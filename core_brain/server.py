@@ -13,6 +13,8 @@ from pydantic import ValidationError
 from models.signal import Signal, ConnectorType, SignalResult, MarketRegime
 from core_brain.regime import RegimeClassifier
 from data_vault.storage import StorageManager
+from core_brain.notificator import get_notifier
+from core_brain.module_manager import get_module_manager, MembershipLevel
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -269,6 +271,23 @@ async def process_signal(message: dict, client_id: str, connector_type: Connecto
             except Exception as e:
                 logger.error(f"Error guardando estado de mercado: {e}")
             
+            # Enviar notificación de cambio de régimen
+            notifier = get_notifier()
+            if notifier:
+                # Por defecto usar membresía básica, en producción esto debería venir del usuario
+                membership = MembershipLevel.BASIC
+                try:
+                    await notifier.notify_regime_change(
+                        symbol=signal.symbol,
+                        previous_regime=previous_regime,
+                        new_regime=regime,
+                        price=signal.price,
+                        membership=membership,
+                        metrics=metrics
+                    )
+                except Exception as e:
+                    logger.error(f"Error enviando notificación de cambio de régimen: {e}")
+            
             # Actualizar régimen anterior
             _last_regime_by_symbol[signal.symbol] = regime
         
@@ -290,8 +309,39 @@ async def process_signal(message: dict, client_id: str, connector_type: Connecto
         
         await manager.send_personal_message(response, client_id)
         
+        # Verificar si es una señal de Oliver Vélez y enviar notificación
+        module_manager = get_module_manager()
+        notifier = get_notifier()
+        
+        # Una señal es de Oliver Vélez si:
+        # 1. El strategy_id contiene "oliver_velez" o
+        # 2. El módulo oliver_velez está activo y el régimen es compatible
+        is_oliver_velez = (
+            signal.strategy_id and "oliver_velez" in signal.strategy_id.lower()
+        ) or (
+            module_manager.is_module_enabled("oliver_velez") and
+            regime in [MarketRegime.TREND, MarketRegime.RANGE]
+        )
+        
+        if is_oliver_velez and notifier:
+            # Por defecto usar membresía básica, en producción esto debería venir del usuario
+            membership = MembershipLevel.BASIC
+            try:
+                strategy_details = {
+                    "Régimen": regime.value,
+                    "ADX": f"{metrics.get('adx', 0):.2f}" if metrics else "N/A",
+                    "Volatilidad": f"{metrics.get('volatility', 0):.4f}" if metrics else "N/A"
+                }
+                await notifier.notify_oliver_velez_signal(
+                    signal=signal,
+                    membership=membership,
+                    strategy_details=strategy_details
+                )
+            except Exception as e:
+                logger.error(f"Error enviando notificación de señal Oliver Vélez: {e}")
+        
         # Aquí se podría añadir lógica para ejecutar estrategias
-        # basadas en el régimen detectado
+        # basadas en el régimen detectado y módulos activos
         
     except Exception as e:
         logger.error(f"Error procesando señal de {client_id}: {e}")

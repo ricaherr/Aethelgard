@@ -1,0 +1,233 @@
+"""
+Gestor de Módulos Activos para Aethelgard
+Verifica qué estrategias tienen permiso para ejecutarse según config/modules.json
+"""
+import json
+import logging
+from typing import Dict, List, Optional, Set
+from pathlib import Path
+from enum import Enum
+
+logger = logging.getLogger(__name__)
+
+
+class MembershipLevel(str, Enum):
+    """Niveles de membresía"""
+    BASIC = "basic"
+    PREMIUM = "premium"
+
+
+class ModuleManager:
+    """
+    Gestiona qué módulos/estrategias están activos y tienen permiso para ejecutarse
+    """
+    
+    def __init__(self, config_path: str = "config/modules.json"):
+        """
+        Inicializa el gestor de módulos
+        
+        Args:
+            config_path: Ruta al archivo de configuración de módulos
+        """
+        self.config_path = Path(config_path)
+        self.config: Dict = {}
+        self._load_config()
+    
+    def _load_config(self):
+        """Carga la configuración desde el archivo JSON"""
+        if not self.config_path.exists():
+            logger.warning(f"Archivo de configuración no encontrado: {self.config_path}. Usando valores por defecto.")
+            self._create_default_config()
+            return
+        
+        try:
+            with open(self.config_path, 'r', encoding='utf-8') as f:
+                self.config = json.load(f)
+            logger.info(f"Configuración de módulos cargada desde {self.config_path}")
+        except Exception as e:
+            logger.error(f"Error cargando configuración de módulos: {e}")
+            self._create_default_config()
+    
+    def _create_default_config(self):
+        """Crea una configuración por defecto si no existe el archivo"""
+        self.config = {
+            "active_modules": {
+                "oliver_velez": {
+                    "enabled": True,
+                    "description": "Estrategias de Oliver Vélez",
+                    "required_regime": ["TREND", "RANGE"],
+                    "membership_required": "basic"
+                },
+                "risk_manager": {
+                    "enabled": True,
+                    "description": "Gestión de riesgo",
+                    "required_regime": ["TREND", "RANGE"],
+                    "membership_required": "basic"
+                }
+            },
+            "membership_levels": {
+                "basic": {
+                    "modules_allowed": ["oliver_velez", "risk_manager"],
+                    "description": "Membresía básica"
+                },
+                "premium": {
+                    "modules_allowed": ["oliver_velez", "risk_manager"],
+                    "description": "Membresía premium"
+                }
+            },
+            "default_membership": "basic"
+        }
+    
+    def is_module_enabled(self, module_name: str) -> bool:
+        """
+        Verifica si un módulo está habilitado
+        
+        Args:
+            module_name: Nombre del módulo
+        
+        Returns:
+            True si el módulo está habilitado, False en caso contrario
+        """
+        module = self.config.get("active_modules", {}).get(module_name)
+        if not module:
+            return False
+        return module.get("enabled", False)
+    
+    def can_execute_module(self, 
+                          module_name: str, 
+                          membership: MembershipLevel = MembershipLevel.BASIC) -> bool:
+        """
+        Verifica si un módulo puede ejecutarse según la membresía
+        
+        Args:
+            module_name: Nombre del módulo
+            membership: Nivel de membresía del usuario
+        
+        Returns:
+            True si el módulo puede ejecutarse, False en caso contrario
+        """
+        # Verificar si el módulo está habilitado
+        if not self.is_module_enabled(module_name):
+            return False
+        
+        module = self.config.get("active_modules", {}).get(module_name)
+        if not module:
+            return False
+        
+        # Verificar membresía requerida
+        required_membership = module.get("membership_required", "basic")
+        
+        # Premium tiene acceso a todo, básico solo a módulos básicos
+        if required_membership == "premium" and membership == MembershipLevel.BASIC:
+            return False
+        
+        # Verificar si el módulo está en la lista de módulos permitidos para esta membresía
+        membership_config = self.config.get("membership_levels", {}).get(membership.value, {})
+        allowed_modules = membership_config.get("modules_allowed", [])
+        
+        return module_name in allowed_modules
+    
+    def get_active_modules(self, 
+                          membership: MembershipLevel = MembershipLevel.BASIC) -> List[str]:
+        """
+        Obtiene la lista de módulos activos para un nivel de membresía
+        
+        Args:
+            membership: Nivel de membresía
+        
+        Returns:
+            Lista de nombres de módulos activos
+        """
+        active_modules = []
+        
+        for module_name, module_config in self.config.get("active_modules", {}).items():
+            if self.can_execute_module(module_name, membership):
+                active_modules.append(module_name)
+        
+        return active_modules
+    
+    def get_modules_for_regime(self, 
+                              regime: str,
+                              membership: MembershipLevel = MembershipLevel.BASIC) -> List[str]:
+        """
+        Obtiene los módulos que pueden ejecutarse para un régimen específico
+        
+        Args:
+            regime: Régimen de mercado (TREND, RANGE, CRASH, NEUTRAL)
+            membership: Nivel de membresía
+        
+        Returns:
+            Lista de nombres de módulos que pueden ejecutarse
+        """
+        available_modules = []
+        
+        for module_name, module_config in self.config.get("active_modules", {}).items():
+            if not self.can_execute_module(module_name, membership):
+                continue
+            
+            required_regimes = module_config.get("required_regime", [])
+            if regime in required_regimes:
+                available_modules.append(module_name)
+        
+        return available_modules
+    
+    def enable_module(self, module_name: str):
+        """Habilita un módulo"""
+        if "active_modules" not in self.config:
+            self.config["active_modules"] = {}
+        
+        if module_name not in self.config["active_modules"]:
+            logger.warning(f"Intento de habilitar módulo inexistente: {module_name}")
+            return
+        
+        self.config["active_modules"][module_name]["enabled"] = True
+        self._save_config()
+        logger.info(f"Módulo {module_name} habilitado")
+    
+    def disable_module(self, module_name: str):
+        """Deshabilita un módulo"""
+        if "active_modules" not in self.config:
+            return
+        
+        if module_name not in self.config["active_modules"]:
+            logger.warning(f"Intento de deshabilitar módulo inexistente: {module_name}")
+            return
+        
+        self.config["active_modules"][module_name]["enabled"] = False
+        self._save_config()
+        logger.info(f"Módulo {module_name} deshabilitado")
+    
+    def _save_config(self):
+        """Guarda la configuración en el archivo JSON"""
+        try:
+            self.config_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(self.config_path, 'w', encoding='utf-8') as f:
+                json.dump(self.config, f, indent=2, ensure_ascii=False)
+            logger.debug(f"Configuración guardada en {self.config_path}")
+        except Exception as e:
+            logger.error(f"Error guardando configuración: {e}")
+    
+    def reload_config(self):
+        """Recarga la configuración desde el archivo"""
+        self._load_config()
+        logger.info("Configuración de módulos recargada")
+    
+    def get_module_info(self, module_name: str) -> Optional[Dict]:
+        """Obtiene información sobre un módulo específico"""
+        return self.config.get("active_modules", {}).get(module_name)
+    
+    def get_all_modules_info(self) -> Dict:
+        """Obtiene información sobre todos los módulos"""
+        return self.config.get("active_modules", {})
+
+
+# Instancia global del gestor de módulos
+_module_manager_instance: Optional[ModuleManager] = None
+
+
+def get_module_manager() -> ModuleManager:
+    """Obtiene la instancia global del gestor de módulos"""
+    global _module_manager_instance
+    if _module_manager_instance is None:
+        _module_manager_instance = ModuleManager()
+    return _module_manager_instance

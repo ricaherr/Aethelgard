@@ -1,0 +1,46 @@
+{
+  "active_modules": {
+    "oliver_velez": {
+      "enabled": true,
+      "description": "Estrategias de Oliver Vélez (Trend Following, Range Trading, Breakout)",
+      "required_regime": ["TREND", "RANGE"],
+      "membership_required": "basic"
+    },
+    "trend_following": {
+      "enabled": true,
+      "description": "Estrategia de seguimiento de tendencia",
+      "required_regime": ["TREND"],
+      "membership_required": "basic"
+    },
+    "range_trading": {
+      "enabled": true,
+      "description": "Estrategia de trading en rango",
+      "required_regime": ["RANGE"],
+      "membership_required": "basic"
+    },
+    "breakout_trading": {
+      "enabled": false,
+      "description": "Estrategia de trading en rupturas",
+      "required_regime": ["TREND"],
+      "membership_required": "premium"
+    },
+    "risk_manager": {
+      "enabled": true,
+      "description": "Gestión dinámica de riesgo basada en volatilidad",
+      "required_regime": ["TREND", "RANGE"],
+      "membership_required": "basic"
+    }
+  },
+  "membership_levels": {
+    "basic": {
+      "modules_allowed": ["oliver_velez", "trend_following", "range_trading", "risk_manager"],
+      "description": "Membresía básica con acceso a estrategias principales"
+    },
+    "premium": {
+      "modules_allowed": ["oliver_velez", "trend_following", "range_trading", "breakout_trading", "risk_manager"],
+      "description": "Membresía premium con acceso a todas las estrategias"
+    }
+  },
+  "default_membership": "basic",
+  "last_updated": null
+}
