@@ -60,24 +60,26 @@ Crear un **cerebro centralizado** que:
 Aethelgard utiliza una arquitectura **Hub-and-Spoke** donde el **Core Brain** (Python) actúa como el centro de control, y los **Conectores** se comunican con él mediante WebSockets.
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    CORE BRAIN (Hub)                     │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐ │
-│  │   Server     │  │   Regime     │  │   Storage    │ │
-│  │  (FastAPI)   │  │ Classifier   │  │  (SQLite)    │ │
-│  └──────────────┘  └──────────────┘  └──────────────┘ │
-│  ┌──────────────┐  ┌──────────────┐                   │
-│  │   Tuner      │  │   Strategies │                   │
-│  │ (Auto-Calib) │  │   (Modular)  │                   │
-│  └──────────────┘  └──────────────┘                   │
-└─────────────────────────────────────────────────────────┘
-         │              │              │
-         │ WebSocket    │ WebSocket    │ HTTP
-         │              │              │
-    ┌────▼────┐    ┌────▼────┐    ┌────▼────┐
-    │   NT8   │    │   MT5   │    │   TV    │
-    │ Bridge  │    │ Bridge  │    │Webhook │
-    └─────────┘    └─────────┘    └─────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                      CORE BRAIN (Hub)                            │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
+│  │   Server     │  │   Regime     │  │   Storage    │           │
+│  │  (FastAPI)   │  │ Classifier   │  │  (SQLite)    │           │
+│  └──────────────┘  └──────────────┘  └──────────────┘           │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
+│  │   Tuner      │  │   Strategies │  │   Scanner    │           │
+│  │ (Auto-Calib) │  │   (Modular)  │  │ (Proactivo)  │           │
+│  └──────────────┘  └──────────────┘  └──────┬───────┘           │
+└─────────────────────────────────────────────┼───────────────────┘
+         │              │              │      │
+         │ WebSocket    │ WebSocket    │ HTTP │ DataProvider
+         │              │              │      │ (OHLC)
+    ┌────▼────┐    ┌────▼────┐    ┌────▼────┐ │
+    │   NT8   │    │   MT5   │    │   TV    │ │    ┌─────────────┐
+    │ Bridge  │    │ Bridge  │    │Webhook  │ └────│ MT5 Data    │
+    └─────────┘    └─────────┘    └─────────┘      │ Provider    │
+                                                    │(copy_rates) │
+                                                    └─────────────┘
 ```
 
 ### Componentes Principales

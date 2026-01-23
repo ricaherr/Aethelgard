@@ -70,15 +70,41 @@ python connectors/bridge_mt5.py
 
 ### Escáner proactivo multihilo
 
-El escáner consulta datos de forma autónoma (MT5 `copy_rates_from_pos`), sin gráficas abiertas. Configuración en `config/config.json`: lista de activos, `cpu_limit_pct`, intervalos por régimen.
+El escáner consulta datos de forma **autónoma** vía MT5 `copy_rates_from_pos` (sin gráficas abiertas), orquesta múltiples activos con `RegimeClassifier` en hilos (`concurrent.futures`), controla CPU y prioriza por régimen.
+
+**Ejecución:**
 
 ```bash
 python run_scanner.py
 ```
 
-- **Activos**: `config.config.json` → `scanner.assets` (ej. `["AAPL","TSLA","MES","EURUSD"]`).
-- **Priorización**: TREND/CRASH cada 1 s; RANGE cada 10 s; NEUTRAL cada 5 s.
-- **CPU**: si el uso supera `cpu_limit_pct`, se aumenta el sleep entre ciclos.
+**Requisitos:** MetaTrader 5 instalado y en ejecución. Los símbolos deben estar en Market Watch.
+
+**Configuración** (`config/config.json` → `scanner`):
+
+| Parámetro | Descripción | Default |
+|-----------|-------------|---------|
+| `assets` | Lista de símbolos a escanear | `["AAPL","TSLA","MES","EURUSD"]` |
+| `cpu_limit_pct` | Umbral de CPU (%); si se supera, se aumenta el sleep entre ciclos | `80.0` |
+| `sleep_trend_seconds` | Intervalo de escaneo para activos en TREND | `1.0` |
+| `sleep_range_seconds` | Intervalo para activos en RANGE | `10.0` |
+| `sleep_neutral_seconds` | Intervalo para NEUTRAL | `5.0` |
+| `sleep_crash_seconds` | Intervalo para CRASH | `1.0` |
+| `base_sleep_seconds` | Sleep base entre ciclos | `1.0` |
+| `max_sleep_multiplier` | Límite del multiplicador de sleep cuando CPU > límite | `5.0` |
+| `mt5_timeframe` | Timeframe MT5 (M1, M5, M15, H1, …) | `"M5"` |
+| `mt5_bars_count` | Velas OHLC a solicitar por símbolo | `500` |
+| `config_path` | Ruta a `dynamic_params` del clasificador | `"config/dynamic_params.json"` |
+
+**Priorización:** TREND y CRASH → cada 1 s; RANGE → cada 10 s; NEUTRAL → cada 5 s.
+
+**Control de recursos:** Si el uso de CPU supera `cpu_limit_pct`, el escáner aumenta el tiempo de espera entre ciclos (hasta `max_sleep_multiplier`).
+
+**Test sin MT5** (DataProvider mock):
+
+```bash
+python test_scanner_mock.py
+```
 
 ### Iniciar webhook de TradingView
 
@@ -122,6 +148,12 @@ El clasificador analiza:
 - **CRASH**: Movimiento extremo detectado
 - **NEUTRAL**: Estado neutral/indefinido
 
+## Configuración
+
+- **`config/config.json`**: Parámetros del escáner (activos, CPU, intervalos, MT5). Véase tabla en [Escáner proactivo](#escáner-proactivo-multihilo).
+- **`config/dynamic_params.json`**: Parámetros del `RegimeClassifier` (ADX, volatilidad, persistencia, etc.).
+- **`config/modules.json`**: Módulos de estrategias activos y niveles de membresía.
+
 ## Estructura Modular
 
 Para añadir nuevas estrategias:
@@ -137,6 +169,25 @@ strategies/
   trend_following.py
   mean_reversion.py
   breakout.py
+```
+
+## Estructura de archivos clave
+
+```
+Aethelgard/
+├── config/
+│   ├── config.json         # Escáner: assets, cpu_limit_pct, intervalos, MT5
+│   ├── dynamic_params.json # RegimeClassifier: ADX, volatilidad, etc.
+│   └── modules.json        # Módulos de estrategias
+├── core_brain/
+│   ├── scanner.py          # Escáner proactivo multihilo (CPUMonitor, ScannerEngine)
+│   ├── regime.py           # RegimeClassifier + load_ohlc
+│   └── server.py           # FastAPI + WebSockets
+├── connectors/
+│   ├── mt5_data_provider.py # OHLC vía copy_rates_from_pos (sin gráficas)
+│   └── bridge_mt5.py       # Bridge WebSocket MT5 → Aethelgard
+├── run_scanner.py          # Entrypoint del escáner
+└── test_scanner_mock.py    # Test del escáner con mock (sin MT5)
 ```
 
 ## Base de Datos
