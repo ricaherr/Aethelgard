@@ -123,6 +123,17 @@ Aethelgard utiliza una arquitectura **Hub-and-Spoke** donde el **Core Brain** (P
 - **Filtro de Persistencia**: Cambio confirmado solo tras 2 velas consecutivas
 - **Filtro de Volatilidad Mínima**: Evita falsos CRASH en mercados muertos
 - **Parámetros Dinámicos**: Carga desde `config/dynamic_params.json`
+- **`load_ohlc(df)`**: Carga masiva OHLC para escáner proactivo (p. ej. desde MT5)
+
+##### `scanner.py` - Escáner Proactivo Multihilo
+- **Función**: Orquestador que escanea una lista de activos de forma proactiva, sin depender de NinjaTrader ni de gráficas abiertas.
+- **Componentes**:
+  - **ScannerEngine**: Recibe `assets` y un **DataProvider** (inyectado; agnóstico de plataforma). Un `RegimeClassifier` por símbolo.
+  - **CPUMonitor**: Lee uso de CPU (`psutil`). Si supera `cpu_limit_pct` (configurable en `config/config.json`), aumenta el sleep entre ciclos.
+- **Multithreading**: `concurrent.futures.ThreadPoolExecutor` para procesar cada activo en hilos separados.
+- **Priorización**: TREND/CRASH → escaneo cada 1 s; RANGE → cada 10 s; NEUTRAL → cada 5 s (configurable).
+- **Configuración**: `config/config.json` → `scanner` (`assets`, `cpu_limit_pct`, `sleep_*_seconds`, `mt5_timeframe`, `mt5_bars_count`, etc.).
+- **Entrypoint**: `run_scanner.py` (usa `MT5DataProvider`). Test sin MT5: `test_scanner_mock.py`.
 
 ##### `tuner.py` - Sistema de Auto-Calibración
 - **Función**: Optimizar parámetros basándose en datos históricos
@@ -146,6 +157,12 @@ Aethelgard utiliza una arquitectura **Hub-and-Spoke** donde el **Core Brain** (P
 - **Función**: Conectar Expert Advisors de MT5 con Aethelgard
 - **Comunicación**: WebSocket hacia `ws://localhost:8000/ws/MT5/{client_id}`
 - **Formato**: JSON con estructura `Signal`
+
+##### `mt5_data_provider.py` - Ingestión autónoma de datos OHLC (MT5)
+- **Lenguaje**: Python
+- **Función**: Obtener OHLC de forma autónoma vía `mt5.copy_rates_from_pos`, **sin gráficas abiertas**. Usado por el Escáner Proactivo.
+- **Interface**: `fetch_ohlc(symbol, timeframe, count)` → `DataFrame` con columnas `time`, `open`, `high`, `low`, `close`.
+- **Requisitos**: MT5 en ejecución; símbolos en Market Watch. Timeframes: M1, M5, M15, M30, H1, H4, D1, W1, MN1.
 
 ##### `webhook_tv.py` - Webhook para TradingView
 - **Lenguaje**: Python
@@ -326,6 +343,26 @@ El sistema debe detectar cuando sus predicciones están fallando:
 - Clasificación de régimen en tiempo real
 - Almacenamiento de señales y estados de mercado
 - Auto-calibración de parámetros ADX y volatilidad
+
+---
+
+### Fase 1.1: Escáner Proactivo Multihilo ✅ **COMPLETADA** (Enero 2026)
+
+**Objetivo**: Transformar Aethelgard en un **escáner proactivo** que obtenga datos de forma autónoma y escanee múltiples activos en paralelo, con control de recursos y priorización por régimen.
+
+**Componentes implementados:**
+- ✅ **`core_brain/scanner.py`**: `ScannerEngine` (orquestador), `CPUMonitor`, protocolo `DataProvider`. Multithreading con `concurrent.futures.ThreadPoolExecutor`.
+- ✅ **`connectors/mt5_data_provider.py`**: Ingestión autónoma OHLC vía `mt5.copy_rates_from_pos` (sin gráficas abiertas).
+- ✅ **`config/config.json`**: Configuración del escáner (`assets`, `cpu_limit_pct`, `sleep_trend_seconds`, `sleep_range_seconds`, etc.).
+- ✅ **`RegimeClassifier.load_ohlc(df)`**: Carga masiva OHLC para uso en escáner.
+- ✅ **`run_scanner.py`**: Entrypoint del escáner con MT5. `test_scanner_mock.py`: test con DataProvider mock (sin MT5).
+
+**Funcionalidades:**
+- Lista de activos configurable; un `RegimeClassifier` por símbolo.
+- Escaneo en hilos separados por activo.
+- **Control de recursos**: si CPU > `cpu_limit_pct` (configurable), aumenta el sleep entre ciclos.
+- **Priorización**: TREND/CRASH cada 1 s, RANGE cada 10 s, NEUTRAL cada 5 s (configurables).
+- Agnóstico de plataforma: el escáner recibe un `DataProvider` inyectado (p. ej. MT5).
 
 ---
 
@@ -577,21 +614,32 @@ Las estrategias se activan según el régimen de mercado detectado:
 
 ## 📝 Notas de Desarrollo
 
-### Estructura de Directorios Futura
+### Estructura de Directorios
 
 ```
 Aethelgard/
-├── core_brain/          # Núcleo del sistema
-├── connectors/          # Conectores a plataformas
-├── strategies/          # Estrategias modulares (por crear)
-│   ├── __init__.py
+├── config/
+│   ├── config.json          # Escáner: assets, cpu_limit_pct, intervalos, MT5
+│   ├── dynamic_params.json  # RegimeClassifier: ADX, volatilidad, etc.
+│   └── modules.json         # Módulos de estrategias
+├── core_brain/
+│   ├── scanner.py           # Escáner proactivo multihilo (CPUMonitor, ScannerEngine)
+│   ├── regime.py            # RegimeClassifier + load_ohlc
+│   ├── server.py            # FastAPI + WebSockets
+│   └── tuner.py             # Auto-calibración
+├── connectors/
+│   ├── mt5_data_provider.py # OHLC vía copy_rates_from_pos (sin gráficas)
+│   ├── bridge_mt5.py        # Bridge WebSocket MT5 → Aethelgard
+│   └── ...
+├── data_vault/              # Persistencia SQLite
+├── models/                  # Modelos de datos (Signal, MarketRegime, etc.)
+├── run_scanner.py           # Entrypoint del escáner proactivo
+├── test_scanner_mock.py     # Test del escáner con mock (sin MT5)
+├── strategies/              # Estrategias modulares (por crear)
 │   ├── trend_following.py
 │   ├── range_trading.py
 │   └── risk_manager.py
-├── data_vault/          # Persistencia
-├── models/              # Modelos de datos
-├── config/              # Configuración dinámica
-└── dashboard/           # Dashboard web (Fase 4)
+└── dashboard/               # Dashboard web (Fase 4)
 ```
 
 ### Convenciones de Código

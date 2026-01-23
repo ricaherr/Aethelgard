@@ -198,6 +198,11 @@ Tablas:
 - `signals`: Almacena todas las señales recibidas
 - `signal_results`: Almacena resultados y feedback
 
+## Documentación
+
+- **[AETHELGARD_MANIFESTO.md](AETHELGARD_MANIFESTO.md)**: Visión, arquitectura, reglas de autonomía y roadmap detallado.
+- **[ROADMAP.md](ROADMAP.md)**: Resumen del roadmap; incluye Fase 1.1 (Escáner Proactivo Multihilo).
+
 ## Desarrollo
 
 El código está diseñado para ser modular y extensible. Cada componente puede funcionar de manera independiente.
