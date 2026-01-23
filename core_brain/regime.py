@@ -488,3 +488,31 @@ class RegimeClassifier:
         self._pending_regime = None
         self._pending_count = 0
         self._last_classify_len = 0
+
+    def load_ohlc(self, df: pd.DataFrame):
+        """
+        Reemplaza el historial OHLC interno con el DataFrame proporcionado.
+        Resetea el estado de persistencia/histéresis.
+        Útil para ingestión masiva (ej. mt5.copy_rates_from_pos) en escáner proactivo.
+
+        Args:
+            df: DataFrame con columnas 'timestamp' (o 'time'), 'open', 'high', 'low', 'close'.
+                Si tiene 'time' (epoch), se convierte a datetime.
+        """
+        if df is None or len(df) == 0:
+            self.df = None
+        else:
+            d = df.copy()
+            if "timestamp" not in d.columns and "time" in d.columns:
+                d["timestamp"] = pd.to_datetime(d["time"], unit="s")
+            if "timestamp" not in d.columns:
+                raise ValueError("DataFrame debe tener 'timestamp' o 'time'")
+            cols = ["timestamp", "open", "high", "low", "close"]
+            for c in cols:
+                if c not in d.columns:
+                    raise ValueError(f"DataFrame debe tener columna '{c}'")
+            self.df = d[cols].tail(self.max_history).reset_index(drop=True)
+        self._confirmed_regime = None
+        self._pending_regime = None
+        self._pending_count = 0
+        self._last_classify_len = 0

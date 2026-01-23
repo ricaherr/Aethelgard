@@ -1,0 +1,15 @@
+{
+  "scanner": {
+    "assets": ["AAPL", "TSLA", "MES", "EURUSD"],
+    "cpu_limit_pct": 80.0,
+    "sleep_trend_seconds": 1.0,
+    "sleep_range_seconds": 10.0,
+    "sleep_neutral_seconds": 5.0,
+    "sleep_crash_seconds": 1.0,
+    "base_sleep_seconds": 1.0,
+    "max_sleep_multiplier": 5.0,
+    "mt5_timeframe": "M5",
+    "mt5_bars_count": 500,
+    "config_path": "config/dynamic_params.json"
+  }
+}

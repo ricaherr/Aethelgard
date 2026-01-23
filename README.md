@@ -11,10 +11,12 @@ Aethelgard está diseñado como un sistema modular que permite integrar múltipl
 #### 1. Core Brain (`core_brain/`)
 - **`server.py`**: Servidor FastAPI con WebSockets que gestiona múltiples conexiones simultáneas
 - **`regime.py`**: Clasificador de régimen de mercado (TREND, RANGE, CRASH, NEUTRAL)
+- **`scanner.py`**: Escáner proactivo multihilo; orquesta activos, `RegimeClassifier` por símbolo, monitor de CPU y priorización TREND (1s) / RANGE (10s)
 
 #### 2. Conectores (`connectors/`)
 - **`bridge_nt8.cs`**: Bridge para NinjaTrader 8 (C#)
 - **`bridge_mt5.py`**: Bridge para MetaTrader 5 (Python)
+- **`mt5_data_provider.py`**: Ingestión autónoma de OHLC vía `mt5.copy_rates_from_pos` (sin gráficas abiertas)
 - **`webhook_tv.py`**: Webhook para recibir alertas de TradingView
 
 #### 3. Data Vault (`data_vault/`)
@@ -65,6 +67,18 @@ El servidor estará disponible en `http://localhost:8000`
 ```bash
 python connectors/bridge_mt5.py
 ```
+
+### Escáner proactivo multihilo
+
+El escáner consulta datos de forma autónoma (MT5 `copy_rates_from_pos`), sin gráficas abiertas. Configuración en `config/config.json`: lista de activos, `cpu_limit_pct`, intervalos por régimen.
+
+```bash
+python run_scanner.py
+```
+
+- **Activos**: `config.config.json` → `scanner.assets` (ej. `["AAPL","TSLA","MES","EURUSD"]`).
+- **Priorización**: TREND/CRASH cada 1 s; RANGE cada 10 s; NEUTRAL cada 5 s.
+- **CPU**: si el uso supera `cpu_limit_pct`, se aumenta el sleep entre ciclos.
 
 ### Iniciar webhook de TradingView
 
