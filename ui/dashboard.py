@@ -8,12 +8,14 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, List, Any
 import sys
+import random # Importar random para simulación de datos
 
 # Añadir el directorio raíz al path para importar módulos
-sys.path.insert(0, str(Path(__file__).parent.parent))
+    sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from core_brain.discovery import DiscoveryEngine # Importar DiscoveryEngine
 from core_brain.regime import RegimeClassifier
 from core_brain.module_manager import get_module_manager, MembershipLevel
 from core_brain.tuner import ParameterTuner
@@ -70,10 +72,18 @@ def main():
     # Sidebar para configuración
     with st.sidebar:
         st.header("⚙️ Configuración")
-        
+
+        # Selector de modo de escaneo
+        scan_mode = st.selectbox(
+            "Modo de Escaneo",
+            options=["ECO", "STANDARD", "AGRESSIVE"],
+            index=1,
+            help="Perfil de escaneo (afecta uso de CPU y velocidad)"
+        )
+
         # Selector de símbolo
         symbol = st.text_input("Símbolo", value="ES", help="Símbolo del instrumento a monitorear")
-        
+
         # Selector de membresía
         membership = st.selectbox(
             "Nivel de Membresía",
@@ -241,8 +251,8 @@ def main():
             else:
                 st.warning(f"⚠️ No hay módulos disponibles para régimen {current_regime}")
     
-    # TAB 3: Parámetros Dinámicos
-    with tab3:
+    # TAB 3: Parámetros Dinámicos (Antigua tab3)
+    with tab_params:
         st.header("⚙️ Parámetros Dinámicos del Tuner")
         
         # Cargar parámetros actuales
@@ -314,8 +324,8 @@ def main():
             st.error(f"Error cargando parámetros: {e}")
             logger.error(f"Error cargando parámetros: {e}", exc_info=True)
     
-    # TAB 4: Estadísticas
-    with tab4:
+    # TAB 4: Estadísticas (Antigua tab4)
+    with tab_stats:
         st.header("📈 Estadísticas del Sistema")
         
         try:

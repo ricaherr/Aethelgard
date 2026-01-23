@@ -90,7 +90,7 @@ class ScannerEngine:
         data_provider: DataProvider,
         config_path: str = "config/config.json",
         regime_config_path: Optional[str] = None,
-        max_workers: Optional[int] = None,
+        scan_mode: str = "STANDARD",  # Nuevo parámetro para el modo de escaneo
     ):
         self.assets = list(assets) if assets else []
         self.provider = data_provider
@@ -98,12 +98,23 @@ class ScannerEngine:
         cfg = _load_config(config_path)
         sc = cfg.get("scanner", {})
 
-        self.cpu_limit_pct = float(sc.get("cpu_limit_pct", 80.0))
+        self.scan_mode = scan_mode.upper()
+        
+        # Configuraciones predefinidas para los modos de escaneo
+        mode_configs = {
+            "ECO": {"cpu_limit_pct": 50.0, "max_workers_multiplier": 0.5, "base_sleep_multiplier": 2.0},
+            "STANDARD": {"cpu_limit_pct": 80.0, "max_workers_multiplier": 1.0, "base_sleep_multiplier": 1.0},
+            "AGRESSIVE": {"cpu_limit_pct": 95.0, "max_workers_multiplier": 2.0, "base_sleep_multiplier": 0.5}, # Ajustado a 95% para AGRESSIVE
+        }
+        
+        selected_mode = mode_configs.get(self.scan_mode, mode_configs["STANDARD"])
+        
+        self.cpu_limit_pct = float(sc.get("cpu_limit_pct", selected_mode["cpu_limit_pct"]))
         self.sleep_trend = float(sc.get("sleep_trend_seconds", 1.0))
         self.sleep_range = float(sc.get("sleep_range_seconds", 10.0))
         self.sleep_neutral = float(sc.get("sleep_neutral_seconds", 5.0))
         self.sleep_crash = float(sc.get("sleep_crash_seconds", 1.0))
-        self.base_sleep = float(sc.get("base_sleep_seconds", 1.0))
+        self.base_sleep = float(sc.get("base_sleep_seconds", 1.0)) * selected_mode["base_sleep_multiplier"]
         self.max_sleep_multiplier = float(sc.get("max_sleep_multiplier", 5.0))
         self.mt5_timeframe = str(sc.get("mt5_timeframe", "M5"))
         self.mt5_bars_count = int(sc.get("mt5_bars_count", 500))
@@ -115,7 +126,12 @@ class ScannerEngine:
         self.last_scan_time: Dict[str, float] = {}
         self._lock = threading.Lock()
         self._running = False
-        self._max_workers = max_workers or min(32, (len(self.assets) or 1) + 4)
+        
+        # Calcular max_workers basado en el modo de escaneo y el número de activos
+        base_workers = min(32, (len(self.assets) or 1) + 4)
+        self._max_workers = int(base_workers * selected_mode["max_workers_multiplier"])
+        
+        logger.info("ScannerEngine inicializado en modo %s con CPU límite %.1f%% y %d workers.", self.scan_mode, self.cpu_limit_pct, self._max_workers)
 
         for s in self.assets:
             self.classifiers[s] = RegimeClassifier(config_path=rp)
