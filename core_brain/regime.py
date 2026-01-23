@@ -2,6 +2,9 @@
 Clasificador de Régimen de Mercado Optimizado
 Analiza volatilidad y tendencia para determinar el modo de operación
 Usa pandas para cálculos vectorizados eficientes
+
+Incluye: filtro de volatilidad mínima, histéresis ADX, suavizado de shock,
+y filtro de persistencia (2 velas consecutivas).
 """
 from typing import List, Optional, Dict
 from datetime import datetime
@@ -13,10 +16,11 @@ import numpy as np
 class RegimeClassifier:
     """
     Clasifica el régimen de mercado basándose en:
-    - Volatilidad (desviación estándar de retornos)
-    - Tendencia (ADX correctamente calculado)
-    - Movimientos extremos (detección de crash/shock: +300% volatilidad en 3 velas)
+    - Volatilidad (desviación estándar de retornos, umbral mínimo vía ATR)
+    - Tendencia (ADX con histéresis: entrar TREND >25, salir RANGE <18)
+    - Movimientos extremos (shock: +500% volatilidad en 5 velas, solo si vol > ATR base)
     - Sesgo a largo plazo (distancia a SMA 200)
+    - Persistencia: cambio confirmado solo tras 2 velas consecutivas
     """
     
     def __init__(self, 
@@ -24,27 +28,42 @@ class RegimeClassifier:
                  sma_period: int = 200,
                  adx_trend_threshold: float = 25.0,
                  adx_range_threshold: float = 20.0,
-                 volatility_shock_multiplier: float = 3.0,
-                 shock_lookback: int = 3):
+                 adx_range_exit_threshold: float = 18.0,
+                 volatility_shock_multiplier: float = 5.0,
+                 shock_lookback: int = 5,
+                 min_volatility_atr_period: int = 50,
+                 persistence_candles: int = 2):
         """
         Args:
             adx_period: Período para cálculo de ADX (default: 14)
             sma_period: Período para SMA de largo plazo (default: 200)
-            adx_trend_threshold: ADX > este valor indica TREND (default: 25.0)
-            adx_range_threshold: ADX < este valor indica RANGE (default: 20.0)
-            volatility_shock_multiplier: Multiplicador para detectar shock (default: 3.0 = 300%)
-            shock_lookback: Número de velas para comparar volatilidad (default: 3)
+            adx_trend_threshold: ADX > este valor para ENTRAR en TREND (default: 25.0)
+            adx_range_threshold: ADX < este valor para ENTRAR en RANGE cuando no en TREND (default: 20.0)
+            adx_range_exit_threshold: ADX < este valor para SALIR de TREND a RANGE (default: 18.0)
+            volatility_shock_multiplier: Multiplicador para detectar shock (default: 5.0 = 500%)
+            shock_lookback: Número de velas para comparar volatilidad (default: 5)
+            min_volatility_atr_period: Período ATR largo plazo como umbral base de volatilidad (default: 50)
+            persistence_candles: Velas consecutivas requeridas para confirmar cambio (default: 2)
         """
         self.adx_period = adx_period
         self.sma_period = sma_period
         self.adx_trend_threshold = adx_trend_threshold
         self.adx_range_threshold = adx_range_threshold
+        self.adx_range_exit_threshold = adx_range_exit_threshold
         self.volatility_shock_multiplier = volatility_shock_multiplier
         self.shock_lookback = shock_lookback
+        self.min_volatility_atr_period = min_volatility_atr_period
+        self.persistence_candles = persistence_candles
         
         # DataFrame para almacenar datos OHLC
         self.df: Optional[pd.DataFrame] = None
         self.max_history = 300  # Mantener suficientes datos para SMA 200
+        
+        # Estado para persistencia e histéresis
+        self._confirmed_regime: Optional[MarketRegime] = None
+        self._pending_regime: Optional[MarketRegime] = None
+        self._pending_count: int = 0
+        self._last_classify_len: int = 0
     
     def add_candle(self, 
                    close: float,
@@ -185,33 +204,62 @@ class RegimeClassifier:
         
         return float(volatility) if not pd.isna(volatility) else 0.0
     
+    def _get_atr_pct(self, period: Optional[int] = None) -> float:
+        """
+        ATR como porcentaje del precio (volatilidad base de largo plazo).
+        Se usa como umbral mínimo para activar detección de shock.
+        
+        Args:
+            period: Período ATR (default: min_volatility_atr_period)
+        
+        Returns:
+            ATR / close actual, en decimal (ej. 0.005 = 0.5%)
+        """
+        period = period or self.min_volatility_atr_period
+        if self.df is None or len(self.df) < period + 1:
+            return 0.0
+        
+        df = self.df.copy()
+        df['prev_close'] = df['close'].shift(1)
+        df['tr1'] = df['high'] - df['low']
+        df['tr2'] = (df['high'] - df['prev_close']).abs()
+        df['tr3'] = (df['low'] - df['prev_close']).abs()
+        df['tr'] = df[['tr1', 'tr2', 'tr3']].max(axis=1)
+        
+        atr = df['tr'].rolling(window=period).mean().iloc[-1]
+        close = df['close'].iloc[-1]
+        if pd.isna(atr) or close <= 0:
+            return 0.0
+        return float(atr / close)
+    
     def _detect_volatility_shock(self) -> bool:
         """
-        Detecta si la volatilidad ha aumentado un 300% (o el multiplicador configurado)
-        en las últimas N velas (shock_lookback)
+        Detecta shock solo si:
+        1. Volatilidad actual supera umbral base (ATR largo plazo) — evita falsos CRASH en mercados muertos.
+        2. La volatilidad aumentó >= multiplicador (ej. 5x) en las últimas N velas (ej. 5).
         
         Returns:
             True si se detecta un shock/crash
         """
-        if self.df is None or len(self.df) < self.shock_lookback + 20:
+        n = self.shock_lookback * 2
+        if self.df is None or len(self.df) < n + max(20, self.min_volatility_atr_period):
             return False
         
         df = self.df.copy()
         df['returns'] = df['close'].pct_change()
         
-        # Calcular volatilidad actual (últimas N velas)
         current_volatility = df['returns'].tail(self.shock_lookback).std()
+        base_volatility = df['returns'].iloc[-n:-self.shock_lookback].std()
         
-        # Calcular volatilidad base (ventana anterior de mismo tamaño)
-        base_volatility = df['returns'].iloc[-(self.shock_lookback * 2):-self.shock_lookback].std()
-        
-        # Evitar división por cero
-        if base_volatility == 0 or pd.isna(base_volatility):
+        if base_volatility == 0 or pd.isna(base_volatility) or pd.isna(current_volatility):
             return False
         
-        # Verificar si la volatilidad aumentó más del multiplicador configurado
-        volatility_increase = current_volatility / base_volatility
+        # Filtro de volatilidad mínima: no activar shock si el mercado está "muerto"
+        atr_pct = self._get_atr_pct()
+        if current_volatility < atr_pct:
+            return False
         
+        volatility_increase = current_volatility / base_volatility
         return volatility_increase >= self.volatility_shock_multiplier
     
     def _calculate_sma_distance(self) -> Optional[float]:
@@ -253,13 +301,47 @@ class RegimeClassifier:
         
         return 'BULLISH' if distance > 0 else 'BEARISH'
     
+    def _classify_raw(self, last_confirmed: Optional[MarketRegime]) -> MarketRegime:
+        """
+        Clasificación "instantánea" sin persistencia.
+        Usa histéresis ADX: entrar TREND > 25, salir TREND -> RANGE < 18.
+        
+        Args:
+            last_confirmed: Último régimen confirmado (para histéresis)
+        
+        Returns:
+            Régimen raw según ADX y shock
+        """
+        if self.df is None or len(self.df) < max(self.adx_period * 2, 20):
+            return MarketRegime.NEUTRAL
+        
+        if self._detect_volatility_shock():
+            return MarketRegime.CRASH
+        
+        adx = self._calculate_adx()
+        in_trend = last_confirmed == MarketRegime.TREND
+        
+        if in_trend:
+            # Histéresis: para salir de TREND, ADX debe caer por debajo de 18
+            if adx < self.adx_range_exit_threshold:
+                return MarketRegime.RANGE
+            return MarketRegime.TREND
+        
+        # No en TREND: entrar TREND > 25, entrar RANGE < 20
+        if adx > self.adx_trend_threshold:
+            return MarketRegime.TREND
+        if adx < self.adx_range_threshold:
+            return MarketRegime.RANGE
+        return MarketRegime.NEUTRAL
+    
     def classify(self, 
                  current_price: Optional[float] = None,
                  high: Optional[float] = None,
                  low: Optional[float] = None,
                  open_price: Optional[float] = None) -> MarketRegime:
         """
-        Clasifica el régimen de mercado actual
+        Clasifica el régimen de mercado actual.
+        Un cambio solo se confirma si se mantiene al menos persistence_candles velas consecutivas.
         
         Args:
             current_price: Precio actual (opcional, se añade al historial como close)
@@ -268,7 +350,7 @@ class RegimeClassifier:
             open_price: Precio de apertura (opcional)
         
         Returns:
-            MarketRegime: Régimen detectado
+            MarketRegime: Régimen confirmado
         """
         if current_price is not None:
             self.add_candle(
@@ -278,34 +360,47 @@ class RegimeClassifier:
                 open_price=open_price
             )
         
-        if self.df is None or len(self.df) < max(self.adx_period * 2, 20):
+        n = len(self.df) if self.df is not None else 0
+        if n < max(self.adx_period * 2, 20):
             return MarketRegime.NEUTRAL
         
-        # 1. Detectar CRASH/SHOCK primero (prioridad alta)
-        # Si la volatilidad aumenta un 300% en 3 velas -> CRASH/SHOCK
-        if self._detect_volatility_shock():
-            return MarketRegime.CRASH
+        # Re-evaluación sin nueva vela (ej. get_metrics): no actualizar persistencia
+        if n == self._last_classify_len:
+            return self._confirmed_regime or MarketRegime.NEUTRAL
+        self._last_classify_len = n
         
-        # 2. Calcular ADX
-        adx = self._calculate_adx()
+        raw = self._classify_raw(self._confirmed_regime)
         
-        # 3. Clasificar según umbrales de ADX
-        if adx > self.adx_trend_threshold:
-            # ADX > 25 -> TREND
-            return MarketRegime.TREND
-        elif adx < self.adx_range_threshold:
-            # ADX < 20 -> RANGE
-            return MarketRegime.RANGE
-        else:
-            # ADX entre 20 y 25 -> Zona de transición, considerar NEUTRAL
-            return MarketRegime.NEUTRAL
+        if self._confirmed_regime is None:
+            self._confirmed_regime = raw
+            self._pending_regime = None
+            self._pending_count = 0
+            return self._confirmed_regime
+        
+        if raw == self._confirmed_regime:
+            self._pending_regime = None
+            self._pending_count = 0
+            return self._confirmed_regime
+        
+        if raw == self._pending_regime:
+            self._pending_count += 1
+            if self._pending_count >= self.persistence_candles:
+                self._confirmed_regime = raw
+                self._pending_regime = None
+                self._pending_count = 0
+                return self._confirmed_regime
+            return self._confirmed_regime
+        
+        self._pending_regime = raw
+        self._pending_count = 1
+        return self._confirmed_regime
     
     def get_metrics(self) -> Dict:
         """
         Retorna un diccionario con todas las métricas calculadas
         
         Returns:
-            Diccionario con: adx, volatility, sma_distance, bias, regime
+            Diccionario con: adx, volatility, sma_distance, bias, regime, atr_pct, etc.
         """
         if self.df is None or len(self.df) < max(self.adx_period * 2, 20):
             return {
@@ -313,7 +408,9 @@ class RegimeClassifier:
                 'volatility': 0.0,
                 'sma_distance': None,
                 'bias': None,
-                'regime': MarketRegime.NEUTRAL.value
+                'regime': MarketRegime.NEUTRAL.value,
+                'volatility_shock_detected': False,
+                'atr_pct': 0.0,
             }
         
         return {
@@ -322,9 +419,14 @@ class RegimeClassifier:
             'sma_distance': self._calculate_sma_distance(),
             'bias': self.get_bias(),
             'regime': self.classify().value,
-            'volatility_shock_detected': self._detect_volatility_shock()
+            'volatility_shock_detected': self._detect_volatility_shock(),
+            'atr_pct': self._get_atr_pct(),
         }
     
     def reset(self):
-        """Resetea el historial del clasificador"""
+        """Resetea el historial y el estado de persistencia/histéresis"""
         self.df = None
+        self._confirmed_regime = None
+        self._pending_regime = None
+        self._pending_count = 0
+        self._last_classify_len = 0
