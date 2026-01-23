@@ -1,0 +1,539 @@
+# AETHELGARD MANIFESTO
+## Única Fuente de Verdad del Proyecto
+
+> **Versión:** 1.0  
+> **Última Actualización:** Enero 2026  
+> **Estado del Proyecto:** Fase 2 - Implementación de Estrategias Modulares
+
+---
+
+## 📋 Tabla de Contenidos
+
+1. [Visión General](#visión-general)
+2. [Arquitectura del Sistema](#arquitectura-del-sistema)
+3. [Reglas de Autonomía](#reglas-de-autonomía)
+4. [Roadmap de Implementación](#roadmap-de-implementación)
+5. [Estrategias](#estrategias)
+
+---
+
+## 🎯 Visión General
+
+### ¿Qué es Aethelgard?
+
+**Aethelgard** es un sistema de trading algorítmico **autónomo**, **agnóstico** y **adaptativo** diseñado para operar múltiples estrategias de manera inteligente basándose en la clasificación de régimen de mercado.
+
+### Principios Fundamentales
+
+#### 1. **Autonomía**
+Aethelgard opera de forma independiente, tomando decisiones basadas en:
+- Clasificación automática de régimen de mercado (TREND, RANGE, CRASH, NEUTRAL)
+- Auto-calibración de parámetros mediante análisis de datos históricos
+- Detección de drift y activación de modo seguridad sin intervención humana
+
+#### 2. **Agnosticismo de Plataforma**
+El sistema está diseñado para ser completamente independiente de cualquier plataforma de trading específica:
+- **Core Brain** (Python) nunca depende de librerías de NinjaTrader o MetaTrader
+- Comunicación universal vía **JSON sobre WebSockets**
+- Conectores modulares que se adaptan a cada plataforma sin modificar el núcleo
+
+#### 3. **Adaptatividad**
+Aethelgard evoluciona continuamente mediante:
+- **Feedback Loop**: Cada decisión se contrasta con resultados reales del mercado
+- **Auto-Tune**: Re-ejecución de tests de sensibilidad sobre datos históricos
+- **Aprendizaje Continuo**: Optimización autónoma de parámetros (ADX, volatilidad, umbrales)
+
+### Objetivo Principal
+
+Crear un **cerebro centralizado** que:
+- Reciba señales de múltiples plataformas (NinjaTrader 8, MetaTrader 5, TradingView)
+- Clasifique el régimen de mercado en tiempo real
+- Active estrategias modulares según el contexto detectado
+- Aprenda de sus resultados para mejorar continuamente
+
+---
+
+## 🏗️ Arquitectura del Sistema
+
+### Modelo Hub-and-Spoke
+
+Aethelgard utiliza una arquitectura **Hub-and-Spoke** donde el **Core Brain** (Python) actúa como el centro de control, y los **Conectores** se comunican con él mediante WebSockets.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    CORE BRAIN (Hub)                     │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐ │
+│  │   Server     │  │   Regime     │  │   Storage    │ │
+│  │  (FastAPI)   │  │ Classifier   │  │  (SQLite)    │ │
+│  └──────────────┘  └──────────────┘  └──────────────┘ │
+│  ┌──────────────┐  ┌──────────────┐                   │
+│  │   Tuner      │  │   Strategies │                   │
+│  │ (Auto-Calib) │  │   (Modular)  │                   │
+│  └──────────────┘  └──────────────┘                   │
+└─────────────────────────────────────────────────────────┘
+         │              │              │
+         │ WebSocket    │ WebSocket    │ HTTP
+         │              │              │
+    ┌────▼────┐    ┌────▼────┐    ┌────▼────┐
+    │   NT8   │    │   MT5   │    │   TV    │
+    │ Bridge  │    │ Bridge  │    │Webhook │
+    └─────────┘    └─────────┘    └─────────┘
+```
+
+### Componentes Principales
+
+#### 1. **Core Brain** (`core_brain/`)
+
+##### `server.py` - Servidor FastAPI con WebSockets
+- **Función**: Punto de entrada principal del sistema
+- **Responsabilidades**:
+  - Gestionar múltiples conexiones WebSocket simultáneas
+  - Diferenciar entre conectores (NT, MT5, TV)
+  - Procesar señales recibidas
+  - Coordinar clasificación de régimen
+  - Enviar respuestas a los conectores
+
+**Endpoints:**
+- `GET /`: Información del sistema
+- `GET /health`: Health check
+- `WS /ws/{connector}/{client_id}`: WebSocket principal
+- `POST /api/signal`: Recibir señal vía HTTP (webhooks)
+- `GET /api/regime/{symbol}`: Obtener régimen actual
+- `GET /api/signals`: Obtener señales recientes
+
+##### `regime.py` - Clasificador de Régimen de Mercado
+- **Función**: Analizar condiciones de mercado y clasificar el régimen
+- **Métricas Calculadas**:
+  - **ADX (Average Directional Index)**: Fuerza de tendencia
+  - **Volatilidad**: Desviación estándar de retornos
+  - **ATR (Average True Range)**: Volatilidad base de largo plazo
+  - **SMA Distance**: Distancia del precio a SMA 200 (sesgo alcista/bajista)
+  - **Volatility Shock**: Detección de movimientos extremos
+
+**Regímenes Detectados:**
+- **TREND**: Mercado con tendencia clara (ADX > 25, con histéresis)
+- **RANGE**: Mercado lateral/rango (ADX < 20)
+- **CRASH**: Movimiento extremo detectado (volatilidad > 5x base)
+- **NEUTRAL**: Estado indefinido o insuficientes datos
+
+**Características Avanzadas:**
+- **Histéresis ADX**: Entrar TREND > 25, salir TREND → RANGE < 18
+- **Filtro de Persistencia**: Cambio confirmado solo tras 2 velas consecutivas
+- **Filtro de Volatilidad Mínima**: Evita falsos CRASH en mercados muertos
+- **Parámetros Dinámicos**: Carga desde `config/dynamic_params.json`
+
+##### `tuner.py` - Sistema de Auto-Calibración
+- **Función**: Optimizar parámetros basándose en datos históricos
+- **Proceso**:
+  1. Analiza estados de mercado históricos desde `data_vault`
+  2. Calcula tasa de falsos positivos para diferentes umbrales
+  3. Optimiza umbrales ADX (TREND, RANGE, EXIT)
+  4. Optimiza multiplicador de volatilidad para shocks
+  5. Guarda configuración optimizada en `config/dynamic_params.json`
+
+#### 2. **Conectores** (`connectors/`)
+
+##### `bridge_nt8.cs` - Bridge para NinjaTrader 8
+- **Lenguaje**: C# (NinjaScript)
+- **Función**: Conectar estrategias de NT8 con Aethelgard
+- **Comunicación**: WebSocket hacia `ws://localhost:8000/ws/NT/{client_id}`
+- **Formato**: JSON con estructura `Signal`
+
+##### `bridge_mt5.py` - Bridge para MetaTrader 5
+- **Lenguaje**: Python
+- **Función**: Conectar Expert Advisors de MT5 con Aethelgard
+- **Comunicación**: WebSocket hacia `ws://localhost:8000/ws/MT5/{client_id}`
+- **Formato**: JSON con estructura `Signal`
+
+##### `webhook_tv.py` - Webhook para TradingView
+- **Lenguaje**: Python
+- **Función**: Recibir alertas de TradingView
+- **Comunicación**: HTTP POST hacia `http://localhost:8000/api/signal`
+- **Puerto**: 8001 (servidor independiente)
+
+#### 3. **Data Vault** (`data_vault/`)
+
+##### `storage.py` - Sistema de Persistencia SQLite
+- **Base de Datos**: `data_vault/aethelgard.db`
+- **Tablas**:
+  - `signals`: Todas las señales recibidas
+  - `signal_results`: Resultados y feedback de señales ejecutadas
+  - `market_states`: Estados completos de mercado (para aprendizaje)
+
+**Funcionalidades:**
+- Guardar señales con régimen detectado
+- Registrar resultados de trades (PNL, feedback)
+- Almacenar estados de mercado con todos los indicadores
+- Consultas para análisis histórico y auto-calibración
+
+#### 4. **Models** (`models/`)
+
+##### `signal.py` - Modelos de Datos Pydantic
+- **Signal**: Modelo de señal recibida
+- **SignalResult**: Modelo de resultado de trade
+- **MarketRegime**: Enum de regímenes (TREND, RANGE, CRASH, NEUTRAL)
+- **ConnectorType**: Enum de conectores (NT, MT5, TV)
+- **SignalType**: Enum de tipos de señal (BUY, SELL, CLOSE, MODIFY)
+
+---
+
+## 🤖 Reglas de Autonomía
+
+### 1. Auto-Calibración
+
+**Principio**: Ningún parámetro numérico debe considerarse estático.
+
+#### Parámetros Auto-Calibrables
+
+- **Umbrales ADX**:
+  - `adx_trend_threshold`: Umbral para entrar en TREND (default: 25.0)
+  - `adx_range_threshold`: Umbral para entrar en RANGE (default: 20.0)
+  - `adx_range_exit_threshold`: Umbral para salir de TREND (default: 18.0)
+- **Volatilidad**:
+  - `volatility_shock_multiplier`: Multiplicador para detectar CRASH (default: 5.0)
+  - `min_volatility_atr_period`: Período ATR base (default: 50)
+- **Persistencia**:
+  - `persistence_candles`: Velas consecutivas para confirmar cambio (default: 2)
+
+#### Proceso de Auto-Calibración
+
+1. **Recolección de Datos**: El sistema almacena todos los estados de mercado en `market_states`
+2. **Análisis Histórico**: `ParameterTuner` analiza los últimos N registros (default: 1000)
+3. **Cálculo de Falsos Positivos**: Evalúa cambios de régimen que se revirtieron en 5-10 velas
+4. **Optimización**: Busca umbrales que minimicen la tasa de falsos positivos
+5. **Actualización**: Guarda nuevos parámetros en `config/dynamic_params.json`
+6. **Aplicación**: `RegimeClassifier` recarga parámetros automáticamente
+
+**Ejecución Manual:**
+```python
+from core_brain.tuner import ParameterTuner
+from data_vault.storage import StorageManager
+
+storage = StorageManager()
+tuner = ParameterTuner(storage)
+new_params = tuner.auto_calibrate(limit=1000)
+```
+
+### 2. Feedback Loop Obligatorio
+
+**Principio**: Cada decisión debe ser contrastada con el resultado del mercado.
+
+#### Ciclo de Feedback
+
+```
+┌─────────────┐
+│   Señal     │
+│  Generada   │
+└──────┬──────┘
+       │
+       ▼
+┌─────────────┐
+│  Clasificar │
+│   Régimen   │
+└──────┬──────┘
+       │
+       ▼
+┌─────────────┐
+│  Ejecutar   │
+│  Estrategia │
+└──────┬──────┘
+       │
+       ▼
+┌─────────────┐      ┌─────────────┐
+│  Registrar  │─────▶│  Evaluar    │
+│  Resultado  │      │  Resultado  │
+└─────────────┘      └──────┬──────┘
+                            │
+                            ▼
+                    ┌─────────────┐
+                    │  Ajustar    │
+                    │ Parámetros  │
+                    └─────────────┘
+```
+
+#### Ventanas de Evaluación
+
+El sistema evalúa resultados en múltiples horizontes temporales:
+- **5 velas**: Resultado inmediato
+- **10 velas**: Resultado a corto plazo
+- **20 velas**: Resultado a medio plazo
+
+#### Métricas de Feedback
+
+- **PNL (Profit and Loss)**: Resultado financiero del trade
+- **Feedback Score**: Puntuación 0-1 basada en:
+  - Ejecución exitosa
+  - PNL positivo/negativo
+  - Persistencia del régimen detectado
+  - Precisión de la estrategia activada
+
+### 3. Aprendizaje Continuo
+
+**Principio**: El sistema debe mejorar autónomamente con el tiempo.
+
+#### Proceso de Auto-Tune
+
+1. **Re-ejecución de Tests**: El sistema re-ejecuta tests de sensibilidad sobre datos históricos
+2. **Análisis de Patrones**: Identifica qué combinaciones de parámetros funcionaron mejor
+3. **Propuesta de Mejoras**: Sugiere nuevos parámetros basándose en evidencia estadística
+4. **Validación**: Verifica que los nuevos parámetros no degraden el rendimiento
+
+#### Detección de Drift
+
+El sistema debe detectar cuando sus predicciones están fallando:
+- **Métrica**: Tasa de acierto de clasificación de régimen
+- **Umbral**: Si la tasa cae por debajo de un umbral (ej. 60%), activar modo seguridad
+- **Acción**: Reducir exposición, aumentar filtros, o detener trading
+
+### 4. Independencia y Modo Seguridad
+
+**Principio**: El sistema debe ser capaz de protegerse sin intervención humana.
+
+#### Condiciones para Modo Seguridad
+
+- Tasa de acierto de régimen < umbral crítico
+- Serie de pérdidas consecutivas > límite
+- Volatilidad extrema detectada (CRASH)
+- Error en comunicación con conectores
+
+#### Acciones en Modo Seguridad
+
+- Cerrar posiciones abiertas
+- Suspender nuevas señales
+- Notificar al operador
+- Registrar evento para análisis posterior
+
+---
+
+## 🗺️ Roadmap de Implementación
+
+### Fase 1: Infraestructura Base ✅ **COMPLETADA**
+
+**Objetivo**: Establecer la arquitectura fundamental del sistema.
+
+**Componentes Implementados:**
+- ✅ Servidor FastAPI con WebSockets (`core_brain/server.py`)
+- ✅ Clasificador de Régimen de Mercado (`core_brain/regime.py`)
+- ✅ Sistema de persistencia SQLite (`data_vault/storage.py`)
+- ✅ Modelos de datos Pydantic (`models/signal.py`)
+- ✅ Conectores básicos (NT8, MT5, TradingView)
+- ✅ Sistema de auto-calibración (`core_brain/tuner.py`)
+
+**Funcionalidades:**
+- Recepción de señales desde múltiples plataformas
+- Clasificación de régimen en tiempo real
+- Almacenamiento de señales y estados de mercado
+- Auto-calibración de parámetros ADX y volatilidad
+
+---
+
+### Fase 2: Implementación de Estrategias Modulares 🚧 **EN PROGRESO**
+
+**Objetivo**: Implementar estrategias modulares que se activen según el régimen detectado.
+
+#### 2.1 Estrategias de Oliver Vélez
+
+**Estado**: Pendiente de implementación
+
+**Estrategias a Implementar:**
+- **Trend Following**: Para régimen TREND
+- **Range Trading**: Para régimen RANGE
+- **Breakout Trading**: Para transiciones de régimen
+- **Risk Management**: Gestión de riesgo dinámica según volatilidad
+
+#### 2.2 Gestión de Riesgo Dinámica
+
+**Estado**: Pendiente de implementación
+
+**Componentes:**
+- Cálculo de tamaño de posición basado en volatilidad (ATR)
+- Stop Loss dinámico según régimen
+- Take Profit adaptativo
+- Gestión de drawdown máximo
+
+#### 2.3 Sistema de Activación de Estrategias
+
+**Estado**: Pendiente de implementación
+
+**Lógica:**
+```python
+def activate_strategy(regime: MarketRegime, symbol: str):
+    if regime == MarketRegime.TREND:
+        return trend_following_strategy(symbol)
+    elif regime == MarketRegime.RANGE:
+        return range_trading_strategy(symbol)
+    elif regime == MarketRegime.CRASH:
+        return safety_mode()  # No trading en crashes
+    else:
+        return None  # Esperar más datos
+```
+
+---
+
+### Fase 3: Feedback Loop y Aprendizaje por Refuerzo 🔜 **SIGUIENTE**
+
+**Objetivo**: Implementar ciclo completo de feedback y aprendizaje básico.
+
+#### 3.1 Feedback Loop de Resultados
+
+**Tareas:**
+- Sistema de seguimiento de trades ejecutados
+- Evaluación automática de resultados (5, 10, 20 velas)
+- Cálculo de métricas de rendimiento por estrategia
+- Análisis de correlación régimen → resultado
+
+#### 3.2 Aprendizaje por Refuerzo Básico
+
+**Tareas:**
+- Modelo simple de Q-Learning o Policy Gradient
+- Recompensas basadas en PNL y precisión de régimen
+- Actualización de políticas de estrategia según resultados
+- Validación en datos históricos antes de aplicar en vivo
+
+#### 3.3 Dashboard de Métricas
+
+**Tareas:**
+- Visualización de rendimiento por régimen
+- Gráficos de evolución de parámetros
+- Análisis de win rate por estrategia
+- Alertas de drift o degradación
+
+---
+
+### Fase 4: Conectores Avanzados y Dashboard 🎯 **FUTURA**
+
+**Objetivo**: Expandir capacidades de conectividad y monitoreo.
+
+#### 4.1 Conectores Avanzados
+
+**Tareas:**
+- **MT5 Real-time**: Streaming de datos OHLC en tiempo real
+- **NinjaTrader Real-time**: Integración completa con estrategias NT8
+- **API REST**: Endpoint para integración con otros sistemas
+- **WebSocket Bidireccional**: Envío de señales desde Core Brain a conectores
+
+#### 4.2 Dashboard de Monitoreo
+
+**Tareas:**
+- Interfaz web para visualización en tiempo real
+- Métricas de sistema (conexiones activas, latencia)
+- Gráficos de régimen de mercado
+- Historial de señales y resultados
+- Control de parámetros (manual override si es necesario)
+
+#### 4.3 Características Avanzadas
+
+**Tareas:**
+- Backtesting integrado
+- Paper trading mode
+- Multi-símbolo simultáneo
+- Notificaciones (email, Telegram, etc.)
+
+---
+
+## 📊 Estrategias
+
+### Estrategias de Oliver Vélez
+
+> **Nota**: Esta sección documentará la lógica de las estrategias de Oliver Vélez una vez implementadas.
+
+#### Activación por Régimen
+
+Las estrategias se activan según el régimen de mercado detectado:
+
+| Régimen | Estrategia Principal | Lógica de Activación |
+|---------|---------------------|---------------------|
+| **TREND** | Trend Following | ADX > 25, precio en tendencia clara |
+| **RANGE** | Range Trading | ADX < 20, precio oscilando entre soportes/resistencias |
+| **CRASH** | Safety Mode | Volatilidad extrema detectada, no trading |
+| **NEUTRAL** | Wait | Insuficientes datos, esperar más información |
+
+#### Trend Following (Régimen TREND)
+
+**Condiciones de Entrada:**
+- Régimen: TREND
+- ADX > 25
+- Precio por encima de SMA 200 (tendencia alcista) o por debajo (tendencia bajista)
+- Confirmación de dirección con indicadores adicionales
+
+**Gestión de Riesgo:**
+- Stop Loss: Basado en ATR (ej. 2x ATR)
+- Take Profit: Basado en extensión de Fibonacci o múltiplos de ATR
+- Tamaño de posición: Inversamente proporcional a volatilidad
+
+#### Range Trading (Régimen RANGE)
+
+**Condiciones de Entrada:**
+- Régimen: RANGE
+- ADX < 20
+- Identificación de soportes y resistencias
+- Oscilador en extremos (RSI, Stochastic)
+
+**Gestión de Riesgo:**
+- Stop Loss: Fuera del rango identificado
+- Take Profit: En el extremo opuesto del rango
+- Tamaño de posición: Conservador debido a naturaleza lateral
+
+#### Breakout Trading (Transiciones de Régimen)
+
+**Condiciones de Entrada:**
+- Transición de RANGE → TREND
+- Ruptura de soporte/resistencia con volumen
+- Confirmación de nuevo régimen TREND
+
+**Gestión de Riesgo:**
+- Stop Loss: Estricto (falsa ruptura)
+- Take Profit: Amplio (sigue la nueva tendencia)
+- Tamaño de posición: Moderado inicialmente
+
+---
+
+## 📝 Notas de Desarrollo
+
+### Estructura de Directorios Futura
+
+```
+Aethelgard/
+├── core_brain/          # Núcleo del sistema
+├── connectors/          # Conectores a plataformas
+├── strategies/          # Estrategias modulares (por crear)
+│   ├── __init__.py
+│   ├── trend_following.py
+│   ├── range_trading.py
+│   └── risk_manager.py
+├── data_vault/          # Persistencia
+├── models/              # Modelos de datos
+├── config/              # Configuración dinámica
+└── dashboard/           # Dashboard web (Fase 4)
+```
+
+### Convenciones de Código
+
+- **Python**: PEP 8, asíncrono (asyncio/FastAPI)
+- **C#**: Estilo NinjaScript profesional
+- **Tipado**: Type Hints y modelos Pydantic obligatorios
+- **Documentación**: Comentarios claros en funciones críticas
+
+### Principios de Diseño
+
+1. **Agnosticismo**: Core Brain nunca depende de librerías específicas de plataforma
+2. **Modularidad**: Estrategias en archivos independientes
+3. **Resiliencia**: Manejo de errores y reconexión automática
+4. **Trazabilidad**: Todo se registra en `data_vault` para aprendizaje
+
+---
+
+## 🔄 Actualización del Manifiesto
+
+Este documento debe actualizarse cuando:
+- Se complete una fase del roadmap
+- Se añada una nueva estrategia
+- Se modifique la arquitectura fundamental
+- Se cambien las reglas de autonomía
+
+**Mantenedor**: Equipo de desarrollo Aethelgard  
+**Revisión**: Mensual o tras cambios significativos
+
+---
+
+*Este manifiesto es la Única Fuente de Verdad del proyecto Aethelgard. Cualquier decisión de diseño o implementación debe alinearse con los principios y arquitectura documentados aquí.*
