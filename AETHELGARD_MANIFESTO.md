@@ -400,34 +400,119 @@ def activate_strategy(regime: MarketRegime, symbol: str):
 
 ---
 
-### Fase 4: Conectores Avanzados y Dashboard 🎯 **FUTURA**
+### Fase 4: Evolución Comercial 🎯 **FUTURA**
 
-**Objetivo**: Expandir capacidades de conectividad y monitoreo.
+**Objetivo**: Transformar Aethelgard en un sistema comercial multi-usuario con capacidades avanzadas de gestión y monitoreo.
 
-#### 4.1 Conectores Avanzados
+#### 4.1 Multi-Tenant System
 
-**Tareas:**
-- **MT5 Real-time**: Streaming de datos OHLC en tiempo real
-- **NinjaTrader Real-time**: Integración completa con estrategias NT8
-- **API REST**: Endpoint para integración con otros sistemas
-- **WebSocket Bidireccional**: Envío de señales desde Core Brain a conectores
+**Estado**: Pendiente de implementación
 
-#### 4.2 Dashboard de Monitoreo
+**Objetivo**: Capacidad para gestionar múltiples cuentas de usuario de forma aislada.
 
-**Tareas:**
-- Interfaz web para visualización en tiempo real
-- Métricas de sistema (conexiones activas, latencia)
-- Gráficos de régimen de mercado
-- Historial de señales y resultados
-- Control de parámetros (manual override si es necesario)
+**Componentes:**
+- Sistema de autenticación y autorización (JWT tokens)
+- Aislamiento de datos por usuario/tenant
+- Gestión de cuotas y límites por cuenta
+- Base de datos multi-tenant con esquemas separados o filtrado por tenant_id
+- API de gestión de usuarios y permisos
 
-#### 4.3 Características Avanzadas
+**Arquitectura:**
+- Cada usuario tiene su propio espacio de datos aislado
+- Señales, resultados y estados de mercado separados por tenant
+- Configuración de parámetros independiente por usuario
+- Límites de recursos configurables (número de señales, estrategias activas, etc.)
 
-**Tareas:**
-- Backtesting integrado
-- Paper trading mode
-- Multi-símbolo simultáneo
-- Notificaciones (email, Telegram, etc.)
+#### 4.2 Módulos bajo Demanda
+
+**Estado**: Pendiente de implementación
+
+**Objetivo**: Activación/Desactivación de estrategias mediante una API Key.
+
+**Componentes:**
+- Sistema de API Keys por usuario
+- Gestión de suscripciones a estrategias específicas
+- Activación/desactivación dinámica de módulos
+- Middleware de validación de API Key en endpoints
+- Dashboard de gestión de suscripciones
+
+**Funcionalidades:**
+- Cada usuario recibe una API Key única
+- Activación selectiva de estrategias (Trend Following, Range Trading, etc.)
+- Control granular de permisos por estrategia
+- Facturación basada en estrategias activas (si aplica)
+- Logs de uso por API Key para auditoría
+
+#### 4.3 Sistema de Notificaciones
+
+**Estado**: Pendiente de implementación
+
+**Objetivo**: Integración con Telegram/Discord para alertas de señales en tiempo real.
+
+**Componentes:**
+- Integración con Telegram Bot API
+- Integración con Discord Webhooks
+- Sistema de plantillas de mensajes personalizables
+- Configuración de notificaciones por usuario
+- Filtros de notificación (por régimen, por estrategia, por símbolo)
+
+**Tipos de Notificaciones:**
+- **Señales de Trading**: Alertas cuando se genera una señal
+- **Cambios de Régimen**: Notificación de transiciones de régimen
+- **Resultados de Trades**: Resumen de PNL y resultados
+- **Alertas del Sistema**: Modo seguridad, errores críticos, drift detectado
+- **Métricas Diarias**: Resumen de rendimiento del día
+
+**Configuración:**
+- Preferencias de notificación por usuario
+- Horarios de notificación (evitar spam fuera de horario)
+- Umbrales personalizables (solo notificar si PNL > X, etc.)
+
+#### 4.4 Web Dashboard
+
+**Estado**: Pendiente de implementación
+
+**Objetivo**: Interfaz en Streamlit o React para visualizar el rendimiento y el régimen de mercado actual.
+
+**Tecnología**: Streamlit (rápido) o React (más flexible para producción)
+
+**Funcionalidades Principales:**
+
+**Panel de Control:**
+- Estado del sistema en tiempo real
+- Conexiones activas (NT8, MT5, TradingView)
+- Régimen de mercado actual por símbolo
+- Métricas de rendimiento (win rate, PNL, Sharpe ratio)
+
+**Visualización de Régimen:**
+- Gráficos de evolución de régimen en tiempo real
+- Indicadores técnicos (ADX, volatilidad, SMA distance)
+- Histórico de cambios de régimen
+- Comparativa de precisión de clasificación
+
+**Gestión de Estrategias:**
+- Lista de estrategias activas/inactivas
+- Activación/desactivación de módulos
+- Configuración de parámetros por estrategia
+- Histórico de ejecuciones
+
+**Análisis de Rendimiento:**
+- Gráficos de PNL acumulado
+- Análisis por régimen (qué régimen es más rentable)
+- Análisis por estrategia (rendimiento comparativo)
+- Métricas de riesgo (drawdown, volatilidad de retornos)
+
+**Gestión de Usuarios (Multi-Tenant):**
+- Panel de administración de usuarios
+- Gestión de API Keys
+- Configuración de permisos y suscripciones
+- Logs de actividad por usuario
+
+**Características Técnicas:**
+- Actualización en tiempo real (WebSockets o polling)
+- Responsive design (móvil y desktop)
+- Exportación de datos (CSV, PDF reports)
+- Filtros avanzados y búsqueda
 
 ---
 
