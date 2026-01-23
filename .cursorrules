@@ -20,3 +20,9 @@
 ## Contexto del Mercado
 - Priorizar la detección de "Régimen de Mercado" antes de validar señales técnicas.
 - No sesgarse por una sola estrategia (ej. Oliver Vélez); evaluar la probabilidad estadística del contexto.
+
+## Regla de Autonomía y Evolución (Core Rule)
+1. **Auto-Calibración**: Ningún parámetro numérico (umbrales de ADX, multiplicadores de volatilidad, periodos de SMA) debe considerarse estático. 
+2. **Feedback Loop Obligatorio**: Cada decisión tomada por el sistema debe ser contrastada con el resultado del mercado 5, 10 y 20 velas después.
+3. **Aprendizaje Continuo**: El sistema debe incluir un proceso de 'Auto-Tune' que re-ejecute tests de sensibilidad sobre los datos históricos guardados en `data_vault` para proponer mejores parámetros de forma autónoma.
+4. **Independencia**: El sistema debe ser capaz de detectar si sus predicciones están fallando (drift) y entrar en modo 'Seguridad' sin intervención humana.

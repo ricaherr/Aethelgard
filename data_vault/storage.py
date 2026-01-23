@@ -73,6 +73,34 @@ class StorageManager:
             )
         """)
         
+        # Tabla de estados de mercado (para aprendizaje)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS market_states (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                regime TEXT NOT NULL,
+                previous_regime TEXT,
+                price REAL NOT NULL,
+                adx REAL,
+                volatility REAL,
+                sma_distance REAL,
+                bias TEXT,
+                atr_pct REAL,
+                volatility_shock_detected BOOLEAN,
+                adx_period INTEGER,
+                sma_period INTEGER,
+                adx_trend_threshold REAL,
+                adx_range_threshold REAL,
+                adx_range_exit_threshold REAL,
+                volatility_shock_multiplier REAL,
+                shock_lookback INTEGER,
+                min_volatility_atr_period INTEGER,
+                persistence_candles INTEGER,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
         # Índices para mejorar rendimiento
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_signals_timestamp 
@@ -87,6 +115,21 @@ class StorageManager:
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_results_signal_id 
             ON signal_results(signal_id)
+        """)
+        
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_market_states_timestamp 
+            ON market_states(timestamp)
+        """)
+        
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_market_states_symbol 
+            ON market_states(symbol)
+        """)
+        
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_market_states_regime 
+            ON market_states(regime)
         """)
         
         conn.commit()
@@ -305,3 +348,115 @@ class StorageManager:
         
         conn.close()
         return stats
+    
+    def log_market_state(self, state_data: Dict) -> int:
+        """
+        Guarda el estado completo del mercado cuando se detecta un cambio de régimen.
+        Incluye todos los indicadores internos para permitir el aprendizaje continuo.
+        
+        Args:
+            state_data: Diccionario con los siguientes campos:
+                - symbol: Símbolo del instrumento
+                - timestamp: Timestamp del estado
+                - regime: Régimen actual detectado
+                - previous_regime: Régimen anterior (opcional)
+                - price: Precio actual
+                - adx: Valor de ADX
+                - volatility: Volatilidad calculada
+                - sma_distance: Distancia a SMA (opcional)
+                - bias: Sesgo del mercado (BULLISH/BEARISH, opcional)
+                - atr_pct: ATR como porcentaje (opcional)
+                - volatility_shock_detected: Si se detectó shock (opcional)
+                - adx_period: Período ADX usado
+                - sma_period: Período SMA usado
+                - adx_trend_threshold: Umbral ADX para TREND
+                - adx_range_threshold: Umbral ADX para RANGE
+                - adx_range_exit_threshold: Umbral ADX para salir de TREND
+                - volatility_shock_multiplier: Multiplicador de shock
+                - shock_lookback: Lookback para shock
+                - min_volatility_atr_period: Período ATR mínimo
+                - persistence_candles: Velas de persistencia
+        
+        Returns:
+            int: ID del estado guardado
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute("""
+                INSERT INTO market_states (
+                    symbol, timestamp, regime, previous_regime, price,
+                    adx, volatility, sma_distance, bias, atr_pct,
+                    volatility_shock_detected, adx_period, sma_period,
+                    adx_trend_threshold, adx_range_threshold, adx_range_exit_threshold,
+                    volatility_shock_multiplier, shock_lookback, min_volatility_atr_period,
+                    persistence_candles
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                state_data.get('symbol'),
+                state_data.get('timestamp'),
+                state_data.get('regime'),
+                state_data.get('previous_regime'),
+                state_data.get('price'),
+                state_data.get('adx'),
+                state_data.get('volatility'),
+                state_data.get('sma_distance'),
+                state_data.get('bias'),
+                state_data.get('atr_pct'),
+                state_data.get('volatility_shock_detected', False),
+                state_data.get('adx_period'),
+                state_data.get('sma_period'),
+                state_data.get('adx_trend_threshold'),
+                state_data.get('adx_range_threshold'),
+                state_data.get('adx_range_exit_threshold'),
+                state_data.get('volatility_shock_multiplier'),
+                state_data.get('shock_lookback'),
+                state_data.get('min_volatility_atr_period'),
+                state_data.get('persistence_candles')
+            ))
+            
+            state_id = cursor.lastrowid
+            conn.commit()
+            logger.debug(f"Estado de mercado guardado con ID: {state_id}")
+            return state_id
+        
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error guardando estado de mercado: {e}")
+            raise
+        finally:
+            conn.close()
+    
+    def get_market_states(self, limit: int = 1000, symbol: Optional[str] = None) -> List[Dict]:
+        """
+        Obtiene los estados de mercado guardados para análisis
+        
+        Args:
+            limit: Número máximo de registros a retornar
+            symbol: Filtrar por símbolo (opcional)
+        
+        Returns:
+            Lista de estados de mercado como diccionarios
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        if symbol:
+            cursor.execute("""
+                SELECT * FROM market_states 
+                WHERE symbol = ?
+                ORDER BY timestamp DESC 
+                LIMIT ?
+            """, (symbol, limit))
+        else:
+            cursor.execute("""
+                SELECT * FROM market_states 
+                ORDER BY timestamp DESC 
+                LIMIT ?
+            """, (limit,))
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        return [dict(row) for row in rows]

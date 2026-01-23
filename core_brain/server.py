@@ -10,7 +10,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
-from models.signal import Signal, ConnectorType, SignalResult
+from models.signal import Signal, ConnectorType, SignalResult, MarketRegime
 from core_brain.regime import RegimeClassifier
 from data_vault.storage import StorageManager
 
@@ -72,6 +72,9 @@ class ConnectionManager:
 manager = ConnectionManager()
 regime_classifier = RegimeClassifier()
 storage = StorageManager()
+
+# Estado para detectar cambios de régimen
+_last_regime_by_symbol: Dict[str, MarketRegime] = {}
 
 
 def create_app() -> FastAPI:
@@ -209,8 +212,9 @@ async def process_signal(message: dict, client_id: str, connector_type: Connecto
     Procesa una señal recibida:
     1. Valida y crea el modelo Signal
     2. Clasifica el régimen de mercado
-    3. Guarda en la base de datos
-    4. Envía respuesta al cliente
+    3. Detecta cambios de régimen y registra estado completo
+    4. Guarda en la base de datos
+    5. Envía respuesta al cliente
     """
     try:
         # Asegurar que el conector esté en el mensaje
@@ -219,9 +223,54 @@ async def process_signal(message: dict, client_id: str, connector_type: Connecto
         # Crear modelo Signal
         signal = Signal(**message)
         
+        # Obtener régimen anterior para este símbolo
+        previous_regime = _last_regime_by_symbol.get(signal.symbol)
+        
         # Clasificar régimen de mercado
         regime = regime_classifier.classify(signal.price)
         signal.regime = regime
+        
+        # Detectar cambio de régimen y registrar estado completo
+        if previous_regime is None or regime != previous_regime:
+            # Obtener todas las métricas del clasificador
+            metrics = regime_classifier.get_metrics()
+            
+            # Preparar datos del estado de mercado
+            state_data = {
+                'symbol': signal.symbol,
+                'timestamp': signal.timestamp.isoformat(),
+                'regime': regime.value,
+                'previous_regime': previous_regime.value if previous_regime else None,
+                'price': signal.price,
+                'adx': metrics.get('adx'),
+                'volatility': metrics.get('volatility'),
+                'sma_distance': metrics.get('sma_distance'),
+                'bias': metrics.get('bias'),
+                'atr_pct': metrics.get('atr_pct'),
+                'volatility_shock_detected': metrics.get('volatility_shock_detected', False),
+                'adx_period': regime_classifier.adx_period,
+                'sma_period': regime_classifier.sma_period,
+                'adx_trend_threshold': regime_classifier.adx_trend_threshold,
+                'adx_range_threshold': regime_classifier.adx_range_threshold,
+                'adx_range_exit_threshold': regime_classifier.adx_range_exit_threshold,
+                'volatility_shock_multiplier': regime_classifier.volatility_shock_multiplier,
+                'shock_lookback': regime_classifier.shock_lookback,
+                'min_volatility_atr_period': regime_classifier.min_volatility_atr_period,
+                'persistence_candles': regime_classifier.persistence_candles
+            }
+            
+            # Guardar estado de mercado
+            try:
+                storage.log_market_state(state_data)
+                logger.info(
+                    f"Cambio de régimen detectado: {signal.symbol} "
+                    f"{previous_regime.value if previous_regime else 'N/A'} -> {regime.value}"
+                )
+            except Exception as e:
+                logger.error(f"Error guardando estado de mercado: {e}")
+            
+            # Actualizar régimen anterior
+            _last_regime_by_symbol[signal.symbol] = regime
         
         # Guardar en base de datos
         signal_id = storage.save_signal(signal)

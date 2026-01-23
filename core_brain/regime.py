@@ -8,9 +8,14 @@ y filtro de persistencia (2 velas consecutivas).
 """
 from typing import List, Optional, Dict
 from datetime import datetime
+from pathlib import Path
+import json
+import logging
 from models.signal import MarketRegime
 import pandas as pd
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 class RegimeClassifier:
@@ -23,37 +28,74 @@ class RegimeClassifier:
     - Persistencia: cambio confirmado solo tras 2 velas consecutivas
     """
     
-    def __init__(self, 
-                 adx_period: int = 14,
-                 sma_period: int = 200,
-                 adx_trend_threshold: float = 25.0,
-                 adx_range_threshold: float = 20.0,
-                 adx_range_exit_threshold: float = 18.0,
-                 volatility_shock_multiplier: float = 5.0,
-                 shock_lookback: int = 5,
-                 min_volatility_atr_period: int = 50,
-                 persistence_candles: int = 2):
+    @staticmethod
+    def _load_params_from_config(config_path: str = "config/dynamic_params.json") -> Dict:
         """
+        Carga parámetros desde el archivo de configuración dinámica
+        
         Args:
-            adx_period: Período para cálculo de ADX (default: 14)
-            sma_period: Período para SMA de largo plazo (default: 200)
-            adx_trend_threshold: ADX > este valor para ENTRAR en TREND (default: 25.0)
-            adx_range_threshold: ADX < este valor para ENTRAR en RANGE cuando no en TREND (default: 20.0)
-            adx_range_exit_threshold: ADX < este valor para SALIR de TREND a RANGE (default: 18.0)
-            volatility_shock_multiplier: Multiplicador para detectar shock (default: 5.0 = 500%)
-            shock_lookback: Número de velas para comparar volatilidad (default: 5)
-            min_volatility_atr_period: Período ATR largo plazo como umbral base de volatilidad (default: 50)
-            persistence_candles: Velas consecutivas requeridas para confirmar cambio (default: 2)
+            config_path: Ruta al archivo de configuración
+        
+        Returns:
+            Diccionario con los parámetros cargados
         """
-        self.adx_period = adx_period
-        self.sma_period = sma_period
-        self.adx_trend_threshold = adx_trend_threshold
-        self.adx_range_threshold = adx_range_threshold
-        self.adx_range_exit_threshold = adx_range_exit_threshold
-        self.volatility_shock_multiplier = volatility_shock_multiplier
-        self.shock_lookback = shock_lookback
-        self.min_volatility_atr_period = min_volatility_atr_period
-        self.persistence_candles = persistence_candles
+        config_file = Path(config_path)
+        
+        if not config_file.exists():
+            logger.warning(f"Archivo de configuración no encontrado: {config_path}. Usando valores por defecto.")
+            return {}
+        
+        try:
+            with open(config_file, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                logger.info(f"Parámetros cargados desde {config_path}")
+                return config
+        except Exception as e:
+            logger.error(f"Error cargando configuración desde {config_path}: {e}. Usando valores por defecto.")
+            return {}
+    
+    def __init__(self, 
+                 adx_period: Optional[int] = None,
+                 sma_period: Optional[int] = None,
+                 adx_trend_threshold: Optional[float] = None,
+                 adx_range_threshold: Optional[float] = None,
+                 adx_range_exit_threshold: Optional[float] = None,
+                 volatility_shock_multiplier: Optional[float] = None,
+                 shock_lookback: Optional[int] = None,
+                 min_volatility_atr_period: Optional[int] = None,
+                 persistence_candles: Optional[int] = None,
+                 config_path: str = "config/dynamic_params.json"):
+        """
+        Inicializa el clasificador. Los parámetros se cargan desde config/dynamic_params.json
+        si no se proporcionan explícitamente.
+        
+        Args:
+            adx_period: Período para cálculo de ADX (se carga desde config si es None)
+            sma_period: Período para SMA de largo plazo (se carga desde config si es None)
+            adx_trend_threshold: ADX > este valor para ENTRAR en TREND (se carga desde config si es None)
+            adx_range_threshold: ADX < este valor para ENTRAR en RANGE cuando no en TREND (se carga desde config si es None)
+            adx_range_exit_threshold: ADX < este valor para SALIR de TREND a RANGE (se carga desde config si es None)
+            volatility_shock_multiplier: Multiplicador para detectar shock (se carga desde config si es None)
+            shock_lookback: Número de velas para comparar volatilidad (se carga desde config si es None)
+            min_volatility_atr_period: Período ATR largo plazo como umbral base de volatilidad (se carga desde config si es None)
+            persistence_candles: Velas consecutivas requeridas para confirmar cambio (se carga desde config si es None)
+            config_path: Ruta al archivo de configuración dinámica
+        """
+        # Cargar configuración desde archivo
+        config = self._load_params_from_config(config_path)
+        
+        # Usar valores de configuración si no se proporcionan explícitamente
+        self.adx_period = adx_period if adx_period is not None else config.get("adx_period", 14)
+        self.sma_period = sma_period if sma_period is not None else config.get("sma_period", 200)
+        self.adx_trend_threshold = adx_trend_threshold if adx_trend_threshold is not None else config.get("adx_trend_threshold", 25.0)
+        self.adx_range_threshold = adx_range_threshold if adx_range_threshold is not None else config.get("adx_range_threshold", 20.0)
+        self.adx_range_exit_threshold = adx_range_exit_threshold if adx_range_exit_threshold is not None else config.get("adx_range_exit_threshold", 18.0)
+        self.volatility_shock_multiplier = volatility_shock_multiplier if volatility_shock_multiplier is not None else config.get("volatility_shock_multiplier", 5.0)
+        self.shock_lookback = shock_lookback if shock_lookback is not None else config.get("shock_lookback", 5)
+        self.min_volatility_atr_period = min_volatility_atr_period if min_volatility_atr_period is not None else config.get("min_volatility_atr_period", 50)
+        self.persistence_candles = persistence_candles if persistence_candles is not None else config.get("persistence_candles", 2)
+        
+        self.config_path = config_path
         
         # DataFrame para almacenar datos OHLC
         self.df: Optional[pd.DataFrame] = None
@@ -422,6 +464,22 @@ class RegimeClassifier:
             'volatility_shock_detected': self._detect_volatility_shock(),
             'atr_pct': self._get_atr_pct(),
         }
+    
+    def reload_params(self):
+        """Recarga los parámetros desde el archivo de configuración"""
+        config = self._load_params_from_config(self.config_path)
+        
+        self.adx_period = config.get("adx_period", self.adx_period)
+        self.sma_period = config.get("sma_period", self.sma_period)
+        self.adx_trend_threshold = config.get("adx_trend_threshold", self.adx_trend_threshold)
+        self.adx_range_threshold = config.get("adx_range_threshold", self.adx_range_threshold)
+        self.adx_range_exit_threshold = config.get("adx_range_exit_threshold", self.adx_range_exit_threshold)
+        self.volatility_shock_multiplier = config.get("volatility_shock_multiplier", self.volatility_shock_multiplier)
+        self.shock_lookback = config.get("shock_lookback", self.shock_lookback)
+        self.min_volatility_atr_period = config.get("min_volatility_atr_period", self.min_volatility_atr_period)
+        self.persistence_candles = config.get("persistence_candles", self.persistence_candles)
+        
+        logger.info("Parámetros recargados desde configuración")
     
     def reset(self):
         """Resetea el historial y el estado de persistencia/histéresis"""
