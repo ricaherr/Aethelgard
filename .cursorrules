@@ -1,0 +1,22 @@
+# Aethelgard: Framework de Inteligencia Financiera Agnóstico
+
+## Identidad del Proyecto
+- Nombre: Aethelgard
+- Misión: Cerebro centralizado para trading algorítmico multi-plataforma.
+- Arquitectura: Hub-and-Spoke (Python Core <-> Conectores Externos).
+
+## Reglas de Desarrollo
+1. **Agnosticismo de Plataforma**: El código en `core_brain` nunca debe depender de librerías específicas de NinjaTrader o MetaTrader. Todo debe comunicarse vía JSON por WebSockets.
+2. **Modularidad de Estrategias**: Las estrategias no se programan en el servidor principal, sino en archivos independientes que el `MarketRegime` consulta.
+3. **Manejo de Errores**: Todo proceso de red (WebSockets/API) debe incluir bloques try-except y reconexión automática.
+4. **Tipado**: Usar Type Hints de Python y modelos Pydantic (ya definidos en `models/signal.py`) para asegurar la integridad de los datos.
+5. **Base de Datos**: Cada operación debe registrarse en `data_vault` para permitir el aprendizaje continuo (Feedback Loop).
+
+## Preferencias de Código
+- Python: Estilo PEP 8, asíncrono (asyncio/fastapi).
+- C#: Estilo NinjaScript profesional, uso eficiente de recursos.
+- Documentación: Comentarios claros en funciones críticas explicando la lógica matemática de los indicadores.
+
+## Contexto del Mercado
+- Priorizar la detección de "Régimen de Mercado" antes de validar señales técnicas.
+- No sesgarse por una sola estrategia (ej. Oliver Vélez); evaluar la probabilidad estadística del contexto.
