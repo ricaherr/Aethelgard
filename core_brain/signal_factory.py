@@ -1,486 +1,279 @@
 """
-Signal Factory - Motor de Generación de Señales
-Genera señales basadas en la estrategia de Oliver Vélez con sistema de scoring.
+Signal Factory - Motor de Generación de Señales para Aethelgard
+==============================================================
 
-Estrategia Oliver Vélez (Swing Trading):
-- Operar en tendencia (TREND es el mejor régimen)
-- Buscar velas de momentum alto (Velas Elefante)
-- Confirmar con volumen superior al promedio
-- Entrar en zonas de soporte/resistencia (SMA 20 como referencia)
+Implementa la lógica de generación de señales basada en la estrategia
+Oliver Vélez, integrando un sistema de scoring dinámico y notificaciones
+diferenciadas por membresía, conforme al AETHELGARD_MANIFESTO.
+
+Estrategia Oliver Vélez (Implementación Bullish):
+1.  **Tendencia Mayor Alcista:** El precio debe estar por encima de la SMA 200.
+2.  **Zona de Compra:** El precio debe estar cerca de la SMA 20, que actúa como soporte dinámico.
+3.  **Vela de Ignición (Elefante):** Debe aparecer una vela alcista con un cuerpo significativamente
+    más grande que el ATR, demostrando momentum comprador.
+4.  **Régimen de Mercado:** La señal tiene mayor validez en un Régimen de 'TREND'.
 """
 import logging
+import asyncio
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
-import pandas as pd
-import numpy as np
+from typing import Dict, List, Optional
 
-from models.signal import (
-    Signal, SignalType, ConnectorType, MarketRegime, 
-    MembershipTier
-)
+import pandas as pd
+
+# Modelos de datos y componentes del core
+from models.signal import Signal, SignalType, MarketRegime, MembershipTier, ConnectorType
+from data_vault.storage import StorageManager
+from core_brain.notificator import get_notifier, TelegramNotifier
+from core_brain.module_manager import MembershipLevel
 
 logger = logging.getLogger(__name__)
 
-
 class SignalFactory:
     """
-    Motor que genera señales de trading basadas en análisis técnico
-    y la estrategia de Oliver Vélez para swing trading.
+    Motor que recibe datos del ScannerEngine, los procesa y genera señales de trading.
     """
     
     def __init__(
         self,
-        connector_type: ConnectorType = ConnectorType.METATRADER5,
-        strategy_id: str = "oliver_velez_swing",
-        # Parámetros de scoring
-        score_regime_trend: float = 30.0,
-        score_elephant_candle: float = 20.0,
-        score_volume_high: float = 20.0,
-        score_near_sma20: float = 30.0,
-        # Umbral para membresía premium
-        premium_threshold: float = 80.0,
-        elite_threshold: float = 90.0,
-        # Parámetros técnicos
-        elephant_candle_threshold: float = 2.0,  # ATR multiplicador
-        sma20_proximity_pct: float = 1.0,  # % de proximidad a SMA 20
-        volume_avg_period: int = 20,
-        sma_period: int = 20,
+        storage_manager: StorageManager,
+        # Parámetros de la estrategia Oliver Vélez
+        strategy_id: str = "oliver_velez_swing_v2",
+        sma_long_period: int = 200,
+        sma_short_period: int = 20,
+        elephant_atr_multiplier: float = 2.0,  # Cuerpo de la vela > 2x ATR
+        sma20_proximity_percent: float = 1.5,  # Precio a < 1.5% de la SMA20
+        # Parámetros de Scoring dinámico
+        base_score: float = 60.0,
+        regime_bonus: float = 20.0,
+        proximity_bonus_weight: float = 10.0,
+        candle_bonus_weight: float = 10.0,
+        # Umbrales de membresía
+        premium_threshold: float = 85.0,
+        elite_threshold: float = 95.0,
     ):
         """
+        Inicializa la SignalFactory.
+
         Args:
-            connector_type: Tipo de conector (MT5, NT, TV)
-            strategy_id: ID de la estrategia
-            score_regime_trend: Puntos si régimen es TREND
-            score_elephant_candle: Puntos si es vela elefante
-            score_volume_high: Puntos si volumen > promedio
-            score_near_sma20: Puntos si precio cerca de SMA 20
-            premium_threshold: Score mínimo para membresía PREMIUM
-            elite_threshold: Score mínimo para membresía ELITE
-            elephant_candle_threshold: Multiplicador ATR para vela elefante
-            sma20_proximity_pct: % de proximidad a SMA 20 para score
-            volume_avg_period: Período para promedio de volumen
-            sma_period: Período para SMA de referencia
+            storage_manager: Instancia del gestor de persistencia.
+            strategy_id: Identificador de la estrategia.
+            ... (parámetros de estrategia y scoring)
         """
-        self.connector_type = connector_type
+        self.storage_manager = storage_manager
+        self.notifier: Optional[TelegramNotifier] = get_notifier()
+        
+        # Parámetros de estrategia
         self.strategy_id = strategy_id
+        self.sma_long_p = sma_long_period
+        self.sma_short_p = sma_short_period
+        self.elephant_atr_multiplier = elephant_atr_multiplier
+        self.sma20_proximity_percent = sma20_proximity_percent
         
-        # Scoring weights
-        self.score_regime_trend = score_regime_trend
-        self.score_elephant_candle = score_elephant_candle
-        self.score_volume_high = score_volume_high
-        self.score_near_sma20 = score_near_sma20
+        # Parámetros de scoring
+        self.base_score = base_score
+        self.regime_bonus = regime_bonus
+        self.proximity_bonus_weight = proximity_bonus_weight
+        self.candle_bonus_weight = candle_bonus_weight
         
-        # Membership thresholds
+        # Umbrales de membresía
         self.premium_threshold = premium_threshold
         self.elite_threshold = elite_threshold
-        
-        # Technical parameters
-        self.elephant_threshold = elephant_candle_threshold
-        self.sma20_proximity_pct = sma20_proximity_pct
-        self.volume_avg_period = volume_avg_period
-        self.sma_period = sma_period
+
+        if not self.notifier or not self.notifier.is_configured():
+            logger.warning("Notificador de Telegram no está configurado. No se enviarán alertas.")
         
         logger.info(
-            f"SignalFactory inicializado: {strategy_id}, "
-            f"Premium threshold: {premium_threshold}, "
-            f"Elite threshold: {elite_threshold}"
+            f"SignalFactory inicializado para '{self.strategy_id}'. "
+            f"Umbral Premium: {self.premium_threshold}, Umbral Elite: {self.elite_threshold}"
         )
-    
-    def _calculate_atr(self, df: pd.DataFrame, period: int = 14) -> pd.Series:
-        """
-        Calcula Average True Range (ATR) para medir volatilidad.
-        
-        Args:
-            df: DataFrame con columnas 'high', 'low', 'close'
-            period: Período para ATR
-        
-        Returns:
-            Series con valores de ATR
-        """
-        high_low = df['high'] - df['low']
-        high_close = (df['high'] - df['close'].shift()).abs()
-        low_close = (df['low'] - df['close'].shift()).abs()
-        
-        ranges = pd.DataFrame({
-            'hl': high_low,
-            'hc': high_close,
-            'lc': low_close
-        })
-        
-        true_range = ranges.max(axis=1)
-        atr = true_range.rolling(window=period).mean()
-        
-        return atr
-    
-    def _is_elephant_candle(self, df: pd.DataFrame, index: int = -1) -> Tuple[bool, float]:
-        """
-        Determina si una vela es "Vela Elefante" (alto momentum).
-        Criterio: Rango (high - low) > ATR * threshold
-        
-        Args:
-            df: DataFrame con OHLC
-            index: Índice de la vela a evaluar (-1 = última)
-        
-        Returns:
-            Tupla (es_elefante, ratio_vs_atr)
-        """
-        if len(df) < 20:
-            return False, 0.0
-        
-        atr = self._calculate_atr(df)
-        
-        if atr.isna().all():
-            return False, 0.0
-        
-        # Rango de la vela actual
-        candle_range = df['high'].iloc[index] - df['low'].iloc[index]
-        current_atr = atr.iloc[index]
-        
-        if pd.isna(current_atr) or current_atr == 0:
-            return False, 0.0
-        
-        ratio = candle_range / current_atr
-        is_elephant = ratio >= self.elephant_threshold
-        
-        return is_elephant, ratio
-    
-    def _is_volume_above_average(self, df: pd.DataFrame, index: int = -1) -> Tuple[bool, float]:
-        """
-        Verifica si el volumen está por encima del promedio.
-        
-        Args:
-            df: DataFrame con columna 'tick_volume' o 'volume'
-            index: Índice de la vela a evaluar
-        
-        Returns:
-            Tupla (volumen_alto, ratio_vs_promedio)
-        """
-        # Intentar con 'tick_volume' primero (MT5), luego 'volume'
-        vol_col = 'tick_volume' if 'tick_volume' in df.columns else 'volume'
-        
-        if vol_col not in df.columns or len(df) < self.volume_avg_period:
-            return False, 0.0
-        
-        current_vol = df[vol_col].iloc[index]
-        avg_vol = df[vol_col].iloc[index - self.volume_avg_period:index].mean()
-        
-        if pd.isna(avg_vol) or avg_vol == 0:
-            return False, 0.0
-        
-        ratio = current_vol / avg_vol
-        is_high = ratio > 1.0
-        
-        return is_high, ratio
-    
-    def _is_near_sma20(self, df: pd.DataFrame, index: int = -1) -> Tuple[bool, float]:
-        """
-        Verifica si el precio está cerca de la SMA 20 (zona de rebote).
-        
-        Args:
-            df: DataFrame con columna 'close'
-            index: Índice de la vela a evaluar
-        
-        Returns:
-            Tupla (cerca_sma, distancia_pct)
-        """
-        if len(df) < self.sma_period:
-            return False, 0.0
-        
-        sma = df['close'].rolling(window=self.sma_period).mean()
-        
-        if sma.isna().all():
-            return False, 0.0
-        
-        current_price = df['close'].iloc[index]
-        current_sma = sma.iloc[index]
-        
-        if pd.isna(current_sma) or current_sma == 0:
-            return False, 0.0
-        
-        distance_pct = abs((current_price - current_sma) / current_sma) * 100
-        is_near = distance_pct <= self.sma20_proximity_pct
-        
-        return is_near, distance_pct
-    
-    def _calculate_score(
-        self,
-        regime: MarketRegime,
-        is_elephant: bool,
-        volume_high: bool,
-        near_sma: bool
-    ) -> float:
-        """
-        Calcula el score de oportunidad (0-100) basado en criterios.
-        
-        Sistema de Scoring:
-        - +30 si régimen es TREND
-        - +20 si es vela elefante
-        - +20 si volumen > promedio
-        - +30 si está cerca de SMA 20
-        
-        Args:
-            regime: Régimen de mercado
-            is_elephant: Es vela elefante
-            volume_high: Volumen alto
-            near_sma: Cerca de SMA 20
-        
-        Returns:
-            Score de 0 a 100
-        """
-        score = 0.0
-        
-        if regime == MarketRegime.TREND:
-            score += self.score_regime_trend
-        
-        if is_elephant:
-            score += self.score_elephant_candle
-        
-        if volume_high:
-            score += self.score_volume_high
-        
-        if near_sma:
-            score += self.score_near_sma20
-        
-        return min(100.0, max(0.0, score))
-    
+
     def _determine_membership_tier(self, score: float) -> MembershipTier:
-        """
-        Determina el tier de membresía basado en el score.
-        
-        Args:
-            score: Score de oportunidad (0-100)
-        
-        Returns:
-            Tier de membresía correspondiente
-        """
+        """Determina el tier de membresía basado en el score."""
         if score >= self.elite_threshold:
             return MembershipTier.ELITE
         elif score >= self.premium_threshold:
             return MembershipTier.PREMIUM
-        else:
-            return MembershipTier.FREE
-    
-    def _determine_signal_type(
-        self, 
-        df: pd.DataFrame,
-        regime: MarketRegime,
-        index: int = -1
-    ) -> Optional[SignalType]:
+        return MembershipTier.FREE
+
+    def _calculate_opportunity_score(self, validation_results: dict, candle_data: dict, regime: MarketRegime) -> float:
         """
-        Determina el tipo de señal basado en precio y régimen.
-        
-        Estrategia Oliver Vélez:
-        - BUY: Precio rebota en SMA 20 en uptrend
-        - SELL: Precio rechaza en SMA 20 en downtrend
-        
+        Calcula el Score de Oportunidad dinámicamente.
+
         Args:
-            df: DataFrame con OHLC
-            regime: Régimen de mercado
-            index: Índice de la vela
-        
+            validation_results: Resultados booleanos de la validación de la estrategia.
+            candle_data: Datos numéricos de la vela y sus indicadores.
+            regime: El régimen de mercado actual.
+
         Returns:
-            SignalType o None si no hay señal clara
+            El score de oportunidad (0-100).
         """
-        if len(df) < self.sma_period + 2:
-            return None
+        if not all(validation_results.values()):
+            return 0.0
+
+        # --- Scoring Dinámico ---
+        score = self.base_score
+
+        # 1. Bonificación por Régimen
+        if regime == MarketRegime.TREND:
+            score += self.regime_bonus
+
+        # 2. Bonificación por Proximidad a SMA20 (más cerca es mejor)
+        # proximity_ratio es 0 si está pegado a la SMA20, 1 si está en el límite del umbral.
+        proximity_ratio = candle_data["sma20_dist_pct"] / self.sma20_proximity_percent
+        score += (1 - proximity_ratio) * self.proximity_bonus_weight
+
+        # 3. Bonificación por Fuerza de la Vela (mucho más grande que el ATR es mejor)
+        # strength_ratio es 1 si está justo en el umbral (2x ATR), > 1 si es más grande.
+        strength_ratio = candle_data["body_atr_ratio"] / self.elephant_atr_multiplier
+        # Se añade un bono limitado por la fuerza extra de la vela.
+        score += min(1.0, strength_ratio - 1.0) * self.candle_bonus_weight
         
-        sma = df['close'].rolling(window=self.sma_period).mean()
-        
-        # Verificar tendencia con SMA
-        current_sma = sma.iloc[index]
-        previous_sma = sma.iloc[index - 1]
-        current_close = df['close'].iloc[index]
-        previous_close = df['close'].iloc[index - 1]
-        
-        if pd.isna(current_sma) or pd.isna(previous_sma):
-            return None
-        
-        # Uptrend: SMA ascendente y precio por encima
-        is_uptrend = current_sma > previous_sma and current_close > current_sma
-        
-        # Downtrend: SMA descendente y precio por debajo
-        is_downtrend = current_sma < previous_sma and current_close < current_sma
-        
-        # Solo operar en TREND
-        if regime != MarketRegime.TREND:
-            return None
-        
-        # BUY: Rebote en uptrend
-        if is_uptrend and previous_close <= previous_sma and current_close > current_sma:
-            return SignalType.BUY
-        
-        # SELL: Rechazo en downtrend
-        if is_downtrend and previous_close >= previous_sma and current_close < current_sma:
-            return SignalType.SELL
-        
-        return None
-    
-    def generate_signal(
-        self,
-        symbol: str,
-        df: pd.DataFrame,
-        regime: MarketRegime,
-        index: int = -1
-    ) -> Optional[Signal]:
+        return min(100.0, max(0.0, score))
+
+    async def generate_signal(self, symbol: str, df: pd.DataFrame, regime: MarketRegime) -> Optional[Signal]:
         """
-        Genera una señal de trading basada en el análisis del DataFrame.
-        
+        Analiza los datos de un mercado y, si cumple las condiciones, genera,
+        guarda y notifica una señal de trading.
+
+        Esta función asume que el DataFrame `df` viene del ScannerEngine y ya
+        contiene las columnas pre-calculadas: 'sma_200', 'sma_20', 'atr'.
+
         Args:
-            symbol: Símbolo del instrumento
-            df: DataFrame con OHLC y volumen
-            regime: Régimen de mercado actual
-            index: Índice de la vela a analizar (-1 = última)
-        
+            symbol: Símbolo del instrumento (e.g., 'EURUSD').
+            df: DataFrame con datos OHLC e indicadores ('sma_200', 'sma_20', 'atr').
+            regime: Régimen actual del mercado.
+
         Returns:
-            Objeto Signal o None si no hay oportunidad
+            Un objeto Signal si se genera una oportunidad, o None.
         """
-        if df is None or len(df) < max(self.sma_period, 20):
-            logger.debug(f"Datos insuficientes para {symbol}")
+        required_cols = ['open', 'high', 'low', 'close', f'sma_{self.sma_short_p}', f'sma_{self.sma_long_p}', 'atr']
+        if df is None or len(df) < 2 or not all(col in df.columns for col in required_cols):
+            logger.debug(f"[{symbol}] Datos insuficientes o columnas faltantes para generar señal.")
             return None
-        
+
         try:
-            # Análisis técnico
-            is_elephant, elephant_ratio = self._is_elephant_candle(df, index)
-            volume_high, volume_ratio = self._is_volume_above_average(df, index)
-            near_sma, sma_distance = self._is_near_sma20(df, index)
+            latest_candle = df.iloc[-1]
             
-            # Calcular score
-            score = self._calculate_score(regime, is_elephant, volume_high, near_sma)
+            # --- Validación de la Estrategia Oliver Vélez (Bullish) ---
+            is_bullish_trend = latest_candle['close'] > latest_candle[f'sma_{self.sma_long_p}']
             
-            # Determinar tier de membresía
+            candle_body = abs(latest_candle['close'] - latest_candle['open'])
+            body_atr_ratio = candle_body / latest_candle['atr'] if latest_candle['atr'] > 0 else 0
+            is_elephant_body = body_atr_ratio > self.elephant_atr_multiplier
+            
+            sma20_dist_pct = abs(latest_candle['close'] - latest_candle[f'sma_{self.sma_short_p}']) / latest_candle[f'sma_{self.sma_short_p}'] * 100
+            is_near_sma20 = sma20_dist_pct < self.sma20_proximity_percent
+            
+            is_bullish_candle = latest_candle['close'] > latest_candle['open']
+
+            validation_results = {
+                "trend_ok": is_bullish_trend and regime == MarketRegime.TREND,
+                "candle_ok": is_elephant_body and is_bullish_candle,
+                "proximity_ok": is_near_sma20,
+            }
+
+            candle_data = {
+                "sma20_dist_pct": sma20_dist_pct,
+                "body_atr_ratio": body_atr_ratio,
+            }
+
+            score = self._calculate_opportunity_score(validation_results, candle_data, regime)
+
+            if score <= 0:
+                logger.debug(f"[{symbol}] No cumple condiciones de señal Oliver Vélez. Score: 0")
+                return None
+
+            # --- Creación del objeto Signal ---
+            current_price = latest_candle['close']
             membership_tier = self._determine_membership_tier(score)
             
-            # Determinar tipo de señal
-            signal_type = self._determine_signal_type(df, regime, index)
-            
-            if signal_type is None:
-                logger.debug(f"No hay señal clara para {symbol} (score: {score:.1f})")
-                return None
-            
-            # Obtener precio actual
-            current_price = float(df['close'].iloc[index])
-            atr = self._calculate_atr(df).iloc[index]
-            
-            # Calcular SL y TP basado en ATR (Oliver Vélez usa 2:1 reward/risk)
-            if not pd.isna(atr) and atr > 0:
-                if signal_type == SignalType.BUY:
-                    stop_loss = current_price - (1.5 * atr)
-                    take_profit = current_price + (3.0 * atr)
-                elif signal_type == SignalType.SELL:
-                    stop_loss = current_price + (1.5 * atr)
-                    take_profit = current_price - (3.0 * atr)
-                else:
-                    stop_loss = None
-                    take_profit = None
-            else:
-                stop_loss = None
-                take_profit = None
-            
-            # Crear señal
+            # Gestión de Riesgo (ejemplo simple basado en ATR)
+            stop_loss = current_price - (1.5 * latest_candle['atr'])
+            take_profit = current_price + (3.0 * latest_candle['atr']) # Ratio 2:1
+
             signal = Signal(
-                connector=self.connector_type,
+                connector=ConnectorType.NINJATRADER, # Asumimos un conector por defecto
                 symbol=symbol,
-                signal_type=signal_type,
+                signal_type=SignalType.BUY, # Lógica de venta a implementar
                 price=current_price,
                 timestamp=datetime.now(),
-                volume=0.01,  # Volumen por defecto (ajustable según capital)
                 stop_loss=stop_loss,
                 take_profit=take_profit,
                 regime=regime,
                 strategy_id=self.strategy_id,
                 score=score,
                 membership_tier=membership_tier,
-                is_elephant_candle=is_elephant,
-                volume_above_average=volume_high,
-                near_sma20=near_sma,
+                is_elephant_candle=is_elephant_body,
+                near_sma20=is_near_sma20,
                 metadata={
-                    "elephant_ratio": float(elephant_ratio),
-                    "volume_ratio": float(volume_ratio),
-                    "sma_distance_pct": float(sma_distance),
-                    "atr": float(atr) if not pd.isna(atr) else None
+                    "body_atr_ratio": round(body_atr_ratio, 2),
+                    "sma20_dist_pct": round(sma20_dist_pct, 2),
+                    "atr": round(latest_candle['atr'], 5),
+                    "sma_20": round(latest_candle[f'sma_{self.sma_short_p}'], 5),
+                    "sma_200": round(latest_candle[f'sma_{self.sma_long_p}'], 5),
                 }
             )
-            
-            logger.info(
-                f"Señal generada: {symbol} {signal_type.value} @ {current_price:.5f} | "
-                f"Score: {score:.1f} | Tier: {membership_tier.value} | "
-                f"Régimen: {regime.value}"
-            )
-            
+
+            # --- Persistencia y Notificación ---
+            try:
+                signal_id = self.storage_manager.save_signal(signal)
+                logger.info(
+                    f"SEÑAL GENERADA [ID: {signal_id}] -> {signal.symbol} {signal.signal_type.value} @ {signal.price:.5f} | "
+                    f"Score: {signal.score:.1f} ({signal.membership_tier.value})"
+                )
+            except Exception as e:
+                logger.error(f"[{symbol}] Error al guardar la señal en la base de datos: {e}")
+                return None # No notificar si no se pudo guardar
+
+            if self.notifier and membership_tier in [MembershipTier.PREMIUM, MembershipTier.ELITE]:
+                logger.debug(f"[{symbol}] Disparando notificación PREMIUM para señal con score {score:.1f}")
+                # Usamos create_task para no bloquear el bucle principal del scanner
+                asyncio.create_task(
+                    self.notifier.notify_oliver_velez_signal(signal, membership=MembershipLevel.PREMIUM)
+                )
+
             return signal
-        
+
         except Exception as e:
             logger.error(f"Error generando señal para {symbol}: {e}", exc_info=True)
             return None
-    
-    def generate_signals_batch(
-        self,
-        scan_results: Dict[str, Dict]
-    ) -> List[Signal]:
-        """
-        Genera señales para múltiples símbolos basándose en resultados del escáner.
-        
-        Args:
-            scan_results: Dict con resultados del escáner por símbolo
-                         {symbol: {"regime": MarketRegime, "df": DataFrame, "metrics": dict}}
-        
-        Returns:
-            Lista de señales generadas
-        """
-        signals = []
-        
-        for symbol, data in scan_results.items():
-            try:
-                regime = data.get("regime")
-                df = data.get("df")
-                
-                if regime is None or df is None:
-                    continue
-                
-                signal = self.generate_signal(symbol, df, regime)
-                
-                if signal is not None:
-                    signals.append(signal)
             
-            except Exception as e:
-                logger.error(f"Error procesando {symbol}: {e}")
-                continue
+    async def generate_signals_batch(self, scan_results: Dict[str, Dict]) -> List[Signal]:
+        """
+        Procesa un lote de resultados del ScannerEngine y genera señales.
+
+        Args:
+            scan_results: Diccionario {symbol: {"regime": MarketRegime, "df": DataFrame}}
+
+        Returns:
+            Una lista de objetos Signal generados.
+        """
+        tasks = [
+            self.generate_signal(symbol, data.get("df"), data.get("regime"))
+            for symbol, data in scan_results.items()
+            if data.get("regime") and data.get("df") is not None
+        ]
         
-        logger.info(f"Batch completado: {len(signals)} señales generadas de {len(scan_results)} símbolos")
+        generated_signals = await asyncio.gather(*tasks)
+        
+        # Filtrar los resultados None
+        signals = [s for s in generated_signals if s is not None]
+        
+        if signals:
+            logger.info(f"Batch completado. {len(signals)} señales generadas de {len(scan_results)} símbolos analizados.")
         
         return signals
-    
-    def filter_by_membership(
-        self,
-        signals: List[Signal],
-        user_tier: MembershipTier = MembershipTier.FREE
-    ) -> List[Signal]:
-        """
-        Filtra señales según el tier de membresía del usuario.
-        
-        Args:
-            signals: Lista de señales
-            user_tier: Tier del usuario
-        
-        Returns:
-            Lista de señales filtradas
-        """
+
+    def filter_by_membership(self, signals: List[Signal], user_tier: MembershipTier) -> List[Signal]:
+        """Filtra una lista de señales según el tier de membresía del usuario."""
         tier_order = {
             MembershipTier.FREE: 0,
             MembershipTier.PREMIUM: 1,
             MembershipTier.ELITE: 2
         }
-        
         user_level = tier_order.get(user_tier, 0)
         
-        filtered = [
-            signal for signal in signals
-            if tier_order.get(signal.membership_tier, 0) <= user_level
-        ]
+        filtered = [s for s in signals if tier_order.get(s.membership_tier, 0) <= user_level]
         
-        logger.info(
-            f"Filtrado por membresía {user_tier.value}: "
-            f"{len(filtered)}/{len(signals)} señales disponibles"
-        )
-        
+        logger.debug(f"Filtrando {len(signals)} señales para tier {user_tier.value}. Disponibles: {len(filtered)}")
         return filtered
