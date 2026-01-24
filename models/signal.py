@@ -30,6 +30,13 @@ class SignalType(str, Enum):
     MODIFY = "MODIFY"
 
 
+class MembershipTier(str, Enum):
+    """Niveles de membresía"""
+    FREE = "FREE"
+    PREMIUM = "PREMIUM"
+    ELITE = "ELITE"
+
+
 class Signal(BaseModel):
     """Modelo de señal de trading recibida"""
     connector: ConnectorType = Field(..., description="Tipo de conector origen")
@@ -43,6 +50,15 @@ class Signal(BaseModel):
     metadata: Optional[dict] = Field(default_factory=dict, description="Metadatos adicionales")
     regime: Optional[MarketRegime] = Field(None, description="Régimen de mercado detectado")
     strategy_id: Optional[str] = Field(None, description="ID de la estrategia que generó la señal")
+    
+    # Campos de scoring y membresía
+    score: Optional[float] = Field(None, ge=0.0, le=100.0, description="Score de oportunidad (0-100)")
+    membership_tier: MembershipTier = Field(default=MembershipTier.FREE, description="Nivel mínimo de membresía requerido")
+    
+    # Indicadores de calidad de señal (Oliver Vélez)
+    is_elephant_candle: Optional[bool] = Field(None, description="Es una vela elefante (vela de alto momentum)")
+    volume_above_average: Optional[bool] = Field(None, description="Volumen superior al promedio")
+    near_sma20: Optional[bool] = Field(None, description="Precio cerca de SMA 20 (zona de rebote)")
 
 
 class SignalResult(BaseModel):

@@ -12,10 +12,11 @@ Aethelgard está diseñado como un sistema modular que permite integrar múltipl
 - **`server.py`**: Servidor FastAPI con WebSockets que gestiona múltiples conexiones simultáneas
 - **`regime.py`**: Clasificador de régimen de mercado (TREND, RANGE, CRASH, NEUTRAL)
 - **`scanner.py`**: Escáner proactivo multihilo; orquesta activos, `RegimeClassifier` por símbolo, monitor de CPU y priorización TREND (1s) / RANGE (10s)
+- **`signal_factory.py`**: ⚡ **NUEVO** Motor de generación de señales con estrategia Oliver Vélez y sistema de scoring (0-100)
 
 #### 2. Conectores (`connectors/`)
 - **`bridge_nt8.cs`**: Bridge para NinjaTrader 8 (C#)
-- **`bridge_mt5.py`**: Bridge para MetaTrader 5 (Python)
+- **`bridge_mt5.py`**: Bridge para MetaTrader 5 (Python) - ⚡ **ACTUALIZADO** con ejecución automática en Demo
 - **`mt5_data_provider.py`**: Ingestión autónoma de OHLC vía `mt5.copy_rates_from_pos` (sin gráficas abiertas)
 - **`webhook_tv.py`**: Webhook para recibir alertas de TradingView
 
@@ -53,6 +54,21 @@ pip install -r requirements.txt
 ```
 
 ## Uso
+
+### 🎯 Sistema Completo con Auto-Ejecución (NUEVO)
+
+**Ejecutar el sistema completo**: Scanner + Signal Factory + MT5 Auto-Execute
+
+```bash
+python example_live_system.py
+```
+
+Este sistema integra:
+1. **Scanner Proactivo**: Escanea múltiples activos en tiempo real
+2. **Signal Factory**: Genera señales con estrategia Oliver Vélez
+3. **MT5 Auto-Execute**: Ejecuta operaciones automáticamente en cuenta Demo
+
+**⚠️ IMPORTANTE**: Solo ejecuta en cuentas DEMO por seguridad.
 
 ### Iniciar el servidor principal
 
@@ -148,6 +164,94 @@ El clasificador analiza:
 - **CRASH**: Movimiento extremo detectado
 - **NEUTRAL**: Estado neutral/indefinido
 
+## 🚀 Signal Factory - Lógica de Decisión Dinámica
+
+### Sistema de Scoring (0-100)
+
+El Signal Factory evalúa oportunidades de trading basándose en la estrategia de **Oliver Vélez** (swing trading):
+
+| Criterio | Puntos | Descripción |
+|----------|--------|-------------|
+| **Régimen TREND** | +30 | El mercado está en tendencia clara (mejor régimen para operar) |
+| **Vela Elefante** | +20 | Vela de alto momentum (rango > 2x ATR) |
+| **Volumen Alto** | +20 | Volumen superior al promedio (confirmación) |
+| **Cerca de SMA 20** | +30 | Precio rebotando en zona de soporte/resistencia |
+
+**Score Total**: 0-100 puntos
+
+### Filtrado por Membresía
+
+Las señales se filtran según su calidad (score):
+
+| Tier | Score Mínimo | Descripción |
+|------|--------------|-------------|
+| **FREE** | 0-79 | Señales básicas, disponibles para todos |
+| **PREMIUM** | 80-89 | Señales de alta calidad (4 criterios cumplidos) |
+| **ELITE** | 90-100 | Señales excepcionales (todos los criterios) |
+
+**Pestaña Dashboard**:
+- FREE: Ve solo señales FREE
+- PREMIUM: Ve señales FREE + PREMIUM
+- ELITE: Ve todas las señales
+
+### Estrategia Oliver Vélez
+
+Principios implementados:
+1. ✅ **Operar solo en tendencia** (TREND regime)
+2. ✅ **Buscar velas de momentum** (Velas Elefante)
+3. ✅ **Confirmar con volumen** (> promedio)
+4. ✅ **Entrar en zonas clave** (SMA 20 como soporte/resistencia)
+5. ✅ **Risk/Reward 1:2** (SL 1.5x ATR, TP 3x ATR)
+
+### Ejemplo de Uso
+
+```python
+from core_brain.signal_factory import SignalFactory
+from models.signal import MarketRegime, MembershipTier
+
+# Crear factory
+factory = SignalFactory(
+    strategy_id="oliver_velez_swing",
+    premium_threshold=80.0,
+    elite_threshold=90.0
+)
+
+# Generar señal
+signal = factory.generate_signal(
+    symbol="EURUSD",
+    df=ohlc_dataframe,
+    regime=MarketRegime.TREND
+)
+
+if signal:
+    print(f"Señal: {signal.signal_type.value}")
+    print(f"Score: {signal.score}/100")
+    print(f"Tier: {signal.membership_tier.value}")
+    print(f"Precio: {signal.price}")
+    print(f"SL: {signal.stop_loss}")
+    print(f"TP: {signal.take_profit}")
+
+# Filtrar por membresía
+premium_signals = factory.filter_by_membership(
+    signals=[signal],
+    user_tier=MembershipTier.PREMIUM
+)
+```
+
+### Test del Sistema de Scoring
+
+```bash
+python test_signal_factory.py
+```
+
+Verifica:
+- ✅ Cálculo correcto de scores
+- ✅ Clasificación de tiers (FREE/PREMIUM/ELITE)
+- ✅ Detección de velas elefante
+- ✅ Análisis de volumen
+- ✅ Proximidad a SMA 20
+- ✅ Generación por lote
+
 ## Configuración
 
 - **`config/config.json`**: Parámetros del escáner (activos, CPU, intervalos, MT5). Véase tabla en [Escáner proactivo](#escáner-proactivo-multihilo).
@@ -200,8 +304,13 @@ Tablas:
 
 ## Documentación
 
-- **[AETHELGARD_MANIFESTO.md](AETHELGARD_MANIFESTO.md)**: Visión, arquitectura, reglas de autonomía y roadmap detallado.
-- **[ROADMAP.md](ROADMAP.md)**: Resumen del roadmap; incluye Fase 1.1 (Escáner Proactivo Multihilo).
+- **[AETHELGARD_MANIFESTO.md](AETHELGARD_MANIFESTO.md)**: 📖 **Fuente de verdad del proyecto** - Visión completa, arquitectura detallada, reglas de autonomía, estrategias implementadas (Signal Factory, Oliver Vélez) y guías técnicas.
+- **[ROADMAP.md](ROADMAP.md)**: 🗺️ **Estado del proyecto** - Fases completadas y pendientes, incluyendo Scanner Proactivo (Fase 1.1) y Signal Factory (Fase 2.1).
+
+**Para información completa sobre:**
+- Sistema de Scoring y Membresías → Ver [AETHELGARD_MANIFESTO.md](AETHELGARD_MANIFESTO.md#signal-factory---lógica-de-decisión-dinámica)
+- Estrategia Oliver Vélez implementada → Ver [AETHELGARD_MANIFESTO.md](AETHELGARD_MANIFESTO.md#trend-following-régimen-trend)
+- Arquitectura y flujo de datos → Ver [AETHELGARD_MANIFESTO.md](AETHELGARD_MANIFESTO.md#arquitectura-del-sistema)
 
 ## Desarrollo
 

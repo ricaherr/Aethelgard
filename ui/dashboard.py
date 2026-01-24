@@ -13,7 +13,7 @@ import sys
 import random # Importar random para simulación de datos
 
 # Añadir el directorio raíz al path para importar módulos
-    sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core_brain.discovery import DiscoveryEngine # Importar DiscoveryEngine
 from core_brain.regime import RegimeClassifier
@@ -251,8 +251,8 @@ def main():
             else:
                 st.warning(f"⚠️ No hay módulos disponibles para régimen {current_regime}")
     
-    # TAB 3: Parámetros Dinámicos (Antigua tab3)
-    with tab_params:
+    # TAB 3: Parámetros Dinámicos
+    with tab3:
         st.header("⚙️ Parámetros Dinámicos del Tuner")
         
         # Cargar parámetros actuales
@@ -324,8 +324,8 @@ def main():
             st.error(f"Error cargando parámetros: {e}")
             logger.error(f"Error cargando parámetros: {e}", exc_info=True)
     
-    # TAB 4: Estadísticas (Antigua tab4)
-    with tab_stats:
+    # TAB 4: Estadísticas
+    with tab4:
         st.header("📈 Estadísticas del Sistema")
         
         try:

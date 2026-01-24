@@ -28,9 +28,46 @@ Resumen del roadmap de implementación. Detalle completo en [AETHELGARD_MANIFEST
 
 ---
 
-## Fase 2: Estrategias Modulares 🚧 EN PROGRESO
+## Fase 2: Estrategias Modulares ✅ PARCIALMENTE COMPLETADA
 
-- Oliver Vélez (Trend Following, Range, Breakout), gestión de riesgo dinámica, activación por régimen.
+**Objetivo:** Implementar estrategias de trading basadas en Oliver Vélez con activación por régimen.
+
+### ✅ Fase 2.1: Signal Factory y Lógica de Decisión Dinámica (Enero 2026)
+
+**Implementado:**
+
+| Componente | Descripción |
+|------------|-------------|
+| `core_brain/signal_factory.py` | Motor de generación de señales con estrategia Oliver Vélez |
+| Sistema de Scoring | Evaluación 0-100: +30 TREND, +20 Vela Elefante, +20 Volumen, +30 SMA20 |
+| Filtrado por Membresía | FREE (0-79), PREMIUM (80-89), ELITE (90-100) |
+| `models/signal.py` | Actualizado con campos `score`, `membership_tier`, indicadores de calidad |
+| `connectors/bridge_mt5.py` | Auto-ejecución en Demo, tracking de `signal_results` |
+| `example_live_system.py` | Sistema completo integrado: Scanner + Signal Factory + MT5 |
+| `test_signal_factory.py` | Suite de tests para verificar scoring y componentes técnicos |
+
+**Funcionalidades:**
+- ✅ Generación de señales BUY/SELL basadas en Oliver Vélez
+- ✅ Detección de Velas Elefante (momentum alto: rango > 2x ATR)
+- ✅ Análisis de volumen relativo (vs promedio 20 períodos)
+- ✅ Proximidad a SMA 20 como zona de rebote (±1%)
+- ✅ Cálculo automático de SL/TP (Risk/Reward 1:2)
+- ✅ Ejecución automática en MT5 Demo (seguridad verificada)
+- ✅ Sistema de membresías para filtrado de señales
+- ✅ Batch processing para múltiples símbolos
+
+**Estrategias Implementadas:**
+- ✅ **Trend Following**: Operar en TREND, rebote en SMA 20, confirmación volumen
+- 🔜 **Range Trading**: Pendiente (operar en RANGE)
+- 🔜 **Breakout**: Pendiente (transiciones de régimen)
+
+### 🚧 Fase 2.2: Estrategias Adicionales (Próximo)
+
+**Pendiente:**
+- Range Trading completo
+- Breakout Trading en transiciones
+- Gestión de riesgo dinámica avanzada
+- Módulos de estrategias independientes
 
 ---
 

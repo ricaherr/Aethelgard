@@ -557,9 +557,90 @@ def activate_strategy(regime: MarketRegime, symbol: str):
 
 ## 📊 Estrategias
 
-### Estrategias de Oliver Vélez
+### Signal Factory - Lógica de Decisión Dinámica ✅ IMPLEMENTADO (Enero 2026)
 
-> **Nota**: Esta sección documentará la lógica de las estrategias de Oliver Vélez una vez implementadas.
+**Estado**: ✅ Implementado y funcional en `core_brain/signal_factory.py`
+
+Motor de generación de señales basado en la **estrategia de Oliver Vélez** para swing trading, con sistema de scoring matemático (0-100) y filtrado por membresía.
+
+#### Sistema de Scoring
+
+Evaluación cuantitativa de oportunidades de trading:
+
+| Criterio | Puntos | Descripción |
+|----------|--------|-------------|
+| **Régimen TREND** | +30 | Mercado en tendencia clara (ADX > 25) |
+| **Vela Elefante** | +20 | Vela de alto momentum (rango > 2x ATR) |
+| **Volumen Alto** | +20 | Volumen superior al promedio 20 períodos |
+| **Cerca de SMA 20** | +30 | Precio rebotando en zona soporte/resistencia (±1%) |
+
+**Fórmula**:
+```
+Score = (Régimen TREND ? 30 : 0) +
+        (Vela Elefante ? 20 : 0) +
+        (Volumen Alto ? 20 : 0) +
+        (Cerca SMA 20 ? 30 : 0)
+
+Total: 0-100 puntos
+```
+
+#### Filtrado por Membresía
+
+Sistema de tres niveles que determina acceso a señales según calidad:
+
+| Tier | Score Mínimo | Descripción |
+|------|--------------|-------------|
+| **FREE** | 0-79 | Señales básicas, disponibles para todos |
+| **PREMIUM** | 80-89 | Señales de alta calidad (4 criterios cumplidos) |
+| **ELITE** | 90-100 | Señales excepcionales (todos los criterios) |
+
+**Implementación**:
+- `models/signal.py`: Enum `MembershipTier` y campos de scoring
+- `signal_factory.py`: Métodos `_calculate_score()` y `filter_by_membership()`
+- Dashboard/Telegram: Listo para filtrado de señales por tier de usuario
+
+#### Integración MT5 - Auto-Ejecución
+
+**Bridge MT5 actualizado** (`connectors/bridge_mt5.py`):
+- ✅ Recepción de señales desde Signal Factory
+- ✅ Ejecución automática BUY/SELL en cuentas DEMO
+- ✅ Verificación de seguridad (solo DEMO por defecto)
+- ✅ Tracking de posiciones activas y resultados
+- ✅ Cálculo automático de SL/TP (Risk/Reward 1:2)
+- ✅ Registro en `signal_results` para feedback loop
+
+**Parámetros de Seguridad**:
+```python
+auto_execute=True   # Habilitar auto-ejecución
+demo_mode=True      # Solo ejecutar en DEMO (protección)
+magic_number=234000 # ID único Aethelgard
+```
+
+#### Componentes Técnicos
+
+**Indicadores utilizados**:
+- ATR (14): Volatilidad y cálculo de SL/TP
+- SMA (20): Zonas de soporte/resistencia
+- Volumen: Confirmación de movimientos
+- Análisis de velas: Detección de momentum (Velas Elefante)
+
+**Métodos principales**:
+```python
+SignalFactory.generate_signal()        # Genera señal para un símbolo
+SignalFactory.generate_signals_batch() # Procesa múltiples símbolos
+SignalFactory.filter_by_membership()   # Filtra por tier usuario
+SignalFactory._calculate_score()       # Calcula score 0-100
+SignalFactory._is_elephant_candle()    # Detecta velas de momentum
+SignalFactory._is_volume_above_average() # Analiza volumen
+SignalFactory._is_near_sma20()         # Verifica proximidad SMA
+```
+
+**Archivos**:
+- `core_brain/signal_factory.py`: Motor completo (580 líneas)
+- `example_live_system.py`: Sistema integrado Scanner + Signal Factory + MT5
+- `test_signal_factory.py`: Suite de tests del scoring
+
+### Estrategias de Oliver Vélez
 
 #### Activación por Régimen
 
@@ -574,18 +655,43 @@ Las estrategias se activan según el régimen de mercado detectado:
 
 #### Trend Following (Régimen TREND)
 
-**Condiciones de Entrada:**
+**Estado**: ✅ Implementado en Signal Factory
+
+**Estrategia Oliver Vélez - Swing Trading**:
+
+**Principios implementados**:
+1. ✅ Operar solo en tendencia (verifica `regime == TREND`)
+2. ✅ Buscar velas de momentum (Velas Elefante: rango > 2x ATR)
+3. ✅ Confirmar con volumen (volumen > promedio 20 períodos)
+4. ✅ Entrar en zonas clave (rebote en SMA 20 como soporte/resistencia)
+5. ✅ Risk/Reward favorable (SL: 1.5x ATR, TP: 3x ATR → Ratio 1:2)
+
+**Condiciones de Entrada BUY:**
 - Régimen: TREND
-- ADX > 25
-- Precio por encima de SMA 200 (tendencia alcista) o por debajo (tendencia bajista)
-- Confirmación de dirección con indicadores adicionales
+- SMA 20 ascendente (uptrend)
+- Precio rebota en SMA 20 (de abajo hacia arriba)
+- Vela actual cierra por encima de SMA 20
+- Vela anterior cerró por debajo o tocó SMA 20
+- Score alto = mayor probabilidad de éxito
+
+**Condiciones de Entrada SELL:**
+- Régimen: TREND
+- SMA 20 descendente (downtrend)
+- Precio rechaza en SMA 20 (de arriba hacia abajo)
+- Vela actual cierra por debajo de SMA 20
+- Vela anterior cerró por encima o tocó SMA 20
+- Score alto = mayor probabilidad de éxito
 
 **Gestión de Riesgo:**
-- Stop Loss: Basado en ATR (ej. 2x ATR)
-- Take Profit: Basado en extensión de Fibonacci o múltiplos de ATR
-- Tamaño de posición: Inversamente proporcional a volatilidad
+- Stop Loss: precio ± (1.5 × ATR)
+- Take Profit: precio ± (3.0 × ATR)
+- Risk/Reward: 1:2 (objetivo 2x el riesgo)
+- Volumen por defecto: 0.01 lotes (ajustable según capital)
+- Tamaño de posición: Basado en ATR (mayor volatilidad = menor tamaño)
 
 #### Range Trading (Régimen RANGE)
+
+**Estado**: Pendiente de implementación completa
 
 **Condiciones de Entrada:**
 - Régimen: RANGE
@@ -598,7 +704,11 @@ Las estrategias se activan según el régimen de mercado detectado:
 - Take Profit: En el extremo opuesto del rango
 - Tamaño de posición: Conservador debido a naturaleza lateral
 
+**Nota**: Actualmente el Signal Factory prioriza señales en TREND. Range Trading se implementará en futuras iteraciones.
+
 #### Breakout Trading (Transiciones de Régimen)
+
+**Estado**: Detectado automáticamente por Scanner, pendiente estrategia específica
 
 **Condiciones de Entrada:**
 - Transición de RANGE → TREND
