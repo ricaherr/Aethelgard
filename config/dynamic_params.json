@@ -1,12 +1,4 @@
 {
-  "adx_trend_threshold": 25.0,
-  "adx_range_threshold": 20.0,
-  "adx_range_exit_threshold": 18.0,
-  "volatility_shock_multiplier": 5.0,
-  "adx_period": 14,
-  "sma_period": 200,
-  "shock_lookback": 5,
-  "min_volatility_atr_period": 50,
-  "persistence_candles": 2,
-  "last_updated": null
+    "risk_per_trade": 0.015,
+    "max_consecutive_losses": 5
 }

@@ -1,192 +1,165 @@
 """
 Risk Manager Module
-Manages position sizing, risk allocation, and lockdown mode
-Implements 1% base risk with dynamic adjustments based on market regime
+Manages position sizing, risk allocation, and lockdown mode.
+Aligned with Aethelgard's principles of Autonomy and Resilience.
 """
-from typing import Optional, Dict
-from datetime import datetime
+import json
 import logging
+from typing import Optional, Dict
+
+# Dependencies aligned with the project structure
+from data_vault.storage import StorageManager
 from models.signal import MarketRegime
 
 logger = logging.getLogger(__name__)
 
-
 class RiskManager:
     """
-    Manages trading risk with adaptive position sizing and lockdown protection.
+    Manages trading risk by being adaptive, persistent, resilient, and agnostic.
     
     Features:
-    - Base 1% risk per trade in normal conditions
-    - Reduced 0.5% risk in VOLATILE/RANGE/CRASH regimes
-    - Lockdown mode after 3 consecutive losses
-    - Dynamic capital tracking
+    - Auto-Adjusting Risk: Loads risk parameters from dynamic_params.json, allowing a Tuner to modify them.
+    - Lockdown Persistence: Saves and restores lockdown state from the database.
+    - Data Resilience: Handles None market regimes defensively.
+    - Agnostic Sizing: Calculates position size based on explicit point/pip value.
     """
     
-    def __init__(
-        self,
-        initial_capital: float,
-        base_risk_pct: float = 1.0,
-        volatile_risk_pct: float = 0.5,
-        max_consecutive_losses: int = 3
-    ):
+    def __init__(self, initial_capital: float, config_path='config/dynamic_params.json'):
         """
-        Initialize RiskManager
+        Initialize RiskManager.
         
         Args:
-            initial_capital: Starting capital amount
-            base_risk_pct: Base risk percentage per trade (default 1.0%)
-            volatile_risk_pct: Risk percentage in volatile regimes (default 0.5%)
-            max_consecutive_losses: Max losses before lockdown (default 3)
+            initial_capital: Starting capital amount.
+            config_path: Path to the dynamic parameters configuration file.
         """
         self.capital = initial_capital
-        self.base_risk_pct = base_risk_pct
-        self.volatile_risk_pct = volatile_risk_pct
-        self.max_consecutive_losses = max_consecutive_losses
         
-        self.consecutive_losses = 0
-        self.is_locked = False
+        # 1. Auto-ajuste: Cargar parámetros desde archivo dinámico
+        try:
+            with open(config_path, 'r') as f:
+                dynamic_params = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            logger.warning(f"Could not load {config_path}. Using defensive default values.")
+            dynamic_params = {}
+
+        self.risk_per_trade = dynamic_params.get('risk_per_trade', 0.005) # Defensivo 0.5%
+        self.max_consecutive_losses = dynamic_params.get('max_consecutive_losses', 3)
+
+        # 2. Persistencia de Lockdown: Integración con StorageManager
+        self.storage = StorageManager()
+        system_state = self.storage.get_system_state()
+        self.lockdown_mode = system_state.get('lockdown_mode', False)
+        
+        self.consecutive_losses = 0 # Se resetea, la persistencia está en el estado de lockdown
         
         logger.info(
             f"RiskManager initialized: Capital=${initial_capital:,.2f}, "
-            f"Base Risk={base_risk_pct}%, Volatile Risk={volatile_risk_pct}%"
+            f"Dynamic Risk Per Trade={self.risk_per_trade*100}%, Lockdown Active={self.lockdown_mode}"
         )
-    
+
     def calculate_position_size(
         self,
-        regime: MarketRegime,
-        entry_price: float,
-        stop_loss: float,
-        direction: str = "LONG"
+        account_balance: float,
+        stop_loss_distance: float,
+        point_value: float,
+        current_regime: Optional[MarketRegime] = None
     ) -> float:
         """
-        Calculate position size based on regime and risk parameters
+        Calcula el tamaño de la posición de forma agnóstica y resiliente.
         
         Args:
-            regime: Current market regime
-            entry_price: Entry price for the trade
-            stop_loss: Stop loss price
-            direction: Trade direction ("LONG" or "SHORT"), default "LONG"
+            account_balance: Balance actual de la cuenta.
+            stop_loss_distance: Distancia al stop loss en puntos o pips.
+            point_value: Valor monetario de un punto/pip para el instrumento.
+            current_regime: El régimen de mercado actual.
         
         Returns:
-            Position size in units/contracts (0 if locked or invalid params)
+            Tamaño de la posición (0 si no es seguro operar).
         """
-        # Check lockdown
-        if self.is_locked:
-            logger.warning("Position size = 0: Account is in LOCKDOWN mode")
+        # 3. Resiliencia de Datos: Comprobar lockdown y régimen nulo
+        if self.lockdown_mode or not current_regime:
+            if self.lockdown_mode:
+                logger.warning("Position size = 0: Account is in LOCKDOWN mode.")
+            if not current_regime:
+                logger.warning("Position size = 0: Market regime is None. Adopting defensive posture.")
             return 0.0
-        
-        # Validate stop loss placement based on direction
-        if direction == "LONG" and stop_loss >= entry_price:
-            logger.warning("Position size = 0: Invalid SL for LONG (SL must be < entry)")
+
+        if stop_loss_distance <= 0 or point_value <= 0:
+            logger.warning("Position size = 0: Invalid stop loss distance or point value.")
             return 0.0
+
+        # Obtener multiplicador de volatilidad (ejemplo, puede ser más complejo)
+        volatility_multiplier = self._get_volatility_multiplier(current_regime)
+        risk_per_trade_adjusted = self.risk_per_trade * volatility_multiplier
         
-        if direction == "SHORT" and stop_loss <= entry_price:
-            logger.warning("Position size = 0: Invalid SL for SHORT (SL must be > entry)")
+        # 4. Agnosticismo: Usar point_value en el cálculo
+        risk_amount_per_trade = account_balance * risk_per_trade_adjusted
+        value_at_risk_per_lot = stop_loss_distance * point_value
+
+        if value_at_risk_per_lot <= 0:
             return 0.0
-        
-        # Calculate risk per unit
-        risk_per_unit = abs(entry_price - stop_loss)
-        
-        if risk_per_unit <= 0:
-            logger.warning("Position size = 0: Zero risk calculated")
-            return 0.0
-        
-        # Get risk percentage based on regime
-        risk_pct = self.get_current_risk_pct(regime)
-        
-        # Calculate risk amount in currency
-        risk_amount = self.capital * (risk_pct / 100.0)
-        
-        # Calculate position size
-        position_size = risk_amount / risk_per_unit
+            
+        position_size = risk_amount_per_trade / value_at_risk_per_lot
         
         logger.debug(
-            f"Position calc: Regime={regime.value}, Risk={risk_pct}%, "
-            f"Amount=${risk_amount:.2f}, Size={position_size:.2f}"
+            f"Position calc: Regime={current_regime.value}, Adjusted Risk={risk_per_trade_adjusted*100:.2f}%, "
+            f"Risk Amount=${risk_amount_per_trade:.2f}, Pos Size={position_size:.2f}"
         )
-        
-        return position_size
-    
-    def get_current_risk_pct(self, regime: MarketRegime) -> float:
-        """
-        Get risk percentage based on current market regime
-        
-        Args:
-            regime: Current market regime
-        
-        Returns:
-            Risk percentage to use
-        """
-        # Reduce risk in volatile/uncertain conditions
-        volatile_regimes = {MarketRegime.RANGE, MarketRegime.CRASH}
-        
-        if regime in volatile_regimes:
-            return self.volatile_risk_pct
-        
-        return self.base_risk_pct
-    
+
+        return round(position_size, 2)
+
     def record_trade_result(self, is_win: bool, pnl: float) -> None:
         """
-        Record trade result and update risk state
-        
-        Args:
-            is_win: Whether the trade was profitable
-            pnl: Profit/Loss amount (positive or negative)
+        Record trade result and update risk state, including lockdown persistence.
         """
-        # Update capital
         self.capital += pnl
         
         if is_win:
-            # Reset losses counter on win
             self.consecutive_losses = 0
             logger.info(f"WIN: PnL=${pnl:+.2f}, Capital=${self.capital:,.2f}")
+            if self.lockdown_mode:
+                self._deactivate_lockdown() # Opcional: un trade ganador podría desactivar el lockdown
         else:
-            # Increment losses
             self.consecutive_losses += 1
             logger.warning(
                 f"LOSS: PnL=${pnl:+.2f}, Capital=${self.capital:,.2f}, "
                 f"Consecutive losses: {self.consecutive_losses}"
             )
             
-            # Check for lockdown
             if self.consecutive_losses >= self.max_consecutive_losses:
-                self.is_locked = True
-                logger.error(
-                    f"LOCKDOWN ACTIVATED: {self.consecutive_losses} consecutive losses. "
-                    f"Trading disabled until manual unlock."
-                )
-    
-    def can_trade(self) -> bool:
-        """
-        Check if trading is allowed
-        
-        Returns:
-            True if trading allowed, False if locked
-        """
-        return not self.is_locked
-    
-    def unlock(self) -> None:
-        """
-        Manually unlock lockdown mode and reset losses counter
-        """
-        self.is_locked = False
-        self.consecutive_losses = 0
-        logger.info("Lockdown manually UNLOCKED. Trading resumed.")
-    
+                self._activate_lockdown()
+
+    def _activate_lockdown(self):
+        """Activa y persiste el modo lockdown."""
+        if not self.lockdown_mode:
+            self.lockdown_mode = True
+            self.storage.update_system_state({'lockdown_mode': True})
+            logger.error(
+                f"LOCKDOWN ACTIVATED: {self.consecutive_losses} consecutive losses. "
+                "Trading disabled."
+            )
+
+    def _deactivate_lockdown(self):
+        """Desactiva y persiste el modo lockdown."""
+        if self.lockdown_mode:
+            self.lockdown_mode = False
+            self.consecutive_losses = 0
+            self.storage.update_system_state({'lockdown_mode': False})
+            logger.info("Lockdown DEACTIVATED. Trading resumed.")
+            
+    def _get_volatility_multiplier(self, regime: MarketRegime) -> float:
+        """Determina un multiplicador de riesgo basado en el régimen."""
+        volatile_regimes = {MarketRegime.RANGE, MarketRegime.CRASH}
+        if regime in volatile_regimes:
+            return 0.5 # Reduce el riesgo a la mitad en mercados volátiles/inciertos
+        return 1.0 # Riesgo normal
+
     def get_status(self) -> Dict:
-        """
-        Get current risk manager status
-        
-        Returns:
-            Dictionary with current state information
-        """
-        trades_until_lockdown = max(0, self.max_consecutive_losses - self.consecutive_losses)
-        
+        """Get current risk manager status."""
         return {
             'capital': self.capital,
             'consecutive_losses': self.consecutive_losses,
-            'is_locked': self.is_locked,
-            'base_risk_pct': self.base_risk_pct,
-            'volatile_risk_pct': self.volatile_risk_pct,
-            'trades_until_lockdown': trades_until_lockdown
+            'is_locked': self.lockdown_mode,
+            'dynamic_risk_per_trade': self.risk_per_trade,
+            'max_consecutive_losses': self.max_consecutive_losses
         }
