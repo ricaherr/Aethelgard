@@ -642,83 +642,74 @@ SignalFactory._is_near_sma20()         # Verifica proximidad SMA
 
 ---
 
-### Risk Manager - Gestión de Riesgo Dinámica ✅ IMPLEMENTADO (Enero 2026)
+### Risk Manager - Gestión de Riesgo Agnóstica y Resiliente ✅ IMPLEMENTADO (Enero 2026, v2.0)
 
-**Estado**: ✅ Implementado y testeado en `core_brain/risk_manager.py`
+**Estado**: ✅ Refactorizado y testeado para cumplir con los principios de Autonomía y Resiliencia.
 
-Módulo de gestión de riesgo que implementa position sizing dinámico, reducción de riesgo en regímenes volátiles y protección mediante lockdown mode.
+Módulo de gestión de riesgo que implementa position sizing dinámico y agnóstico, y un modo de protección `Lockdown` persistente que sobrevive a reinicios del sistema.
 
 #### Características Principales
 
-**1. Position Sizing Adaptivo**
-- **Base Risk**: 1% del capital por operación en condiciones normales (TREND, NEUTRAL)
-- **Reduced Risk**: 0.5% del capital en regímenes de alta incertidumbre (RANGE, CRASH)
-- Cálculo automático de tamaño de posición basado en distancia al stop loss
+**1. Position Sizing Agnóstico y Auto-Ajustable**
+- **Riesgo Dinámico**: El riesgo por operación (`risk_per_trade`) no es estático. Se carga desde `config/dynamic_params.json`, permitiendo que el **`tuner.py`** lo modifique basándose en el análisis del rendimiento histórico almacenado en `data_vault`.
+- **Cálculo Agnóstico**: El tamaño de la posición se calcula de forma universal, aceptando un `point_value` explícito. Esto permite que funcione igual para un lote de Forex (valor por pip) que para un contrato de Futuros (valor por punto) sin cambiar la lógica.
+- **Reducción por Régimen**: El riesgo se reduce automáticamente a la mitad en regímenes de alta incertidumbre (RANGE, CRASH).
 
-**2. Lockdown Mode**
-- Activación automática tras 3 pérdidas consecutivas
-- Bloqueo total de nuevas operaciones hasta revisión manual
-- Reset automático del contador tras operación ganadora
+**2. Lockdown Mode Persistente**
+- **Activación**: Se activa automáticamente tras un número configurable de pérdidas consecutivas (leído desde `dynamic_params.json`).
+- **Persistencia**: Al activarse o desactivarse, el estado de `Lockdown` **se escribe inmediatamente en la base de datos** (`data_vault`) a través del `StorageManager`.
+- **Recuperación Autónoma**: Si el sistema se reinicia, el `RiskManager` **recupera el estado de Lockdown desde la base de datos** al inicializarse. Esto garantiza que el sistema permanezca en modo seguro aunque haya un fallo o reinicio, cumpliendo el principio de Independencia.
 
-**3. Tracking de Capital**
-- Actualización en tiempo real del capital disponible
-- Registro de todas las operaciones (ganadoras/perdedoras)
-- Cálculo de pérdidas consecutivas
+**3. Resiliencia de Datos**
+- Adopta una postura defensiva (tamaño de posición `0`) si el régimen de mercado llega como `None`, evitando fallos por datos inesperados.
 
 #### Métodos Principales
 
 ```python
-RiskManager.calculate_position_size()  # Calcula tamaño de posición
-RiskManager.get_current_risk_pct()     # Obtiene % de riesgo por régimen
-RiskManager.record_trade_result()      # Registra resultado de operación
-RiskManager.can_trade()                # Verifica si trading está permitido
-RiskManager.unlock()                   # Desbloqueo manual del lockdown
-RiskManager.get_status()               # Estado completo del risk manager
+RiskManager.calculate_position_size(account_balance, stop_loss_distance, point_value, current_regime)
+RiskManager.record_trade_result()      # Registra resultado y actualiza estado de lockdown
+RiskManager._activate_lockdown()       # Activa y persiste el lockdown
+RiskManager._deactivate_lockdown()     # Desactiva y persiste el lockdown
 ```
 
 #### Reglas de Riesgo
 
-| Régimen | Risk % | Lógica |
-|---------|--------|--------|
-| **TREND** | 1.0% | Condiciones óptimas, riesgo base |
-| **NEUTRAL** | 1.0% | Riesgo base |
-| **RANGE** | 0.5% | Alta incertidumbre, riesgo reducido |
-| **CRASH** | 0.5% | Volatilidad extrema, riesgo reducido |
+| Régimen | Multiplicador de Riesgo | Lógica |
+|---------|-------------------------|--------|
+| **TREND** | 1.0x | Condiciones óptimas, riesgo base |
+| **NEUTRAL** | 1.0x | Riesgo base |
+| **RANGE** | 0.5x | Alta incertidumbre, riesgo reducido |
+| **CRASH** | 0.5x | Volatilidad extrema, riesgo reducido |
 
-**Fórmula Position Sizing**:
+**Fórmula de Position Sizing (Agnóstica)**:
 ```
-Risk Amount = Capital × (Risk % / 100)
-Position Size = Risk Amount / |Entry Price - Stop Loss|
+# Risk per trade es cargado dinámicamente
+RiskAmount = AccountBalance * risk_per_trade * RegimeMultiplier
+ValueAtRisk = StopLossDistance * PointValue
+PositionSize = RiskAmount / ValueAtRisk
 ```
 
 #### Protección Lockdown
 
 **Activación**:
-- 3 pérdidas consecutivas → Lockdown activado
-- `can_trade()` retorna `False`
-- `calculate_position_size()` retorna `0`
+- `N` pérdidas consecutivas → Lockdown activado.
+- El estado `{'lockdown_mode': True}` se guarda en la base de datos.
+- `calculate_position_size()` retorna `0`.
 
 **Desactivación**:
-- 1 operación ganadora → Reset automático del contador
-- `unlock()` manual → Reset completo del estado
+- Manual o por reglas custom (ej. 1 operación ganadora).
+- El estado `{'lockdown_mode': False}` se actualiza en la base de datos.
 
-#### Tests Implementados (21/21 ✅)
+#### Tests Implementados (Suite TDD Completa)
 
 **Test Suite** (`tests/test_risk_manager.py`):
-- ✅ Inicialización con parámetros por defecto y personalizados
-- ✅ Cálculo de position size en todos los regímenes
-- ✅ Reducción de riesgo en RANGE/CRASH (0.5%)
-- ✅ Validación de stop loss inválido
-- ✅ Activación de lockdown tras 3 pérdidas
-- ✅ Reset de contador tras victoria
-- ✅ Bloqueo de trading en lockdown mode
-- ✅ Desbloqueo manual
-- ✅ Actualización de capital tras operaciones
-- ✅ Validación de estado y reportes
-
-**Archivos**:
-- `core_brain/risk_manager.py`: Implementación completa (180 líneas)
-- `tests/test_risk_manager.py`: Suite TDD completa (21 tests)
+- ✅ **Agnosticismo**: Cálculo correcto para Futuros (puntos) y Forex (pips).
+- ✅ **Auto-Ajuste**: Carga correcta del `risk_per_trade` desde `dynamic_params.json`.
+- ✅ **Persistencia de Lockdown**: Verifica que el estado de lockdown se recupera al instanciar un nuevo `RiskManager`.
+- ✅ **Resiliencia**: Devuelve `0` si el régimen es `None`.
+- ✅ Activación de lockdown tras N pérdidas.
+- ✅ Reducción de riesgo en RANGE/CRASH.
+- ✅ Actualización de capital y estado general.
 
 ---
 
