@@ -640,6 +640,88 @@ SignalFactory._is_near_sma20()         # Verifica proximidad SMA
 - `example_live_system.py`: Sistema integrado Scanner + Signal Factory + MT5
 - `test_signal_factory.py`: Suite de tests del scoring
 
+---
+
+### Risk Manager - Gestión de Riesgo Dinámica ✅ IMPLEMENTADO (Enero 2026)
+
+**Estado**: ✅ Implementado y testeado en `core_brain/risk_manager.py`
+
+Módulo de gestión de riesgo que implementa position sizing dinámico, reducción de riesgo en regímenes volátiles y protección mediante lockdown mode.
+
+#### Características Principales
+
+**1. Position Sizing Adaptivo**
+- **Base Risk**: 1% del capital por operación en condiciones normales (TREND, NEUTRAL)
+- **Reduced Risk**: 0.5% del capital en regímenes de alta incertidumbre (RANGE, CRASH)
+- Cálculo automático de tamaño de posición basado en distancia al stop loss
+
+**2. Lockdown Mode**
+- Activación automática tras 3 pérdidas consecutivas
+- Bloqueo total de nuevas operaciones hasta revisión manual
+- Reset automático del contador tras operación ganadora
+
+**3. Tracking de Capital**
+- Actualización en tiempo real del capital disponible
+- Registro de todas las operaciones (ganadoras/perdedoras)
+- Cálculo de pérdidas consecutivas
+
+#### Métodos Principales
+
+```python
+RiskManager.calculate_position_size()  # Calcula tamaño de posición
+RiskManager.get_current_risk_pct()     # Obtiene % de riesgo por régimen
+RiskManager.record_trade_result()      # Registra resultado de operación
+RiskManager.can_trade()                # Verifica si trading está permitido
+RiskManager.unlock()                   # Desbloqueo manual del lockdown
+RiskManager.get_status()               # Estado completo del risk manager
+```
+
+#### Reglas de Riesgo
+
+| Régimen | Risk % | Lógica |
+|---------|--------|--------|
+| **TREND** | 1.0% | Condiciones óptimas, riesgo base |
+| **NEUTRAL** | 1.0% | Riesgo base |
+| **RANGE** | 0.5% | Alta incertidumbre, riesgo reducido |
+| **CRASH** | 0.5% | Volatilidad extrema, riesgo reducido |
+
+**Fórmula Position Sizing**:
+```
+Risk Amount = Capital × (Risk % / 100)
+Position Size = Risk Amount / |Entry Price - Stop Loss|
+```
+
+#### Protección Lockdown
+
+**Activación**:
+- 3 pérdidas consecutivas → Lockdown activado
+- `can_trade()` retorna `False`
+- `calculate_position_size()` retorna `0`
+
+**Desactivación**:
+- 1 operación ganadora → Reset automático del contador
+- `unlock()` manual → Reset completo del estado
+
+#### Tests Implementados (21/21 ✅)
+
+**Test Suite** (`tests/test_risk_manager.py`):
+- ✅ Inicialización con parámetros por defecto y personalizados
+- ✅ Cálculo de position size en todos los regímenes
+- ✅ Reducción de riesgo en RANGE/CRASH (0.5%)
+- ✅ Validación de stop loss inválido
+- ✅ Activación de lockdown tras 3 pérdidas
+- ✅ Reset de contador tras victoria
+- ✅ Bloqueo de trading en lockdown mode
+- ✅ Desbloqueo manual
+- ✅ Actualización de capital tras operaciones
+- ✅ Validación de estado y reportes
+
+**Archivos**:
+- `core_brain/risk_manager.py`: Implementación completa (180 líneas)
+- `tests/test_risk_manager.py`: Suite TDD completa (21 tests)
+
+---
+
 ### Estrategias de Oliver Vélez
 
 #### Activación por Régimen

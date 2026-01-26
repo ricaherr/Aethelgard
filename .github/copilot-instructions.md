@@ -32,3 +32,11 @@ Sistema autónomo, proactivo y agnóstico de trading multihilo. Capacidad de aut
 - Risk per trade: 1% del capital
 - Régimen VOLATILE/RANGE: reducir a 0.5%
 - 3 pérdidas consecutivas = Lockdown mode
+
+## Flujo de Trabajo (Workflow)
+1. Definir requerimientos técnicos.
+2. Crear archivo de test en `tests/`.
+3. Ejecutar test (debe fallar).
+4. Implementar código mínimo en `core_brain/`.
+5. Ejecutar test (debe pasar).
+6. Actualizar `AETHELGARD_MANIFESTO.md`.
