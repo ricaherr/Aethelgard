@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Optional, Any
+from typing import Optional, Any, Dict
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -10,13 +10,33 @@ class ConnectorType(Enum):
     NINJATRADER8 = "NINJATRADER8"
     GENERIC = "GENERIC"
 
+class SignalType(Enum):
+    """Define los tipos de señales de trading."""
+    BUY = "BUY"
+    SELL = "SELL"
+    HOLD = "HOLD"
+    CLOSE = "CLOSE"
+    MODIFY = "MODIFY"
+
+class MembershipTier(Enum):
+    """Define los niveles de membresía de usuarios."""
+    BASIC = "BASIC"
+    PREMIUM = "PREMIUM"
+    VIP = "VIP"
+
 @dataclass
 class Signal:
     """Representa una señal de trading generada por un scanner."""
     symbol: str
     signal_type: str  # 'BUY', 'SELL', 'HOLD'
     confidence: float
-    # ... otros campos relevantes
+    connector_type: ConnectorType  # Tipo de conector a usar
+    entry_price: float = 0.0  # Precio de entrada sugerido
+    stop_loss: float = 0.0  # Stop loss en precio
+    take_profit: float = 0.0  # Take profit en precio
+    volume: float = 0.01  # Volumen/tamaño de posición
+    timestamp: datetime = field(default_factory=datetime.now)
+    metadata: Dict[str, Any] = field(default_factory=dict)  # Información adicional
     
 @dataclass
 class SignalResult:

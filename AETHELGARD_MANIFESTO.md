@@ -60,24 +60,38 @@ Crear un **cerebro centralizado** que:
 Aethelgard utiliza una arquitectura **Hub-and-Spoke** donde el **Core Brain** (Python) actúa como el centro de control, y los **Conectores** se comunican con él mediante WebSockets.
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                      CORE BRAIN (Hub)                            │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
-│  │   Server     │  │   Regime     │  │   Storage    │           │
-│  │  (FastAPI)   │  │ Classifier   │  │  (SQLite)    │           │
-│  └──────────────┘  └──────────────┘  └──────────────┘           │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
-│  │   Tuner      │  │   Strategies │  │   Scanner    │           │
-│  │ (Auto-Calib) │  │   (Modular)  │  │ (Proactivo)  │           │
-│  └──────────────┘  └──────────────┘  └──────┬───────┘           │
-└─────────────────────────────────────────────┼───────────────────┘
-         │              │              │      │
-         │ WebSocket    │ WebSocket    │ HTTP │ DataProvider
-         │              │              │      │ (OHLC)
-    ┌────▼────┐    ┌────▼────┐    ┌────▼────┐ │
-    │   NT8   │    │   MT5   │    │   TV    │ │    ┌─────────────┐
-    │ Bridge  │    │ Bridge  │    │Webhook  │ └────│ MT5 Data    │
-    └─────────┘    └─────────┘    └─────────┘      │ Provider    │
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         CORE BRAIN (Hub)                                 │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                   │
+│  │   Server     │  │   Regime     │  │   Storage    │                   │
+│  │  (FastAPI)   │  │ Classifier   │  │  (SQLite)    │                   │
+│  └──────────────┘  └──────────────┘  └──────────────┘                   │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌─────────────┐ │
+│  │   Tuner      │  │ SignalFactory│  │   Scanner    │  │ RiskManager │ │
+│  │ (Auto-Calib) │  │ (Strategies) │  │ (Proactivo)  │  │  (Escudo)   │ │
+│  └──────────────┘  └──────┬───────┘  └──────┬───────┘  └──────┬──────┘ │
+│                           │                  │                 │        │
+│                           ▼                  ▼                 ▼        │
+│                    ┌──────────────────────────────────────────────┐    │
+│                    │          OrderExecutor (Cerebro)             │    │
+│                    │  • Validación RiskManager                    │    │
+│                    │  • Factory Pattern (Routing)                 │    │
+│                    │  • Resiliencia ante fallos                   │    │
+│                    │  • Audit Trail + Telegram                    │    │
+│                    └─────────────────┬────────────────────────────┘    │
+└──────────────────────────────────────┼─────────────────────────────────┘
+                                       │
+                     ┌─────────────────┼─────────────────┐
+                     │                 │                 │
+                 WebSocket        WebSocket         HTTP/DataProvider
+                     │                 │                 │
+                ┌────▼────┐       ┌────▼────┐      ┌────▼────┐
+                │   NT8   │       │   MT5   │      │   TV    │       ┌─────────────┐
+                │ Bridge  │       │ Bridge  │      │Webhook  │───────│ MT5 Data    │
+                └─────────┘       └─────────┘      └─────────┘       │ Provider    │
+                                                                      │(copy_rates) │
+                                                                      └─────────────┘
+```
                                                     │(copy_rates) │
                                                     └─────────────┘
 ```
@@ -713,6 +727,189 @@ PositionSize = RiskAmount / ValueAtRisk
 
 ---
 
+### Order Executor - Ejecución de Señales con Validación y Resiliencia ✅ IMPLEMENTADO (Enero 2026, v1.0)
+
+**Estado**: ✅ Implementado siguiendo TDD con suite completa de tests.
+
+Módulo de ejecución de órdenes que actúa como el **brazo ejecutor** de Aethelgard. Valida señales con RiskManager, enruta a conectores usando Factory Pattern, y maneja fallos con resiliencia.
+
+#### Características Principales
+
+**1. Validación por RiskManager**
+- **Última Verificación**: Antes de enviar cualquier orden, consulta `RiskManager.is_locked()`.
+- **Bloqueo Automático**: Si el sistema está en lockdown, rechaza la señal y registra el intento en `data_vault` como `REJECTED_LOCKDOWN`.
+- **Retorno Explícito**: `execute_signal()` retorna `False` cuando la señal es bloqueada.
+
+**2. Factory Pattern para Conectores (Agnosticismo)**
+- **Routing Dinámico**: Basado en el `ConnectorType` de la señal, delega la ejecución al conector apropiado:
+  - `ConnectorType.METATRADER5` → `mt5_connector`
+  - `ConnectorType.NINJATRADER8` → `nt8_connector`
+  - `ConnectorType.WEBHOOK` → `webhook_connector`
+- **Independencia del Core**: El `OrderExecutor` no importa librerías de brokers, mantiene el cerebro agnóstico.
+- **Manejo de Conectores Faltantes**: Si un conector no está configurado, rechaza la señal con notificación.
+
+**3. Resiliencia ante Fallos de Conexión**
+- **Captura de Errores**: Captura `ConnectionError` y excepciones generales del conector.
+- **Registro en Data Vault**: Marca señales fallidas como `REJECTED_CONNECTION` en la base de datos.
+- **Notificación Inmediata a Telegram**: Envía alerta urgente con detalles del fallo:
+  - Símbolo
+  - Acción (BUY/SELL)
+  - Conector que falló
+  - Mensaje de error
+  - Timestamp
+
+**4. Audit Trail Completo**
+- **Estado PENDING**: Registra cada señal como `PENDING` antes de ejecutar.
+- **Estado EXECUTED**: Marca señales exitosas con `order_id` del broker.
+- **Estado REJECTED**: Guarda motivo de rechazo (LOCKDOWN, INVALID_DATA, CONNECTION).
+
+**5. Validación de Datos (Seguridad)**
+- Verifica campos requeridos (`symbol`, `signal_type`, `connector_type`).
+- Valida `confidence` en rango [0.0, 1.0].
+- Rechaza `signal_type` inválidos (solo BUY, SELL, HOLD).
+
+#### Métodos Principales
+
+```python
+OrderExecutor.execute_signal(signal: Signal) -> bool
+    # Flujo completo: validar → checkear lockdown → registrar PENDING → 
+    # enrutar a conector → manejar fallo → notificar
+
+OrderExecutor._validate_signal(signal: Signal) -> bool
+    # Validación de datos de entrada
+
+OrderExecutor._get_connector(connector_type: ConnectorType) -> Optional[Connector]
+    # Factory Pattern: retorna el conector apropiado
+
+OrderExecutor._register_pending_signal(signal: Signal)
+    # Registra señal con estado PENDING en data_vault
+
+OrderExecutor._handle_connector_failure(signal: Signal, error_message: str)
+    # Maneja fallos: registra REJECTED_CONNECTION + notifica Telegram
+
+OrderExecutor.get_status() -> Dict
+    # Retorna estado: conectores disponibles, lockdown, notificaciones
+```
+
+#### Flujo de Ejecución
+
+```
+┌─────────────────┐
+│  Signal Input   │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────────────┐
+│  Validate Signal Data   │ ◄─── Seguridad: validar todas las entradas externas
+└────────┬────────────────┘
+         │
+         ▼
+┌──────────────────────────┐
+│ RiskManager.is_locked()? │ ◄─── Última consulta antes de ejecutar
+└────┬────────────┬────────┘
+     │ YES        │ NO
+     │            │
+     ▼            ▼
+┌──────────┐  ┌─────────────────┐
+│ REJECTED │  │ Register PENDING│ ◄─── Audit trail
+│ Return   │  └────────┬────────┘
+│ False    │           │
+└──────────┘           ▼
+              ┌────────────────────┐
+              │ Factory: Get       │ ◄─── Agnosticismo
+              │ Connector by Type  │
+              └────────┬───────────┘
+                       │
+                       ▼
+              ┌─────────────────────┐
+              │ connector.execute() │
+              └────┬────────┬───────┘
+                   │ SUCCESS│ FAIL
+                   │        │
+                   ▼        ▼
+         ┌──────────┐  ┌────────────────────┐
+         │ EXECUTED │  │ REJECTED_CONNECTION│ ◄─── Resiliencia
+         │ Return   │  │ + Telegram Alert   │
+         │ True     │  │ Return False       │
+         └──────────┘  └────────────────────┘
+```
+
+#### Tests Implementados (Suite TDD Completa)
+
+**Test Suite** (`tests/test_executor.py`):
+1. ✅ **Bloqueo por RiskManager**: Verifica que `execute_signal()` retorna `False` cuando `is_locked() == True` y registra intento fallido.
+2. ✅ **Envío Exitoso**: Señal enviada correctamente cuando RiskManager permite.
+3. ✅ **Factory Pattern**: Enrutamiento correcto a MT5 y NT8 según `ConnectorType`.
+4. ✅ **Resiliencia ante Fallos**: Maneja `ConnectionError`, registra como `REJECTED_CONNECTION`, notifica a Telegram.
+5. ✅ **Registro PENDING**: Verifica que cada señal se marca como `PENDING` antes de ejecutar.
+6. ✅ **Conectores Faltantes**: Maneja conectores no configurados sin crashear.
+7. ✅ **Validación de Datos**: Rechaza señales con `confidence` inválida o campos faltantes.
+
+**Ejecución de Tests:**
+```bash
+.\venv\Scripts\python.exe -m pytest tests/test_executor.py -v
+# ====================== 7 passed in 1.01s ======================
+```
+
+#### Ejemplo de Uso
+
+```python
+from core_brain.executor import OrderExecutor
+from core_brain.risk_manager import RiskManager
+from core_brain.notificator import TelegramNotifier
+from models.signal import Signal, ConnectorType
+
+# Setup
+risk_manager = RiskManager(initial_capital=10000)
+notificator = TelegramNotifier(bot_token="...", basic_chat_id="...")
+
+# Conectores (configurados externamente)
+from connectors.bridge_mt5 import MT5Bridge
+mt5_bridge = MT5Bridge(symbol="EURUSD", auto_execute=True)
+
+connectors = {
+    ConnectorType.METATRADER5: mt5_bridge
+}
+
+# Executor
+executor = OrderExecutor(
+    risk_manager=risk_manager,
+    notificator=notificator,
+    connectors=connectors
+)
+
+# Señal de entrada
+signal = Signal(
+    symbol="EURUSD",
+    signal_type="BUY",
+    confidence=0.85,
+    connector_type=ConnectorType.METATRADER5,
+    entry_price=1.1050,
+    stop_loss=1.1000,
+    take_profit=1.1150,
+    volume=0.01
+)
+
+# Ejecutar
+success = executor.execute_signal(signal)
+if success:
+    print("✅ Orden ejecutada")
+else:
+    print("❌ Orden rechazada (lockdown o fallo de conexión)")
+```
+
+#### Integración con Sistema Completo
+
+El `OrderExecutor` se integra en el flujo principal de Aethelgard:
+
+```
+Scanner → Signal Factory → RiskManager (sizing) → OrderExecutor → Connector → Broker
+   ↓            ↓                ↓                      ↓             ↓          ↓
+DataVault   DataVault       DataVault             DataVault     WebSocket   Order
+```
+
+---
+
 ### Estrategias de Oliver Vélez
 
 #### Activación por Régimen
@@ -809,13 +1006,22 @@ Aethelgard/
 │   ├── scanner.py           # Escáner proactivo multihilo (CPUMonitor, ScannerEngine)
 │   ├── regime.py            # RegimeClassifier + load_ohlc
 │   ├── server.py            # FastAPI + WebSockets
-│   └── tuner.py             # Auto-calibración
+│   ├── tuner.py             # Auto-calibración
+│   ├── risk_manager.py      # Gestión de riesgo agnóstica + Lockdown persistente
+│   ├── executor.py          # Ejecución de órdenes con Factory Pattern + Resiliencia
+│   ├── signal_factory.py    # Generación de señales (Oliver Vélez)
+│   ├── notificator.py       # Notificaciones Telegram
+│   └── module_manager.py    # Gestión de membresías
 ├── connectors/
 │   ├── mt5_data_provider.py # OHLC vía copy_rates_from_pos (sin gráficas)
 │   ├── bridge_mt5.py        # Bridge WebSocket MT5 → Aethelgard
 │   └── ...
 ├── data_vault/              # Persistencia SQLite
 ├── models/                  # Modelos de datos (Signal, MarketRegime, etc.)
+├── tests/                   # Tests TDD
+│   ├── test_risk_manager.py # Suite RiskManager (7 tests)
+│   ├── test_executor.py     # Suite OrderExecutor (7 tests)
+│   └── test_signal_factory.py # Suite SignalFactory
 ├── run_scanner.py           # Entrypoint del escáner proactivo
 ├── test_scanner_mock.py     # Test del escáner con mock (sin MT5)
 ├── strategies/              # Estrategias modulares (por crear)

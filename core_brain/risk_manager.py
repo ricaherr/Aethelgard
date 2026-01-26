@@ -153,6 +153,15 @@ class RiskManager:
         if regime in volatile_regimes:
             return 0.5 # Reduce el riesgo a la mitad en mercados volátiles/inciertos
         return 1.0 # Riesgo normal
+    
+    def is_locked(self) -> bool:
+        """
+        Check if trading is locked due to lockdown mode.
+        
+        Returns:
+            True if in lockdown mode, False otherwise
+        """
+        return self.lockdown_mode
 
     def get_status(self) -> Dict:
         """Get current risk manager status."""
