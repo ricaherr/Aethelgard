@@ -38,7 +38,7 @@ class SessionStats:
     Tracks session statistics for the current trading day.
     Resets automatically when a new day begins.
     """
-    date: date = field(default_factory=date.today)
+    date: date = field(default_factory=lambda: date.today())
     signals_processed: int = 0
     signals_executed: int = 0
     cycles_completed: int = 0
@@ -329,7 +329,7 @@ class MainOrchestrator:
                     "errors_count": self.stats.errors_count
                 }
             }
-            self.storage.save_system_state(system_state)
+            self.storage.update_system_state(system_state)
             
             # Close broker connections (if connectors have cleanup methods)
             if hasattr(self.executor, 'close_connections'):
