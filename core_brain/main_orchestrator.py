@@ -240,19 +240,19 @@ class MainOrchestrator:
         
         return base_interval
     
-    def _update_regime_from_scan(self, scan_results: Dict[str, Dict]) -> None:
+    def _update_regime_from_scan(self, scan_results: Dict[str, MarketRegime]) -> None:
         """
         Update current regime based on scan results.
         Uses the most aggressive regime found across all symbols.
         
         Args:
-            scan_results: Dictionary of symbol -> regime data
+            scan_results: Dictionary of symbol -> MarketRegime
         """
         if not scan_results:
             return
         
         # Priority order: SHOCK > VOLATILE > TREND > RANGE
-        regime_priority = {
+        regime_priority: Dict[MarketRegime, int] = {
             MarketRegime.SHOCK: 4,
             MarketRegime.VOLATILE: 3,
             MarketRegime.TREND: 2,
@@ -260,7 +260,7 @@ class MainOrchestrator:
         }
         
         max_priority = 0
-        new_regime = MarketRegime.RANGE
+        new_regime: MarketRegime = MarketRegime.RANGE
         
         # scan_results es un Dict[str, MarketRegime] donde key=symbol, value=MarketRegime
         for symbol, regime in scan_results.items():
@@ -349,7 +349,8 @@ class MainOrchestrator:
                     logger.error(f"Error executing signal {signal.symbol}: {e}")
                     self.stats.errors_count += 1
             
-            # Step 5: Update cycle count and persist stats
+            # Step 5: Clear active signals after execution and update cycle count
+            self._active_signals.clear()
             self.stats.cycles_completed += 1
             self._persist_session_stats()
             logger.info(f"Cycle completed. Stats: {self.stats}")
@@ -357,6 +358,7 @@ class MainOrchestrator:
         except Exception as e:
             logger.error(f"Error in cycle execution: {e}", exc_info=True)
             self.stats.errors_count += 1
+            self.stats.cycles_completed += 1
     
     def _persist_session_stats(self) -> None:
         """

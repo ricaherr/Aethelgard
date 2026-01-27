@@ -23,9 +23,10 @@ from models.signal import MarketRegime, Signal, SignalType, ConnectorType, Membe
 def mock_scanner():
     """Mock ScannerEngine that returns predictable regime data"""
     scanner = MagicMock()
-    scanner.scan_all_symbols = AsyncMock(return_value={
-        "EURUSD": {"regime": MarketRegime.BULL, "atr": 0.0015},
-        "GBPUSD": {"regime": MarketRegime.RANGE, "atr": 0.0020}
+    # Usar get_scan_results_with_data para compatibilidad con la implementación real
+    scanner.get_scan_results_with_data = MagicMock(return_value={
+        "EURUSD": {"regime": MarketRegime.TREND, "atr": 0.0015, "df": MagicMock()},
+        "GBPUSD": {"regime": MarketRegime.RANGE, "atr": 0.0020, "df": MagicMock()}
     })
     return scanner
 
@@ -46,7 +47,7 @@ def mock_signal_factory():
         take_profit=1.0950
     )
     
-    factory.process_scan_results = AsyncMock(return_value=[test_signal])
+    factory.generate_signals_batch = AsyncMock(return_value=[test_signal])
     return factory
 
 
@@ -82,6 +83,21 @@ def temp_config(tmp_path):
     config_file = tmp_path / "config.json"
     config_file.write_text(json.dumps(config_data))
     return str(config_file)
+
+
+@pytest.fixture
+def temp_storage(tmp_path):
+    """Create temporary isolated storage for each test"""
+    from data_vault.storage import StorageManager
+    import tempfile
+    
+    # Create unique temp DB file for this test
+    db_file = tmp_path / f"test_db_{id(tmp_path)}.json"
+    storage = StorageManager(db_path=str(db_file))
+    
+    yield storage
+    
+    # Cleanup is automatic with tmp_path
 
 
 class TestSessionStats:
@@ -131,7 +147,8 @@ class TestMainOrchestrator:
         mock_signal_factory, 
         mock_risk_manager, 
         mock_executor,
-        temp_config
+        temp_config,
+        temp_storage
     ):
         """Test single complete cycle: Scan -> Signal -> Risk -> Execute"""
         orchestrator = MainOrchestrator(
@@ -139,6 +156,7 @@ class TestMainOrchestrator:
             signal_factory=mock_signal_factory,
             risk_manager=mock_risk_manager,
             executor=mock_executor,
+            storage=temp_storage,
             config_path=temp_config
         )
         
@@ -146,8 +164,8 @@ class TestMainOrchestrator:
         await orchestrator.run_single_cycle()
         
         # Verify the complete chain was executed
-        mock_scanner.scan_all_symbols.assert_called_once()
-        mock_signal_factory.process_scan_results.assert_called_once()
+        mock_scanner.get_scan_results_with_data.assert_called_once()
+        mock_signal_factory.generate_signals_batch.assert_called_once()
         mock_executor.execute_signal.assert_called_once()
         
         # Verify stats were updated
@@ -161,19 +179,24 @@ class TestMainOrchestrator:
         mock_signal_factory,
         mock_risk_manager,
         mock_executor,
-        temp_config
+        temp_config,
+        temp_storage
     ):
         """Test loop runs faster in TREND regime"""
         # Configure scanner to return TREND regime
-        mock_scanner.scan_all_symbols = AsyncMock(return_value={
-            "EURUSD": {"regime": MarketRegime.TREND, "atr": 0.0015}
+        mock_scanner.get_scan_results_with_data = MagicMock(return_value={
+            "EURUSD": {"regime": MarketRegime.TREND, "atr": 0.0015, "df": MagicMock()}
         })
+        
+        # Configure signal factory to return no signals (so _active_signals is empty)
+        mock_signal_factory.generate_signals_batch = AsyncMock(return_value=[])
         
         orchestrator = MainOrchestrator(
             scanner=mock_scanner,
             signal_factory=mock_signal_factory,
             risk_manager=mock_risk_manager,
             executor=mock_executor,
+            storage=temp_storage,
             config_path=temp_config
         )
         
@@ -193,19 +216,24 @@ class TestMainOrchestrator:
         mock_signal_factory,
         mock_risk_manager,
         mock_executor,
-        temp_config
+        temp_config,
+        temp_storage
     ):
         """Test loop runs slower in RANGE regime"""
         # Configure scanner to return RANGE regime
-        mock_scanner.scan_all_symbols = AsyncMock(return_value={
-            "EURUSD": {"regime": MarketRegime.RANGE, "atr": 0.0015}
+        mock_scanner.get_scan_results_with_data = MagicMock(return_value={
+            "EURUSD": {"regime": MarketRegime.RANGE, "atr": 0.0015, "df": MagicMock()}
         })
+        
+        # Configure signal factory to return no signals (so _active_signals is empty)
+        mock_signal_factory.generate_signals_batch = AsyncMock(return_value=[])
         
         orchestrator = MainOrchestrator(
             scanner=mock_scanner,
             signal_factory=mock_signal_factory,
             risk_manager=mock_risk_manager,
             executor=mock_executor,
+            storage=temp_storage,
             config_path=temp_config
         )
         
@@ -228,6 +256,9 @@ class TestMainOrchestrator:
         temp_config
     ):
         """Test graceful shutdown saves state before exiting"""
+        # Mock executor close_connections as async
+        mock_executor.close_connections = AsyncMock()
+        
         orchestrator = MainOrchestrator(
             scanner=mock_scanner,
             signal_factory=mock_signal_factory,
@@ -238,13 +269,13 @@ class TestMainOrchestrator:
         
         # Mock storage save method
         orchestrator.storage = MagicMock()
-        orchestrator.storage.save_system_state = MagicMock()
+        orchestrator.storage.update_system_state = MagicMock()
         
         # Trigger shutdown
         await orchestrator.shutdown()
         
         # Verify state was saved
-        orchestrator.storage.save_system_state.assert_called_once()
+        orchestrator.storage.update_system_state.assert_called_once()
         assert orchestrator._shutdown_requested is True
     
     @pytest.mark.asyncio
@@ -272,8 +303,8 @@ class TestMainOrchestrator:
         await orchestrator.run_single_cycle()
         
         # Scanner and signal factory should run
-        mock_scanner.scan_all_symbols.assert_called_once()
-        mock_signal_factory.process_scan_results.assert_called_once()
+        mock_scanner.get_scan_results_with_data.assert_called_once()
+        mock_signal_factory.generate_signals_batch.assert_called_once()
         
         # But executor should NOT be called due to lockdown
         mock_executor.execute_signal.assert_not_called()
@@ -285,14 +316,35 @@ class TestMainOrchestrator:
         mock_signal_factory,
         mock_risk_manager,
         mock_executor,
-        temp_config
+        temp_config,
+        temp_storage
     ):
         """Test SessionStats are maintained across cycles"""
+        # Create function that returns a new signal each time (avoiding caching issues)
+        def create_signal():
+            return [Signal(
+                symbol="EURUSD",
+                signal_type="BUY",
+                confidence=0.85,
+                connector_type=ConnectorType.METATRADER5,
+                entry_price=1.0850,
+                stop_loss=1.0800,
+                take_profit=1.0950
+            )]
+        
+        # Use side_effect to return fresh signals each call
+        mock_signal_factory.generate_signals_batch = AsyncMock(side_effect=[
+            create_signal(),
+            create_signal(),
+            create_signal()
+        ])
+        
         orchestrator = MainOrchestrator(
             scanner=mock_scanner,
             signal_factory=mock_signal_factory,
             risk_manager=mock_risk_manager,
             executor=mock_executor,
+            storage=temp_storage,
             config_path=temp_config
         )
         
@@ -302,7 +354,7 @@ class TestMainOrchestrator:
         
         # Verify stats accumulated
         assert orchestrator.stats.cycles_completed == 3
-        assert orchestrator.stats.signals_processed >= 3
+        assert orchestrator.stats.signals_processed == 3  # 1 signal per cycle x 3 cycles
     
     @pytest.mark.asyncio
     async def test_error_handling_continues_loop(
@@ -315,8 +367,11 @@ class TestMainOrchestrator:
     ):
         """Test loop continues after error in one component"""
         # Configure scanner to fail once then succeed
-        mock_scanner.scan_all_symbols = AsyncMock(
-            side_effect=[Exception("Network error"), {"EURUSD": {"regime": MarketRegime.BULL, "atr": 0.0015}}]
+        mock_scanner.get_scan_results_with_data = MagicMock(
+            side_effect=[
+                Exception("Network error"), 
+                {"EURUSD": {"regime": MarketRegime.TREND, "atr": 0.0015, "df": MagicMock()}}
+            ]
         )
         
         orchestrator = MainOrchestrator(
@@ -334,7 +389,7 @@ class TestMainOrchestrator:
         await orchestrator.run_single_cycle()
         
         # Verify second call was made despite first error
-        assert mock_scanner.scan_all_symbols.call_count == 2
+        assert mock_scanner.get_scan_results_with_data.call_count == 2
     
     @pytest.mark.asyncio
     async def test_daily_stats_reset(
@@ -343,7 +398,8 @@ class TestMainOrchestrator:
         mock_signal_factory,
         mock_risk_manager,
         mock_executor,
-        temp_config
+        temp_config,
+        temp_storage
     ):
         """Test stats reset when day changes"""
         orchestrator = MainOrchestrator(
@@ -351,6 +407,7 @@ class TestMainOrchestrator:
             signal_factory=mock_signal_factory,
             risk_manager=mock_risk_manager,
             executor=mock_executor,
+            storage=temp_storage,
             config_path=temp_config
         )
         

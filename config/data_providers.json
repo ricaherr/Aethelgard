@@ -1,9 +1,9 @@
 {
   "yahoo": {
     "name": "yahoo",
-    "enabled": true,
+    "enabled": false,
     "requires_auth": false,
-    "priority": 100,
+    "priority": 10,
     "free_tier": true,
     "api_key": null,
     "api_secret": null,
@@ -25,9 +25,9 @@
     "name": "alphavantage",
     "enabled": false,
     "requires_auth": true,
-    "priority": 80,
+    "priority": 5,
     "free_tier": true,
-    "api_key": null,
+    "api_key": "test_key",
     "api_secret": null,
     "additional_config": {
       "rate_limit_per_day": 500
