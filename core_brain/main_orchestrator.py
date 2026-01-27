@@ -7,15 +7,21 @@ Orchestrates the complete trading cycle: Scan -> Signal -> Risk -> Execute.
 Key Features:
 - Asynchronous event loop for non-blocking operation
 - Dynamic frequency adjustment based on market regime
-- Session statistics tracking
+- Session statistics with DB reconstruction (Resilient Recovery)
+- Adaptive heartbeat (faster when signals active)
 - Graceful shutdown with state persistence
 - Error resilience with automatic recovery
 
 Principles Applied:
-- Autonomy: Self-regulating loop frequency
-- Resilience: Continues operation on component failures
+- Autonomy: Self-regulating loop frequency + adaptive heartbeat
+- Resilience: Reconstructs session state from DB after restart
 - Agnosticism: Works with any injected components
 - Security: Persists critical state before shutdown
+
+Architecture: "Orquestador Resiliente"
+- SessionStats se reconstruye desde la DB al iniciar
+- Latido de Guardia: sleep se reduce si hay señales activas
+- Persistencia completa de trades ejecutados del día
 """
 import asyncio
 import json
@@ -24,7 +30,7 @@ import signal
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, List
 
 from models.signal import MarketRegime, Signal
 from data_vault.storage import StorageManager
@@ -37,12 +43,63 @@ class SessionStats:
     """
     Tracks session statistics for the current trading day.
     Resets automatically when a new day begins.
+    
+    RESILIENCIA: Can reconstruct state from database on initialization.
+    This ensures trades executed today are not forgotten after restarts.
     """
     date: date = field(default_factory=lambda: date.today())
     signals_processed: int = 0
     signals_executed: int = 0
     cycles_completed: int = 0
     errors_count: int = 0
+    
+    @classmethod
+    def from_storage(cls, storage: StorageManager) -> 'SessionStats':
+        """
+        Reconstruct SessionStats from persistent storage.
+        
+        This method enables recovery after system restarts, ensuring
+        we don't lose track of today's executed signals.
+        
+        Args:
+            storage: StorageManager instance to query
+            
+        Returns:
+            SessionStats instance reconstructed from DB
+        """
+        today = date.today()
+        
+        # Query DB for today's executed signals
+        executed_count = storage.count_executed_signals(today)
+        
+        # Retrieve system state for other metrics
+        system_state = storage.get_system_state()
+        session_data = system_state.get("session_stats", {})
+        
+        # Check if session data is from today
+        stored_date_str = session_data.get("date", "")
+        try:
+            stored_date = date.fromisoformat(stored_date_str)
+            is_today = stored_date == today
+        except (ValueError, TypeError):
+            is_today = False
+        
+        if is_today:
+            # Restore full stats from storage
+            stats = cls(
+                date=today,
+                signals_processed=session_data.get("signals_processed", 0),
+                signals_executed=executed_count,  # Always source from DB
+                cycles_completed=session_data.get("cycles_completed", 0),
+                errors_count=session_data.get("errors_count", 0)
+            )
+            logger.info(f"SessionStats reconstructed from DB: {stats}")
+        else:
+            # Fresh start for new day
+            stats = cls(date=today, signals_executed=executed_count)
+            logger.info(f"New day detected. Fresh SessionStats initialized: {stats}")
+        
+        return stats
     
     def reset_if_new_day(self) -> None:
         """Reset stats if a new day has started"""
@@ -75,9 +132,16 @@ class MainOrchestrator:
     3. Risk Manager: Validates risk parameters
     4. Executor: Places orders
     
-    Features dynamic loop frequency based on market regime to optimize
-    CPU usage and trading responsiveness.
+    Features:
+    - Dynamic loop frequency based on market regime
+    - Adaptive heartbeat: faster sleep when active signals present
+    - Resilient recovery: reconstructs session state from DB
+    - Latido de Guardia: CPU-friendly monitoring
     """
+    
+    # Adaptive heartbeat constants
+    MIN_SLEEP_INTERVAL = 3  # Seconds (when signals active)
+    HEARTBEAT_CHECK_INTERVAL = 1  # Check every second for shutdown
     
     def __init__(
         self,
@@ -108,14 +172,17 @@ class MainOrchestrator:
         # Load configuration
         self.config = self._load_config(config_path)
         
-        # Session tracking
-        self.stats = SessionStats()
+        # Session tracking - RECONSTRUCT FROM DB
+        self.stats = SessionStats.from_storage(self.storage)
         
         # Current market regime (updated after each scan)
         self.current_regime: MarketRegime = MarketRegime.RANGE
         
         # Shutdown flag
         self._shutdown_requested = False
+        
+        # Active signals tracking (for adaptive heartbeat)
+        self._active_signals: List[Signal] = []
         
         # Loop intervals by regime (seconds)
         orchestrator_config = self.config.get("orchestrator", {})
@@ -133,6 +200,7 @@ class MainOrchestrator:
             f"VOLATILE={self.intervals[MarketRegime.VOLATILE]}s, "
             f"SHOCK={self.intervals[MarketRegime.SHOCK]}s"
         )
+        logger.info(f"Adaptive heartbeat: MIN={self.MIN_SLEEP_INTERVAL}s when signals active")
     
     def _load_config(self, config_path: str) -> Dict:
         """Load configuration from JSON file"""
@@ -153,10 +221,24 @@ class MainOrchestrator:
         """
         Get sleep interval based on current market regime.
         
+        LATIDO DE GUARDIA: Reduces sleep interval when active signals present,
+        enabling faster response to market conditions.
+        
         Returns:
             Sleep interval in seconds
         """
-        return self.intervals.get(self.current_regime, 30)
+        base_interval = self.intervals.get(self.current_regime, 30)
+        
+        # Adaptive heartbeat: faster when signals are active
+        if self._active_signals:
+            adaptive_interval = min(base_interval, self.MIN_SLEEP_INTERVAL)
+            logger.debug(
+                f"Adaptive heartbeat active: {len(self._active_signals)} signals, "
+                f"interval reduced to {adaptive_interval}s"
+            )
+            return adaptive_interval
+        
+        return base_interval
     
     def _update_regime_from_scan(self, scan_results: Dict[str, Dict]) -> None:
         """
@@ -200,7 +282,7 @@ class MainOrchestrator:
         1. Scan market for opportunities
         2. Generate signals from scan results
         3. Validate with risk manager
-        4. Execute approved signals
+        4. Execute approved signals (with DB persistence)
         5. Update statistics
         """
         try:
@@ -224,11 +306,16 @@ class MainOrchestrator:
             
             if not signals:
                 logger.debug("No signals generated")
+                # Clear active signals if none generated
+                self._active_signals.clear()
                 self.stats.cycles_completed += 1
                 return
             
             logger.info(f"Generated {len(signals)} signals")
             self.stats.signals_processed += len(signals)
+            
+            # Update active signals for adaptive heartbeat
+            self._active_signals = signals
             
             # Step 3: Check risk manager lockdown
             if self.risk_manager.is_lockdown_active():
@@ -236,15 +323,19 @@ class MainOrchestrator:
                 self.stats.cycles_completed += 1
                 return
             
-            # Step 4: Execute signals
+            # Step 4: Execute signals with DB persistence
             for signal in signals:
                 try:
                     logger.info(f"Executing signal: {signal.symbol} {signal.signal_type}")
                     success = await self.executor.execute_signal(signal)
                     
                     if success:
+                        # PERSIST TO DB - Critical for recovery
+                        signal_id = self.storage.save_signal(signal)
+                        logger.info(
+                            f"Signal executed and persisted: {signal.symbol} (ID: {signal_id})"
+                        )
                         self.stats.signals_executed += 1
-                        logger.info(f"Signal executed successfully: {signal.symbol}")
                     else:
                         logger.warning(f"Signal execution failed: {signal.symbol}")
                         
@@ -252,20 +343,43 @@ class MainOrchestrator:
                     logger.error(f"Error executing signal {signal.symbol}: {e}")
                     self.stats.errors_count += 1
             
-            # Step 5: Update cycle count
+            # Step 5: Update cycle count and persist stats
             self.stats.cycles_completed += 1
+            self._persist_session_stats()
             logger.info(f"Cycle completed. Stats: {self.stats}")
             
         except Exception as e:
             logger.error(f"Error in cycle execution: {e}", exc_info=True)
             self.stats.errors_count += 1
     
+    def _persist_session_stats(self) -> None:
+        """
+        Persist current session stats to storage.
+        
+        Called after each cycle to ensure stats are not lost on crash.
+        """
+        session_data = {
+            "date": self.stats.date.isoformat(),
+            "signals_processed": self.stats.signals_processed,
+            "signals_executed": self.stats.signals_executed,
+            "cycles_completed": self.stats.cycles_completed,
+            "errors_count": self.stats.errors_count,
+            "last_update": datetime.now().isoformat()
+        }
+        
+        self.storage.update_system_state({"session_stats": session_data})
+    
     async def run(self) -> None:
         """
         Main event loop.
         
         Runs continuously until shutdown is requested.
-        Adjusts loop frequency dynamically based on market regime.
+        
+        Features:
+        - Dynamic loop frequency based on market regime
+        - Adaptive heartbeat (faster with active signals)
+        - Graceful shutdown on SIGINT/SIGTERM
+        - Session persistence after each cycle
         """
         logger.info("MainOrchestrator starting event loop...")
         
@@ -277,18 +391,20 @@ class MainOrchestrator:
                 # Execute one complete cycle
                 await self.run_single_cycle()
                 
-                # Dynamic sleep based on current regime
+                # Dynamic sleep based on current regime and active signals
                 sleep_interval = self._get_sleep_interval()
                 logger.debug(
                     f"Sleeping for {sleep_interval}s "
-                    f"(regime: {self.current_regime})"
+                    f"(regime: {self.current_regime}, "
+                    f"active_signals: {len(self._active_signals)})"
                 )
                 
                 # Use small sleep chunks to allow quick shutdown
+                # LATIDO DE GUARDIA: Check every second for responsiveness
                 for _ in range(sleep_interval):
                     if self._shutdown_requested:
                         break
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(self.HEARTBEAT_CHECK_INTERVAL)
                     
         except asyncio.CancelledError:
             logger.info("Event loop cancelled")
