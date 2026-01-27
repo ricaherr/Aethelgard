@@ -1258,15 +1258,27 @@ Aethelgard/
 │   ├── notificator.py       # Notificaciones Telegram
 │   └── module_manager.py    # Gestión de membresías
 ├── connectors/
-│   ├── mt5_data_provider.py # OHLC vía copy_rates_from_pos (sin gráficas)
-│   ├── bridge_mt5.py        # Bridge WebSocket MT5 → Aethelgard
+│   ├── data_provider_manager.py # Sistema multi-proveedor con fallback automático
+│   ├── generic_data_provider.py # Yahoo Finance (gratis, sin auth)
+│   ├── alpha_vantage_provider.py # Alpha Vantage (25 req/día gratis)
+│   ├── twelve_data_provider.py  # Twelve Data (800 req/día gratis)
+│   ├── polygon_provider.py      # Polygon.io (requiere pago)
+│   ├── iex_cloud_provider.py    # IEX Cloud (50k req/mes gratis)
+│   ├── finnhub_provider.py      # Finnhub (60 req/min gratis)
+│   ├── mt5_data_provider.py     # OHLC vía copy_rates_from_pos (sin gráficas)
+│   ├── bridge_mt5.py            # Bridge WebSocket MT5 → Aethelgard
 │   └── ...
 ├── data_vault/              # Persistencia SQLite
 ├── models/                  # Modelos de datos (Signal, MarketRegime, etc.)
 ├── tests/                   # Tests TDD
-│   ├── test_risk_manager.py # Suite RiskManager (7 tests)
-│   ├── test_executor.py     # Suite OrderExecutor (7 tests)
-│   └── test_signal_factory.py # Suite SignalFactory
+│   ├── test_risk_manager.py     # Suite RiskManager (7 tests)
+│   ├── test_executor.py         # Suite OrderExecutor (7 tests)
+│   ├── test_signal_factory.py   # Suite SignalFactory
+│   └── test_data_providers.py   # Suite Data Providers (10 tests)
+├── config/
+│   ├── config.json              # Configuración general del sistema
+│   ├── dynamic_params.json      # Parámetros auto-calibrables
+│   └── data_providers.json      # Configuración de proveedores de datos
 ├── run_scanner.py           # Entrypoint del escáner proactivo
 ├── test_scanner_mock.py     # Test del escáner con mock (sin MT5)
 ├── strategies/              # Estrategias modulares (por crear)
@@ -1275,6 +1287,29 @@ Aethelgard/
 │   └── risk_manager.py
 └── dashboard/               # Dashboard web (Fase 4)
 ```
+
+### Sistema Multi-Proveedor de Datos
+
+Aethelgard implementa un sistema robusto de múltiples proveedores de datos con fallback automático:
+
+#### Proveedores Gratuitos (sin autenticación):
+- **Yahoo Finance**: Proveedor principal, sin límites, sin API key
+- **MT5 Data Provider**: Datos directos desde MetaTrader 5 (requiere instalación)
+
+#### Proveedores Gratuitos (con API key):
+- **Alpha Vantage**: 25 requests/día, 5 requests/minuto
+- **Twelve Data**: 800 requests/día, 8 requests/minuto
+- **Finnhub**: 60 requests/minuto
+- **IEX Cloud**: 50,000 requests/mes
+
+#### Proveedores de Pago:
+- **Polygon.io**: Desde $29/mes, datos profesionales
+
+#### Características del Sistema:
+- **Fallback Automático**: Si un proveedor falla, intenta con el siguiente
+- **Configuración por Prioridad**: Define el orden de uso en `data_providers.json`
+- **Activación/Desactivación**: Control granular de cada proveedor
+- **Dashboard Integrado**: Gestión visual de proveedores y API keys
 
 ### Convenciones de Código
 
@@ -1287,12 +1322,18 @@ Aethelgard/
 
 1. **Agnosticismo**: Core Brain nunca depende de librerías específicas de plataforma
 2. **Modularidad**: Estrategias en archivos independientes
-3. **Resiliencia**: Manejo de errores y reconexión automática
+3. **Resiliencia**: Manejo de errores y reconexión automática (incluye fallback de datos)
 4. **Trazabilidad**: Todo se registra en `data_vault` para aprendizaje
 
 ---
 
 ## 🔄 Actualización del Manifiesto
+
+**Última Actualización**: 27 de Enero 2026
+- ✅ Implementado sistema multi-proveedor de datos con 6 proveedores
+- ✅ Fallback automático entre proveedores
+- ✅ Tests TDD completos (10 tests, 9 passing)
+- ✅ Dashboard con gestión de proveedores y API keys
 
 Este documento debe actualizarse cuando:
 - Se complete una fase del roadmap
