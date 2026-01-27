@@ -20,6 +20,7 @@ from core_brain.regime import RegimeClassifier
 from core_brain.module_manager import get_module_manager, MembershipLevel
 from core_brain.tuner import ParameterTuner
 from core_brain.notificator import get_notifier
+from core_brain.data_provider_manager import DataProviderManager
 from data_vault.storage import StorageManager
 from models.signal import MarketRegime
 
@@ -51,6 +52,11 @@ def get_tuner():
     """Obtiene una instancia del tuner de parámetros"""
     storage = get_storage()
     return ParameterTuner(storage)
+
+@st.cache_resource
+def get_provider_manager():
+    """Obtiene una instancia del gestor de proveedores de datos"""
+    return DataProviderManager()
 
 def get_regime_color(regime: str) -> str:
     """Retorna un color para cada régimen"""
@@ -105,12 +111,14 @@ def main():
     tuner = get_tuner()
     
     # Tabs principales
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "🛡️ Monitor de Resiliencia",
         "📊 Régimen en Tiempo Real",
         "🎛️ Gestión de Módulos",
         "⚙️ Parámetros Dinámicos",
-        "📈 Estadísticas"
+        "📈 Estadísticas",
+        "⚡ Señales de Trading",
+        "📡 Proveedores de Datos"
     ])
     
     # TAB 1: Monitor de Resiliencia
@@ -598,6 +606,401 @@ def main():
             st.caption(f"Estado: {'Habilitado' if notifier.enabled else 'Deshabilitado'}")
         else:
             st.warning("⚠️ Notificador de Telegram no configurado")
+    
+    # TAB 6: Señales de Trading
+    with tab6:
+        st.header("⚡ Señales de Trading en Tiempo Real")
+        
+        # Auto-refresh automático cada 3 segundos
+        st.markdown("""
+        <style>
+        .refresh-indicator {
+            position: fixed;
+            top: 70px;
+            right: 20px;
+            background: #00ff00;
+            color: black;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            z-index: 999;
+        }
+        </style>
+        <div class="refresh-indicator">🔄 Auto-refresh: 3s</div>
+        """, unsafe_allow_html=True)
+        
+        # Contenedor para actualización automática
+        auto_refresh = st.empty()
+        
+        with auto_refresh.container():
+            # Filtros
+            col1, col2, col3, col4 = st.columns(4)
+        
+            with col1:
+                filter_type = st.selectbox(
+                    "Tipo de Señal",
+                    options=["Todas", "BUY", "SELL"],
+                    index=0,
+                    key="signal_type_filter"
+                )
+            
+            with col2:
+                filter_tier = st.selectbox(
+                    "Nivel de Membresía",
+                    options=["Todos", "FREE", "PREMIUM", "ELITE"],
+                    index=0,
+                    key="tier_filter"
+                )
+            
+            with col3:
+                limit_signals = st.number_input(
+                    "Mostrar últimas N señales",
+                    min_value=5,
+                    max_value=100,
+                    value=20,
+                    step=5,
+                    key="limit_signals"
+                )
+            
+            with col4:
+                # Timestamp de última actualización
+                st.metric("Última actualización", datetime.now().strftime("%H:%M:%S"))
+            
+            st.markdown("---")
+            
+            # Obtener señales de hoy
+            try:
+                signals_today = storage.get_signals_today()
+                
+                if not signals_today:
+                    st.info("📭 No hay señales generadas hoy")
+                    st.caption("Las señales aparecerán aquí cuando el sistema detecte oportunidades en TREND")
+                    st.caption(f"⏰ Sistema escaneando... próxima actualización automática en 3s")
+                else:
+                    # Aplicar filtros
+                    filtered_signals = signals_today
+                    
+                    if filter_type != "Todas":
+                        filtered_signals = [s for s in filtered_signals if s.get('signal_type') == filter_type]
+                    
+                    if filter_tier != "Todos":
+                        filtered_signals = [s for s in filtered_signals if s.get('metadata', {}).get('membership_tier') == filter_tier]
+                    
+                    # Limitar número de señales
+                    filtered_signals = filtered_signals[-limit_signals:]
+                    
+                    # Resumen de señales
+                    st.subheader(f"📊 Resumen ({len(filtered_signals)} señales)")
+                    
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        buy_signals = sum(1 for s in filtered_signals if s.get('signal_type') == 'BUY')
+                        st.metric("🟢 Señales BUY", buy_signals)
+                    
+                    with col2:
+                        sell_signals = sum(1 for s in filtered_signals if s.get('signal_type') == 'SELL')
+                        st.metric("🔴 Señales SELL", sell_signals)
+                    
+                    with col3:
+                        premium_signals = sum(1 for s in filtered_signals if s.get('metadata', {}).get('membership_tier') in ['PREMIUM', 'ELITE'])
+                        st.metric("💎 Premium/Elite", premium_signals)
+                    
+                    with col4:
+                        avg_score = sum(s.get('metadata', {}).get('score', 0) for s in filtered_signals) / len(filtered_signals) if filtered_signals else 0
+                        st.metric("⭐ Score Promedio", f"{avg_score:.1f}")
+                    
+                    st.markdown("---")
+                    
+                    # Tabla de señales
+                    st.subheader("📋 Señales Detalladas")
+                    
+                    for idx, signal in enumerate(reversed(filtered_signals)):
+                        # Crear un expander para cada señal
+                        metadata = signal.get('metadata', {})
+                        signal_type = signal.get('signal_type', 'N/A')
+                        symbol = signal.get('symbol', 'N/A')
+                        score = metadata.get('score', 0)
+                        tier = metadata.get('membership_tier', 'FREE')
+                        timestamp = signal.get('timestamp', 'N/A')
+                        
+                        # Emoji según tipo
+                        type_emoji = "🟢" if signal_type == "BUY" else "🔴"
+                        
+                        # Color según tier
+                        tier_color = {
+                            'ELITE': '🌟',
+                            'PREMIUM': '💎',
+                            'FREE': '📌'
+                        }.get(tier, '📌')
+                        
+                        with st.expander(f"{type_emoji} {symbol} - {signal_type} | Score: {score:.1f} {tier_color} {tier} | {timestamp}"):
+                            col1, col2, col3 = st.columns(3)
+                            
+                            with col1:
+                                st.markdown("**📊 Precios**")
+                                st.write(f"Entry: `{signal.get('entry_price', 'N/A')}`")
+                                st.write(f"Stop Loss: `{signal.get('stop_loss', 'N/A')}`")
+                                st.write(f"Take Profit: `{signal.get('take_profit', 'N/A')}`")
+                            
+                            with col2:
+                                st.markdown("**🎯 Indicadores Técnicos**")
+                                st.write(f"Régimen: `{metadata.get('regime', 'N/A')}`")
+                                st.write(f"ATR: `{metadata.get('atr', 'N/A')}`")
+                                st.write(f"Body/ATR Ratio: `{metadata.get('body_atr_ratio', 'N/A')}`")
+                                st.write(f"SMA20 Dist: `{metadata.get('sma20_dist_pct', 'N/A')}%`")
+                            
+                            with col3:
+                                st.markdown("**✅ Validaciones**")
+                                st.write(f"Vela Elefante: `{'✅' if metadata.get('is_elephant_candle') else '❌'}`")
+                                st.write(f"Cerca de SMA20: `{'✅' if metadata.get('near_sma20') else '❌'}`")
+                                st.write(f"Confidence: `{signal.get('confidence', 0):.2%}`")
+                                st.write(f"Strategy: `{metadata.get('strategy_id', 'N/A')}`")
+                            
+                            # Mostrar metadata completa en JSON
+                            if st.checkbox(f"Ver JSON completo (señal #{len(filtered_signals) - idx})", key=f"json_{signal.get('id', idx)}"):
+                                st.json(signal)
+                    
+            except Exception as e:
+                st.error(f"Error cargando señales: {e}")
+                logger.error(f"Error cargando señales: {e}", exc_info=True)
+    
+    # TAB 7: Proveedores de Datos
+    with tab7:
+        st.header("📡 Gestión de Proveedores de Datos")
+        
+        try:
+            provider_manager = get_provider_manager()
+            
+            # Información general
+            st.markdown("""
+            Configura múltiples fuentes de datos para obtener información de mercado. 
+            El sistema selecciona automáticamente el mejor proveedor disponible basado en prioridad.
+            """)
+            
+            st.markdown("---")
+            
+            # Sección: Proveedores Gratuitos (sin autenticación)
+            st.subheader("🆓 Proveedores Gratuitos (Sin API Key)")
+            
+            free_providers = provider_manager.get_free_providers()
+            
+            if free_providers:
+                for provider_info in free_providers:
+                    name = provider_info["name"]
+                    enabled = provider_info["enabled"]
+                    description = provider_info.get("description", "")
+                    supports = provider_info.get("supports", [])
+                    
+                    with st.expander(f"{'✅' if enabled else '❌'} {name.upper()} - {description}", expanded=enabled):
+                        col1, col2 = st.columns([3, 1])
+                        
+                        with col1:
+                            st.markdown(f"**Soporta:** {', '.join(supports)}")
+                            
+                            # Mostrar estado
+                            status = provider_manager.get_provider_status(name)
+                            if status:
+                                if status.available:
+                                    st.success("✅ Disponible")
+                                else:
+                                    st.error("❌ No disponible (librería no instalada)")
+                        
+                        with col2:
+                            # Toggle para habilitar/deshabilitar
+                            if enabled:
+                                if st.button(f"Deshabilitar", key=f"disable_{name}"):
+                                    provider_manager.disable_provider(name)
+                                    st.success(f"Proveedor {name} deshabilitado")
+                                    st.rerun()
+                            else:
+                                if st.button(f"Habilitar", key=f"enable_{name}"):
+                                    provider_manager.enable_provider(name)
+                                    st.success(f"Proveedor {name} habilitado")
+                                    st.rerun()
+                        
+                        # Configuración adicional para CCXT
+                        if name == "ccxt":
+                            config = provider_manager.get_provider_config(name)
+                            current_exchange = config.additional_config.get("exchange_id", "binance")
+                            
+                            new_exchange = st.selectbox(
+                                "Exchange",
+                                options=["binance", "coinbase", "kraken", "bitfinex", "huobi", "okx"],
+                                index=["binance", "coinbase", "kraken", "bitfinex", "huobi", "okx"].index(current_exchange) if current_exchange in ["binance", "coinbase", "kraken", "bitfinex", "huobi", "okx"] else 0,
+                                key=f"exchange_{name}"
+                            )
+                            
+                            if new_exchange != current_exchange:
+                                provider_manager.configure_provider(name, exchange_id=new_exchange)
+                                st.success(f"Exchange actualizado a {new_exchange}")
+            else:
+                st.info("No hay proveedores gratuitos disponibles")
+            
+            st.markdown("---")
+            
+            # Sección: Proveedores con API Key
+            st.subheader("🔑 Proveedores con API Key (Tier Gratuito Disponible)")
+            
+            auth_providers = provider_manager.get_auth_required_providers()
+            
+            if auth_providers:
+                for provider_info in auth_providers:
+                    name = provider_info["name"]
+                    enabled = provider_info["enabled"]
+                    configured = provider_info.get("configured", False)
+                    description = provider_info.get("description", "")
+                    supports = provider_info.get("supports", [])
+                    
+                    # Emoji de estado
+                    status_emoji = "✅" if enabled and configured else "⚙️" if enabled else "❌"
+                    
+                    with st.expander(f"{status_emoji} {name.upper()} - {description}", expanded=False):
+                        col1, col2 = st.columns([3, 1])
+                        
+                        with col1:
+                            st.markdown(f"**Soporta:** {', '.join(supports)}")
+                            
+                            # Mostrar estado
+                            status = provider_manager.get_provider_status(name)
+                            if status:
+                                if not status.available:
+                                    st.error("❌ Librería no instalada")
+                                elif not status.credentials_configured:
+                                    st.warning("⚠️ API Key no configurada")
+                                else:
+                                    st.success("✅ Configurado y listo")
+                            
+                            # Links para obtener API keys
+                            api_key_links = {
+                                "alphavantage": "https://www.alphavantage.co/support/#api-key",
+                                "twelvedata": "https://twelvedata.com/pricing",
+                                "polygon": "https://polygon.io/",
+                                "mt5": "Requiere MetaTrader 5 instalado localmente"
+                            }
+                            
+                            if name in api_key_links:
+                                link = api_key_links[name]
+                                if link.startswith("http"):
+                                    st.markdown(f"[🔗 Obtener API Key gratuita]({link})")
+                                else:
+                                    st.info(f"ℹ️ {link}")
+                        
+                        with col2:
+                            # Toggle para habilitar/deshabilitar
+                            if enabled:
+                                if st.button(f"Deshabilitar", key=f"disable_{name}"):
+                                    provider_manager.disable_provider(name)
+                                    st.success(f"Proveedor {name} deshabilitado")
+                                    st.rerun()
+                            else:
+                                if st.button(f"Habilitar", key=f"enable_{name}"):
+                                    provider_manager.enable_provider(name)
+                                    st.success(f"Proveedor {name} habilitado")
+                                    st.rerun()
+                        
+                        st.markdown("---")
+                        
+                        # Formulario para configurar API Key
+                        if name != "mt5":
+                            with st.form(key=f"config_form_{name}"):
+                                st.markdown("**Configuración**")
+                                
+                                config = provider_manager.get_provider_config(name)
+                                current_key = config.api_key if config else ""
+                                
+                                api_key_input = st.text_input(
+                                    "API Key",
+                                    value=current_key if current_key else "",
+                                    type="password",
+                                    help="Tu API key del proveedor"
+                                )
+                                
+                                submitted = st.form_submit_button("💾 Guardar Configuración")
+                                
+                                if submitted and api_key_input:
+                                    provider_manager.configure_provider(name, api_key=api_key_input)
+                                    st.success(f"✅ API Key guardada para {name}")
+                                    st.rerun()
+                        else:
+                            # Configuración especial para MT5
+                            with st.form(key=f"config_form_{name}"):
+                                st.markdown("**Configuración MT5**")
+                                
+                                config = provider_manager.get_provider_config(name)
+                                mt5_config = config.additional_config if config else {}
+                                
+                                login = st.text_input("Login", value=mt5_config.get("login", ""))
+                                password = st.text_input("Password", value="", type="password")
+                                server = st.text_input("Server", value=mt5_config.get("server", ""))
+                                
+                                submitted = st.form_submit_button("💾 Guardar Configuración")
+                                
+                                if submitted and login and server:
+                                    provider_manager.configure_provider(
+                                        name,
+                                        login=login,
+                                        password=password if password else mt5_config.get("password", ""),
+                                        server=server
+                                    )
+                                    st.success(f"✅ Configuración guardada para MT5")
+                                    st.rerun()
+            else:
+                st.info("No hay proveedores con autenticación disponibles")
+            
+            st.markdown("---")
+            
+            # Sección: Estado Actual
+            st.subheader("📊 Estado Actual del Sistema")
+            
+            active_providers = provider_manager.get_active_providers()
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.metric("Proveedores Activos", len(active_providers))
+                
+                if active_providers:
+                    st.markdown("**Lista de activos (por prioridad):**")
+                    for idx, prov in enumerate(active_providers, 1):
+                        st.write(f"{idx}. {prov['name'].upper()} (prioridad: {prov['priority']})")
+            
+            with col2:
+                # Proveedor actual seleccionado
+                best_provider = provider_manager.get_best_provider()
+                
+                if best_provider:
+                    provider_name = best_provider.__class__.__name__.replace("Provider", "").replace("DataProvider", "")
+                    st.success(f"✅ Proveedor activo: **{provider_name}**")
+                else:
+                    st.error("❌ Ningún proveedor disponible")
+                
+                # Botón para probar conexión
+                if st.button("🔍 Probar Conexión"):
+                    with st.spinner("Probando conexión..."):
+                        if best_provider:
+                            try:
+                                # Intentar fetch de datos de prueba
+                                test_data = provider_manager.fetch_ohlc("AAPL", "D1", 10)
+                                
+                                if test_data is not None and len(test_data) > 0:
+                                    st.success(f"✅ Conexión exitosa! {len(test_data)} velas obtenidas")
+                                    st.dataframe(test_data.tail(5))
+                                else:
+                                    st.warning("⚠️ Conexión establecida pero sin datos")
+                            except Exception as e:
+                                st.error(f"❌ Error en la conexión: {str(e)}")
+                        else:
+                            st.error("❌ No hay proveedor disponible para probar")
+        
+        except Exception as e:
+            st.error(f"Error en gestión de proveedores: {e}")
+            logger.error(f"Error en tab proveedores: {e}", exc_info=True)
+        
+        # Auto-refresh cada 3 segundos
+        import time
+        time.sleep(3)
+        st.rerun()
 
 
 if __name__ == "__main__":

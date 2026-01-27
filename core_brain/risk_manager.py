@@ -162,6 +162,15 @@ class RiskManager:
             True if in lockdown mode, False otherwise
         """
         return self.lockdown_mode
+    
+    def is_lockdown_active(self) -> bool:
+        """
+        Alias for is_locked() for compatibility with MainOrchestrator.
+        
+        Returns:
+            True if in lockdown mode, False otherwise
+        """
+        return self.lockdown_mode
 
     def get_status(self) -> Dict:
         """Get current risk manager status."""

@@ -124,6 +124,7 @@ class ScannerEngine:
         self.classifiers: Dict[str, RegimeClassifier] = {}
         self.last_regime: Dict[str, MarketRegime] = {}
         self.last_scan_time: Dict[str, float] = {}
+        self.last_dataframes: Dict[str, Any] = {}  # Almacenar últimos DataFrames
         self._lock = threading.Lock()
         self._running = False
         
@@ -135,7 +136,7 @@ class ScannerEngine:
 
         for s in self.assets:
             self.classifiers[s] = RegimeClassifier(config_path=rp)
-            self.last_regime[s] = MarketRegime.NEUTRAL
+            self.last_regime[s] = MarketRegime.NORMAL  # Changed from NEUTRAL to NORMAL
             self.last_scan_time[s] = 0.0
 
     def _sleep_for_regime(self, regime: MarketRegime) -> float:
@@ -148,19 +149,19 @@ class ScannerEngine:
         return self.sleep_neutral
 
     def _symbols_to_scan(self) -> List[str]:
-        """Priorización: TREND/CRASH cada 1s, RANGE/NEUTRAL cada 5–10s."""
+        """Priorización: TREND/CRASH cada 1s, RANGE/NORMAL cada 5–10s."""
         now = time.monotonic()
         out = []
         with self._lock:
             for s in self.assets:
                 last = self.last_scan_time.get(s, 0.0)
-                regime = self.last_regime.get(s, MarketRegime.NEUTRAL)
+                regime = self.last_regime.get(s, MarketRegime.NORMAL)  # Changed from NEUTRAL to NORMAL
                 interval = self._sleep_for_regime(regime)
                 if now - last >= interval:
                     out.append(s)
         return out
 
-    def _scan_one(self, symbol: str) -> Optional[Tuple[str, MarketRegime, Dict]]:
+    def _scan_one(self, symbol: str) -> Optional[Tuple[str, MarketRegime, Dict, Any]]:
         """Ejecuta RegimeClassifier para un símbolo. Seguro para hilos (un clasificador por símbolo)."""
         try:
             df = self.provider.fetch_ohlc(
@@ -176,7 +177,7 @@ class ScannerEngine:
             cl.load_ohlc(df)
             regime = cl.classify()
             metrics = cl.get_metrics()
-            return (symbol, regime, metrics)
+            return (symbol, regime, metrics, df)  # Retornar también el DataFrame
         except Exception as e:
             logger.warning("Error escaneando %s: %s", symbol, e)
             return None
@@ -197,11 +198,12 @@ class ScannerEngine:
                     continue
                 if res is None:
                     continue
-                symbol, regime, metrics = res
+                symbol, regime, metrics, df = res
                 now = time.monotonic()
                 with self._lock:
                     self.last_regime[symbol] = regime
                     self.last_scan_time[symbol] = now
+                    self.last_dataframes[symbol] = df  # Almacenar DataFrame
                 logger.info(
                     "Escáner %s -> %s (ADX=%.2f)",
                     symbol,
@@ -249,6 +251,33 @@ class ScannerEngine:
     def stop(self) -> None:
         """Detiene el bucle del escáner."""
         self._running = False
+
+    def get_all_regimes(self) -> Dict[str, MarketRegime]:
+        """
+        Obtiene los últimos regímenes detectados para todos los símbolos.
+        Método para compatibilidad con el orquestador.
+        
+        Returns:
+            Dict con symbol -> MarketRegime
+        """
+        with self._lock:
+            return dict(self.last_regime)
+    
+    def get_scan_results_with_data(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Obtiene los últimos resultados del scanner con DataFrames incluidos.
+        
+        Returns:
+            Dict con symbol -> {"regime": MarketRegime, "df": DataFrame}
+        """
+        with self._lock:
+            results = {}
+            for symbol in self.last_regime:
+                results[symbol] = {
+                    "regime": self.last_regime[symbol],
+                    "df": self.last_dataframes.get(symbol)
+                }
+            return results
 
     def get_status(self) -> Dict[str, Any]:
         """Estado actual: último régimen por símbolo, CPU, etc."""

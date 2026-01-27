@@ -248,6 +248,88 @@ await orchestrator.run()  # Inicia el loop resiliente
 - **Interface**: `fetch_ohlc(symbol, timeframe, count)` → `DataFrame` con columnas `time`, `open`, `high`, `low`, `close`.
 - **Requisitos**: MT5 en ejecución; símbolos en Market Watch. Timeframes: M1, M5, M15, M30, H1, H4, D1, W1, MN1.
 
+##### `generic_data_provider.py` - Proveedor de Datos Genérico (Yahoo Finance)
+- **Lenguaje**: Python
+- **Función**: Obtener datos OHLC de Yahoo Finance mediante `yfinance`
+- **Ventajas**: 100% gratuito, sin API key, autónomo
+- **Soporta**: Stocks, Forex, Crypto, Commodities, Índices
+- **Interface**: `fetch_ohlc(symbol, timeframe, count)` → `DataFrame` con OHLC
+
+##### Sistema Multi-Proveedor de Datos
+
+**DataProviderManager** (`core_brain/data_provider_manager.py`): Sistema centralizado para gestionar múltiples proveedores de datos con fallback automático.
+
+**Proveedores Disponibles:**
+
+1. **Yahoo Finance** (Gratuito, sin API key)
+   - Prioridad: 100 (más alta)
+   - Soporta: Stocks, Forex, Crypto, Commodities, Índices
+   - Sin límites de requests
+   - Librería: `yfinance`
+
+2. **CCXT** (Gratuito, sin API key)
+   - Prioridad: 90
+   - Soporta: Crypto (100+ exchanges)
+   - Exchange por defecto: Binance
+   - Librería: `ccxt`
+
+3. **Alpha Vantage** (Gratuito con API key)
+   - Prioridad: 80
+   - Soporta: Stocks, Forex, Crypto
+   - Límite: 500 requests/día
+   - Registrarse: https://www.alphavantage.co/support/#api-key
+   - Librería: `requests`
+
+4. **Twelve Data** (Gratuito con API key)
+   - Prioridad: 70
+   - Soporta: Stocks, Forex, Crypto, Commodities
+   - Límite: 800 requests/día
+   - Registrarse: https://twelvedata.com/pricing
+   - Librería: `requests`
+
+5. **Polygon.io** (Gratuito con API key)
+   - Prioridad: 60
+   - Soporta: Stocks, Forex, Crypto, Options
+   - Datos con delay en tier gratuito
+   - Registrarse: https://polygon.io/
+   - Librería: `requests`
+
+6. **MetaTrader 5** (Requiere instalación local)
+   - Prioridad: 95
+   - Soporta: Forex, Stocks, Commodities, Índices
+   - Requiere: MT5 instalado y configurado
+   - Librería: `MetaTrader5`
+
+**Características del Sistema Multi-Proveedor:**
+- ✅ **Fallback Automático**: Si falla el proveedor principal, usa el siguiente
+- ✅ **Priorización Inteligente**: Selección basada en prioridad y disponibilidad
+- ✅ **Gestión desde Dashboard**: Activar/desactivar proveedores desde UI
+- ✅ **Configuración Persistente**: Settings guardados en `config/data_providers.json`
+- ✅ **Detección de Tipo**: Selección automática del mejor proveedor según símbolo
+- ✅ **Sin Vendor Lock-in**: Cambio de proveedor sin modificar código del core
+
+**Uso del DataProviderManager:**
+
+```python
+from core_brain.data_provider_manager import DataProviderManager
+
+# Inicializar manager
+manager = DataProviderManager()
+
+# Obtener mejor proveedor disponible
+provider = manager.get_best_provider()
+
+# Obtener datos con fallback automático
+data = manager.fetch_ohlc("AAPL", timeframe="M5", count=500)
+
+# Habilitar/deshabilitar proveedores
+manager.enable_provider("alphavantage")
+manager.disable_provider("yahoo")
+
+# Configurar API keys
+manager.configure_provider("alphavantage", api_key="YOUR_KEY_HERE")
+```
+
 ##### `webhook_tv.py` - Webhook para TradingView
 - **Lenguaje**: Python
 - **Función**: Recibir alertas de TradingView

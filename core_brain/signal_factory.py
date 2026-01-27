@@ -46,7 +46,7 @@ class SignalFactory:
         strategy_id: str = "oliver_velez_swing_v2",
         sma_long_period: int = 200,
         sma_short_period: int = 20,
-        elephant_atr_multiplier: float = 2.0,  # Cuerpo de la vela > 2x ATR
+        elephant_atr_multiplier: float = 0.3,  # Cuerpo de la vela >= 0.3x ATR (ajustado para M5)
         sma20_proximity_percent: float = 1.5,  # Precio a < 1.5% de la SMA20
         # Parámetros de Scoring dinámico
         base_score: float = 60.0,
@@ -149,30 +149,43 @@ class SignalFactory:
         """
         Analiza, genera, guarda y notifica una señal de trading.
 
-        Asume que el DataFrame `df` viene del ScannerEngine y ya contiene
-        las columnas pre-calculadas: 'sma_200', 'sma_20', 'atr'.
+        Calcula indicadores si no existen en el DataFrame.
 
         Args:
             symbol: Símbolo del instrumento (e.g., 'EURUSD').
-            df: DataFrame con datos OHLC e indicadores.
+            df: DataFrame con datos OHLC.
             regime: Régimen actual del mercado.
 
         Returns:
             Un objeto Signal si se genera una oportunidad, o None.
         """
-        required_cols = [
-            'open', 'high', 'low', 'close', f'sma_{self.sma_short_p}',
-            f'sma_{self.sma_long_p}', 'atr'
-        ]
-        if (df is None or len(df) < 2
-                or not all(c in df.columns for c in required_cols)):
-            logger.debug(
-                f"[{symbol}] Datos insuficientes o columnas faltantes."
-            )
+        if df is None or len(df) < self.sma_long_p + 10:
+            logger.debug(f"[{symbol}] Datos insuficientes (<{self.sma_long_p + 10} velas)")
             return None
 
         try:
+            # Calcular indicadores si no existen
+            if f'sma_{self.sma_long_p}' not in df.columns:
+                df[f'sma_{self.sma_long_p}'] = df['close'].rolling(window=self.sma_long_p).mean()
+            
+            if f'sma_{self.sma_short_p}' not in df.columns:
+                df[f'sma_{self.sma_short_p}'] = df['close'].rolling(window=self.sma_short_p).mean()
+            
+            if 'atr' not in df.columns:
+                # ATR = Average True Range
+                df['tr'] = pd.concat([
+                    df['high'] - df['low'],
+                    abs(df['high'] - df['close'].shift()),
+                    abs(df['low'] - df['close'].shift())
+                ], axis=1).max(axis=1)
+                df['atr'] = df['tr'].rolling(window=14).mean()
+            
             latest_candle = df.iloc[-1]
+            
+            # Verificar que los indicadores estén calculados (no NaN)
+            if pd.isna(latest_candle[f'sma_{self.sma_long_p}']) or pd.isna(latest_candle['atr']):
+                logger.debug(f"[{symbol}] Indicadores aún no calculados (necesita más datos)")
+                return None
 
             # --- Validación de la Estrategia Oliver Vélez (Bullish) ---
             is_bullish_trend = (
@@ -185,7 +198,7 @@ class SignalFactory:
                 candle_body / latest_candle['atr'] if latest_candle['atr'] > 0
                 else 0
             )
-            is_elephant_body = body_atr_ratio > self.elephant_atr_multiplier
+            is_elephant_body = body_atr_ratio >= self.elephant_atr_multiplier
 
             sma20_dist_pct = (
                 abs(
@@ -196,6 +209,13 @@ class SignalFactory:
             is_near_sma20 = sma20_dist_pct < self.sma20_proximity_percent
 
             is_bullish_candle = latest_candle['close'] > latest_candle['open']
+
+            # === LOGGING DETALLADO ===
+            logger.info(f"[{symbol}] Validación:")
+            logger.info(f"  - Precio: {latest_candle['close']:.5f} | SMA200: {latest_candle[f'sma_{self.sma_long_p}']:.5f} | BullishTrend: {is_bullish_trend}")
+            logger.info(f"  - Cuerpo: {candle_body:.5f} | ATR: {latest_candle['atr']:.5f} | Ratio: {body_atr_ratio:.2f} | Elephant: {is_elephant_body} (>{self.elephant_atr_multiplier})")
+            logger.info(f"  - Dist SMA20: {sma20_dist_pct:.2f}% | Near: {is_near_sma20} (<{self.sma20_proximity_percent}%)")
+            logger.info(f"  - Candle Bullish: {is_bullish_candle} | Régimen: {regime.value}")
 
             validation_results = {
                 "trend_ok": is_bullish_trend and regime == MarketRegime.TREND,
@@ -208,15 +228,19 @@ class SignalFactory:
                 "body_atr_ratio": body_atr_ratio,
             }
 
+            logger.info(f"[{symbol}] Resultados: trend_ok={validation_results['trend_ok']}, candle_ok={validation_results['candle_ok']}, proximity_ok={validation_results['proximity_ok']}")
+
             score = self._calculate_opportunity_score(
                 validation_results, candle_data, regime
             )
 
             if score <= 0:
-                logger.debug(
-                    f"[{symbol}] No cumple condiciones. Score: 0"
+                logger.warning(
+                    f"[{symbol}] ❌ No cumple condiciones. Score: {score}"
                 )
                 return None
+            
+            logger.info(f"[{symbol}] ✅ SEÑAL GENERADA - Score: {score}")
 
             # --- Creación del objeto Signal ---
             current_price = latest_candle['close']
@@ -318,6 +342,45 @@ class SignalFactory:
                 f"{len(scan_results)} símbolos analizados."
             )
 
+        return signals
+
+    async def process_scan_results(self, scan_results: Dict[str, MarketRegime]) -> List[Signal]:
+        """
+        Procesa los resultados del scanner y genera señales.
+        
+        Este método es llamado por el MainOrchestrator con los regímenes
+        detectados por el scanner. Solo procesa símbolos en TREND.
+        
+        Args:
+            scan_results: Dict con symbol -> MarketRegime
+            
+        Returns:
+            Lista de señales generadas
+        """
+        logger.debug(f"Processing scan results for {len(scan_results)} symbols")
+        
+        signals = []
+        
+        # Filtrar solo símbolos en TREND (condición crítica de la estrategia)
+        trending_symbols = {
+            symbol: regime for symbol, regime in scan_results.items()
+            if regime == MarketRegime.TREND
+        }
+        
+        if not trending_symbols:
+            logger.debug("No trending symbols found in scan results")
+            return signals
+        
+        logger.info(f"Found {len(trending_symbols)} symbols in TREND: {list(trending_symbols.keys())}")
+        
+        # Generar señales para cada símbolo en tendencia
+        # Nota: Este método solo recibe regímenes, no DataFrames
+        # La lógica completa con datos históricos debe ir en generate_signals_batch()
+        for symbol, regime in trending_symbols.items():
+            logger.debug(f"Symbol {symbol} in {regime.value} - ready for signal generation")
+            # Las señales se generarán cuando el scanner proporcione DataFrames completos
+            # vía generate_signals_batch() que tiene acceso a datos OHLC
+        
         return signals
 
     def filter_by_membership(

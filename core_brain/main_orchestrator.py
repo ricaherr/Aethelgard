@@ -262,8 +262,8 @@ class MainOrchestrator:
         max_priority = 0
         new_regime = MarketRegime.RANGE
         
-        for symbol_data in scan_results.values():
-            regime = symbol_data.get("regime", MarketRegime.RANGE)
+        # scan_results es un Dict[str, MarketRegime] donde key=symbol, value=MarketRegime
+        for symbol, regime in scan_results.items():
             priority = regime_priority.get(regime, 1)
             
             if priority > max_priority:
@@ -289,20 +289,26 @@ class MainOrchestrator:
             # Check if we need to reset stats for new day
             self.stats.reset_if_new_day()
             
-            # Step 1: Scan market
-            logger.debug("Starting market scan...")
-            scan_results = await self.scanner.scan_all_symbols()
+            # Step 1: Get current market regimes from scanner WITH DataFrames
+            logger.debug("Getting market regimes with data from scanner...")
             
-            if not scan_results:
-                logger.warning("No scan results received")
+            # Scanner trabaja de forma sincrónica en background
+            # Obtenemos su último estado CON DataFrames
+            scan_results_with_data = await asyncio.to_thread(self.scanner.get_scan_results_with_data)
+            
+            if not scan_results_with_data:
+                logger.warning("No scan results available yet")
                 return
+            
+            # Extraer solo regímenes para actualizar estado
+            scan_results = {sym: data["regime"] for sym, data in scan_results_with_data.items()}
             
             # Update current regime based on scan
             self._update_regime_from_scan(scan_results)
             
-            # Step 2: Generate signals
-            logger.debug("Generating signals from scan results...")
-            signals = await self.signal_factory.process_scan_results(scan_results)
+            # Step 2: Generate signals WITH DataFrames
+            logger.debug("Generating signals from scan results with data...")
+            signals = await self.signal_factory.generate_signals_batch(scan_results_with_data)
             
             if not signals:
                 logger.debug("No signals generated")

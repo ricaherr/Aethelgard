@@ -238,7 +238,7 @@ class TelegramNotifier:
             MarketRegime.TREND: "📈",
             MarketRegime.RANGE: "↔️",
             MarketRegime.CRASH: "💥",
-            MarketRegime.NEUTRAL: "⚪"
+            MarketRegime.NORMAL: "⚪"
         }
         return emoji_map.get(regime, "⚪")
     

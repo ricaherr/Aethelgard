@@ -1,1 +1,117 @@
-{}
+{
+    "signals": [
+        {
+            "id": "4081c497-857c-49f8-9d1c-93fa03cd4d0a",
+            "symbol": "USDTRY=X",
+            "signal_type": "BUY",
+            "confidence": 0.9200487621691225,
+            "entry_price": 43.38719940185547,
+            "stop_loss": 43.351731709071565,
+            "take_profit": 43.45813478742327,
+            "timestamp": "2026-01-26T23:21:44.998594",
+            "date": "2026-01-26",
+            "status": "executed",
+            "metadata": {
+                "regime": "TREND",
+                "strategy_id": "oliver_velez_swing_v2",
+                "score": 92.00487621691225,
+                "membership_tier": "PREMIUM",
+                "is_elephant_candle": "True",
+                "near_sma20": "True",
+                "body_atr_ratio": 0.36,
+                "sma20_dist_pct": 0.02,
+                "atr": 0.02365,
+                "sma_20": 43.37752,
+                "sma_200": 43.36337
+            }
+        },
+        {
+            "id": "5922f640-71e1-4b86-8d81-625e559cc1ce",
+            "symbol": "USDTRY=X",
+            "signal_type": "BUY",
+            "confidence": 0.9200487621691225,
+            "entry_price": 43.38719940185547,
+            "stop_loss": 43.351731709071565,
+            "take_profit": 43.45813478742327,
+            "timestamp": "2026-01-26T23:21:48.080524",
+            "date": "2026-01-26",
+            "status": "executed",
+            "metadata": {
+                "regime": "TREND",
+                "strategy_id": "oliver_velez_swing_v2",
+                "score": 92.00487621691225,
+                "membership_tier": "PREMIUM",
+                "is_elephant_candle": "True",
+                "near_sma20": "True",
+                "body_atr_ratio": 0.36,
+                "sma20_dist_pct": 0.02,
+                "atr": 0.02365,
+                "sma_20": 43.37752,
+                "sma_200": 43.36337
+            }
+        },
+        {
+            "id": "e42d4b4b-1e36-4490-ae68-d2a42a013f82",
+            "symbol": "USDTRY=X",
+            "signal_type": "BUY",
+            "confidence": 0.9200487621691225,
+            "entry_price": 43.38719940185547,
+            "stop_loss": 43.351731709071565,
+            "take_profit": 43.45813478742327,
+            "timestamp": "2026-01-26T23:21:53.573796",
+            "date": "2026-01-26",
+            "status": "executed",
+            "metadata": {
+                "regime": "TREND",
+                "strategy_id": "oliver_velez_swing_v2",
+                "score": 92.00487621691225,
+                "membership_tier": "PREMIUM",
+                "is_elephant_candle": "True",
+                "near_sma20": "True",
+                "body_atr_ratio": 0.36,
+                "sma20_dist_pct": 0.02,
+                "atr": 0.02365,
+                "sma_20": 43.37752,
+                "sma_200": 43.36337
+            }
+        }
+    ],
+    "system_state": {
+        "pending_signals": [
+            {
+                "timestamp": "2026-01-26T23:21:53.580745",
+                "symbol": "USDTRY=X",
+                "signal_type": "BUY",
+                "confidence": 0.9200487621691225,
+                "connector_type": "NINJATRADER8",
+                "status": "PENDING",
+                "entry_price": 43.38719940185547,
+                "stop_loss": 43.351731709071565,
+                "take_profit": 43.45813478742327,
+                "volume": 0.01
+            }
+        ],
+        "failed_signals": [
+            {
+                "timestamp": "2026-01-26T23:21:53.593022",
+                "symbol": "USDTRY=X",
+                "signal_type": "BUY",
+                "confidence": 0.9200487621691225,
+                "status": "REJECTED_CONNECTION",
+                "error": "Connector not configured",
+                "connector_type": "NINJATRADER8"
+            }
+        ],
+        "session_stats": {
+            "date": "2026-01-26",
+            "signals_processed": 0,
+            "signals_executed": 0,
+            "cycles_completed": 103,
+            "errors_count": 0
+        },
+        "last_shutdown": "2026-01-26T23:22:21.842898",
+        "lockdown_active": false,
+        "consecutive_losses": 0,
+        "last_regime": "TREND"
+    }
+}

@@ -6,7 +6,7 @@ pydantic==2.12.5
 
 # Data processing
 numpy==2.4.1
-pandas==3.0.0
+pandas>=1.4.0,<3.0.0
 scikit-learn==1.8.0
 
 # Data providers
@@ -17,7 +17,7 @@ MetaTrader5==5.0.5509  # MT5 - Opcional, solo si se usa --provider mt5
 httpx==0.27.2
 
 # Dashboard UI
-streamlit==1.39.0
+streamlit>=1.40.0  # Versión con mejor soporte para Python 3.14
 
 # Monitor de recursos (escáner proactivo)
 psutil==6.1.0

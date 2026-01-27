@@ -355,7 +355,7 @@ class RegimeClassifier:
             Régimen raw según ADX y shock
         """
         if self.df is None or len(self.df) < max(self.adx_period * 2, 20):
-            return MarketRegime.NEUTRAL
+            return MarketRegime.NORMAL
         
         if self._detect_volatility_shock():
             return MarketRegime.CRASH
@@ -374,7 +374,7 @@ class RegimeClassifier:
             return MarketRegime.TREND
         if adx < self.adx_range_threshold:
             return MarketRegime.RANGE
-        return MarketRegime.NEUTRAL
+        return MarketRegime.NORMAL
     
     def classify(self, 
                  current_price: Optional[float] = None,
@@ -404,11 +404,11 @@ class RegimeClassifier:
         
         n = len(self.df) if self.df is not None else 0
         if n < max(self.adx_period * 2, 20):
-            return MarketRegime.NEUTRAL
+            return MarketRegime.NORMAL
         
         # Re-evaluación sin nueva vela (ej. get_metrics): no actualizar persistencia
         if n == self._last_classify_len:
-            return self._confirmed_regime or MarketRegime.NEUTRAL
+            return self._confirmed_regime or MarketRegime.NORMAL
         self._last_classify_len = n
         
         raw = self._classify_raw(self._confirmed_regime)
@@ -450,7 +450,7 @@ class RegimeClassifier:
                 'volatility': 0.0,
                 'sma_distance': None,
                 'bias': None,
-                'regime': MarketRegime.NEUTRAL.value,
+                'regime': MarketRegime.NORMAL.value,
                 'volatility_shock_detected': False,
                 'atr_pct': 0.0,
             }
