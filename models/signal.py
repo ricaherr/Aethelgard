@@ -20,8 +20,10 @@ class SignalType(Enum):
 
 class MembershipTier(Enum):
     """Define los niveles de membresía de usuarios."""
+    FREE = "FREE"
     BASIC = "BASIC"
     PREMIUM = "PREMIUM"
+    ELITE = "ELITE"
     VIP = "VIP"
 
 @dataclass
@@ -48,8 +50,11 @@ class SignalResult:
 
 class MarketRegime(Enum):
     """Representa el régimen o estado actual del mercado."""
+    TREND = "TREND"
+    RANGE = "RANGE"
+    VOLATILE = "VOLATILE"
+    SHOCK = "SHOCK"
     BULL = "BULL"
     BEAR = "BEAR"
-    RANGE = "RANGE"
     CRASH = "CRASH"
     NORMAL = "NORMAL"

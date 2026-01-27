@@ -11,5 +11,11 @@
     "mt5_timeframe": "M5",
     "mt5_bars_count": 500,
     "config_path": "config/dynamic_params.json"
+  },
+  "orchestrator": {
+    "loop_interval_trend": 5,
+    "loop_interval_range": 30,
+    "loop_interval_volatile": 15,
+    "loop_interval_shock": 60
   }
 }

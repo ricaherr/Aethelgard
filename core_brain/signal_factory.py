@@ -227,20 +227,21 @@ class SignalFactory:
             take_profit = current_price + (3.0 * latest_candle['atr'])
 
             signal = Signal(
-                connector=ConnectorType.NINJATRADER,
                 symbol=symbol,
-                signal_type=SignalType.BUY,
-                price=current_price,
-                timestamp=datetime.now(),
+                signal_type="BUY",
+                confidence=score / 100.0,  # Convertir score 0-100 a confidence 0-1
+                connector_type=ConnectorType.NINJATRADER8,
+                entry_price=current_price,
                 stop_loss=stop_loss,
                 take_profit=take_profit,
-                regime=regime,
-                strategy_id=self.strategy_id,
-                score=score,
-                membership_tier=membership_tier,
-                is_elephant_candle=is_elephant_body,
-                near_sma20=is_near_sma20,
+                timestamp=datetime.now(),
                 metadata={
+                    "regime": regime.value,
+                    "strategy_id": self.strategy_id,
+                    "score": score,
+                    "membership_tier": membership_tier.value,
+                    "is_elephant_candle": is_elephant_body,
+                    "near_sma20": is_near_sma20,
                     "body_atr_ratio": round(body_atr_ratio, 2),
                     "sma20_dist_pct": round(sma20_dist_pct, 2),
                     "atr": round(latest_candle['atr'], 5),
@@ -258,9 +259,9 @@ class SignalFactory:
                 signal_id = self.storage_manager.save_signal(signal)
                 logger.info(
                     f"SEÑAL GENERADA [ID: {signal_id}] -> {signal.symbol} "
-                    f"{signal.signal_type.value} @ {signal.price:.5f} | "
-                    f"Score: {signal.score:.1f} "
-                    f"({signal.membership_tier.value})"
+                    f"{signal.signal_type} @ {signal.entry_price:.5f} | "
+                    f"Score: {score:.1f} "
+                    f"({membership_tier.value})"
                 )
             except Exception as e:
                 logger.error(

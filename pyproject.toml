@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aethelgard"
+version = "0.1.0"
+description = "Sistema autónomo de trading multihilo con auto-calibración"
+readme = "README.md"
+requires-python = ">=3.12"
+license = {text = "MIT"}
+authors = [
+    {name = "Aethelgard Team"}
+]
+
+dependencies = [
+    "fastapi",
+    "streamlit",
+    "websockets",
+    "pandas",
+    "numpy",
+    "pytest",
+    "pytest-asyncio",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "pytest-cov",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-v --tb=short"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["core_brain*", "connectors*", "data_vault*", "models*", "ui*"]

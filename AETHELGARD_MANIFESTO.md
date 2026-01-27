@@ -149,6 +149,45 @@ Aethelgard utiliza una arquitectura **Hub-and-Spoke** donde el **Core Brain** (P
 - **Configuración**: `config/config.json` → `scanner` (`assets`, `cpu_limit_pct`, `sleep_*_seconds`, `mt5_timeframe`, `mt5_bars_count`, etc.).
 - **Entrypoint**: `run_scanner.py` (usa `MT5DataProvider`). Test sin MT5: `test_scanner_mock.py`.
 
+##### `main_orchestrator.py` - Orquestador Principal del Sistema
+- **Función**: Coordina el ciclo completo de trading: Scan → Signal → Risk → Execute
+- **Características**:
+  - **Bucle Asíncrono**: Usa `asyncio` para ejecución no bloqueante
+  - **Frecuencia Dinámica**: Ajusta velocidad del loop según régimen de mercado:
+    - TREND: 5 segundos (rápido)
+    - RANGE: 30 segundos (lento, ahorro de CPU)
+    - VOLATILE: 15 segundos (intermedio)
+    - SHOCK: 60 segundos (muy lento, modo precaución)
+  - **SessionStats**: Rastrea estadísticas del día actual:
+    - `signals_processed`: Total de señales procesadas
+    - `signals_executed`: Señales ejecutadas exitosamente
+    - `cycles_completed`: Ciclos completos del loop
+    - `errors_count`: Errores encontrados
+  - **Graceful Shutdown**: Manejo de Ctrl+C (SIGINT) y SIGTERM:
+    1. Cierra conexiones de brokers limpiamente
+    2. Persiste estado de lockdown en `data_vault`
+    3. Guarda estadísticas de sesión
+    4. Sale de forma ordenada sin pérdida de datos
+- **Ciclo de Ejecución**:
+  1. Scanner busca oportunidades en activos configurados
+  2. Signal Factory genera señales basadas en estrategias
+  3. Risk Manager valida contra lockdown mode
+  4. Executor ejecuta señales aprobadas
+  5. Actualiza estadísticas y régimen actual
+- **Configuración**: `config/config.json` → `orchestrator` (`loop_interval_trend`, `loop_interval_range`, `loop_interval_volatile`, `loop_interval_shock`)
+- **Tests**: `tests/test_orchestrator.py` (11 tests cubriendo ciclo completo, frecuencia dinámica, shutdown graceful, manejo de errores)
+- **Ejemplo de Uso**:
+```python
+from core_brain.main_orchestrator import MainOrchestrator
+orchestrator = MainOrchestrator(
+    scanner=scanner_instance,
+    signal_factory=factory_instance,
+    risk_manager=risk_instance,
+    executor=executor_instance
+)
+await orchestrator.run()  # Inicia el loop principal
+```
+
 ##### `tuner.py` - Sistema de Auto-Calibración
 - **Función**: Optimizar parámetros basándose en datos históricos
 - **Proceso**:

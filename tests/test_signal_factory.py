@@ -97,7 +97,7 @@ def create_synthetic_dataframe(
         df.loc[last_idx, 'atr'] = atr_value
 
     # Rellenar NaNs iniciales
-    df.fillna(method='bfill', inplace=True)
+    df.bfill(inplace=True)
     return df
 
 # --- Casos de Prueba ---
@@ -119,9 +119,10 @@ async def test_perfect_elephant_candle_generates_high_score_signal(signal_factor
     # Assert: Validar que la señal es de alta calidad
     assert result_signal is not None, "No se generó ninguna señal para un escenario perfecto."
     assert isinstance(result_signal, Signal)
-    assert result_signal.score > 80, f"El score fue {result_signal.score}, se esperaba > 80."
-    assert result_signal.signal_type == SignalType.BUY
-    assert result_signal.membership_tier in [MembershipTier.PREMIUM, MembershipTier.ELITE]
+    assert result_signal.metadata.get("score", 0) > 80, f"El score fue {result_signal.metadata.get('score', 0)}, se esperaba > 80."
+    assert result_signal.signal_type == "BUY"
+    membership_tier_value = result_signal.metadata.get("membership_tier", "")
+    assert membership_tier_value in [MembershipTier.PREMIUM.value, MembershipTier.ELITE.value]
     
     # Validar que la notificación SÍ se disparó para una señal de alto score
     mock_notifier.notify_oliver_velez_signal.assert_called_once()
@@ -177,8 +178,10 @@ async def test_low_score_signal_does_not_trigger_notification(signal_factory, mo
     
     # Assert
     assert result_signal is not None, "No se generó señal para datos débiles pero válidos."
-    assert result_signal.score < 80, f"El score fue {result_signal.score}, se esperaba < 80."
-    assert result_signal.membership_tier == MembershipTier.FREE
+    score = result_signal.metadata.get("score", 0)
+    assert score < 80, f"El score fue {score}, se esperaba < 80."
+    membership_tier_value = result_signal.metadata.get("membership_tier", "")
+    assert membership_tier_value == MembershipTier.FREE.value
     
     # La aserción CRÍTICA: el notificador no debe ser llamado para señales 'FREE'
     mock_notifier.notify_oliver_velez_signal.assert_not_called()
