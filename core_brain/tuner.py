@@ -277,3 +277,220 @@ class ParameterTuner:
             Diccionario con los parámetros actuales
         """
         return self._load_config()
+
+
+# ============================================================================
+# EDGE TUNER: Auto-ajuste de parámetros de señales basado en resultados reales
+# ============================================================================
+
+class EdgeTuner:
+    """
+    Sistema EDGE de auto-calibración que ajusta parámetros de generación de señales
+    basándose en el rendimiento real de los trades ejecutados.
+    
+    Filosofía:
+    - Racha de pérdidas → Modo CONSERVADOR (filtros más estrictos)
+    - Racha de ganancias → Modo AGRESIVO (capturar más oportunidades)
+    - Win rate cercano al target → Ajustes graduales (estabilidad)
+    """
+    
+    def __init__(self, storage: StorageManager, config_path: str = "config/dynamic_params.json"):
+        """
+        Args:
+            storage: StorageManager para acceder a resultados de trades
+            config_path: Ruta a dynamic_params.json
+        """
+        self.storage = storage
+        self.config_path = Path(config_path)
+        self.logger = logging.getLogger(__name__)
+    
+    def _load_config(self) -> Dict:
+        """Carga configuración desde dynamic_params.json"""
+        try:
+            with open(self.config_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except FileNotFoundError:
+            self.logger.error(f"Config file not found: {self.config_path}")
+            raise
+    
+    def _save_config(self, config: Dict):
+        """Guarda configuración actualizada"""
+        with open(self.config_path, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+        self.logger.info(f"✅ Configuración actualizada: {self.config_path}")
+    
+    def _calculate_stats(self, trades: List[Dict]) -> Dict:
+        """
+        Calcula estadísticas de rendimiento
+        
+        Returns:
+            {
+                "total_trades": int,
+                "wins": int,
+                "losses": int,
+                "win_rate": float,
+                "avg_pips_win": float,
+                "avg_pips_loss": float,
+                "profit_factor": float,
+                "consecutive_losses": int,
+                "consecutive_wins": int
+            }
+        """
+        if not trades:
+            return {"total_trades": 0, "win_rate": 0.0}
+        
+        wins = [t for t in trades if t.get("is_win", False)]
+        losses = [t for t in trades if not t.get("is_win", True)]
+        
+        win_rate = len(wins) / len(trades) if trades else 0.0
+        
+        avg_pips_win = np.mean([t["pips"] for t in wins]) if wins else 0.0
+        avg_pips_loss = abs(np.mean([t["pips"] for t in losses])) if losses else 0.0
+        
+        total_profit = sum([t["profit_loss"] for t in wins])
+        total_loss = abs(sum([t["profit_loss"] for t in losses]))
+        profit_factor = total_profit / total_loss if total_loss > 0 else 0.0
+        
+        # Calcular rachas consecutivas (más recientes primero)
+        consecutive_losses = 0
+        consecutive_wins = 0
+        
+        for trade in trades:  # Ya vienen ordenados por timestamp desc
+            if not trade.get("is_win", True):
+                consecutive_losses += 1
+                if consecutive_wins > 0:
+                    break
+            else:
+                consecutive_wins += 1
+                if consecutive_losses > 0:
+                    break
+        
+        return {
+            "total_trades": len(trades),
+            "wins": len(wins),
+            "losses": len(losses),
+            "win_rate": win_rate,
+            "avg_pips_win": float(avg_pips_win),
+            "avg_pips_loss": float(avg_pips_loss),
+            "profit_factor": float(profit_factor),
+            "consecutive_losses": consecutive_losses,
+            "consecutive_wins": consecutive_wins
+        }
+    
+    def adjust_parameters(self, limit_trades: int = 100) -> Optional[Dict]:
+        """
+        Analiza resultados recientes y ajusta parámetros automáticamente.
+        
+        Lógica de ajuste:
+        - Win rate < 45% → CONSERVADOR (subir filtros)
+        - Win rate > 65% → AGRESIVO (bajar filtros)
+        - Win rate 45-65% → Ajuste gradual hacia target (55%)
+        - Racha de 5+ pérdidas → Modo defensivo inmediato
+        
+        Args:
+            limit_trades: Número de trades recientes a analizar
+        
+        Returns:
+            Dictionary con detalles del ajuste o None si no se hizo nada
+        """
+        config = self._load_config()
+        
+        # Verificar si tuning está habilitado
+        if not config.get("tuning_enabled", False):
+            self.logger.info("⏸️ Tuning deshabilitado en config")
+            return {"skipped_reason": "tuning_disabled"}
+        
+        # Obtener trades recientes
+        trades = self.storage.get_recent_trades(limit=limit_trades)
+        
+        min_trades = config.get("min_trades_for_tuning", 20)
+        if len(trades) < min_trades:
+            self.logger.info(f"⏳ Insuficientes trades para ajuste ({len(trades)}/{min_trades})")
+            return {"skipped_reason": "insufficient_data"}
+        
+        # Calcular estadísticas
+        stats = self._calculate_stats(trades)
+        self.logger.info(f"📊 Stats: Win Rate={stats['win_rate']:.1%}, Trades={stats['total_trades']}, "
+                        f"Consecutive Losses={stats['consecutive_losses']}")
+        
+        # Guardar parámetros actuales para comparación
+        old_params = {
+            "adx_threshold": config.get("adx_threshold", 25),
+            "elephant_atr_multiplier": config.get("elephant_atr_multiplier", 0.3),
+            "sma20_proximity_percent": config.get("sma20_proximity_percent", 1.5),
+            "min_signal_score": config.get("min_signal_score", 60)
+        }
+        
+        # === DETERMINAR MODO DE AJUSTE ===
+        trigger = "normal_adjustment"
+        adjustment_factor = 1.0  # 1.0 = sin cambio, >1.0 = más conservador, <1.0 = más agresivo
+        
+        target_win_rate = config.get("target_win_rate", 0.55)
+        conservative_threshold = config.get("conservative_mode_threshold", 0.45)
+        aggressive_threshold = config.get("aggressive_mode_threshold", 0.65)
+        
+        # RACHA DE PÉRDIDAS → Defensivo inmediato
+        if stats["consecutive_losses"] >= 5:
+            trigger = "consecutive_losses"
+            adjustment_factor = 1.7  # +70% más conservador
+            self.logger.warning(f"🛡️ MODO DEFENSIVO: {stats['consecutive_losses']} pérdidas consecutivas")
+        
+        # WIN RATE MUY BAJO → Conservador
+        elif stats["win_rate"] < conservative_threshold:
+            trigger = "low_win_rate"
+            adjustment_factor = 1.5  # +50% más conservador
+            self.logger.warning(f"⚠️ Win rate bajo ({stats['win_rate']:.1%}) → Modo conservador")
+        
+        # WIN RATE MUY ALTO → Agresivo
+        elif stats["win_rate"] > aggressive_threshold:
+            trigger = "high_win_rate"
+            adjustment_factor = 0.7  # -30% menos filtros
+            self.logger.info(f"🚀 Win rate alto ({stats['win_rate']:.1%}) → Modo agresivo")
+        
+        # WIN RATE CERCANO AL TARGET → Ajuste gradual
+        else:
+            # Ajuste proporcional: cuanto más lejos del target, mayor el ajuste
+            deviation = stats["win_rate"] - target_win_rate
+            adjustment_factor = 1.0 - (deviation * 0.5)  # Max ±25% ajuste
+            self.logger.info(f"⚖️ Ajuste gradual: win_rate={stats['win_rate']:.1%}, target={target_win_rate:.1%}")
+        
+        # === APLICAR AJUSTES ===
+        new_params = old_params.copy()
+        
+        # ADX Threshold: más alto = más conservador (solo tendencias fuertes)
+        base_adx = 25
+        new_params["adx_threshold"] = max(20, min(35, base_adx * adjustment_factor))
+        
+        # ATR Multiplier: más alto = más conservador (solo velas grandes)
+        base_atr = 0.3
+        new_params["elephant_atr_multiplier"] = max(0.15, min(0.7, base_atr * adjustment_factor))
+        
+        # SMA20 Proximity: más bajo = más conservador (pullback más preciso)
+        base_proximity = 1.5
+        new_params["sma20_proximity_percent"] = max(0.8, min(2.5, base_proximity / adjustment_factor))
+        
+        # Min Score: más alto = más conservador
+        base_score = 60
+        new_params["min_signal_score"] = max(50, min(80, int(base_score * adjustment_factor)))
+        
+        # Actualizar configuración
+        config.update(new_params)
+        self._save_config(config)
+        
+        # Guardar ajuste en historial
+        adjustment_record = {
+            "trigger": trigger,
+            "old_params": old_params,
+            "new_params": new_params,
+            "stats": stats,
+            "adjustment_factor": float(adjustment_factor)
+        }
+        
+        self.storage.save_tuning_adjustment(adjustment_record)
+        
+        self.logger.info(f"✅ Parámetros ajustados:")
+        self.logger.info(f"   ADX: {old_params['adx_threshold']:.1f} → {new_params['adx_threshold']:.1f}")
+        self.logger.info(f"   ATR: {old_params['elephant_atr_multiplier']:.2f} → {new_params['elephant_atr_multiplier']:.2f}")
+        self.logger.info(f"   SMA20: {old_params['sma20_proximity_percent']:.1f}% → {new_params['sma20_proximity_percent']:.1f}%")
+        
+        return adjustment_record

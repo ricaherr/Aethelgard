@@ -18,7 +18,9 @@ class StorageManager:
         """Initialize database with proper structure"""
         initial_state = {
             "signals": [],
-            "system_state": {}
+            "trades": [],  # Resultados de trades cerrados para EDGE learning
+            "system_state": {},
+            "tuning_history": []  # Historial de ajustes del tuner
         }
         with open(self.db_path, 'w') as f:
             json.dump(initial_state, f, indent=4)
@@ -206,3 +208,111 @@ class StorageManager:
             "system_state": data.get("system_state", {}),
             "last_signal": signals[-1] if signals else None
         }
+    
+    def save_trade_result(self, trade_result: Dict) -> str:
+        """
+        Save trade result for EDGE learning.
+        
+        Args:
+            trade_result: Dictionary with trade outcome data
+                {
+                    "signal_id": str,
+                    "symbol": str,
+                    "entry_price": float,
+                    "exit_price": float,
+                    "pips": float,
+                    "profit_loss": float,  # En moneda base
+                    "duration_minutes": int,
+                    "is_win": bool,
+                    "exit_reason": str,  # "take_profit", "stop_loss", "manual"
+                    "market_regime": str,
+                    "volatility_atr": float,
+                    "parameters_used": dict  # Parámetros activos al generar la señal
+                }
+        
+        Returns:
+            Trade ID (UUID)
+        """
+        import uuid
+        
+        trade_id = str(uuid.uuid4())
+        
+        trade_record = {
+            "id": trade_id,
+            "timestamp": datetime.now().isoformat(),
+            "date": date.today().isoformat(),
+            **trade_result
+        }
+        
+        try:
+            with open(self.db_path, 'r') as f:
+                data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            data = {"signals": [], "trades": [], "system_state": {}, "tuning_history": []}
+        
+        if "trades" not in data:
+            data["trades"] = []
+        
+        data["trades"].append(trade_record)
+        
+        with open(self.db_path, 'w') as f:
+            json.dump(data, f, indent=4)
+        
+        return trade_id
+    
+    def get_recent_trades(self, limit: int = 100) -> List[Dict]:
+        """
+        Get recent trade results for EDGE analysis.
+        
+        Args:
+            limit: Maximum number of trades to return (most recent first)
+        
+        Returns:
+            List of trade result dictionaries
+        """
+        try:
+            with open(self.db_path, 'r') as f:
+                data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return []
+        
+        trades = data.get("trades", [])
+        
+        # Retornar más recientes primero
+        return sorted(trades, key=lambda t: t.get("timestamp", ""), reverse=True)[:limit]
+    
+    def save_tuning_adjustment(self, adjustment: Dict):
+        """
+        Save parameter adjustment made by tuner for audit trail.
+        
+        Args:
+            adjustment: Dictionary with tuning details
+                {
+                    "trigger": str,  # "win_rate_low", "consecutive_losses", etc.
+                    "old_params": dict,
+                    "new_params": dict,
+                    "stats": dict  # Win rate, profit factor, etc.
+                }
+        """
+        try:
+            with open(self.db_path, 'r') as f:
+                data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            data = {"signals": [], "trades": [], "system_state": {}, "tuning_history": []}
+        
+        if "tuning_history" not in data:
+            data["tuning_history"] = []
+        
+        adjustment_record = {
+            "timestamp": datetime.now().isoformat(),
+            **adjustment
+        }
+        
+        data["tuning_history"].append(adjustment_record)
+        
+        # Keep only last 500 adjustments
+        if len(data["tuning_history"]) > 500:
+            data["tuning_history"] = data["tuning_history"][-500:]
+        
+        with open(self.db_path, 'w') as f:
+            json.dump(data, f, indent=4)

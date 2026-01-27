@@ -18,6 +18,7 @@ Estrategia Oliver Vélez (Implementación Bullish):
 """
 import logging
 import asyncio
+import json
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -32,58 +33,67 @@ from core_brain.module_manager import MembershipLevel
 
 logger = logging.getLogger(__name__)
 
-
 class SignalFactory:
     """
     Motor que recibe datos del ScannerEngine, los procesa y genera señales de
     trading.
+    
+    EDGE: Lee parámetros desde dynamic_params.json (auto-ajustados por tuner.py)
     """
 
     def __init__(
         self,
         storage_manager: StorageManager,
-        # Parámetros de la estrategia Oliver Vélez
+        config_path: str = "config/dynamic_params.json",
         strategy_id: str = "oliver_velez_swing_v2",
-        sma_long_period: int = 200,
-        sma_short_period: int = 20,
-        elephant_atr_multiplier: float = 0.3,  # Cuerpo de la vela >= 0.3x ATR (ajustado para M5)
-        sma20_proximity_percent: float = 1.5,  # Precio a < 1.5% de la SMA20
-        # Parámetros de Scoring dinámico
-        base_score: float = 60.0,
-        regime_bonus: float = 20.0,
-        proximity_bonus_weight: float = 10.0,
-        candle_bonus_weight: float = 10.0,
-        # Umbrales de membresía
-        premium_threshold: float = 85.0,
-        elite_threshold: float = 95.0,
     ):
         """
         Inicializa la SignalFactory.
 
         Args:
             storage_manager: Instancia del gestor de persistencia.
+            config_path: Ruta a dynamic_params.json (fuente de verdad para parámetros)
             strategy_id: Identificador de la estrategia.
-            ... (parámetros de estrategia y scoring)
         """
         self.storage_manager = storage_manager
         self.notifier: Optional[TelegramNotifier] = get_notifier()
-
-        # Parámetros de estrategia
+        self.config_path = config_path
         self.strategy_id = strategy_id
-        self.sma_long_p = sma_long_period
-        self.sma_short_p = sma_short_period
-        self.elephant_atr_multiplier = elephant_atr_multiplier
-        self.sma20_proximity_percent = sma20_proximity_percent
+        
+        # Cargar parámetros desde config (EDGE)
+        self._load_parameters()
+        
+        logger.info(f"✅ SignalFactory initialized with EDGE parameters from {config_path}")
+        logger.info(f"   ADX: {self.adx_threshold}, ATR: {self.elephant_atr_multiplier}, SMA20: {self.sma20_proximity_percent}%")
+    
+    def _load_parameters(self):
+        """Carga parámetros desde dynamic_params.json (auto-ajustados por EDGE)"""
+        try:
+            with open(self.config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+        except FileNotFoundError:
+            logger.warning(f"Config not found: {self.config_path}. Using defaults.")
+            config = {}
+        
+        # Parámetros EDGE (auto-ajustables)
+        self.adx_threshold = config.get("adx_threshold", 25)
+        self.elephant_atr_multiplier = config.get("elephant_atr_multiplier", 0.3)
+        self.sma20_proximity_percent = config.get("sma20_proximity_percent", 1.5)
+        self.min_signal_score = config.get("min_signal_score", 60)
+        
+        # Parámetros de estrategia (fijos)
+        self.sma_long_p = config.get("sma_long_period", 200)
+        self.sma_short_p = config.get("sma_short_period", 20)
+        
+        # Parámetros de scoring (fijos)
+        self.base_score = 60.0
+        self.regime_bonus = 20.0
+        self.proximity_bonus_weight = 10.0
+        self.candle_bonus_weight = 10.0
 
-        # Parámetros de scoring
-        self.base_score = base_score
-        self.regime_bonus = regime_bonus
-        self.proximity_bonus_weight = proximity_bonus_weight
-        self.candle_bonus_weight = candle_bonus_weight
-
-        # Umbrales de membresía
-        self.premium_threshold = premium_threshold
-        self.elite_threshold = elite_threshold
+        # Umbrales de membresía (fijos)
+        self.premium_threshold = 85.0
+        self.elite_threshold = 95.0
 
         if not self.notifier or not self.notifier.is_configured():
             logger.warning(

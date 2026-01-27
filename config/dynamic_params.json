@@ -1,4 +1,22 @@
 {
     "risk_per_trade": 0.015,
-    "max_consecutive_losses": 5
+    "max_consecutive_losses": 5,
+    
+    "_comment_signal_generation": "Parámetros ajustados dinámicamente por tuner.py",
+    "adx_threshold": 25,
+    "elephant_atr_multiplier": 0.3,
+    "sma20_proximity_percent": 1.5,
+    "min_signal_score": 60,
+    
+    "_comment_sma_periods": "Períodos de medias móviles para estrategia Oliver Vélez",
+    "sma_long_period": 200,
+    "sma_short_period": 20,
+    
+    "_comment_tuning": "Configuración del auto-ajuste EDGE",
+    "tuning_enabled": true,
+    "tuning_interval_hours": 1,
+    "min_trades_for_tuning": 20,
+    "target_win_rate": 0.55,
+    "aggressive_mode_threshold": 0.65,
+    "conservative_mode_threshold": 0.45
 }

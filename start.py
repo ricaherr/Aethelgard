@@ -23,6 +23,7 @@ from core_brain.scanner import ScannerEngine
 from core_brain.signal_factory import SignalFactory
 from core_brain.risk_manager import RiskManager
 from core_brain.executor import OrderExecutor
+from core_brain.tuner import EdgeTuner
 from data_vault.storage import StorageManager
 from connectors.generic_data_provider import GenericDataProvider
 
@@ -141,6 +142,37 @@ async def main():
         logger.info(f"   Símbolos: {len(symbols)} pares forex")
         logger.info(f"   - Majors: 6 | Minors: 6 | Commodities: 4 | Exotics: 6 | Scandinavian: 2")
         
+        
+        # === FUNCIONES AUXILIARES EDGE ===
+        async def run_edge_tuner_loop(edge_tuner: EdgeTuner):
+            """
+            Tarea asíncrona que ejecuta el EDGE Tuner cada hora.
+            Ajusta parámetros basándose en resultados de trades.
+            """
+            tuner_logger = logging.getLogger(__name__)
+            
+            while True:
+                try:
+                    # Esperar 1 hora
+                    await asyncio.sleep(3600)  # 3600 segundos = 1 hora
+                    
+                    tuner_logger.info("⏰ Ejecutando ajuste EDGE de parámetros...")
+                    adjustment = edge_tuner.adjust_parameters()
+                    
+                    if adjustment and not adjustment.get("skipped_reason"):
+                        tuner_logger.info(f"✅ Ajuste EDGE completado: {adjustment.get('trigger')}")
+                        # Recargar parámetros en SignalFactory
+                        signal_factory._load_parameters()
+                        tuner_logger.info("🔄 Parámetros recargados en SignalFactory")
+                    else:
+                        reason = adjustment.get("skipped_reason") if adjustment else "unknown"
+                        tuner_logger.info(f"⏸️ Sin ajustes: {reason}")
+                        
+                except Exception as e:
+                    tuner_logger.error(f"❌ Error en EDGE Tuner: {e}", exc_info=True)
+                    # Continuar ejecutándose a pesar del error
+                    await asyncio.sleep(60)  # Esperar 1 minuto antes de reintentar
+        
         # 4. Scanner Engine
         logger.info("🔍 Inicializando Scanner Engine...")
         scanner = ScannerEngine(
@@ -165,7 +197,14 @@ async def main():
             connectors={}  # Paper trading
         )
         
-        # 7. Main Orchestrator
+        # 7. EDGE Tuner (Auto-calibración)
+        logger.info("🤖 Inicializando EDGE Tuner...")
+        edge_tuner = EdgeTuner(
+            storage=storage,
+            config_path="config/dynamic_params.json"
+        )
+        
+        # 8. Main Orchestrator
         logger.info("🧠 Inicializando Main Orchestrator...")
         orchestrator = MainOrchestrator(
             scanner=scanner,
@@ -198,6 +237,10 @@ async def main():
         logger.info("🌐 Dashboard: http://localhost:8503")
         logger.info("🛑 Presiona Ctrl+C para detener")
         logger.info("")
+        
+        # Crear tarea asíncrona del EDGE Tuner
+        tuner_task = asyncio.create_task(run_edge_tuner_loop(edge_tuner))
+        logger.info("🤖 EDGE Tuner: ajustes automáticos cada 1 hora")
         
         # Ejecutar loop principal
         await orchestrator.run()
