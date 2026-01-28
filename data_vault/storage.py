@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class StorageManager:
     """
     Manages persistence of system state using SQLite for production reliability.
-    Enhanced with signal tracking capabilities for session recovery.
+    Enhanced with signal tracking and open operation management for session recovery.
     """
     def __init__(self, db_path='data_vault/aethelgard.db'):
         self.db_path = db_path

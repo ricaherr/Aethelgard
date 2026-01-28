@@ -1,0 +1,15 @@
+from data_vault.storage import StorageManager
+import logging
+
+logging.basicConfig(level=logging.INFO)
+
+try:
+    storage = StorageManager()
+    print("Instance created")
+    print(f"Testing get_statistics: {storage.get_statistics()}")
+    print(f"Testing get_open_operations: {storage.get_open_operations()}")
+    print("Success")
+except Exception as e:
+    print(f"CRASH: {e}")
+    import traceback
+    traceback.print_exc()

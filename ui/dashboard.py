@@ -14,6 +14,8 @@ import random # Importar random para simulación de datos
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import traceback
+import importlib
 
 # Añadir el directorio raíz al path para importar módulos
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -161,22 +163,41 @@ def main():
         col1, col2, col3, col4 = st.columns(4)
         
         # Get statistics and active trades
-        stats = storage.get_statistics()
-        open_trades = storage.get_open_operations()
-        recent_trades = storage.get_recent_trades(limit=50)
-        
-        # Calculate daily P/L and Balance (simulated or real from broker if connected)
-        total_pnl = sum(t.get('profit_loss', 0) for t in recent_trades)
-        win_rate = stats.get('executed_signals', {}).get('win_rate', 0)
-        
-        with col1:
-            st.metric("Equity Total", f"${10540.50 + total_pnl:,.2f}", delta=f"{total_pnl:+.2f}")
-        with col2:
-            st.metric("Balance", f"${10540.50:,.2f}")
-        with col3:
-            st.metric("Win Rate (Total)", f"{win_rate:.1%}")
-        with col4:
-            st.metric("Ops. Abiertas", len(open_trades))
+        try:
+            # Check if storage is stale (missing new methods)
+            if not hasattr(storage, 'get_open_operations'):
+                # Force reload of the module and clear cache
+                st.cache_resource.clear()
+                import data_vault.storage
+                importlib.reload(data_vault.storage)
+                from data_vault.storage import StorageManager
+                # Re-instantiate if cached one is old
+                storage = StorageManager()
+                st.info("🔄 Se detectó una versión antigua del motor de datos. Limpiando caché y reiniciando conexión...")
+                st.rerun() # Rerun to ensure clean state
+            
+            stats = storage.get_statistics()
+            open_trades = storage.get_open_operations()
+            recent_trades = storage.get_recent_trades(limit=50)
+            
+            # Calculate daily P/L and Balance (simulated or real from broker if connected)
+            total_pnl = sum(t.get('profit_loss', 0) for t in recent_trades)
+            win_rate = stats.get('executed_signals', {}).get('win_rate', 0)
+            
+            with col1:
+                st.metric("Equity Total", f"${10540.50 + total_pnl:,.2f}", delta=f"{total_pnl:+.2f}")
+            with col2:
+                st.metric("Balance", f"${10540.50:,.2f}")
+            with col3:
+                st.metric("Win Rate (Total)", f"{win_rate:.1%}")
+            with col4:
+                st.metric("Ops. Abiertas", len(open_trades))
+        except Exception as e:
+            st.error(f"⚠️ Error cargando estadísticas principales: {e}")
+            st.code(traceback.format_exc())
+            stats = {}
+            open_trades = []
+            recent_trades = []
 
         st.markdown("---")
         
