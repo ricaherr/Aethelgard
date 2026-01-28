@@ -72,6 +72,12 @@ class BrokerProvisioner:
             return await self._provision_tradovate_demo()
         elif broker_id == 'tradingview':
             return await self._provision_tradingview_paper()
+        elif broker_id in ['pepperstone', 'ic_markets', 'xm', 'custom']:
+            # MT5/MT4 brokers require manual setup or setup_mt5_demo.py
+            return False, {
+                "error": "manual_setup_required",
+                "instructions": "Run 'python scripts/setup_mt5_demo.py' to configure MT5 accounts."
+            }
         else:
             logger.warning(f"Provisioner not implemented for {broker_id}")
             return False, {"error": "provisioner_not_implemented"}

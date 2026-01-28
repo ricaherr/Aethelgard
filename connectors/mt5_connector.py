@@ -52,18 +52,19 @@ class MT5Connector:
     def _load_config(self) -> Dict:
         """Load MT5 configuration from JSON file"""
         if not self.config_path.exists():
-            raise FileNotFoundError(
+            logger.warning(
                 f"MT5 configuration not found at {self.config_path}. "
-                f"Run: python scripts/setup_mt5_demo.py"
+                f"MT5 connector will be disabled."
             )
+            return {'enabled': False}
         
-        with open(self.config_path, 'r') as f:
-            config = json.load(f)
-        
-        if not config.get('enabled', False):
-            raise ValueError("MT5 connector is disabled in configuration")
-        
-        return config
+        try:
+            with open(self.config_path, 'r') as f:
+                config = json.load(f)
+            return config
+        except Exception as e:
+            logger.error(f"Error loading MT5 config: {e}")
+            return {'enabled': False}
     
     def connect(self) -> bool:
         """
@@ -72,6 +73,10 @@ class MT5Connector:
         Returns:
             True if connection successful
         """
+        if not self.config.get('enabled', False):
+            logger.warning("MT5 connector is disabled in configuration. skipping connection.")
+            return False
+            
         try:
             # Initialize MT5
             if not mt5.initialize():

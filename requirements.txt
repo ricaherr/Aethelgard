@@ -12,6 +12,7 @@ scikit-learn==1.8.0
 # Data providers
 yfinance>=0.2.40  # Yahoo Finance - Provider autónomo (sin API key)
 MetaTrader5==5.0.5509  # MT5 - Opcional, solo si se usa --provider mt5
+ccxt>=4.2.0  # CCXT - For crypto exchanges
 
 # HTTP client for webhooks and Telegram
 httpx==0.27.2

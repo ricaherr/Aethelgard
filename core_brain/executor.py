@@ -215,7 +215,7 @@ class OrderExecutor:
         signal_record = {
             "timestamp": datetime.now().isoformat(),
             "symbol": signal.symbol,
-            "signal_type": signal.signal_type,
+            "signal_type": signal.signal_type.value if hasattr(signal.signal_type, 'value') else signal.signal_type,
             "confidence": signal.confidence,
             "connector_type": signal.connector_type.value,
             "status": "PENDING",
@@ -254,7 +254,7 @@ class OrderExecutor:
         signal_record = {
             "timestamp": datetime.now().isoformat(),
             "symbol": signal.symbol,
-            "signal_type": signal.signal_type,
+            "signal_type": signal.signal_type.value if hasattr(signal.signal_type, 'value') else signal.signal_type,
             "confidence": signal.confidence,
             "status": "REJECTED",
             "reason": reason,
@@ -279,7 +279,7 @@ class OrderExecutor:
         signal_record = {
             "timestamp": datetime.now().isoformat(),
             "symbol": signal.symbol,
-            "signal_type": signal.signal_type,
+            "signal_type": signal.signal_type.value if hasattr(signal.signal_type, 'value') else signal.signal_type,
             "confidence": signal.confidence,
             "status": "REJECTED_CONNECTION",
             "error": error_message,
