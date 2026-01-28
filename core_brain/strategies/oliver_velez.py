@@ -41,10 +41,35 @@ class OliverVelezStrategy(BaseStrategy):
         # Umbrales
         self.premium_threshold = 85.0
         self.elite_threshold = 95.0
+        
+        # Auto-detectar conector disponible (agnosticismo)
+        self.connector_type = self._detect_available_connector()
 
     @property
     def strategy_id(self) -> str:
         return "oliver_velez_swing_v2"
+    
+    def _detect_available_connector(self) -> ConnectorType:
+        """
+        Auto-detecta el conector disponible basándose en configuración.
+        Prioridad: MT5 > NT8 > GENERIC
+        
+        Esto mantiene el agnosticismo: la estrategia no depende de un conector específico.
+        """
+        from pathlib import Path
+        
+        # Verificar MT5
+        if Path('config/mt5_config.json').exists():
+            logger.info(f"[{self.strategy_id}] Usando MT5 connector (config detectada)")
+            return ConnectorType.METATRADER5
+        
+        # Verificar NT8 (si existe configuración en el futuro)
+        # if Path('config/nt8_config.json').exists():
+        #     return ConnectorType.NINJATRADER8
+        
+        # Fallback a GENERIC
+        logger.info(f"[{self.strategy_id}] Usando GENERIC connector (no config específica)")
+        return ConnectorType.GENERIC
 
     async def analyze(self, symbol: str, df: pd.DataFrame, regime: MarketRegime) -> Optional[Signal]:
         """
@@ -124,7 +149,7 @@ class OliverVelezStrategy(BaseStrategy):
             symbol=symbol,
             signal_type="BUY",
             confidence=score / 100.0,
-            connector_type=ConnectorType.NINJATRADER8,
+            connector_type=self.connector_type,  # Auto-detectado
             entry_price=current_price,
             stop_loss=stop_loss,
             take_profit=take_profit,

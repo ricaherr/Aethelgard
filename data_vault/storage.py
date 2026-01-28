@@ -877,60 +877,39 @@ class StorageManager:
             logger.error(f"Error saving platform: {e}")
             raise
     
-    def save_broker_account(self, account_config: Dict):
+    def save_broker_account(self, broker_id: str, platform_id: str, account_name: str, 
+                          account_type: str = 'demo', server: str = '', login: str = '', 
+                          password: str = '', enabled: bool = True):
         """
         Save or update broker account.
-        
-        Args:
-            account_config: Dict with keys: account_id, broker_id, platform_id, account_name, 
-                           account_number, server, account_type, credentials_path, enabled
         """
         try:
-            account_id = account_config.get('account_id') or str(uuid.uuid4())
-            broker_id = account_config['broker_id']
-            platform_id = account_config['platform_id']
-            account_name = account_config.get('account_name', '')
-            account_number = account_config.get('account_number', '')
-            server = account_config.get('server', '')
-            account_type = account_config.get('account_type', 'demo')
-            credentials_path = account_config.get('credentials_path', '')
-            enabled = account_config.get('enabled', True)
-            balance = account_config.get('balance', 0.0)
-            
+            account_id = str(uuid.uuid4())
             now = datetime.now().isoformat()
             
             with self._get_conn() as conn:
                 cursor = conn.cursor()
                 
-                # Check if exists
-                cursor.execute("SELECT account_id FROM broker_accounts WHERE account_id = ?", (account_id,))
-                exists = cursor.fetchone() is not None
-                
-                if exists:
-                    # Update
-                    cursor.execute("""
-                        UPDATE broker_accounts 
-                        SET broker_id = ?, platform_id = ?, account_name = ?, 
-                            account_number = ?, server = ?, account_type = ?, 
-                            credentials_path = ?, enabled = ?, balance = ?, updated_at = ?
-                        WHERE account_id = ?
-                    """, (broker_id, platform_id, account_name, account_number, 
-                          server, account_type, credentials_path, enabled, balance, 
-                          now, account_id))
-                else:
-                    # Insert
-                    cursor.execute("""
-                        INSERT INTO broker_accounts 
-                        (account_id, broker_id, platform_id, account_name, account_number, 
-                         server, account_type, credentials_path, enabled, balance, 
-                         created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (account_id, broker_id, platform_id, account_name, account_number, 
-                          server, account_type, credentials_path, enabled, balance, now, now))
+                # Insert account
+                cursor.execute("""
+                    INSERT INTO broker_accounts 
+                    (account_id, broker_id, platform_id, account_name, account_number, 
+                        server, account_type, enabled, balance, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (account_id, broker_id, platform_id, account_name, login, 
+                        server, account_type, enabled, 0.0, now, now))
                 
                 conn.commit()
-                logger.info(f"Account saved: {account_id}")
-                return account_id
+            
+            # Save credentials if provided
+            if password:
+                self.save_credential(account_id, "password", "password", password)
+            
+            # Save login as credential too? Usually stored in account_number but safe to have reference
+            # For now relying on account_number column
+            
+            logger.info(f"Account saved: {account_id}")
+            return account_id
                 
         except Exception as e:
             logger.error(f"Error saving broker account: {e}")
@@ -1152,25 +1131,34 @@ class StorageManager:
                 params.append(login)
             
             if password is not None:
-                # En producción, esto debería cifrarse
-                # Por ahora solo actualizamos credentials_path si se proporciona
-                updates.append("credentials_path = ?")
-                params.append(f"config/accounts/{account_id}.json")
+                # Save password safely using encrypted credentials
+                try:
+                    # Check if credential exists
+                    existing = self.get_credentials(account_id, "password")
+                    if existing:
+                        self.update_credential(account_id, "password", password)
+                    else:
+                        self.save_credential(account_id, "password", "password", password)
+                except Exception as e:
+                    logger.error(f"Error updating password credential: {e}")
             
             if not updates:
-                logger.warning("No updates provided for account")
-                return
-            
-            updates.append("updated_at = ?")
-            params.append(datetime.now().isoformat())
-            params.append(account_id)
-            
-            with self._get_conn() as conn:
-                cursor = conn.cursor()
-                query = f"UPDATE broker_accounts SET {', '.join(updates)} WHERE account_id = ?"
-                cursor.execute(query, params)
-                conn.commit()
-                logger.info(f"Account {account_id} updated successfully")
+                # Still might need to update password even if no other fields changed
+                if password is None:
+                    logger.warning("No updates provided for account")
+                    return
+            else:
+                updates.append("updated_at = ?")
+                params.append(datetime.now().isoformat())
+                params.append(account_id)
+                
+                with self._get_conn() as conn:
+                    cursor = conn.cursor()
+                    query = f"UPDATE broker_accounts SET {', '.join(updates)} WHERE account_id = ?"
+                    cursor.execute(query, params)
+                    conn.commit()
+                    
+            logger.info(f"Account {account_id} updated successfully")
         except Exception as e:
             logger.error(f"Error updating account: {e}")
             raise
@@ -1315,7 +1303,7 @@ class StorageManager:
             with self._get_conn() as conn:
                 cursor = conn.cursor()
                 
-                # Delete credentials first (explicit, even though CASCADE should handle it)
+                # Delete credentials first
                 cursor.execute("DELETE FROM broker_credentials WHERE account_id = ?", (account_id,))
                 
                 # Delete account
@@ -1323,19 +1311,6 @@ class StorageManager:
                 
                 conn.commit()
                 logger.info(f"Deleted account {account_id} and all credentials")
-        except Exception as e:
-            logger.error(f"Error deleting account: {e}")
-            raise
-            raise
-    
-    def delete_account(self, account_id: str):
-        """Delete an account"""
-        try:
-            with self._get_conn() as conn:
-                cursor = conn.cursor()
-                cursor.execute("DELETE FROM broker_accounts WHERE account_id = ?", (account_id,))
-                conn.commit()
-                logger.info(f"Account {account_id} deleted")
         except Exception as e:
             logger.error(f"Error deleting account: {e}")
             raise

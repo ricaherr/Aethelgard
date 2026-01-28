@@ -66,9 +66,9 @@
     "api_key": null,
     "api_secret": null,
     "additional_config": {
-      "login": null,
-      "password": null,
-      "server": null
+      "login": "10091952",
+      "password": "10091952.Mt5",
+      "server": "XMGlobal-MT5 5"
     }
   }
 }
