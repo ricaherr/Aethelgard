@@ -24,6 +24,7 @@ from core_brain.scanner import ScannerEngine
 from core_brain.signal_factory import SignalFactory
 from core_brain.risk_manager import RiskManager
 from core_brain.executor import OrderExecutor
+from core_brain.monitor import ClosingMonitor
 from core_brain.tuner import EdgeTuner
 from data_vault.storage import StorageManager
 from connectors.generic_data_provider import GenericDataProvider
@@ -208,13 +209,44 @@ async def main():
             strategy_id="oliver_velez_swing_v2"
         )
         
-        # 6. Order Executor
+        # 6. Order Executor (carga cuentas habilitadas desde DB)
         logger.info("🎯 Inicializando Order Executor...")
+        
+        # Cargar cuentas de brokers habilitadas desde la base de datos
+        enabled_accounts = storage.get_broker_accounts(enabled_only=True)
+        connectors = {}
+        
+        if enabled_accounts:
+            logger.info(f"   Cargando {len(enabled_accounts)} cuenta(s) habilitada(s)...")
+            for account in enabled_accounts:
+                broker_name = account['broker_id']
+                platform = account['platform_id']
+                acc_type = account['account_type']
+                
+                logger.info(f"      {broker_name} ({platform}) - {acc_type}")
+                
+                # TODO: Instanciar conectores según platform_id
+                # Por ahora, solo paper trading hasta implementar conectores completos
+            
+            logger.info("   ⚠️  Conectores en desarrollo - usando Paper Trading temporalmente")
+        else:
+            logger.info("   Sin cuentas configuradas - usando Paper Trading")
+            logger.info("   💡 Configura cuentas en: Dashboard → Configuración de Brokers")
+        
         executor = OrderExecutor(
             risk_manager=risk_manager,
             storage=storage,
-            connectors={}  # Paper trading
+            connectors=connectors  # Por ahora vacío, se implementará con conectores
         )
+        
+        # 7. Closing Monitor (Feedback Loop)
+        logger.info("💰 Inicializando Closing Monitor...")
+        monitor = ClosingMonitor(
+            storage=storage,
+            connectors=connectors,
+            interval_seconds=60
+        )
+        logger.info("   Intervalo: 60 segundos | Estado: Activo")
         
         # 7. EDGE Tuner (Auto-calibración)
         logger.info("🤖 Inicializando EDGE Tuner...")
@@ -254,6 +286,12 @@ async def main():
         logger.info("✅ Scanner ejecutándose")
         logger.info("")
         
+        # Iniciar Closing Monitor en tarea asíncrona
+        logger.info("🔄 Iniciando Closing Monitor...")
+        monitor_task = asyncio.create_task(monitor.start())
+        logger.info("✅ Closing Monitor activo (Feedback Loop)")
+        logger.info("")
+        
         # Esperar a que dashboard esté listo
         time.sleep(2)
         
@@ -271,6 +309,8 @@ async def main():
     except KeyboardInterrupt:
         logger.info("\n⚠️  Deteniendo sistema...")
         scanner.stop()
+        if 'monitor' in locals():
+            await monitor.stop()
         if streamlit_process and streamlit_process.poll() is None:
             streamlit_process.terminate()
             logger.info("✅ Dashboard detenido")

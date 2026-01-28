@@ -99,17 +99,23 @@ class OrderExecutor:
             # Execute signal through connector
             result = connector.execute_signal(signal)
             
-            # Verify execution success
-            if result and result.get("status") == "success":
+            # Verify execution success (support both formats)
+            success = result.get('success', False) or result.get("status") == "success"
+            
+            if success:
+                # Extract ticket/order_id
+                ticket = result.get('ticket') or result.get('order_id')
+                
                 logger.info(
-                    f"Signal executed successfully: {signal.symbol} {signal.signal_type}, "
-                    f"OrderID={result.get('order_id')}"
+                    f"✅ Signal executed successfully: {signal.symbol} {signal.signal_type}, "
+                    f"Ticket={ticket}"
                 )
                 self._register_successful_signal(signal, result)
                 return True
             else:
-                logger.warning(f"Signal execution failed: {result}")
-                self._handle_connector_failure(signal, f"Execution failed: {result}")
+                error_msg = result.get('error', 'Unknown error')
+                logger.warning(f"Signal execution failed: {error_msg}")
+                self._handle_connector_failure(signal, f"Execution failed: {error_msg}")
                 return False
                 
         except ConnectionError as e:
@@ -188,18 +194,21 @@ class OrderExecutor:
     
     def _register_successful_signal(self, signal: Signal, result: Dict):
         """Register successfully executed signal."""
-        signal_record = {
-            "timestamp": datetime.now().isoformat(),
-            "symbol": signal.symbol,
-            "signal_type": signal.signal_type,
-            "status": "EXECUTED",
-            "order_id": result.get("order_id"),
-            "connector_type": signal.connector_type.value
-        }
+        # Extract ticket from result (supports both formats)
+        ticket = result.get('ticket') or result.get('order_id')
         
-        self.storage.update_system_state({
-            "executed_signals": [signal_record]
+        # Save signal to database
+        signal_id = self.storage.save_signal(signal)
+        
+        # Update to EXECUTED status with execution details
+        self.storage.update_signal_status(signal_id, 'EXECUTED', {
+            'ticket': ticket,
+            'execution_price': result.get('price'),
+            'execution_time': datetime.now().isoformat(),
+            'connector': signal.connector_type if hasattr(signal, 'connector_type') else 'UNKNOWN'
         })
+        
+        logger.debug(f"Signal registered as EXECUTED: {signal.symbol}, Ticket: {ticket}")
     
     def _register_failed_signal(self, signal: Signal, reason: str):
         """Register failed signal attempt in data_vault."""
