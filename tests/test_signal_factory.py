@@ -1,11 +1,12 @@
 """
-Test Suite para el Signal Factory de Aethelgard
+Test Suite para el Signal Factory de Aethelgard (Refactorizado)
 =================================================
 
 Objetivo: Validar la lógica de negocio del SignalFactory bajo los principios de TDD.
 - Mockea dependencias externas (Storage, Notifier).
 - Simula datos de mercado para probar escenarios específicos.
 - Verifica la correcta asignación de scores y el disparo de notificaciones.
+- Adaptado al Patrón Strategy (Fase 2.2).
 """
 import pytest
 import pandas as pd
@@ -15,6 +16,7 @@ from datetime import datetime
 
 # Componentes a probar y mockear
 from core_brain.signal_factory import SignalFactory
+from core_brain.strategies.oliver_velez import OliverVelezStrategy
 from models.signal import Signal, MarketRegime, MembershipTier, SignalType, ConnectorType
 from data_vault.storage import StorageManager
 
@@ -113,11 +115,13 @@ async def test_perfect_elephant_candle_generates_high_score_signal(signal_factor
     df = create_synthetic_dataframe(is_perfect_elephant=True, trend_slope=0.1)
     symbol = "EURUSD_PERFECT"
     
-    # Act: Generar la señal
-    result_signal = await signal_factory.generate_signal(symbol, df, MarketRegime.TREND)
+    # Act: Generar señales (ahora devuelve lista)
+    results = await signal_factory.generate_signal(symbol, df, MarketRegime.TREND)
     
     # Assert: Validar que la señal es de alta calidad
-    assert result_signal is not None, "No se generó ninguna señal para un escenario perfecto."
+    assert len(results) > 0, "No se generó ninguna señal para un escenario perfecto."
+    result_signal = results[0]
+    
     assert isinstance(result_signal, Signal)
     assert result_signal.metadata.get("score", 0) > 80, f"El score fue {result_signal.metadata.get('score', 0)}, se esperaba > 80."
     assert result_signal.signal_type == "BUY"
@@ -140,10 +144,10 @@ async def test_inconsistent_data_is_rejected(signal_factory, mock_notifier):
     symbol = "EURUSD_INCONSISTENT"
     
     # Act: Intentar generar la señal
-    result_signal = await signal_factory.generate_signal(symbol, df, MarketRegime.TREND)
+    results = await signal_factory.generate_signal(symbol, df, MarketRegime.TREND)
     
     # Assert: El sistema debe rechazar la señal
-    assert result_signal is None, "Se generó una señal para datos inconsistentes."
+    assert len(results) == 0, "Se generó una señal para datos inconsistentes."
     
     # Asegurarse de que el notificador no fue llamado
     mock_notifier.notify_oliver_velez_signal.assert_not_called()
@@ -156,6 +160,9 @@ async def test_low_score_signal_does_not_trigger_notification(signal_factory, mo
     Una señal que cumple los requisitos mínimos pero con valores límite debe generar
     un score bajo y no disparar una notificación 'Premium'.
     """
+    # Obtener la estrategia OliverVelezStrategy de la lista
+    ov_strategy = next(s for s in signal_factory.strategies if isinstance(s, OliverVelezStrategy))
+
     # Arrange: Crear una base de señal válida, pero con valores débiles.
     atr = 0.2
     df = create_synthetic_dataframe(is_perfect_elephant=True, atr_value=atr, trend_slope=0.01)
@@ -163,21 +170,23 @@ async def test_low_score_signal_does_not_trigger_notification(signal_factory, mo
     # Degradamos la vela "perfecta" a una "apenas pasable".
     # El cuerpo será > 2.0x ATR, pero no por mucho.
     last_idx = df.index[-1]
-    # El multiplicador en la factory es 2.0. Usamos 2.1 para que pase justo.
-    df.loc[last_idx, 'close'] = df.loc[last_idx, 'open'] + (atr * signal_factory.elephant_atr_multiplier + 0.01)
+    # Usamos el multiplicador configurado en la estrategia
+    df.loc[last_idx, 'close'] = df.loc[last_idx, 'open'] + (atr * ov_strategy.elephant_atr_multiplier + 0.01)
 
     symbol = "EURUSD_WEAK"
     
-    # Modificamos los umbrales en la instancia de factory para forzar un score bajo
-    signal_factory.base_score = 60.0 # Score base normal
-    signal_factory.regime_bonus = 5.0 # Bono bajo por estar en Trend
-    signal_factory.premium_threshold = 85.0 # Umbral premium normal
+    # Modificamos los umbrales en la **estrategia** para forzar un score bajo
+    ov_strategy.base_score = 60.0 # Score base normal
+    ov_strategy.regime_bonus = 5.0 # Bono bajo por estar en Trend
+    ov_strategy.premium_threshold = 85.0 # Umbral premium normal
 
     # Act: Generar la señal
-    result_signal = await signal_factory.generate_signal(symbol, df, MarketRegime.TREND)
+    results = await signal_factory.generate_signal(symbol, df, MarketRegime.TREND)
     
     # Assert
-    assert result_signal is not None, "No se generó señal para datos débiles pero válidos."
+    assert len(results) > 0, "No se generó señal para datos débiles pero válidos."
+    result_signal = results[0]
+    
     score = result_signal.metadata.get("score", 0)
     assert score < 80, f"El score fue {score}, se esperaba < 80."
     membership_tier_value = result_signal.metadata.get("membership_tier", "")

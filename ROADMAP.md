@@ -63,9 +63,11 @@ Resumen del roadmap de implementación. Detalle completo en [AETHELGARD_MANIFEST
 
 ### 🚧 Fase 2.2: Arquitectura y Estrategias Avanzadas (Prioridad Alta)
 
-**Mejoras Técnicas Detectadas:**
-- **Refactorización a Patrón Strategy**: Desacoplar `SignalFactory` de estrategias específicas (Oliver Vélez) extrayéndolas a clases modulares (`strategies/`) con interfaz común `IStrategy`.
-- **Gestión de Riesgo de Portafolio**: Implementar `PortfolioManager` para controlar correlación entre activos y exposición global, superando la gestión simple por trade.
+**Implementado:**
+- ✅ **Refactorización a Patrón Strategy**: Arquitectura modular implementada. `SignalFactory` actúa como orquestador de `strategies/oliver_velez.py`.
+
+**Pendiente de Implementación:**
+- **Gestión de Riesgo de Portafolio**: Control de correlación y exposición global.
 
 **Pendiente de Implementación:**
 - Range Trading completo
