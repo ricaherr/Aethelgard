@@ -796,7 +796,323 @@ await monitor.start()
 
 ---
 
-### Fase 4: Evolución Comercial 🎯 **FUTURA**
+### Fase 4: Auto-Provisioning y Multi-Broker 🚀 **EN PROGRESO**
+
+**Objetivo**: Sistema autónomo capaz de crear y gestionar cuentas demo automáticamente en múltiples brokers sin intervención humana.
+
+#### 4.1 Arquitectura Correcta: Brokers vs Plataformas ✅ **CORREGIDO**
+
+**Estado**: Completado (Enero 2026)
+
+**Objetivo**: Separación correcta de conceptos: Broker (proveedor), Plataforma (software), Cuenta (configuración usuario).
+
+**Conceptos Clave:**
+- **BROKER** = Proveedor de liquidez/intermediario financiero (Pepperstone, IC Markets, Binance, IBKR)
+- **PLATFORM** = Software de ejecución (MetaTrader 5, NinjaTrader 8, TradingView, API)
+- **ACCOUNT** = Cuenta específica en un broker usando una plataforma
+
+**Relaciones:**
+- Un BROKER puede ofrecer múltiples PLATFORMS (Pepperstone: MT5, MT4, cTrader)
+- Un BROKER puede tener múltiples ACCOUNTS (Pepperstone Demo 1, Pepperstone Live)
+- Una ACCOUNT usa una PLATFORM específica y un SERVER específico
+
+**Ejemplo Correcto:**
+```
+Broker: Pepperstone (proveedor de liquidez forex)
+├── Platforms Available: [MT5, MT4, cTrader]
+├── Data Server: Pepperstone-Demo
+└── Accounts:
+    ├── Account 1:
+    │   ├── Platform: MT5
+    │   ├── Server: Pepperstone-Demo
+    │   ├── Type: demo
+    │   ├── Account Number: 123456789
+    │   └── Credentials: config/accounts/pepperstone_mt5_demo_123.json
+    └── Account 2:
+        ├── Platform: cTrader
+        ├── Server: Pepperstone-cTrader-Demo
+        ├── Type: demo
+        └── Credentials: config/accounts/pepperstone_ctrader_demo_456.json
+```
+
+**Schema SQL:**
+```sql
+-- Catálogo de Brokers (proveedores)
+CREATE TABLE brokers (
+    broker_id TEXT PRIMARY KEY,           -- pepperstone, ic_markets, binance
+    name TEXT NOT NULL,                   -- Pepperstone, IC Markets
+    type TEXT,                            -- forex, crypto, multi_asset, futures
+    website TEXT,                         -- URL oficial
+    platforms_available TEXT,             -- JSON: ["mt5", "mt4", "ctrader"]
+    data_server TEXT,                     -- Servidor de datos históricos
+    auto_provision_available BOOLEAN,     -- Soporta auto-provisioning?
+    registration_url TEXT,                -- URL para crear cuenta
+    created_at TEXT,
+    updated_at TEXT
+);
+
+-- Catálogo de Plataformas (software)
+CREATE TABLE platforms (
+    platform_id TEXT PRIMARY KEY,         -- mt5, nt8, tradingview, binance_api
+    name TEXT NOT NULL,                   -- MetaTrader 5, NinjaTrader 8
+    vendor TEXT,                          -- MetaQuotes, NinjaTrader LLC
+    type TEXT,                            -- desktop, web, api
+    capabilities TEXT,                    -- JSON: ["forex", "futures", "crypto"]
+    connector_class TEXT,                 -- connectors.mt5_connector.MT5Connector
+    created_at TEXT
+);
+
+-- Cuentas configuradas (usuario)
+CREATE TABLE broker_accounts (
+    account_id TEXT PRIMARY KEY,          -- uuid generado
+    broker_id TEXT,                       -- FK a brokers
+    platform_id TEXT,                     -- FK a platforms
+    account_name TEXT,                    -- "Pepperstone Demo 1"
+    account_number TEXT,                  -- Login del broker
+    server TEXT,                          -- Pepperstone-Demo, api.binance.com
+    account_type TEXT,                    -- demo, live, paper
+    credentials_path TEXT,                -- config/accounts/pepperstone_mt5_demo.json
+    enabled BOOLEAN DEFAULT 1,
+    last_connection TEXT,
+    balance REAL,                         -- Último balance conocido
+    created_at TEXT,
+    updated_at TEXT,
+    FOREIGN KEY (broker_id) REFERENCES brokers(broker_id),
+    FOREIGN KEY (platform_id) REFERENCES platforms(platform_id)
+);
+```
+
+**Datos Iniciales Seeded:**
+
+**Plataformas (7):**
+- MetaTrader 5 (desktop)
+- MetaTrader 4 (desktop)
+- NinjaTrader 8 (desktop)
+- TradingView (web)
+- Binance API (api)
+- Interactive Brokers API (api)
+- cTrader (desktop)
+
+**Brokers (7):**
+- Pepperstone (forex) - Platforms: MT5, MT4, cTrader [👤 Manual]
+- IC Markets (forex) - Platforms: MT5, MT4, cTrader [👤 Manual]
+- XM Global (forex) - Platforms: MT5, MT4 [👤 Manual]
+- **Binance (crypto)** - Platforms: API [🤖 Auto-Provision]
+- Interactive Brokers (multi-asset) - Platforms: API [👤 Manual]
+- AMP Futures (futures) - Platforms: NT8 [👤 Manual]
+- **Tradovate (futures)** - Platforms: API, NT8 [🤖 Auto-Provision]
+
+**Migración de Datos:**
+```bash
+# 1. Migrar schema (elimina tabla vieja, crea nuevas)
+python scripts/migrate_broker_schema.py
+
+# 2. Poblar brokers y plataformas iniciales
+python scripts/seed_brokers_platforms.py
+
+# Output:
+# ✅ 7 Platforms seeded
+# ✅ 7 Brokers seeded
+# Auto-Provision Available: 2/7
+```
+
+#### 4.2 Auto-Provisioning de Cuentas Demo ✅ **ACTUALIZADO**
+
+**Estado**: Actualizado con arquitectura correcta (Enero 2026)
+
+**Objetivo**: Crear cuentas demo automáticamente en brokers que lo permitan.
+
+**Arquitectura Correcta:**
+- El sistema ahora distingue entre **BROKER** (proveedor) y **PLATFORM** (software)
+- Auto-provisioning se aplica a nivel de **ACCOUNT** (combinación broker + platform)
+- Datos almacenados en DB: tablas `brokers`, `platforms`, `broker_accounts`
+
+**Clasificación de Brokers:**
+
+| Broker | Tipo | Auto-Provisioning | Método | Estado |
+|--------|------|-------------------|--------|--------|
+| **Binance Testnet** | Crypto | ✅ Full | API pública | Automático |
+| **TradingView Paper** | Multi-Asset | ✅ Full | Webhook | Automático |
+| **MT5 MetaQuotes Demo** | Forex/CFD | ✅ Partial | API demo | Automático |
+| **NinjaTrader Kinetic** | Futures | ✅ Partial | Simulador local | Automático |
+| **MT5 Pepperstone/IC** | Forex | ⚠️ Partial | Registro web | Manual |
+| **Interactive Brokers** | Multi-Asset | ❌ None | Cuenta real requerida | Manual |
+| **Rithmic** | Futures | ❌ None | Registro comercial | Manual |
+
+**Funcionalidad:**
+```bash
+# Modo DEMO: Auto-crea cuentas si no existen
+python start_production.py --mode demo
+
+# Sistema automáticamente:
+# 1. Verifica si existe cuenta demo guardada
+# 2. Si NO existe y broker soporta auto-creation → CREA automáticamente
+# 3. Si broker requiere manual → Muestra instrucciones de registro
+# 4. Guarda credenciales en config/demo_accounts/ (encriptado)
+# 5. Conecta y opera en modo demo
+```
+
+**Proveedores Automáticos:**
+- **Binance**: Genera API keys en testnet sin registro
+- **TradingView**: Configura webhook para paper trading integrado
+- **MT5 MetaQuotes**: Crea cuenta demo instantánea (sin broker específico)
+- **NT8 Kinetic**: Activa simulador local (sin conexión externa)
+
+**Proveedores Manuales:**
+- **MT5 Brokers**: Usuario debe registrarse en sitio web (Pepperstone, IC Markets, XM)
+- **IBKR**: Requiere cuenta real primero, luego habilitar paper trading
+- **Rithmic**: Requiere solicitud comercial y aprobación
+
+**Seguridad:**
+- Credenciales guardadas en `config/demo_accounts/*.json`
+- Permisos 600 (solo propietario)
+- Validación de cuentas demo antes de ejecutar trades
+- Lockdown automático si detecta cuenta real en modo DEMO
+
+#### 4.2 Modo DEMO Autónomo ✅ **IMPLEMENTADO**
+
+**Estado**: Completado (Enero 2026)
+
+**Cómo Funciona:**
+```python
+# Sistema detecta si usuario elige --mode demo
+# Si broker soporta auto-creation:
+provisioner = BrokerProvisioner()
+success, creds = await provisioner.ensure_demo_account('binance')
+
+if success:
+    # Cuenta creada/cargada automáticamente
+    # Sistema opera sin intervención humana
+else:
+    # Broker requiere setup manual
+    # Muestra instrucciones: URL registro + pasos
+```
+
+**Experiencia de Usuario:**
+
+**Broker Automático (Binance):**
+```
+🤖 Auto-Provisioning: Configurando brokers DEMO...
+   Verificando binance...
+   ✅ binance demo disponible
+   Account: aethelgard_a3f9b2c1
+   API Key: test_****
+   Ready to trade!
+```
+
+**Broker Manual (IBKR):**
+```
+⚠️  ibkr requiere configuración manual
+   1. Registro: https://www.interactivebrokers.com/...
+   2. Crear cuenta real
+   3. Habilitar Paper Trading en Account Management
+   4. Guardar credenciales en config/demo_accounts/ibkr_demo.json
+```
+
+#### 4.3 Roadmap Multi-Broker 🎯 **FUTURO**
+
+**Próximos Brokers:**
+- [ ] Implementar conector Binance Testnet completo
+- [ ] Implementar conector TradingView webhook
+- [ ] Completar auto-provision MT5 MetaQuotes Demo
+- [ ] Implementar NT8 Kinetic simulator connector
+- [ ] Agregar IBKR paper trading (manual)
+- [ ] Agregar más exchanges crypto (Bybit testnet, OKX demo)
+
+#### 4.4 Gestión de Brokers desde Dashboard ✅ **IMPLEMENTADO**
+
+**Estado**: Completado (Enero 2026)
+
+**Objetivo**: Interfaz visual para gestionar conexiones con brokers sin editar archivos manualmente.
+
+**Componentes Implementados:**
+- ✅ Tabla `brokers` en SQLite con toda la configuración
+- ✅ Script de migración `migrate_brokers_to_db.py` (JSON → DB)
+- ✅ Tab "🔌 Configuración de Brokers" en Dashboard
+- ✅ 8 tests unitarios en `test_broker_storage.py` (todos pasando)
+
+**Funcionalidades de la Interfaz:**
+
+**Vista General:**
+- Lista de todos los brokers configurados
+- Estado visual: 🟢 Habilitado / 🔴 Deshabilitado
+- Iconos de auto-provisioning: 🤖 Full / ⚙️ Partial / 👤 Manual
+- Filtros: Todos / Habilitados / Deshabilitados
+- Estadísticas: Total, Habilitados %, Auto-Provision Full, Configurados %
+
+**Por Broker (Expandible):**
+- **Información**: Tipo, Auto-Provisioning nivel, Proveedores disponibles
+- **Estado**: Última conexión, Credenciales configuradas (✅/⚠️)
+- **Toggle**: Habilitar/Deshabilitar con un click
+- **Acciones**:
+  * 🔌 **Test Conexión**: Verifica conectividad, auto-crea cuenta si soportado
+  * 🤖 **Auto-Provision**: Crea cuenta demo automáticamente (si aplicable)
+  * 📁 **Ver Credenciales**: Muestra configuración (oculta passwords/keys)
+
+**Flujo de Trabajo:**
+```
+Usuario → Dashboard → Tab "Configuración de Brokers"
+→ Selecciona broker (ej: Binance)
+→ Click "Auto-Provision"
+→ Sistema crea cuenta testnet automáticamente
+→ Guarda credenciales en config/demo_accounts/
+→ Actualiza DB con path y timestamp
+→ Broker listo para operar
+```
+
+**Persistencia:**
+```sql
+-- Tabla brokers
+CREATE TABLE brokers (
+    broker_id TEXT PRIMARY KEY,        -- binance, mt5, ibkr, nt8, tradingview
+    name TEXT NOT NULL,                -- Binance, MetaTrader 5, etc.
+    type TEXT,                         -- crypto, forex_cfd, multi_asset, futures
+    auto_provisioning TEXT,            -- full, partial, none
+    providers_json TEXT,               -- JSON con proveedores disponibles
+    enabled BOOLEAN DEFAULT 1,         -- Habilitado/Deshabilitado
+    credentials_path TEXT,             -- Ruta a archivo de credenciales
+    last_connection TEXT,              -- Timestamp última conexión exitosa
+    created_at TEXT,
+    updated_at TEXT
+);
+```
+
+**Métodos de StorageManager:**
+- `save_broker_config(broker_config)`: Guarda/actualiza broker
+- `get_brokers()`: Lista todos los brokers
+- `get_broker(broker_id)`: Obtiene broker específico
+- `get_enabled_brokers()`: Solo habilitados
+- `get_auto_provision_brokers()`: Solo con auto-provision
+- `update_broker_status(broker_id, enabled)`: Habilitar/deshabilitar
+- `update_broker_credentials(broker_id, path)`: Actualiza ruta credenciales
+- `update_broker_connection(broker_id)`: Marca timestamp conexión
+
+**Migración de Datos:**
+```bash
+# Migrar brokers de config/brokers.json a DB (una sola vez)
+python scripts/migrate_brokers_to_db.py
+
+# Output:
+# ✅ Migrated: binance (Binance)
+# ✅ Migrated: mt5 (MetaTrader 5)
+# ✅ Migrated: ibkr (Interactive Brokers)
+# ✅ Migrated: nt8 (NinjaTrader 8)
+# ✅ Migrated: tradingview (TradingView)
+# Migration complete: 5/5 brokers
+```
+
+**Seguridad:**
+- Credenciales sensibles (passwords, API keys) mostradas como `***HIDDEN***` en UI
+- Archivos de credenciales con permisos 600 (solo propietario)
+- Validación de auto-provisioning antes de ejecutar
+
+**Documentación:**
+Todo está documentado EXCLUSIVAMENTE en este archivo (AETHELGARD_MANIFESTO.md).
+NO crear guías separadas, READMEs adicionales, o documentos redundantes.
+
+---
+
+### Fase 5: Evolución Comercial 🎯 **FUTURA**
 
 **Objetivo**: Transformar Aethelgard en un sistema comercial multi-usuario con capacidades avanzadas de gestión y monitoreo.
 
@@ -819,7 +1135,7 @@ await monitor.start()
 - Configuración de parámetros independiente por usuario
 - Límites de recursos configurables (número de señales, estrategias activas, etc.)
 
-#### 4.2 Módulos bajo Demanda
+#### 5.2 Módulos bajo Demanda
 
 **Estado**: Pendiente de implementación
 
@@ -839,7 +1155,7 @@ await monitor.start()
 - Facturación basada en estrategias activas (si aplica)
 - Logs de uso por API Key para auditoría
 
-#### 4.3 Sistema de Notificaciones
+#### 5.3 Sistema de Notificaciones
 
 **Estado**: Pendiente de implementación
 
