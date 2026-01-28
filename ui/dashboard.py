@@ -80,6 +80,8 @@ def get_regime_color(regime: str) -> str:
 
 def main():
     """Función principal del dashboard"""
+    # Fix for UnboundLocalError by ensuring global access to plotly and pandas
+    global pd, px, go
     
     # Título
     st.title("🧠 Aethelgard - Dashboard de Control")
@@ -164,16 +166,33 @@ def main():
         
         # Get statistics and active trades
         try:
-            # Check if storage is stale (missing new methods)
-            if not hasattr(storage, 'get_open_operations'):
-                # Force reload of the module and clear cache
+            # Check if storage or provider_manager are stale
+            storage_stale = not hasattr(storage, 'get_open_operations')
+            
+            # We also check ProviderConfig indirectly via DataProviderManager
+            # But simpler to just check if we have the new fields
+            prov_manager = get_provider_manager()
+            config_sample = prov_manager.get_active_providers()
+            # If active providers don't have is_system in their metadata or config
+            prov_stale = False
+            if config_sample:
+                test_name = config_sample[0]['name']
+                test_conf = prov_manager.get_provider_config(test_name)
+                prov_stale = not hasattr(test_conf, 'is_system')
+
+            if storage_stale or prov_stale:
+                # Force reload of core modules and clear cache
                 st.cache_resource.clear()
+                
                 import data_vault.storage
                 importlib.reload(data_vault.storage)
                 from data_vault.storage import StorageManager
-                # Re-instantiate if cached one is old
-                storage = StorageManager()
-                st.info("🔄 Se detectó una versión antigua del motor de datos. Limpiando caché y reiniciando conexión...")
+                
+                import core_brain.data_provider_manager
+                importlib.reload(core_brain.data_provider_manager)
+                from core_brain.data_provider_manager import DataProviderManager
+                
+                st.info("🔄 Se detectó una versión antigua del motor de datos o proveedores. Limpiando caché y reiniciando conexión...")
                 st.rerun() # Rerun to ensure clean state
             
             stats = storage.get_statistics()
@@ -1035,7 +1054,7 @@ def main():
                                 
                             # Add is_system for free providers
                             config = provider_manager.get_provider_config(name)
-                            is_sys = st.checkbox("Usar como fuente para el Scanner (System Data)", value=config.is_system, key=f"sys_free_{name}")
+                            is_sys = st.checkbox("Usar como fuente para el Scanner (System Data)", value=getattr(config, 'is_system', False), key=f"sys_free_{name}")
                             if is_sys != config.is_system:
                                 provider_manager.set_system_provider(name, is_sys)
                                 st.success(f"Estado de sistema actualizado para {name}")
@@ -1125,7 +1144,7 @@ def main():
                                     help="Tu API key del proveedor"
                                 )
                                 
-                                is_system = st.checkbox("Usar como fuente para el Scanner (System Data)", value=config.is_system)
+                                is_system = st.checkbox("Usar como fuente para el Scanner (System Data)", value=getattr(config, 'is_system', False), key=f"sys_auth_{name}")
                                 
                                 submitted = st.form_submit_button("💾 Guardar Configuración")
                                 
@@ -1152,7 +1171,7 @@ def main():
                                 
                                 server = st.text_input("Server", value=mt5_config.get("server", ""))
                                 
-                                is_system = st.checkbox("Usar como fuente para el Scanner (System Data)", value=config.is_system)
+                                is_system = st.checkbox("Usar como fuente para el Scanner (System Data)", value=getattr(config, 'is_system', False), key=f"sys_mt5_{name}")
                                 
                                 submitted = st.form_submit_button("💾 Guardar Configuración")
                                 

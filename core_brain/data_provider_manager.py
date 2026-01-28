@@ -86,7 +86,8 @@ class DataProviderManager:
             "module": "connectors.generic_data_provider",
             "class": "GenericDataProvider",
             "description": "Yahoo Finance - Totalmente gratuito, sin API key",
-            "supports": ["stocks", "forex", "crypto", "commodities", "indices"]
+            "supports": ["stocks", "forex", "crypto", "commodities", "indices"],
+            "is_system": True
         },
         "alphavantage": {
             "name": "alphavantage",
@@ -180,7 +181,7 @@ class DataProviderManager:
                         is_system=bool(p_data.get('is_system', 0))
                     )
                 logger.info(f"Loaded {len(self.providers)} providers from database")
-            elif self.config_path.exists():
+            elif self.config_path and self.config_path.exists():
                 # Migrate from JSON
                 logger.info(f"Migrating provider configuration from {self.config_path} to DB")
                 try:
@@ -220,7 +221,8 @@ class DataProviderManager:
                 enabled=metadata.get("enabled", False),
                 requires_auth=metadata.get("requires_auth", False),
                 priority=metadata.get("priority", 50),
-                free_tier=metadata.get("free_tier", True)
+                free_tier=metadata.get("free_tier", True),
+                is_system=metadata.get("is_system", False)
             )
             self.providers[name] = config
             # Save to DB
