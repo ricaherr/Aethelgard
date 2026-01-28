@@ -10,9 +10,11 @@ Sistema autónomo, proactivo y agnóstico de trading multihilo. Capacidad de aut
 4. **Escalabilidad Comercial**: Las señales y funciones deben filtrarse por niveles de membresía (Basic/Premium) definidos en `config/modules.json`.
 5. **Auto-Calibración**: El sistema debe priorizar el aprendizaje de los datos en `data_vault` para ajustar `dynamic_params.json`.
 6. **Seguridad Primero**: Validar todas las entradas externas (datos de mercado, configuraciones de usuario) antes de procesarlas.
-7. **Documentación Continua**: Cada módulo nuevo debe incluir documentación clara y ejemplos de uso, en el archivo AETHELGARD_MANIFIESTO.md.
-8. **Codigo en el chat**: no agregar codigo completo directamente en la conversación, solo fragmentos relevantes y explicaciones.
-9. **Sin Documentos de Tareas**: NO crear archivos markdown explicando tareas completadas. Entregar SOLO resumen ejecutivo directo en el chat.
+7. **Documentación Única**: TODO debe documentarse EXCLUSIVAMENTE en AETHELGARD_MANIFESTO.md. NUNCA crear documentos adicionales (README separados, guías, tutoriales). Un solo archivo de verdad.
+8. **Auto-Provisioning**: El sistema debe crear cuentas demo automáticamente en brokers que lo permitan (sin intervención humana). Clasificar brokers: automático vs manual.
+9. **Modo DEMO Autónomo**: Si el usuario elige modo DEMO y no existe cuenta, el sistema debe crearla automáticamente. Solo pedir credenciales en brokers que requieren registro manual.
+10. **Codigo en el chat**: no agregar codigo completo directamente en la conversación, solo fragmentos relevantes y explicaciones.
+11. **Sin Documentos de Tareas**: NO crear archivos markdown explicando tareas completadas. Entregar SOLO resumen ejecutivo directo en el chat.
 
 ## 🛠️ Stack Tecnológico
 - **Backend**: Python 3.12+ (Asyncio, FastAPI).
