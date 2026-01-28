@@ -104,6 +104,57 @@ class StorageManager:
                     data TEXT
                 )
             ''')
+            
+            # Tabla de Brokers (Proveedores de liquidez)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS brokers (
+                    broker_id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    type TEXT,
+                    website TEXT,
+                    platforms_available TEXT,
+                    data_server TEXT,
+                    auto_provision_available BOOLEAN DEFAULT 0,
+                    registration_url TEXT,
+                    created_at TEXT,
+                    updated_at TEXT
+                )
+            ''')
+            
+            # Tabla de Plataformas (Software de ejecución)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS platforms (
+                    platform_id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    vendor TEXT,
+                    type TEXT,
+                    capabilities TEXT,
+                    connector_class TEXT,
+                    created_at TEXT
+                )
+            ''')
+            
+            # Tabla de Cuentas (Cuentas configuradas por usuario)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS broker_accounts (
+                    account_id TEXT PRIMARY KEY,
+                    broker_id TEXT,
+                    platform_id TEXT,
+                    account_name TEXT,
+                    account_number TEXT,
+                    server TEXT,
+                    account_type TEXT,
+                    credentials_path TEXT,
+                    enabled BOOLEAN DEFAULT 1,
+                    last_connection TEXT,
+                    balance REAL,
+                    created_at TEXT,
+                    updated_at TEXT,
+                    FOREIGN KEY (broker_id) REFERENCES brokers(broker_id),
+                    FOREIGN KEY (platform_id) REFERENCES platforms(platform_id)
+                )
+            ''')
+            
             conn.commit()
             logger.info("Database schema verified/initialized successfully.")
 
@@ -717,3 +768,400 @@ class StorageManager:
         except Exception as e:
             logger.error(f"Error getting profit by symbol: {e}")
             return []
+    
+    # ==================== BROKER MANAGEMENT ====================
+    
+    def save_broker(self, broker_config: Dict):
+        """
+        Save or update broker (provider) configuration.
+        
+        Args:
+            broker_config: Dict with keys: broker_id, name, type, website, platforms_available, etc.
+        """
+        try:
+            broker_id = broker_config['broker_id']
+            name = broker_config['name']
+            broker_type = broker_config.get('type', '')
+            website = broker_config.get('website', '')
+            platforms = broker_config.get('platforms_available', [])
+            data_server = broker_config.get('data_server', '')
+            auto_provision = broker_config.get('auto_provision_available', False)
+            registration_url = broker_config.get('registration_url', '')
+            
+            # Serialize platforms list to JSON
+            platforms_json = json.dumps(platforms)
+            
+            now = datetime.now().isoformat()
+            
+            with self._get_conn() as conn:
+                cursor = conn.cursor()
+                
+                # Check if exists
+                cursor.execute("SELECT broker_id FROM brokers WHERE broker_id = ?", (broker_id,))
+                exists = cursor.fetchone() is not None
+                
+                if exists:
+                    # Update
+                    cursor.execute("""
+                        UPDATE brokers 
+                        SET name = ?, type = ?, website = ?, platforms_available = ?, 
+                            data_server = ?, auto_provision_available = ?, 
+                            registration_url = ?, updated_at = ?
+                        WHERE broker_id = ?
+                    """, (name, broker_type, website, platforms_json, data_server, 
+                          auto_provision, registration_url, now, broker_id))
+                else:
+                    # Insert
+                    cursor.execute("""
+                        INSERT INTO brokers 
+                        (broker_id, name, type, website, platforms_available, 
+                         data_server, auto_provision_available, registration_url, 
+                         created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (broker_id, name, broker_type, website, platforms_json, 
+                          data_server, auto_provision, registration_url, now, now))
+                
+                conn.commit()
+                logger.info(f"Broker saved: {broker_id}")
+                
+        except Exception as e:
+            logger.error(f"Error saving broker: {e}")
+            raise
+    
+    def save_platform(self, platform_config: Dict):
+        """
+        Save platform configuration.
+        
+        Args:
+            platform_config: Dict with keys: platform_id, name, vendor, type, capabilities, connector_class
+        """
+        try:
+            platform_id = platform_config['platform_id']
+            name = platform_config['name']
+            vendor = platform_config.get('vendor', '')
+            platform_type = platform_config.get('type', '')
+            capabilities = platform_config.get('capabilities', [])
+            connector_class = platform_config.get('connector_class', '')
+            
+            # Serialize capabilities
+            capabilities_json = json.dumps(capabilities)
+            now = datetime.now().isoformat()
+            
+            with self._get_conn() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT OR REPLACE INTO platforms 
+                    (platform_id, name, vendor, type, capabilities, connector_class, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (platform_id, name, vendor, platform_type, capabilities_json, 
+                      connector_class, now))
+                conn.commit()
+                logger.info(f"Platform saved: {platform_id}")
+                
+        except Exception as e:
+            logger.error(f"Error saving platform: {e}")
+            raise
+    
+    def save_broker_account(self, account_config: Dict):
+        """
+        Save or update broker account.
+        
+        Args:
+            account_config: Dict with keys: account_id, broker_id, platform_id, account_name, 
+                           account_number, server, account_type, credentials_path, enabled
+        """
+        try:
+            account_id = account_config.get('account_id') or str(uuid.uuid4())
+            broker_id = account_config['broker_id']
+            platform_id = account_config['platform_id']
+            account_name = account_config.get('account_name', '')
+            account_number = account_config.get('account_number', '')
+            server = account_config.get('server', '')
+            account_type = account_config.get('account_type', 'demo')
+            credentials_path = account_config.get('credentials_path', '')
+            enabled = account_config.get('enabled', True)
+            balance = account_config.get('balance', 0.0)
+            
+            now = datetime.now().isoformat()
+            
+            with self._get_conn() as conn:
+                cursor = conn.cursor()
+                
+                # Check if exists
+                cursor.execute("SELECT account_id FROM broker_accounts WHERE account_id = ?", (account_id,))
+                exists = cursor.fetchone() is not None
+                
+                if exists:
+                    # Update
+                    cursor.execute("""
+                        UPDATE broker_accounts 
+                        SET broker_id = ?, platform_id = ?, account_name = ?, 
+                            account_number = ?, server = ?, account_type = ?, 
+                            credentials_path = ?, enabled = ?, balance = ?, updated_at = ?
+                        WHERE account_id = ?
+                    """, (broker_id, platform_id, account_name, account_number, 
+                          server, account_type, credentials_path, enabled, balance, 
+                          now, account_id))
+                else:
+                    # Insert
+                    cursor.execute("""
+                        INSERT INTO broker_accounts 
+                        (account_id, broker_id, platform_id, account_name, account_number, 
+                         server, account_type, credentials_path, enabled, balance, 
+                         created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (account_id, broker_id, platform_id, account_name, account_number, 
+                          server, account_type, credentials_path, enabled, balance, now, now))
+                
+                conn.commit()
+                logger.info(f"Account saved: {account_id}")
+                return account_id
+                
+        except Exception as e:
+            logger.error(f"Error saving broker account: {e}")
+            raise
+    
+    def get_brokers(self) -> List[Dict]:
+        """Get all brokers (providers)"""
+        try:
+            with self._get_conn() as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT broker_id, name, type, website, platforms_available, 
+                           data_server, auto_provision_available, registration_url,
+                           created_at, updated_at
+                    FROM brokers
+                    ORDER BY name
+                """)
+                rows = cursor.fetchall()
+                return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"Error getting brokers: {e}")
+            return []
+    
+    def get_broker(self, broker_id: str) -> Optional[Dict]:
+        """Get specific broker"""
+        try:
+            with self._get_conn() as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT broker_id, name, type, website, platforms_available, 
+                           data_server, auto_provision_available, registration_url,
+                           created_at, updated_at
+                    FROM brokers
+                    WHERE broker_id = ?
+                """, (broker_id,))
+                row = cursor.fetchone()
+                return dict(row) if row else None
+        except Exception as e:
+            logger.error(f"Error getting broker {broker_id}: {e}")
+            return None
+    
+    def get_platforms(self) -> List[Dict]:
+        """Get all platforms"""
+        try:
+            with self._get_conn() as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT platform_id, name, vendor, type, capabilities, 
+                           connector_class, created_at
+                    FROM platforms
+                    ORDER BY name
+                """)
+                rows = cursor.fetchall()
+                return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"Error getting platforms: {e}")
+            return []
+    
+    def get_broker_accounts(self, broker_id: Optional[str] = None, 
+                           enabled_only: bool = False) -> List[Dict]:
+        """
+        Get broker accounts, optionally filtered by broker_id
+        
+        Args:
+            broker_id: Filter by specific broker (None = all)
+            enabled_only: Only return enabled accounts
+        """
+        try:
+            with self._get_conn() as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                
+                query = """
+                    SELECT account_id, broker_id, platform_id, account_name, 
+                           account_number, server, account_type, credentials_path,
+                           enabled, last_connection, balance, created_at, updated_at
+                    FROM broker_accounts
+                """
+                
+                params = []
+                conditions = []
+                
+                if broker_id:
+                    conditions.append("broker_id = ?")
+                    params.append(broker_id)
+                
+                if enabled_only:
+                    conditions.append("enabled = 1")
+                
+                if conditions:
+                    query += " WHERE " + " AND ".join(conditions)
+                
+                query += " ORDER BY account_name"
+                
+                cursor.execute(query, tuple(params))
+                rows = cursor.fetchall()
+                return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"Error getting broker accounts: {e}")
+            return []
+    
+    def get_account(self, account_id: str) -> Optional[Dict]:
+        """Get specific account"""
+        try:
+            with self._get_conn() as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT account_id, broker_id, platform_id, account_name, 
+                           account_number, server, account_type, credentials_path,
+                           enabled, last_connection, balance, created_at, updated_at
+                    FROM broker_accounts
+                    WHERE account_id = ?
+                """, (account_id,))
+                row = cursor.fetchone()
+                return dict(row) if row else None
+        except Exception as e:
+            logger.error(f"Error getting account {account_id}: {e}")
+            return None
+    
+    def update_account_status(self, account_id: str, enabled: bool):
+        """Enable or disable an account"""
+        try:
+            with self._get_conn() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE broker_accounts 
+                    SET enabled = ?, updated_at = ?
+                    WHERE account_id = ?
+                """, (enabled, datetime.now().isoformat(), account_id))
+                conn.commit()
+                logger.info(f"Account {account_id} {'enabled' if enabled else 'disabled'}")
+        except Exception as e:
+            logger.error(f"Error updating account status: {e}")
+            raise
+    
+    def update_account_connection(self, account_id: str, balance: Optional[float] = None):
+        """Update last connection timestamp and optionally balance"""
+        try:
+            with self._get_conn() as conn:
+                cursor = conn.cursor()
+                if balance is not None:
+                    cursor.execute("""
+                        UPDATE broker_accounts 
+                        SET last_connection = ?, balance = ?
+                        WHERE account_id = ?
+                    """, (datetime.now().isoformat(), balance, account_id))
+                else:
+                    cursor.execute("""
+                        UPDATE broker_accounts 
+                        SET last_connection = ?
+                        WHERE account_id = ?
+                    """, (datetime.now().isoformat(), account_id))
+                conn.commit()
+        except Exception as e:
+            logger.error(f"Error updating account connection: {e}")
+    
+    # Legacy methods for backwards compatibility (deprecated)
+    def save_broker_config(self, broker_config: Dict):
+        """DEPRECATED: Use save_broker() instead"""
+        logger.warning("save_broker_config() is deprecated, use save_broker()")
+        return self.save_broker(broker_config)
+    
+    def get_enabled_brokers(self) -> List[Dict]:
+        """DEPRECATED: Use get_broker_accounts(enabled_only=True) instead"""
+        logger.warning("get_enabled_brokers() is deprecated")
+        return self.get_broker_accounts(enabled_only=True)
+    
+    # Account management methods for Dashboard
+    def update_account_type(self, account_id: str, account_type: str):
+        """Update account type (demo/real)"""
+        try:
+            if account_type not in ['demo', 'real']:
+                raise ValueError("account_type must be 'demo' or 'real'")
+            
+            with self._get_conn() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE broker_accounts 
+                    SET account_type = ?, updated_at = ?
+                    WHERE account_id = ?
+                """, (account_type, datetime.now().isoformat(), account_id))
+                conn.commit()
+                logger.info(f"Account {account_id} type changed to {account_type}")
+        except Exception as e:
+            logger.error(f"Error updating account type: {e}")
+            raise
+    
+    def update_account_enabled(self, account_id: str, enabled: bool):
+        """Update account enabled status (alias for update_account_status)"""
+        return self.update_account_status(account_id, enabled)
+    
+    def update_account(self, account_id: str, account_name: str = None, 
+                      server: str = None, login: str = None, password: str = None):
+        """Update account details"""
+        try:
+            updates = []
+            params = []
+            
+            if account_name is not None:
+                updates.append("account_name = ?")
+                params.append(account_name)
+            
+            if server is not None:
+                updates.append("server = ?")
+                params.append(server)
+            
+            if login is not None:
+                updates.append("account_number = ?")
+                params.append(login)
+            
+            if password is not None:
+                # En producción, esto debería cifrarse
+                # Por ahora solo actualizamos credentials_path si se proporciona
+                updates.append("credentials_path = ?")
+                params.append(f"config/accounts/{account_id}.json")
+            
+            if not updates:
+                logger.warning("No updates provided for account")
+                return
+            
+            updates.append("updated_at = ?")
+            params.append(datetime.now().isoformat())
+            params.append(account_id)
+            
+            with self._get_conn() as conn:
+                cursor = conn.cursor()
+                query = f"UPDATE broker_accounts SET {', '.join(updates)} WHERE account_id = ?"
+                cursor.execute(query, params)
+                conn.commit()
+                logger.info(f"Account {account_id} updated successfully")
+        except Exception as e:
+            logger.error(f"Error updating account: {e}")
+            raise
+    
+    def delete_account(self, account_id: str):
+        """Delete an account"""
+        try:
+            with self._get_conn() as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM broker_accounts WHERE account_id = ?", (account_id,))
+                conn.commit()
+                logger.info(f"Account {account_id} deleted")
+        except Exception as e:
+            logger.error(f"Error deleting account: {e}")
+            raise
