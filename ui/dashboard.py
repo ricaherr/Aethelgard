@@ -121,22 +121,38 @@ def main():
     module_manager = get_module_manager()
     tuner = get_tuner()
     
-    # Tabs principales
-    tab_sys, tab_brokers, tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
-        "🛡️ Sistema & Diagnóstico",
-        "🔌 Configuración de Brokers",
-        "🛡️ Monitor de Resiliencia",
-        "📊 Régimen en Tiempo Real",
-        "🎛️ Gestión de Módulos",
-        "⚙️ Parámetros Dinámicos",
-        "📈 Estadísticas",
-        "⚡ Señales de Trading",
-        "📡 Proveedores de Datos",
-        "💰 Análisis de Activos"
-    ])
+    # Navegación Principal en Sidebar
+    menu_selection = None
+    with st.sidebar:
+        st.markdown("---")
+        st.subheader("🧭 Navegación")
+        
+        # Categorías de navegación
+        category = st.selectbox(
+            "Categoría",
+            ["Operación Hub", "Análisis & Mercado", "Configuración"],
+            index=0
+        )
+        
+        if category == "Operación Hub":
+            menu_selection = st.radio(
+                "Módulo",
+                ["🛡️ Sistema & Diagnóstico", "🔌 Configuración de Brokers", "🛡️ Monitor de Resiliencia", "⚡ Señales de Trading"]
+            )
+        elif category == "Análisis & Mercado":
+            menu_selection = st.radio(
+                "Vista",
+                ["📊 Régimen en Tiempo Real", "📈 Estadísticas", "💰 Análisis de Activos"]
+            )
+        else: # Configuración
+            menu_selection = st.radio(
+                "Ajustes",
+                ["🎛️ Gestión de Módulos", "⚙️ Parámetros Dinámicos", "📡 Proveedores de Datos"]
+            )
     
-    # TAB 0: Sistema & Diagnóstico (Unified interface)
-    with tab_sys:
+    
+    # Renderizar vista seleccionada
+    if menu_selection == "🛡️ Sistema & Diagnóstico":
         st.header("🛡️ Aethelgard System Monitor")
         health_manager = get_health_manager()
         
@@ -176,7 +192,7 @@ def main():
                 st.write(f"{'🟢' if 'SUCCESS' in d else '🟡' if 'WARNING' in d else '🔴'} {d}")
     
     # TAB 1: Monitor de Resiliencia
-    with tab1:
+    elif menu_selection == "🛡️ Monitor de Resiliencia":
         st.header("🛡️ Monitor de Resiliencia - Orquestador")
         
         # Obtener estado del sistema
@@ -382,7 +398,7 @@ def main():
             st.info("Monitor desactivado para debug")
     
     # TAB 2: Régimen en Tiempo Real
-    with tab2:
+    elif menu_selection == "📊 Régimen en Tiempo Real":
         st.header("Régimen de Mercado en Tiempo Real")
         
         col1, col2 = st.columns(2)
@@ -449,7 +465,7 @@ def main():
                 st.json(metrics)
     
     # TAB 3: Gestión de Módulos
-    with tab3:
+    elif menu_selection == "🎛️ Gestión de Módulos":
         st.header("🎛️ Gestión de Módulos Activos")
         
         st.info(f"📋 Mostrando módulos para membresía: **{membership.upper()}**")
@@ -521,7 +537,7 @@ def main():
                 st.warning(f"⚠️ No hay módulos disponibles para régimen {current_regime}")
     
     # TAB 4: Parámetros Dinámicos
-    with tab4:
+    elif menu_selection == "⚙️ Parámetros Dinámicos":
         st.header("⚙️ Parámetros Dinámicos del Tuner")
         
         # Cargar parámetros actuales
@@ -594,7 +610,7 @@ def main():
             logger.error(f"Error cargando parámetros: {e}", exc_info=True)
     
     # TAB 5: Estadísticas
-    with tab5:
+    elif menu_selection == "📈 Estadísticas":
         st.header("📈 Estadísticas del Sistema")
         
         try:
@@ -663,7 +679,7 @@ def main():
             st.warning("⚠️ Notificador de Telegram no configurado")
     
     # TAB 6: Señales de Trading
-    with tab6:
+    elif menu_selection == "⚡ Señales de Trading":
         st.header("⚡ Señales de Trading en Tiempo Real")
         
         # Auto-refresh automático cada 3 segundos
@@ -821,7 +837,7 @@ def main():
                 logger.error(f"Error cargando señales: {e}", exc_info=True)
     
     # TAB 7: Proveedores de Datos
-    with tab7:
+    elif menu_selection == "📡 Proveedores de Datos":
         st.header("📡 Gestión de Proveedores de Datos")
         
         try:
@@ -920,9 +936,12 @@ def main():
                             status = provider_manager.get_provider_status(name)
                             if status:
                                 if not status.available:
-                                    st.error("❌ Librería no instalada")
+                                    st.error(f"❌ Librería/Software no detectado")
+                                    if name == "mt5":
+                                        st.caption("💡 Para MT5: Asegúrate de tener MetaTrader 5 instalado y configurado.")
                                 elif not status.credentials_configured:
-                                    st.warning("⚠️ API Key no configurada")
+                                    msg = "⚠️ Credenciales no configuradas" if name == "mt5" else "⚠️ API Key no configurada"
+                                    st.warning(msg)
                                 else:
                                     st.success("✅ Configurado y listo")
                             
@@ -1053,7 +1072,7 @@ def main():
             logger.error(f"Error en tab proveedores: {e}", exc_info=True)
     
     # TAB 8: Análisis de Activos (NEW - Feedback Loop)
-    with tab8:
+    elif menu_selection == "💰 Análisis de Activos":
         st.header("💰 Análisis de Rentabilidad por Activo")
         st.markdown("Análisis basado en resultados reales de trading (Feedback Loop)")
         
@@ -1219,7 +1238,7 @@ def main():
                             'Salida': '{:.5f}',
                             'PIPs': '{:.2f}',
                             'Profit ($)': '${:.2f}'
-                        }).hide(columns=['Win']),
+                        }).hide(['Win'], axis=1),
                         use_container_width=True
                     )
                 else:
@@ -1238,8 +1257,8 @@ def main():
         st.rerun()
     
     # TAB 9: Configuración de Brokers (DEBUG MODE)
-    # TAB 9: Configuración de Brokers y Cuentas (AHORA PRIMERA PESTAÑA)
-    with tab_brokers:
+    # TAB: Configuración de Brokers y Cuentas
+    elif menu_selection == "🔌 Configuración de Brokers":
         st.header("🔌 Configuración de Brokers y Cuentas")
         st.markdown("Gestiona brokers, plataformas y cuentas de trading")
         

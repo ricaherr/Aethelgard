@@ -305,7 +305,13 @@ class DataProviderManager:
         # Check if credentials are configured
         credentials_configured = True
         if config.requires_auth:
-            credentials_configured = bool(config.api_key)
+            if name == "mt5":
+                # Special check for MT5 (requires login, password, and server)
+                mt5_cfg = config.additional_config
+                credentials_configured = bool(mt5_cfg.get("login") and mt5_cfg.get("server"))
+                # Note: password might be empty if already saved, but login/server are mandatory
+            else:
+                credentials_configured = bool(config.api_key)
         
         return ProviderStatus(
             name=name,

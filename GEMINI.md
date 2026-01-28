@@ -48,8 +48,8 @@ Actúa simultáneamente como:
 
 *   **Infraestructura**: ✅ Lista (Server, DB, Regime).
 *   **Scanner**: ✅ Proactivo y Multihilo.
-*   **Estrategias**: 🚧 Implementando Oliver Vélez (Signal Factory). Trend Following activo. Range Trading pendiente.
-*   **Aprendizaje**: 🔄 Feedback Loop básico activo. Dashboard implementado.
+*   **Estrategias**: 🚧 Implementando Oliver Vélez (Signal Factory). Trend Following activo. Range Trading con lógica básica.
+*   **Aprendizaje**: 🔄 Feedback Loop básico activo. Dashboard upgraded (Sidebar Responsive).
 
 ## 💡 Instrucciones para Generar Respuestas
 

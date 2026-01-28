@@ -65,14 +65,16 @@ def launch_dashboard():
         )
         
         # Esperar a que Streamlit esté listo
-        time.sleep(3)
+        time.sleep(10)
         
         if streamlit_process.poll() is None:
             logger.info("✅ Dashboard disponible en: http://localhost:8503")
             # Abrir navegador automáticamente
             threading.Timer(1.0, lambda: webbrowser.open('http://localhost:8503')).start()
         else:
-            logger.warning("⚠️  Dashboard no pudo iniciarse correctamente")
+            # Si el proceso terminó, capturar error
+            stderr = streamlit_process.stderr.read().decode()
+            logger.warning(f"⚠️  Dashboard no pudo iniciarse correctamente: {stderr}")
             
     except Exception as e:
         logger.error(f"❌ Error al iniciar dashboard: {e}")

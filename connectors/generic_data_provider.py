@@ -190,9 +190,15 @@ class GenericDataProvider:
                 logger.warning(f"No se obtuvieron datos para {symbol}")
                 return None
             
+            # Robustez: yfinance puede devolver MultiIndex si hay problemas o cambios de versión
+            if isinstance(df.columns, pd.MultiIndex):
+                logger.debug(f"Aplanando MultiIndex para {symbol}")
+                df.columns = df.columns.get_level_values(0)
+            
             # Renombrar columnas al formato Aethelgard
             df = df.reset_index()
-            df.columns = df.columns.str.lower()
+            # Asegurar que columns.str existe y funciona
+            df.columns = [str(col).lower() for col in df.columns]
             
             # Mapear nombres de columnas
             column_mapping = {
@@ -204,17 +210,19 @@ class GenericDataProvider:
             # Asegurar que tenemos las columnas requeridas
             required_cols = ['time', 'open', 'high', 'low', 'close', 'volume']
             
-            # Agregar tick_volume (mismo que volume para Yahoo Finance)
+            # Verificar si existe volume antes de subscriptar
             if 'volume' in df.columns:
                 df['tick_volume'] = df['volume']
+            else:
+                df['tick_volume'] = 0
             
-            # Verificar columnas
+            # Verificar columnas faltantes
             missing_cols = [col for col in required_cols if col not in df.columns]
             if missing_cols:
-                logger.error(f"Columnas faltantes: {missing_cols}")
+                logger.error(f"Columnas faltantes para {symbol}: {missing_cols}")
                 return None
             
-            # Seleccionar solo las columnas necesarias
+            # Seleccionar solo las columnas necesarias (uso de .get para evitar NoneType subscripting if df was somehow lost)
             df = df[required_cols + ['tick_volume']]
             
             # Limitar a count velas (las más recientes)
@@ -229,7 +237,7 @@ class GenericDataProvider:
             return df
         
         except Exception as e:
-            logger.error(f"Error obteniendo datos para {symbol}: {e}")
+            logger.error(f"Error obteniendo datos para {symbol}: {str(e)}", exc_info=True)
             return None
     
     def get_available_symbols(self) -> list[str]:

@@ -37,14 +37,29 @@ class MT5DataProvider:
     No requiere gráficas abiertas; los símbolos deben estar en Market Watch.
     """
 
-    def __init__(self, init_mt5: bool = True):
+    def __init__(self, login: Optional[int] = None, password: str = "", server: str = "", init_mt5: bool = True):
         self._initialized = False
-        if init_mt5 and mt5 and not mt5.initialize():
+        if not init_mt5 or not mt5:
+            return
+            
+        # Initialize MT5
+        if not mt5.initialize():
             logger.warning("MT5 no pudo inicializarse: %s", mt5.last_error())
             return
-        if mt5:
-            self._initialized = True
-            logger.info("MT5DataProvider listo. Versión MT5: %s", mt5.version())
+            
+        # Login if credentials provided
+        if login and server:
+            authorized = mt5.login(
+                login=int(login),
+                password=password,
+                server=server
+            )
+            if not authorized:
+                logger.warning("MT5 no pudo autorizarse con login %s: %s", login, mt5.last_error())
+                return
+        
+        self._initialized = True
+        logger.info("MT5DataProvider listo. Versión MT5: %s", mt5.version())
 
     def shutdown(self) -> None:
         """Cierra la conexión con MT5."""

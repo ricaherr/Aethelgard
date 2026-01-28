@@ -16,8 +16,8 @@ Aethelgard está diseñado como un sistema modular que permite integrar múltipl
 
 #### 2. Conectores (`connectors/`)
 - **`bridge_nt8.cs`**: Bridge para NinjaTrader 8 (C#)
-- **`bridge_mt5.py`**: Bridge para MetaTrader 5 (Python) - ⚡ **ACTUALIZADO** con ejecución automática en Demo
-- **`mt5_data_provider.py`**: Ingestión autónoma de OHLC vía `mt5.copy_rates_from_pos` (sin gráficas abiertas)
+- **`bridge_mt5.py`**: Bridge para MetaTrader 5 (Python) - ⚡ **ACTUALIZADO** con ejecución automática en Demo y sincronización de credenciales
+- **`mt5_data_provider.py`**: Ingestión autónoma de OHLC vía `mt5.copy_rates_from_pos`. ⚡ **NUEVO**: Soporta autenticación directa con login/servidor desde el Dashboard.
 - **`webhook_tv.py`**: Webhook para recibir alertas de TradingView
 
 #### 3. Data Vault (`data_vault/`)
@@ -66,7 +66,7 @@ py start.py
 .\start_dashboard.ps1
 ```
 
-El dashboard estará disponible en: http://localhost:8501
+El dashboard estará disponible en: http://localhost:8503 (vía start.py) o http://localhost:8501 (vía script directo)
 
 3. Instalar dependencias
 ```bash
@@ -209,10 +209,10 @@ Las señales se filtran según su calidad (score):
 | **PREMIUM** | 80-89 | Señales de alta calidad (4 criterios cumplidos) |
 | **ELITE** | 90-100 | Señales excepcionales (todos los criterios) |
 
-**Pestaña Dashboard**:
-- FREE: Ve solo señales FREE
-- PREMIUM: Ve señales FREE + PREMIUM
-- ELITE: Ve todas las señales
+**Navegación Sidebar (NUEVO)**:
+- **Operación Hub**: Gestión de Sistema, Brokers y Monitor de Resiliencia.
+- **Análisis & Mercado**: Clasificación de Régimen y Estadísticas de Trading.
+- **Configuración**: Gestión de Módulos, Parámetros EDGE y Proveedores de Datos.
 
 ### Estrategia Oliver Vélez
 
