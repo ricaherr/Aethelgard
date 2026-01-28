@@ -39,27 +39,47 @@ class MT5DataProvider:
 
     def __init__(self, login: Optional[int] = None, password: str = "", server: str = "", init_mt5: bool = True):
         self._initialized = False
-        if not init_mt5 or not mt5:
-            return
+        self.login = login
+        self.password = str(password).strip() if password else ""
+        self.server = str(server).strip() if server else ""
+        self.init_mt5 = init_mt5
+        
+        if init_mt5 and mt5:
+            self._try_initialize()
+
+    def _try_initialize(self) -> bool:
+        """Intenta inicializar y loguear en MT5."""
+        if not mt5:
+            return False
             
-        # Initialize MT5
+        # Check if already initialized and healthy
+        try:
+            if self._initialized and mt5.terminal_info() is not None:
+                return True
+        except Exception:
+            self._initialized = False
+
         if not mt5.initialize():
             logger.warning("MT5 no pudo inicializarse: %s", mt5.last_error())
-            return
+            return False
             
-        # Login if credentials provided
-        if login and server:
-            authorized = mt5.login(
-                login=int(login),
-                password=password,
-                server=server
-            )
-            if not authorized:
-                logger.warning("MT5 no pudo autorizarse con login %s: %s", login, mt5.last_error())
-                return
+        if self.login and self.server:
+            try:
+                authorized = mt5.login(
+                    login=int(self.login),
+                    password=self.password,
+                    server=self.server
+                )
+                if not authorized:
+                    logger.warning("MT5 no pudo autorizarse con login %s: %s", self.login, mt5.last_error())
+                    return False
+            except (ValueError, TypeError) as e:
+                logger.error("Error en formato de login MT5: %s", e)
+                return False
         
         self._initialized = True
         logger.info("MT5DataProvider listo. Versión MT5: %s", mt5.version())
+        return True
 
     def shutdown(self) -> None:
         """Cierra la conexión con MT5."""
@@ -93,8 +113,9 @@ class MT5DataProvider:
             DataFrame con columnas time, open, high, low, close; None si error.
         """
         if not mt5 or not self._initialized:
-            logger.error("MT5 no disponible o no inicializado.")
-            return None
+            if not self._try_initialize():
+                logger.error("MT5 no disponible o no inicializado.")
+                return None
 
         tf = self._resolve_timeframe(timeframe)
         # start_pos=0: desde la vela actual; count: cuántas barras

@@ -12,6 +12,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Protocol
 
+from data_vault.storage import StorageManager
+
 logger = logging.getLogger(__name__)
 
 
@@ -142,14 +144,15 @@ class DataProviderManager:
         }
     }
     
-    def __init__(self, config_path: str = "config/data_providers.json"):
+    def __init__(self, config_path: Optional[str] = None):
         """
         Initialize DataProviderManager
         
         Args:
-            config_path: Path to provider configuration file
+            config_path: Optional path to legacy provider configuration file for migration
         """
-        self.config_path = Path(config_path)
+        self.config_path = Path(config_path) if config_path else None
+        self.storage = StorageManager()
         self.providers: Dict[str, ProviderConfig] = {}
         self.provider_instances: Dict[str, Any] = {}
         self.provider_metadata: Dict[str, Dict] = self.DEFAULT_PROVIDERS.copy()
@@ -157,59 +160,106 @@ class DataProviderManager:
         self._load_configuration()
     
     def _load_configuration(self):
-        """Load provider configuration from file"""
-        if self.config_path.exists():
-            try:
-                with open(self.config_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                
-                for name, config_data in data.items():
-                    self.providers[name] = ProviderConfig(**config_data)
-                
-                logger.info(f"Loaded configuration for {len(self.providers)} providers")
-            except Exception as e:
-                logger.error(f"Error loading provider config: {e}")
+        """Load provider configuration from DB with fallback to JSON migration"""
+        try:
+            db_providers = self.storage.get_data_providers()
+            
+            if db_providers:
+                # Load from DB
+                for p_data in db_providers:
+                    name = p_data['name']
+                    self.providers[name] = ProviderConfig(
+                        name=name,
+                        enabled=bool(p_data['enabled']),
+                        priority=p_data['priority'],
+                        requires_auth=bool(p_data['requires_auth']),
+                        api_key=p_data.get('api_key'),
+                        api_secret=p_data.get('api_secret'),
+                        additional_config=p_data.get('additional_config', {})
+                    )
+                logger.info(f"Loaded {len(self.providers)} providers from database")
+            elif self.config_path.exists():
+                # Migrate from JSON
+                logger.info(f"Migrating provider configuration from {self.config_path} to DB")
+                try:
+                    with open(self.config_path, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    
+                    for name, config_data in data.items():
+                        self.providers[name] = ProviderConfig(**config_data)
+                        # Save to DB immediately
+                        self.storage.save_data_provider(
+                            name=name,
+                            enabled=self.providers[name].enabled,
+                            priority=self.providers[name].priority,
+                            requires_auth=self.providers[name].requires_auth,
+                            api_key=self.providers[name].api_key,
+                            api_secret=self.providers[name].api_secret,
+                            additional_config=self.providers[name].additional_config
+                        )
+                    logger.info(f"Successfully migrated {len(self.providers)} providers to DB")
+                    # Optional: rename JSON file after migration
+                    # self.config_path.rename(self.config_path.with_suffix('.json.bak'))
+                except Exception as e:
+                    logger.error(f"Error during JSON migration: {e}")
+                    self._initialize_defaults()
+            else:
                 self._initialize_defaults()
-        else:
+        except Exception as e:
+            logger.error(f"Error loading provider config from DB: {e}")
             self._initialize_defaults()
     
     def _initialize_defaults(self):
-        """Initialize default provider configurations"""
+        """Initialize default provider configurations and save to DB"""
         for name, metadata in self.provider_metadata.items():
-            self.providers[name] = ProviderConfig(
+            config = ProviderConfig(
                 name=name,
                 enabled=metadata.get("enabled", False),
                 requires_auth=metadata.get("requires_auth", False),
                 priority=metadata.get("priority", 50),
                 free_tier=metadata.get("free_tier", True)
             )
+            self.providers[name] = config
+            # Save to DB
+            self.storage.save_data_provider(
+                name=name,
+                enabled=config.enabled,
+                priority=config.priority,
+                requires_auth=config.requires_auth,
+                api_key=config.api_key,
+                api_secret=config.api_secret,
+                additional_config=config.additional_config
+            )
         
-        logger.info("Initialized default provider configurations")
+        logger.info("Initialized default provider configurations in database")
     
     def save_configuration(self):
-        """Save current provider configuration to file"""
+        """Save current provider configuration to DB"""
         try:
-            self.config_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            data = {
-                name: config.to_dict()
-                for name, config in self.providers.items()
-            }
-            
-            with open(self.config_path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2)
-            
-            logger.info(f"Saved provider configuration to {self.config_path}")
+            for name, config in self.providers.items():
+                self.storage.save_data_provider(
+                    name=name,
+                    enabled=config.enabled,
+                    priority=config.priority,
+                    requires_auth=config.requires_auth,
+                    api_key=config.api_key,
+                    api_secret=config.api_secret,
+                    additional_config=config.additional_config
+                )
+            logger.info("Provider configuration saved to database")
         except Exception as e:
-            logger.error(f"Error saving provider config: {e}")
+            logger.error(f"Error saving provider config to DB: {e}")
     
     def get_available_providers(self) -> List[str]:
         """Get list of all available provider names"""
         return list(self.providers.keys())
     
     def get_active_providers(self) -> List[Dict]:
-        """Get list of currently enabled providers with metadata"""
+        """Get list of currently enabled providers with metadata, reloading from DB for real-time updates"""
         active = []
+        
+        # Reload from DB to catch changes from other processes (Dashboard)
+        self._load_configuration()
         
         for name, config in self.providers.items():
             if config.enabled:
@@ -373,9 +423,12 @@ class DataProviderManager:
             
             instance = provider_class(**kwargs)
             
-            # Cache instance
+            # Cache instance only if successfully initialized
+            if hasattr(instance, 'is_available') and not instance.is_available():
+                logger.info(f"Provider {name} instance created but not available. Not caching to allow retry.")
+                return instance
+                
             self.provider_instances[name] = instance
-            
             logger.info(f"Created instance for provider: {name}")
             return instance
             

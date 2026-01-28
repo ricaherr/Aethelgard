@@ -170,6 +170,20 @@ class StorageManager:
                 )
             ''')
             
+            # Tabla de Configuración de Proveedores de Datos (MIGRE FROM JSON TO DB)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS data_providers (
+                    name TEXT PRIMARY KEY,
+                    enabled BOOLEAN DEFAULT 0,
+                    priority INTEGER DEFAULT 50,
+                    requires_auth BOOLEAN DEFAULT 0,
+                    api_key TEXT,
+                    api_secret TEXT,
+                    additional_config TEXT,
+                    updated_at TEXT
+                )
+            ''')
+            
             conn.commit()
             logger.info("Database schema verified/initialized successfully.")
 
@@ -943,6 +957,23 @@ class StorageManager:
             with open(json_path, 'w') as f:
                 json.dump(config_data, f, indent=2)
                 
+            # Sync to data_providers table (DB) for the MT5 data provider
+            try:
+                self.save_data_provider(
+                    name='mt5',
+                    enabled=True,
+                    priority=95,
+                    requires_auth=True,
+                    additional_config={
+                        'login': login,
+                        'server': server,
+                        'password': password
+                    }
+                )
+                logger.info("MT5 Data Provider configuration synchronized in DB.")
+            except Exception as ex:
+                logger.error(f"Error syncing MT5 to data_providers table: {ex}")
+                
             logger.info("MT5 configuration files synchronized with database.")
         except Exception as e:
             logger.error(f"Error syncing MT5 config files: {e}")
@@ -1047,7 +1078,13 @@ class StorageManager:
                 
                 cursor.execute(query, tuple(params))
                 rows = cursor.fetchall()
-                return [dict(row) for row in rows]
+                accounts = []
+                for row in rows:
+                    acc = dict(row)
+                    # Alias account_number to login for consistency
+                    acc['login'] = acc.get('account_number')
+                    accounts.append(acc)
+                return accounts
         except Exception as e:
             logger.error(f"Error getting broker accounts: {e}")
             return []
@@ -1300,9 +1337,72 @@ class StorageManager:
                     WHERE account_id = ? AND credential_key = ?
                 """, (encrypted_value, account_id, credential_key))
                 conn.commit()
-                logger.info(f"Updated credential {credential_key} for account {account_id}")
+                logger.info(f"Updated encrypted credential {credential_key} for account {account_id}")
         except Exception as e:
             logger.error(f"Error updating credential: {e}")
+            raise
+
+    # ========================================
+    # Data Provider Management (DB BACKEND)
+    # ========================================
+    
+    def get_data_providers(self) -> List[Dict]:
+        """Get all data provider configurations from DB"""
+        try:
+            with self._get_conn() as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM data_providers ORDER BY priority DESC")
+                rows = cursor.fetchall()
+                
+                providers = []
+                for row in rows:
+                    p = dict(row)
+                    # Deserialize additional_config
+                    if p.get('additional_config'):
+                        p['additional_config'] = json.loads(p['additional_config'])
+                    else:
+                        p['additional_config'] = {}
+                    providers.append(p)
+                return providers
+        except Exception as e:
+            logger.error(f"Error getting data providers from DB: {e}")
+            return []
+
+    def save_data_provider(self, name: str, enabled: bool, priority: int, 
+                          requires_auth: bool, api_key: str = None, 
+                          api_secret: str = None, additional_config: Dict = None):
+        """Save or update data provider configuration in DB"""
+        try:
+            config_json = json.dumps(additional_config or {})
+            now = datetime.now().isoformat()
+            
+            with self._get_conn() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT OR REPLACE INTO data_providers 
+                    (name, enabled, priority, requires_auth, api_key, api_secret, additional_config, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (name, enabled, priority, requires_auth, api_key, api_secret, config_json, now))
+                conn.commit()
+                logger.info(f"Data provider {name} saved to DB")
+        except Exception as e:
+            logger.error(f"Error saving data provider {name} to DB: {e}")
+            raise
+
+    def update_provider_enabled(self, name: str, enabled: bool):
+        """Update enabled status for a provider"""
+        try:
+            with self._get_conn() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE data_providers 
+                    SET enabled = ?, updated_at = ?
+                    WHERE name = ?
+                """, (enabled, datetime.now().isoformat(), name))
+                conn.commit()
+        except Exception as e:
+            logger.error(f"Error updating provider {name} status: {e}")
             raise
     
     def delete_credential(self, account_id: str, credential_key: str = None):

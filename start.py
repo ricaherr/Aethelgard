@@ -28,6 +28,9 @@ from core_brain.executor import OrderExecutor
 from core_brain.monitor import ClosingMonitor
 from core_brain.tuner import EdgeTuner
 from data_vault.storage import StorageManager
+
+# Core Brain Imports
+from core_brain.data_provider_manager import DataProviderManager
 from connectors.generic_data_provider import GenericDataProvider
 
 # Configurar logging
@@ -124,9 +127,11 @@ async def main():
         logger.info(f"   Capital: ${risk_manager.capital:,.2f}")
         logger.info(f"   Riesgo por trade: {risk_manager.risk_per_trade:.1%}")
         
-        # 3. Data Provider (Yahoo Finance)
-        logger.info("📡 Inicializando Data Provider (Yahoo Finance)...")
-        data_provider = GenericDataProvider()
+        # 3. Data Provider Manager (DB Backend)
+        logger.info("📡 Inicializando Data Provider Manager (DB backend)...")
+        provider_manager = DataProviderManager()
+        # Inyectar el manager como provider (implementa el mismo protocolo fetch_ohlc)
+        data_provider = provider_manager
         
         # Símbolos a monitorear - FOREX MAJORS + MINORS + EXOTICS
         symbols = [

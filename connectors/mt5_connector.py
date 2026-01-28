@@ -102,8 +102,8 @@ class MT5Connector:
             # Login
             authorized = mt5.login(
                 login=int(self.config['login']),
-                password=password,
-                server=self.config['server']
+                password=password.strip() if password else "",
+                server=self.config['server'].strip() if self.config.get('server') else ""
             )
             
             if not authorized:

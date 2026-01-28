@@ -1005,7 +1005,12 @@ def main():
                                 mt5_config = config.additional_config if config else {}
                                 
                                 login = st.text_input("Login", value=mt5_config.get("login", ""))
-                                password = st.text_input("Password", value="", type="password")
+                                
+                                # Hint visual para contraseña guardada
+                                has_pwd = bool(mt5_config.get("password"))
+                                pwd_label = "Password" + (" (🔒 Guardado)" if has_pwd else "")
+                                password = st.text_input(pwd_label, value="", type="password", help="Deja vacío para mantener la contraseña actual. Si es la primera vez, ingrésala aquí.")
+                                
                                 server = st.text_input("Server", value=mt5_config.get("server", ""))
                                 
                                 submitted = st.form_submit_button("💾 Guardar Configuración")
@@ -1350,10 +1355,11 @@ def main():
                     
                     col3, col4 = st.columns(2)
                     with col3:
-                        login = st.text_input("Login (Cuenta)")
-                        server = st.text_input("Servidor")
+                        login = st.text_input("Login (Cuenta)", help="Tu número de cuenta de MT5")
+                        server = st.text_input("Servidor", help="Ejemplo: XMGlobal-Demo")
                     with col4:
-                        pwd = st.text_input("Password", type="password")
+                        pwd = st.text_input("Password", type="password", help="Tu contraseña se guardará de forma encriptada en la base de datos.")
+                        st.caption("ℹ️ El Broker ID se asigna según tu selección arriba (ej. XM).")
                     
                     if st.form_submit_button("💾 Guardar Cuenta"):
                         if name and login:
