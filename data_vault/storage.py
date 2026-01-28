@@ -180,6 +180,7 @@ class StorageManager:
                     api_key TEXT,
                     api_secret TEXT,
                     additional_config TEXT,
+                    is_system BOOLEAN DEFAULT 0,
                     updated_at TEXT
                 )
             ''')
@@ -598,15 +599,40 @@ class StorageManager:
                 cursor = conn.cursor()
                 cursor.execute("SELECT * FROM signals WHERE id = ?", (signal_id,))
                 row = cursor.fetchone()
-                
                 if row:
                     sig = dict(row)
                     sig['metadata'] = json.loads(sig['metadata']) if sig['metadata'] else {}
                     return sig
                 return None
         except Exception as e:
-            logger.error(f"Error getting signal by ID: {e}")
+            logger.error(f"Error getting signal by id {signal_id}: {e}")
             return None
+
+    def get_open_operations(self) -> List[Dict]:
+        """
+        Get signals that are currently considered 'open' (executed but not closed).
+        """
+        try:
+            with self._get_conn() as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                # Signals with status 'executed' that don't have a corresponding entry in 'trades'
+                cursor.execute("""
+                    SELECT s.* FROM signals s
+                    LEFT JOIN trades t ON s.id = t.signal_id
+                    WHERE s.status = 'executed' AND t.id IS NULL
+                    ORDER BY s.timestamp DESC
+                """)
+                rows = cursor.fetchall()
+                signals = []
+                for row in rows:
+                    sig = dict(row)
+                    sig['metadata'] = json.loads(sig['metadata']) if sig['metadata'] else {}
+                    signals.append(sig)
+                return signals
+        except Exception as e:
+            logger.error(f"Error getting open operations: {e}")
+            return []
     
     def update_signal_status(self, signal_id: str, status: str, metadata_update: Dict = None):
         """
@@ -1371,7 +1397,8 @@ class StorageManager:
 
     def save_data_provider(self, name: str, enabled: bool, priority: int, 
                           requires_auth: bool, api_key: str = None, 
-                          api_secret: str = None, additional_config: Dict = None):
+                          api_secret: str = None, additional_config: Dict = None,
+                          is_system: bool = False):
         """Save or update data provider configuration in DB"""
         try:
             config_json = json.dumps(additional_config or {})
@@ -1381,11 +1408,11 @@ class StorageManager:
                 cursor = conn.cursor()
                 cursor.execute("""
                     INSERT OR REPLACE INTO data_providers 
-                    (name, enabled, priority, requires_auth, api_key, api_secret, additional_config, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (name, enabled, priority, requires_auth, api_key, api_secret, config_json, now))
+                    (name, enabled, priority, requires_auth, api_key, api_secret, additional_config, is_system, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (name, enabled, priority, requires_auth, api_key, api_secret, config_json, 1 if is_system else 0, now))
                 conn.commit()
-                logger.info(f"Data provider {name} saved to DB")
+                logger.info(f"Data provider {name} saved to DB (is_system={is_system})")
         except Exception as e:
             logger.error(f"Error saving data provider {name} to DB: {e}")
             raise

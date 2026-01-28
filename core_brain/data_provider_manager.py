@@ -28,6 +28,7 @@ class ProviderConfig:
     api_key: Optional[str] = None
     api_secret: Optional[str] = None
     additional_config: Dict[str, Any] = field(default_factory=dict)
+    is_system: bool = False
     
     def to_dict(self) -> Dict:
         """Convert to dictionary for serialization"""
@@ -175,7 +176,8 @@ class DataProviderManager:
                         requires_auth=bool(p_data['requires_auth']),
                         api_key=p_data.get('api_key'),
                         api_secret=p_data.get('api_secret'),
-                        additional_config=p_data.get('additional_config', {})
+                        additional_config=p_data.get('additional_config', {}),
+                        is_system=bool(p_data.get('is_system', 0))
                     )
                 logger.info(f"Loaded {len(self.providers)} providers from database")
             elif self.config_path.exists():
@@ -195,7 +197,8 @@ class DataProviderManager:
                             requires_auth=self.providers[name].requires_auth,
                             api_key=self.providers[name].api_key,
                             api_secret=self.providers[name].api_secret,
-                            additional_config=self.providers[name].additional_config
+                            additional_config=self.providers[name].additional_config,
+                            is_system=self.providers[name].is_system
                         )
                     logger.info(f"Successfully migrated {len(self.providers)} providers to DB")
                     # Optional: rename JSON file after migration
@@ -228,7 +231,8 @@ class DataProviderManager:
                 requires_auth=config.requires_auth,
                 api_key=config.api_key,
                 api_secret=config.api_secret,
-                additional_config=config.additional_config
+                additional_config=config.additional_config,
+                is_system=config.is_system
             )
         
         logger.info("Initialized default provider configurations in database")
@@ -244,7 +248,8 @@ class DataProviderManager:
                     requires_auth=config.requires_auth,
                     api_key=config.api_key,
                     api_secret=config.api_secret,
-                    additional_config=config.additional_config
+                    additional_config=config.additional_config,
+                    is_system=config.is_system
                 )
             logger.info("Provider configuration saved to database")
         except Exception as e:
@@ -268,6 +273,7 @@ class DataProviderManager:
                     "name": name,
                     "priority": config.priority,
                     "requires_auth": config.requires_auth,
+                    "is_system": config.is_system,
                     "free_tier": config.free_tier,
                     "description": metadata.get("description", ""),
                     "supports": metadata.get("supports", [])
@@ -302,6 +308,16 @@ class DataProviderManager:
         
         self.save_configuration()
         logger.info(f"Disabled provider: {name}")
+        return True
+
+    def set_system_provider(self, name: str, is_system: bool) -> bool:
+        """Set or unset a provider as system-level"""
+        if name not in self.providers:
+            return False
+            
+        self.providers[name].is_system = is_system
+        self.save_configuration()
+        logger.info(f"Provider '{name}' system status set to: {is_system}")
         return True
     
     def is_provider_enabled(self, name: str) -> bool:
@@ -578,7 +594,8 @@ class DataProviderManager:
         symbol: str,
         timeframe: str = "M5",
         count: int = 500,
-        provider_name: Optional[str] = None
+        provider_name: Optional[str] = None,
+        only_system: bool = False
     ) -> Optional[Any]:
         """
         Fetch OHLC data with automatic fallback
@@ -588,6 +605,7 @@ class DataProviderManager:
             timeframe: Timeframe (M5, H1, etc.)
             count: Number of candles
             provider_name: Specific provider to use (optional)
+            only_system: If True, only use providers marked as system-level (optional)
         
         Returns:
             OHLC data or None
@@ -604,6 +622,10 @@ class DataProviderManager:
         
         # Try providers in priority order with fallback
         active = self.get_active_providers()
+        
+        # Filter by system if requested
+        if only_system:
+            active = [p for p in active if p.get("is_system", False)]
         
         for provider_info in active:
             name = provider_info["name"]

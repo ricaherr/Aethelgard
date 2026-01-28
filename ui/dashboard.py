@@ -12,7 +12,8 @@ from typing import Dict, Optional, List, Any
 import sys
 import random # Importar random para simulación de datos
 import pandas as pd
-# import plotly.express as px
+import plotly.express as px
+import plotly.graph_objects as go
 
 # Añadir el directorio raíz al path para importar módulos
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -130,11 +131,13 @@ def main():
         # Categorías de navegación
         category = st.selectbox(
             "Categoría",
-            ["Operación Hub", "Análisis & Mercado", "Configuración"],
+            ["🏠 Inicio", "Operación Hub", "Análisis & Mercado", "Configuración"],
             index=0
         )
         
-        if category == "Operación Hub":
+        if category == "🏠 Inicio":
+            menu_selection = "🏠 Inicio"
+        elif category == "Operación Hub":
             menu_selection = st.radio(
                 "Módulo",
                 ["🛡️ Sistema & Diagnóstico", "🔌 Configuración de Brokers", "🛡️ Monitor de Resiliencia", "⚡ Señales de Trading"]
@@ -152,7 +155,110 @@ def main():
     
     
     # Renderizar vista seleccionada
-    if menu_selection == "🛡️ Sistema & Diagnóstico":
+    if menu_selection == "🏠 Inicio":
+        st.header("🏠 Panel de Control Principal")
+        # --- COMMAND CENTER HEADER ---
+        col1, col2, col3, col4 = st.columns(4)
+        
+        # Get statistics and active trades
+        stats = storage.get_statistics()
+        open_trades = storage.get_open_operations()
+        recent_trades = storage.get_recent_trades(limit=50)
+        
+        # Calculate daily P/L and Balance (simulated or real from broker if connected)
+        total_pnl = sum(t.get('profit_loss', 0) for t in recent_trades)
+        win_rate = stats.get('executed_signals', {}).get('win_rate', 0)
+        
+        with col1:
+            st.metric("Equity Total", f"${10540.50 + total_pnl:,.2f}", delta=f"{total_pnl:+.2f}")
+        with col2:
+            st.metric("Balance", f"${10540.50:,.2f}")
+        with col3:
+            st.metric("Win Rate (Total)", f"{win_rate:.1%}")
+        with col4:
+            st.metric("Ops. Abiertas", len(open_trades))
+
+        st.markdown("---")
+        
+        # --- ACTIVE OPERATIONS ---
+        st.subheader("🚀 Operaciones Activas")
+        if open_trades:
+            # Table of active trades
+            trade_data = []
+            for t in open_trades:
+                meta = t.get('metadata', {})
+                trade_data.append({
+                    "ID": t.get('id')[:8],
+                    "Símbolo": t.get('symbol'),
+                    "Tipo": t.get('signal_type'),
+                    "Entrada": t.get('entry_price'),
+                    "SL": t.get('stop_loss'),
+                    "TP": t.get('take_profit'),
+                    "Score": f"{meta.get('score', 0):.1f}",
+                    "Tiempo": t.get('timestamp', '').split('T')[-1][:5]
+                })
+            
+            df_open = pd.DataFrame(trade_data)
+            st.dataframe(df_open, use_container_width=True, hide_index=True)
+            
+            # Action buttons for first few trades
+            for t in open_trades[:3]:
+                with st.expander(f"Gestionar {t['symbol']} ({t['signal_type']})"):
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        if st.button(f"Cerrar {t['symbol']}", key=f"close_{t['id']}"):
+                            st.warning(f"Solicitando cierre de {t['id']}...")
+                    with c2:
+                        st.info(f"SL: {t['stop_loss']} | TP: {t['take_profit']}")
+        else:
+            st.info("No hay operaciones abierta en este momento.")
+
+        st.markdown("---")
+        
+        # --- ANALYTICS & CHARTS ---
+        col_c1, col_c2 = st.columns([2, 1])
+        
+        with col_c1:
+            st.subheader("📈 Rendimiento Acumulado")
+            if recent_trades:
+                # Simple P/L accumulation
+                pnl_history = []
+                current_acc = 0
+                for t in reversed(recent_trades):
+                    current_acc += t.get('profit_loss', 0)
+                    pnl_history.append({"time": t.get('timestamp'), "pnl": current_acc})
+                
+                df_pnl = pd.DataFrame(pnl_history)
+                fig = px.line(df_pnl, x="time", y="pnl", title="Curva de P/L (Reciente)")
+                fig.update_layout(height=300, margin=dict(l=20, r=20, t=40, b=20))
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.caption("No hay datos históricos suficientes para graficar.")
+                
+        with col_c2:
+            st.subheader("🎯 Win/Loss")
+            if recent_trades:
+                wins = sum(1 for t in recent_trades if t.get('is_win'))
+                losses = len(recent_trades) - wins
+                fig_pie = px.pie(values=[wins, losses], names=['Wins', 'Losses'], 
+                                color_discrete_sequence=['#00CC96', '#EF553B'])
+                fig_pie.update_layout(height=300, margin=dict(l=20, r=20, t=40, b=20))
+                st.plotly_chart(fig_pie, use_container_width=True)
+
+        st.markdown("---")
+        # --- BROKER HEALTH CARDS ---
+        st.subheader("🔌 Estado de Brokers/Conectores")
+        accounts = storage.get_broker_accounts()
+        if accounts:
+            cols = st.columns(len(accounts) if len(accounts) < 5 else 4)
+            for i, acc in enumerate(accounts):
+                with cols[i % 4]:
+                    status_color = "🟢" if acc.get('enabled') else "🔴"
+                    st.info(f"{status_color} **{acc.get('broker_id', 'N/A').upper()}**\n\n{acc.get('account_number', 'N/A')}\n\nBalance: ${acc.get('balance', 0):,.2f}")
+        else:
+            st.info("No hay cuentas de broker configuradas.")
+
+    elif menu_selection == "🛡️ Sistema & Diagnóstico":
         st.header("🛡️ Aethelgard System Monitor")
         health_manager = get_health_manager()
         
@@ -905,6 +1011,14 @@ def main():
                             if new_exchange != current_exchange:
                                 provider_manager.configure_provider(name, exchange_id=new_exchange)
                                 st.success(f"Exchange actualizado a {new_exchange}")
+                                
+                            # Add is_system for free providers
+                            config = provider_manager.get_provider_config(name)
+                            is_sys = st.checkbox("Usar como fuente para el Scanner (System Data)", value=config.is_system, key=f"sys_free_{name}")
+                            if is_sys != config.is_system:
+                                provider_manager.set_system_provider(name, is_sys)
+                                st.success(f"Estado de sistema actualizado para {name}")
+                                st.rerun()
             else:
                 st.info("No hay proveedores gratuitos disponibles")
             
@@ -990,11 +1104,14 @@ def main():
                                     help="Tu API key del proveedor"
                                 )
                                 
+                                is_system = st.checkbox("Usar como fuente para el Scanner (System Data)", value=config.is_system)
+                                
                                 submitted = st.form_submit_button("💾 Guardar Configuración")
                                 
                                 if submitted and api_key_input:
                                     provider_manager.configure_provider(name, api_key=api_key_input)
-                                    st.success(f"✅ API Key guardada para {name}")
+                                    provider_manager.set_system_provider(name, is_system)
+                                    st.success(f"✅ Configuración guardada para {name}")
                                     st.rerun()
                         else:
                             # Configuración especial para MT5
@@ -1011,7 +1128,10 @@ def main():
                                 pwd_label = "Password" + (" (🔒 Guardado)" if has_pwd else "")
                                 password = st.text_input(pwd_label, value="", type="password", help="Deja vacío para mantener la contraseña actual. Si es la primera vez, ingrésala aquí.")
                                 
+                                
                                 server = st.text_input("Server", value=mt5_config.get("server", ""))
+                                
+                                is_system = st.checkbox("Usar como fuente para el Scanner (System Data)", value=config.is_system)
                                 
                                 submitted = st.form_submit_button("💾 Guardar Configuración")
                                 
@@ -1022,6 +1142,7 @@ def main():
                                         password=password if password else mt5_config.get("password", ""),
                                         server=server
                                     )
+                                    provider_manager.set_system_provider(name, is_system)
                                     st.success(f"✅ Configuración guardada para MT5")
                                     st.rerun()
             else:

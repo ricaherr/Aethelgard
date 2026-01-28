@@ -168,6 +168,7 @@ class ScannerEngine:
                 symbol,
                 timeframe=self.mt5_timeframe,
                 count=self.mt5_bars_count,
+                only_system=True
             )
             if df is None or (hasattr(df, "empty") and df.empty):
                 logger.debug("Sin datos OHLC para %s", symbol)
