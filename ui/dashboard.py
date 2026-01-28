@@ -113,7 +113,7 @@ def main():
     tuner = get_tuner()
     
     # Tabs principales
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
         "🛡️ Monitor de Resiliencia",
         "📊 Régimen en Tiempo Real",
         "🎛️ Gestión de Módulos",
@@ -121,7 +121,8 @@ def main():
         "📈 Estadísticas",
         "⚡ Señales de Trading",
         "📡 Proveedores de Datos",
-        "💰 Análisis de Activos"
+        "💰 Análisis de Activos",
+        "🔌 Configuración de Brokers"
     ])
     
     # TAB 1: Monitor de Resiliencia
@@ -1184,6 +1185,345 @@ def main():
         import time
         time.sleep(3)
         st.rerun()
+    
+    # TAB 9: Configuración de Brokers y Cuentas
+    with tab9:
+        st.header("🔌 Configuración de Brokers y Cuentas")
+        st.markdown("Gestiona brokers, plataformas y cuentas de trading")
+        
+        try:
+            # Botón de refresh
+            col_ref1, col_ref2 = st.columns([6, 1])
+            with col_ref2:
+                if st.button("🔄 Actualizar", key="refresh_brokers"):
+                    st.cache_resource.clear()
+                    st.rerun()
+            
+            # Cargar datos
+            brokers = storage.get_brokers()
+            platforms = storage.get_platforms()
+            accounts = storage.get_broker_accounts()
+            
+            # Sección: Resumen de Cuentas
+            st.subheader("💼 Tus Cuentas de Trading")
+            
+            if accounts:
+                # Filtros
+                col_f1, col_f2, col_f3 = st.columns(3)
+                with col_f1:
+                    filter_status = st.selectbox(
+                        "Estado",
+                        options=["Todas", "Habilitadas", "Deshabilitadas"],
+                        key="filter_account_status"
+                    )
+                with col_f2:
+                    filter_type = st.selectbox(
+                        "Tipo",
+                        options=["Todas", "DEMO", "REAL"],
+                        key="filter_account_type"
+                    )
+                with col_f3:
+                    filter_broker = st.selectbox(
+                        "Broker",
+                        options=["Todos"] + [b['broker_id'] for b in brokers],
+                        key="filter_broker"
+                    )
+                
+                # Aplicar filtros
+                filtered_accounts = accounts
+                if filter_status == "Habilitadas":
+                    filtered_accounts = [a for a in filtered_accounts if a['enabled'] == 1]
+                elif filter_status == "Deshabilitadas":
+                    filtered_accounts = [a for a in filtered_accounts if a['enabled'] == 0]
+                
+                if filter_type != "Todas":
+                    filtered_accounts = [a for a in filtered_accounts if a['account_type'] == filter_type.lower()]
+                
+                if filter_broker != "Todos":
+                    filtered_accounts = [a for a in filtered_accounts if a['broker_id'] == filter_broker]
+                
+                st.markdown(f"**{len(filtered_accounts)} cuenta(s) encontrada(s)**")
+                
+                # Mostrar cuentas
+                for account in filtered_accounts:
+                    account_id = account['account_id']
+                    broker_id = account['broker_id']
+                    platform_id = account['platform_id']
+                    account_name = account['account_name']
+                    account_type = account['account_type']
+                    enabled = bool(account['enabled'])
+                    server = account.get('server', 'N/A')
+                    login = account.get('login', 'N/A')
+                    
+                    # Iconos de estado
+                    status_icon = "🟢" if enabled else "🔴"
+                    type_icon = "🎮" if account_type == "demo" else "💰"
+                    
+                    with st.expander(f"{status_icon} {type_icon} **{account_name}** ({broker_id} → {platform_id})", expanded=False):
+                        col1, col2, col3 = st.columns([2, 2, 1])
+                        
+                        with col1:
+                            st.markdown(f"**Broker:** {broker_id}")
+                            st.markdown(f"**Plataforma:** {platform_id}")
+                            st.markdown(f"**Servidor:** {server}")
+                            st.markdown(f"**Login:** {login}")
+                        
+                        with col2:
+                            # Toggle DEMO/REAL
+                            new_type = st.radio(
+                                "Tipo de Cuenta",
+                                options=["demo", "real"],
+                                index=0 if account_type == "demo" else 1,
+                                horizontal=True,
+                                key=f"type_{account_id}"
+                            )
+                            
+                            if new_type != account_type:
+                                storage.update_account_type(account_id, new_type)
+                                st.success(f"✅ Cambiado a {new_type.upper()}")
+                                st.rerun()
+                            
+                            # Última conexión
+                            if account.get('last_connection'):
+                                last_conn = datetime.fromisoformat(account['last_connection'])
+                                st.caption(f"🕐 Última conexión: {last_conn.strftime('%Y-%m-%d %H:%M')}")
+                            else:
+                                st.caption("🕐 Nunca conectada")
+                        
+                        with col3:
+                            # Toggle enable/disable
+                            new_enabled = st.checkbox(
+                                "Habilitada",
+                                value=enabled,
+                                key=f"enable_account_{account_id}"
+                            )
+                            
+                            if new_enabled != enabled:
+                                storage.update_account_enabled(account_id, new_enabled)
+                                st.success(f"{'✅ Habilitada' if new_enabled else '🔴 Deshabilitada'}")
+                                st.rerun()
+                        
+                        # Botones de acción
+                        st.markdown("---")
+                        col_act1, col_act2, col_act3 = st.columns(3)
+                        
+                        with col_act1:
+                            if st.button("🔌 Test Conexión", key=f"test_account_{account_id}"):
+                                st.info(f"⚙️ Probando conexión... (En desarrollo)")
+                        
+                        with col_act2:
+                            if st.button("✏️ Editar", key=f"edit_account_{account_id}"):
+                                st.session_state[f'editing_account_{account_id}'] = True
+                        
+                        with col_act3:
+                            if st.button("🗑️ Eliminar", key=f"delete_account_{account_id}"):
+                                if st.checkbox("Confirmar eliminación", key=f"confirm_del_{account_id}"):
+                                    storage.delete_account(account_id)
+                                    st.success("✅ Cuenta eliminada")
+                                    st.rerun()
+                        
+                        # Formulario de edición (si está activado)
+                        if st.session_state.get(f'editing_account_{account_id}'):
+                            st.markdown("---")
+                            st.markdown("**Editar Cuenta**")
+                            
+                            with st.form(key=f"edit_form_{account_id}"):
+                                new_name = st.text_input("Nombre", value=account_name)
+                                new_server = st.text_input("Servidor", value=server)
+                                new_login = st.text_input("Login", value=login)
+                                new_password = st.text_input("Password", type="password", placeholder="Dejar vacío para mantener")
+                                
+                                col_submit1, col_submit2 = st.columns(2)
+                                with col_submit1:
+                                    if st.form_submit_button("💾 Guardar Cambios"):
+                                        storage.update_account(
+                                            account_id=account_id,
+                                            account_name=new_name,
+                                            server=new_server,
+                                            login=new_login,
+                                            password=new_password if new_password else None
+                                        )
+                                        del st.session_state[f'editing_account_{account_id}']
+                                        st.success("✅ Cuenta actualizada")
+                                        st.rerun()
+                                
+                                with col_submit2:
+                                    if st.form_submit_button("❌ Cancelar"):
+                                        del st.session_state[f'editing_account_{account_id}']
+                                        st.rerun()
+                
+                # Estadísticas de cuentas
+                st.markdown("---")
+                st.subheader("📈 Estadísticas de Cuentas")
+                
+                col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+                
+                total_accounts = len(accounts)
+                enabled_accounts = sum(1 for a in accounts if a['enabled'] == 1)
+                demo_accounts = sum(1 for a in accounts if a['account_type'] == 'demo')
+                real_accounts = sum(1 for a in accounts if a['account_type'] == 'real')
+                
+                with col_s1:
+                    st.metric("Total Cuentas", total_accounts)
+                with col_s2:
+                    st.metric("Habilitadas", enabled_accounts, delta=f"{enabled_accounts/total_accounts*100:.0f}%" if total_accounts > 0 else "0%")
+                with col_s3:
+                    st.metric("🎮 DEMO", demo_accounts)
+                with col_s4:
+                    st.metric("💰 REAL", real_accounts)
+            
+            else:
+                st.warning("⚠️ No tienes cuentas configuradas")
+            
+            # Botón para agregar nueva cuenta
+            st.markdown("---")
+            if st.button("➕ Agregar Nueva Cuenta", key="add_account_btn"):
+                st.session_state['adding_account'] = True
+            
+            # Formulario para nueva cuenta
+            if st.session_state.get('adding_account'):
+                st.subheader("➕ Nueva Cuenta de Trading")
+                
+                with st.form("new_account_form"):
+                    col_form1, col_form2 = st.columns(2)
+                    
+                    with col_form1:
+                        selected_broker = st.selectbox(
+                            "Broker *",
+                            options=[b['broker_id'] for b in brokers],
+                            help="Proveedor del servicio (Pepperstone, Binance, etc.)"
+                        )
+                        
+                        selected_platform = st.selectbox(
+                            "Plataforma *",
+                            options=[p['platform_id'] for p in platforms],
+                            help="Software de trading (MT5, NT8, Binance API, etc.)"
+                        )
+                        
+                        account_name_new = st.text_input(
+                            "Nombre de la Cuenta *",
+                            placeholder="Ej: Pepperstone Demo MT5"
+                        )
+                    
+                    with col_form2:
+                        account_type_new = st.radio(
+                            "Tipo de Cuenta *",
+                            options=["demo", "real"],
+                            horizontal=True
+                        )
+                        
+                        server_new = st.text_input(
+                            "Servidor",
+                            placeholder="Ej: Pepperstone-Demo"
+                        )
+                        
+                        login_new = st.text_input(
+                            "Login",
+                            placeholder="Número de cuenta"
+                        )
+                        
+                        password_new = st.text_input(
+                            "Password",
+                            type="password"
+                        )
+                    
+                    col_btn1, col_btn2 = st.columns(2)
+                    
+                    with col_btn1:
+                        if st.form_submit_button("💾 Crear Cuenta"):
+                            if not account_name_new:
+                                st.error("❌ El nombre de la cuenta es obligatorio")
+                            else:
+                                account_id = storage.save_broker_account(
+                                    broker_id=selected_broker,
+                                    platform_id=selected_platform,
+                                    account_name=account_name_new,
+                                    account_type=account_type_new,
+                                    server=server_new,
+                                    login=login_new,
+                                    password=password_new,
+                                    enabled=True
+                                )
+                                del st.session_state['adding_account']
+                                st.success(f"✅ Cuenta '{account_name_new}' creada exitosamente")
+                                st.rerun()
+                    
+                    with col_btn2:
+                        if st.form_submit_button("❌ Cancelar"):
+                            del st.session_state['adding_account']
+                            st.rerun()
+            
+            # Sección: Información de Brokers y Plataformas
+            st.markdown("---")
+            st.subheader("📚 Brokers y Plataformas Disponibles")
+            
+            tab_brokers, tab_platforms = st.tabs(["🏢 Brokers", "⚙️ Plataformas"])
+            
+            with tab_brokers:
+                if brokers:
+                    st.markdown(f"**{len(brokers)} broker(s) disponible(s)**")
+                    
+                    for broker in brokers:
+                        auto_icon = {"full": "🤖", "partial": "⚙️", "none": "👤"}.get(broker['auto_provisioning'], "")
+                        
+                        with st.expander(f"{auto_icon} **{broker['name']}** ({broker['broker_id']})", expanded=False):
+                            col1, col2 = st.columns(2)
+                            
+                            with col1:
+                                st.markdown(f"**Tipo:** {broker['type']}")
+                                st.markdown(f"**Auto-Provisioning:** {broker['auto_provisioning']}")
+                                
+                                if broker.get('registration_url'):
+                                    st.markdown(f"[📝 Registrarse]({broker['registration_url']})")
+                            
+                            with col2:
+                                # Contar cuentas de este broker
+                                broker_accounts = [a for a in accounts if a['broker_id'] == broker['broker_id']]
+                                st.markdown(f"**Cuentas configuradas:** {len(broker_accounts)}")
+                                
+                                if broker_accounts:
+                                    for acc in broker_accounts:
+                                        type_label = "🎮" if acc['account_type'] == 'demo' else "💰"
+                                        status_label = "🟢" if acc['enabled'] == 1 else "🔴"
+                                        st.caption(f"  {status_label} {type_label} {acc['account_name']}")
+                else:
+                    st.warning("⚠️ No hay brokers en la base de datos")
+            
+            with tab_platforms:
+                if platforms:
+                    st.markdown(f"**{len(platforms)} plataforma(s) disponible(s)**")
+                    
+                    for platform in platforms:
+                        with st.expander(f"⚙️ **{platform['name']}** ({platform['platform_id']})", expanded=False):
+                            col1, col2 = st.columns(2)
+                            
+                            with col1:
+                                st.markdown(f"**Tipo:** {platform['type']}")
+                                st.markdown(f"**Protocolo:** {platform.get('protocol', 'N/A')}")
+                                
+                                # Capacidades
+                                capabilities = json.loads(platform.get('capabilities', '[]'))
+                                if capabilities:
+                                    st.markdown("**Capacidades:**")
+                                    for cap in capabilities:
+                                        st.caption(f"  ✅ {cap}")
+                            
+                            with col2:
+                                # Contar cuentas con esta plataforma
+                                platform_accounts = [a for a in accounts if a['platform_id'] == platform['platform_id']]
+                                st.markdown(f"**Cuentas usando esta plataforma:** {len(platform_accounts)}")
+                                
+                                if platform_accounts:
+                                    for acc in platform_accounts:
+                                        type_label = "🎮" if acc['account_type'] == 'demo' else "💰"
+                                        status_label = "🟢" if acc['enabled'] == 1 else "🔴"
+                                        st.caption(f"  {status_label} {type_label} {acc['account_name']} ({acc['broker_id']})")
+                else:
+                    st.warning("⚠️ No hay plataformas en la base de datos")
+        
+        except Exception as e:
+            st.error(f"Error al cargar configuración de brokers: {e}")
+            logger.error(f"Error en tab brokers: {e}", exc_info=True)
 
 
 if __name__ == "__main__":
