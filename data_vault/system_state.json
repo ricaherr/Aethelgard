@@ -2699,13 +2699,13 @@
         "session_stats": {
             "date": "2026-01-27",
             "signals_processed": 14,
-            "signals_executed": 13,
-            "cycles_completed": 24,
+            "signals_executed": 14,
+            "cycles_completed": 25,
             "errors_count": 6
         },
-        "last_shutdown": "2026-01-27T12:56:42.968957",
+        "last_shutdown": "2026-01-27T18:54:57.281642",
         "lockdown_active": false,
         "consecutive_losses": 0,
-        "last_regime": "TREND"
+        "last_regime": "NORMAL"
     }
 }

@@ -1,67 +1,141 @@
 import json
 import os
+import sqlite3
+import logging
+import uuid
 from datetime import date, datetime
 from enum import Enum
 from typing import Dict, List, Optional
 
+logger = logging.getLogger(__name__)
+
 class StorageManager:
     """
-    Manages persistence of system state to a local JSON file.
+    Manages persistence of system state using SQLite for production reliability.
     Enhanced with signal tracking capabilities for session recovery.
     """
-    def __init__(self, db_path='data_vault/system_state.json'):
+    def __init__(self, db_path='data_vault/aethelgard.db'):
         self.db_path = db_path
-        if not os.path.exists(self.db_path):
-            self._initialize_db()
+        self._initialize_db()
     
+    def _get_conn(self):
+        """Creates a database connection"""
+        return sqlite3.connect(self.db_path)
+
     def _initialize_db(self):
-        """Initialize database with proper structure"""
-        initial_state = {
-            "signals": [],
-            "trades": [],  # Resultados de trades cerrados para EDGE learning
-            "system_state": {},
-            "tuning_history": []  # Historial de ajustes del tuner
-        }
-        with open(self.db_path, 'w') as f:
-            json.dump(initial_state, f, indent=4)
+        """Initialize SQLite database with proper schema"""
+        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+        logger.info(f"Checking database schema at {self.db_path}...")
+        
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            
+            # Tabla de Señales
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS signals (
+                    id TEXT PRIMARY KEY,
+                    symbol TEXT,
+                    signal_type TEXT,
+                    confidence REAL,
+                    entry_price REAL,
+                    stop_loss REAL,
+                    take_profit REAL,
+                    timestamp TEXT,
+                    date TEXT,
+                    status TEXT,
+                    metadata TEXT
+                )
+            ''')
+            
+            # Tabla de Trades (Resultados)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS trades (
+                    id TEXT PRIMARY KEY,
+                    signal_id TEXT,
+                    symbol TEXT,
+                    entry_price REAL,
+                    exit_price REAL,
+                    pips REAL,
+                    profit_loss REAL,
+                    duration_minutes INTEGER,
+                    is_win BOOLEAN,
+                    exit_reason TEXT,
+                    market_regime TEXT,
+                    volatility_atr REAL,
+                    parameters_used TEXT,
+                    timestamp TEXT,
+                    date TEXT
+                )
+            ''')
+            
+            # Tabla Key-Value para estado del sistema (SessionStats, Lockdown, etc)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS system_state (
+                    key TEXT PRIMARY KEY,
+                    value TEXT
+                )
+            ''')
+            
+            # Historial de Tuning
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS tuning_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT,
+                    data TEXT
+                )
+            ''')
+            
+            # Estados de Mercado (para análisis histórico)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS market_states (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    symbol TEXT,
+                    timestamp TEXT,
+                    regime TEXT,
+                    data TEXT
+                )
+            ''')
+            conn.commit()
+            logger.info("Database schema verified/initialized successfully.")
 
     def get_system_state(self) -> dict:
         """Retrieves the current system state from the database."""
         try:
-            with open(self.db_path, 'r') as f:
-                data = json.load(f)
-                return data.get("system_state", {})
-        except (FileNotFoundError, json.JSONDecodeError):
+            with self._get_conn() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT key, value FROM system_state")
+                rows = cursor.fetchall()
+                
+                state = {}
+                for key, value in rows:
+                    try:
+                        state[key] = json.loads(value)
+                    except json.JSONDecodeError:
+                        state[key] = value
+                return state
+        except Exception as e:
+            logger.error(f"Error reading system state: {e}")
             return {}
 
     def update_system_state(self, new_state: dict):
         """Updates and saves the system state."""
         try:
-            with open(self.db_path, 'r') as f:
-                data = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            data = {"signals": [], "system_state": {}}
-        
-        # Garantizar que system_state existe
-        if "system_state" not in data:
-            data["system_state"] = {}
-        data["system_state"].update(new_state)
-        
-        with open(self.db_path, 'w') as f:
-            json.dump(data, f, indent=4)
+            with self._get_conn() as conn:
+                cursor = conn.cursor()
+                for key, value in new_state.items():
+                    json_value = json.dumps(value)
+                    cursor.execute(
+                        "INSERT OR REPLACE INTO system_state (key, value) VALUES (?, ?)",
+                        (key, json_value)
+                    )
+                conn.commit()
+        except Exception as e:
+            logger.error(f"Error updating system state: {e}")
 
     def save_signal(self, signal) -> str:
         """
         Save a signal to persistent storage.
-        
-        Args:
-            signal: Signal object to save
-            
-        Returns:
-            Signal ID (UUID)
         """
-        import uuid
-        
         signal_id = str(uuid.uuid4())
         
         # Serialize metadata properly (convert non-JSON types)
@@ -75,48 +149,35 @@ class StorageManager:
             else:
                 serialized_metadata[key] = str(value)
         
-        signal_record = {
-            "id": signal_id,
-            "symbol": signal.symbol,
-            "signal_type": signal.signal_type if isinstance(signal.signal_type, str) else signal.signal_type.value,
-            "confidence": getattr(signal, 'confidence', 0.0),
-            "entry_price": signal.entry_price,
-            "stop_loss": signal.stop_loss,
-            "take_profit": signal.take_profit,
-            "timestamp": datetime.now().isoformat(),
-            "date": date.today().isoformat(),
-            "status": "executed",
-            "metadata": serialized_metadata
-        }
-        
         try:
-            with open(self.db_path, 'r') as f:
-                data = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            data = {"signals": [], "system_state": {}}
-        
-        if "signals" not in data:
-            data["signals"] = []
-        
-        data["signals"].append(signal_record)
-        
-        with open(self.db_path, 'w') as f:
-            json.dump(data, f, indent=4)
+            with self._get_conn() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO signals (id, symbol, signal_type, confidence, entry_price, stop_loss, take_profit, timestamp, date, status, metadata)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    signal_id,
+                    signal.symbol,
+                    signal.signal_type if isinstance(signal.signal_type, str) else signal.signal_type.value,
+                    getattr(signal, 'confidence', 0.0),
+                    signal.entry_price,
+                    signal.stop_loss,
+                    signal.take_profit,
+                    datetime.now().isoformat(),
+                    date.today().isoformat(),
+                    "executed",
+                    json.dumps(serialized_metadata)
+                ))
+                conn.commit()
+        except Exception as e:
+            logger.error(f"Error saving signal: {e}")
+            raise
         
         return signal_id
     
     def count_executed_signals(self, target_date: Optional[date] = None) -> int:
         """
         Count signals executed on a specific date.
-        
-        This method enables SessionStats to reconstruct state from DB
-        after system restarts.
-        
-        Args:
-            target_date: Date to count signals for (defaults to today)
-            
-        Returns:
-            Number of signals executed on the target date
         """
         if target_date is None:
             target_date = date.today()
@@ -124,29 +185,20 @@ class StorageManager:
         target_date_str = target_date.isoformat()
         
         try:
-            with open(self.db_path, 'r') as f:
-                data = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
+            with self._get_conn() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT COUNT(*) FROM signals WHERE date = ? AND status = 'executed'",
+                    (target_date_str,)
+                )
+                return cursor.fetchone()[0]
+        except Exception as e:
+            logger.error(f"Error counting signals: {e}")
             return 0
-        
-        signals = data.get("signals", [])
-        
-        count = sum(
-            1 for signal in signals 
-            if signal.get("date") == target_date_str and signal.get("status") == "executed"
-        )
-        
-        return count
     
     def get_signals_by_date(self, target_date: Optional[date] = None) -> List[Dict]:
         """
         Retrieve all signals for a specific date.
-        
-        Args:
-            target_date: Date to retrieve signals for (defaults to today)
-            
-        Returns:
-            List of signal records
         """
         if target_date is None:
             target_date = date.today()
@@ -154,17 +206,24 @@ class StorageManager:
         target_date_str = target_date.isoformat()
         
         try:
-            with open(self.db_path, 'r') as f:
-                data = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
+            with self._get_conn() as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT * FROM signals WHERE date = ?",
+                    (target_date_str,)
+                )
+                rows = cursor.fetchall()
+                
+                signals = []
+                for row in rows:
+                    sig = dict(row)
+                    sig['metadata'] = json.loads(sig['metadata']) if sig['metadata'] else {}
+                    signals.append(sig)
+                return signals
+        except Exception as e:
+            logger.error(f"Error getting signals: {e}")
             return []
-        
-        signals = data.get("signals", [])
-        
-        return [
-            signal for signal in signals 
-            if signal.get("date") == target_date_str
-        ]
     
     def get_signals_today(self) -> List[Dict]:
         """
@@ -176,6 +235,36 @@ class StorageManager:
         """
         return self.get_signals_by_date()
     
+    def get_all_signals(self, limit: int = 100) -> List[Dict]:
+        """
+        Retrieve all signals with an optional limit.
+        
+        Args:
+            limit: Maximum number of signals to return (most recent)
+        
+        Returns:
+            List of signal records
+        """
+        try:
+            with self._get_conn() as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT * FROM signals ORDER BY timestamp DESC LIMIT ?",
+                    (limit,)
+                )
+                rows = cursor.fetchall()
+                
+                signals = []
+                for row in rows:
+                    sig = dict(row)
+                    sig['metadata'] = json.loads(sig['metadata']) if sig['metadata'] else {}
+                    signals.append(sig)
+                return signals
+        except Exception as e:
+            logger.error(f"Error getting all signals: {e}")
+            return []
+    
     def get_statistics(self) -> Dict:
         """
         Get comprehensive statistics about the system.
@@ -185,29 +274,39 @@ class StorageManager:
             Dictionary with system statistics
         """
         try:
-            with open(self.db_path, 'r') as f:
-                data = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
+            with self._get_conn() as conn:
+                cursor = conn.cursor()
+                
+                # Total signals
+                cursor.execute("SELECT COUNT(*) FROM signals")
+                total_signals = cursor.fetchone()[0]
+                
+                # Signals today
+                today_str = date.today().isoformat()
+                cursor.execute("SELECT COUNT(*) FROM signals WHERE date = ?", (today_str,))
+                signals_today = cursor.fetchone()[0]
+                
+                # Executed today
+                cursor.execute("SELECT COUNT(*) FROM signals WHERE date = ? AND status = 'executed'", (today_str,))
+                executed_today = cursor.fetchone()[0]
+                
+                # System state
+                system_state = self.get_system_state()
+                
+                return {
+                    "total_signals": total_signals,
+                    "signals_today": signals_today,
+                    "executed_today": executed_today,
+                    "system_state": system_state
+                }
+        except Exception as e:
+            logger.error(f"Error getting statistics: {e}")
             return {
                 "total_signals": 0,
                 "signals_today": 0,
                 "executed_today": 0,
                 "system_state": {}
             }
-        
-        signals = data.get("signals", [])
-        today_str = date.today().isoformat()
-        
-        signals_today = [s for s in signals if s.get("date") == today_str]
-        executed_today = [s for s in signals_today if s.get("status") == "executed"]
-        
-        return {
-            "total_signals": len(signals),
-            "signals_today": len(signals_today),
-            "executed_today": len(executed_today),
-            "system_state": data.get("system_state", {}),
-            "last_signal": signals[-1] if signals else None
-        }
     
     def save_trade_result(self, trade_result: Dict) -> str:
         """
@@ -233,86 +332,131 @@ class StorageManager:
         Returns:
             Trade ID (UUID)
         """
-        import uuid
-        
         trade_id = str(uuid.uuid4())
         
-        trade_record = {
-            "id": trade_id,
-            "timestamp": datetime.now().isoformat(),
-            "date": date.today().isoformat(),
-            **trade_result
-        }
-        
         try:
-            with open(self.db_path, 'r') as f:
-                data = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            data = {"signals": [], "trades": [], "system_state": {}, "tuning_history": []}
-        
-        if "trades" not in data:
-            data["trades"] = []
-        
-        data["trades"].append(trade_record)
-        
-        with open(self.db_path, 'w') as f:
-            json.dump(data, f, indent=4)
+            with self._get_conn() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO trades (
+                        id, signal_id, symbol, entry_price, exit_price, pips, profit_loss,
+                        duration_minutes, is_win, exit_reason, market_regime, volatility_atr,
+                        parameters_used, timestamp, date
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    trade_id,
+                    trade_result.get("signal_id"),
+                    trade_result.get("symbol"),
+                    trade_result.get("entry_price"),
+                    trade_result.get("exit_price"),
+                    trade_result.get("pips"),
+                    trade_result.get("profit_loss"),
+                    trade_result.get("duration_minutes"),
+                    trade_result.get("is_win"),
+                    trade_result.get("exit_reason"),
+                    trade_result.get("market_regime"),
+                    trade_result.get("volatility_atr"),
+                    json.dumps(trade_result.get("parameters_used", {})),
+                    datetime.now().isoformat(),
+                    date.today().isoformat()
+                ))
+                conn.commit()
+        except Exception as e:
+            logger.error(f"Error saving trade result: {e}")
+            raise
         
         return trade_id
     
     def get_recent_trades(self, limit: int = 100) -> List[Dict]:
         """
         Get recent trade results for EDGE analysis.
-        
-        Args:
-            limit: Maximum number of trades to return (most recent first)
-        
-        Returns:
-            List of trade result dictionaries
         """
         try:
-            with open(self.db_path, 'r') as f:
-                data = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
+            with self._get_conn() as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT * FROM trades ORDER BY timestamp DESC LIMIT ?",
+                    (limit,)
+                )
+                rows = cursor.fetchall()
+                
+                trades = []
+                for row in rows:
+                    trade = dict(row)
+                    trade['parameters_used'] = json.loads(trade['parameters_used']) if trade['parameters_used'] else {}
+                    trade['is_win'] = bool(trade['is_win'])
+                    trades.append(trade)
+                return trades
+        except Exception as e:
+            logger.error(f"Error getting recent trades: {e}")
             return []
-        
-        trades = data.get("trades", [])
-        
-        # Retornar más recientes primero
-        return sorted(trades, key=lambda t: t.get("timestamp", ""), reverse=True)[:limit]
     
     def save_tuning_adjustment(self, adjustment: Dict):
         """
         Save parameter adjustment made by tuner for audit trail.
-        
-        Args:
-            adjustment: Dictionary with tuning details
-                {
-                    "trigger": str,  # "win_rate_low", "consecutive_losses", etc.
-                    "old_params": dict,
-                    "new_params": dict,
-                    "stats": dict  # Win rate, profit factor, etc.
-                }
         """
         try:
-            with open(self.db_path, 'r') as f:
-                data = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            data = {"signals": [], "trades": [], "system_state": {}, "tuning_history": []}
-        
-        if "tuning_history" not in data:
-            data["tuning_history"] = []
-        
-        adjustment_record = {
-            "timestamp": datetime.now().isoformat(),
-            **adjustment
-        }
-        
-        data["tuning_history"].append(adjustment_record)
-        
-        # Keep only last 500 adjustments
-        if len(data["tuning_history"]) > 500:
-            data["tuning_history"] = data["tuning_history"][-500:]
-        
-        with open(self.db_path, 'w') as f:
-            json.dump(data, f, indent=4)
+            with self._get_conn() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "INSERT INTO tuning_history (timestamp, data) VALUES (?, ?)",
+                    (datetime.now().isoformat(), json.dumps(adjustment))
+                )
+                # Cleanup old records (keep last 500)
+                cursor.execute("""
+                    DELETE FROM tuning_history 
+                    WHERE id NOT IN (
+                        SELECT id FROM tuning_history ORDER BY id DESC LIMIT 500
+                    )
+                """)
+                conn.commit()
+        except Exception as e:
+            logger.error(f"Error saving tuning adjustment: {e}")
+
+    def log_market_state(self, state_data: Dict):
+        """
+        Log market state for historical analysis and auto-calibration.
+        """
+        try:
+            with self._get_conn() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "INSERT INTO market_states (symbol, timestamp, regime, data) VALUES (?, ?, ?, ?)",
+                    (
+                        state_data.get('symbol'),
+                        state_data.get('timestamp'),
+                        state_data.get('regime'),
+                        json.dumps(state_data)
+                    )
+                )
+                conn.commit()
+        except Exception as e:
+            logger.error(f"Error logging market state: {e}")
+
+    def get_market_states(self, limit: int = 1000, symbol: Optional[str] = None) -> List[Dict]:
+        """
+        Retrieve historical market states for analysis.
+        """
+        try:
+            with self._get_conn() as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                
+                query = "SELECT data FROM market_states"
+                params = []
+                
+                if symbol:
+                    query += " WHERE symbol = ?"
+                    params.append(symbol)
+                
+                query += " ORDER BY timestamp DESC LIMIT ?"
+                params.append(limit)
+                
+                cursor.execute(query, tuple(params))
+                rows = cursor.fetchall()
+                
+                return [json.loads(row['data']) for row in rows]
+        except Exception as e:
+            logger.error(f"Error getting market states: {e}")
+            return []

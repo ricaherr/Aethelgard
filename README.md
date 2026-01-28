@@ -29,7 +29,7 @@ Aethelgard está diseñado como un sistema modular que permite integrar múltipl
 ## Instalación
 
 ### Requisitos
-- Python 3.8+
+- Python 3.12+
 - Windows 11
 - MetaTrader 5 (opcional, para conector MT5)
 - NinjaTrader 8 (opcional, para conector NT8)
@@ -45,8 +45,28 @@ cd Aethelgard
 2. Crear entorno virtual
 ```bash
 python -m venv venv
-venv\Scripts\activate
+.\venv\Scripts\Activate.ps1
 ```
+
+3. Instalar dependencias
+```bash
+pip install -r requirements.txt
+```
+
+## Inicio Rápido
+
+### Iniciar Sistema Completo (Motor + Dashboard)
+```powershell
+.\venv\Scripts\Activate.ps1
+py start.py
+```
+
+### Iniciar Solo Dashboard
+```powershell
+.\start_dashboard.ps1
+```
+
+El dashboard estará disponible en: http://localhost:8501
 
 3. Instalar dependencias
 ```bash

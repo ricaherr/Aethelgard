@@ -3,9 +3,10 @@ Aethelgard Trading System - Unified Launcher
 =============================================
 
 Comando único que inicia:
-1. Motor de trading (scanner + orchestrator)
-2. Dashboard Streamlit (UI)
-3. Todo en procesos paralelos
+1. Servidor API (FastAPI/Uvicorn) - Cerebro y WebSockets
+2. Motor de trading (Scanner + Orchestrator) - Lógica de negocio
+3. Dashboard Streamlit (UI) - Visualización
+4. EDGE Tuner - Auto-calibración
 
 USO: py start.py
 """
@@ -41,6 +42,7 @@ logger = logging.getLogger(__name__)
 
 # Variable global para el proceso de Streamlit
 streamlit_process = None
+server_process = None
 
 
 def launch_dashboard():
@@ -71,6 +73,23 @@ def launch_dashboard():
     except Exception as e:
         logger.error(f"❌ Error al iniciar dashboard: {e}")
 
+def launch_server():
+    """Lanza el servidor FastAPI (Uvicorn) en un proceso separado."""
+    global server_process
+    try:
+        logger.info("🌐 Iniciando Servidor API (Cerebro)...")
+        # Ejecutar uvicorn como módulo en subproceso
+        server_process = subprocess.Popen(
+            [sys.executable, "-m", "uvicorn", "core_brain.server:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "warning"],
+            cwd=os.getcwd()
+        )
+        time.sleep(2) # Dar tiempo para arrancar
+        if server_process.poll() is None:
+            logger.info("✅ Servidor API activo en: http://localhost:8000")
+        else:
+            logger.warning("⚠️  El servidor API no pudo iniciarse.")
+    except Exception as e:
+        logger.error(f"❌ Error al iniciar servidor API: {e}")
 
 async def main():
     """
@@ -220,6 +239,10 @@ async def main():
         logger.info("=" * 70)
         logger.info("")
         
+        # Iniciar Servidor API en hilo separado (lanza subproceso)
+        server_thread = threading.Thread(target=launch_server, daemon=True)
+        server_thread.start()
+        
         # Iniciar Dashboard en hilo separado
         dashboard_thread = threading.Thread(target=launch_dashboard, daemon=True)
         dashboard_thread.start()
@@ -251,12 +274,17 @@ async def main():
         if streamlit_process and streamlit_process.poll() is None:
             streamlit_process.terminate()
             logger.info("✅ Dashboard detenido")
+        if server_process and server_process.poll() is None:
+            server_process.terminate()
+            logger.info("✅ Servidor API detenido")
     except Exception as e:
         logger.error(f"❌ Error crítico: {e}", exc_info=True)
         raise
     finally:
         if streamlit_process and streamlit_process.poll() is None:
             streamlit_process.terminate()
+        if server_process and server_process.poll() is None:
+            server_process.terminate()
         logger.info("💾 Sistema detenido completamente.")
 
 

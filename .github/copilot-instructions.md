@@ -12,6 +12,7 @@ Sistema autónomo, proactivo y agnóstico de trading multihilo. Capacidad de aut
 6. **Seguridad Primero**: Validar todas las entradas externas (datos de mercado, configuraciones de usuario) antes de procesarlas.
 7. **Documentación Continua**: Cada módulo nuevo debe incluir documentación clara y ejemplos de uso, en el archivo AETHELGARD_MANIFIESTO.md.
 8. **Codigo en el chat**: no agregar codigo completo directamente en la conversación, solo fragmentos relevantes y explicaciones.
+9. **Sin Documentos de Tareas**: NO crear archivos markdown explicando tareas completadas. Entregar SOLO resumen ejecutivo directo en el chat.
 
 ## 🛠️ Stack Tecnológico
 - **Backend**: Python 3.12+ (Asyncio, FastAPI).
