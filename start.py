@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 import sys
 import os
+import webbrowser
 
 from core_brain.main_orchestrator import MainOrchestrator
 from core_brain.scanner import ScannerEngine
@@ -68,6 +69,8 @@ def launch_dashboard():
         
         if streamlit_process.poll() is None:
             logger.info("✅ Dashboard disponible en: http://localhost:8503")
+            # Abrir navegador automáticamente
+            threading.Timer(1.0, lambda: webbrowser.open('http://localhost:8503')).start()
         else:
             logger.warning("⚠️  Dashboard no pudo iniciarse correctamente")
             

@@ -59,7 +59,7 @@
   },
   "mt5": {
     "name": "mt5",
-    "enabled": false,
+    "enabled": true,
     "requires_auth": true,
     "priority": 95,
     "free_tier": true,

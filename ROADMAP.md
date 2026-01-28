@@ -61,25 +61,33 @@ Resumen del roadmap de implementación. Detalle completo en [AETHELGARD_MANIFEST
 - 🔜 **Range Trading**: Pendiente (operar en RANGE)
 - 🔜 **Breakout**: Pendiente (transiciones de régimen)
 
-### 🚧 Fase 2.2: Estrategias Adicionales (Próximo)
+### 🚧 Fase 2.2: Arquitectura y Estrategias Avanzadas (Prioridad Alta)
 
-**Pendiente:**
+**Mejoras Técnicas Detectadas:**
+- **Refactorización a Patrón Strategy**: Desacoplar `SignalFactory` de estrategias específicas (Oliver Vélez) extrayéndolas a clases modulares (`strategies/`) con interfaz común `IStrategy`.
+- **Gestión de Riesgo de Portafolio**: Implementar `PortfolioManager` para controlar correlación entre activos y exposición global, superando la gestión simple por trade.
+
+**Pendiente de Implementación:**
 - Range Trading completo
 - Breakout Trading en transiciones
-- Gestión de riesgo dinámica avanzada
 - Módulos de estrategias independientes
 
 ---
 
 ## Fase 3: Feedback Loop y Aprendizaje 🔜 SIGUIENTE
 
-- Feedback de resultados, aprendizaje por refuerzo básico, dashboard de métricas.
+- **Motor de Backtesting Rápido**: Simulación de ejecución del `Scanner` sobre datos históricos para validación pre-live.
+- **Feedback de resultados**: Aprendizaje por refuerzo básico y ajuste de pesos.
+- **Dashboard de métricas**: Visualización avanzada de KPIs de aprendizaje.
 
 ---
 
 ## Fase 4: Evolución Comercial 🎯 FUTURA
 
-- Multi-tenant, módulos bajo demanda (API Key), notificaciones (Telegram/Discord), web dashboard.
+- **Seguridad SaaS**: Autenticación vía API Key para endpoints HTTP/WebSocket.
+- **Multi-tenant**: Soporte para múltiples usuarios aislados.
+- **Módulos bajo demanda**: Activación de features vía licencia.
+- **Notificaciones**: Integración profunda con Telegram/Discord.
 
 ---
 
