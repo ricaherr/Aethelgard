@@ -245,13 +245,15 @@ await orchestrator.run()  # Inicia el loop resiliente
 ##### `mt5_data_provider.py` - Ingestión autónoma de datos OHLC (MT5)
 - **Lenguaje**: Python
 - **Función**: Obtener OHLC de forma autónoma vía `mt5.copy_rates_from_pos`, **sin gráficas abiertas**. Usado por el Escáner Proactivo.
+- **Seguridad**: Sincroniza automáticamente credenciales (Login, Password, Servidor) desde el Dashboard.
 - **Interface**: `fetch_ohlc(symbol, timeframe, count)` → `DataFrame` con columnas `time`, `open`, `high`, `low`, `close`.
-- **Requisitos**: MT5 en ejecución; símbolos en Market Watch. Timeframes: M1, M5, M15, M30, H1, H4, D1, W1, MN1.
+- **Requisitos**: MT5 en ejecución; los símbolos deben estar en Market Watch.
 
 ##### `generic_data_provider.py` - Proveedor de Datos Genérico (Yahoo Finance)
 - **Lenguaje**: Python
 - **Función**: Obtener datos OHLC de Yahoo Finance mediante `yfinance`
-- **Ventajas**: 100% gratuito, sin API key, autónomo
+- **Robustez**: Manejo automático de MultiIndex y validación de integridad de columnas.
+- **Ventajas**: 100% gratuito, sin API key, totalmente autónomo.
 - **Soporta**: Stocks, Forex, Crypto, Commodities, Índices
 - **Interface**: `fetch_ohlc(symbol, timeframe, count)` → `DataFrame` con OHLC
 
@@ -715,34 +717,19 @@ def activate_strategy(regime: MarketRegime, symbol: str):
   - Extrae entry_price, exit_price, profit, exit_reason automáticamente
   - Detecta razón de cierre (TP/SL/Manual) mediante análisis del comentario
 
-#### 3.2 Dashboard de Análisis Avanzado ✅
+#### 3.3 Dashboard de Control (Upgrade UX) ✅
 
-**Nueva Pestaña: 💰 Análisis de Activos**
+**Arquitectura de Navegación (Sidebar)**:
+- **Operación Hub**: Gestión crítica del sistema (Salud, Brokers, Monitor de Resiliencia, Señales).
+- **Análisis & Mercado**: Clasificación de Régimen en tiempo real, KPIs y Análisis de Activos.
+- **Configuración**: Gestión de Módulos, Tuner EDGE y Proveedores de Datos.
 
-**KPIs Principales** (calculados desde datos reales):
-- **Profit Total**: Suma de ganancias/pérdidas de todos los trades
-- **Win Rate %**: Porcentaje de trades ganadores sobre total
-- **Total Trades**: Número de operaciones cerradas
-- **Profit Promedio**: Ganancia promedio por trade
+**Beneficios**:
+- ✅ **Responsividad**: Navegación lateral que evita el clipping de secciones en pantallas pequeñas.
+- ✅ **Categorización**: Agrupación lógica de las 10 secciones del sistema.
+- ✅ **Visibilidad**: Acceso directo y persistente a todas las funciones del hub.
 
-**Gráficos Interactivos** (Plotly):
-- **Gráfico de Barras**: Profit acumulado por símbolo (código de color verde/rojo)
-- **Tabla Detallada**: Por cada activo muestra:
-  - Símbolo
-  - Total de trades
-  - Win Rate %
-  - Profit Total
-  - Profit Promedio
-  - PIPs Totales
-  - Resultado visual (🟢 Ganador / 🔴 Perdedor)
-
-**Tabla de Señales con Resultado Real**:
-- Lista de últimos 20 trades cerrados
-- Muestra: Símbolo, Entrada, Salida, PIPs, Profit, Razón de Salida, Fecha
-- Colores condicionales: Verde para trades ganados, Rojo para perdidos
-- Filtro de período (1-90 días)
-
-#### 3.3 Integración del Monitor en el Sistema
+#### 3.4 Integración del Monitor en el Sistema
 
 **Uso en Producción**:
 ```python
