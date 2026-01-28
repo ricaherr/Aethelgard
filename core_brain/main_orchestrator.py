@@ -23,6 +23,8 @@ Architecture: "Orquestador Resiliente"
 - Latido de Guardia: sleep se reduce si hay señales activas
 - Persistencia completa de trades ejecutados del día
 """
+import sys
+import os
 import asyncio
 import json
 import logging
@@ -31,6 +33,10 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 from typing import Dict, Optional, Any, List
+
+# Add project root to path
+BASE_DIR = Path(__file__).parent.parent
+sys.path.append(str(BASE_DIR))
 
 from models.signal import MarketRegime, Signal
 from data_vault.storage import StorageManager
@@ -479,9 +485,15 @@ class MainOrchestrator:
 async def main():
     """
     Main entry point for Aethelgard.
-    Includes pre-flight health checks.
+    Includes pre-flight health checks and component initialization.
     """
     from core_brain.health import HealthManager
+    from core_brain.data_provider_manager import DataProviderManager
+    from core_brain.scanner import ScannerEngine
+    from core_brain.signal_factory import SignalFactory
+    from core_brain.risk_manager import RiskManager
+    from core_brain.executor import OrderExecutor
+    from core_brain.notificator import get_notifier
     
     print("=" * 50)
     print("🚀 AETHELGARD ORCHESTRATOR STARTUP")
@@ -491,8 +503,16 @@ async def main():
     health = HealthManager()
     summary = health.run_full_diagnostic()
     
+    if summary["overall_status"] != "GREEN":
+        print(f"⚠️  ISSUES DETECTED: {summary['overall_status']}. Attempting auto-repair...")
+        if health.try_auto_repair():
+            print("✅ Auto-repair successful. Re-checking...")
+            summary = health.run_full_diagnostic()
+        else:
+            print("❌ Auto-repair failed.")
+
     if summary["overall_status"] == "RED":
-        print("🚨 CRITICAL ERRORS DETECTED. ABORTING STARTUP.")
+        print("🚨 CRITICAL ERRORS STILL PRESENT. ABORTING STARTUP.")
         print(json.dumps(summary["config"], indent=2))
         print(json.dumps(summary["db"], indent=2))
         return
@@ -502,25 +522,48 @@ async def main():
     else:
         print("✅ HEALTH CHECK PASSED.")
     
-    from core_brain.scanner import ScannerEngine
-    from core_brain.signal_factory import SignalFactory
-    from core_brain.risk_manager import RiskManager
-    from core_brain.executor import OrderExecutor
-    
-    # Initialize components (would use real implementations in production)
+    # 2. Component Initialization
     storage = StorageManager()
+    
+    # Data Provider (Using Yahoo as default for live test)
+    provider_manager = DataProviderManager()
+    data_provider = provider_manager.get_best_provider()
+    
+    if not data_provider:
+        print("🚨 No data provider available. Aborting.")
+        return
+    
+    # Scanner (Scanning major assets)
+    assets = ["EURUSD", "GBPUSD", "BTCUSD", "ETHUSD", "GOLD"]
+    scanner = ScannerEngine(assets=assets, data_provider=data_provider)
+    
+    # Signal Factory
+    signal_factory = SignalFactory(storage_manager=storage)
+    
+    # Risk Manager ($10k starting capital)
     risk_manager = RiskManager(initial_capital=10000.0)
     
-    # Create orchestrator (components would be fully initialized)
+    # Order Executor
+    notifier = get_notifier()
+    executor = OrderExecutor(risk_manager=risk_manager, storage=storage, notificator=notifier)
+    
+    # 3. Create Orchestrator
     orchestrator = MainOrchestrator(
-        scanner=None,  # Would be ScannerEngine instance
-        signal_factory=None,  # Would be SignalFactory instance
+        scanner=scanner,
+        signal_factory=signal_factory,
         risk_manager=risk_manager,
-        executor=None,  # Would be OrderExecutor instance
+        executor=executor,
         storage=storage
     )
     
-    # Run the main loop
+    # 4. Start Scanner background thread (if needed by your architecture)
+    # The ScannerEngine.run() usually runs in its own thread
+    import threading
+    scanner_thread = threading.Thread(target=scanner.run, daemon=True)
+    scanner_thread.start()
+    
+    # 5. Run the main loop
+    print("🚀 System LIVE. Starting event loop...")
     await orchestrator.run()
 
 
@@ -532,4 +575,7 @@ if __name__ == "__main__":
     )
     
     # Run the orchestrator
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\n👋 Shutdown by user.")

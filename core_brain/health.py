@@ -47,7 +47,7 @@ class HealthManager:
         return results
 
     def check_db_integrity(self) -> Dict[str, Any]:
-        """Checks SQLite database health."""
+        """Checks SQLite database health and table presence."""
         results = {"status": "GREEN", "details": []}
         
         if not self.db_path.exists():
@@ -63,11 +63,12 @@ class HealthManager:
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
             tables = [r[0] for r in cursor.fetchall()]
             
-            needed_tables = ['system_state', 'signals', 'executed_signals']
+            # Correct tables based on StorageManager schema
+            needed_tables = ['system_state', 'signals', 'trades', 'market_states']
             for t in needed_tables:
                 if t not in tables:
                     results["status"] = "YELLOW"
-                    results["details"].append(f"WARNING: Table {t} missing (will be auto-created).")
+                    results["details"].append(f"WARNING: Table {t} missing.")
                 else:
                     results["details"].append(f"SUCCESS: Table {t} found.")
             
@@ -77,6 +78,17 @@ class HealthManager:
             results["details"].append(f"CRITICAL: DB Connection Error: {e}")
             
         return results
+
+    def try_auto_repair(self) -> bool:
+        """Attempts to fix detected issues automatically."""
+        from data_vault.storage import StorageManager
+        try:
+            # Re-initializing the DB will create missing tables (CREATE TABLE IF NOT EXISTS)
+            StorageManager(db_path=str(self.db_path))
+            return True
+        except Exception as e:
+            logger.error(f"Auto-repair failed: {e}")
+            return False
 
     def get_resource_usage(self) -> Dict[str, Any]:
         """Gets CPU and Memory usage of the current process group."""

@@ -24,6 +24,7 @@ from core_brain.tuner import ParameterTuner
 from core_brain.notificator import get_notifier
 from core_brain.data_provider_manager import DataProviderManager
 from data_vault.storage import StorageManager
+from core_brain.health import HealthManager
 # from models.signal import MarketRegime
 
 # Configurar logging
@@ -58,6 +59,11 @@ def get_tuner():
 def get_provider_manager():
     """Obtiene una instancia del gestor de proveedores de datos"""
     return DataProviderManager()
+
+@st.cache_resource
+def get_health_manager():
+    """Obtiene una instancia del motor de diagnóstico"""
+    return HealthManager()
 
 def get_regime_color(regime: str) -> str:
     """Retorna un color para cada régimen"""
@@ -102,8 +108,7 @@ def main():
         
         st.markdown("---")
         st.subheader("🛠️ Soporte Técnico")
-        if st.button("🚨 Abrir System Monitor"):
-            st.info("Para abrir el monitor, ejecuta: `streamlit run ui/system_monitor.py` en una nueva terminal.")
+        st.caption("Accede a la pestaña '🛡️ Sistema' para diagnósticos.")
             
         # Botón para recargar datos
         if st.button("🔄 Recargar Datos"):
@@ -117,8 +122,9 @@ def main():
     tuner = get_tuner()
     
     # Tabs principales
-    tab_brokers, tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
-        "🔌 Configuración de Brokers", # MOVIDO AL INICIO PARA DEBUG
+    tab_sys, tab_brokers, tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+        "🛡️ Sistema & Diagnóstico",
+        "🔌 Configuración de Brokers",
         "🛡️ Monitor de Resiliencia",
         "📊 Régimen en Tiempo Real",
         "🎛️ Gestión de Módulos",
@@ -128,6 +134,46 @@ def main():
         "📡 Proveedores de Datos",
         "💰 Análisis de Activos"
     ])
+    
+    # TAB 0: Sistema & Diagnóstico (Unified interface)
+    with tab_sys:
+        st.header("🛡️ Aethelgard System Monitor")
+        health_manager = get_health_manager()
+        
+        # Botón de reparación manual
+        if st.button("🔧 Ejecutar Auto-Reparación de DB"):
+            if health_manager.try_auto_repair():
+                st.success("✅ Intento de reparación completado. Refrescando...")
+                st.rerun()
+            else:
+                st.error("❌ Falló la auto-reparación. Revisa los logs.")
+
+        summary = health_manager.run_full_diagnostic()
+        status = summary["overall_status"]
+        status_emoji = {"GREEN": "✅", "YELLOW": "⚠️", "RED": "🚨"}.get(status, "⚪")
+        
+        st.subheader(f"Estado Global: {status_emoji} {status}")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("CPU Usage", f"{summary['resources'].get('cpu_percent', 0)}%")
+        with col2:
+            st.metric("RAM (Process)", f"{summary['resources'].get('memory_mb', 0):.1f} MB")
+        with col3:
+            st.metric("Threads", summary['resources'].get('threads', 0))
+        with col4:
+            st.metric("Timestamp", datetime.fromisoformat(summary["timestamp"]).strftime("%H:%M:%S"))
+
+        st.markdown("---")
+        c1, c2 = st.columns(2)
+        with c1:
+            st.subheader("📂 Configuración")
+            for d in summary["config"]["details"]:
+                st.write(f"{'🟢' if 'SUCCESS' in d else '🔴'} {d}")
+        with c2:
+            st.subheader("🗄️ Base de Datos")
+            for d in summary["db"]["details"]:
+                st.write(f"{'🟢' if 'SUCCESS' in d else '🟡' if 'WARNING' in d else '🔴'} {d}")
     
     # TAB 1: Monitor de Resiliencia
     with tab1:
