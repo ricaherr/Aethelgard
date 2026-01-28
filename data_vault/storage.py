@@ -6,6 +6,7 @@ import uuid
 from datetime import date, datetime
 from enum import Enum
 from typing import Dict, List, Optional
+from utils.encryption import get_encryptor
 
 logger = logging.getLogger(__name__)
 
@@ -152,6 +153,20 @@ class StorageManager:
                     updated_at TEXT,
                     FOREIGN KEY (broker_id) REFERENCES brokers(broker_id),
                     FOREIGN KEY (platform_id) REFERENCES platforms(platform_id)
+                )
+            ''')
+            
+            # Tabla de Credenciales Encriptadas
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS broker_credentials (
+                    credential_id TEXT PRIMARY KEY,
+                    account_id TEXT NOT NULL,
+                    credential_type TEXT NOT NULL,
+                    credential_key TEXT NOT NULL,
+                    encrypted_value BLOB NOT NULL,
+                    created_at TEXT,
+                    expires_at TEXT,
+                    FOREIGN KEY (account_id) REFERENCES broker_accounts(account_id) ON DELETE CASCADE
                 )
             ''')
             
@@ -978,13 +993,15 @@ class StorageManager:
             return []
     
     def get_broker_accounts(self, broker_id: Optional[str] = None, 
-                           enabled_only: bool = False) -> List[Dict]:
+                           enabled_only: bool = False,
+                           account_type: Optional[str] = None) -> List[Dict]:
         """
-        Get broker accounts, optionally filtered by broker_id
+        Get broker accounts, optionally filtered by broker_id and account_type
         
         Args:
             broker_id: Filter by specific broker (None = all)
             enabled_only: Only return enabled accounts
+            account_type: Filter by account type ('demo' or 'real')
         """
         try:
             with self._get_conn() as conn:
@@ -1007,6 +1024,10 @@ class StorageManager:
                 
                 if enabled_only:
                     conditions.append("enabled = 1")
+                
+                if account_type:
+                    conditions.append("account_type = ?")
+                    params.append(account_type)
                 
                 if conditions:
                     query += " WHERE " + " AND ".join(conditions)
@@ -1152,6 +1173,159 @@ class StorageManager:
                 logger.info(f"Account {account_id} updated successfully")
         except Exception as e:
             logger.error(f"Error updating account: {e}")
+            raise
+    
+    # ========================================
+    # Credential Management (Encrypted)
+    # ========================================
+    
+    def save_credential(self, account_id: str, credential_type: str, 
+                       credential_key: str, value: str, expires_at: str = None) -> str:
+        """
+        Save encrypted credential for a broker account
+        
+        Args:
+            account_id: Account ID (FK to broker_accounts)
+            credential_type: Type of credential (api_key, password, oauth_token, etc)
+            credential_key: Name/key of the credential (e.g., 'api_key', 'api_secret', 'password')
+            value: Plain text value to encrypt and store
+            expires_at: Optional expiration timestamp
+        
+        Returns:
+            credential_id: ID of saved credential
+        """
+        try:
+            encryptor = get_encryptor()
+            encrypted_value = encryptor.encrypt(value)
+            credential_id = str(uuid.uuid4())
+            
+            with self._get_conn() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO broker_credentials 
+                    (credential_id, account_id, credential_type, credential_key, 
+                     encrypted_value, created_at, expires_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    credential_id,
+                    account_id,
+                    credential_type,
+                    credential_key,
+                    encrypted_value,
+                    datetime.now().isoformat(),
+                    expires_at
+                ))
+                conn.commit()
+                logger.info(f"Saved encrypted credential {credential_key} for account {account_id}")
+                return credential_id
+        except Exception as e:
+            logger.error(f"Error saving credential: {e}")
+            raise
+    
+    def get_credentials(self, account_id: str, credential_type: str = None) -> Dict[str, str]:
+        """
+        Get decrypted credentials for an account
+        
+        Args:
+            account_id: Account ID
+            credential_type: Optional filter by credential type
+        
+        Returns:
+            Dict mapping credential_key -> decrypted_value
+        """
+        try:
+            encryptor = get_encryptor()
+            
+            with self._get_conn() as conn:
+                cursor = conn.cursor()
+                
+                if credential_type:
+                    cursor.execute("""
+                        SELECT credential_key, encrypted_value 
+                        FROM broker_credentials
+                        WHERE account_id = ? AND credential_type = ?
+                    """, (account_id, credential_type))
+                else:
+                    cursor.execute("""
+                        SELECT credential_key, encrypted_value 
+                        FROM broker_credentials
+                        WHERE account_id = ?
+                    """, (account_id,))
+                
+                rows = cursor.fetchall()
+                
+                credentials = {}
+                for key, encrypted_value in rows:
+                    try:
+                        credentials[key] = encryptor.decrypt(encrypted_value)
+                    except Exception as e:
+                        logger.error(f"Failed to decrypt credential {key}: {e}")
+                
+                return credentials
+        except Exception as e:
+            logger.error(f"Error getting credentials: {e}")
+            return {}
+    
+    def update_credential(self, account_id: str, credential_key: str, new_value: str):
+        """Update an existing credential value"""
+        try:
+            encryptor = get_encryptor()
+            encrypted_value = encryptor.encrypt(new_value)
+            
+            with self._get_conn() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE broker_credentials 
+                    SET encrypted_value = ?
+                    WHERE account_id = ? AND credential_key = ?
+                """, (encrypted_value, account_id, credential_key))
+                conn.commit()
+                logger.info(f"Updated credential {credential_key} for account {account_id}")
+        except Exception as e:
+            logger.error(f"Error updating credential: {e}")
+            raise
+    
+    def delete_credential(self, account_id: str, credential_key: str = None):
+        """Delete credential(s) for an account"""
+        try:
+            with self._get_conn() as conn:
+                cursor = conn.cursor()
+                
+                if credential_key:
+                    cursor.execute("""
+                        DELETE FROM broker_credentials 
+                        WHERE account_id = ? AND credential_key = ?
+                    """, (account_id, credential_key))
+                    logger.info(f"Deleted credential {credential_key} for account {account_id}")
+                else:
+                    cursor.execute("""
+                        DELETE FROM broker_credentials 
+                        WHERE account_id = ?
+                    """, (account_id,))
+                    logger.info(f"Deleted all credentials for account {account_id}")
+                
+                conn.commit()
+        except Exception as e:
+            logger.error(f"Error deleting credential: {e}")
+            raise
+    
+    def delete_account(self, account_id: str):
+        """Delete account and all its credentials (CASCADE)"""
+        try:
+            with self._get_conn() as conn:
+                cursor = conn.cursor()
+                
+                # Delete credentials first (explicit, even though CASCADE should handle it)
+                cursor.execute("DELETE FROM broker_credentials WHERE account_id = ?", (account_id,))
+                
+                # Delete account
+                cursor.execute("DELETE FROM broker_accounts WHERE account_id = ?", (account_id,))
+                
+                conn.commit()
+                logger.info(f"Deleted account {account_id} and all credentials")
+        except Exception as e:
+            logger.error(f"Error deleting account: {e}")
+            raise
             raise
     
     def delete_account(self, account_id: str):

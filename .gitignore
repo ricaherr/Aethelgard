@@ -43,6 +43,10 @@ venv.bak/
 .env.local
 .env.*.local
 
+# Encryption key (NEVER commit!)
+.encryption_key
+.encryption_key.*
+
 # Database
 *.db
 *.sqlite
@@ -50,6 +54,11 @@ venv.bak/
 data_vault/*.db
 data_vault/*.sqlite
 data_vault/*.sqlite3
+
+# Credentials (now stored encrypted in DB)
+config/demo_accounts/*.json
+config/demo_accounts/*.json.bak
+config/accounts/*.json
 
 # Logs
 *.log
