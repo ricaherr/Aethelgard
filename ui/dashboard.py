@@ -100,6 +100,11 @@ def main():
         )
         membership_level = MembershipLevel.BASIC if membership == "basic" else MembershipLevel.PREMIUM
         
+        st.markdown("---")
+        st.subheader("🛠️ Soporte Técnico")
+        if st.button("🚨 Abrir System Monitor"):
+            st.info("Para abrir el monitor, ejecuta: `streamlit run ui/system_monitor.py` en una nueva terminal.")
+            
         # Botón para recargar datos
         if st.button("🔄 Recargar Datos"):
             st.cache_resource.clear()

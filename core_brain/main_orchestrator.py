@@ -478,11 +478,30 @@ class MainOrchestrator:
 
 async def main():
     """
-    Example usage of MainOrchestrator.
-    
-    In production, components would be properly initialized.
-    This is just a demonstration of the async entry point.
+    Main entry point for Aethelgard.
+    Includes pre-flight health checks.
     """
+    from core_brain.health import HealthManager
+    
+    print("=" * 50)
+    print("🚀 AETHELGARD ORCHESTRATOR STARTUP")
+    print("=" * 50)
+    
+    # 1. Pre-flight Health Check
+    health = HealthManager()
+    summary = health.run_full_diagnostic()
+    
+    if summary["overall_status"] == "RED":
+        print("🚨 CRITICAL ERRORS DETECTED. ABORTING STARTUP.")
+        print(json.dumps(summary["config"], indent=2))
+        print(json.dumps(summary["db"], indent=2))
+        return
+    
+    if summary["overall_status"] == "YELLOW":
+        print("⚠️  SYSTEM READY WITH WARNINGS. PROCEEDING...")
+    else:
+        print("✅ HEALTH CHECK PASSED.")
+    
     from core_brain.scanner import ScannerEngine
     from core_brain.signal_factory import SignalFactory
     from core_brain.risk_manager import RiskManager
