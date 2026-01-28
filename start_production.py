@@ -21,6 +21,7 @@ from core_brain.scanner import ScannerEngine
 from core_brain.signal_factory import SignalFactory
 from core_brain.risk_manager import RiskManager
 from core_brain.executor import OrderExecutor
+from core_brain.monitor import ClosingMonitor
 from data_vault.storage import StorageManager
 from connectors.generic_data_provider import GenericDataProvider
 
@@ -106,20 +107,37 @@ async def main():
         )
         logger.info("   Modo: Paper Trading (sin conexión a broker)")
         
-        # 7. Main Orchestrator (Cerebro del sistema)
+        # 7. Closing Monitor (Feedback Loop)
+        logger.info("💰 Inicializando Closing Monitor (Feedback Loop)...")
+        monitor = ClosingMonitor(
+            storage=storage,
+            connectors={},  # Se agregarán cuando conectemos MT5/NT8
+            interval_seconds=60  # Revisar cada minuto
+        )
+        logger.info("   Intervalo de monitoreo: 60 segundos")
+        logger.info("   Estado: Activo (esperando trades para monitorear)")
+        
+        # 8. Main Orchestrator (Cerebro del sistema)
         logger.info("🧠 Inicializando Main Orchestrator...")
         orchestrator = MainOrchestrator(
             scanner=scanner,
             signal_factory=signal_factory,
             risk_manager=risk_manager,
-            executor=executor,
-            storage=storage
-        )
-        
+            executor=e� Nueva pestaña: 'Análisis de Activos' - Ver resultados reales")
+        logger.info("🛑 Presiona Ctrl+C para detener el sistema de forma segura")
         logger.info("")
-        logger.info("=" * 70)
-        logger.info("✅ SISTEMA LISTO - PROCESANDO MERCADOS EN TIEMPO REAL")
-        logger.info("=" * 70)
+        
+        # Iniciar scanner en hilo separado
+        logger.info("🔄 Iniciando Scanner en hilo de fondo...")
+        scanner_thread = threading.Thread(target=scanner.run, daemon=True)
+        scanner_thread.start()
+        logger.info("✅ Scanner ejecutándose en background")
+        logger.info("")
+        
+        # Iniciar monitor en tarea asíncrona
+        logger.info("🔄 Iniciando Closing Monitor...")
+        monitor_task = asyncio.create_task(monitor.start())
+        logger.info("✅ Closing Monitor ejecutándose (Feedback Loop activo)
         logger.info("")
         logger.info("📊 El Dashboard está disponible en: http://localhost:8503")
         logger.info("🛑 Presiona Ctrl+C para detener el sistema de forma segura")
@@ -131,6 +149,7 @@ async def main():
         scanner_thread.start()
         logger.info("✅ Scanner ejecutándose en background")
         logger.info("")
+        await monitor.stop()  # Detener monitor gracefully
         
         # Ejecutar el loop principal del orquestador
         await orchestrator.run()

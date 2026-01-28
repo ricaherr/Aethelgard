@@ -16,15 +16,24 @@ class StorageManager:
     """
     def __init__(self, db_path='data_vault/aethelgard.db'):
         self.db_path = db_path
+        self._conn = None  # Persistent connection for :memory: databases
         self._initialize_db()
     
     def _get_conn(self):
-        """Creates a database connection"""
+        """Creates or returns a database connection"""
+        # For in-memory databases, reuse the same connection
+        if self.db_path == ':memory:':
+            if self._conn is None:
+                self._conn = sqlite3.connect(self.db_path)
+            return self._conn
+        # For file databases, create new connection each time
         return sqlite3.connect(self.db_path)
 
     def _initialize_db(self):
         """Initialize SQLite database with proper schema"""
-        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+        # Only create directories for file-based databases, not :memory:
+        if self.db_path != ':memory:':
+            os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         logger.info(f"Checking database schema at {self.db_path}...")
         
         with self._get_conn() as conn:
@@ -459,4 +468,252 @@ class StorageManager:
                 return [json.loads(row['data']) for row in rows]
         except Exception as e:
             logger.error(f"Error getting market states: {e}")
+            return []
+    
+    # ==================== FEEDBACK LOOP METHODS ====================
+    
+    def get_signals_by_status(self, status: str) -> List[Dict]:
+        """
+        Get all signals with a specific status (for monitoring loop).
+        
+        Args:
+            status: Signal status ('EXECUTED', 'PENDING', 'CLOSED', etc.)
+        
+        Returns:
+            List of matching signals
+        """
+        try:
+            with self._get_conn() as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT * FROM signals WHERE status = ? ORDER BY timestamp DESC",
+                    (status,)
+                )
+                rows = cursor.fetchall()
+                
+                signals = []
+                for row in rows:
+                    sig = dict(row)
+                    sig['metadata'] = json.loads(sig['metadata']) if sig['metadata'] else {}
+                    signals.append(sig)
+                return signals
+        except Exception as e:
+            logger.error(f"Error getting signals by status: {e}")
+            return []
+    
+    def get_signal_by_id(self, signal_id: str) -> Optional[Dict]:
+        """
+        Get a specific signal by ID.
+        
+        Args:
+            signal_id: Signal UUID
+        
+        Returns:
+            Signal dict or None if not found
+        """
+        try:
+            with self._get_conn() as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM signals WHERE id = ?", (signal_id,))
+                row = cursor.fetchone()
+                
+                if row:
+                    sig = dict(row)
+                    sig['metadata'] = json.loads(sig['metadata']) if sig['metadata'] else {}
+                    return sig
+                return None
+        except Exception as e:
+            logger.error(f"Error getting signal by ID: {e}")
+            return None
+    
+    def update_signal_status(self, signal_id: str, status: str, metadata_update: Dict = None):
+        """
+        Update signal status and optionally merge metadata.
+        
+        Args:
+            signal_id: Signal UUID
+            status: New status
+            metadata_update: Additional metadata to merge
+        """
+        try:
+            with self._get_conn() as conn:
+                cursor = conn.cursor()
+                
+                # Get current signal
+                cursor.execute("SELECT metadata FROM signals WHERE id = ?", (signal_id,))
+                row = cursor.fetchone()
+                
+                if not row:
+                    logger.warning(f"Signal {signal_id} not found for update")
+                    return
+                
+                # Merge metadata
+                current_metadata = json.loads(row[0]) if row[0] else {}
+                if metadata_update:
+                    current_metadata.update(metadata_update)
+                
+                # Update signal
+                cursor.execute(
+                    "UPDATE signals SET status = ?, metadata = ? WHERE id = ?",
+                    (status, json.dumps(current_metadata), signal_id)
+                )
+                conn.commit()
+                
+                logger.debug(f"Signal {signal_id} updated to status: {status}")
+        except Exception as e:
+            logger.error(f"Error updating signal status: {e}")
+    
+    def get_all_trades(self, limit: int = 100) -> List[Dict]:
+        """
+        Get all trade results (alias for get_recent_trades for clarity).
+        
+        Args:
+            limit: Maximum number of trades to return
+        
+        Returns:
+            List of trade records
+        """
+        return self.get_recent_trades(limit)
+    
+    def get_win_rate(self, symbol: Optional[str] = None, days: int = 30) -> float:
+        """
+        Calculate win rate percentage.
+        
+        Args:
+            symbol: Optional filter by symbol
+            days: Number of days to look back
+        
+        Returns:
+            Win rate as percentage (0-100)
+        """
+        try:
+            with self._get_conn() as conn:
+                cursor = conn.cursor()
+                
+                # Build query
+                base_query = "SELECT COUNT(*) FROM trades WHERE 1=1"
+                params = []
+                
+                if symbol:
+                    base_query += " AND symbol = ?"
+                    params.append(symbol)
+                
+                if days:
+                    from datetime import timedelta
+                    cutoff_date = (date.today() - timedelta(days=days)).isoformat()
+                    base_query += " AND date >= ?"
+                    params.append(cutoff_date)
+                
+                # Total trades
+                cursor.execute(base_query, tuple(params))
+                total = cursor.fetchone()[0]
+                
+                if total == 0:
+                    return 0.0
+                
+                # Winning trades
+                win_query = base_query + " AND is_win = 1"
+                cursor.execute(win_query, tuple(params))
+                wins = cursor.fetchone()[0]
+                
+                win_rate = (wins / total) * 100
+                return round(win_rate, 2)
+        except Exception as e:
+            logger.error(f"Error calculating win rate: {e}")
+            return 0.0
+    
+    def get_total_profit(self, symbol: Optional[str] = None, days: int = 30) -> float:
+        """
+        Calculate total profit/loss.
+        
+        Args:
+            symbol: Optional filter by symbol
+            days: Number of days to look back
+        
+        Returns:
+            Total profit in account currency
+        """
+        try:
+            with self._get_conn() as conn:
+                cursor = conn.cursor()
+                
+                query = "SELECT SUM(profit_loss) FROM trades WHERE 1=1"
+                params = []
+                
+                if symbol:
+                    query += " AND symbol = ?"
+                    params.append(symbol)
+                
+                if days:
+                    from datetime import timedelta
+                    cutoff_date = (date.today() - timedelta(days=days)).isoformat()
+                    query += " AND date >= ?"
+                    params.append(cutoff_date)
+                
+                cursor.execute(query, tuple(params))
+                result = cursor.fetchone()[0]
+                
+                return round(result or 0.0, 2)
+        except Exception as e:
+            logger.error(f"Error calculating total profit: {e}")
+            return 0.0
+    
+    def get_profit_by_symbol(self, days: int = 30) -> List[Dict]:
+        """
+        Get profit breakdown by symbol (for asset analysis).
+        
+        Args:
+            days: Number of days to look back
+        
+        Returns:
+            List of dicts: [{'symbol': 'EURUSD', 'total_trades': 10, 'win_rate': 60.0, 'profit': 150.50}]
+        """
+        try:
+            with self._get_conn() as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                
+                # Date filter
+                params = []
+                date_filter = ""
+                if days:
+                    from datetime import timedelta
+                    cutoff_date = (date.today() - timedelta(days=days)).isoformat()
+                    date_filter = "WHERE date >= ?"
+                    params.append(cutoff_date)
+                
+                # Query with grouping and aggregation
+                query = f"""
+                    SELECT 
+                        symbol,
+                        COUNT(*) as total_trades,
+                        SUM(CASE WHEN is_win = 1 THEN 1 ELSE 0 END) as wins,
+                        SUM(profit_loss) as total_profit,
+                        AVG(profit_loss) as avg_profit,
+                        SUM(pips) as total_pips
+                    FROM trades
+                    {date_filter}
+                    GROUP BY symbol
+                    ORDER BY total_profit DESC
+                """
+                
+                cursor.execute(query, tuple(params))
+                rows = cursor.fetchall()
+                
+                results = []
+                for row in rows:
+                    results.append({
+                        'symbol': row['symbol'],
+                        'total_trades': row['total_trades'],
+                        'win_rate': round((row['wins'] / row['total_trades'] * 100), 2) if row['total_trades'] > 0 else 0.0,
+                        'profit': round(row['total_profit'] or 0.0, 2),
+                        'avg_profit': round(row['avg_profit'] or 0.0, 2),
+                        'total_pips': round(row['total_pips'] or 0.0, 1)
+                    })
+                
+                return results
+        except Exception as e:
+            logger.error(f"Error getting profit by symbol: {e}")
             return []

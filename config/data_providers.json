@@ -1,7 +1,7 @@
 {
   "yahoo": {
     "name": "yahoo",
-    "enabled": false,
+    "enabled": true,
     "requires_auth": false,
     "priority": 10,
     "free_tier": true,
@@ -11,7 +11,7 @@
   },
   "ccxt": {
     "name": "ccxt",
-    "enabled": false,
+    "enabled": true,
     "requires_auth": false,
     "priority": 90,
     "free_tier": true,

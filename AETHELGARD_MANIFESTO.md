@@ -668,33 +668,131 @@ def activate_strategy(regime: MarketRegime, symbol: str):
 
 ---
 
-### Fase 3: Feedback Loop y Aprendizaje por Refuerzo 🔜 **SIGUIENTE**
+### Fase 3: Feedback Loop y Aprendizaje Autónomo ✅ **COMPLETADA**
 
-**Objetivo**: Implementar ciclo completo de feedback y aprendizaje básico.
+**Objetivo**: Implementar ciclo completo de feedback y aprendizaje basado en resultados reales.
 
-#### 3.1 Feedback Loop de Resultados
+**Fecha de Implementación**: Enero 2026
 
-**Tareas:**
-- Sistema de seguimiento de trades ejecutados
-- Evaluación automática de resultados (5, 10, 20 velas)
-- Cálculo de métricas de rendimiento por estrategia
-- Análisis de correlación régimen → resultado
+#### 3.1 Feedback Loop de Resultados ✅
 
-#### 3.2 Aprendizaje por Refuerzo Básico
+**Componentes Implementados:**
 
-**Tareas:**
-- Modelo simple de Q-Learning o Policy Gradient
-- Recompensas basadas en PNL y precisión de régimen
-- Actualización de políticas de estrategia según resultados
-- Validación en datos históricos antes de aplicar en vivo
+##### ClosingMonitor (`core_brain/monitor.py`)
+- **Función**: Monitorea señales ejecutadas y actualiza la DB con resultados reales del broker
+- **Características**:
+  - Verificación periódica de posiciones cerradas (cada 60 segundos por defecto)
+  - Consulta automática al historial de órdenes de MT5/NT8
+  - Cálculo automático de PIPs (adaptado por tipo de instrumento: Forex, JPY, Gold)
+  - Detección inteligente del motivo de cierre (TAKE_PROFIT, STOP_LOSS, MANUAL)
+  - Actualización en tiempo real de la tabla `trades` en SQLite
+  
+- **Workflow**:
+  1. El monitor detecta señales con estado `EXECUTED` en la DB
+  2. Consulta a los conectores (`MT5Bridge.get_closed_positions()`) por órdenes cerradas
+  3. Empareja órdenes cerradas con señales mediante ticket o signal_id
+  4. Calcula PIPs, profit real, duración y resultado (win/loss)
+  5. Actualiza señal a estado `CLOSED` y registra resultado en tabla `trades`
 
-#### 3.3 Dashboard de Métricas
+##### Extensiones de StorageManager (`data_vault/storage.py`)
 
-**Tareas:**
-- Visualización de rendimiento por régimen
-- Gráficos de evolución de parámetros
-- Análisis de win rate por estrategia
-- Alertas de drift o degradación
+**Métodos Nuevos**:
+- `get_signals_by_status(status)`: Obtiene señales filtradas por estado (ej. EXECUTED)
+- `get_signal_by_id(signal_id)`: Recupera señal específica para actualización
+- `update_signal_status(signal_id, status, metadata)`: Actualiza estado de señal con metadatos
+- `get_win_rate(symbol, days)`: Calcula Win Rate % basado en trades reales
+- `get_total_profit(symbol, days)`: Suma profit/loss de trades cerrados
+- `get_profit_by_symbol(days)`: Análisis detallado por activo (profit, win rate, pips)
+- `get_all_trades(limit)`: Obtiene historial completo de trades cerrados
+
+##### MT5Bridge Enhancement (`connectors/bridge_mt5.py`)
+
+**Método Nuevo**:
+- `get_closed_positions(hours)`: Obtiene posiciones cerradas del historial de MT5
+  - Consulta a `mt5.history_deals_get()` con rango de tiempo
+  - Filtra deals por magic number de Aethelgard
+  - Identifica entry/exit deals para reconstruir posiciones completas
+  - Extrae entry_price, exit_price, profit, exit_reason automáticamente
+  - Detecta razón de cierre (TP/SL/Manual) mediante análisis del comentario
+
+#### 3.2 Dashboard de Análisis Avanzado ✅
+
+**Nueva Pestaña: 💰 Análisis de Activos**
+
+**KPIs Principales** (calculados desde datos reales):
+- **Profit Total**: Suma de ganancias/pérdidas de todos los trades
+- **Win Rate %**: Porcentaje de trades ganadores sobre total
+- **Total Trades**: Número de operaciones cerradas
+- **Profit Promedio**: Ganancia promedio por trade
+
+**Gráficos Interactivos** (Plotly):
+- **Gráfico de Barras**: Profit acumulado por símbolo (código de color verde/rojo)
+- **Tabla Detallada**: Por cada activo muestra:
+  - Símbolo
+  - Total de trades
+  - Win Rate %
+  - Profit Total
+  - Profit Promedio
+  - PIPs Totales
+  - Resultado visual (🟢 Ganador / 🔴 Perdedor)
+
+**Tabla de Señales con Resultado Real**:
+- Lista de últimos 20 trades cerrados
+- Muestra: Símbolo, Entrada, Salida, PIPs, Profit, Razón de Salida, Fecha
+- Colores condicionales: Verde para trades ganados, Rojo para perdidos
+- Filtro de período (1-90 días)
+
+#### 3.3 Integración del Monitor en el Sistema
+
+**Uso en Producción**:
+```python
+from core_brain.monitor import ClosingMonitor
+from connectors.bridge_mt5 import MT5Bridge
+
+# Inicializar monitor con conectores
+mt5_connector = MT5Bridge()
+monitor = ClosingMonitor(
+    storage=storage,
+    connectors={'MT5': mt5_connector},
+    interval_seconds=60
+)
+
+# Ejecutar como tarea asíncrona
+await monitor.start()
+```
+
+**Tests Implementados** (`tests/test_monitor.py`):
+- ✅ Verificación de inicialización correcta
+- ✅ Actualización de trades en DB desde posiciones cerradas
+- ✅ Cálculo correcto de PIPs para diferentes instrumentos (EUR/USD, USD/JPY, XAU/USD)
+- ✅ Clasificación correcta de trades ganados/perdidos
+- ✅ Manejo robusto de errores de conexión con brokers
+- ✅ Loop asíncrono de monitoreo continuo
+
+**Dependencias Agregadas**:
+- `plotly>=5.18.0` (para gráficos interactivos en Dashboard)
+
+#### Impacto en el Sistema
+
+**Antes del Feedback Loop**:
+- Señales ejecutadas sin seguimiento post-ejecución
+- Win Rate y profit calculados con datos simulados
+- Imposible medir rendimiento real por activo
+- Sin datos para optimización del Tuner
+
+**Después del Feedback Loop**:
+- ✅ Tracking automático de todos los trades cerrados
+- ✅ KPIs calculados con datos reales del broker
+- ✅ Análisis detallado de rentabilidad por símbolo
+- ✅ Base de datos robusta para análisis histórico
+- ✅ Datos reales alimentan el ParameterTuner para auto-calibración
+- ✅ Visibilidad completa del rendimiento en Dashboard
+
+**Próximos Pasos (Aprendizaje Avanzado)**:
+- Integrar resultados en ParameterTuner para ajuste automático de umbrales
+- Implementar sistema de scoring de estrategias basado en win rate real
+- Crear alertas automáticas ante degradación de rendimiento
+- Desarrollar modelo predictivo de éxito de señales basado en histórico
 
 ---
 

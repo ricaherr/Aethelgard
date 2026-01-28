@@ -468,6 +468,108 @@ class MT5Bridge:
             logger.error(f"Error obteniendo P&L: {e}")
             return None
     
+    def get_closed_positions(self, hours: int = 24) -> List[Dict]:
+        """
+        Get closed positions from MT5 history (for feedback loop).
+        
+        Args:
+            hours: Look back this many hours (default: 24)
+        
+        Returns:
+            List of closed position dicts with trade results
+        """
+        try:
+            from datetime import timedelta
+            
+            # Calculate time range
+            now = datetime.now()
+            from_date = now - timedelta(hours=hours)
+            
+            # Get history deals
+            deals = mt5.history_deals_get(from_date, now)
+            
+            if deals is None:
+                logger.warning("No history deals found")
+                return []
+            
+            closed_positions = []
+            
+            # Process deals - filter only our magic number and exits
+            for deal in deals:
+                # Only process our trades
+                if deal.magic != self.magic_number:
+                    continue
+                
+                # Only process exits (DEAL_ENTRY_OUT)
+                if deal.entry != mt5.DEAL_ENTRY_OUT:
+                    continue
+                
+                # Build position info
+                position_info = {
+                    'ticket': deal.position_id,
+                    'symbol': deal.symbol,
+                    'entry_price': None,  # Will need to find entry deal
+                    'exit_price': deal.price,
+                    'profit': deal.profit,
+                    'volume': deal.volume,
+                    'close_time': datetime.fromtimestamp(deal.time),
+                    'exit_reason': self._detect_exit_reason(deal),
+                    'signal_id': self._extract_signal_id(deal.comment)
+                }
+                
+                # Try to find entry price from position history
+                entry_deal = self._find_entry_deal(deal.position_id, from_date, now)
+                if entry_deal:
+                    position_info['entry_price'] = entry_deal.price
+                
+                closed_positions.append(position_info)
+            
+            logger.info(f"Found {len(closed_positions)} closed positions in last {hours}h")
+            return closed_positions
+        
+        except Exception as e:
+            logger.error(f"Error getting closed positions: {e}")
+            return []
+    
+    def _find_entry_deal(self, position_id: int, from_date: datetime, to_date: datetime):
+        """Find the entry deal for a position"""
+        try:
+            deals = mt5.history_deals_get(from_date, to_date, position=position_id)
+            if deals:
+                # Find DEAL_ENTRY_IN
+                for deal in deals:
+                    if deal.entry == mt5.DEAL_ENTRY_IN:
+                        return deal
+            return None
+        except Exception as e:
+            logger.error(f"Error finding entry deal: {e}")
+            return None
+    
+    def _detect_exit_reason(self, deal) -> str:
+        """Detect why a position was closed"""
+        comment = deal.comment.lower()
+        
+        if 'tp' in comment or 'take profit' in comment:
+            return 'TAKE_PROFIT'
+        elif 'sl' in comment or 'stop loss' in comment:
+            return 'STOP_LOSS'
+        elif 'close' in comment or 'aethelgard_close' in comment:
+            return 'MANUAL'
+        else:
+            return 'CLOSED'
+    
+    def _extract_signal_id(self, comment: str) -> Optional[str]:
+        """Extract signal ID from deal comment if present"""
+        try:
+            # Comment format: "Aethelgard_strategy_id" or custom format
+            if 'signal_' in comment:
+                parts = comment.split('signal_')
+                if len(parts) > 1:
+                    return f"signal_{parts[1].split('_')[0]}"
+            return None
+        except Exception:
+            return None
+    
     async def send_market_data(self):
         """Envía datos de mercado actuales"""
         try:

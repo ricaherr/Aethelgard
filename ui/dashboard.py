@@ -6,11 +6,13 @@ import streamlit as st
 import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, date
 from pathlib import Path
 from typing import Dict, Optional, List, Any
 import sys
 import random # Importar random para simulación de datos
+import pandas as pd
+import plotly.express as px
 
 # Añadir el directorio raíz al path para importar módulos
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -111,14 +113,15 @@ def main():
     tuner = get_tuner()
     
     # Tabs principales
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
         "🛡️ Monitor de Resiliencia",
         "📊 Régimen en Tiempo Real",
         "🎛️ Gestión de Módulos",
         "⚙️ Parámetros Dinámicos",
         "📈 Estadísticas",
         "⚡ Señales de Trading",
-        "📡 Proveedores de Datos"
+        "📡 Proveedores de Datos",
+        "💰 Análisis de Activos"
     ])
     
     # TAB 1: Monitor de Resiliencia
@@ -996,6 +999,186 @@ def main():
         except Exception as e:
             st.error(f"Error en gestión de proveedores: {e}")
             logger.error(f"Error en tab proveedores: {e}", exc_info=True)
+    
+    # TAB 8: Análisis de Activos (NEW - Feedback Loop)
+    with tab8:
+        st.header("💰 Análisis de Rentabilidad por Activo")
+        st.markdown("Análisis basado en resultados reales de trading (Feedback Loop)")
+        
+        # Filtro de días
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            days_filter = st.slider(
+                "Período de análisis (días)",
+                min_value=1,
+                max_value=90,
+                value=30,
+                step=1
+            )
+        
+        with col2:
+            if st.button("🔄 Actualizar Datos"):
+                st.rerun()
+        
+        st.markdown("---")
+        
+        try:
+            # KPIs Principales - Calculados desde la DB real
+            st.subheader("📊 KPIs Principales")
+            
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                total_profit = storage.get_total_profit(days=days_filter)
+                delta_color = "normal" if total_profit >= 0 else "inverse"
+                st.metric(
+                    "Profit Total",
+                    f"${total_profit:,.2f}",
+                    delta=f"{'↑' if total_profit > 0 else '↓'} {abs(total_profit):.2f}",
+                    delta_color=delta_color
+                )
+            
+            with col2:
+                win_rate = storage.get_win_rate(days=days_filter)
+                st.metric(
+                    "Win Rate",
+                    f"{win_rate:.1f}%",
+                    delta="Últimos " + str(days_filter) + " días"
+                )
+            
+            with col3:
+                all_trades = storage.get_all_trades(limit=1000)
+                recent_trades = [t for t in all_trades if t.get('date') >= (datetime.now().date() - __import__('datetime').timedelta(days=days_filter)).isoformat()]
+                total_trades = len(recent_trades)
+                st.metric(
+                    "Total Trades",
+                    total_trades
+                )
+            
+            with col4:
+                if total_trades > 0:
+                    avg_profit = total_profit / total_trades
+                    st.metric(
+                        "Profit Promedio",
+                        f"${avg_profit:.2f}"
+                    )
+                else:
+                    st.metric("Profit Promedio", "$0.00")
+            
+            st.markdown("---")
+            
+            # Gráfico de barras: Profit por símbolo
+            st.subheader("📈 Profit Acumulado por Símbolo")
+            
+            profit_by_symbol = storage.get_profit_by_symbol(days=days_filter)
+            
+            if profit_by_symbol:
+                import pandas as pd
+                
+                # Preparar datos para gráfico
+                df_profit = pd.DataFrame(profit_by_symbol)
+                
+                # Gráfico de barras con colores
+                import plotly.express as px
+                
+                fig = px.bar(
+                    df_profit,
+                    x='symbol',
+                    y='profit',
+                    color='profit',
+                    color_continuous_scale=['red', 'yellow', 'green'],
+                    labels={'symbol': 'Símbolo', 'profit': 'Profit ($)'},
+                    title=f'Rentabilidad por Activo (últimos {days_filter} días)',
+                    text='profit'
+                )
+                
+                fig.update_traces(texttemplate='$%{text:.2f}', textposition='outside')
+                fig.update_layout(showlegend=False)
+                
+                st.plotly_chart(fig, use_container_width=True)
+                
+                st.markdown("---")
+                
+                # Tabla detallada por activo
+                st.subheader("📋 Tabla Detallada de Rentabilidad")
+                
+                # Agregar columna de color para resultado
+                df_profit['Resultado'] = df_profit['profit'].apply(
+                    lambda x: '🟢 Ganador' if x > 0 else ('🔴 Perdedor' if x < 0 else '⚪ Neutro')
+                )
+                
+                # Formatear columnas
+                df_display = df_profit[['symbol', 'total_trades', 'win_rate', 'profit', 'avg_profit', 'total_pips', 'Resultado']].copy()
+                df_display.columns = ['Símbolo', 'Total Trades', 'Win Rate (%)', 'Profit Total ($)', 'Profit Promedio ($)', 'PIPs Totales', 'Resultado']
+                
+                # Aplicar estilo condicional
+                def color_resultado(row):
+                    if row['Profit Total ($)'] > 0:
+                        return ['background-color: #90EE90'] * len(row)
+                    elif row['Profit Total ($)'] < 0:
+                        return ['background-color: #FFB6C1'] * len(row)
+                    else:
+                        return [''] * len(row)
+                
+                st.dataframe(
+                    df_display.style.apply(color_resultado, axis=1).format({
+                        'Win Rate (%)': '{:.2f}%',
+                        'Profit Total ($)': '${:.2f}',
+                        'Profit Promedio ($)': '${:.2f}',
+                        'PIPs Totales': '{:.1f}'
+                    }),
+                    use_container_width=True
+                )
+                
+                st.markdown("---")
+                
+                # Señales recientes con resultado real
+                st.subheader("🎯 Últimas Señales con Resultado")
+                
+                recent_trades_display = storage.get_recent_trades(limit=20)
+                
+                if recent_trades_display:
+                    df_trades = pd.DataFrame(recent_trades_display)
+                    
+                    # Seleccionar columnas relevantes
+                    df_trades_display = df_trades[['symbol', 'entry_price', 'exit_price', 'pips', 'profit_loss', 'is_win', 'exit_reason', 'timestamp']].copy()
+                    
+                    # Agregar columna de resultado visual
+                    df_trades_display['Resultado'] = df_trades_display['is_win'].apply(
+                        lambda x: '🟢 Ganada' if x else '🔴 Perdida'
+                    )
+                    
+                    # Formatear timestamp
+                    df_trades_display['timestamp'] = pd.to_datetime(df_trades_display['timestamp']).dt.strftime('%Y-%m-%d %H:%M')
+                    
+                    df_trades_display.columns = ['Símbolo', 'Entrada', 'Salida', 'PIPs', 'Profit ($)', 'Win', 'Razón Salida', 'Fecha/Hora', 'Resultado']
+                    
+                    # Aplicar color por resultado
+                    def color_trade(row):
+                        if row['Resultado'] == '🟢 Ganada':
+                            return ['background-color: #90EE90'] * len(row)
+                        else:
+                            return ['background-color: #FFB6C1'] * len(row)
+                    
+                    st.dataframe(
+                        df_trades_display.style.apply(color_trade, axis=1).format({
+                            'Entrada': '{:.5f}',
+                            'Salida': '{:.5f}',
+                            'PIPs': '{:.2f}',
+                            'Profit ($)': '${:.2f}'
+                        }).hide(columns=['Win']),
+                        use_container_width=True
+                    )
+                else:
+                    st.info("📭 No hay trades cerrados aún. Los resultados aparecerán cuando el Monitor cierre posiciones.")
+            else:
+                st.info("📭 No hay datos de trading para el período seleccionado")
+                st.caption(f"💡 Ejecuta señales y espera a que se cierren para ver análisis detallado")
+        
+        except Exception as e:
+            st.error(f"Error en análisis de activos: {e}")
+            logger.error(f"Error en tab análisis de activos: {e}", exc_info=True)
         
         # Auto-refresh cada 3 segundos
         import time
@@ -1005,3 +1188,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
