@@ -67,9 +67,9 @@ class OliverVelezStrategy(BaseStrategy):
         # if Path('config/nt8_config.json').exists():
         #     return ConnectorType.NINJATRADER8
         
-        # Fallback a GENERIC
-        logger.info(f"[{self.strategy_id}] Usando GENERIC connector (no config específica)")
-        return ConnectorType.GENERIC
+        # Fallback a PAPER (si no hay configs específicas)
+        logger.info(f"[{self.strategy_id}] Usando PAPER connector (modo simulación)")
+        return ConnectorType.PAPER
 
     async def analyze(self, symbol: str, df: pd.DataFrame, regime: MarketRegime) -> Optional[Signal]:
         """

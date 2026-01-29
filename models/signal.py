@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Optional, Any, Dict
-from dataclasses import dataclass, field
 from datetime import datetime
+from pydantic import BaseModel, Field
 
 class ConnectorType(Enum):
     """Define los tipos de conectores o fuentes de datos."""
@@ -9,6 +9,7 @@ class ConnectorType(Enum):
     METATRADER5 = "METATRADER5"
     NINJATRADER8 = "NINJATRADER8"
     GENERIC = "GENERIC"
+    PAPER = "PAPER"
 
 class SignalType(Enum):
     """Define los tipos de señales de trading."""
@@ -26,28 +27,6 @@ class MembershipTier(Enum):
     ELITE = "ELITE"
     VIP = "VIP"
 
-@dataclass
-class Signal:
-    """Representa una señal de trading generada por un scanner."""
-    symbol: str
-    signal_type: str  # 'BUY', 'SELL', 'HOLD'
-    confidence: float
-    connector_type: ConnectorType  # Tipo de conector a usar
-    entry_price: float = 0.0  # Precio de entrada sugerido
-    stop_loss: float = 0.0  # Stop loss en precio
-    take_profit: float = 0.0  # Take profit en precio
-    volume: float = 0.01  # Volumen/tamaño de posición
-    timestamp: datetime = field(default_factory=datetime.now)
-    metadata: Dict[str, Any] = field(default_factory=dict)  # Información adicional
-    
-@dataclass
-class SignalResult:
-    """Representa el resultado de una operación basada en una señal."""
-    signal: Signal
-    is_win: bool
-    pnl: float
-    # ... otros campos
-
 class MarketRegime(Enum):
     """Representa el régimen o estado actual del mercado."""
     TREND = "TREND"
@@ -58,3 +37,50 @@ class MarketRegime(Enum):
     BEAR = "BEAR"
     CRASH = "CRASH"
     NORMAL = "NORMAL"
+
+class Signal(BaseModel):
+    """Representa una señal de trading generada por un motor de análisis."""
+    symbol: str
+    signal_type: SignalType
+    confidence: float
+    connector_type: ConnectorType
+    entry_price: float = 0.0
+    stop_loss: float = 0.0
+    take_profit: float = 0.0
+    volume: float = 0.01
+    timestamp: datetime = Field(default_factory=datetime.now)
+    strategy_id: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+    @property
+    def price(self) -> float:
+        """Alias para entry_price usado en algunas partes del sistema."""
+        return self.entry_price
+
+    @property
+    def regime(self) -> Optional[MarketRegime]:
+        """Obtiene el régimen de los metadatos si está disponible."""
+        regime_val = self.metadata.get("regime")
+        if regime_val:
+            try:
+                if isinstance(regime_val, MarketRegime):
+                    return regime_val
+                return MarketRegime(regime_val)
+            except ValueError:
+                return None
+        return None
+
+    @regime.setter
+    def regime(self, value: MarketRegime):
+        """Establece el régimen en los metadatos."""
+        if hasattr(value, 'value'):
+            self.metadata["regime"] = value.value
+        else:
+            self.metadata["regime"] = value
+
+class SignalResult(BaseModel):
+    """Representa el resultado de una operación basada en una señal."""
+    signal: Signal
+    is_win: bool
+    pnl: float
+    # ... otros campos

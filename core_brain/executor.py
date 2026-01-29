@@ -90,7 +90,7 @@ class OrderExecutor:
         except Exception as e:
             logger.error(f"Error loading MT5Connector: {e}", exc_info=True)
     
-    def execute_signal(self, signal: Signal) -> bool:
+    async def execute_signal(self, signal: Signal) -> bool:
         """
         Execute a trading signal with full validation and resilience.
         
@@ -132,7 +132,7 @@ class OrderExecutor:
             
             if connector is None:
                 logger.error(f"No connector found for type: {signal.connector_type}")
-                self._handle_connector_failure(signal, "Connector not configured")
+                await self._handle_connector_failure(signal, "Connector not configured")
                 return False
             
             # Execute signal through connector
@@ -154,19 +154,19 @@ class OrderExecutor:
             else:
                 error_msg = result.get('error', 'Unknown error')
                 logger.warning(f"Signal execution failed: {error_msg}")
-                self._handle_connector_failure(signal, f"Execution failed: {error_msg}")
+                await self._handle_connector_failure(signal, f"Execution failed: {error_msg}")
                 return False
                 
         except ConnectionError as e:
             # Step 5: Handle connection failures
             logger.error(f"Connection error executing signal: {e}")
-            self._handle_connector_failure(signal, f"Connection error: {str(e)}")
+            await self._handle_connector_failure(signal, f"Connection error: {str(e)}")
             return False
             
         except Exception as e:
             # Step 6: Handle unexpected errors
             logger.error(f"Unexpected error executing signal: {e}", exc_info=True)
-            self._handle_connector_failure(signal, f"Unexpected error: {str(e)}")
+            await self._handle_connector_failure(signal, f"Unexpected error: {str(e)}")
             return False
     
     def _validate_signal(self, signal: Signal) -> bool:
@@ -265,7 +265,7 @@ class OrderExecutor:
             "rejected_signals": [signal_record]
         })
     
-    def _handle_connector_failure(self, signal: Signal, error_message: str):
+    async def _handle_connector_failure(self, signal: Signal, error_message: str):
         """
         Handle connector failures with resilience:
         1. Mark signal as REJECTED_CONNECTION in database
@@ -302,7 +302,7 @@ class OrderExecutor:
             )
             
             try:
-                self.notificator.send_alert(alert_message)
+                await self.notificator.send_alert(alert_message)
                 logger.info("Failure notification sent to Telegram")
             except Exception as e:
                 logger.error(f"Failed to send Telegram notification: {e}")

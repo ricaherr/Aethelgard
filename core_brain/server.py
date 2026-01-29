@@ -220,7 +220,7 @@ async def process_signal(message: dict, client_id: str, connector_type: Connecto
     """
     try:
         # Asegurar que el conector esté en el mensaje
-        message["connector"] = connector_type.value
+        message["connector_type"] = connector_type
         
         # Crear modelo Signal
         signal = Signal(**message)

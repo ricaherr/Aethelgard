@@ -28,6 +28,8 @@ from core_brain.executor import OrderExecutor
 from core_brain.monitor import ClosingMonitor
 from core_brain.tuner import EdgeTuner
 from data_vault.storage import StorageManager
+from connectors.paper_connector import PaperConnector
+from models.signal import ConnectorType
 
 # Core Brain Imports
 from core_brain.data_provider_manager import DataProviderManager
@@ -242,6 +244,9 @@ async def main():
         else:
             logger.info("   Sin cuentas configuradas - usando Paper Trading")
             logger.info("   💡 Configura cuentas en: Dashboard → Configuración de Brokers")
+        
+        # Inyectar PaperConnector
+        connectors[ConnectorType.PAPER] = PaperConnector()
         
         executor = OrderExecutor(
             risk_manager=risk_manager,

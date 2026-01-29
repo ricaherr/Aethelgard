@@ -163,16 +163,19 @@ class TelegramNotifier:
             return
         
         # Construir mensaje
-        signal_emoji = "🟢" if signal.signal_type.value == "BUY" else "🔴"
-        regime_emoji = self._get_regime_emoji(signal.regime) if signal.regime else "⚪"
+        stype = signal.signal_type.value if hasattr(signal.signal_type, 'value') else str(signal.signal_type)
+        signal_emoji = "🟢" if stype == "BUY" else "🔴"
+        
+        regime = signal.regime
+        regime_emoji = self._get_regime_emoji(regime) if regime else "⚪"
         
         message = f"""
 {signal_emoji} <b>Señal Oliver Vélez Detectada</b>
 
 📊 <b>Símbolo:</b> {signal.symbol}
-📈 <b>Tipo:</b> {signal.signal_type.value}
-💰 <b>Precio:</b> {signal.price:.2f}
-{regime_emoji} <b>Régimen:</b> {signal.regime.value if signal.regime else 'N/A'}
+📈 <b>Tipo:</b> {stype}
+💰 <b>Precio:</b> {signal.price:.5f}
+{regime_emoji} <b>Régimen:</b> {regime.value if regime else 'N/A'}
 
 ⏰ <b>Hora:</b> {signal.timestamp.strftime('%Y-%m-%d %H:%M:%S')}
 """
@@ -231,6 +234,10 @@ class TelegramNotifier:
 """
         
         await self._send_message(chat_id, formatted_message)
+
+    async def send_alert(self, message: str, title: str = "Aethelgard Alert"):
+        """Alias para notify_system_alert usado por algunos componentes."""
+        await self.notify_system_alert(title=title, message=message, alert_type="warning")
     
     def _get_regime_emoji(self, regime: MarketRegime) -> str:
         """Retorna un emoji para cada tipo de régimen"""
