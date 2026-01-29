@@ -2548,7 +2548,142 @@ return min(100.0, max(0.0, score))
 "exotics": {"enabled": false}  // Evitar gaps nocturnos
 ```
 
-#### Próximos Pasos
+#### Migración a Base de Datos (Próxima Implementación)
+
+**Problema con JSON:**
+- ❌ No permite configuración por usuario (multi-tenant)
+- ❌ No hay UI para editar configuraciones
+- ❌ Sin auditoría: ¿quién cambió qué y cuándo?
+- ❌ No escala: 1000 usuarios = 1000 archivos JSON?
+
+**Solución: Arquitectura 3-Tablas con Pivot**
+
+```sql
+-- Tabla 1: Categorías Globales (seed data)
+CREATE TABLE instrument_categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    market TEXT NOT NULL,           -- FOREX, CRYPTO, STOCKS, FUTURES
+    subcategory TEXT NOT NULL,      -- majors, minors, exotics, tier1, altcoins
+    enabled_default BOOLEAN DEFAULT 1,
+    min_score_default REAL DEFAULT 75.0,
+    risk_multiplier_default REAL DEFAULT 1.0,
+    max_spread REAL,
+    priority INTEGER DEFAULT 2,
+    description TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(market, subcategory)
+);
+
+-- Tabla 2: Instrumentos Individuales
+CREATE TABLE instruments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol TEXT NOT NULL UNIQUE,    -- EURUSD, BTCUSDT, etc.
+    category_id INTEGER NOT NULL,   -- FK a instrument_categories
+    enabled_default BOOLEAN DEFAULT 1,
+    min_score_override REAL,        -- NULL = usar default de categoría
+    risk_multiplier_override REAL,
+    max_spread_override REAL,
+    metadata TEXT,                  -- JSON para extensibilidad
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (category_id) REFERENCES instrument_categories(id)
+);
+
+-- Tabla 3: Configuración por Usuario (PIVOT TABLE)
+CREATE TABLE user_instruments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,          -- UUID del usuario (FK a users)
+    instrument_id INTEGER NOT NULL, -- FK a instruments
+    enabled BOOLEAN DEFAULT 1,      -- Override por usuario
+    min_score REAL,                 -- NULL = usar default de instrument
+    risk_multiplier REAL,           -- NULL = usar default de instrument
+    max_spread REAL,
+    notes TEXT,                     -- Notas personales del usuario
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (instrument_id) REFERENCES instruments(id),
+    UNIQUE(user_id, instrument_id)  -- 1 config por usuario-instrumento
+);
+
+-- Índices para performance
+CREATE INDEX idx_user_instruments_user ON user_instruments(user_id);
+CREATE INDEX idx_user_instruments_enabled ON user_instruments(user_id, enabled);
+CREATE INDEX idx_instruments_symbol ON instruments(symbol);
+CREATE INDEX idx_instruments_category ON instruments(category_id);
+```
+
+**Flujo de Consulta (Cascading Defaults):**
+
+```python
+# Nivel 1: Configuración de Usuario (más específico)
+SELECT ui.enabled, ui.min_score, ui.risk_multiplier
+FROM user_instruments ui
+JOIN instruments i ON ui.instrument_id = i.id
+WHERE ui.user_id = ? AND i.symbol = ?
+
+# Si no existe → Nivel 2: Default de Instrumento
+SELECT i.enabled_default, i.min_score_override, i.risk_multiplier_override
+FROM instruments i
+WHERE i.symbol = ?
+
+# Si min_score_override IS NULL → Nivel 3: Default de Categoría
+SELECT ic.min_score_default, ic.risk_multiplier_default
+FROM instrument_categories ic
+WHERE ic.id = i.category_id
+
+# Si no existe instrumento → Nivel 4: Auto-clasificar y usar default global
+# (Fallback conservador: min_score = 80, disabled)
+```
+
+**Ejemplo de Configuración Multi-Usuario:**
+
+```sql
+-- Usuario 1 (Conservador): Solo majors, score alto
+INSERT INTO user_instruments (user_id, instrument_id, enabled, min_score)
+SELECT 'user-001', i.id, 1, 85.0
+FROM instruments i
+JOIN instrument_categories ic ON i.category_id = ic.id
+WHERE ic.subcategory = 'majors';
+
+-- Usuario 2 (Agresivo): Todo habilitado, scores bajos
+INSERT INTO user_instruments (user_id, instrument_id, enabled, min_score)
+SELECT 'user-002', i.id, 1, 
+    CASE ic.subcategory
+        WHEN 'majors' THEN 65.0
+        WHEN 'minors' THEN 70.0
+        WHEN 'exotics' THEN 80.0
+    END
+FROM instruments i
+JOIN instrument_categories ic ON i.category_id = ic.id;
+
+-- Usuario 3 (Especialista Crypto): Solo crypto, Forex deshabilitado
+UPDATE user_instruments
+SET enabled = 0
+WHERE user_id = 'user-003' AND instrument_id IN (
+    SELECT i.id FROM instruments i
+    JOIN instrument_categories ic ON i.category_id = ic.id
+    WHERE ic.market = 'FOREX'
+);
+```
+
+**Beneficios de la Arquitectura Pivot:**
+
+✅ **Multi-Tenant Native**: Cada usuario tiene configuración independiente  
+✅ **Cascading Defaults**: Usuario → Instrument → Category → Global  
+✅ **Auditoría Completa**: `updated_at` rastrea cambios por usuario  
+✅ **UI Ready**: Dashboard puede mostrar sliders por instrumento  
+✅ **Escalabilidad**: 10,000 usuarios × 100 instrumentos = consultas eficientes con índices  
+✅ **Flexibilidad**: Usuarios pueden override scores sin afectar defaults globales  
+✅ **Sin Duplicación**: Un solo registro de EURUSD, múltiples configs por usuario  
+✅ **Migración Gradual**: Seed data de JSON → DB, luego agregar UI
+
+**Próxima Implementación:**
+1. Script de migración: `scripts/migrate_instruments_to_db.py`
+2. Modificar `InstrumentManager` para leer de DB con `user_id`
+3. Crear `StorageManager.get_user_instrument_config(user_id, symbol)`
+4. Tests multi-usuario en `test_instrument_filtering.py`
+5. Dashboard UI: Tab "Mis Instrumentos" con toggles + sliders
+
+#### Próximos Pasos (Niveles 2-4)
 
 **Nivel 2 (Score Adaptativo - Prioridad Media):**
 1. Eliminar base arbitraria (60 puntos)
@@ -2568,19 +2703,6 @@ return min(100.0, max(0.0, score))
 3. Target: 1 si trade ganó, 0 si perdió
 4. Entrenar Random Forest / XGBoost
 5. Score = `probability * 100` (0-100)
-- Reconciliar `order_id` con posiciones cerradas del broker
-
-**3. Dashboard Enhancements**
-- Filtro multi-select: Platform, Account Type, Market
-- Gráficos separados: DEMO vs REAL performance
-- Comparación: ROI por mercado (Forex vs Crypto)
-- Tabla de cuentas: Balance por account_id
-
-**4. Reporting System**
-- Report diario: DEMO vs REAL comparison
-- Report mensual: Performance por plataforma
-- Export CSV: Todas las operaciones con traceability completa
-- Tax report: Solo operaciones REAL con commission/swap
 
 ---
 

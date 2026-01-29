@@ -76,7 +76,7 @@ Resumen del roadmap de implementación. Detalle completo en [AETHELGARD_MANIFEST
 
 **Objetivo:** Filtrado inteligente de señales por calidad (score) y gestión granular de instrumentos activos/inactivos por categoría de mercado.
 
-**Implementado (Nivel 1 - Validación de Score Mínimo):**
+**Implementado (Nivel 1 - Validación con JSON):**
 
 | Componente | Descripción | Estado |
 |------------|-------------|--------|
@@ -101,7 +101,43 @@ Resumen del roadmap de implementación. Detalle completo en [AETHELGARD_MANIFEST
 - 🛡️ **Protección**: Risk multipliers reducidos en instrumentos volátiles
 - 📊 **SaaS Ready**: Filtrado por membresía (Basic: solo majors, Premium: todo)
 
-**Pendiente de Implementación (Niveles 2-4):**
+### 🚧 Fase 2.4: Migración a Base de Datos (Próxima Prioridad Alta)
+
+**Objetivo:** Migrar configuración de instrumentos de JSON a base de datos SQLite con soporte multi-usuario.
+
+**Arquitectura 3-Tablas con Pivot:**
+
+| Tabla | Propósito | Registros Iniciales |
+|-------|-----------|---------------------|
+| `instrument_categories` | Categorías globales (FOREX/majors, CRYPTO/tier1, etc.) | ~12 categorías |
+| `instruments` | Símbolos individuales con defaults (EURUSD, BTCUSDT, etc.) | ~50 instrumentos |
+| `user_instruments` | Configuración por usuario (tabla PIVOT) | 0 (se crea on-demand) |
+
+**Cascading Defaults:**
+1. **User Override** → `user_instruments.min_score` (más específico)
+2. **Instrument Default** → `instruments.min_score_override`
+3. **Category Default** → `instrument_categories.min_score_default`
+4. **Global Fallback** → 80.0 (conservador)
+
+**Tareas Pendientes:**
+
+| # | Tarea | Descripción | Prioridad |
+|---|-------|-------------|-----------|
+| 1 | Script de migración | `scripts/migrate_instruments_to_db.py` para seed data de JSON → DB | 🔴 Alta |
+| 2 | Modificar InstrumentManager | Leer de DB con `user_id`, mantener JSON fallback | 🔴 Alta |
+| 3 | StorageManager enhancement | `get_user_instrument_config(user_id, symbol)` con cascading | 🔴 Alta |
+| 4 | Tests multi-usuario | Validar aislamiento entre usuarios, defaults en cascada | 🟡 Media |
+| 5 | Dashboard UI | Tab "Mis Instrumentos" con toggles/sliders por categoría | 🟢 Baja |
+
+**Beneficios de DB sobre JSON:**
+- ✅ **Multi-Tenant**: Usuario 1 = conservador, Usuario 2 = agresivo, configs aisladas
+- ✅ **Auditoría**: `updated_at` rastrea cambios, posible tabla `audit_log`
+- ✅ **UI Editable**: Dashboard puede mostrar/editar configs sin tocar archivos
+- ✅ **Escalabilidad**: 10,000 usuarios × 100 instrumentos con índices eficientes
+- ✅ **Sin Duplicación**: Un registro EURUSD, múltiples configs en `user_instruments`
+- ✅ **Defaults Inteligentes**: Nuevos instrumentos heredan config de categoría
+
+**Pendiente de Implementación (Niveles 2-4 - Score Adaptativo):**
 - **Nivel 2: Score Adaptativo**: Eliminar base arbitraria (60), penalizar por spread, pesos ajustados (40/30/30)
 - **Nivel 3: Calibración Backtesting**: Ajustar umbrales basados en win-rate histórico (1000+ trades)
 - **Nivel 4: Score Predictivo (ML)**: Modelo de machine learning para probabilidad de éxito (500+ trades reales)
