@@ -533,9 +533,19 @@ async def main():
         print("🚨 No data provider available. Aborting.")
         return
     
-    # Scanner (Scanning major assets)
-    assets = ["EURUSD", "GBPUSD", "BTCUSD", "ETHUSD", "GOLD"]
-    scanner = ScannerEngine(assets=assets, data_provider=data_provider)
+    # Instrument Manager: Get only enabled instruments for scanning
+    from core_brain.instrument_manager import InstrumentManager
+    instrument_mgr = InstrumentManager()
+    enabled_assets = instrument_mgr.get_enabled_symbols()
+    
+    if not enabled_assets:
+        print("🚨 No enabled instruments found in config/instruments.json. Aborting.")
+        return
+    
+    print(f"📊 Scanning {len(enabled_assets)} enabled instruments: {enabled_assets[:10]}...")
+    
+    # Scanner (Only scans enabled instruments from configuration)
+    scanner = ScannerEngine(assets=enabled_assets, data_provider=data_provider)
     
     # Signal Factory
     signal_factory = SignalFactory(storage_manager=storage)

@@ -93,7 +93,7 @@ class SignalFactory:
             logger.error(f"Failed to register OliverVelezStrategy: {e}", exc_info=True)
 
     async def generate_signal(
-        self, symbol: str, df: pd.DataFrame, regime: MarketRegime
+        self, symbol: str, df: pd.DataFrame, regime: MarketRegime, timeframe: Optional[str] = None
     ) -> List[Signal]:
         """
         Analiza un símbolo con TODAS las estrategias registradas.
@@ -102,6 +102,7 @@ class SignalFactory:
             symbol: Símbolo del activo.
             df: DataFrame con datos OHLC.
             regime: Régimen actual del mercado.
+            timeframe: Timeframe del análisis (ej: "M5", "H1"). Se incluye en signal metadata.
 
         Returns:
             Lista de señales generadas (puede estar vacía).
@@ -114,6 +115,10 @@ class SignalFactory:
                 signal = await strategy.analyze(symbol, df, regime)
                 
                 if signal:
+                    # Set timeframe in signal if provided
+                    if timeframe:
+                        signal.timeframe = timeframe
+                    
                     # Validar que no sea duplicado antes de procesar
                     if self._is_duplicate_signal(signal):
                         logger.info(
@@ -138,9 +143,12 @@ class SignalFactory:
         """
         Verifica si la señal es un duplicado.
         
-        Criterios:
+        Criterios de deduplicación (clave única: symbol + signal_type + timeframe):
         - Ya existe una posición abierta para el símbolo
-        - Ya existe una señal reciente (ventana dinámica según timeframe)
+        - Ya existe una señal reciente para el mismo (symbol, signal_type, timeframe)
+        
+        Esto permite señales del MISMO instrumento en DIFERENTES timeframes.
+        Ejemplo: EURUSD BUY en M5 (scalping) y EURUSD BUY en H4 (swing) son válidas simultáneamente.
         
         Args:
             signal: Señal a validar
@@ -216,16 +224,22 @@ class SignalFactory:
         Procesa un lote de resultados del ScannerEngine y genera señales.
 
         Args:
-            scan_results: validez con {symbol: {"regime": MarketRegime, "df": DataFrame}}
+            scan_results: Dict con "symbol|timeframe" -> {"regime": MarketRegime, "df": DataFrame, "symbol": str, "timeframe": str}
 
         Returns:
             Lista plana de todas las señales generadas.
         """
-        tasks = [
-            self.generate_signal(s, d.get("df"), d.get("regime"))
-            for s, d in scan_results.items()
-            if d.get("regime") and d.get("df") is not None
-        ]
+        tasks = []
+        for key, data in scan_results.items():
+            regime = data.get("regime")
+            df = data.get("df")
+            symbol = data.get("symbol")  # Extraer symbol del dict
+            timeframe = data.get("timeframe")  # Extraer timeframe del dict
+            
+            if regime and df is not None and symbol:
+                # Pass both symbol and timeframe to strategies
+                # Strategies will use timeframe for signal metadata
+                tasks.append(self.generate_signal(symbol, df, regime, timeframe))
 
         if not tasks:
             return []
@@ -241,7 +255,7 @@ class SignalFactory:
         if all_signals:
             logger.info(
                 f"Batch completado. {len(all_signals)} señales generadas de "
-                f"{len(scan_results)} símbolos analizados."
+                f"{len(scan_results)} instrumentos analizados (multi-timeframe)."
             )
 
         return all_signals

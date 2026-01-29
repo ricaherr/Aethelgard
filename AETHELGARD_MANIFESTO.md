@@ -139,15 +139,22 @@ Aethelgard utiliza una arquitectura **Hub-and-Spoke** donde el **Core Brain** (P
 - **Parámetros Dinámicos**: Carga desde `config/dynamic_params.json`
 - **`load_ohlc(df)`**: Carga masiva OHLC para escáner proactivo (p. ej. desde MT5)
 
-##### `scanner.py` - Escáner Proactivo Multihilo
-- **Función**: Orquestador que escanea una lista de activos de forma proactiva, sin depender de NinjaTrader ni de gráficas abiertas.
+##### `scanner.py` - Escáner Proactivo Multi-Timeframe
+- **Función**: Orquestador que escanea una lista de activos de forma proactiva en **múltiples timeframes simultáneamente**, sin depender de NinjaTrader ni de gráficas abiertas.
 - **Componentes**:
-  - **ScannerEngine**: Recibe `assets` y un **DataProvider** (inyectado; agnóstico de plataforma). Un `RegimeClassifier` por símbolo.
+  - **ScannerEngine**: Recibe `assets` y un **DataProvider** (inyectado; agnóstico de plataforma). Crea un `RegimeClassifier` por cada combinación **(símbolo, timeframe)**.
   - **CPUMonitor**: Lee uso de CPU (`psutil`). Si supera `cpu_limit_pct` (configurable en `config/config.json`), aumenta el sleep entre ciclos.
-- **Multithreading**: `concurrent.futures.ThreadPoolExecutor` para procesar cada activo en hilos separados.
+- **Multi-Timeframe Support**:
+  - Usuario configura timeframes activos en `config.json` (M1, M5, M15, H1, H4, D1)
+  - Cada símbolo se escanea en TODOS los timeframes activos
+  - Genera claves compuestas: `"symbol|timeframe"` (ej: `"EURUSD|M5"`, `"EURUSD|H4"`)
+  - Permite estrategias simultáneas: scalping en M5 + swing en H4 del mismo instrumento
+- **Multithreading**: `concurrent.futures.ThreadPoolExecutor` para procesar cada combinación (símbolo, timeframe) en hilos separados.
 - **Priorización**: TREND/CRASH → escaneo cada 1 s; RANGE → cada 10 s; NEUTRAL → cada 5 s (configurable).
-- **Configuración**: `config/config.json` → `scanner` (`assets`, `cpu_limit_pct`, `sleep_*_seconds`, `mt5_timeframe`, `mt5_bars_count`, etc.).
+- **Configuración**: `config/config.json` → `scanner` (`assets`, `cpu_limit_pct`, `sleep_*_seconds`, `timeframes[]`, `mt5_bars_count`, etc.).
+- **Modos de Escaneo**: ECO (50% CPU), STANDARD (80% CPU), AGGRESSIVE (95% CPU)
 - **Entrypoint**: `run_scanner.py` (usa `MT5DataProvider`). Test sin MT5: `test_scanner_mock.py`.
+- **Documentación**: Ver `docs/TIMEFRAMES_CONFIG.md` para guía completa de configuración.
 
 ##### `main_orchestrator.py` - Orquestador Resiliente del Sistema
 - **Función**: Coordina el ciclo completo de trading: Scan → Signal → Risk → Execute
@@ -608,23 +615,33 @@ El sistema debe detectar cuando sus predicciones están fallando:
 
 ---
 
-### Fase 1.1: Escáner Proactivo Multihilo ✅ **COMPLETADA** (Enero 2026)
+### Fase 1.1: Escáner Proactivo Multi-Timeframe ✅ **COMPLETADA** (Enero 2026)
 
-**Objetivo**: Transformar Aethelgard en un **escáner proactivo** que obtenga datos de forma autónoma y escanee múltiples activos en paralelo, con control de recursos y priorización por régimen.
+**Objetivo**: Transformar Aethelgard en un **escáner proactivo multi-timeframe** que obtenga datos de forma autónoma y escanee múltiples activos en **todos los timeframes activos simultáneamente**, con control de recursos y priorización por régimen.
 
 **Componentes implementados:**
-- ✅ **`core_brain/scanner.py`**: `ScannerEngine` (orquestador), `CPUMonitor`, protocolo `DataProvider`. Multithreading con `concurrent.futures.ThreadPoolExecutor`.
+- ✅ **`core_brain/scanner.py`**: `ScannerEngine` (orquestador multi-timeframe), `CPUMonitor`, protocolo `DataProvider`. Multithreading con `concurrent.futures.ThreadPoolExecutor`.
+- ✅ **Multi-Timeframe Support**: Configuración de timeframes activos (M1, M5, M15, H1, H4, D1) con flags enabled
 - ✅ **`connectors/mt5_data_provider.py`**: Ingestión autónoma OHLC vía `mt5.copy_rates_from_pos` (sin gráficas abiertas).
-- ✅ **`config/config.json`**: Configuración del escáner (`assets`, `cpu_limit_pct`, `sleep_trend_seconds`, `sleep_range_seconds`, etc.).
+- ✅ **`config/config.json`**: Configuración del escáner con array de timeframes configurables.
 - ✅ **`RegimeClassifier.load_ohlc(df)`**: Carga masiva OHLC para uso en escáner.
 - ✅ **`run_scanner.py`**: Entrypoint del escáner con MT5. `test_scanner_mock.py`: test con DataProvider mock (sin MT5).
+- ✅ **`docs/TIMEFRAMES_CONFIG.md`**: Guía completa de configuración de timeframes
 
 **Funcionalidades:**
-- Lista de activos configurable; un `RegimeClassifier` por símbolo.
-- Escaneo en hilos separados por activo.
-- **Control de recursos**: si CPU > `cpu_limit_pct` (configurable), aumenta el sleep entre ciclos.
-- **Priorización**: TREND/CRASH cada 1 s, RANGE cada 10 s, NEUTRAL cada 5 s (configurables).
-- Agnóstico de plataforma: el escáner recibe un `DataProvider` inyectado (p. ej. MT5).
+- Lista de activos configurable desde `InstrumentManager` (solo instrumentos habilitados)
+- Un `RegimeClassifier` por cada combinación **(símbolo, timeframe)**
+- Escaneo paralelo de todas las combinaciones activas
+- **Control de recursos**: si CPU > `cpu_limit_pct`, aumenta el sleep entre ciclos
+- **Priorización**: TREND/CRASH cada 1s, RANGE cada 10s, NEUTRAL cada 5s (configurables)
+- **Modos de escaneo**: ECO (50% CPU), STANDARD (80% CPU), AGGRESSIVE (95% CPU)
+- **Deduplicación inteligente**: Permite señales del mismo símbolo en diferentes timeframes
+- Agnóstico de plataforma: el escáner recibe un `DataProvider` inyectado
+
+**Tests implementados:**
+- ✅ `tests/test_scanner_multiframe.py` (6 tests): Validación multi-timeframe
+- ✅ `tests/test_multiframe_deduplication.py` (6 tests): Deduplicación por (symbol, timeframe)
+- ✅ Suite completa: **134/134 tests passing**
 
 ---
 
@@ -2827,48 +2844,90 @@ Las estrategias se activan según el régimen de mercado detectado:
 ```
 Aethelgard/
 ├── config/
-│   ├── config.json          # Escáner: assets, cpu_limit_pct, intervalos, MT5
+│   ├── config.json          # Configuración general (scanner, timeframes, CPU)
 │   ├── dynamic_params.json  # RegimeClassifier: ADX, volatilidad, etc.
-│   └── modules.json         # Módulos de estrategias
+│   ├── instruments.json     # Instrumentos habilitados por mercado/categoría
+│   ├── modules.json         # Módulos de estrategias
+│   ├── data_providers.example.env  # Template para API keys de proveedores
+│   ├── telegram.example.env        # Template para Telegram notifications
+│   └── demo_accounts/       # Credenciales de cuentas demo
 ├── core_brain/
-│   ├── scanner.py           # Escáner proactivo multihilo (CPUMonitor, ScannerEngine)
+│   ├── scanner.py           # Escáner proactivo multi-timeframe (ScannerEngine, CPUMonitor)
 │   ├── regime.py            # RegimeClassifier + load_ohlc
 │   ├── server.py            # FastAPI + WebSockets
 │   ├── tuner.py             # Auto-calibración
 │   ├── risk_manager.py      # Gestión de riesgo agnóstica + Lockdown persistente
 │   ├── executor.py          # Ejecución de órdenes con Factory Pattern + Resiliencia
-│   ├── signal_factory.py    # Generación de señales (Oliver Vélez)
+│   ├── signal_factory.py    # Generación de señales (Oliver Vélez) + Multi-timeframe
 │   ├── notificator.py       # Notificaciones Telegram
-│   └── module_manager.py    # Gestión de membresías
+│   ├── module_manager.py    # Gestión de membresías
+│   ├── monitor.py           # Health monitoring
+│   ├── main_orchestrator.py # Orquestador resiliente con SessionStats
+│   ├── instrument_manager.py# Gestión de instrumentos por mercado
+│   ├── data_provider_manager.py # Sistema multi-proveedor con fallback
+│   └── strategies/
+│       ├── base_strategy.py # Clase base para estrategias
+│       └── oliver_velez.py  # Estrategia Oliver Vélez Swing v2
 ├── connectors/
 │   ├── data_provider_manager.py # Sistema multi-proveedor con fallback automático
 │   ├── generic_data_provider.py # Yahoo Finance (gratis, sin auth)
-│   ├── alpha_vantage_provider.py # Alpha Vantage (25 req/día gratis)
-│   ├── twelve_data_provider.py  # Twelve Data (800 req/día gratis)
+│   ├── ccxt_provider.py         # CCXT (crypto exchanges, gratis)
+│   ├── alphavantage_provider.py # Alpha Vantage (deprecated - removed)
+│   ├── twelvedata_provider.py   # Twelve Data (800 req/día gratis)
 │   ├── polygon_provider.py      # Polygon.io (requiere pago)
 │   ├── iex_cloud_provider.py    # IEX Cloud (50k req/mes gratis)
 │   ├── finnhub_provider.py      # Finnhub (60 req/min gratis)
 │   ├── mt5_data_provider.py     # OHLC vía copy_rates_from_pos (sin gráficas)
+│   ├── mt5_connector.py         # Conector MT5 para ejecución de órdenes
+│   ├── mt5_discovery.py         # Auto-discovery de instalaciones MT5
+│   ├── paper_connector.py       # Paper trading (simulación)
+│   ├── auto_provisioning.py     # Auto-provisioning de cuentas demo
 │   ├── bridge_mt5.py            # Bridge WebSocket MT5 → Aethelgard
-│   └── ...
+│   ├── bridge_nt8.cs            # Bridge WebSocket NT8 → Aethelgard
+│   └── webhook_tv.py            # Webhook TradingView → Aethelgard
 ├── data_vault/              # Persistencia SQLite
+│   ├── storage.py           # StorageManager con multi-timeframe support
+│   ├── aethelgard.db        # Base de datos principal
+│   └── system_state.json    # Estado del sistema (backup)
 ├── models/                  # Modelos de datos (Signal, MarketRegime, etc.)
-├── tests/                   # Tests TDD
-│   ├── test_risk_manager.py     # Suite RiskManager (7 tests)
-│   ├── test_executor.py         # Suite OrderExecutor (7 tests)
-│   ├── test_signal_factory.py   # Suite SignalFactory
-│   └── test_data_providers.py   # Suite Data Providers (10 tests)
-├── config/
-│   ├── config.json              # Configuración general del sistema
-│   ├── dynamic_params.json      # Parámetros auto-calibrables
-│   └── data_providers.json      # Configuración de proveedores de datos
+│   └── signal.py            # Signal model con timeframe support
+├── tests/                   # Tests TDD (134 tests)
+│   ├── test_scanner_multiframe.py      # Tests de scanner multi-timeframe (6)
+│   ├── test_multiframe_deduplication.py # Tests deduplicación multi-frame (6)
+│   ├── test_dynamic_deduplication.py   # Tests ventanas dinámicas (13)
+│   ├── test_orchestrator.py            # Tests orquestador (11)
+│   ├── test_orchestrator_recovery.py   # Tests resiliencia (10)
+│   ├── test_risk_manager.py            # Tests risk manager (4)
+│   ├── test_executor.py                # Tests executor (7)
+│   ├── test_signal_factory.py          # Tests signal factory (3)
+│   ├── test_data_provider_manager.py   # Tests data providers (10)
+│   ├── test_broker_storage.py          # Tests broker storage (5)
+│   ├── test_instrument_filtering.py    # Tests instrument manager (6)
+│   └── verify_architecture_ready.py    # Validación arquitectura
+├── scripts/
+│   ├── migrations/          # Migraciones one-time de DB
+│   │   ├── migrate_add_timeframe.py
+│   │   ├── migrate_broker_schema.py
+│   │   ├── migrate_credentials_to_db.py
+│   │   └── seed_brokers_platforms.py
+│   └── utilities/           # Scripts recurrentes
+│       ├── check_system.py
+│       ├── check_duplicates.py
+│       ├── clean_duplicates.py
+│       ├── setup_mt5_demo.py
+│       └── simulate_trades.py
+├── docs/
+│   ├── TIMEFRAMES_CONFIG.md # Guía configuración timeframes
+│   ├── DATA_PROVIDERS.md    # Guía proveedores de datos
+│   └── MT5_INSTALLATION.md  # Guía instalación MT5
+├── ui/
+│   └── dashboard.py         # Dashboard Streamlit
+├── utils/
+│   └── encryption.py        # Encriptación de credenciales
+├── main.py                  # Entrypoint principal
+├── start.py                 # Startup con health checks
 ├── run_scanner.py           # Entrypoint del escáner proactivo
-├── test_scanner_mock.py     # Test del escáner con mock (sin MT5)
-├── strategies/              # Estrategias modulares (por crear)
-│   ├── trend_following.py
-│   ├── range_trading.py
-│   └── risk_manager.py
-└── dashboard/               # Dashboard web (Fase 4)
+└── AETHELGARD_MANIFESTO.md  # ÚNICA FUENTE DE VERDAD
 ```
 
 ### Sistema Multi-Proveedor de Datos
@@ -2930,6 +2989,73 @@ mi_cuenta_binance = {
 }
 ```
 
+### Configuración de Timeframes
+
+El sistema permite configurar qué timeframes se escanean por cada instrumento:
+
+#### Timeframes Disponibles
+
+| Timeframe | Período | Uso Recomendado | Ventana Dedup | Default |
+|-----------|---------|-----------------|---------------|---------|
+| M1 | 1 minuto | Scalping agresivo | 10 min | ❌ Disabled |
+| M5 | 5 minutos | Scalping moderado | 20 min | ✅ Enabled |
+| M15 | 15 minutos | Day trading | 45 min | ✅ Enabled |
+| H1 | 1 hora | Day/Swing trading | 120 min | ✅ Enabled |
+| H4 | 4 horas | Swing trading | 480 min | ✅ Enabled |
+| D1 | Diario | Position trading | 1440 min | ✅ Enabled |
+
+#### Ejemplo de Configuración
+
+**[config/config.json](config/config.json)**:
+```json
+{
+  "scanner": {
+    "timeframes": [
+      {"timeframe": "M1", "enabled": false},
+      {"timeframe": "M5", "enabled": true},
+      {"timeframe": "M15", "enabled": true},
+      {"timeframe": "H1", "enabled": true},
+      {"timeframe": "H4", "enabled": true},
+      {"timeframe": "D1", "enabled": true}
+    ],
+    "scan_mode": "STANDARD",
+    "cpu_limit_pct": 80.0
+  }
+}
+```
+
+#### Perfiles Predefinidos
+
+**Scalper** (rápido, alta frecuencia):
+```json
+"timeframes": [
+  {"timeframe": "M1", "enabled": true},
+  {"timeframe": "M5", "enabled": true},
+  {"timeframe": "M15", "enabled": false}
+]
+```
+
+**Swing Trader** (lento, baja frecuencia):
+```json
+"timeframes": [
+  {"timeframe": "H1", "enabled": true},
+  {"timeframe": "H4", "enabled": true},
+  {"timeframe": "D1", "enabled": true}
+]
+```
+
+**Multi-Estrategia** (cobertura total):
+```json
+"timeframes": [
+  {"timeframe": "M5", "enabled": true},
+  {"timeframe": "H1", "enabled": true},
+  {"timeframe": "H4", "enabled": true},
+  {"timeframe": "D1", "enabled": true}
+]
+```
+
+**📚 Documentación completa**: [docs/TIMEFRAMES_CONFIG.md](docs/TIMEFRAMES_CONFIG.md)
+
 ### Convenciones de Código
 
 - **Python**: PEP 8, asíncrono (asyncio/FastAPI)
@@ -2946,15 +3072,210 @@ mi_cuenta_binance = {
 
 ---
 
+## 🧪 Tests y Calidad de Código
+
+### Suite de Tests (134/134 passing)
+
+Aethelgard mantiene una cobertura de tests del 100% de funcionalidades críticas:
+
+**Core Brain (47 tests):**
+- `test_orchestrator.py` (11 tests): Ciclo completo, frecuencia dinámica, shutdown
+- `test_orchestrator_recovery.py` (10 tests): Resiliencia, SessionStats, crash recovery
+- `test_risk_manager.py` (4 tests): Position sizing, lockdown, régimen adaptativo
+- `test_executor.py` (7 tests): Ejecución de órdenes, validación, factory pattern
+- `test_signal_factory.py` (3 tests): Generación de señales, Oliver Vélez
+- `test_monitor.py` (3 tests): Health monitoring, metrics
+- `test_tuner_edge.py` (4 tests): Auto-calibración, edge detection
+- `test_regime_classifier.py` (5 tests): Clasificación de régimen, histéresis
+
+**Scanner & Multi-Timeframe (19 tests):**
+- `test_scanner_multiframe.py` (6 tests): Escaneo multi-timeframe, configuración
+- `test_multiframe_deduplication.py` (6 tests): Deduplicación por (symbol, timeframe)
+- `test_dynamic_deduplication.py` (13 tests): Ventanas dinámicas, timeframes
+- `test_signal_deduplication.py` (6 tests): Prevención de duplicados
+
+**Data & Storage (38 tests):**
+- `test_data_provider_manager.py` (10 tests): Multi-proveedor, fallback Yahoo
+- `test_data_providers.py` (10 tests): Proveedores individuales
+- `test_broker_storage.py` (5 tests): Gestión de cuentas, brokers
+- `test_instrument_filtering.py` (6 tests): InstrumentManager, validación
+- Storage tests (7 tests): Persistencia, recuperación
+
+**Integration Tests:**
+- `verify_architecture_ready.py`: Validación de arquitectura agnóstica
+- End-to-end workflow tests
+
+### Metodología TDD
+
+Todos los componentes críticos se desarrollan siguiendo Test-Driven Development:
+1. Escribir test que falla
+2. Implementar código mínimo para pasar
+3. Refactorizar manteniendo tests verdes
+4. Documentar en manifesto
+
+### Ejecución de Tests
+
+```bash
+# Suite completa
+pytest tests/ -v
+
+# Tests específicos
+pytest tests/test_scanner_multiframe.py -v
+pytest tests/test_orchestrator_recovery.py -v
+
+# Con coverage
+pytest tests/ --cov=core_brain --cov-report=html
+```
+
+---
+
+## 📚 Documentación Técnica
+
+### Guías de Usuario
+
+- **[TIMEFRAMES_CONFIG.md](docs/TIMEFRAMES_CONFIG.md)**: Configuración de timeframes activos
+  - Casos de uso por perfil de trader (scalper, swing, multi-estrategia)
+  - Impacto en rendimiento y CPU
+  - Mejores prácticas y troubleshooting
+
+- **[DATA_PROVIDERS.md](docs/DATA_PROVIDERS.md)**: Gestión de proveedores de datos
+  - Configuración de API keys
+  - Sistema de fallback automático
+  - Comparativa de proveedores
+
+- **[MT5_INSTALLATION.md](docs/MT5_INSTALLATION.md)**: Instalación y configuración de MetaTrader 5
+  - Setup de cuenta demo
+  - Configuración de conectores
+  - Troubleshooting común
+
+### Migraciones de Base de Datos
+
+**Ubicación**: `scripts/migrations/`
+
+- `migrate_add_timeframe.py`: Agrega columna timeframe a tabla signals
+- `migrate_broker_schema.py`: Separa brokers de broker_accounts
+- `migrate_credentials_to_db.py`: Migra credenciales a DB encriptado
+- `seed_brokers_platforms.py`: Pobla catálogo de brokers
+
+**Ejecución**:
+```bash
+python scripts/migrations/migrate_add_timeframe.py
+```
+
+### Scripts Utilitarios
+
+**Ubicación**: `scripts/utilities/`
+
+- `check_system.py`: Diagnóstico completo del sistema
+- `check_duplicates.py`: Detecta datos duplicados
+- `clean_duplicates.py`: Limpia duplicados de DB
+- `setup_mt5_demo.py`: Configuración automática de MT5 demo
+- `simulate_trades.py`: Simulación de trades para testing
+
+---
+
 ## 🔄 Actualización del Manifiesto
 
 **Última Actualización**: 29 de Enero 2026
 - ✅ Implementado sistema multi-proveedor de datos con 6 proveedores
 - ✅ Fallback automático a Yahoo cuando no hay proveedores configurados
-- ✅ Suite de tests 100% funcional (122/122 passing)
+- ✅ Suite de tests 100% funcional (134/134 passing)
 - ✅ Arquitectura de brokers migrada a DB (brokers + broker_accounts)
 - ✅ Dashboard con gestión de proveedores, brokers y cuentas
 - ✅ Correcciones de API deprecated en StorageManager
+- ✅ **Deduplicación multi-timeframe**: Permite señales simultáneas del mismo instrumento en diferentes timeframes
+- ✅ **Scanner filtrado**: Solo escanea instrumentos habilitados en `instruments.json`
+- ✅ **Scanner multi-timeframe**: Escanea todos los timeframes activos configurables por el usuario
+
+### Cambios Críticos Recientes
+
+#### Multi-Timeframe Scanning System (29/01/2026)
+
+**Mejora Implementada**: El scanner ahora escanea múltiples timeframes simultáneamente por cada símbolo.
+
+**Características**:
+
+1. **Configuración de Timeframes Activos** ([config.json](config/config.json#L13-L20)):
+   ```json
+   "timeframes": [
+     {"timeframe": "M1", "enabled": false},
+     {"timeframe": "M5", "enabled": true},
+     {"timeframe": "M15", "enabled": true},
+     {"timeframe": "H1", "enabled": true},
+     {"timeframe": "H4", "enabled": true},
+     {"timeframe": "D1", "enabled": true}
+   ]
+   ```
+   - Usuario puede activar/desactivar timeframes individualmente
+   - Por defecto: M5, M15, H1, H4, D1 activos
+   - M1 desactivado (demasiado ruido)
+
+2. **Arquitectura de Clasificadores**:
+   - Un clasificador por cada combinación (symbol, timeframe)
+   - Ejemplo: EURUSD con 5 timeframes = 5 clasificadores independientes
+   - Clave interna: `"symbol|timeframe"` (ej: `"EURUSD|M5"`)
+
+3. **Procesamiento Paralelo**:
+   - ThreadPoolExecutor procesa todas las combinaciones simultáneamente
+   - Control de CPU respeta límite configurado
+   - Priorización por régimen (TREND cada 1s, RANGE cada 10s)
+
+4. **Flujo de Datos**:
+   ```
+   Scanner → Dict["symbol|timeframe"] → {
+     "regime": MarketRegime,
+     "df": DataFrame,
+     "symbol": str,
+     "timeframe": str
+   } → SignalFactory → Signals con timeframe específico
+   ```
+
+**Beneficios**:
+- **Scalping + Swing simultáneos**: Opera M5 para scalping y H4 para swing en el mismo instrumento
+- **Confirmación multi-temporalidad**: Detecta alineación de tendencias cross-timeframe
+- **Flexibilidad total**: Usuario controla qué timeframes analizar
+
+**Tests Agregados**:
+- [test_scanner_multiframe.py](tests/test_scanner_multiframe.py) (6 tests)
+- Validación de carga de configuración
+- Validación de clasificadores por combinación
+- Validación de procesamiento independiente
+
+**Archivos Modificados**:
+- [config/config.json](config/config.json): Array de timeframes con flags enabled
+- [core_brain/scanner.py](core_brain/scanner.py#L120-L145): Multi-timeframe support
+- [core_brain/signal_factory.py](core_brain/signal_factory.py#L93-L134): Timeframe en signals
+
+#### Signal Deduplication Strategy (29/01/2026)
+
+**Problema Resuelto**: El sistema generaba señales duplicadas y escaneaba instrumentos no configurados.
+
+**Solución Implementada**:
+
+1. **Deduplicación por (symbol, signal_type, timeframe)**: 
+   - Clave única: `(symbol, signal_type, timeframe)`
+   - Permite scalping en M5 y swing trading en H4 simultáneamente
+   - Ventana de deduplicación dinámica según timeframe (M5=20min, H4=480min)
+
+2. **Scanner filtrado por InstrumentManager**:
+   - El scanner solo procesa instrumentos habilitados en `config/instruments.json`
+   - Elimina demanda innecesaria a proveedores de datos
+   - MainOrchestrator inicializa scanner con `InstrumentManager.get_enabled_symbols()`
+
+3. **Schema Update**:
+   - Agregada columna `timeframe` a tabla `signals` (SQLite)
+   - Migración: `scripts/migrations/migrate_add_timeframe.py`
+   - Default value: `M5`
+
+**Tests Agregados**:
+- `tests/test_multiframe_deduplication.py` (6 tests)
+- Validación de señales en diferentes timeframes
+- Validación de ventanas de deduplicación dinámicas
+
+**Archivos Modificados**:
+- `data_vault/storage.py`: `has_recent_signal()` ahora considera timeframe
+- `core_brain/main_orchestrator.py`: Scanner usa `InstrumentManager.get_enabled_symbols()`
+- `core_brain/signal_factory.py`: Documentación actualizada de deduplicación
 
 Este documento debe actualizarse cuando:
 - Se complete una fase del roadmap

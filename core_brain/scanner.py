@@ -116,11 +116,22 @@ class ScannerEngine:
         self.sleep_crash = float(sc.get("sleep_crash_seconds", 1.0))
         self.base_sleep = float(sc.get("base_sleep_seconds", 1.0)) * selected_mode["base_sleep_multiplier"]
         self.max_sleep_multiplier = float(sc.get("max_sleep_multiplier", 5.0))
-        self.mt5_timeframe = str(sc.get("mt5_timeframe", "M5"))
+        self.mt5_timeframe = str(sc.get("mt5_timeframe", "M5"))  # Deprecated, use timeframes array
         self.mt5_bars_count = int(sc.get("mt5_bars_count", 500))
+        
+        # Load active timeframes from configuration
+        timeframes_config = sc.get("timeframes", [])
+        if timeframes_config:
+            self.active_timeframes = [tf["timeframe"] for tf in timeframes_config if tf.get("enabled", True)]
+        else:
+            # Fallback to legacy single timeframe
+            self.active_timeframes = [self.mt5_timeframe]
+        
+        logger.info(f"Active timeframes for scanning: {self.active_timeframes}")
         rp = regime_config_path or sc.get("config_path", "config/dynamic_params.json")
 
         self.cpu_monitor = CPUMonitor(cpu_limit_pct=self.cpu_limit_pct)
+        # Multi-timeframe support: key = "symbol|timeframe"
         self.classifiers: Dict[str, RegimeClassifier] = {}
         self.last_regime: Dict[str, MarketRegime] = {}
         self.last_scan_time: Dict[str, float] = {}
@@ -134,10 +145,13 @@ class ScannerEngine:
         
         logger.info("ScannerEngine inicializado en modo %s con CPU límite %.1f%% y %d workers.", self.scan_mode, self.cpu_limit_pct, self._max_workers)
 
+        # Initialize classifiers for each (symbol, timeframe) combination
         for s in self.assets:
-            self.classifiers[s] = RegimeClassifier(config_path=rp)
-            self.last_regime[s] = MarketRegime.NORMAL  # Changed from NEUTRAL to NORMAL
-            self.last_scan_time[s] = 0.0
+            for tf in self.active_timeframes:
+                key = f"{s}|{tf}"
+                self.classifiers[key] = RegimeClassifier(config_path=rp)
+                self.last_regime[key] = MarketRegime.NORMAL
+                self.last_scan_time[key] = 0.0
 
     def _sleep_for_regime(self, regime: MarketRegime) -> float:
         if regime == MarketRegime.TREND:
@@ -148,39 +162,54 @@ class ScannerEngine:
             return self.sleep_range
         return self.sleep_neutral
 
-    def _symbols_to_scan(self) -> List[str]:
-        """Priorización: TREND/CRASH cada 1s, RANGE/NORMAL cada 5–10s."""
+    def _symbols_to_scan(self) -> List[Tuple[str, str]]:
+        """Priorización: TREND/CRASH cada 1s, RANGE/NORMAL cada 5–10s.
+        
+        Returns:
+            List of (symbol, timeframe) tuples ready to scan
+        """
         now = time.monotonic()
         out = []
         with self._lock:
             for s in self.assets:
-                last = self.last_scan_time.get(s, 0.0)
-                regime = self.last_regime.get(s, MarketRegime.NORMAL)  # Changed from NEUTRAL to NORMAL
-                interval = self._sleep_for_regime(regime)
-                if now - last >= interval:
-                    out.append(s)
+                for tf in self.active_timeframes:
+                    key = f"{s}|{tf}"
+                    last = self.last_scan_time.get(key, 0.0)
+                    regime = self.last_regime.get(key, MarketRegime.NORMAL)
+                    interval = self._sleep_for_regime(regime)
+                    if now - last >= interval:
+                        out.append((s, tf))
         return out
 
-    def _scan_one(self, symbol: str) -> Optional[Tuple[str, MarketRegime, Dict, Any]]:
-        """Ejecuta RegimeClassifier para un símbolo. Seguro para hilos (un clasificador por símbolo)."""
+    def _scan_one(self, symbol: str, timeframe: str) -> Optional[Tuple[str, str, MarketRegime, Dict, Any]]:
+        """Ejecuta RegimeClassifier para un símbolo y timeframe específico.
+        
+        Args:
+            symbol: Trading symbol
+            timeframe: Timeframe to scan (e.g., "M5", "H1")
+            
+        Returns:
+            Tuple of (symbol, timeframe, regime, metrics, dataframe) or None
+        """
         try:
             df = self.provider.fetch_ohlc(
                 symbol,
-                timeframe=self.mt5_timeframe,
+                timeframe=timeframe,
                 count=self.mt5_bars_count,
                 only_system=True
             )
             if df is None or (hasattr(df, "empty") and df.empty):
-                logger.debug("Sin datos OHLC para %s", symbol)
+                logger.debug("Sin datos OHLC para %s en %s", symbol, timeframe)
                 return None
 
-            cl = self.classifiers[symbol]
+            key = f"{symbol}|{timeframe}"
+            cl = self.classifiers[key]
             cl.load_ohlc(df)
             regime = cl.classify()
             metrics = cl.get_metrics()
-            return (symbol, regime, metrics, df)  # Retornar también el DataFrame
+            return (symbol, timeframe, regime, metrics, df)
         except Exception as e:
-            logger.warning("Error escaneando %s: %s", symbol, e)
+            logger.warning("Error escaneando %s [%s]: %s", symbol, timeframe, e)
             return None
 
     def _run_cycle(self) -> None:
@@ -189,25 +218,27 @@ class ScannerEngine:
             return
 
         with ThreadPoolExecutor(max_workers=self._max_workers) as ex:
-            futs = {ex.submit(self._scan_one, s): s for s in to_scan}
+            futs = {ex.submit(self._scan_one, sym, tf): (sym, tf) for sym, tf in to_scan}
             for fut in as_completed(futs):
                 try:
                     res = fut.result()
                 except Exception as e:
-                    sym = futs[fut]
-                    logger.warning("Excepción en hilo para %s: %s", sym, e)
+                    sym, tf = futs[fut]
+                    logger.warning("Excepción en hilo para %s [%s]: %s", sym, tf, e)
                     continue
                 if res is None:
                     continue
-                symbol, regime, metrics, df = res
+                symbol, timeframe, regime, metrics, df = res
+                key = f"{symbol}|{timeframe}"
                 now = time.monotonic()
                 with self._lock:
-                    self.last_regime[symbol] = regime
-                    self.last_scan_time[symbol] = now
-                    self.last_dataframes[symbol] = df  # Almacenar DataFrame
+                    self.last_regime[key] = regime
+                    self.last_scan_time[key] = now
+                    self.last_dataframes[key] = df
                 logger.info(
-                    "Escáner %s -> %s (ADX=%.2f)",
+                    "Escáner %s [%s] -> %s (ADX=%.2f)",
                     symbol,
+                    timeframe,
                     regime.value,
                     metrics.get("adx", 0) or 0,
                 )
@@ -269,14 +300,24 @@ class ScannerEngine:
         Obtiene los últimos resultados del scanner con DataFrames incluidos.
         
         Returns:
-            Dict con symbol -> {"regime": MarketRegime, "df": DataFrame}
+            Dict con "symbol|timeframe" -> {"regime": MarketRegime, "df": DataFrame, "symbol": str, "timeframe": str}
         """
         with self._lock:
             results = {}
-            for symbol in self.last_regime:
-                results[symbol] = {
-                    "regime": self.last_regime[symbol],
-                    "df": self.last_dataframes.get(symbol)
+            for key in self.last_regime:
+                # Parse key: "symbol|timeframe"
+                if "|" in key:
+                    symbol, timeframe = key.split("|", 1)
+                else:
+                    # Legacy support
+                    symbol = key
+                    timeframe = self.mt5_timeframe
+                    
+                results[key] = {
+                    "regime": self.last_regime[key],
+                    "df": self.last_dataframes.get(key),
+                    "symbol": symbol,
+                    "timeframe": timeframe
                 }
             return results
 

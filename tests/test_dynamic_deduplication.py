@@ -140,11 +140,13 @@ class TestDynamicDeduplicationWindow:
         signal_1m.timestamp = datetime.now() - timedelta(minutes=12)
         storage.save_signal(signal_1m)
         
-        # 1m check (12 min > 10 min window) -> should NOT detect
+        # 1m check (12 min > 10 min window) -> should NOT detect (expired)
         assert not storage.has_recent_signal("EURUSD", "BUY", timeframe="1m")
         
-        # 1h check (12 min < 120 min window) -> should detect
-        assert storage.has_recent_signal("EURUSD", "BUY", timeframe="1h")
+        # 1h check (different timeframe) -> should NOT detect (different key)
+        # NEW BEHAVIOR: Timeframe is part of deduplication key
+        # This allows scalping on 1m and swing trading on 1h simultaneously
+        assert not storage.has_recent_signal("EURUSD", "BUY", timeframe="1h")
     
     @pytest.mark.asyncio
     async def test_executor_uses_signal_timeframe(self, storage):

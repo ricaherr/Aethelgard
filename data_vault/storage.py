@@ -141,7 +141,8 @@ class StorageManager:
                     market_type TEXT,
                     platform TEXT,
                     order_id TEXT,
-                    volume REAL
+                    volume REAL,
+                    timeframe TEXT DEFAULT 'M5'
                 )
             ''')
             
@@ -350,9 +351,9 @@ class StorageManager:
                         entry_price, stop_loss, take_profit, 
                         timestamp, date, status, metadata,
                         connector_type, account_id, account_type, 
-                        market_type, platform, order_id, volume
+                        market_type, platform, order_id, volume, timeframe
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     signal_id,
                     signal.symbol,
@@ -372,7 +373,8 @@ class StorageManager:
                     getattr(signal, 'market_type', 'FOREX'),
                     getattr(signal, 'platform', None),
                     getattr(signal, 'order_id', None),
-                    getattr(signal, 'volume', 0.01)
+                    getattr(signal, 'volume', 0.01),
+                    getattr(signal, 'timeframe', 'M5')  # Timeframe added for multi-timeframe support
                 ))
                 conn.commit()
                 
@@ -783,16 +785,19 @@ class StorageManager:
     
     def has_recent_signal(self, symbol: str, signal_type: str, minutes: Optional[int] = None, timeframe: Optional[str] = None) -> bool:
         """
-        Check if there's a recent signal (PENDING or EXECUTED) for the same symbol and type.
+        Check if there's a recent signal (PENDING or EXECUTED) for the same symbol, type AND timeframe.
+        
+        This allows multiple signals for the same symbol if they use different timeframes
+        (e.g., scalping on M5 and swing trading on H4 simultaneously).
         
         Args:
             symbol: Trading symbol
             signal_type: Signal type (BUY, SELL)
             minutes: Time window in minutes to check for duplicates (overrides timeframe calculation)
-            timeframe: Trading timeframe (e.g., "1m", "5m", "1h"). If provided, calculates dynamic window
+            timeframe: Trading timeframe (e.g., "1m", "5m", "1h"). Part of unique key for deduplication.
         
         Returns:
-            True if a recent signal exists, False otherwise
+            True if a recent signal exists for this (symbol, signal_type, timeframe) combination
         """
         try:
             from datetime import datetime, timedelta
@@ -810,12 +815,25 @@ class StorageManager:
             
             with self._get_conn() as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT COUNT(*) FROM signals
-                    WHERE symbol = ? 
-                    AND signal_type = ?
-                    AND timestamp >= ?
-                """, (symbol, signal_type, cutoff_time))
+                
+                # Include timeframe in deduplication key
+                if timeframe:
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM signals
+                        WHERE symbol = ? 
+                        AND signal_type = ?
+                        AND timeframe = ?
+                        AND timestamp >= ?
+                    """, (symbol, signal_type, timeframe, cutoff_time))
+                else:
+                    # Fallback if timeframe not provided (should not happen in production)
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM signals
+                        WHERE symbol = ? 
+                        AND signal_type = ?
+                        AND timestamp >= ?
+                    """, (symbol, signal_type, cutoff_time))
+                
                 count = cursor.fetchone()[0]
                 return count > 0
         except Exception as e:

@@ -10,7 +10,15 @@
     "max_sleep_multiplier": 5.0,
     "mt5_timeframe": "M5",
     "mt5_bars_count": 500,
-    "config_path": "config/dynamic_params.json"
+    "config_path": "config/dynamic_params.json",
+    "timeframes": [
+      {"timeframe": "M1", "enabled": false},
+      {"timeframe": "M5", "enabled": true},
+      {"timeframe": "M15", "enabled": true},
+      {"timeframe": "H1", "enabled": true},
+      {"timeframe": "H4", "enabled": true},
+      {"timeframe": "D1", "enabled": true}
+    ]
   },
   "orchestrator": {
     "loop_interval_trend": 5,
