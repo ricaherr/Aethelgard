@@ -39,7 +39,15 @@ class MarketRegime(Enum):
     NORMAL = "NORMAL"
 
 class Signal(BaseModel):
-    """Representa una señal de trading generada por un motor de análisis."""
+    """
+    Representa una señal de trading generada por un motor de análisis.
+    
+    Incluye trazabilidad completa para soportar:
+    - Múltiples cuentas (DEMO y REAL)
+    - Múltiples plataformas (MT5, NT8, Binance, etc.)
+    - Múltiples mercados (Forex, Crypto, Stocks)
+    """
+    # Core signal data
     symbol: str
     signal_type: SignalType
     confidence: float
@@ -51,6 +59,15 @@ class Signal(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.now)
     strategy_id: Optional[str] = None
     timeframe: Optional[str] = "M5"  # Default to 5-minute timeframe
+    
+    # Traceability fields (WHERE was this executed?)
+    account_id: Optional[str] = None        # UUID de cuenta en DB (foreign key)
+    account_type: Optional[str] = "DEMO"    # DEMO o REAL
+    market_type: Optional[str] = "FOREX"    # FOREX, CRYPTO, STOCKS, FUTURES
+    platform: Optional[str] = None          # MT5, NT8, BINANCE, PAPER, etc.
+    order_id: Optional[str] = None          # ID de orden del broker (si ejecutada)
+    
+    # Metadata adicional
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
     @property

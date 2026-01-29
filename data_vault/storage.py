@@ -134,7 +134,14 @@ class StorageManager:
                     timestamp TEXT,
                     date TEXT,
                     status TEXT,
-                    metadata TEXT
+                    metadata TEXT,
+                    connector_type TEXT,
+                    account_id TEXT,
+                    account_type TEXT,
+                    market_type TEXT,
+                    platform TEXT,
+                    order_id TEXT,
+                    volume REAL
                 )
             ''')
             
@@ -155,7 +162,15 @@ class StorageManager:
                     volatility_atr REAL,
                     parameters_used TEXT,
                     timestamp TEXT,
-                    date TEXT
+                    date TEXT,
+                    connector_type TEXT,
+                    account_id TEXT,
+                    account_type TEXT,
+                    market_type TEXT,
+                    platform TEXT,
+                    volume REAL,
+                    commission REAL,
+                    swap REAL
                 )
             ''')
             
@@ -305,7 +320,8 @@ class StorageManager:
 
     def save_signal(self, signal) -> str:
         """
-        Save a signal to persistent storage.
+        Save a signal to persistent storage with full traceability.
+        Includes connector, account, platform, and market information.
         """
         signal_id = str(uuid.uuid4())
         
@@ -320,12 +336,23 @@ class StorageManager:
             else:
                 serialized_metadata[key] = str(value)
         
+        # Extract traceability fields
+        connector_type = None
+        if hasattr(signal, 'connector_type'):
+            connector_type = signal.connector_type if isinstance(signal.connector_type, str) else signal.connector_type.value
+        
         try:
             with self._get_conn() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
-                    INSERT INTO signals (id, symbol, signal_type, confidence, entry_price, stop_loss, take_profit, timestamp, date, status, metadata)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO signals (
+                        id, symbol, signal_type, confidence, 
+                        entry_price, stop_loss, take_profit, 
+                        timestamp, date, status, metadata,
+                        connector_type, account_id, account_type, 
+                        market_type, platform, order_id, volume
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     signal_id,
                     signal.symbol,
@@ -337,9 +364,24 @@ class StorageManager:
                     signal.timestamp.isoformat() if hasattr(signal, 'timestamp') and signal.timestamp else datetime.now().isoformat(),
                     date.today().isoformat(),
                     "executed",
-                    json.dumps(serialized_metadata)
+                    json.dumps(serialized_metadata),
+                    # Traceability fields
+                    connector_type,
+                    getattr(signal, 'account_id', None),
+                    getattr(signal, 'account_type', 'DEMO'),
+                    getattr(signal, 'market_type', 'FOREX'),
+                    getattr(signal, 'platform', None),
+                    getattr(signal, 'order_id', None),
+                    getattr(signal, 'volume', 0.01)
                 ))
                 conn.commit()
+                
+                logger.debug(
+                    f"Signal saved: {signal_id} | {signal.symbol} {signal.signal_type} | "
+                    f"Platform: {getattr(signal, 'platform', 'N/A')} | "
+                    f"Account: {getattr(signal, 'account_type', 'DEMO')} | "
+                    f"Market: {getattr(signal, 'market_type', 'FOREX')}"
+                )
         except Exception as e:
             logger.error(f"Error saving signal: {e}")
             raise
