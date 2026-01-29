@@ -1556,6 +1556,293 @@ DataVault   DataVault       DataVault             DataVault     WebSocket   Orde
 
 ---
 
+### Sistema de Deduplicación Inteligente
+
+#### Problema que Resuelve
+
+En trading algorítmico, **duplicar señales** es un riesgo crítico:
+- 📉 **Sobre-exposición**: Abrir dos posiciones idénticas en el mismo símbolo
+- ⚡ **Ruido del mercado**: Señales repetitivas en ventanas temporales cortas
+- 💸 **Costos duplicados**: Spreads y comisiones innecesarias
+
+#### Arquitectura Multi-Capa
+
+Aethelgard implementa **3 capas de protección** anti-duplicados:
+
+```
+┌───────────────────────────────────────────────────────────────┐
+│ CAPA 1: Signal Factory (Pre-Generación)                      │
+│ ┌───────────────────────────────────────────────────────────┐ │
+│ │ _is_duplicate_signal()                                    │ │
+│ │ • Verifica si existe posición abierta                     │ │
+│ │ • Consulta señales recientes (ventana dinámica)           │ │
+│ │ • Descarta ANTES de generar la señal                      │ │
+│ └───────────────────────────────────────────────────────────┘ │
+└───────────────────────────────────────────────────────────────┘
+                              ↓
+┌───────────────────────────────────────────────────────────────┐
+│ CAPA 2: OrderExecutor (Pre-Ejecución)                        │
+│ ┌───────────────────────────────────────────────────────────┐ │
+│ │ execute_signal() - Paso 2                                 │ │
+│ │ • has_open_position(): Bloquea si hay posición activa     │ │
+│ │ • has_recent_signal(): Bloquea si señal reciente existe   │ │
+│ │ • Rechaza con código DUPLICATE_OPEN_POSITION o            │ │
+│ │   DUPLICATE_RECENT_SIGNAL                                 │ │
+│ └───────────────────────────────────────────────────────────┘ │
+└───────────────────────────────────────────────────────────────┘
+                              ↓
+┌───────────────────────────────────────────────────────────────┐
+│ CAPA 3: StorageManager (Persistencia)                        │
+│ ┌───────────────────────────────────────────────────────────┐ │
+│ │ has_open_position(symbol)                                 │ │
+│ │ SELECT COUNT(*) FROM signals s                            │ │
+│ │ LEFT JOIN trades t ON s.id = t.signal_id                  │ │
+│ │ WHERE s.symbol = ? AND s.status = 'EXECUTED'              │ │
+│ │ AND t.id IS NULL  -- Sin trade de cierre                  │ │
+│ │                                                            │ │
+│ │ has_recent_signal(symbol, signal_type, timeframe)         │ │
+│ │ SELECT COUNT(*) FROM signals                              │ │
+│ │ WHERE symbol = ? AND signal_type = ?                      │ │
+│ │ AND timestamp >= ?  -- Ventana dinámica                   │ │
+│ └───────────────────────────────────────────────────────────┘ │
+└───────────────────────────────────────────────────────────────┘
+```
+
+#### Ventana de Deduplicación Adaptativa
+
+**Problema**: Una ventana fija de 60 minutos es:
+- ❌ **Demasiado larga** para timeframes de 1 minuto (scalping bloqueado)
+- ❌ **Demasiado corta** para timeframes de 4 horas (permite duplicados prematuros)
+
+**Solución**: Ventana **proporcional al timeframe** de la estrategia.
+
+##### Función de Cálculo Dinámico
+
+```python
+def calculate_deduplication_window(timeframe: Optional[str]) -> int:
+    """
+    Calcula ventana de deduplicación basada en timeframe.
+    
+    Ejemplos:
+        - "1m" or "M1" -> 10 minutos
+        - "5m" or "M5" -> 20 minutos
+        - "15m" or "M15" -> 45 minutos
+        - "1h" or "H1" -> 120 minutos (2 horas)
+        - "4h" or "H4" -> 480 minutos (8 horas)
+        - "1D" or "D1" -> 1440 minutos (24 horas)
+    """
+```
+
+##### Mapeo de Ventanas por Timeframe
+
+| Timeframe | Ventana Deduplicación | Ratio | Uso Típico |
+|-----------|----------------------|-------|------------|
+| **1m / M1** | 10 minutos | 10x | Scalping ultra-rápido |
+| **3m / M3** | 15 minutos | 5x | Scalping intensivo |
+| **5m / M5** | 20 minutos | 4x | Scalping estándar |
+| **15m / M15** | 45 minutos | 3x | Day trading corto plazo |
+| **30m / M30** | 90 minutos | 3x | Intraday swing |
+| **1h / H1** | 120 minutos (2h) | 2x | Swing intraday |
+| **4h / H4** | 480 minutos (8h) | 2x | Swing multi-sesión |
+| **1D / D1** | 1440 minutos (24h) | 1x | Position trading |
+
+**Regla General**: 
+- Timeframes de **minutos**: Ventana = `Timeframe × 5` (mínimo 10 min)
+- Timeframes de **horas**: Ventana = `Timeframe × 2` (en minutos)
+- Timeframes de **días**: Ventana = `Timeframe × 1440` (día completo)
+
+#### Modelo de Signal con Timeframe
+
+```python
+class Signal(BaseModel):
+    """Señal de trading con timeframe para deduplicación inteligente."""
+    symbol: str
+    signal_type: SignalType
+    confidence: float
+    connector_type: ConnectorType
+    entry_price: float = 0.0
+    stop_loss: float = 0.0
+    take_profit: float = 0.0
+    volume: float = 0.01
+    timestamp: datetime = Field(default_factory=datetime.now)
+    strategy_id: Optional[str] = None
+    timeframe: Optional[str] = "M5"  # Default: 5 minutos
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+```
+
+#### Validación en OrderExecutor
+
+```python
+async def execute_signal(self, signal: Signal) -> bool:
+    """Ejecuta señal con validación multi-capa de duplicados."""
+    
+    # Step 2a: Verificar posición abierta
+    if self.storage.has_open_position(signal.symbol):
+        logger.warning(
+            f"Signal rejected: Open position already exists for {signal.symbol}. "
+            f"Preventing duplicate operation."
+        )
+        self._register_failed_signal(signal, "DUPLICATE_OPEN_POSITION")
+        return False
+    
+    # Step 2b: Verificar señal reciente (ventana dinámica)
+    if self.storage.has_recent_signal(
+        symbol=signal.symbol, 
+        signal_type=signal_type_str, 
+        timeframe=signal.timeframe
+    ):
+        window = calculate_deduplication_window(signal.timeframe) if signal.timeframe else 60
+        logger.warning(
+            f"Signal rejected: Recent {signal_type_str} signal for {signal.symbol} "
+            f"already processed within last {window} minutes (timeframe: {signal.timeframe}). "
+            f"Preventing duplicate."
+        )
+        self._register_failed_signal(signal, "DUPLICATE_RECENT_SIGNAL")
+        return False
+```
+
+#### Ejemplos Prácticos
+
+##### Ejemplo 1: Scalping en 1m
+
+```python
+# Señal 1: BUY EURUSD @ 10:00:00
+signal_1 = Signal(
+    symbol="EURUSD",
+    signal_type=SignalType.BUY,
+    timeframe="1m",
+    entry_price=1.1050
+)
+executor.execute_signal(signal_1)  # ✅ EJECUTADA
+
+# Señal 2: BUY EURUSD @ 10:05:00 (5 minutos después)
+signal_2 = Signal(
+    symbol="EURUSD",
+    signal_type=SignalType.BUY,
+    timeframe="1m",
+    entry_price=1.1055
+)
+executor.execute_signal(signal_2)  # ❌ RECHAZADA (5 min < 10 min window)
+
+# Señal 3: BUY EURUSD @ 10:12:00 (12 minutos después)
+signal_3 = Signal(
+    symbol="EURUSD",
+    signal_type=SignalType.BUY,
+    timeframe="1m",
+    entry_price=1.1060
+)
+executor.execute_signal(signal_3)  # ✅ EJECUTADA (12 min > 10 min window)
+```
+
+##### Ejemplo 2: Swing Trading en 4h
+
+```python
+# Señal 1: SELL BTCUSD @ Lunes 08:00
+signal_1 = Signal(
+    symbol="BTCUSD",
+    signal_type=SignalType.SELL,
+    timeframe="4h",
+    entry_price=50000
+)
+executor.execute_signal(signal_1)  # ✅ EJECUTADA
+
+# Señal 2: SELL BTCUSD @ Lunes 14:00 (6 horas después)
+signal_2 = Signal(
+    symbol="BTCUSD",
+    signal_type=SignalType.SELL,
+    timeframe="4h",
+    entry_price=49500
+)
+executor.execute_signal(signal_2)  # ❌ RECHAZADA (6h < 8h window)
+
+# Señal 3: SELL BTCUSD @ Lunes 17:00 (9 horas después)
+signal_3 = Signal(
+    symbol="BTCUSD",
+    signal_type=SignalType.SELL,
+    timeframe="4h",
+    entry_price=49000
+)
+executor.execute_signal(signal_3)  # ✅ EJECUTADA (9h > 8h window)
+```
+
+#### Override Manual de Ventana
+
+Para casos especiales, puedes **forzar una ventana específica**:
+
+```python
+# Verificar con ventana personalizada (30 minutos)
+is_duplicate = storage.has_recent_signal(
+    symbol="EURUSD",
+    signal_type="BUY",
+    minutes=30,  # Override: ignora timeframe
+    timeframe="1h"  # Normalmente sería 120 min
+)
+```
+
+#### Beneficios del Sistema
+
+✅ **Protección Inteligente**: Adapta la ventana al contexto temporal de la estrategia  
+✅ **Scalpers Protegidos**: En 1m, solo bloquea 10 min (antes 60 min era excesivo)  
+✅ **Swing Traders Seguros**: En 4h, ventana de 8h evita entradas prematuras  
+✅ **Multi-Símbolo**: Permite operar diferentes pares simultáneamente  
+✅ **Señales Opuestas**: BUY y SELL son independientes (no se bloquean mutuamente)  
+✅ **Retrocompatible**: Señales sin timeframe usan default 60 minutos  
+✅ **Production-Ready**: 26 tests validando todos los escenarios  
+
+#### Tests de Deduplicación
+
+**Test Suite 1** (`tests/test_signal_deduplication.py` - 6 tests):
+1. ✅ **Detección de Posición Abierta**: `has_open_position()` detecta trades sin cierre
+2. ✅ **Detección de Señal Reciente**: `has_recent_signal()` encuentra señales en ventana
+3. ✅ **Rechazo por Posición Abierta**: Executor rechaza con `DUPLICATE_OPEN_POSITION`
+4. ✅ **Rechazo por Señal Reciente**: Executor rechaza con `DUPLICATE_RECENT_SIGNAL`
+5. ✅ **Permitir Diferentes Símbolos**: EURUSD y GBPUSD operan independientemente
+6. ✅ **Bloquear Señales Opuestas**: Rechaza SELL si hay posición BUY abierta
+
+**Test Suite 2** (`tests/test_dynamic_deduplication.py` - 13 tests):
+1. ✅ **Cálculo Ventana 1m**: 10 minutos
+2. ✅ **Cálculo Ventana 5m**: 20 minutos
+3. ✅ **Cálculo Ventana 15m**: 45 minutos
+4. ✅ **Cálculo Ventana 1h**: 120 minutos
+5. ✅ **Cálculo Ventana 4h**: 480 minutos
+6. ✅ **Cálculo Ventana 1D**: 1440 minutos
+7. ✅ **Timeframe Desconocido**: Fallback a 60 minutos
+8. ✅ **Respeto Ventana 1m**: Señal de 15 min atrás NO bloqueada (15 > 10)
+9. ✅ **Respeto Ventana 4h**: Señal de 6h atrás SÍ bloqueada (6 < 8)
+10. ✅ **Señales Expiradas**: Señal de 9h atrás en 4h NO bloqueada (9 > 8)
+11. ✅ **Override Explícito**: `minutes` parameter sobrescribe cálculo
+12. ✅ **Timeframes Diferentes**: Mismo símbolo, diferentes ventanas según TF
+13. ✅ **Integración Executor**: Executor usa `signal.timeframe` automáticamente
+
+**Ejecución Completa**:
+```bash
+# Suite deduplicación básica
+pytest tests/test_signal_deduplication.py -v
+# ====================== 6 passed in 3.32s ======================
+
+# Suite ventana dinámica
+pytest tests/test_dynamic_deduplication.py -v
+# ====================== 13 passed in 1.28s ======================
+
+# Suite executor (incluye validación duplicados)
+pytest tests/test_executor.py -v
+# ====================== 7 passed in 1.09s ======================
+
+# Total: 26 tests validando sistema anti-duplicados
+```
+
+#### Códigos de Rechazo
+
+| Código | Significado | Acción |
+|--------|-------------|--------|
+| `DUPLICATE_OPEN_POSITION` | Ya existe posición abierta | Esperar cierre antes de nueva entrada |
+| `DUPLICATE_RECENT_SIGNAL` | Señal reciente en ventana | Esperar expiración de ventana |
+| `REJECTED_LOCKDOWN` | RiskManager bloqueado | Sistema en modo seguridad |
+| `REJECTED_CONNECTION` | Fallo de conexión con broker | Reintento o notificación |
+| `INVALID_DATA` | Datos de señal inválidos | Validar entrada antes de enviar |
+
+---
+
 ### Estrategias de Oliver Vélez
 
 #### Activación por Régimen

@@ -11,7 +11,7 @@ from utils.encryption import get_encryptor
 logger = logging.getLogger(__name__)
 
 
-def calculate_deduplication_window(timeframe: str) -> int:
+def calculate_deduplication_window(timeframe: Optional[str]) -> int:
     """
     Calculate dynamic deduplication window based on trading timeframe.
     
@@ -739,7 +739,7 @@ class StorageManager:
             logger.error(f"Error checking open position for {symbol}: {e}")
             return False
     
-    def has_recent_signal(self, symbol: str, signal_type: str, minutes: int = None, timeframe: str = None) -> bool:
+    def has_recent_signal(self, symbol: str, signal_type: str, minutes: Optional[int] = None, timeframe: Optional[str] = None) -> bool:
         """
         Check if there's a recent signal (PENDING or EXECUTED) for the same symbol and type.
         
@@ -780,7 +780,7 @@ class StorageManager:
             logger.error(f"Error checking recent signal for {symbol}: {e}")
             return False
     
-    def update_signal_status(self, signal_id: str, status: str, metadata_update: Dict = None):
+    def update_signal_status(self, signal_id: str, status: str, metadata_update: Optional[Dict] = None):
         """
         Update signal status and optionally merge metadata.
         
@@ -1358,8 +1358,8 @@ class StorageManager:
         """Update account enabled status (alias for update_account_status)"""
         return self.update_account_status(account_id, enabled)
     
-    def update_account(self, account_id: str, account_name: str = None, 
-                      server: str = None, login: str = None, password: str = None):
+    def update_account(self, account_id: str, account_name: Optional[str] = None,
+                      server: Optional[str] = None, login: Optional[str] = None, password: Optional[str] = None):
         """Update account details"""
         try:
             updates = []
@@ -1415,7 +1415,7 @@ class StorageManager:
     # ========================================
     
     def save_credential(self, account_id: str, credential_type: str, 
-                       credential_key: str, value: str, expires_at: str = None) -> str:
+                       credential_key: str, value: str, expires_at: Optional[str] = None) -> str:
         """
         Save encrypted credential for a broker account
         
@@ -1457,7 +1457,7 @@ class StorageManager:
             logger.error(f"Error saving credential: {e}")
             raise
     
-    def get_credentials(self, account_id: str, credential_type: str = None) -> Dict[str, str]:
+    def get_credentials(self, account_id: str, credential_type: Optional[str] = None) -> Dict[str, str]:
         """
         Get decrypted credentials for an account
         
@@ -1548,8 +1548,8 @@ class StorageManager:
             return []
 
     def save_data_provider(self, name: str, enabled: bool, priority: int, 
-                          requires_auth: bool, api_key: str = None, 
-                          api_secret: str = None, additional_config: Dict = None,
+                          requires_auth: bool, api_key: Optional[str] = None,
+                          api_secret: Optional[str] = None, additional_config: Optional[Dict] = None,
                           is_system: bool = False):
         """Save or update data provider configuration in DB"""
         try:
@@ -1584,7 +1584,7 @@ class StorageManager:
             logger.error(f"Error updating provider {name} status: {e}")
             raise
     
-    def delete_credential(self, account_id: str, credential_key: str = None):
+    def delete_credential(self, account_id: str, credential_key: Optional[str] = None):
         """Delete credential(s) for an account"""
         try:
             with self._get_conn() as conn:

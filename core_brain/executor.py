@@ -131,7 +131,7 @@ class OrderExecutor:
         if self.storage.has_recent_signal(
             symbol=signal.symbol, 
             signal_type=signal_type_str, 
-            timeframe=signal.timeframe
+            timeframe=signal.timeframe if signal.timeframe else None
         ):
             # Calculate window for logging
             from data_vault.storage import calculate_deduplication_window

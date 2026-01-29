@@ -51,7 +51,9 @@ class TestDynamicDeduplicationWindow:
         """Unknown timeframe should fallback to 60 minutes."""
         assert calculate_deduplication_window("INVALID") == 60
         assert calculate_deduplication_window("") == 60
-        assert calculate_deduplication_window(None) == 60
+        # Test None separately with type hint
+        result: int = calculate_deduplication_window(None)  # type: ignore
+        assert result == 60
     
     def test_has_recent_signal_respects_1m_timeframe(self, storage):
         """1-minute timeframe should only block signals within 10 minutes."""
