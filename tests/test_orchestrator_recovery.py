@@ -130,20 +130,17 @@ class MockExecutor:
 @pytest.fixture
 def temp_db():
     """Create temporary database for testing"""
-    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as f:
+    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.db') as f:
         temp_path = f.name
-        # Initialize with proper structure
-        initial_data = {
-            "signals": [],
-            "system_state": {}
-        }
-        json.dump(initial_data, f)
     
     yield temp_path
     
     # Cleanup
-    if os.path.exists(temp_path):
-        os.unlink(temp_path)
+    try:
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
+    except PermissionError:
+        pass  # File in use, will be cleaned up later
 
 
 @pytest.fixture
@@ -465,24 +462,44 @@ def test_count_executed_signals_filters_by_date(storage):
     signal_yesterday_record = {
         "id": "test-yesterday",
         "symbol": "GBPUSD",
+        "connector_type": "GENERIC",
         "signal_type": "SELL",
+        "confidence": 0.85,
         "entry_price": 1.3000,
         "stop_loss": 1.3050,
         "take_profit": 1.2900,
         "timestamp": datetime.now().isoformat(),
         "date": yesterday.isoformat(),
-        "status": "executed"
+        "status": "executed",
+        "metadata": "{}"
     }
     
     # Save today's signal normally
     storage.save_signal(signal_today)
     
-    # Manually add yesterday's signal
-    with open(storage.db_path, 'r') as f:
-        data = json.load(f)
-    data["signals"].append(signal_yesterday_record)
-    with open(storage.db_path, 'w') as f:
-        json.dump(data, f, indent=4)
+    # Manually insert yesterday's signal into database
+    conn = storage._get_conn()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO signals 
+        (id, symbol, connector_type, signal_type, confidence, entry_price, stop_loss, take_profit, 
+         timestamp, date, status, metadata)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        signal_yesterday_record["id"],
+        signal_yesterday_record["symbol"],
+        signal_yesterday_record["connector_type"],
+        signal_yesterday_record["signal_type"],
+        signal_yesterday_record["confidence"],
+        signal_yesterday_record["entry_price"],
+        signal_yesterday_record["stop_loss"],
+        signal_yesterday_record["take_profit"],
+        signal_yesterday_record["timestamp"],
+        signal_yesterday_record["date"],
+        signal_yesterday_record["status"],
+        signal_yesterday_record["metadata"]
+    ))
+    conn.commit()
     
     # Verify counts
     today_count = storage.count_executed_signals(today)

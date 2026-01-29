@@ -22,7 +22,7 @@ import json
 import logging
 from pathlib import Path
 from typing import Dict, Optional, List, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
@@ -37,11 +37,11 @@ class InstrumentConfig:
     risk_multiplier: float
     max_spread: Optional[float] = None
     priority: int = 2
-    instruments: List[str] = None
+    instruments: List[str] = field(default_factory=list)
     
     def __post_init__(self):
-        if self.instruments is None:
-            self.instruments = []
+        # instruments ya tiene default_factory, no necesita validación
+        pass
 
 
 class InstrumentManager:

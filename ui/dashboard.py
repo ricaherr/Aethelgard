@@ -20,7 +20,7 @@ import importlib
 # Añadir el directorio raíz al path para importar módulos
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# from core_brain.discovery import DiscoveryEngine # Importar DiscoveryEngine
+# from connectors.mt5_discovery import DiscoveryEngine # MT5 Discovery (optional utility)
 from core_brain.regime import RegimeClassifier
 from core_brain.module_manager import get_module_manager, MembershipLevel
 from core_brain.tuner import ParameterTuner

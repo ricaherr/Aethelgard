@@ -72,8 +72,9 @@ class TestBrokerStorage:
         # Non-existent broker
         assert storage.get_broker('nonexistent') is None
     
-    def test_update_broker_status(self, storage):
-        """Enable/disable broker"""
+    def test_save_and_get_broker_account(self, storage):
+        """Save and retrieve broker accounts (enabled status applies to accounts, not brokers)"""
+        # First save a broker
         broker_config = {
             "broker_id": "ibkr",
             "name": "Interactive Brokers",
@@ -86,145 +87,138 @@ class TestBrokerStorage:
         
         storage.save_broker(broker_config)
         
-        # Disable broker
-        storage.update_broker_status('ibkr', enabled=False)
+        # Create an account for this broker
+        account_id = storage.save_broker_account(
+            broker_id='ibkr',
+            platform_id='ibkr_api',
+            account_name='IBKR Demo',
+            account_type='demo',
+            server='demo.ibkr.com',
+            login='DU12345',
+            password='test_password',
+            enabled=True
+        )
         
-        broker = storage.get_broker('ibkr')
-        assert broker['enabled'] == 0  # SQLite stores as integer
+        # Get account and verify
+        account = storage.get_account(account_id)
+        assert account is not None
+        assert account['broker_id'] == 'ibkr'
+        assert account['enabled'] == 1
+        
+        # Update account status (disable)
+        storage.update_account_status(account_id, enabled=False)
+        account = storage.get_account(account_id)
+        assert account['enabled'] == 0
         
         # Enable again
-        storage.update_broker_status('ibkr', enabled=True)
-        broker = storage.get_broker('ibkr')
-        assert broker['enabled'] == 1
+        storage.update_account_status(account_id, enabled=True)
+        account = storage.get_account(account_id)
+        assert account['enabled'] == 1
     
-    def test_get_enabled_brokers(self, storage):
-        """Get only enabled brokers"""
+    def test_get_enabled_accounts(self, storage):
+        """Get only enabled broker accounts"""
+        # Create brokers
         brokers = [
-            {
-                "broker_id": "binance",
-                "name": "Binance",
-                "type": "crypto",
-                "auto_provisioning": "full",
-                "providers": {},
-                "enabled": True
-            },
-            {
-                "broker_id": "ibkr",
-                "name": "Interactive Brokers",
-                "type": "multi_asset",
-                "auto_provisioning": "none",
-                "providers": {},
-                "enabled": False
-            },
-            {
-                "broker_id": "mt5",
-                "name": "MetaTrader 5",
-                "type": "forex_cfd",
-                "auto_provisioning": "partial",
-                "providers": {},
-                "enabled": True
-            }
+            {"broker_id": "binance", "name": "Binance", "type": "crypto", "auto_provision_available": True},
+            {"broker_id": "ibkr", "name": "Interactive Brokers", "type": "multi_asset", "auto_provision_available": False},
+            {"broker_id": "mt5", "name": "MetaTrader 5", "type": "forex_cfd", "auto_provision_available": False}
         ]
         
         for broker in brokers:
-            storage.save_broker_config(broker)
+            storage.save_broker(broker)
         
-        # Get only enabled
-        enabled = storage.get_enabled_brokers()
-        assert len(enabled) == 2
-        assert all(b['enabled'] == 1 for b in enabled)
-        assert {b['broker_id'] for b in enabled} == {'binance', 'mt5'}
+        # Create accounts (some enabled, some disabled)
+        storage.save_broker_account('binance', 'binance_api', 'Binance Demo', enabled=True)
+        storage.save_broker_account('ibkr', 'ibkr_api', 'IBKR Demo', enabled=False)
+        storage.save_broker_account('mt5', 'mt5', 'MT5 Demo', enabled=True)
+        
+        # Get only enabled accounts
+        enabled_accounts = storage.get_broker_accounts(enabled_only=True)
+        assert len(enabled_accounts) == 2
+        assert all(acc['enabled'] == 1 for acc in enabled_accounts)
+        assert {acc['broker_id'] for acc in enabled_accounts} == {'binance', 'mt5'}
     
-    def test_update_broker_credentials_path(self, storage):
-        """Update credentials path after auto-provisioning"""
+    def test_account_credentials_storage(self, storage):
+        """Verify account credentials are stored securely"""
         broker_config = {
             "broker_id": "binance",
             "name": "Binance",
             "type": "crypto",
-            "auto_provisioning": "full",
-            "providers": {},
-            "enabled": True
+            "auto_provision_available": True
         }
         
-        storage.save_broker_config(broker_config)
+        storage.save_broker(broker_config)
         
-        # Update credentials path
-        creds_path = "config/demo_accounts/binance_demo.json"
-        storage.update_broker_credentials('binance', creds_path)
+        # Create account with password
+        account_id = storage.save_broker_account(
+            broker_id='binance',
+            platform_id='binance_api',
+            account_name='Binance Demo',
+            login='test_user',
+            password='secret_password'
+        )
         
-        broker = storage.get_broker('binance')
-        assert broker['credentials_path'] == creds_path
+        # Verify account exists
+        account = storage.get_account(account_id)
+        assert account is not None
+        assert account['account_number'] == 'test_user'
+        
+        # Verify credentials are stored (encrypted)
+        creds = storage.get_credentials(account_id, 'password')
+        assert creds is not None
+        assert len(creds) > 0
     
-    def test_get_auto_provision_brokers(self, storage):
+    def test_filter_auto_provision_brokers(self, storage):
         """Get brokers that support auto-provisioning"""
         brokers = [
             {
                 "broker_id": "binance",
                 "name": "Binance",
                 "type": "crypto",
-                "auto_provisioning": "full",
-                "providers": {},
-                "enabled": True
+                "auto_provision_available": True
             },
             {
                 "broker_id": "mt5",
                 "name": "MetaTrader 5",
                 "type": "forex_cfd",
-                "auto_provisioning": "partial",
-                "providers": {},
-                "enabled": True
+                "auto_provision_available": True
             },
             {
                 "broker_id": "ibkr",
                 "name": "Interactive Brokers",
                 "type": "multi_asset",
-                "auto_provisioning": "none",
-                "providers": {},
-                "enabled": True
+                "auto_provision_available": False
             }
         ]
         
         for broker in brokers:
-            storage.save_broker_config(broker)
+            storage.save_broker(broker)
         
-        # Get full + partial auto-provision
-        auto_brokers = storage.get_auto_provision_brokers()
+        # Get all brokers and filter by auto_provision_available
+        all_brokers = storage.get_brokers()
+        auto_brokers = [b for b in all_brokers if b.get('auto_provision_available')]
         assert len(auto_brokers) == 2
         assert {b['broker_id'] for b in auto_brokers} == {'binance', 'mt5'}
     
-    def test_providers_json_serialization(self, storage):
-        """Verify providers dict is properly serialized/deserialized"""
-        complex_providers = {
-            "testnet": {
-                "auto_create": True,
-                "requires_credentials": False,
-                "api_available": True,
-                "method": "api",
-                "base_url": "https://testnet.binance.vision",
-                "notes": "Public testnet with auto-generated API keys"
-            },
-            "mainnet": {
-                "auto_create": False,
-                "requires_credentials": True,
-                "registration_url": "https://www.binance.com/register"
-            }
-        }
+    def test_platforms_json_serialization(self, storage):
+        """Verify platforms_available list is properly serialized/deserialized"""
+        platforms = ["binance_api", "binance_futures", "tradingview"]
         
         broker_config = {
             "broker_id": "binance",
             "name": "Binance",
             "type": "crypto",
-            "auto_provisioning": "full",
-            "providers": complex_providers,
-            "enabled": True
+            "platforms_available": platforms,
+            "auto_provision_available": True
         }
         
-        storage.save_broker_config(broker_config)
+        storage.save_broker(broker_config)
         
-        # Retrieve and verify
+        # Retrieve and verify platforms are deserialized
         broker = storage.get_broker('binance')
-        providers = json.loads(broker['providers_json'])
+        assert broker is not None
         
-        assert providers == complex_providers
-        assert providers['testnet']['auto_create'] is True
-        assert providers['testnet']['base_url'] == "https://testnet.binance.vision"
+        # platforms_available is stored as JSON string, parse it
+        stored_platforms = json.loads(broker['platforms_available'])
+        assert stored_platforms == platforms
+        assert 'binance_api' in stored_platforms

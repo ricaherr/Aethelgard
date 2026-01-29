@@ -13,7 +13,7 @@ Uso: python scripts/test_mt5_system.py
 """
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import logging
 from datetime import datetime

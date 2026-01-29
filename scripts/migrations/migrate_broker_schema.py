@@ -8,7 +8,7 @@ from pathlib import Path
 import sqlite3
 
 # Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

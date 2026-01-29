@@ -283,6 +283,21 @@ class DataProviderManager:
         
         # Sort by priority (highest first)
         active.sort(key=lambda x: x["priority"], reverse=True)
+        
+        # FALLBACK: If no providers enabled, use Yahoo as default
+        if not active and "yahoo" in self.providers:
+            logger.info("No providers enabled - using Yahoo as automatic fallback")
+            yahoo_metadata = self.provider_metadata.get("yahoo", {})
+            active.append({
+                "name": "yahoo",
+                "priority": self.providers["yahoo"].priority,
+                "requires_auth": False,
+                "is_system": False,
+                "free_tier": True,
+                "description": yahoo_metadata.get("description", ""),
+                "supports": yahoo_metadata.get("supports", [])
+            })
+        
         return active
     
     def enable_provider(self, name: str) -> bool:
@@ -474,7 +489,23 @@ class DataProviderManager:
                 logger.info(f"Selected provider: {name} (priority: {config.priority})")
                 return instance
         
-        logger.warning("No available providers found")
+        # FALLBACK: Try yahoo directly if no other provider worked
+        if "yahoo" in self.providers:
+            logger.info("No configured providers available - forcing Yahoo fallback")
+            # Temporarily enable yahoo for fallback (don't save to DB)
+            yahoo_was_enabled = self.providers["yahoo"].enabled
+            self.providers["yahoo"].enabled = True
+            
+            try:
+                instance = self._get_provider_instance("yahoo")
+                if instance:
+                    logger.info("Yahoo fallback activated successfully")
+                    return instance
+            finally:
+                # Restore original state (in memory only)
+                self.providers["yahoo"].enabled = yahoo_was_enabled
+        
+        logger.warning("No available providers found (all fallbacks exhausted)")
         return None
     
     def get_provider_for_symbol(self, symbol: str) -> Optional[Any]:

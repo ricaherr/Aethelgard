@@ -27,6 +27,9 @@ def mock_storage_manager():
     """Mock del StorageManager para evitar accesos a la base de datos."""
     manager = MagicMock(spec=StorageManager)
     manager.save_signal.return_value = "signal_123"
+    # Deduplication queries should return False (no existing signals/positions)
+    manager.has_recent_signal.return_value = False
+    manager.has_open_position.return_value = False
     return manager
 
 @pytest.fixture
@@ -43,11 +46,42 @@ def mock_notifier():
         yield notifier_instance
 
 @pytest.fixture
-def signal_factory(mock_storage_manager, mock_notifier):
+def signal_factory(mock_storage_manager, mock_notifier, monkeypatch):
     """Fixture que inicializa el SignalFactory con dependencias mockeadas."""
     factory = SignalFactory(storage_manager=mock_storage_manager)
     # Re-asignamos el notifier por si la inicialización original falló
     factory.notifier = mock_notifier
+    
+    # Patch InstrumentManager to accept test symbols
+    from core_brain.instrument_manager import InstrumentManager, InstrumentConfig
+    
+    test_config = InstrumentConfig(
+        category="forex",
+        subcategory="majors",
+        enabled=True,
+        min_score=50.0,
+        risk_multiplier=1.0,
+        max_spread=2.0,
+        priority=3,
+        instruments=["EURUSD_PERFECT", "EURUSD_WEAK"]
+    )
+    
+    original_get_config = InstrumentManager.get_config
+    original_is_enabled = InstrumentManager.is_enabled
+    
+    def patched_get_config(self, symbol: str):
+        if symbol in ["EURUSD_PERFECT", "EURUSD_WEAK"]:
+            return test_config
+        return original_get_config(self, symbol)
+    
+    def patched_is_enabled(self, symbol: str):
+        if symbol in ["EURUSD_PERFECT", "EURUSD_WEAK"]:
+            return True
+        return original_is_enabled(self, symbol)
+    
+    monkeypatch.setattr(InstrumentManager, "get_config", patched_get_config)
+    monkeypatch.setattr(InstrumentManager, "is_enabled", patched_is_enabled)
+    
     return factory
 
 def create_synthetic_dataframe(

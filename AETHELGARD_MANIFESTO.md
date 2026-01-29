@@ -304,9 +304,10 @@ await orchestrator.run()  # Inicia el loop resiliente
 
 **Características del Sistema Multi-Proveedor:**
 - ✅ **Fallback Automático**: Si falla el proveedor principal, usa el siguiente
+- ✅ **Yahoo como Red de Seguridad**: Si NO hay proveedores habilitados o todos fallan, el sistema automáticamente usa Yahoo Finance (sin persistir cambio en DB)
 - ✅ **Priorización Inteligente**: Selección basada en prioridad y disponibilidad
 - ✅ **Gestión desde Dashboard**: Activar/desactivar proveedores desde UI
-- ✅ **Configuración Persistente**: Settings guardados en `config/data_providers.json`
+- ✅ **Configuración Persistente**: Settings guardados en base de datos (tabla `data_providers`)
 - ✅ **Detección de Tipo**: Selección automática del mejor proveedor según símbolo
 - ✅ **Sin Vendor Lock-in**: Cambio de proveedor sin modificar código del core
 
@@ -1049,30 +1050,61 @@ Usuario → Dashboard → Tab "Configuración de Brokers"
 
 **Persistencia:**
 ```sql
--- Tabla brokers
+-- Tabla brokers (catálogo de proveedores disponibles)
 CREATE TABLE brokers (
-    broker_id TEXT PRIMARY KEY,        -- binance, mt5, ibkr, nt8, tradingview
-    name TEXT NOT NULL,                -- Binance, MetaTrader 5, etc.
-    type TEXT,                         -- crypto, forex_cfd, multi_asset, futures
-    auto_provisioning TEXT,            -- full, partial, none
-    providers_json TEXT,               -- JSON con proveedores disponibles
-    enabled BOOLEAN DEFAULT 1,         -- Habilitado/Deshabilitado
-    credentials_path TEXT,             -- Ruta a archivo de credenciales
-    last_connection TEXT,              -- Timestamp última conexión exitosa
+    broker_id TEXT PRIMARY KEY,              -- binance, mt5, ibkr, nt8, tradingview
+    name TEXT NOT NULL,                      -- Binance, MetaTrader 5, etc.
+    type TEXT,                               -- crypto, forex_cfd, multi_asset, futures
+    website TEXT,                            -- URL oficial del broker
+    platforms_available TEXT,                -- JSON: ["mt5", "api", "tradingview"]
+    data_server TEXT,                        -- Servidor de datos demo/prod
+    auto_provision_available BOOLEAN,        -- ¿Soporta creación automática de cuentas?
+    registration_url TEXT,                   -- URL para registro manual
     created_at TEXT,
     updated_at TEXT
 );
+
+-- Tabla broker_accounts (cuentas específicas del usuario)
+CREATE TABLE broker_accounts (
+    account_id TEXT PRIMARY KEY,
+    broker_id TEXT,                          -- FK a brokers
+    platform_id TEXT,                        -- mt5, binance_api, ibkr_api
+    account_name TEXT,                       -- Nombre descriptivo
+    account_number TEXT,                     -- Login/Usuario
+    server TEXT,                             -- Server específico
+    account_type TEXT,                       -- demo, real
+    credentials_path TEXT,                   -- Ruta a credenciales cifradas
+    enabled BOOLEAN DEFAULT 1,               -- ⚠️ enabled SOLO en cuentas, NO en brokers
+    last_connection TEXT,
+    balance REAL,
+    created_at TEXT,
+    updated_at TEXT,
+    FOREIGN KEY (broker_id) REFERENCES brokers(broker_id)
+);
 ```
 
-**Métodos de StorageManager:**
-- `save_broker_config(broker_config)`: Guarda/actualiza broker
-- `get_brokers()`: Lista todos los brokers
+**Métodos de StorageManager (API Actual):**
+
+*Gestión de Brokers (Catálogo):*
+- `save_broker(broker_config)`: Guarda/actualiza broker en catálogo
+- `get_brokers()`: Lista todos los brokers del catálogo
 - `get_broker(broker_id)`: Obtiene broker específico
-- `get_enabled_brokers()`: Solo habilitados
-- `get_auto_provision_brokers()`: Solo con auto-provision
-- `update_broker_status(broker_id, enabled)`: Habilitar/deshabilitar
-- `update_broker_credentials(broker_id, path)`: Actualiza ruta credenciales
-- `update_broker_connection(broker_id)`: Marca timestamp conexión
+- `save_platform(platform_config)`: Guarda plataforma (mt5, nt8, etc.)
+- `get_platforms()`: Lista todas las plataformas
+
+*Gestión de Cuentas (Usuario):*
+- `save_broker_account(broker_id, platform_id, account_name, ...)`: Crea cuenta de trading
+- `get_broker_accounts(broker_id=None, enabled_only=False, account_type=None)`: Filtra cuentas
+- `get_account(account_id)`: Obtiene cuenta específica
+- `update_account_status(account_id, enabled)`: Habilita/deshabilita cuenta
+- `update_account_connection(account_id, balance)`: Actualiza conexión y balance
+- `update_account_type(account_id, account_type)`: Cambia demo ↔ real
+
+*Métodos Deprecated (NO usar):*
+- ~~`save_broker_config()`~~ → usar `save_broker()`
+- ~~`get_enabled_brokers()`~~ → usar `get_broker_accounts(enabled_only=True)`
+- ~~`update_broker_status()`~~ → NO EXISTE (enabled solo en cuentas)
+- ~~`update_broker_credentials()`~~ → credenciales en cuenta, no en broker
 
 **Migración de Datos:**
 ```bash
@@ -2858,9 +2890,45 @@ Aethelgard implementa un sistema robusto de múltiples proveedores de datos con 
 
 #### Características del Sistema:
 - **Fallback Automático**: Si un proveedor falla, intenta con el siguiente
-- **Configuración por Prioridad**: Define el orden de uso en `data_providers.json`
-- **Activación/Desactivación**: Control granular de cada proveedor
+- **Yahoo como Red de Seguridad**: Si todos los proveedores fallan o ninguno está configurado, el sistema automáticamente usa Yahoo Finance de forma temporal (sin guardar el cambio en DB)
+- **Configuración por Prioridad**: Define el orden de uso en base de datos (tabla `data_providers`)
+- **Activación/Desactivación**: Control granular de cada proveedor desde Dashboard
 - **Dashboard Integrado**: Gestión visual de proveedores y API keys
+
+### Arquitectura de Brokers y Cuentas
+
+Aethelgard separa conceptualmente **Brokers** (catálogo de proveedores) de **Broker Accounts** (cuentas específicas del usuario):
+
+#### Brokers (Catálogo):
+- **Tabla**: `brokers`
+- **Propósito**: Definir qué brokers están disponibles en el sistema
+- **Propiedades**: `broker_id`, `name`, `type`, `auto_provision_available`, etc.
+- **NO tiene columna `enabled`**: Los brokers son solo metadatos, no se habilitan/deshabilitan
+
+#### Broker Accounts (Cuentas del Usuario):
+- **Tabla**: `broker_accounts`
+- **Propósito**: Cuentas de trading configuradas por el usuario
+- **Propiedades**: `account_id`, `broker_id`, `account_name`, `login`, `enabled`, `account_type` (demo/real)
+- **SÍ tiene columna `enabled`**: Las cuentas se habilitan/deshabilitan individualmente
+
+**Ejemplo**:
+```python
+# Broker en catálogo (siempre "disponible")
+binance_broker = {
+    "broker_id": "binance",
+    "name": "Binance",
+    "auto_provision_available": True
+}
+
+# Cuenta del usuario (puede habilitarse/deshabilitarse)
+mi_cuenta_binance = {
+    "account_id": "uuid-123",
+    "broker_id": "binance",
+    "account_name": "Mi Cuenta Demo",
+    "enabled": True,  # ← enabled SOLO aquí
+    "account_type": "demo"
+}
+```
 
 ### Convenciones de Código
 
@@ -2880,11 +2948,13 @@ Aethelgard implementa un sistema robusto de múltiples proveedores de datos con 
 
 ## 🔄 Actualización del Manifiesto
 
-**Última Actualización**: 27 de Enero 2026
+**Última Actualización**: 29 de Enero 2026
 - ✅ Implementado sistema multi-proveedor de datos con 6 proveedores
-- ✅ Fallback automático entre proveedores
-- ✅ Tests TDD completos (10 tests, 9 passing)
-- ✅ Dashboard con gestión de proveedores y API keys
+- ✅ Fallback automático a Yahoo cuando no hay proveedores configurados
+- ✅ Suite de tests 100% funcional (122/122 passing)
+- ✅ Arquitectura de brokers migrada a DB (brokers + broker_accounts)
+- ✅ Dashboard con gestión de proveedores, brokers y cuentas
+- ✅ Correcciones de API deprecated en StorageManager
 
 Este documento debe actualizarse cuando:
 - Se complete una fase del roadmap
