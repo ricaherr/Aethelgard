@@ -9,7 +9,7 @@ from datetime import datetime
 
 from core_brain.executor import OrderExecutor
 from core_brain.risk_manager import RiskManager
-from models.signal import Signal, ConnectorType
+from models.signal import Signal, ConnectorType, SignalType
 from data_vault.storage import StorageManager
 
 
@@ -81,7 +81,8 @@ class TestOrderExecutor:
             volume=0.01
         )
     
-    def test_executor_blocks_signal_when_risk_manager_locked(self, executor, mock_risk_manager, sample_signal, mock_storage):
+    @pytest.mark.asyncio
+    async def test_executor_blocks_signal_when_risk_manager_locked(self, executor, mock_risk_manager, sample_signal, mock_storage):
         """
         TEST 1: Executor debe bloquear señales cuando RiskManager está en lockdown.
         Critical: Ensures no orders are sent when system is locked.
@@ -89,9 +90,11 @@ class TestOrderExecutor:
         """
         # Arrange: RiskManager en lockdown
         mock_risk_manager.is_locked.return_value = True
+        mock_storage.has_open_position.return_value = False
+        mock_storage.has_recent_signal.return_value = False
         
         # Act: Intentar ejecutar señal
-        result = executor.execute_signal(sample_signal)
+        result = await executor.execute_signal(sample_signal)
         
         # Assert: Señal debe ser rechazada
         assert result is False
@@ -102,58 +105,66 @@ class TestOrderExecutor:
         call_args = mock_storage.update_system_state.call_args[0][0]
         assert "rejected_signals" in call_args or "failed_signals" in call_args
     
-    def test_executor_sends_signal_when_risk_manager_allows(self, executor, mock_risk_manager, sample_signal, mock_mt5_connector):
+    @pytest.mark.asyncio
+    async def test_executor_sends_signal_when_risk_manager_allows(self, executor, mock_risk_manager, sample_signal, mock_mt5_connector, mock_storage):
         """
         TEST 2: Executor debe enviar señales cuando RiskManager lo permite.
         Validates that signals are routed to the correct connector using Factory pattern.
         """
         # Arrange: RiskManager permite trading
         mock_risk_manager.is_locked.return_value = False
+        mock_storage.has_open_position.return_value = False
+        mock_storage.has_recent_signal.return_value = False
         
         # Act: Ejecutar señal
-        result = executor.execute_signal(sample_signal)
+        result = await executor.execute_signal(sample_signal)
         
         # Assert: Señal enviada al conector MT5
         assert result is True
         mock_mt5_connector.execute_signal.assert_called_once_with(sample_signal)
         mock_risk_manager.is_locked.assert_called_once()
     
-    def test_executor_uses_factory_pattern_for_connector_routing(
-        self, executor, mock_mt5_connector, mock_nt8_connector, mock_risk_manager
+    @pytest.mark.asyncio
+    async def test_executor_uses_factory_pattern_for_connector_routing(
+        self, executor, mock_mt5_connector, mock_nt8_connector, mock_risk_manager, mock_storage
     ):
         """
         TEST 3: Executor debe usar Factory Pattern para enrutar al conector correcto.
         Tests agnostic connector routing based on ConnectorType.
         """
+        mock_storage.has_open_position.return_value = False
+        mock_storage.has_recent_signal.return_value = False
+        
         # Test MT5 routing
         signal_mt5 = Signal(
             symbol="EURUSD",
-            signal_type="BUY",
+            signal_type=SignalType.BUY,
             confidence=0.9,
             connector_type=ConnectorType.METATRADER5,
             entry_price=1.1050,
             volume=0.01
         )
         
-        result_mt5 = executor.execute_signal(signal_mt5)
+        result_mt5 = await executor.execute_signal(signal_mt5)
         assert result_mt5 is True
         mock_mt5_connector.execute_signal.assert_called_once_with(signal_mt5)
         
         # Test NT8 routing
         signal_nt8 = Signal(
             symbol="NQ",
-            signal_type="SELL",
+            signal_type=SignalType.SELL,
             confidence=0.88,
             connector_type=ConnectorType.NINJATRADER8,
             entry_price=15000,
             volume=1
         )
         
-        result_nt8 = executor.execute_signal(signal_nt8)
+        result_nt8 = await executor.execute_signal(signal_nt8)
         assert result_nt8 is True
         mock_nt8_connector.execute_signal.assert_called_once_with(signal_nt8)
     
-    def test_executor_handles_connector_failure_with_resilience(
+    @pytest.mark.asyncio
+    async def test_executor_handles_connector_failure_with_resilience(
         self, executor, mock_mt5_connector, mock_storage, mock_notificator, mock_risk_manager
     ):
         """
@@ -162,10 +173,12 @@ class TestOrderExecutor:
         """
         # Arrange: Simular falla de conexión
         mock_mt5_connector.execute_signal.side_effect = ConnectionError("Broker disconnected")
+        mock_storage.has_open_position.return_value = False
+        mock_storage.has_recent_signal.return_value = False
         
         signal = Signal(
             symbol="EURUSD",
-            signal_type="BUY",
+            signal_type=SignalType.BUY,
             confidence=0.85,
             connector_type=ConnectorType.METATRADER5,
             entry_price=1.1050,
@@ -173,7 +186,7 @@ class TestOrderExecutor:
         )
         
         # Act: Intentar ejecutar señal
-        result = executor.execute_signal(signal)
+        result = await executor.execute_signal(signal)
         
         # Assert: Señal debe ser rechazada
         assert result is False
@@ -191,13 +204,17 @@ class TestOrderExecutor:
         alert_message = str(mock_notificator.send_alert.call_args)
         assert "connection" in alert_message.lower() or "fail" in alert_message.lower()
     
-    def test_executor_registers_pending_signal_before_execution(self, executor, mock_storage, sample_signal):
+    @pytest.mark.asyncio
+    async def test_executor_registers_pending_signal_before_execution(self, executor, mock_storage, sample_signal, mock_risk_manager):
         """
         TEST 5: Executor debe registrar señal con estado PENDING antes de ejecutar.
         Ensures audit trail and order tracking.
         """
+        mock_storage.has_open_position.return_value = False
+        mock_storage.has_recent_signal.return_value = False
+        
         # Act
-        executor.execute_signal(sample_signal)
+        await executor.execute_signal(sample_signal)
         
         # Assert: Verificar que se registró con estado PENDING
         assert mock_storage.update_system_state.called
@@ -207,21 +224,25 @@ class TestOrderExecutor:
         pending_found = any("PENDING" in call or "pending" in call.lower() for call in calls)
         assert pending_found, "Signal should be registered with PENDING status"
     
-    def test_executor_handles_missing_connector_gracefully(self, executor, mock_storage, mock_notificator):
+    @pytest.mark.asyncio
+    async def test_executor_handles_missing_connector_gracefully(self, executor, mock_storage, mock_notificator):
         """
         TEST 6: Executor debe manejar conectores faltantes sin crashear.
         Resilience test for missing connector types.
         """
+        mock_storage.has_open_position.return_value = False
+        mock_storage.has_recent_signal.return_value = False
+        
         signal = Signal(
             symbol="BTCUSD",
-            signal_type="BUY",
+            signal_type=SignalType.BUY,
             confidence=0.9,
             connector_type=ConnectorType.WEBHOOK,  # No configurado
             entry_price=50000,
             volume=0.1
         )
         
-        result = executor.execute_signal(signal)
+        result = await executor.execute_signal(signal)
         
         # Assert: Debe retornar False sin crashear
         assert result is False
@@ -229,7 +250,8 @@ class TestOrderExecutor:
         # Debe notificar el error
         mock_notificator.send_alert.assert_called()
     
-    def test_executor_validates_signal_data_before_execution(self, executor):
+    @pytest.mark.asyncio
+    async def test_executor_validates_signal_data_before_execution(self, executor):
         """
         TEST 7: Executor debe validar datos de señal antes de ejecutar.
         Security principle: validate all external inputs.
@@ -237,14 +259,14 @@ class TestOrderExecutor:
         # Señal con confidence inválida (fuera de rango 0-1)
         invalid_signal = Signal(
             symbol="EURUSD",
-            signal_type="BUY",
+            signal_type=SignalType.BUY,
             confidence=1.5,  # Inválido
             connector_type=ConnectorType.METATRADER5,
             entry_price=1.1050,
             volume=0.01
         )
         
-        result = executor.execute_signal(invalid_signal)
+        result = await executor.execute_signal(invalid_signal)
         
         # Debe rechazar señales inválidas
         assert result is False

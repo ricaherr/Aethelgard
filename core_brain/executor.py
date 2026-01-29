@@ -96,11 +96,12 @@ class OrderExecutor:
         
         Workflow:
         1. Validate signal data
-        2. Check RiskManager lockdown status
-        3. Register signal as PENDING in data_vault
-        4. Route to appropriate connector using Factory pattern
-        5. Handle failures with REJECTED_CONNECTION status
-        6. Notify Telegram on errors
+        2. Check for duplicate signals (recent or open position)
+        3. Check RiskManager lockdown status
+        4. Register signal as PENDING in data_vault
+        5. Route to appropriate connector using Factory pattern
+        6. Handle failures with REJECTED_CONNECTION status
+        7. Notify Telegram on errors
         
         Args:
             signal: Signal object to execute
@@ -114,7 +115,28 @@ class OrderExecutor:
             self._register_failed_signal(signal, "INVALID_DATA")
             return False
         
-        # Step 2: Check RiskManager lockdown
+        # Step 2: Check for duplicate signals
+        signal_type_str = signal.signal_type.value if hasattr(signal.signal_type, 'value') else str(signal.signal_type)
+        
+        # 2a. Check if there's an open position for this symbol
+        if self.storage.has_open_position(signal.symbol):
+            logger.warning(
+                f"Signal rejected: Open position already exists for {signal.symbol}. "
+                f"Preventing duplicate operation."
+            )
+            self._register_failed_signal(signal, "DUPLICATE_OPEN_POSITION")
+            return False
+        
+        # 2b. Check if there's a recent signal (within 60 minutes)
+        if self.storage.has_recent_signal(signal.symbol, signal_type_str, minutes=60):
+            logger.warning(
+                f"Signal rejected: Recent {signal_type_str} signal for {signal.symbol} "
+                f"already processed within last 60 minutes. Preventing duplicate."
+            )
+            self._register_failed_signal(signal, "DUPLICATE_RECENT_SIGNAL")
+            return False
+        
+        # Step 3: Check RiskManager lockdown
         if self.risk_manager.is_locked():
             logger.warning(
                 f"Signal rejected: RiskManager in LOCKDOWN mode. "
@@ -123,10 +145,10 @@ class OrderExecutor:
             self._register_failed_signal(signal, "REJECTED_LOCKDOWN")
             return False
         
-        # Step 3: Register signal as PENDING
+        # Step 4: Register signal as PENDING
         self._register_pending_signal(signal)
         
-        # Step 4: Route to connector using Factory pattern
+        # Step 5: Route to connector using Factory pattern
         try:
             connector = self._get_connector(signal.connector_type)
             
@@ -190,9 +212,10 @@ class OrderExecutor:
             logger.warning("Missing required fields: symbol or signal_type")
             return False
         
-        # Check signal type
-        if signal.signal_type not in ["BUY", "SELL", "HOLD"]:
-            logger.warning(f"Invalid signal_type: {signal.signal_type}")
+        # Check signal type (support both enum and string)
+        signal_type_str = signal.signal_type.value if hasattr(signal.signal_type, 'value') else str(signal.signal_type)
+        if signal_type_str not in ["BUY", "SELL", "HOLD"]:
+            logger.warning(f"Invalid signal_type: {signal_type_str}")
             return False
         
         return True
@@ -240,11 +263,12 @@ class OrderExecutor:
         signal_id = self.storage.save_signal(signal)
         
         # Update to EXECUTED status with execution details
+        connector_str = signal.connector_type.value if hasattr(signal.connector_type, 'value') else str(signal.connector_type)
         self.storage.update_signal_status(signal_id, 'EXECUTED', {
             'ticket': ticket,
             'execution_price': result.get('price'),
             'execution_time': datetime.now().isoformat(),
-            'connector': signal.connector_type if hasattr(signal, 'connector_type') else 'UNKNOWN'
+            'connector': connector_str
         })
         
         logger.debug(f"Signal registered as EXECUTED: {signal.symbol}, Ticket: {ticket}")

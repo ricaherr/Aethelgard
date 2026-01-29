@@ -634,6 +634,61 @@ class StorageManager:
             logger.error(f"Error getting open operations: {e}")
             return []
     
+    def has_open_position(self, symbol: str) -> bool:
+        """
+        Check if there is an open position for the given symbol.
+        
+        Args:
+            symbol: Trading symbol
+        
+        Returns:
+            True if there's an open position, False otherwise
+        """
+        try:
+            with self._get_conn() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT COUNT(*) FROM signals s
+                    LEFT JOIN trades t ON s.id = t.signal_id
+                    WHERE s.symbol = ? AND s.status = 'EXECUTED' AND t.id IS NULL
+                """, (symbol,))
+                count = cursor.fetchone()[0]
+                return count > 0
+        except Exception as e:
+            logger.error(f"Error checking open position for {symbol}: {e}")
+            return False
+    
+    def has_recent_signal(self, symbol: str, signal_type: str, minutes: int = 60) -> bool:
+        """
+        Check if there's a recent signal (PENDING or EXECUTED) for the same symbol and type.
+        
+        Args:
+            symbol: Trading symbol
+            signal_type: Signal type (BUY, SELL)
+            minutes: Time window in minutes to check for duplicates
+        
+        Returns:
+            True if a recent signal exists, False otherwise
+        """
+        try:
+            from datetime import datetime, timedelta
+            
+            cutoff_time = (datetime.now() - timedelta(minutes=minutes)).isoformat()
+            
+            with self._get_conn() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT COUNT(*) FROM signals
+                    WHERE symbol = ? 
+                    AND signal_type = ?
+                    AND timestamp >= ?
+                """, (symbol, signal_type, cutoff_time))
+                count = cursor.fetchone()[0]
+                return count > 0
+        except Exception as e:
+            logger.error(f"Error checking recent signal for {symbol}: {e}")
+            return False
+    
     def update_signal_status(self, signal_id: str, status: str, metadata_update: Dict = None):
         """
         Update signal status and optionally merge metadata.

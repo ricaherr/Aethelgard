@@ -114,6 +114,14 @@ class SignalFactory:
                 signal = await strategy.analyze(symbol, df, regime)
                 
                 if signal:
+                    # Validar que no sea duplicado antes de procesar
+                    if self._is_duplicate_signal(signal):
+                        logger.info(
+                            f"[{symbol}] Señal {signal.signal_type} descartada: "
+                            f"ya existe posición abierta o señal reciente"
+                        )
+                        continue
+                    
                     # Procesar señal válida
                     await self._process_valid_signal(signal)
                     generated_signals.append(signal)
@@ -125,6 +133,32 @@ class SignalFactory:
                 )
 
         return generated_signals
+
+    def _is_duplicate_signal(self, signal: Signal) -> bool:
+        """
+        Verifica si la señal es un duplicado.
+        
+        Criterios:
+        - Ya existe una posición abierta para el símbolo
+        - Ya existe una señal reciente (últimos 60 min) del mismo tipo
+        
+        Args:
+            signal: Señal a validar
+        
+        Returns:
+            True si es duplicado, False si es válida
+        """
+        signal_type_str = signal.signal_type.value if hasattr(signal.signal_type, 'value') else str(signal.signal_type)
+        
+        # Verificar posición abierta
+        if self.storage_manager.has_open_position(signal.symbol):
+            return True
+        
+        # Verificar señal reciente
+        if self.storage_manager.has_recent_signal(signal.symbol, signal_type_str, minutes=60):
+            return True
+        
+        return False
 
     async def _process_valid_signal(self, signal: Signal):
         """Maneja persistencia y notificación de una señal válida."""
