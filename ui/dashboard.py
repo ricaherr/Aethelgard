@@ -26,6 +26,7 @@ from core_brain.module_manager import get_module_manager, MembershipLevel
 from core_brain.tuner import ParameterTuner
 from core_brain.notificator import get_notifier
 from core_brain.data_provider_manager import DataProviderManager
+from core_brain.instrument_manager import InstrumentManager
 from data_vault.storage import StorageManager
 from core_brain.health import HealthManager
 # from models.signal import MarketRegime
@@ -67,6 +68,11 @@ def get_provider_manager():
 def get_health_manager():
     """Obtiene una instancia del motor de diagnóstico"""
     return HealthManager()
+
+@st.cache_resource
+def get_instrument_manager():
+    """Obtiene una instancia del gestor de instrumentos"""
+    return InstrumentManager()
 
 def get_regime_color(regime: str) -> str:
     """Retorna un color para cada régimen"""
@@ -154,7 +160,7 @@ def main():
         else: # Configuración
             menu_selection = st.radio(
                 "Ajustes",
-                ["🎛️ Gestión de Módulos", "⚙️ Parámetros Dinámicos", "📡 Proveedores de Datos"]
+                ["🎛️ Gestión de Módulos", "⚙️ Parámetros Dinámicos", "📡 Proveedores de Datos", "🎯 Gestión de Instrumentos"]
             )
     
     
@@ -1546,6 +1552,327 @@ def main():
 
         except Exception as e:
             st.error("Error visualizando configuración")
+            st.exception(e)
+    
+    # TAB: Gestión de Instrumentos
+    elif menu_selection == "🎯 Gestión de Instrumentos":
+        st.header("🎯 Gestión de Instrumentos y Filtrado por Score")
+        
+        st.markdown("""
+        Configura qué instrumentos están habilitados para trading y los scores mínimos requeridos por categoría.
+        Los instrumentos con score por debajo del umbral configurado serán rechazados automáticamente.
+        """)
+        
+        try:
+            instrument_manager = get_instrument_manager()
+            
+            # Información general del sistema
+            st.markdown("---")
+            col1, col2, col3 = st.columns(3)
+            
+            enabled_symbols = instrument_manager.get_enabled_symbols()
+            total_symbols = len(instrument_manager.symbol_cache)
+            
+            with col1:
+                st.metric("Total Símbolos", total_symbols)
+            with col2:
+                st.metric("Habilitados", len(enabled_symbols))
+            with col3:
+                st.metric("Deshabilitados", total_symbols - len(enabled_symbols))
+            
+            st.markdown("---")
+            
+            # Tabs por mercado
+            market_tabs = st.tabs(["💱 FOREX", "₿ CRYPTO", "📈 STOCKS", "🔮 FUTURES", "⚙️ Global Settings"])
+            
+            # TAB 1: FOREX
+            with market_tabs[0]:
+                st.subheader("💱 Mercado FOREX")
+                
+                if "FOREX" in instrument_manager.config:
+                    forex_config = instrument_manager.config["FOREX"]
+                    
+                    for subcategory, settings in forex_config.items():
+                        with st.expander(f"📊 {subcategory.upper()}", expanded=True):
+                            col1, col2 = st.columns([2, 1])
+                            
+                            with col1:
+                                st.markdown(f"**Descripción:** {settings.get('description', 'N/A')}")
+                                
+                                # Mostrar instrumentos
+                                instruments = settings.get('instruments', [])
+                                if instruments:
+                                    st.caption(f"**Instrumentos ({len(instruments)}):**")
+                                    st.code(", ".join(instruments[:10]) + ("..." if len(instruments) > 10 else ""))
+                            
+                            with col2:
+                                # Estado actual
+                                enabled = settings.get('enabled', False)
+                                min_score = settings.get('min_score', 75.0)
+                                risk_mult = settings.get('risk_multiplier', 1.0)
+                                
+                                st.metric("Estado", "✅ Habilitado" if enabled else "🔴 Deshabilitado")
+                                st.metric("Score Mínimo", f"{min_score:.0f}")
+                                st.metric("Risk Multiplier", f"{risk_mult:.1f}x")
+                            
+                            # Configuración editable
+                            st.markdown("---")
+                            with st.form(key=f"forex_{subcategory}"):
+                                col_a, col_b, col_c = st.columns(3)
+                                
+                                with col_a:
+                                    new_enabled = st.checkbox(
+                                        "Habilitar", 
+                                        value=enabled,
+                                        key=f"forex_{subcategory}_enabled"
+                                    )
+                                
+                                with col_b:
+                                    new_min_score = st.slider(
+                                        "Score Mínimo",
+                                        min_value=0,
+                                        max_value=100,
+                                        value=int(min_score),
+                                        step=5,
+                                        key=f"forex_{subcategory}_score"
+                                    )
+                                
+                                with col_c:
+                                    new_risk_mult = st.slider(
+                                        "Risk Multiplier",
+                                        min_value=0.1,
+                                        max_value=2.0,
+                                        value=float(risk_mult),
+                                        step=0.1,
+                                        key=f"forex_{subcategory}_risk"
+                                    )
+                                
+                                submitted = st.form_submit_button("💾 Guardar Cambios")
+                                
+                                if submitted:
+                                    # Actualizar config en memoria (por ahora)
+                                    settings['enabled'] = new_enabled
+                                    settings['min_score'] = float(new_min_score)
+                                    settings['risk_multiplier'] = float(new_risk_mult)
+                                    
+                                    # Guardar a JSON
+                                    config_path = Path("config/instruments.json")
+                                    with open(config_path, 'w', encoding='utf-8') as f:
+                                        json.dump(instrument_manager.config, f, indent=2, ensure_ascii=False)
+                                    
+                                    # Limpiar cache para forzar recarga
+                                    st.cache_resource.clear()
+                                    
+                                    st.success(f"✅ Configuración guardada para FOREX/{subcategory}")
+                                    st.info("🔄 Reiniciando InstrumentManager...")
+                                    st.rerun()
+                else:
+                    st.warning("No hay configuración FOREX disponible")
+            
+            # TAB 2: CRYPTO
+            with market_tabs[1]:
+                st.subheader("₿ Mercado CRYPTO")
+                
+                if "CRYPTO" in instrument_manager.config:
+                    crypto_config = instrument_manager.config["CRYPTO"]
+                    
+                    for subcategory, settings in crypto_config.items():
+                        with st.expander(f"📊 {subcategory.upper()}", expanded=True):
+                            col1, col2 = st.columns([2, 1])
+                            
+                            with col1:
+                                st.markdown(f"**Descripción:** {settings.get('description', 'N/A')}")
+                                
+                                instruments = settings.get('instruments', [])
+                                if instruments:
+                                    st.caption(f"**Instrumentos ({len(instruments)}):**")
+                                    st.code(", ".join(instruments))
+                            
+                            with col2:
+                                enabled = settings.get('enabled', False)
+                                min_score = settings.get('min_score', 75.0)
+                                risk_mult = settings.get('risk_multiplier', 1.0)
+                                
+                                st.metric("Estado", "✅ Habilitado" if enabled else "🔴 Deshabilitado")
+                                st.metric("Score Mínimo", f"{min_score:.0f}")
+                                st.metric("Risk Multiplier", f"{risk_mult:.1f}x")
+                            
+                            st.markdown("---")
+                            with st.form(key=f"crypto_{subcategory}"):
+                                col_a, col_b, col_c = st.columns(3)
+                                
+                                with col_a:
+                                    new_enabled = st.checkbox("Habilitar", value=enabled, key=f"crypto_{subcategory}_enabled")
+                                with col_b:
+                                    new_min_score = st.slider("Score Mínimo", 0, 100, int(min_score), 5, key=f"crypto_{subcategory}_score")
+                                with col_c:
+                                    new_risk_mult = st.slider("Risk Multiplier", 0.1, 2.0, float(risk_mult), 0.1, key=f"crypto_{subcategory}_risk")
+                                
+                                submitted = st.form_submit_button("💾 Guardar Cambios")
+                                
+                                if submitted:
+                                    settings['enabled'] = new_enabled
+                                    settings['min_score'] = float(new_min_score)
+                                    settings['risk_multiplier'] = float(new_risk_mult)
+                                    
+                                    config_path = Path("config/instruments.json")
+                                    with open(config_path, 'w', encoding='utf-8') as f:
+                                        json.dump(instrument_manager.config, f, indent=2, ensure_ascii=False)
+                                    
+                                    st.cache_resource.clear()
+                                    st.success(f"✅ Configuración guardada para CRYPTO/{subcategory}")
+                                    st.rerun()
+                else:
+                    st.warning("No hay configuración CRYPTO disponible")
+            
+            # TAB 3: STOCKS
+            with market_tabs[2]:
+                st.subheader("📈 Mercado STOCKS")
+                
+                if "STOCKS" in instrument_manager.config:
+                    stocks_config = instrument_manager.config["STOCKS"]
+                    
+                    for subcategory, settings in stocks_config.items():
+                        with st.expander(f"📊 {subcategory.upper()}", expanded=True):
+                            enabled = settings.get('enabled', False)
+                            min_score = settings.get('min_score', 75.0)
+                            
+                            st.markdown(f"**Descripción:** {settings.get('description', 'N/A')}")
+                            st.metric("Estado", "✅ Habilitado" if enabled else "🔴 Deshabilitado")
+                            
+                            with st.form(key=f"stocks_{subcategory}"):
+                                new_enabled = st.checkbox("Habilitar", value=enabled)
+                                new_min_score = st.slider("Score Mínimo", 0, 100, int(min_score), 5)
+                                
+                                submitted = st.form_submit_button("💾 Guardar")
+                                
+                                if submitted:
+                                    settings['enabled'] = new_enabled
+                                    settings['min_score'] = float(new_min_score)
+                                    
+                                    config_path = Path("config/instruments.json")
+                                    with open(config_path, 'w', encoding='utf-8') as f:
+                                        json.dump(instrument_manager.config, f, indent=2, ensure_ascii=False)
+                                    
+                                    st.cache_resource.clear()
+                                    st.success(f"✅ Guardado STOCKS/{subcategory}")
+                                    st.rerun()
+                else:
+                    st.warning("No hay configuración STOCKS disponible")
+            
+            # TAB 4: FUTURES
+            with market_tabs[3]:
+                st.subheader("🔮 Mercado FUTURES")
+                
+                if "FUTURES" in instrument_manager.config:
+                    futures_config = instrument_manager.config["FUTURES"]
+                    
+                    for subcategory, settings in futures_config.items():
+                        with st.expander(f"📊 {subcategory.upper()}", expanded=True):
+                            col1, col2 = st.columns([2, 1])
+                            
+                            with col1:
+                                st.markdown(f"**Descripción:** {settings.get('description', 'N/A')}")
+                                instruments = settings.get('instruments', [])
+                                if instruments:
+                                    st.code(", ".join(instruments))
+                            
+                            with col2:
+                                enabled = settings.get('enabled', False)
+                                min_score = settings.get('min_score', 75.0)
+                                
+                                st.metric("Estado", "✅ Habilitado" if enabled else "🔴 Deshabilitado")
+                                st.metric("Score Mínimo", f"{min_score:.0f}")
+                            
+                            with st.form(key=f"futures_{subcategory}"):
+                                new_enabled = st.checkbox("Habilitar", value=enabled)
+                                new_min_score = st.slider("Score Mínimo", 0, 100, int(min_score), 5)
+                                
+                                submitted = st.form_submit_button("💾 Guardar")
+                                
+                                if submitted:
+                                    settings['enabled'] = new_enabled
+                                    settings['min_score'] = float(new_min_score)
+                                    
+                                    config_path = Path("config/instruments.json")
+                                    with open(config_path, 'w', encoding='utf-8') as f:
+                                        json.dump(instrument_manager.config, f, indent=2, ensure_ascii=False)
+                                    
+                                    st.cache_resource.clear()
+                                    st.success(f"✅ Guardado FUTURES/{subcategory}")
+                                    st.rerun()
+                else:
+                    st.warning("No hay configuración FUTURES disponible")
+            
+            # TAB 5: Global Settings
+            with market_tabs[4]:
+                st.subheader("⚙️ Configuración Global")
+                
+                global_settings = instrument_manager.config.get("_global_settings", {})
+                
+                st.markdown("### Defaults para Instrumentos Desconocidos")
+                
+                with st.form(key="global_settings"):
+                    default_min_score = st.slider(
+                        "Score Mínimo por Defecto",
+                        min_value=0,
+                        max_value=100,
+                        value=int(global_settings.get('default_min_score', 80)),
+                        step=5,
+                        help="Score mínimo para instrumentos no clasificados"
+                    )
+                    
+                    default_risk_mult = st.slider(
+                        "Risk Multiplier por Defecto",
+                        min_value=0.1,
+                        max_value=2.0,
+                        value=float(global_settings.get('default_risk_multiplier', 0.8)),
+                        step=0.1,
+                        help="Multiplicador de riesgo para instrumentos desconocidos"
+                    )
+                    
+                    unknown_action = st.selectbox(
+                        "Acción para Instrumentos Desconocidos",
+                        options=["reject", "allow"],
+                        index=0 if global_settings.get('unknown_instrument_action') == 'reject' else 1,
+                        help="'reject' = rechazar automáticamente, 'allow' = permitir con defaults conservadores"
+                    )
+                    
+                    log_rejections = st.checkbox(
+                        "Registrar Rechazos en Logs",
+                        value=global_settings.get('log_all_rejections', True),
+                        help="Guardar en logs todos los setups rechazados por score bajo"
+                    )
+                    
+                    submitted = st.form_submit_button("💾 Guardar Configuración Global")
+                    
+                    if submitted:
+                        global_settings['default_min_score'] = float(default_min_score)
+                        global_settings['default_risk_multiplier'] = float(default_risk_mult)
+                        global_settings['unknown_instrument_action'] = unknown_action
+                        global_settings['log_all_rejections'] = log_rejections
+                        
+                        instrument_manager.config['_global_settings'] = global_settings
+                        
+                        config_path = Path("config/instruments.json")
+                        with open(config_path, 'w', encoding='utf-8') as f:
+                            json.dump(instrument_manager.config, f, indent=2, ensure_ascii=False)
+                        
+                        st.cache_resource.clear()
+                        st.success("✅ Configuración global guardada correctamente")
+                        st.rerun()
+                
+                st.markdown("---")
+                st.markdown("### Información del Sistema")
+                st.info(f"""
+                **Archivo de Configuración:** `config/instruments.json`  
+                **Total de Categorías:** {sum(len(v) for k, v in instrument_manager.config.items() if not k.startswith('_'))}  
+                **Símbolos en Cache:** {len(instrument_manager.symbol_cache)}  
+                **Política Actual:** {global_settings.get('fallback_behavior', 'conservative')}
+                """)
+        
+        except Exception as e:
+            st.error(f"Error cargando gestión de instrumentos: {e}")
             st.exception(e)
 
 
