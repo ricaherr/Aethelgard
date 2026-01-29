@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch, MagicMock
 import pandas as pd
 from datetime import datetime
 
-from connectors.data_provider_manager import DataProviderManager
+from core_brain.data_provider_manager import DataProviderManager
 
 
 @pytest.fixture

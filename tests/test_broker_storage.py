@@ -32,21 +32,15 @@ class TestBrokerStorage:
             "broker_id": "binance",
             "name": "Binance",
             "type": "crypto",
-            "auto_provisioning": "full",
-            "providers": {
-                "testnet": {
-                    "auto_create": True,
-                    "requires_credentials": False,
-                    "api_available": True,
-                    "method": "api",
-                    "base_url": "https://testnet.binance.vision"
-                }
-            },
-            "enabled": True
+            "website": "https://binance.com",
+            "platforms_available": ["binance_api", "tradingview"],
+            "data_server": "https://testnet.binance.vision",
+            "auto_provision_available": True,
+            "registration_url": "https://binance.com/register"
         }
         
         # Save broker
-        storage.save_broker_config(broker_config)
+        storage.save_broker(broker_config)
         
         # Verify saved
         brokers = storage.get_brokers()
@@ -61,12 +55,13 @@ class TestBrokerStorage:
             "broker_id": "mt5",
             "name": "MetaTrader 5",
             "type": "forex_cfd",
-            "auto_provisioning": "partial",
-            "providers": {"metaquotes_demo": {"auto_create": True}},
-            "enabled": True
+            "website": "https://metaquotes.net",
+            "platforms_available": ["mt5"],
+            "auto_provision_available": False,
+            "registration_url": "https://metaquotes.net/demo"
         }
         
-        storage.save_broker_config(broker_config)
+        storage.save_broker(broker_config)
         
         # Get specific broker
         broker = storage.get_broker('mt5')
@@ -83,12 +78,13 @@ class TestBrokerStorage:
             "broker_id": "ibkr",
             "name": "Interactive Brokers",
             "type": "multi_asset",
-            "auto_provisioning": "none",
-            "providers": {},
-            "enabled": True
+            "website": "https://interactivebrokers.com",
+            "platforms_available": ["ibkr_api"],
+            "auto_provision_available": False,
+            "registration_url": "https://interactivebrokers.com/demo"
         }
         
-        storage.save_broker_config(broker_config)
+        storage.save_broker(broker_config)
         
         # Disable broker
         storage.update_broker_status('ibkr', enabled=False)

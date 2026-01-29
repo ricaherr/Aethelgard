@@ -124,7 +124,7 @@ async def test_perfect_elephant_candle_generates_high_score_signal(signal_factor
     
     assert isinstance(result_signal, Signal)
     assert result_signal.metadata.get("score", 0) > 80, f"El score fue {result_signal.metadata.get('score', 0)}, se esperaba > 80."
-    assert result_signal.signal_type == "BUY"
+    assert result_signal.signal_type == SignalType.BUY
     membership_tier_value = result_signal.metadata.get("membership_tier", "")
     assert membership_tier_value in [MembershipTier.PREMIUM.value, MembershipTier.ELITE.value]
     

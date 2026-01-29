@@ -8,7 +8,7 @@ from datetime import datetime
 from unittest.mock import Mock, AsyncMock, patch
 from core_brain.monitor import ClosingMonitor
 from data_vault.storage import StorageManager
-from models.signal import Signal, SignalType
+from models.signal import Signal, SignalType, ConnectorType
 
 
 class TestClosingMonitor:
@@ -57,7 +57,7 @@ class TestClosingMonitor:
             stop_loss=1.0950,
             take_profit=1.1100,
             confidence=0.8,
-            connector_type='MT5'
+            connector_type=ConnectorType.METATRADER5
         ))
         
         # Update signal to EXECUTED status with ticket
@@ -111,7 +111,7 @@ class TestClosingMonitor:
             stop_loss=1.0950,
             take_profit=1.1100,
             confidence=0.8,
-            connector_type='MT5'
+            connector_type=ConnectorType.METATRADER5
         ))
         
         # Update to closed with profit
@@ -135,7 +135,7 @@ class TestClosingMonitor:
             signal_type=SignalType.BUY,
             entry_price=1.1000,
             confidence=0.8,
-            connector_type='MT5',
+            connector_type=ConnectorType.METATRADER5,
             stop_loss=1.0950,
             take_profit=1.1100
         ))

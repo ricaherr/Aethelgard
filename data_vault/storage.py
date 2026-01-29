@@ -1018,7 +1018,13 @@ class StorageManager:
                     ORDER BY name
                 """)
                 rows = cursor.fetchall()
-                return [dict(row) for row in rows]
+                brokers = []
+                for row in rows:
+                    broker = dict(row)
+                    # Alias for backward compatibility
+                    broker['auto_provisioning'] = 'full' if broker.get('auto_provision_available') else 'none'
+                    brokers.append(broker)
+                return brokers
         except Exception as e:
             logger.error(f"Error getting brokers: {e}")
             return []
