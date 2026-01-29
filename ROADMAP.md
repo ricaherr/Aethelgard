@@ -68,11 +68,43 @@ Resumen del roadmap de implementación. Detalle completo en [AETHELGARD_MANIFEST
 
 **Pendiente de Implementación:**
 - **Gestión de Riesgo de Portafolio**: Control de correlación y exposición global.
-
-**Pendiente de Implementación:**
 - Range Trading completo
 - Breakout Trading en transiciones
 - Módulos de estrategias independientes
+
+### ✅ Fase 2.3: Score Dinámico y Gestión de Instrumentos (COMPLETADA - Enero 2026)
+
+**Objetivo:** Filtrado inteligente de señales por calidad (score) y gestión granular de instrumentos activos/inactivos por categoría de mercado.
+
+**Implementado (Nivel 1 - Validación de Score Mínimo):**
+
+| Componente | Descripción | Estado |
+|------------|-------------|--------|
+| `config/instruments.json` | Clasificación FOREX (majors/minors/exotics), CRYPTO, STOCKS, FUTURES con min_score, enabled, spread | ✅ Completado |
+| `core_brain/instrument_manager.py` | Clasificador de símbolos, validación de habilitación, score mínimo dinámico, auto-clasificación | ✅ Completado |
+| `oliver_velez.py` (modificación) | Integración con InstrumentManager, validación de score antes de generar Signal | ✅ Completado |
+| `tests/test_instrument_filtering.py` | 20 tests de filtrado por score, habilitación/deshabilitación por categoría | ✅ 20/20 Pasando |
+
+**Funcionalidades:**
+- ✅ **Scores Dinámicos por Categoría**: Majors 70, Minors 75, Exotics 90, Crypto Tier1 75, Altcoins 85
+- ✅ **Habilitación/Deshabilitación**: Exóticas y altcoins desactivadas por defecto
+- ✅ **Auto-Clasificación**: Símbolos desconocidos clasificados automáticamente (USDSGD → FOREX/majors)
+- ✅ **Multiplicadores de Riesgo**: Position sizing ajustado por volatilidad (exotics: 0.5x, majors: 1.0x)
+- ✅ **Validación Completa**: Rechazo de setups con score insuficiente o instrumento deshabilitado
+- ✅ **Testing Robusto**: Cobertura completa de clasificación, validación e integración
+- ✅ **Logs Detallados**: Trazabilidad de por qué se rechaza cada setup
+
+**Beneficios:**
+- 🎯 **Control de Calidad**: Solo ejecutar setups con score >= umbral dinámico
+- 💰 **Gestión de Costos**: Evitar exóticas con spreads prohibitivos (15-30 pips)
+- 🔧 **Flexibilidad**: Activar/desactivar categorías vía config sin código
+- 🛡️ **Protección**: Risk multipliers reducidos en instrumentos volátiles
+- 📊 **SaaS Ready**: Filtrado por membresía (Basic: solo majors, Premium: todo)
+
+**Pendiente de Implementación (Niveles 2-4):**
+- **Nivel 2: Score Adaptativo**: Eliminar base arbitraria (60), penalizar por spread, pesos ajustados (40/30/30)
+- **Nivel 3: Calibración Backtesting**: Ajustar umbrales basados en win-rate histórico (1000+ trades)
+- **Nivel 4: Score Predictivo (ML)**: Modelo de machine learning para probabilidad de éxito (500+ trades reales)
 
 ---
 

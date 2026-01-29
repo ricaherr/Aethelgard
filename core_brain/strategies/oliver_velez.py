@@ -7,6 +7,7 @@ from models.signal import (
     Signal, SignalType, MarketRegime, MembershipTier, ConnectorType
 )
 from core_brain.strategies.base_strategy import BaseStrategy
+from core_brain.instrument_manager import InstrumentManager
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,7 @@ class OliverVelezStrategy(BaseStrategy):
     1. Tendencia mayor (SMA 200)
     2. Zona de valor (SMA 20)
     3. Velas de ignición (Elefante)
+    4. Score dinámico por instrumento (majors: 70, exotics: 90)
     """
 
     def __init__(self, config: Dict):
@@ -44,6 +46,14 @@ class OliverVelezStrategy(BaseStrategy):
         
         # Auto-detectar conector disponible (agnosticismo)
         self.connector_type = self._detect_available_connector()
+        
+        # Instrument Manager para validación dinámica de scores
+        self.instrument_manager = InstrumentManager()
+        
+        logger.info(
+            f"[{self.strategy_id}] Initialized with InstrumentManager. "
+            f"Enabled symbols: {len(self.instrument_manager.get_enabled_symbols())}"
+        )
 
     @property
     def strategy_id(self) -> str:
@@ -137,6 +147,22 @@ class OliverVelezStrategy(BaseStrategy):
 
         if score <= 0:
             return None
+        
+        # NUEVO: Validación de score contra umbral dinámico por instrumento
+        validation = self.instrument_manager.validate_symbol(symbol, score)
+        
+        if not validation["valid"]:
+            logger.info(
+                f"[{symbol}] Setup técnicamente válido pero RECHAZADO: "
+                f"{validation['rejection_reason']}. "
+                f"Score: {score:.1f}, Categoría: {validation['category']}/{validation['subcategory']}"
+            )
+            return None
+        
+        logger.info(
+            f"[{symbol}] Setup APROBADO. Score: {score:.1f} >= {validation['min_score_required']:.1f} "
+            f"({validation['category']}/{validation['subcategory']})"
+        )
         
         # --- Construcción de Señal ---
         current_price = latest_candle['close']
