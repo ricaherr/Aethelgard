@@ -140,7 +140,7 @@ class SignalFactory:
         
         Criterios:
         - Ya existe una posición abierta para el símbolo
-        - Ya existe una señal reciente (últimos 60 min) del mismo tipo
+        - Ya existe una señal reciente (ventana dinámica según timeframe)
         
         Args:
             signal: Señal a validar
@@ -154,8 +154,12 @@ class SignalFactory:
         if self.storage_manager.has_open_position(signal.symbol):
             return True
         
-        # Verificar señal reciente
-        if self.storage_manager.has_recent_signal(signal.symbol, signal_type_str, minutes=60):
+        # Verificar señal reciente (ventana dinámica basada en timeframe)
+        if self.storage_manager.has_recent_signal(
+            symbol=signal.symbol, 
+            signal_type=signal_type_str, 
+            timeframe=signal.timeframe
+        ):
             return True
         
         return False

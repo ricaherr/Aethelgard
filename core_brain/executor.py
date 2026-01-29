@@ -127,11 +127,20 @@ class OrderExecutor:
             self._register_failed_signal(signal, "DUPLICATE_OPEN_POSITION")
             return False
         
-        # 2b. Check if there's a recent signal (within 60 minutes)
-        if self.storage.has_recent_signal(signal.symbol, signal_type_str, minutes=60):
+        # 2b. Check if there's a recent signal (dynamic window based on timeframe)
+        if self.storage.has_recent_signal(
+            symbol=signal.symbol, 
+            signal_type=signal_type_str, 
+            timeframe=signal.timeframe
+        ):
+            # Calculate window for logging
+            from data_vault.storage import calculate_deduplication_window
+            window = calculate_deduplication_window(signal.timeframe) if signal.timeframe else 60
+            
             logger.warning(
                 f"Signal rejected: Recent {signal_type_str} signal for {signal.symbol} "
-                f"already processed within last 60 minutes. Preventing duplicate."
+                f"already processed within last {window} minutes (timeframe: {signal.timeframe}). "
+                f"Preventing duplicate."
             )
             self._register_failed_signal(signal, "DUPLICATE_RECENT_SIGNAL")
             return False

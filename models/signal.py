@@ -50,6 +50,7 @@ class Signal(BaseModel):
     volume: float = 0.01
     timestamp: datetime = Field(default_factory=datetime.now)
     strategy_id: Optional[str] = None
+    timeframe: Optional[str] = "M5"  # Default to 5-minute timeframe
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
     @property

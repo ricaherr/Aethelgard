@@ -10,6 +10,87 @@ from utils.encryption import get_encryptor
 
 logger = logging.getLogger(__name__)
 
+
+def calculate_deduplication_window(timeframe: str) -> int:
+    """
+    Calculate dynamic deduplication window based on trading timeframe.
+    
+    Args:
+        timeframe: Trading timeframe (e.g., "1m", "5m", "15m", "1h", "4h", "1D")
+    
+    Returns:
+        Deduplication window in minutes
+        
+    Examples:
+        - "1m" or "M1" -> 10 minutes
+        - "5m" or "M5" -> 20 minutes
+        - "15m" or "M15" -> 45 minutes
+        - "1h" or "H1" -> 120 minutes (2 hours)
+        - "4h" or "H4" -> 480 minutes (8 hours)
+        - "1D" or "D1" -> 1440 minutes (24 hours)
+    """
+    if not timeframe:
+        return 60  # Default 1 hour
+    
+    # Normalize timeframe to uppercase
+    tf = timeframe.upper().strip()
+    
+    # Timeframe mapping: timeframe -> window in minutes
+    timeframe_windows = {
+        # Minutes
+        "1M": 10,
+        "M1": 10,
+        "3M": 15,
+        "M3": 15,
+        "5M": 20,
+        "M5": 20,
+        "10M": 30,
+        "M10": 30,
+        "15M": 45,
+        "M15": 45,
+        "30M": 90,
+        "M30": 90,
+        # Hours
+        "1H": 120,
+        "H1": 120,
+        "2H": 240,
+        "H2": 240,
+        "4H": 480,
+        "H4": 480,
+        "6H": 720,
+        "H6": 720,
+        "8H": 960,
+        "H8": 960,
+        # Days
+        "1D": 1440,
+        "D1": 1440,
+        "1W": 10080,
+        "W1": 10080,
+    }
+    
+    # Return mapped value or calculate proportional window
+    if tf in timeframe_windows:
+        return timeframe_windows[tf]
+    
+    # Fallback: try to parse and calculate proportional window
+    # For example: "2m" -> 2 * 5 = 10 minutes
+    try:
+        if tf.endswith('M') and tf[:-1].isdigit():
+            minutes = int(tf[:-1])
+            return max(10, minutes * 5)  # At least 10 minutes
+        elif tf.endswith('H') and tf[:-1].isdigit():
+            hours = int(tf[:-1])
+            return hours * 60 * 2  # 2x the timeframe in minutes
+        elif tf.endswith('D') and tf[:-1].isdigit():
+            days = int(tf[:-1])
+            return days * 1440  # Full day(s)
+    except (ValueError, IndexError):
+        pass
+    
+    # Default fallback
+    logger.warning(f"Unknown timeframe '{timeframe}', using default 60 minutes")
+    return 60
+
 class StorageManager:
     """
     Manages persistence of system state using SQLite for production reliability.
@@ -253,7 +334,7 @@ class StorageManager:
                     signal.entry_price,
                     signal.stop_loss,
                     signal.take_profit,
-                    datetime.now().isoformat(),
+                    signal.timestamp.isoformat() if hasattr(signal, 'timestamp') and signal.timestamp else datetime.now().isoformat(),
                     date.today().isoformat(),
                     "executed",
                     json.dumps(serialized_metadata)
@@ -658,14 +739,15 @@ class StorageManager:
             logger.error(f"Error checking open position for {symbol}: {e}")
             return False
     
-    def has_recent_signal(self, symbol: str, signal_type: str, minutes: int = 60) -> bool:
+    def has_recent_signal(self, symbol: str, signal_type: str, minutes: int = None, timeframe: str = None) -> bool:
         """
         Check if there's a recent signal (PENDING or EXECUTED) for the same symbol and type.
         
         Args:
             symbol: Trading symbol
             signal_type: Signal type (BUY, SELL)
-            minutes: Time window in minutes to check for duplicates
+            minutes: Time window in minutes to check for duplicates (overrides timeframe calculation)
+            timeframe: Trading timeframe (e.g., "1m", "5m", "1h"). If provided, calculates dynamic window
         
         Returns:
             True if a recent signal exists, False otherwise
@@ -673,7 +755,16 @@ class StorageManager:
         try:
             from datetime import datetime, timedelta
             
-            cutoff_time = (datetime.now() - timedelta(minutes=minutes)).isoformat()
+            # Calculate window: explicit minutes > timeframe calculation > default 60
+            if minutes is not None:
+                window_minutes = minutes
+            elif timeframe:
+                window_minutes = calculate_deduplication_window(timeframe)
+                logger.debug(f"Calculated deduplication window for {timeframe}: {window_minutes} minutes")
+            else:
+                window_minutes = 60  # Default fallback
+            
+            cutoff_time = (datetime.now() - timedelta(minutes=window_minutes)).isoformat()
             
             with self._get_conn() as conn:
                 cursor = conn.cursor()
