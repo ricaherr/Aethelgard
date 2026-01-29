@@ -25,5 +25,16 @@
     "loop_interval_range": 30,
     "loop_interval_volatile": 15,
     "loop_interval_shock": 60
+  },
+  "logging": {
+    "global_level": "INFO",
+    "module_levels": {
+      "core_brain.strategies.oliver_velez": "INFO",
+      "core_brain.data_provider_manager": "WARNING",
+      "connectors.generic_data_provider": "INFO",
+      "core_brain.scanner": "INFO"
+    },
+    "performance_mode": false
   }
 }
+

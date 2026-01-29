@@ -5,11 +5,16 @@ Signal Factory - Motor de Generación de Señales para Aethelgard
 Refactorizado a Patrón Strategy (Fase 2.2).
 Actúa como orquestador que delega la lógica de análisis a estrategias específicas
 (e.g., OliverVelezStrategy) y gestiona la persistencia y notificación centralizada.
+
+FASE 2.5: Multi-Timeframe Confluence Integration
+Signals are reinforced or penalized based on alignment across timeframes.
+EDGE learning optimizes confluence weights automatically.
 """
 import logging
 import asyncio
 import json
 from typing import Dict, List, Optional
+from collections import defaultdict
 
 import pandas as pd
 
@@ -19,6 +24,7 @@ from models.signal import (
 from data_vault.storage import StorageManager
 from core_brain.notificator import get_notifier, TelegramNotifier
 from core_brain.module_manager import MembershipLevel
+from core_brain.confluence import MultiTimeframeConfluenceAnalyzer
 
 # Import strategies
 from core_brain.strategies.base_strategy import BaseStrategy
@@ -63,10 +69,21 @@ class SignalFactory:
         self.strategies: List[BaseStrategy] = []
         self._register_default_strategies()
         
+        # FASE 2.5: Initialize Multi-Timeframe Confluence Analyzer
+        confluence_config = self.config_data.get("confluence", {})
+        confluence_enabled = confluence_config.get("enabled", True)
+        self.confluence_analyzer = MultiTimeframeConfluenceAnalyzer(
+            config_path=config_path,
+            enabled=confluence_enabled
+        )
+        
         if not self.notifier or not self.notifier.is_configured():
             logger.warning("Notificador de Telegram no está configurado. No se enviarán alertas.")
 
-        logger.info(f"SignalFactory initialized with {len(self.strategies)} strategies.")
+        logger.info(
+            f"SignalFactory initialized with {len(self.strategies)} strategies. "
+            f"Confluence enabled: {confluence_enabled}"
+        )
 
     def _load_parameters(self) -> Dict:
         """Carga parámetros desde dynamic_params.json"""
@@ -222,12 +239,14 @@ class SignalFactory:
     ) -> List[Signal]:
         """
         Procesa un lote de resultados del ScannerEngine y genera señales.
+        
+        FASE 2.5: Aplica confluencia multi-timeframe para reforzar/penalizar señales.
 
         Args:
             scan_results: Dict con "symbol|timeframe" -> {"regime": MarketRegime, "df": DataFrame, "symbol": str, "timeframe": str}
 
         Returns:
-            Lista plana de todas las señales generadas.
+            Lista plana de todas las señales generadas (con confluencia aplicada).
         """
         tasks = []
         for key, data in scan_results.items():
@@ -252,6 +271,10 @@ class SignalFactory:
         for batch in results:
             all_signals.extend(batch)
 
+        # FASE 2.5: Apply Multi-Timeframe Confluence
+        if all_signals and self.confluence_analyzer.enabled:
+            all_signals = self._apply_confluence(all_signals, scan_results)
+
         if all_signals:
             logger.info(
                 f"Batch completado. {len(all_signals)} señales generadas de "
@@ -259,6 +282,60 @@ class SignalFactory:
             )
 
         return all_signals
+    
+    def _apply_confluence(
+        self, 
+        signals: List[Signal], 
+        scan_results: Dict[str, Dict]
+    ) -> List[Signal]:
+        """
+        Apply multi-timeframe confluence to signals.
+        
+        Groups signals by symbol, extracts regime from all timeframes,
+        and applies confluence analysis.
+        
+        Args:
+            signals: List of generated signals
+            scan_results: Original scan data (needed for regime context)
+        
+        Returns:
+            Signals with adjusted confidence based on confluence
+        """
+        # Group scan results by symbol to get regime context
+        symbol_regimes = defaultdict(dict)
+        for key, data in scan_results.items():
+            symbol = data.get("symbol")
+            timeframe = data.get("timeframe")
+            regime = data.get("regime")
+            
+            if symbol and timeframe and regime:
+                symbol_regimes[symbol][timeframe] = regime
+        
+        # Apply confluence to each signal
+        adjusted_signals = []
+        for signal in signals:
+            # Get timeframe regimes for this symbol
+            timeframe_regimes = symbol_regimes.get(signal.symbol, {})
+            
+            # Remove primary signal's timeframe (don't compare M5 to M5)
+            primary_timeframe = signal.timeframe
+            higher_timeframes = {
+                tf: regime 
+                for tf, regime in timeframe_regimes.items() 
+                if tf != primary_timeframe
+            }
+            
+            if higher_timeframes:
+                # Apply confluence
+                adjusted_signal = self.confluence_analyzer.analyze_confluence(
+                    signal, higher_timeframes
+                )
+                adjusted_signals.append(adjusted_signal)
+            else:
+                # No higher timeframes available, keep signal as-is
+                adjusted_signals.append(signal)
+        
+        return adjusted_signals
 
     async def process_scan_results(self, scan_results: Dict[str, MarketRegime]) -> List[Signal]:
         """

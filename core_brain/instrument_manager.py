@@ -134,22 +134,25 @@ class InstrumentManager:
         """
         Get configuration for a specific symbol.
         
+        Normalizes Yahoo Finance symbols (removes =X suffix) before lookup.
+        
         Args:
-            symbol: Trading symbol (e.g., "EURUSD", "BTCUSDT")
+            symbol: Trading symbol (e.g., "EURUSD", "BTCUSDT", "EURUSD=X")
         
         Returns:
             InstrumentConfig if found, None otherwise
         """
-        symbol_upper = symbol.upper()
+        # Normalize Yahoo Finance symbols (EURUSD=X -> EURUSD)
+        normalized_symbol = symbol.upper().replace("=X", "")
         
         # Check cache first
-        if symbol_upper in self.symbol_cache:
-            return self.symbol_cache[symbol_upper]
+        if normalized_symbol in self.symbol_cache:
+            return self.symbol_cache[normalized_symbol]
         
         # Try auto-classification
-        config = self._auto_classify(symbol_upper)
+        config = self._auto_classify(normalized_symbol)
         if config:
-            self.symbol_cache[symbol_upper] = config
+            self.symbol_cache[normalized_symbol] = config
             return config
         
         logger.warning(f"Symbol {symbol} not found in configuration")

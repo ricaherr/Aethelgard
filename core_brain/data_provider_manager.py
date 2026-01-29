@@ -261,12 +261,23 @@ class DataProviderManager:
         """Get list of all available provider names"""
         return list(self.providers.keys())
     
-    def get_active_providers(self) -> List[Dict]:
-        """Get list of currently enabled providers with metadata, reloading from DB for real-time updates"""
+    def get_active_providers(self, force_reload: bool = False) -> List[Dict]:
+        """
+        Get list of currently enabled providers with metadata.
+        
+        Args:
+            force_reload: If True, reload from DB (use sparingly - performance critical)
+        
+        PERFORMANCE: By default, uses cached configuration.
+        Only reload when explicitly needed (e.g., after Dashboard updates).
+        """
         active = []
         
-        # Reload from DB to catch changes from other processes (Dashboard)
-        self._load_configuration()
+        # OPTIMIZATION: Only reload if explicitly requested
+        # This prevents 1000+ DB queries per scan cycle
+        if force_reload:
+            self._load_configuration()
+            logger.debug("Reloaded provider configuration from DB (force_reload=True)")
         
         for name, config in self.providers.items():
             if config.enabled:
@@ -336,6 +347,19 @@ class DataProviderManager:
         self.save_configuration()
         logger.info(f"Provider '{name}' system status set to: {is_system}")
         return True
+    
+    def reload_providers(self):
+        """
+        Reload provider configuration from DB and clear provider instance cache.
+        
+        Use this when provider configuration changes (API keys updated, providers enabled/disabled).
+        PERFORMANCE WARNING: This clears all cached provider instances.
+        """
+        logger.info("Reloading provider configuration and clearing cache...")
+        self._load_configuration()
+        # Clear provider instances so they get recreated with new config
+        self.provider_instances.clear()
+        logger.info(f"Reloaded {len(self.providers)} providers from database")
     
     def is_provider_enabled(self, name: str) -> bool:
         """Check if provider is enabled"""

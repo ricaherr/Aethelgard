@@ -28,17 +28,26 @@ class RegimeClassifier:
     - Persistencia: cambio confirmado solo tras 2 velas consecutivas
     """
     
+    # Class-level cache for parameters (singleton pattern)
+    _params_cache: Dict[str, Dict] = {}
+    
     @staticmethod
-    def _load_params_from_config(config_path: str = "config/dynamic_params.json") -> Dict:
+    def _load_params_from_config(config_path: str = "config/dynamic_params.json", force_reload: bool = False) -> Dict:
         """
-        Carga parámetros desde el archivo de configuración dinámica
+        Carga parámetros desde el archivo de configuración dinámica.
+        Usa cache para evitar lecturas repetidas del disco.
         
         Args:
             config_path: Ruta al archivo de configuración
+            force_reload: Si True, ignora cache y recarga desde archivo
         
         Returns:
             Diccionario con los parámetros cargados
         """
+        # Check cache first (unless force_reload requested)
+        if not force_reload and config_path in RegimeClassifier._params_cache:
+            return RegimeClassifier._params_cache[config_path]
+        
         config_file = Path(config_path)
         
         if not config_file.exists():
@@ -48,11 +57,23 @@ class RegimeClassifier:
         try:
             with open(config_file, 'r', encoding='utf-8') as f:
                 config = json.load(f)
-                logger.info(f"Parámetros cargados desde {config_path}")
+                logger.debug(f"Parámetros cargados desde {config_path}")
+                
+                # Cache the loaded config
+                RegimeClassifier._params_cache[config_path] = config
                 return config
         except Exception as e:
             logger.error(f"Error cargando configuración desde {config_path}: {e}. Usando valores por defecto.")
             return {}
+    
+    @staticmethod
+    def reload_params():
+        """
+        Invalida cache de parámetros para forzar recarga.
+        Útil cuando dynamic_params.json es modificado por EdgeTuner.
+        """
+        RegimeClassifier._params_cache.clear()
+        logger.info("Parameter cache cleared. Next classifier will reload from file.")
     
     def __init__(self, 
                  adx_period: Optional[int] = None,

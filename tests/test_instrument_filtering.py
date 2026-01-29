@@ -102,6 +102,30 @@ class TestInstrumentManager:
         assert config.category == "FOREX"
         assert config.subcategory == "minors"
     
+    def test_yahoo_finance_symbol_normalization(self):
+        """Test Yahoo Finance symbols with =X suffix are normalized correctly."""
+        manager = InstrumentManager()
+        
+        # Test symbols with =X suffix (Yahoo Finance format)
+        test_cases = [
+            ("EURUSD=X", "FOREX", "majors"),
+            ("AUDUSD=X", "FOREX", "majors"),
+            ("NZDUSD=X", "FOREX", "majors"),
+            ("CADJPY=X", "FOREX", "minors"),
+            ("USDTRY=X", "FOREX", "exotics"),
+        ]
+        
+        for symbol_with_suffix, expected_category, expected_subcategory in test_cases:
+            config = manager.get_config(symbol_with_suffix)
+            assert config is not None, f"Config not found for {symbol_with_suffix}"
+            assert config.category == expected_category, f"{symbol_with_suffix} -> {config.category} != {expected_category}"
+            assert config.subcategory == expected_subcategory, f"{symbol_with_suffix} -> {config.subcategory} != {expected_subcategory}"
+        
+        # Verify cache works for both formats (with and without suffix)
+        config_with_suffix = manager.get_config("EURUSD=X")
+        config_without_suffix = manager.get_config("EURUSD")
+        assert config_with_suffix == config_without_suffix
+    
     def test_is_enabled(self):
         """Test enabled/disabled filtering."""
         manager = InstrumentManager()

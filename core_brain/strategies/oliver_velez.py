@@ -127,10 +127,10 @@ class OliverVelezStrategy(BaseStrategy):
         is_near_sma20 = sma20_dist_pct < self.sma20_proximity_percent
         is_bullish_candle = latest_candle['close'] > latest_candle['open']
 
-        # Debug logs
-        logger.info(f"[{symbol}] OV Strategy Analysis:")
-        logger.info(f"  Prices: Close={latest_candle['close']:.4f}, SMA200={latest_candle[f'sma_{self.sma_long_p}']:.4f}")
-        logger.info(f"  Conditions: Trend={is_bullish_trend}, Elephant={is_elephant_body} ({body_atr_ratio:.2f}), NearSMA20={is_near_sma20} ({sma20_dist_pct:.2f}%)")
+        # Debug logs (use logger.debug to reduce console noise)
+        logger.debug(f"[{symbol}] OV Strategy Analysis:")
+        logger.debug(f"  Prices: Close={latest_candle['close']:.4f}, SMA200={latest_candle[f'sma_{self.sma_long_p}']:.4f}")
+        logger.debug(f"  Conditions: Trend={is_bullish_trend}, Elephant={is_elephant_body} ({body_atr_ratio:.2f}), NearSMA20={is_near_sma20} ({sma20_dist_pct:.2f}%)")
 
         validation_results = {
             "trend_ok": is_bullish_trend and regime == MarketRegime.TREND,
