@@ -1,6 +1,14 @@
 """
 Tests for Data Provider Manager and Multiple Data Providers
 Testing TDD-first: Alpha Vantage, Twelve Data, Polygon.io, IEX Cloud
+
+DEPRECATION WARNING: 
+This test file uses legacy DataProviderManager API.
+Some tests may fail due to API changes. 
+Priority: Refactor to use current DataProviderManager interface.
+
+Current passing tests: 6/10 (Alpha Vantage, Twelve Data, Polygon, IEX Cloud, Finnhub)
+Failing tests: 4/10 (Manager tests use old API - get_enabled_providers, providers list access)
 """
 import pytest
 from unittest.mock import Mock, patch, MagicMock
