@@ -30,6 +30,68 @@ Resumen del roadmap de implementación. Detalle completo en [AETHELGARD_MANIFEST
 
 ---
 
+## 🔧 Fase 2.6: Migración Streamlit - Deprecación `use_container_width` 🔜 PLANIFICADA
+
+**Objetivo:** Actualizar Dashboard UI para eliminar warnings de deprecación de Streamlit.
+
+**Contexto:**
+- Streamlit está deprecando el parámetro `use_container_width` (será eliminado después de 2025-12-31)
+- Nuevo API: `use_container_width=True` → `width='stretch'` | `use_container_width=False` → `width='content'`
+- Afecta componentes: `st.dataframe()` y `st.plotly_chart()`
+
+**Archivos Afectados:**
+- `ui/dashboard.py`: 7 ocurrencias detectadas
+
+**Plan de Migración:**
+
+| # | Ubicación | Línea | Componente | Cambio Requerido |
+|---|-----------|-------|------------|------------------|
+| 1 | dashboard.py | 263 | `st.dataframe(df_open, ...)` | `use_container_width=True` → `width='stretch'` |
+| 2 | dashboard.py | 332 | `st.plotly_chart(fig, ...)` | `use_container_width=True` → `width='stretch'` |
+| 3 | dashboard.py | 344 | `st.plotly_chart(fig_pie, ...)` | `use_container_width=True` → `width='stretch'` |
+| 4 | dashboard.py | 614 | `st.dataframe(df_mt5_positions, ...)` | `use_container_width=True` → `width='stretch'` |
+| 5 | dashboard.py | 1644 | `st.plotly_chart(fig, ...)` | `use_container_width=True` → `width='stretch'` |
+| 6 | dashboard.py | 1676 | `st.dataframe(..., use_container_width=True)` | `use_container_width=True` → `width='stretch'` |
+| 7 | dashboard.py | 1716 | `st.dataframe(..., use_container_width=True)` | `use_container_width=True` → `width='stretch'` |
+
+**Proceso de Implementación:**
+
+1. **Análisis Previo** ✅
+   - Identificar todas las ocurrencias: 7 encontradas
+   - Verificar compatibilidad de versión Streamlit
+   - Documentar ubicaciones exactas
+
+2. **Migración de Código** 🔜
+   - Reemplazar `use_container_width=True` → `width='stretch'`
+   - Reemplazar `use_container_width=False` → `width='content'` (si existe)
+   - Mantener otros parámetros sin cambios
+
+3. **Testing** 🔜
+   - Ejecutar Dashboard localmente
+   - Verificar que tablas y gráficos se muestren correctamente
+   - Confirmar eliminación de warnings en logs
+   - Probar en diferentes resoluciones (ancho variable)
+
+4. **Validación** 🔜
+   - Dashboard arranca sin warnings de deprecación
+   - Componentes visualmente idénticos
+   - Sin errores en consola
+   - Funcionalidad intacta
+
+**Impacto:**
+- ⚠️ Warning eliminado
+- 🎨 Sin cambios visuales para el usuario
+- ✅ Código preparado para Streamlit 2026+
+- 📦 Compatible con versiones actuales (comportamiento idéntico)
+
+**Tiempo Estimado:** 15-20 minutos
+
+**Prioridad:** BAJA (no crítico, tiene 1 año de gracia hasta deprecación final)
+
+**Estado:** ⏸️ Esperando aprobación del usuario
+
+---
+
 ## Fase 1: Infraestructura Base ✅ COMPLETADA
 
 - Servidor FastAPI + WebSockets, RegimeClassifier, Storage, conectores (NT8, MT5, TV), Tuner.
