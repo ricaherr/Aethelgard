@@ -123,6 +123,23 @@ class TestOrderExecutor:
         assert result is True
         mock_mt5_connector.execute_signal.assert_called_once_with(sample_signal)
         mock_risk_manager.is_locked.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_executor_rejects_mt5_success_without_ticket(
+        self, executor, sample_signal, mock_mt5_connector, mock_storage
+    ):
+        """
+        TEST 2.1: MT5 requiere ticket/order_id para marcar EXECUTED.
+        Si no hay ticket, debe rechazarse.
+        """
+        mock_storage.has_open_position.return_value = False
+        mock_storage.has_recent_signal.return_value = False
+        mock_mt5_connector.execute_signal.return_value = {"success": True}
+
+        result = await executor.execute_signal(sample_signal)
+
+        assert result is False
+        assert mock_storage.update_system_state.called
     
     @pytest.mark.asyncio
     async def test_executor_uses_factory_pattern_for_connector_routing(

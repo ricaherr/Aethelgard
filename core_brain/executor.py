@@ -166,6 +166,12 @@ class OrderExecutor:
             if success:
                 # Extract ticket/order_id
                 ticket = result.get('ticket') or result.get('order_id')
+
+                if signal.connector_type == ConnectorType.METATRADER5 and not ticket:
+                    error_msg = "Missing MT5 ticket/order_id"
+                    logger.warning(f"Signal execution failed: {error_msg}")
+                    await self._handle_connector_failure(signal, error_msg)
+                    return False
                 
                 logger.info(
                     f"✅ Signal executed successfully: {signal.symbol} {signal.signal_type}, "

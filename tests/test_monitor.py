@@ -62,6 +62,10 @@ class TestClosingMonitor:
         
         # Update signal to EXECUTED status with ticket
         storage.update_signal_status(signal_id, 'EXECUTED', {'ticket': 123456})
+
+        # Verify order_id persisted in signals table
+        updated = storage.get_signal_by_id(signal_id)
+        assert updated['order_id'] == "123456"
         
         # Configure mock to return a closed position matching our signal
         mock_mt5_connector.get_closed_positions.return_value = [

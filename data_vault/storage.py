@@ -865,12 +865,22 @@ class StorageManager:
                 current_metadata = json.loads(row[0]) if row[0] else {}
                 if metadata_update:
                     current_metadata.update(metadata_update)
+
+                order_id = None
+                if metadata_update:
+                    order_id = metadata_update.get('ticket') or metadata_update.get('order_id')
                 
                 # Update signal
-                cursor.execute(
-                    "UPDATE signals SET status = ?, metadata = ? WHERE id = ?",
-                    (status, json.dumps(current_metadata), signal_id)
-                )
+                if order_id is not None:
+                    cursor.execute(
+                        "UPDATE signals SET status = ?, metadata = ?, order_id = ? WHERE id = ?",
+                        (status, json.dumps(current_metadata), str(order_id), signal_id)
+                    )
+                else:
+                    cursor.execute(
+                        "UPDATE signals SET status = ?, metadata = ? WHERE id = ?",
+                        (status, json.dumps(current_metadata), signal_id)
+                    )
                 conn.commit()
                 
                 logger.debug(f"Signal {signal_id} updated to status: {status}")

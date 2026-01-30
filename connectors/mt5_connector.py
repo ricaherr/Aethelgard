@@ -109,6 +109,16 @@ class MT5Connector:
         except Exception as e:
             logger.error(f"Error loading MT5 config from database: {e}", exc_info=True)
             return {'enabled': False}
+
+    @staticmethod
+    def normalize_symbol(symbol: str) -> str:
+        """
+        Normalize provider symbols to MT5 format.
+
+        Examples:
+            USDJPY=X -> USDJPY
+        """
+        return symbol.replace("=X", "") if symbol else symbol
     
     def connect(self) -> bool:
         """
@@ -209,7 +219,9 @@ class MT5Connector:
             return {'success': False, 'error': 'Not a demo account'}
         
         try:
-            symbol = signal.symbol
+            symbol = self.normalize_symbol(signal.symbol)
+            if symbol != signal.symbol:
+                logger.info(f"Normalized symbol for MT5: {signal.symbol} -> {symbol}")
             
             # Prepare order request
             order_type = mt5.ORDER_TYPE_BUY if signal.signal_type == SignalType.BUY else mt5.ORDER_TYPE_SELL
