@@ -78,8 +78,10 @@ def launch_dashboard():
             threading.Timer(1.0, lambda: webbrowser.open('http://localhost:8503')).start()
         else:
             # Si el proceso terminó, capturar error
-            stderr = streamlit_process.stderr.read().decode()
-            logger.warning(f"⚠️  Dashboard no pudo iniciarse correctamente: {stderr}")
+            stderr = None
+            if streamlit_process.stderr:
+                stderr = streamlit_process.stderr.read().decode()
+            logger.warning(f"⚠️  Dashboard no pudo iniciarse correctamente: {stderr if stderr else 'Sin información de error disponible.'}")
             
     except Exception as e:
         logger.error(f"❌ Error al iniciar dashboard: {e}")

@@ -256,11 +256,29 @@ def main():
                     "SL": t.get('stop_loss'),
                     "TP": t.get('take_profit'),
                     "Score": f"{meta.get('score', 0):.1f}",
-                    "Tiempo": t.get('timestamp', '').split('T')[-1][:5]
+                    "Tiempo": t.get('timestamp', '').split('T')[-1][:5],
+                    "Ejecución": meta.get('execution_observation', '')
                 })
             
             df_open = pd.DataFrame(trade_data)
-            st.dataframe(df_open, width='stretch', hide_index=True)
+            # Resaltado visual en la columna de ejecución
+            def color_ejecucion(val):
+                if not isinstance(val, str):
+                    return ''
+                val_lower = val.lower()
+                if any(x in val_lower for x in ["éxito", "ejecutada correctamente", "success", "completada"]):
+                    return 'background-color: #d4edda; color: #155724; font-weight: bold;'
+                elif any(x in val_lower for x in ["advertencia", "warning", "parcial", "atención"]):
+                    return 'background-color: #fff3cd; color: #856404; font-weight: bold;'
+                elif val:
+                    return 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
+                return ''
+
+            if 'Ejecución' in df_open.columns:
+                styled_df = df_open.style.applymap(color_ejecucion, subset=['Ejecución'])
+                st.dataframe(styled_df, width='stretch', hide_index=True)
+            else:
+                st.dataframe(df_open, width='stretch', hide_index=True)
             
             # Action buttons for first few trades
             for t in open_trades[:3]:
@@ -308,6 +326,16 @@ def main():
                         st.info(f"SL: {t['stop_loss']}")
                     with c3:
                         st.info(f"TP: {t['take_profit']}")
+                    # Mostrar observación de ejecución con semáforo visual
+                    execution_obs = meta.get('execution_observation')
+                    if execution_obs:
+                        obs_lower = execution_obs.lower()
+                        if any(x in obs_lower for x in ["éxito", "ejecutada correctamente", "success", "completada"]):
+                            st.success(f"🟢 Observación de ejecución: {execution_obs}")
+                        elif any(x in obs_lower for x in ["advertencia", "warning", "parcial", "atención"]):
+                            st.warning(f"🟡 Observación de ejecución: {execution_obs}")
+                        else:
+                            st.error(f"🔴 Observación de ejecución: {execution_obs}")
         else:
             st.info("No hay operaciones abierta en este momento.")
 
@@ -1279,6 +1307,16 @@ def main():
                                 st.write(f"Cerca de SMA20: `{'✅' if metadata.get('near_sma20') else '❌'}`")
                                 st.write(f"Confidence: `{signal.get('confidence', 0):.2%}`")
                                 st.write(f"Strategy: `{metadata.get('strategy_id', 'N/A')}`")
+                            # Mostrar observación de ejecución con semáforo visual
+                            execution_obs = metadata.get('execution_observation')
+                            if execution_obs:
+                                obs_lower = execution_obs.lower()
+                                if any(x in obs_lower for x in ["éxito", "ejecutada correctamente", "success", "completada"]):
+                                    st.success(f"🟢 Observación de ejecución: {execution_obs}")
+                                elif any(x in obs_lower for x in ["advertencia", "warning", "parcial", "atención"]):
+                                    st.warning(f"🟡 Observación de ejecución: {execution_obs}")
+                                else:
+                                    st.error(f"🔴 Observación de ejecución: {execution_obs}")
                             
                             # Mostrar metadata completa en JSON
                             if st.checkbox(f"Ver JSON completo (señal #{len(filtered_signals) - idx})", key=f"json_{signal.get('id', idx)}"):

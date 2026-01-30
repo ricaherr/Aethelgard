@@ -47,6 +47,44 @@ def sample_dataframe():
     })
 
 
+def test_generic_provider_fallback_on_history_error(monkeypatch, sample_dataframe):
+    from connectors import generic_data_provider as gdp
+
+    class FakeTicker:
+        def history(self, period: str, interval: str):
+            raise TypeError("NoneType object is not subscriptable")
+
+    class FakeYF:
+        def Ticker(self, symbol: str):
+            return FakeTicker()
+
+        def download(
+            self,
+            symbol: str,
+            period: str,
+            interval: str,
+            progress: bool = False,
+            auto_adjust: bool = False,
+            threads: bool = False,
+            group_by: str = 'column',
+        ):
+            df = sample_dataframe.copy()
+            df = df.set_index('time')
+            df.index.name = 'Datetime'
+            df = df.rename(columns={'volume': 'Volume'})
+            df = pd.concat([df, df[['Volume']]], axis=1)
+            return df
+
+    monkeypatch.setattr(gdp, 'yf', FakeYF())
+
+    provider = gdp.GenericDataProvider()
+    result = provider.fetch_ohlc("EURUSD", "M5", 100)
+
+    assert result is not None
+    assert len(result) == 100
+    assert 'time' in result.columns
+
+
 class TestDataProviderManager:
     """Test Data Provider Manager"""
     

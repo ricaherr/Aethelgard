@@ -4,6 +4,7 @@ Utiliza Yahoo Finance (yfinance) para obtener datos OHLC sin requerir MT5
 100% autónomo, sin instalaciones externas más allá de pip
 """
 import logging
+import threading
 from typing import Optional
 import pandas as pd
 
@@ -13,6 +14,7 @@ except ImportError:
     yf = None
 
 logger = logging.getLogger(__name__)
+YFINANCE_LOCK = threading.Lock()
 
 
 class GenericDataProvider:
@@ -182,10 +184,42 @@ class GenericDataProvider:
                 f"Período: {period}"
             )
             
-            # Descargar datos
-            ticker = yf.Ticker(yf_symbol)
-            df = ticker.history(period=period, interval=yf_interval)
-            
+            # Descargar datos (history con fallback a download)
+            df = None
+            try:
+                with YFINANCE_LOCK:
+                    ticker = yf.Ticker(yf_symbol)
+                    df = ticker.history(
+                        period=period,
+                        interval=yf_interval,
+                        auto_adjust=False,
+                        actions=False,
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"history() falló para {symbol} ({yf_symbol}): {e}. "
+                    "Intentando yf.download()"
+                )
+
+            if df is None or df.empty:
+                try:
+                    with YFINANCE_LOCK:
+                        df = yf.download(
+                            yf_symbol,
+                            period=period,
+                            interval=yf_interval,
+                            progress=False,
+                            auto_adjust=False,
+                            group_by='column',
+                            threads=False,
+                        )
+                except Exception as e:
+                    logger.error(
+                        f"Error descargando datos para {symbol} ({yf_symbol}): {e}",
+                        exc_info=True,
+                    )
+                    return None
+
             if df is None or df.empty:
                 logger.warning(f"No se obtuvieron datos para {symbol}")
                 return None
@@ -199,6 +233,9 @@ class GenericDataProvider:
             df = df.reset_index()
             # Asegurar que columns.str existe y funciona
             df.columns = [str(col).lower() for col in df.columns]
+            # Remover columnas duplicadas (puede ocurrir con yfinance)
+            if df.columns.duplicated().any():
+                df = df.loc[:, ~df.columns.duplicated()]
             
             # Mapear nombres de columnas
             column_mapping = {
@@ -212,7 +249,16 @@ class GenericDataProvider:
             
             # Verificar si existe volume antes de subscriptar
             if 'volume' in df.columns:
-                df['tick_volume'] = df['volume']
+                volume_cols = [col for col in df.columns if str(col).lower().startswith('volume')]
+                if volume_cols:
+                    volume_data = df[volume_cols]
+                else:
+                    volume_data = df['volume']
+
+                if isinstance(volume_data, pd.DataFrame):
+                    volume_data = volume_data.iloc[:, 0]
+
+                df['tick_volume'] = volume_data
             else:
                 df['tick_volume'] = 0
             

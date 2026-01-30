@@ -267,7 +267,7 @@ await orchestrator.run()  # Inicia el loop resiliente
 ##### `generic_data_provider.py` - Proveedor de Datos Genérico (Yahoo Finance)
 - **Lenguaje**: Python
 - **Función**: Obtener datos OHLC de Yahoo Finance mediante `yfinance`
-- **Robustez**: Manejo automático de MultiIndex y validación de integridad de columnas.
+- **Robustez**: Bloqueo de concurrencia para llamadas a `yfinance`, manejo de MultiIndex, columnas duplicadas y fallback controlado.
 - **Ventajas**: 100% gratuito, sin API key, totalmente autónomo.
 - **Soporta**: Stocks, Forex, Crypto, Commodities, Índices
 - **Interface**: `fetch_ohlc(symbol, timeframe, count)` → `DataFrame` con OHLC
@@ -387,9 +387,26 @@ manager.configure_provider("alphavantage", api_key="YOUR_KEY_HERE")
 
 ---
 
+
 ## 🤖 Reglas de Autonomía
 
+
 ### 1. Auto-Calibración
+### 5. Desarrollo Guiado por Pruebas (TDD)
+
+**Principio**: Ningún cambio de código debe implementarse sin antes crear o actualizar un test que lo valide.
+
+#### Proceso Obligatorio
+
+1. **Primero el Test**: Antes de modificar o agregar cualquier funcionalidad, se debe crear o actualizar el test correspondiente en la carpeta `tests/`.
+2. **Ejecución de Tests**: Ejecutar la suite completa de tests (`pytest`) y verificar que el nuevo test falle (red).
+3. **Implementación Mínima**: Escribir el código mínimo necesario para que el test pase.
+4. **Validación**: Ejecutar nuevamente todos los tests y asegurar que todos pasen (green).
+5. **Refactorización**: Mejorar el código si es necesario, manteniendo los tests en verde.
+6. **Documentación**: Actualizar este manifiesto y el ROADMAP.md con cada nueva regla, funcionalidad o cambio relevante.
+7. **Commit Único**: Solo se permite hacer commit cuando todos los tests pasan y la documentación está actualizada.
+
+**Regla de Oro**: Ningún cambio se considera terminado ni puede ser integrado al sistema si no sigue este flujo. El incumplimiento de TDD es considerado un bug crítico de proceso.
 
 **Principio**: Ningún parámetro numérico debe considerarse estático.
 
@@ -806,10 +823,13 @@ def activate_strategy(regime: MarketRegime, symbol: str):
   
 - **Workflow**:
   1. El monitor detecta señales con estado `EXECUTED` en la DB
-  2. Consulta a los conectores (`MT5Bridge.get_closed_positions()`) por órdenes cerradas
+  2. Consulta a los conectores (`get_closed_positions()`) por órdenes cerradas
   3. Empareja órdenes cerradas con señales mediante ticket o signal_id
   4. Calcula PIPs, profit real, duración y resultado (win/loss)
   5. Actualiza señal a estado `CLOSED` y registra resultado en tabla `trades`
+
+**Nota de Integración**:
+- `PaperConnector` implementa `get_closed_positions()` y retorna lista vacía para evitar errores en ClosingMonitor.
 
 ##### Extensiones de StorageManager (`data_vault/storage.py`)
 

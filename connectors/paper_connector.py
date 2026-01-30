@@ -41,6 +41,10 @@ class PaperConnector:
             "timestamp": datetime.now().isoformat(),
             "message": f"Signal executed successfully in paper mode (Ticket: {ticket})"
         }
+
+    def get_closed_positions(self, hours: int = 24) -> list[dict]:
+        """Return empty list for paper mode (no real closed positions)."""
+        return []
         
     def close_connections(self):
         """Cleanup"""

@@ -2,7 +2,7 @@ INFO:data_vault.storage:Checking database schema at data_vault/aethelgard.db...
 INFO:data_vault.storage:Database schema verified/initialized successfully.
 INFO:data_vault.storage:Checking database schema at data_vault/aethelgard.db...
 INFO:data_vault.storage:Database schema verified/initialized successfully.
-INFO:core_brain.module_manager:Configuración de módulos cargada desde config\modules.json
+INFO:core_brain.module_manager:Configuraciï¿½n de mï¿½dulos cargada desde config\modules.json
 INFO:data_vault.storage:Checking database schema at data_vault/aethelgard.db...
 INFO:data_vault.storage:Database schema verified/initialized successfully.
 INFO:core_brain.data_provider_manager:Loaded 6 providers from database
@@ -37,6 +37,26 @@ INFO:connectors.mt5_connector:   Balance: 999.80 USD
 INFO:connectors.mt5_connector:   Type: DEMO
 INFO:connectors.mt5_connector:============================================================
 INFO:connectors.mt5_connector:MT5 disconnected
+
+2026-01-30 00:12:00 Captured failures from live monitoring:
+WARNING:core_brain.monitor:Signal Close not found
+
+2026-01-30 00:00:00 Captured failures from live monitoring:
+ERROR:connectors.generic_data_provider:Error obteniendo datos para EURUSD=X: 'NoneType' object is not subscriptable (yfinance history)
+ERROR:connectors.generic_data_provider:Error obteniendo datos para GBPUSD=X: 'NoneType' object is not subscriptable (yfinance history)
+ERROR:core_brain.monitor:Error checking ConnectorType.PAPER: 'PaperConnector' object has no attribute 'get_closed_positions'
+
+2026-01-30 00:02:00 Captured failures from live monitoring:
+ERROR:core_brain.monitor:Error checking ConnectorType.PAPER: 'PaperConnector' object has no attribute 'get_closed_positions'
+WARNING:core_brain.monitor:Signal Close not found
+
+2026-01-30 00:05:00 Captured failures from live monitoring:
+ERROR:connectors.generic_data_provider:Cannot set a DataFrame with multiple columns to the single column tick_volume (yfinance columns duplication)
+
+2026-01-30 00:07:00 Captured failures from live monitoring:
+ERROR:connectors.generic_data_provider:yfinance download error (dictionary changed size during iteration)
+ERROR:connectors.generic_data_provider:yfinance download error (Cannot join tz-naive with tz-aware DatetimeIndex)
+ERROR:connectors.generic_data_provider:Cannot set a DataFrame with multiple columns to the single column tick_volume (still observed before lock)
 INFO:data_vault.storage:Checking database schema at data_vault/aethelgard.db...
 INFO:data_vault.storage:Database schema verified/initialized successfully.
 INFO:data_vault.storage:Checking database schema at data_vault/aethelgard.db...

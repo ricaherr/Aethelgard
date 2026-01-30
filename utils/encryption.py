@@ -39,10 +39,14 @@ class CredentialEncryption:
         """Encrypt a credential value"""
         if not isinstance(value, str):
             value = str(value)
+        if self._cipher is None:
+            raise RuntimeError("Cipher not initialized: encryption key missing or failed to load.")
         return self._cipher.encrypt(value.encode('utf-8'))
     
     def decrypt(self, encrypted_value: bytes) -> str:
         """Decrypt a credential value"""
+        if self._cipher is None:
+            raise RuntimeError("Cipher not initialized: encryption key missing or failed to load.")
         return self._cipher.decrypt(encrypted_value).decode('utf-8')
     
     def rotate_key(self, new_key_path: Optional[str] = None):

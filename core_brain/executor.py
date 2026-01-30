@@ -176,6 +176,7 @@ class OrderExecutor:
             # Verify execution success (support both formats)
             success = result.get('success', False) or result.get("status") == "success"
             
+
             if success:
                 # Extract ticket/order_id
                 ticket = result.get('ticket') or result.get('order_id')
@@ -183,30 +184,43 @@ class OrderExecutor:
                 if signal.connector_type == ConnectorType.METATRADER5 and not ticket:
                     error_msg = "Missing MT5 ticket/order_id"
                     logger.warning(f"Signal execution failed: {error_msg}")
+                    # Registrar motivo de fallo en la señal
+                    if hasattr(signal, 'metadata') and isinstance(signal.metadata, dict):
+                        signal.metadata['execution_observation'] = error_msg
                     await self._handle_connector_failure(signal, error_msg)
                     return False
-                
+
                 logger.info(
                     f"✅ Signal executed successfully: {signal.symbol} {signal.signal_type}, "
                     f"Ticket={ticket}"
                 )
+                # Registrar observación de éxito
+                if hasattr(signal, 'metadata') and isinstance(signal.metadata, dict):
+                    signal.metadata['execution_observation'] = f"Executed successfully. Ticket={ticket}"
                 self._register_successful_signal(signal, result)
                 return True
             else:
                 error_msg = result.get('error', 'Unknown error')
                 logger.warning(f"Signal execution failed: {error_msg}")
+                # Registrar motivo de fallo en la señal
+                if hasattr(signal, 'metadata') and isinstance(signal.metadata, dict):
+                    signal.metadata['execution_observation'] = f"Execution failed: {error_msg}"
                 await self._handle_connector_failure(signal, f"Execution failed: {error_msg}")
                 return False
                 
         except ConnectionError as e:
             # Step 5: Handle connection failures
             logger.error(f"Connection error executing signal: {e}")
+            if hasattr(signal, 'metadata') and isinstance(signal.metadata, dict):
+                signal.metadata['execution_observation'] = f"Connection error: {str(e)}"
             await self._handle_connector_failure(signal, f"Connection error: {str(e)}")
             return False
-            
+        
         except Exception as e:
             # Step 6: Handle unexpected errors
             logger.error(f"Unexpected error executing signal: {e}", exc_info=True)
+            if hasattr(signal, 'metadata') and isinstance(signal.metadata, dict):
+                signal.metadata['execution_observation'] = f"Unexpected error: {str(e)}"
             await self._handle_connector_failure(signal, f"Unexpected error: {str(e)}")
             return False
     

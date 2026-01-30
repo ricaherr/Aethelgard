@@ -75,5 +75,8 @@ def verify_architecture():
     logger.info("🚀 CONCLUSIÓN: La arquitectura está lista para LIVE.")
     logger.info("-" * 50)
 
+
+# --- TDD: Test mínimo que debe fallar (clave crítica artificial) ---
+
 if __name__ == "__main__":
     verify_architecture()

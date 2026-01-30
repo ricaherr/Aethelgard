@@ -26,6 +26,30 @@
 
 ---
 
+## 🧯 Hotfix: Monitoreo continuo y resiliencia de datos (2026-01-30) ✅ COMPLETADA
+
+**Objetivo:** Reducir fallos de datos en Yahoo Finance y eliminar errores en el monitor de cierres en modo paper.
+
+**Plan de Trabajo (hoy):**
+
+1. **Registrar fallos de monitoreo** ✅
+  - Guardar errores capturados en `dashboard_errors.txt`.
+
+2. **PaperConnector: soporte de cierres** ✅
+  - Implementar `get_closed_positions()` para evitar error en ClosingMonitor.
+
+3. **GenericDataProvider: fallback robusto** ✅
+  - Reintentar con `yf.download()` cuando `history()` falla.
+
+4. **Tests de cobertura** ✅
+  - Test de fallback en Yahoo Finance.
+  - Test de `get_closed_positions()` en PaperConnector.
+
+5. **Validación de tests** ✅
+  - Tests nuevos ejecutados: **2 passed** (PaperConnector + fallback Yahoo).
+
+---
+
 Resumen del roadmap de implementación. Detalle completo en [AETHELGARD_MANIFESTO.md](AETHELGARD_MANIFESTO.md#roadmap-de-implementación).
 
 ---
@@ -76,7 +100,6 @@ Resumen del roadmap de implementación. Detalle completo en [AETHELGARD_MANIFEST
 - Dashboard y utilidades MT5 guardan configuración exclusivamente en DB.
 - Diagnóstico MT5 compara contra DB, no archivos locales.
 
-**Resultado:**
 - ✅ No existe dependencia de archivos locales para MT5.
 - ✅ Configuración y credenciales centralizadas en DB.
 
@@ -115,9 +138,7 @@ Resumen del roadmap de implementación. Detalle completo en [AETHELGARD_MANIFEST
 - Streamlit está deprecando el parámetro `use_container_width` (será eliminado después de 2025-12-31)
 - Nuevo API: `use_container_width=True` → `width='stretch'` | `use_container_width=False` → `width='content'`
 - Afecta componentes: `st.dataframe()` y `st.plotly_chart()`
-
 **Archivos Afectados:**
-- `ui/dashboard.py`: 7 ocurrencias detectadas
 
 **Cambios Aplicados:**
 
