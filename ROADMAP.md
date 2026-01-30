@@ -51,13 +51,18 @@ Resumen del roadmap de implementación. Detalle completo en [AETHELGARD_MANIFEST
   - Resumen de resultados y cualquier bloqueo.
 
 **Evidencia técnica (2026-01-30):**
-- ✅ Suite de tests ejecutada completa: **148/148 PASSED**.
-- ✅ Sistema iniciado y monitoreo activo.
+- ✅ Suite de tests ejecutada completa: **151/151 PASSED**.
+- ✅ Normalización MT5 aplicada en conector.
+- ✅ Validación de ticket MT5 obligatoria antes de `EXECUTED`.
 
 **Criterios de Éxito:**
 - Conexión MT5 demo exitosa.
 - Orden BUY ejecutada y cerrada correctamente.
 - Resultado registrado en DB sin errores.
+
+**Ajustes técnicos en curso (2026-01-30):**
+- Normalización de símbolos para MT5 (ej. `USDJPY=X` → `USDJPY`).
+- Validación estricta de `ticket/order_id` antes de marcar `EXECUTED`.
 
 ---
 
@@ -74,6 +79,33 @@ Resumen del roadmap de implementación. Detalle completo en [AETHELGARD_MANIFEST
 **Resultado:**
 - ✅ No existe dependencia de archivos locales para MT5.
 - ✅ Configuración y credenciales centralizadas en DB.
+
+---
+
+## 🛡️ Fase 2.9: Monitor de Coherencia End-to-End (EDGE) ⏳ EN PROGRESO
+
+**Objetivo:** Auto-monitoreo inteligente de consistencia entre Scanner → Señal → Estrategia → Ejecución → Ticket.
+
+**Alcance:**
+- Detectar cuando hay condiciones de mercado pero no se genera señal.
+- Detectar cuando hay señal pero no se ejecuta (o no hay ticket).
+- Detectar cuando la estrategia válida no coincide con ejecución.
+
+**Plan de Trabajo:**
+1. **Definir eventos y métricas** (Scanner, SignalFactory, Executor, MT5Connector).
+2. **Registro de trazabilidad** (por símbolo/timeframe/estrategia) en DB.
+3. **Reglas de coherencia** (mismatch detector con razones exactas).
+4. **Panel de diagnóstico** en Dashboard (lista de inconsistencias y causa).
+5. **Alertas** (Telegram opcional) cuando se exceda umbral.
+
+**Estado Actual:**
+- ✅ CoherenceMonitor implementado (DB-first).
+- ✅ Tabla `coherence_events` creada.
+- ✅ Reglas: símbolo no normalizado, `EXECUTED` sin ticket, `PENDING` con timeout.
+- ✅ Integración en orquestador por ciclo.
+
+**Evidencia técnica (2026-01-30):**
+- ✅ Suite de tests ejecutada completa: **153/153 PASSED**.
 
 ## 🔧 Fase 2.6: Migración Streamlit - Deprecación `use_container_width` ✅ COMPLETADA
 

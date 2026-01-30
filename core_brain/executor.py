@@ -45,6 +45,7 @@ class OrderExecutor:
         self.storage = storage or StorageManager()
         self.notificator = notificator
         self.connectors = connectors or {}
+        self.persists_signals = True
         
         # Auto-detect and load MT5Connector if configured
         # This maintains agnosticism: core doesn't depend on MT5, but uses it if available
@@ -100,6 +101,18 @@ class OrderExecutor:
         Returns:
             True if signal was executed successfully, False otherwise
         """
+        # Normalize symbol for MT5 execution (provider -> MT5 format)
+        if signal.connector_type == ConnectorType.METATRADER5:
+            try:
+                from connectors.mt5_connector import MT5Connector
+                normalized = MT5Connector.normalize_symbol(signal.symbol)
+                if normalized != signal.symbol:
+                    if hasattr(signal, 'metadata') and isinstance(signal.metadata, dict):
+                        signal.metadata.setdefault("symbol_normalized_from", signal.symbol)
+                    signal.symbol = normalized
+            except Exception as e:
+                logger.warning(f"Symbol normalization failed: {e}")
+
         # Step 1: Validate signal data
         if not self._validate_signal(signal):
             logger.warning(f"Invalid signal rejected: {signal.symbol}")

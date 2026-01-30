@@ -40,6 +40,7 @@ sys.path.append(str(BASE_DIR))
 
 from models.signal import MarketRegime, Signal
 from data_vault.storage import StorageManager
+from core_brain.coherence_monitor import CoherenceMonitor
 
 logger = logging.getLogger(__name__)
 
@@ -189,6 +190,9 @@ class MainOrchestrator:
         
         # Active signals tracking (for adaptive heartbeat)
         self._active_signals: List[Signal] = []
+
+        # Coherence monitor
+        self.coherence_monitor = CoherenceMonitor(storage=self.storage)
         
         # Loop intervals by regime (seconds)
         orchestrator_config = self.config.get("orchestrator", {})
@@ -342,11 +346,11 @@ class MainOrchestrator:
                     success = await self.executor.execute_signal(signal)
                     
                     if success:
-                        # PERSIST TO DB - Critical for recovery
-                        signal_id = self.storage.save_signal(signal)
-                        logger.info(
-                            f"Signal executed and persisted: {signal.symbol} (ID: {signal_id})"
-                        )
+                        if not getattr(self.executor, "persists_signals", False):
+                            signal_id = self.storage.save_signal(signal)
+                            logger.info(
+                                f"Signal executed and persisted: {signal.symbol} (ID: {signal_id})"
+                            )
                         self.stats.signals_executed += 1
                     else:
                         logger.warning(f"Signal execution failed: {signal.symbol}")
@@ -359,6 +363,10 @@ class MainOrchestrator:
             self._active_signals.clear()
             self.stats.cycles_completed += 1
             self._persist_session_stats()
+            # Coherence monitoring
+            coherence_events = self.coherence_monitor.run_once()
+            if coherence_events:
+                logger.warning(f"Coherence inconsistencies detected: {len(coherence_events)}")
             logger.info(f"Cycle completed. Stats: {self.stats}")
             
         except Exception as e:

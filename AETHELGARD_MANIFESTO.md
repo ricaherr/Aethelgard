@@ -492,6 +492,13 @@ La arquitectura ha sido **100% unificada** para garantizar que TODOS los compone
   # Toda la configuración vive en DB
   ```
 
+- **CoherenceMonitor (EDGE)**:
+  ```python
+  # Auditoría end-to-end: Scanner -> Señal -> Estrategia -> Ejecución -> Ticket
+  # Registra inconsistencias en tabla coherence_events
+  # Reglas: símbolo no normalizado, EXECUTED sin ticket, PENDING con timeout
+  ```
+
 - **HealthManager**:
   ```python
   def check_mt5_connection(self):
@@ -513,6 +520,8 @@ La arquitectura ha sido **100% unificada** para garantizar que TODOS los compone
 - ✅ **Credenciales Encriptadas**: Passwords protegidos con Fernet
 - ✅ **Mensajes Mejorados**: Errores con pasos paso-a-paso para solucionar
 - ✅ **AutoTrading Detection**: Sistema detecta si AutoTrading está habilitado
+- ✅ **Normalización de Símbolos MT5**: `USDJPY=X` → `USDJPY`
+- ✅ **Ejecución con Ticket Obligatorio**: No se marca `EXECUTED` sin `order_id`
 
 **3. Reconstrucción de Estado (Crash Recovery)**
 ```python

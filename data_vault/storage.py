@@ -174,6 +174,20 @@ class StorageManager:
                     swap REAL
                 )
             ''')
+
+            # Tabla de Coherencia (monitor end-to-end)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS coherence_events (
+                    id TEXT PRIMARY KEY,
+                    signal_id TEXT,
+                    symbol TEXT,
+                    stage TEXT,
+                    status TEXT,
+                    reason TEXT,
+                    connector_type TEXT,
+                    created_at TEXT
+                )
+            ''')
             
             # Tabla Key-Value para estado del sistema (SessionStats, Lockdown, etc)
             cursor.execute('''
@@ -732,6 +746,92 @@ class StorageManager:
         except Exception as e:
             logger.error(f"Error getting signal by id {signal_id}: {e}")
             return None
+
+    def get_recent_signals(self, minutes: int = 120) -> List[Dict]:
+        """
+        Get recent signals for coherence monitoring.
+        """
+        try:
+            from datetime import datetime, timedelta
+            cutoff_time = (datetime.now() - timedelta(minutes=minutes)).isoformat()
+            with self._get_conn() as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT id, symbol, status, connector_type, order_id, timestamp
+                    FROM signals
+                    WHERE timestamp >= ?
+                    ORDER BY timestamp DESC
+                    """,
+                    (cutoff_time,)
+                )
+                rows = cursor.fetchall()
+                return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"Error getting recent signals: {e}")
+            return []
+
+    def log_coherence_event(
+        self,
+        signal_id: Optional[str],
+        symbol: str,
+        stage: str,
+        status: str,
+        reason: str,
+        connector_type: Optional[str] = None
+    ) -> str:
+        """
+        Log a coherence event for auditing.
+        """
+        event_id = str(uuid.uuid4())
+        try:
+            with self._get_conn() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    INSERT INTO coherence_events (
+                        id, signal_id, symbol, stage, status, reason, connector_type, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        event_id,
+                        signal_id,
+                        symbol,
+                        stage,
+                        status,
+                        reason,
+                        connector_type,
+                        datetime.now().isoformat()
+                    )
+                )
+                conn.commit()
+                return event_id
+        except Exception as e:
+            logger.error(f"Error logging coherence event: {e}")
+            return event_id
+
+    def get_recent_coherence_events(self, limit: int = 100) -> List[Dict]:
+        """
+        Get recent coherence events.
+        """
+        try:
+            with self._get_conn() as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT * FROM coherence_events
+                    ORDER BY created_at DESC
+                    LIMIT ?
+                    """,
+                    (limit,)
+                )
+                rows = cursor.fetchall()
+                return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"Error getting coherence events: {e}")
+            return []
 
     def get_open_operations(self) -> List[Dict]:
         """
