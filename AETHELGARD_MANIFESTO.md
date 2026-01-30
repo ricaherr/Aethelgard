@@ -540,6 +540,52 @@ La arquitectura ha sido **100% unificada** para garantizar que TODOS los compone
 - ✅ **Normalización de Símbolos MT5**: `USDJPY=X` → `USDJPY`
 - ✅ **Ejecución con Ticket Obligatorio**: No se marca `EXECUTED` sin `order_id`
 
+---
+
+## 🟢 Provisión EDGE de cuentas demo maestras y brokers (2026-01-30) ✅ COMPLETADA
+
+**Resumen Ejecutivo:**
+Se completó la provisión autónoma y óptima de cuentas demo maestras en brokers disponibles. El sistema detecta y crea cuentas demo solo cuando es necesario, evitando duplicados y asegurando resiliencia. Todo el estado y credenciales se gestionan exclusivamente en la base de datos, cumpliendo el principio de Single Source of Truth. El dashboard y los logs reflejan el estado actualizado y la lógica EDGE. Ver detalles y criterios en el [ROADMAP.md](ROADMAP.md).
+
+**Reglas de Autonomía aplicadas:**
+- Provisión solo cuando es óptimo (no redundante)
+- Clasificación automática de brokers (auto/manual)
+- Persistencia y validación en DB
+- Visibilidad en dashboard y logs
+
+**Referencias:**
+- [ROADMAP.md](ROADMAP.md#fase-27-provision-edge-de-cuentas-demo-maestras-y-brokers)
+- [Reglas de Autonomía](#reglas-de-autonomía)
+
+---
+
+## 🛡️ Fase 2.9: Monitor de Coherencia End-to-End (EDGE) ⏳ EN PROGRESO
+
+**Objetivo:** Auto-monitoreo inteligente de consistencia entre Scanner → Señal → Estrategia → Ejecución → Ticket.
+
+**Alcance:**
+- Detectar cuando hay condiciones de mercado pero no se genera señal.
+- Detectar cuando hay señal pero no se ejecuta (o no hay ticket).
+- Detectar cuando la estrategia válida no coincide con ejecución.
+
+**Plan de Trabajo (2026-01-30):**
+1. Definir eventos y métricas de coherencia (Scanner, SignalFactory, Executor, MT5Connector).
+2. Diseñar y crear tabla `coherence_events` en DB para trazabilidad por símbolo/timeframe/estrategia.
+3. Implementar reglas de coherencia (mismatch detector con razones exactas y tipo de incoherencia).
+4. Integrar registro de eventos en el ciclo del orquestador.
+5. Exponer estado y eventos en el dashboard UI.
+6. Crear tests de cobertura para casos de incoherencia y recuperación.
+7. Documentar criterios y resultados en el MANIFESTO.
+
+**Checklist de tareas:**
+- [ ] Definición de eventos y métricas
+- [ ] Diseño y migración de DB (tabla coherence_events)
+- [ ] Implementación de reglas de coherencia
+- [ ] Integración en orquestador
+- [ ] Visualización en dashboard
+- [ ] Tests de cobertura
+- [ ] Documentación actualizada
+
 **3. Reconstrucción de Estado (Crash Recovery)**
 ```python
 # Al inicializar SessionStats, reconstruir desde DB

@@ -175,15 +175,19 @@ class StorageManager:
                 )
             ''')
 
-            # Tabla de Coherencia (monitor end-to-end)
+            # Tabla de Coherencia (monitor end-to-end, trazabilidad avanzada)
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS coherence_events (
                     id TEXT PRIMARY KEY,
                     signal_id TEXT,
                     symbol TEXT,
+                    timeframe TEXT,
+                    strategy TEXT,
                     stage TEXT,
                     status TEXT,
+                    incoherence_type TEXT,
                     reason TEXT,
+                    details TEXT,
                     connector_type TEXT,
                     created_at TEXT
                 )
@@ -776,13 +780,17 @@ class StorageManager:
         self,
         signal_id: Optional[str],
         symbol: str,
-        stage: str,
-        status: str,
-        reason: str,
+        timeframe: Optional[str] = None,
+        strategy: Optional[str] = None,
+        stage: str = "",
+        status: str = "",
+        incoherence_type: Optional[str] = None,
+        reason: str = "",
+        details: Optional[str] = None,
         connector_type: Optional[str] = None
     ) -> str:
         """
-        Log a coherence event for auditing.
+        Log a coherence event for auditing (trazabilidad avanzada).
         """
         event_id = str(uuid.uuid4())
         try:
@@ -791,16 +799,20 @@ class StorageManager:
                 cursor.execute(
                     """
                     INSERT INTO coherence_events (
-                        id, signal_id, symbol, stage, status, reason, connector_type, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        id, signal_id, symbol, timeframe, strategy, stage, status, incoherence_type, reason, details, connector_type, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         event_id,
                         signal_id,
                         symbol,
+                        timeframe,
+                        strategy,
                         stage,
                         status,
+                        incoherence_type,
                         reason,
+                        details,
                         connector_type,
                         datetime.now().isoformat()
                     )

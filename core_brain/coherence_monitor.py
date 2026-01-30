@@ -110,7 +110,11 @@ class CoherenceMonitor:
         stage: str,
         status: str,
         reason: str,
-        connector_type: Optional[str]
+        connector_type: Optional[str],
+        timeframe: Optional[str] = None,
+        strategy: Optional[str] = None,
+        incoherence_type: Optional[str] = None,
+        details: Optional[str] = None
     ) -> CoherenceEvent:
         event = CoherenceEvent(
             signal_id=signal_id,
@@ -125,9 +129,13 @@ class CoherenceMonitor:
             self.storage.log_coherence_event(
                 signal_id=signal_id,
                 symbol=symbol,
+                timeframe=timeframe,
+                strategy=strategy,
                 stage=stage,
                 status=status,
+                incoherence_type=incoherence_type,
                 reason=reason,
+                details=details,
                 connector_type=connector_type
             )
         except Exception as e:

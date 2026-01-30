@@ -130,6 +130,32 @@ class SessionStats:
 
 
 class MainOrchestrator:
+    async def ensure_optimal_demo_accounts(self):
+        """
+        Provisiona cuentas demo maestras solo cuando sea óptimo:
+        - Al inicio si no existe cuenta válida
+        - Si falla la conexión o expira la cuenta
+        - Cuando el usuario activa modo DEMO y no hay cuenta
+        """
+        from connectors.auto_provisioning import BrokerProvisioner
+        provisioner = BrokerProvisioner(storage=self.storage)
+        for broker_id, info in self.broker_status.items():
+            if info['auto_provision']:
+                # Verificar si existe cuenta demo válida
+                if not provisioner.has_demo_account(broker_id):
+                    logger.info(f"[EDGE] No existe cuenta demo válida para {broker_id}. Provisionando...")
+                    success, result = await provisioner.ensure_demo_account(broker_id)
+                    if success:
+                        self.broker_status[broker_id]['status'] = 'demo_ready'
+                        logger.info(f"✅ Cuenta demo lista para {broker_id}")
+                    else:
+                        self.broker_status[broker_id]['status'] = f"error: {result.get('error', 'unknown')}"
+                        logger.warning(f"❌ Error al provisionar demo {broker_id}: {result}")
+                else:
+                    logger.info(f"[EDGE] Ya existe cuenta demo válida para {broker_id}. No se reprovisiona.")
+            else:
+                self.broker_status[broker_id]['status'] = 'manual_required'
+                logger.info(f"⚠️  {broker_id} requiere provisión manual")
     """
     Main orchestrator for the Aethelgard trading system.
     
@@ -178,6 +204,80 @@ class MainOrchestrator:
         
         # Load configuration
         self.config = self._load_config(config_path)
+
+
+        # Session tracking - RECONSTRUCT FROM DB
+        self.stats = SessionStats.from_storage(self.storage)
+        # Current market regime (updated after each scan)
+        self.current_regime: MarketRegime = MarketRegime.RANGE
+        # Shutdown flag
+        self._shutdown_requested = False
+        # Active signals tracking (for adaptive heartbeat)
+        self._active_signals: List[Signal] = []
+        # Coherence monitor
+        self.coherence_monitor = CoherenceMonitor(storage=self.storage)
+        # Loop intervals by regime (seconds)
+        orchestrator_config = self.config.get("orchestrator", {})
+        self.intervals = {
+            MarketRegime.TREND: orchestrator_config.get("loop_interval_trend", 5),
+            MarketRegime.RANGE: orchestrator_config.get("loop_interval_range", 30),
+            MarketRegime.VOLATILE: orchestrator_config.get("loop_interval_volatile", 15),
+            MarketRegime.SHOCK: orchestrator_config.get("loop_interval_shock", 60)
+        }
+        logger.info(
+            f"MainOrchestrator initialized with intervals: "
+            f"TREND={self.intervals[MarketRegime.TREND]}s, "
+            f"RANGE={self.intervals[MarketRegime.RANGE]}s, "
+            f"VOLATILE={self.intervals[MarketRegime.VOLATILE]}s, "
+            f"SHOCK={self.intervals[MarketRegime.SHOCK]}s"
+        )
+        logger.info(f"Adaptive heartbeat: MIN={self.MIN_SLEEP_INTERVAL}s when signals active")
+
+        # EDGE: Descubrimiento y clasificación dinámica de brokers (después de stats)
+        self.brokers = self._discover_brokers()
+        self.broker_status = self._classify_brokers(self.brokers)
+
+    def _discover_brokers(self) -> List[Dict]:
+        """Descubre todos los brokers registrados en la base de datos."""
+        try:
+            return self.storage.get_brokers()
+        except Exception as e:
+            logger.error(f"Error discovering brokers: {e}")
+            return []
+
+    def _classify_brokers(self, brokers: List[Dict]) -> Dict[str, Dict]:
+        """Clasifica brokers según provisión automática o manual."""
+        status = {}
+        for broker in brokers:
+            broker_id = broker.get('broker_id')
+            auto = broker.get('auto_provision_available', False)
+            status[broker_id] = {
+                'name': broker.get('name'),
+                'auto_provision': bool(auto),
+                'manual_required': not bool(auto),
+                'platforms': broker.get('platforms_available'),
+                'website': broker.get('website'),
+                'status': 'pending',
+            }
+        return status
+
+    async def provision_all_demo_accounts(self):
+        """Provisiona cuentas demo maestras para todos los brokers con provisión automática."""
+        from connectors.auto_provisioning import BrokerProvisioner
+        provisioner = BrokerProvisioner(storage=self.storage)
+        for broker_id, info in self.broker_status.items():
+            if info['auto_provision']:
+                logger.info(f"[EDGE] Provisionando cuenta demo para broker: {broker_id}")
+                success, result = await provisioner.ensure_demo_account(broker_id)
+                if success:
+                    self.broker_status[broker_id]['status'] = 'demo_ready'
+                    logger.info(f"✅ Cuenta demo lista para {broker_id}")
+                else:
+                    self.broker_status[broker_id]['status'] = f"error: {result.get('error', 'unknown')}"
+                    logger.warning(f"❌ Error al provisionar demo {broker_id}: {result}")
+            else:
+                self.broker_status[broker_id]['status'] = 'manual_required'
+                logger.info(f"⚠️  {broker_id} requiere provisión manual")
         
         # Session tracking - RECONSTRUCT FROM DB
         self.stats = SessionStats.from_storage(self.storage)
@@ -366,7 +466,10 @@ class MainOrchestrator:
             # Coherence monitoring
             coherence_events = self.coherence_monitor.run_once()
             if coherence_events:
-                logger.warning(f"Coherence inconsistencies detected: {len(coherence_events)}")
+                    for event in coherence_events:
+                        logger.warning(
+                            f"Coherence inconsistency: symbol={event.symbol}, stage={event.stage}, status={event.status}, reason={event.reason}, connector={event.connector_type}"
+                        )
             logger.info(f"Cycle completed. Stats: {self.stats}")
             
         except Exception as e:

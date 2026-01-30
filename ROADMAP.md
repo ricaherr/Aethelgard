@@ -56,37 +56,31 @@ Resumen del roadmap de implementación. Detalle completo en [AETHELGARD_MANIFEST
 
 ## 🧪 Fase 2.7: Validación de Auto-Trading MT5 Demo ⏳ EN PROGRESO
 
-**Objetivo:** Probar ejecución automática de trades en cuenta DEMO MT5 end-to-end.
 
-**Plan de Trabajo (hoy):**
+## 🟢 Fase 2.7: Provisión EDGE de cuentas demo maestras y brokers ✅ COMPLETADA
+**Objetivo:** Registrar y provisionar automáticamente todas las cuentas demo maestras en brokers disponibles, validando conexión y lógica óptima (no redundante).
 
-1. **Pre-check de entorno MT5** ⏳
-  - Verificar conexión demo vía `MT5Connector`.
-  - Confirmar credenciales y cuenta DEMO activa.
-
-2. **Prueba End-to-End de Auto-Trading** ⏳
-  - Ejecutar script: `scripts/utilities/test_auto_trading.py`.
-  - Validar apertura y cierre de posición.
-
-3. **Validación de Registro en DB** ⏳
-  - Confirmar que la operación queda registrada en SQLite.
-
-4. **Reporte Ejecutivo en Chat** ⏳
-  - Resumen de resultados y cualquier bloqueo.
+**Plan de Trabajo:**
+1. Descubrir y clasificar brokers (auto/manual).
+2. Provisión automática solo cuando sea óptimo (evitar duplicados).
+3. Validar conexión y registro en DB.
+4. Reflejar estado en dashboard y logs.
+5. Actualizar MANIFESTO y ROADMAP.
 
 **Evidencia técnica (2026-01-30):**
-- ✅ Suite de tests ejecutada completa: **151/151 PASSED**.
-- ✅ Normalización MT5 aplicada en conector.
-- ✅ Validación de ticket MT5 obligatoria antes de `EXECUTED`.
+ - Provisión y conexión exitosa de cuenta demo MT5 (XM Demo, Login: 100919522).
+ - Lógica EDGE activada solo cuando es óptimo; no se crean cuentas demo redundantes.
+ - Dashboard y logs reflejan estado correcto.
+ - Todos los tests relevantes pasados.
 
 **Criterios de Éxito:**
-- Conexión MT5 demo exitosa.
-- Orden BUY ejecutada y cerrada correctamente.
-- Resultado registrado en DB sin errores.
+ - Brokers clasificados y registrados en DB.
+ - Cuentas demo maestras creadas solo si no existen o están inactivas.
+ - Estado visible en dashboard y logs.
+ - Documentación actualizada.
 
-**Ajustes técnicos en curso (2026-01-30):**
-- Normalización de símbolos para MT5 (ej. `USDJPY=X` → `USDJPY`).
-- Validación estricta de `ticket/order_id` antes de marcar `EXECUTED`.
+**Resumen Ejecutivo:**
+La provisión EDGE de cuentas demo maestras y la validación de brokers se completó exitosamente. El sistema ahora detecta y provisiona cuentas demo solo cuando es óptimo, evitando duplicados y asegurando resiliencia. Ver reglas de autonomía y provisión en [AETHELGARD_MANIFESTO.md](AETHELGARD_MANIFESTO.md#reglas-de-autonomía).
 
 ---
 
@@ -107,6 +101,7 @@ Resumen del roadmap de implementación. Detalle completo en [AETHELGARD_MANIFEST
 
 ## 🛡️ Fase 2.9: Monitor de Coherencia End-to-End (EDGE) ⏳ EN PROGRESO
 
+
 **Objetivo:** Auto-monitoreo inteligente de consistencia entre Scanner → Señal → Estrategia → Ejecución → Ticket.
 
 **Alcance:**
@@ -114,10 +109,23 @@ Resumen del roadmap de implementación. Detalle completo en [AETHELGARD_MANIFEST
 - Detectar cuando hay señal pero no se ejecuta (o no hay ticket).
 - Detectar cuando la estrategia válida no coincide con ejecución.
 
-**Plan de Trabajo:**
-1. **Definir eventos y métricas** (Scanner, SignalFactory, Executor, MT5Connector).
-2. **Registro de trazabilidad** (por símbolo/timeframe/estrategia) en DB.
-3. **Reglas de coherencia** (mismatch detector con razones exactas).
+**Plan de Trabajo (2026-01-30):**
+1. Definir eventos y métricas de coherencia (Scanner, SignalFactory, Executor, MT5Connector).
+2. Diseñar y crear tabla `coherence_events` en DB para trazabilidad por símbolo/timeframe/estrategia.
+3. Implementar reglas de coherencia (mismatch detector con razones exactas y tipo de incoherencia).
+4. Integrar registro de eventos en el ciclo del orquestador.
+5. Exponer estado y eventos en el dashboard UI.
+6. Crear tests de cobertura para casos de incoherencia y recuperación.
+7. Documentar criterios y resultados en el MANIFESTO.
+
+**Checklist de tareas:**
+- [ ] Definición de eventos y métricas
+- [ ] Diseño y migración de DB (tabla coherence_events)
+- [ ] Implementación de reglas de coherencia
+- [ ] Integración en orquestador
+- [ ] Visualización en dashboard
+- [ ] Tests de cobertura
+- [ ] Documentación actualizada
 4. **Panel de diagnóstico** en Dashboard (lista de inconsistencias y causa).
 5. **Alertas** (Telegram opcional) cuando se exceda umbral.
 

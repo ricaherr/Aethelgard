@@ -195,6 +195,20 @@ class GenericDataProvider:
                         auto_adjust=False,
                         actions=False,
                     )
+                # Remover columnas duplicadas (puede ocurrir con yfinance)
+                df = df.loc[:,~df.columns.duplicated()]
+                # Normalizar índice de tiempo (evitar tz-naive/tz-aware conflict)
+                try:
+                    if hasattr(df.index, 'tz') and df.index.tz is not None:
+                        df.index = df.index.tz_convert(None)
+                except Exception:
+                    df.index = pd.to_datetime(df.index, errors='coerce')
+                df = df.reset_index()
+                # Si hay error de dictionary changed size, forzar copia segura
+                try:
+                    df = df.copy()
+                except Exception:
+                    pass
             except Exception as e:
                 logger.warning(
                     f"history() falló para {symbol} ({yf_symbol}): {e}. "

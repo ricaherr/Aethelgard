@@ -118,7 +118,46 @@ async def main():
     Path("data_vault").mkdir(exist_ok=True)
     
     try:
+        # EDGE: Validar y provisionar cuentas demo maestras solo si es óptimo
+        # Inicializar componentes core
         # 1. Storage Manager
+        logger.info("📦 Inicializando Storage Manager...")
+        storage = StorageManager()
+        # 2. Risk Manager
+        logger.info("⚖️  Inicializando Risk Manager...")
+        risk_manager = RiskManager(
+            initial_capital=10000.0,
+            config_path='config/dynamic_params.json'
+        )
+        logger.info(f"   Capital: ${risk_manager.capital:,.2f}")
+        logger.info(f"   Riesgo por trade: {risk_manager.risk_per_trade:.1%}")
+        # 3. Data Provider Manager (DB Backend)
+        logger.info("📡 Inicializando Data Provider Manager (DB backend)...")
+        provider_manager = DataProviderManager()
+        data_provider = provider_manager
+        # Símbolos a monitorear
+        symbols = [
+            "EURUSD=X", "GBPUSD=X", "USDJPY=X", "AUDUSD=X", "USDCAD=X", "USDCHF=X",
+            "EURGBP=X", "EURJPY=X", "GBPJPY=X", "EURCHF=X", "EURAUD=X", "GBPAUD=X",
+            "NZDUSD=X", "AUDJPY=X", "CADJPY=X"
+        ]
+        orchestrator = None
+        try:
+            from core_brain.main_orchestrator import MainOrchestrator
+            scanner = ScannerEngine(assets=symbols, data_provider=data_provider)
+            signal_factory = SignalFactory(storage_manager=storage)
+            executor = OrderExecutor(risk_manager=risk_manager, storage=storage)
+            orchestrator = MainOrchestrator(
+                scanner=scanner,
+                signal_factory=signal_factory,
+                risk_manager=risk_manager,
+                executor=executor,
+                storage=storage
+            )
+            # Validar y provisionar cuentas demo EDGE solo si es óptimo
+            await orchestrator.ensure_optimal_demo_accounts()
+        except Exception as e:
+            logger.error(f"Error inicializando orquestador o provisión EDGE: {e}")
         logger.info("📦 Inicializando Storage Manager...")
         storage = StorageManager()
         
