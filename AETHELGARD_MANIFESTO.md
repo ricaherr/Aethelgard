@@ -252,9 +252,17 @@ await orchestrator.run()  # Inicia el loop resiliente
 ##### `mt5_data_provider.py` - Ingestión autónoma de datos OHLC (MT5)
 - **Lenguaje**: Python
 - **Función**: Obtener OHLC de forma autónoma vía `mt5.copy_rates_from_pos`, **sin gráficas abiertas**. Usado por el Escáner Proactivo.
-- **Seguridad**: Sincroniza automáticamente credenciales (Login, Password, Servidor) desde el Dashboard.
+- **Arquitectura**: **Single Source of Truth = DATABASE** - Lee configuración de `broker_accounts` + `broker_credentials` (NO archivos JSON)
 - **Interface**: `fetch_ohlc(symbol, timeframe, count)` → `DataFrame` con columnas `time`, `open`, `high`, `low`, `close`.
 - **Requisitos**: MT5 en ejecución; los símbolos deben estar en Market Watch.
+
+##### `mt5_connector.py` - Conector de Trading MT5
+- **Lenguaje**: Python
+- **Función**: Ejecutar operaciones de trading (abrir/cerrar posiciones) en MetaTrader 5
+- **Arquitectura**: **Single Source of Truth = DATABASE** - Lee configuración de `broker_accounts` + `broker_credentials` (NO archivos JSON)
+- **Seguridad**: Solo permite operaciones en cuentas DEMO (bloquea cuentas REAL automáticamente)
+- **Interface**: `execute_signal()`, `close_position()`, `get_open_positions()`
+- **Validación**: Verifica tipo de cuenta antes de cada operación
 
 ##### `generic_data_provider.py` - Proveedor de Datos Genérico (Yahoo Finance)
 - **Lenguaje**: Python
@@ -349,17 +357,24 @@ manager.configure_provider("alphavantage", api_key="YOUR_KEY_HERE")
 #### 3. **Data Vault** (`data_vault/`)
 
 ##### `storage.py` - Sistema de Persistencia SQLite
-- **Base de Datos**: `data_vault/aethelgard.db`
+- **Base de Datos**: `data_vault/aethelgard.db` (**SINGLE SOURCE OF TRUTH**)
 - **Tablas**:
   - `signals`: Todas las señales recibidas
   - `signal_results`: Resultados y feedback de señales ejecutadas
   - `market_states`: Estados completos de mercado (para aprendizaje)
+  - `broker_accounts`: Cuentas de brokers (MT5, NinjaTrader, Paper Trading)
+  - `broker_credentials`: Credenciales encriptadas de conexión
+  - `trades`: Registro completo de operaciones ejecutadas
+  - `data_providers`: Proveedores de datos históricos configurados
 
 **Funcionalidades:**
 - Guardar señales con régimen detectado
 - Registrar resultados de trades (PNL, feedback)
 - Almacenar estados de mercado con todos los indicadores
 - Consultas para análisis histórico y auto-calibración
+- **Configuración Centralizada**: Credenciales, cuentas y proveedores en DB (NO archivos JSON/ENV)
+- **Credenciales Encriptadas**: Passwords almacenados con Fernet encryption
+- **Único Punto de Verdad**: Connectors y Dashboard leen SOLO de base de datos
 
 #### 4. **Models** (`models/`)
 
@@ -426,7 +441,66 @@ if success:
     self.stats.signals_executed += 1
 ```
 
-**2. Reconstrucción de Estado (Crash Recovery)**
+**2. Single Source of Truth = DATABASE**
+
+La arquitectura ha sido **100% unificada** para garantizar que TODOS los componentes lean de la base de datos:
+
+```python
+# ❌ NUNCA MÁS: Configuración en archivos JSON/ENV
+# config/mt5_config.json
+# config/mt5.env
+# config/data_providers.additional_config
+
+# ✅ SIEMPRE: Configuración en base de datos
+# Tablas: broker_accounts, broker_credentials, data_providers
+```
+
+**Componentes con DB-First:**
+
+- **MT5Connector**: 
+  ```python
+  def __init__(self, account_id: Optional[str] = None):
+      self.storage = StorageManager()
+      self._load_config_from_db(account_id)  # Lee broker_accounts + broker_credentials
+  ```
+
+- **MT5DataProvider**:
+  ```python
+  def __init__(self, account_id, login=None, password=None, server=None, init_mt5=True):
+      self.storage = StorageManager()
+      self._load_from_db(account_id)  # Prioriza DB sobre parámetros legacy
+  ```
+
+- **Dashboard UI**:
+  ```python
+  # Solo guarda en DB, NO crea archivos JSON/ENV
+  storage.save_credentials(account_id, password)
+  st.rerun()  # NO time.sleep() innecesario
+  ```
+
+- **HealthManager**:
+  ```python
+  def check_mt5_connection(self):
+      accounts = self.storage.get_broker_accounts()  # Lee de DB
+      credentials = self.storage.get_credentials(account_id)  # Lee de DB
+      # Verifica AutoTrading habilitado
+      if not terminal_info.trade_allowed:
+          return {
+              "status": "warning",
+              "message": "AutoTrading deshabilitado...",
+              "help": "Paso 1: Abre MetaTrader 5..."
+          }
+  ```
+
+**Beneficios:**
+- ✅ **Cero Duplicación**: Una sola fuente de verdad (DB)
+- ✅ **Cero Archivos Obsoletos**: No más `mt5_config.json` o `mt5.env`
+- ✅ **Cero Reconexiones Fallidas**: Sin datos desactualizados en archivos
+- ✅ **Credenciales Encriptadas**: Passwords protegidos con Fernet
+- ✅ **Mensajes Mejorados**: Errores con pasos paso-a-paso para solucionar
+- ✅ **AutoTrading Detection**: Sistema detecta si AutoTrading está habilitado
+
+**3. Reconstrucción de Estado (Crash Recovery)**
 ```python
 # Al inicializar SessionStats, reconstruir desde DB
 @classmethod

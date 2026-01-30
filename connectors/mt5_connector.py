@@ -1,6 +1,7 @@
 """
 MT5 Connector - Production-Ready Integration
 Simplified connector for OrderExecutor and ClosingMonitor
+ARCHITECTURE: Single source of truth = DATABASE (no JSON files)
 """
 import logging
 import json
@@ -16,6 +17,7 @@ except ImportError:
     logging.warning("MetaTrader5 library not installed. MT5 connector disabled.")
 
 from models.signal import Signal, SignalType
+from data_vault.storage import StorageManager
 
 logger = logging.getLogger(__name__)
 
@@ -31,39 +33,78 @@ class MT5Connector:
     - Thread-safe operations
     """
     
-    def __init__(self, config_path: str = 'config/mt5_config.json'):
+    def __init__(self, account_id: Optional[str] = None):
         """
         Initialize MT5 Connector
         
         Args:
-            config_path: Path to MT5 configuration file
+            account_id: Optional account ID to use. If None, uses first enabled MT5 account from DB
+        
+        ARCHITECTURE NOTE: Configuration comes from DATABASE ONLY (single source of truth)
         """
         if not MT5_AVAILABLE:
             raise ImportError("MetaTrader5 library not installed. Run: pip install MetaTrader5")
         
-        self.config_path = Path(config_path)
-        self.config = self._load_config()
+        self.storage = StorageManager()
+        self.account_id = account_id
+        self.config = self._load_config_from_db()
         self.is_connected = False
         self.is_demo = False
         self.magic_number = 234000  # Aethelgard magic number
         
-        logger.info(f"MT5Connector initialized with config from {config_path}")
+        logger.info(f"MT5Connector initialized from database")
     
-    def _load_config(self) -> Dict:
-        """Load MT5 configuration from JSON file"""
-        if not self.config_path.exists():
-            logger.warning(
-                f"MT5 configuration not found at {self.config_path}. "
-                f"MT5 connector will be disabled."
-            )
-            return {'enabled': False}
+    def _load_config_from_db(self) -> Dict:
+        """
+        Load MT5 configuration from DATABASE (single source of truth)
         
+        Returns:
+            Dict with 'enabled', 'login', 'server', 'password', 'account_id'
+        """
         try:
-            with open(self.config_path, 'r') as f:
-                config = json.load(f)
+            # Get all MT5 accounts
+            all_accounts = self.storage.get_broker_accounts()
+            mt5_accounts = [acc for acc in all_accounts if acc.get('platform_id') == 'mt5' and acc.get('enabled', True)]
+            
+            if not mt5_accounts:
+                logger.warning("No MT5 accounts found in database. MT5 connector disabled.")
+                return {'enabled': False}
+            
+            # Select account (by ID or first enabled)
+            account = None
+            if self.account_id:
+                account = next((acc for acc in mt5_accounts if acc['account_id'] == self.account_id), None)
+                if not account:
+                    logger.error(f"MT5 account {self.account_id} not found in database")
+                    return {'enabled': False}
+            else:
+                account = mt5_accounts[0]  # Use first enabled account
+            
+            # Store account ID for later use
+            self.account_id = account['account_id']
+            
+            # Get credentials
+            credentials = self.storage.get_credentials(self.account_id)
+            
+            if not credentials or not credentials.get('password'):
+                logger.error(f"No credentials found for MT5 account {self.account_id}")
+                return {'enabled': False}
+            
+            config = {
+                'enabled': True,
+                'login': account.get('login') or account.get('account_number'),
+                'server': account.get('server'),
+                'password': credentials['password'],
+                'account_id': self.account_id,
+                'account_name': account.get('account_name'),
+                'account_type': account.get('account_type')
+            }
+            
+            logger.info(f"Loaded MT5 config from DB: Account '{config['account_name']}' (Login: {config['login']})")
             return config
+            
         except Exception as e:
-            logger.error(f"Error loading MT5 config: {e}")
+            logger.error(f"Error loading MT5 config from database: {e}", exc_info=True)
             return {'enabled': False}
     
     def connect(self) -> bool:
@@ -84,26 +125,23 @@ class MT5Connector:
                 logger.error(f"MT5 initialization failed: {error}")
                 return False
             
-            # Load password from env file (more secure)
-            env_path = Path('config/mt5.env')
-            password = None
+            # Get credentials from config (already loaded from DB)
+            login = self.config.get('login')
+            password = self.config.get('password')
+            server = self.config.get('server')
             
-            if env_path.exists():
-                with open(env_path, 'r') as f:
-                    for line in f:
-                        if line.startswith('MT5_PASSWORD='):
-                            password = line.split('=', 1)[1].strip()
-                            break
-            
-            if not password:
-                logger.error("MT5 password not found in config/mt5.env")
+            if not login or not password or not server:
+                logger.error(f"Incomplete MT5 credentials: login={bool(login)}, password={bool(password)}, server={bool(server)}")
                 return False
+            
+            # Log what we're about to send (without password)
+            logger.info(f"Attempting MT5 login with: login={login} (type: {type(login)}, len: {len(str(login))}), server='{server}'")
             
             # Login
             authorized = mt5.login(
-                login=int(self.config['login']),
-                password=password.strip() if password else "",
-                server=self.config['server'].strip() if self.config.get('server') else ""
+                login=int(login),
+                password=str(password).strip(),
+                server=str(server).strip()
             )
             
             if not authorized:

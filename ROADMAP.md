@@ -1,5 +1,31 @@
 # Aethelgard – Roadmap
 
+**Última actualización**: 2026-01-29
+
+---
+
+## 📊 Estado del Sistema (Enero 2026)
+
+| Componente | Estado | Validación |
+|------------|--------|------------|
+| 🧠 Core Brain (Orquestador) | ✅ Operacional | 11/11 tests pasados |
+| 🛡️ Risk Manager | ✅ Operacional | 4/4 tests pasados |
+| 📊 Confluence Analyzer | ✅ Operacional | 8/8 tests pasados |
+| 🔌 Connectors (MT5) | ✅ Operacional | DB-First implementado |
+| 💾 Database (SQLite) | ✅ Operacional | Single Source of Truth |
+| 🎯 Signal Factory | ✅ Operacional | 3/3 tests pasados |
+| 📡 Data Providers | ✅ Operacional | 19/19 tests pasados |
+| 🖥️ Dashboard UI | ✅ Operacional | Sin errores críticos |
+| 🧪 Test Suite | ✅ Operacional | **148/148 tests pasados** |
+
+**Resumen**: Sistema completamente funcional y validado end-to-end
+
+**Warnings no críticos detectados**:
+- ⚠️ Streamlit deprecation: `use_container_width` → migrar a `width='stretch'` (deprecado 2025-12-31)
+- ℹ️ Telegram Bot no configurado (opcional para notificaciones)
+
+---
+
 Resumen del roadmap de implementación. Detalle completo en [AETHELGARD_MANIFESTO.md](AETHELGARD_MANIFESTO.md#roadmap-de-implementación).
 
 ---
@@ -141,6 +167,118 @@ Resumen del roadmap de implementación. Detalle completo en [AETHELGARD_MANIFEST
 - **Nivel 2: Score Adaptativo**: Eliminar base arbitraria (60), penalizar por spread, pesos ajustados (40/30/30)
 - **Nivel 3: Calibración Backtesting**: Ajustar umbrales basados en win-rate histórico (1000+ trades)
 - **Nivel 4: Score Predictivo (ML)**: Modelo de machine learning para probabilidad de éxito (500+ trades reales)
+
+---
+
+### 🧪 Fase 2.5: Sistema de Diagnóstico MT5 y Gestión de Operaciones ✅ COMPLETADA (Enero 2026)
+
+**Objetivo:** Verificación de conectividad MT5, identificación de origen de operaciones (PAPER/DEMO/REAL) y funcionalidad completa de cierre de posiciones desde Dashboard.
+
+**Tareas Completadas:**
+
+| # | Tarea | Descripción | Estado |
+|---|-------|-------------|--------|
+| 1 | Diagnóstico MT5 en HealthManager | Método `check_mt5_connection()` que verifica instalación, conexión, tipo de cuenta, balance y posiciones reales | ✅ Completado |
+| 2 | Integración Dashboard | Sección en "Sistema & Diagnóstico" con botón "Probar Conexión MT5" y visualización de estado | ✅ Completado |
+| 3 | Clasificación de Operaciones | Mostrar origen (PAPER/DEMO/REAL + Broker) en vista de operaciones abiertas | ✅ Completado |
+| 4 | Funcionalidad Cerrar Operación | Conectar botón de cierre con MT5Connector.close_position() y actualizar DB | ✅ Completado |
+| 5 | Script de Prueba Automática | `test_auto_trading.py` para validar flujo completo: señal → ejecución → cierre | ✅ Completado |
+| 6 | Arquitectura DB-First | Unificación de configuración MT5: Single Source of Truth = DATABASE | ✅ Completado |
+| 7 | Mensajes de Error Mejorados | Sistema de ayuda contextual paso-a-paso en todos los mensajes de error/warning | ✅ Completado |
+
+**Funcionalidades Implementadas:**
+
+- 🗄️ **Single Source of Truth (DB)**: Configuración centralizada en base de datos
+  - **MT5Connector**: Lee de `broker_accounts` + `broker_credentials` (NO archivos JSON)
+  - **MT5DataProvider**: Lee de `broker_accounts` (NO archivos JSON)
+  - **HealthManager**: Lee de `broker_accounts` (NO archivos JSON)
+  - **Dashboard**: Guarda SOLO en DB (NO genera archivos de configuración)
+  - Eliminados archivos obsoletos: `config/mt5_config.json`, `config/mt5.env`
+  - Sin duplicación de configuración
+  - Sin reconexiones fallidas por datos desactualizados
+  
+- 📋 **Sistema de Mensajes Mejorado**: Ayuda contextual paso-a-paso
+  - Todos los errores/warnings incluyen causa exacta del problema
+  - Pasos numerados para solucionar (usuario no técnico)
+  - Información de contexto (cuenta, login, servidor)
+  - Indicación de cuándo contactar soporte técnico
+  - Ejemplos: Librería no instalada, cuenta sin configurar, contraseña faltante, conexión fallida
+  
+- 🤖 **Verificación AutoTrading**: Detección y documentación de requisitos MT5
+  - HealthManager detecta si AutoTrading está habilitado/deshabilitado
+  - Mensajes claros con pasos para habilitar desde MT5
+  - Documentación de ubicación del botón en interfaz MT5
+  - Alternativa por menú Herramientas → Opciones
+  - Warning claro: "SIN AUTOTRADING NO SE PUEDEN EJECUTAR OPERACIONES AUTOMÁTICAS"
+  
+- 🔌 **Health Check MT5**: Diagnóstico completo desde Dashboard (instalación, conexión, cuentas)
+  - Verifica si MetaTrader5 está instalado
+  - Conecta y obtiene información de cuenta
+  - Detecta automáticamente tipo de cuenta (DEMO/REAL)
+  - Muestra balance, equity, profit, margin
+  - Lista posiciones abiertas en tiempo real desde MT5
+  
+- 🏷️ **Origen de Operaciones**: Identificación clara PAPER (sistema) vs DEMO (broker) vs REAL (broker)
+  - 🔵 PAPER (Sistema): Operaciones simuladas internamente
+  - 🟢 DEMO (MT5): Operaciones en cuenta demo de broker
+  - 🔴 REAL (MT5): Operaciones en cuenta real (bloqueadas por seguridad)
+  
+- ✂️ **Cierre de Posiciones**: Funcionalidad real conectada a MT5 con actualización de DB
+  - Botón de cierre integrado en Dashboard
+  - Conexión directa con MT5Connector
+  - Actualización automática de status en base de datos
+  - Feedback visual de éxito/error
+  
+- 🧪 **Testing Automático**: Validación end-to-end del flujo de trading
+  - Script `test_auto_trading.py` completo
+  - Prueba conexión MT5
+  - Crea señal de test
+  - Ejecuta con OrderExecutor
+  - Espera 10 segundos
+  - Cierra posición
+  - Verifica en base de datos
+  
+- 📊 **Posiciones Reales**: Visualización de posiciones abiertas directamente desde MT5
+  - Tabla completa en Dashboard con ticket, símbolo, tipo, volumen, precios, P/L
+  - Actualización en tiempo real
+  - Información de SL/TP
+
+**Beneficios:**
+- ✅ **Arquitectura Limpia**: Una sola fuente de verdad (DB), sin archivos JSON redundantes
+- ✅ **Verificación Fácil**: Usuario puede confirmar que MT5 funciona correctamente
+- ✅ **Transparencia**: Saber origen exacto de cada operación
+- ✅ **Control Total**: Cerrar operaciones desde el Dashboard
+- ✅ **Confianza**: Testing completo antes de operar en real
+- ✅ **Seguridad**: Protección anti-real (solo opera en DEMO)
+- ✅ **Mantenibilidad**: Sin desincronización entre archivos y DB
+- ✅ **UX Mejorada**: Mensajes de error comprensibles para usuarios no técnicos
+- ✅ **Auto-Diagnóstico**: Sistema detecta problemas comunes y sugiere soluciones
+- ✅ **Scripts Mínimos**: Solo 3 scripts útiles de MT5 (setup, diagnose, test_auto_trading)
+
+**Tests Ejecutados y Pasados:**
+- ✅ `test_auto_trading.py` - Test END-TO-END completo (Ticket: 667793674)
+  - Conexión a MT5 (Login: 100919522)
+  - Creación de señal con precios reales
+  - Ejecución de orden (0.01 lotes EURUSD)
+  - Verificación de posición abierta
+  - Cierre automático de posición
+  - Persistencia en base de datos
+
+**Archivos Modificados:**
+- `core_brain/health.py`: +90 líneas (método check_mt5_connection con mensajes amigables)
+- `ui/dashboard.py`: Sección MT5 en Sistema & Diagnóstico, configuración asistida, mejoras en operaciones abiertas
+- `scripts/utilities/test_auto_trading.py`: Script completo de testing (nuevo)
+
+**Mejoras de UX (29 Enero 2026):**
+- ✅ **Mensajes Amigables**: Todos los mensajes de diagnóstico en español y orientados a usuario final
+- ✅ **Configuración Asistida**: Formulario integrado en Dashboard para configurar MT5 sin tocar archivos
+- ✅ **Guías Contextuales**: Mensajes con 💡 que explican cómo resolver cada problema
+- ✅ **Auto-expansión**: Panel de detalles se expande automáticamente cuando hay errores
+- ✅ **Integración con Cuentas Guardadas**: Selector de cuentas MT5 desde la base de datos
+- ✅ **Gestión de Contraseñas**: Detecta y solicita contraseñas faltantes, guarda encriptado
+- ✅ **Edición de Cuentas**: Permite editar cuentas de broker existentes (nombre, login, servidor, contraseña)
+- ✅ **Sin Límites de Caracteres**: Campos de login sin truncamiento (max_chars=None)
+- ✅ **Herramienta de Diagnóstico**: Script `diagnose_mt5_connection.py` para comparar config vs MT5 real
 
 ---
 

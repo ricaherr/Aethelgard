@@ -1133,6 +1133,8 @@ class StorageManager:
             account_id = str(uuid.uuid4())
             now = datetime.now().isoformat()
             
+            logger.info(f"Saving broker account - login: '{login}' (type: {type(login)}, length: {len(str(login))})")
+            
             with self._get_conn() as conn:
                 cursor = conn.cursor()
                 
@@ -1146,6 +1148,7 @@ class StorageManager:
                         server, account_type, enabled, 0.0, now, now))
                 
                 conn.commit()
+                logger.info(f"Account saved successfully with account_number: '{login}'")
             
             # Save credentials if provided
             if password:
@@ -1428,14 +1431,17 @@ class StorageManager:
             if account_name is not None:
                 updates.append("account_name = ?")
                 params.append(account_name)
+                logger.info(f"Updating account_name to: {account_name}")
             
             if server is not None:
                 updates.append("server = ?")
                 params.append(server)
+                logger.info(f"Updating server to: {server}")
             
             if login is not None:
                 updates.append("account_number = ?")
                 params.append(login)
+                logger.info(f"Updating account_number (login) to: '{login}' (type: {type(login)}, length: {len(str(login))})")
             
             if password is not None:
                 # Save password safely using encrypted credentials

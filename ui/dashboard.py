@@ -6,6 +6,7 @@ import streamlit as st
 import asyncio
 import json
 import logging
+import time
 from datetime import datetime, timedelta, date
 from pathlib import Path
 from typing import Dict, Optional, List, Any
@@ -233,8 +234,22 @@ def main():
             trade_data = []
             for t in open_trades:
                 meta = t.get('metadata', {})
+                
+                # Determine origin of operation
+                connector_type = t.get('connector_type', 'PAPER')
+                account_type = t.get('account_type', 'DEMO')
+                
+                # Create origin label
+                if connector_type == 'PAPER' or not connector_type:
+                    origin_label = "🔵 PAPER (Sistema)"
+                elif account_type == 'REAL':
+                    origin_label = f"🔴 REAL ({connector_type.upper()})"
+                else:  # DEMO
+                    origin_label = f"🟢 DEMO ({connector_type.upper()})"
+                
                 trade_data.append({
                     "ID": t.get('id')[:8],
+                    "Origen": origin_label,
                     "Símbolo": t.get('symbol'),
                     "Tipo": t.get('signal_type'),
                     "Entrada": t.get('entry_price'),
@@ -249,13 +264,50 @@ def main():
             
             # Action buttons for first few trades
             for t in open_trades[:3]:
-                with st.expander(f"Gestionar {t['symbol']} ({t['signal_type']})"):
-                    c1, c2 = st.columns(2)
+                connector_type = t.get('connector_type', 'PAPER')
+                account_type = t.get('account_type', 'DEMO')
+                
+                if connector_type == 'PAPER' or not connector_type:
+                    origin_badge = "🔵 PAPER"
+                elif account_type == 'REAL':
+                    origin_badge = f"🔴 REAL ({connector_type.upper()})"
+                else:
+                    origin_badge = f"🟢 DEMO ({connector_type.upper()})"
+                
+                with st.expander(f"Gestionar {t['symbol']} ({t['signal_type']}) - {origin_badge}"):
+                    c1, c2, c3 = st.columns(3)
                     with c1:
-                        if st.button(f"Cerrar {t['symbol']}", key=f"close_{t['id']}"):
-                            st.warning(f"Solicitando cierre de {t['id']}...")
+                        if st.button(f"❌ Cerrar {t['symbol']}", key=f"close_{t['id']}"):
+                            # Call close position function
+                            try:
+                                if connector_type == 'MT5' or connector_type == 'METATRADER5':
+                                    from connectors.mt5_connector import MT5Connector
+                                    mt5_connector = MT5Connector()
+                                    if mt5_connector.connect():
+                                        # Extract ticket from metadata
+                                        ticket = meta.get('ticket') or meta.get('order_id')
+                                        if ticket:
+                                            success = mt5_connector.close_position(int(ticket))
+                                            if success:
+                                                # Update DB
+                                                storage.update_signal_status(t['id'], 'CLOSED')
+                                                st.success(f"✅ Posición {ticket} cerrada")
+                                                st.rerun()
+                                            else:
+                                                st.error(f"❌ Error al cerrar posición {ticket}")
+                                        else:
+                                            st.error("❌ No se encontró el ticket de la operación")
+                                        mt5_connector.disconnect()
+                                    else:
+                                        st.error("❌ No se pudo conectar a MT5")
+                                else:
+                                    st.warning(f"⚠️ Cierre no implementado para {connector_type}")
+                            except Exception as e:
+                                st.error(f"❌ Error: {e}")
                     with c2:
-                        st.info(f"SL: {t['stop_loss']} | TP: {t['take_profit']}")
+                        st.info(f"SL: {t['stop_loss']}")
+                    with c3:
+                        st.info(f"TP: {t['take_profit']}")
         else:
             st.info("No hay operaciones abierta en este momento.")
 
@@ -308,13 +360,19 @@ def main():
         st.header("🛡️ Aethelgard System Monitor")
         health_manager = get_health_manager()
         
-        # Botón de reparación manual
-        if st.button("🔧 Ejecutar Auto-Reparación de DB"):
-            if health_manager.try_auto_repair():
-                st.success("✅ Intento de reparación completado. Refrescando...")
-                st.rerun()
-            else:
-                st.error("❌ Falló la auto-reparación. Revisa los logs.")
+        col_btns = st.columns([1, 1, 2])
+        with col_btns[0]:
+            # Botón de reparación manual
+            if st.button("🔧 Auto-Reparación DB"):
+                if health_manager.try_auto_repair():
+                    st.success("✅ Intento de reparación completado. Refrescando...")
+                    st.rerun()
+                else:
+                    st.error("❌ Falló la auto-reparación. Revisa los logs.")
+        
+        with col_btns[1]:
+            # Botón para probar conexión MT5
+            test_mt5 = st.button("🔌 Probar Conexión MT5")
 
         summary = health_manager.run_full_diagnostic()
         status = summary["overall_status"]
@@ -331,6 +389,250 @@ def main():
             st.metric("Threads", summary['resources'].get('threads', 0))
         with col4:
             st.metric("Timestamp", datetime.fromisoformat(summary["timestamp"]).strftime("%H:%M:%S"))
+
+        st.markdown("---")
+        
+        # MT5 Connection Status Section
+        st.subheader("🔌 Estado de Conexión MT5")
+        mt5_info = summary.get("mt5", {})
+        mt5_status = mt5_info.get("status", "YELLOW")
+        mt5_status_emoji = {"GREEN": "✅", "YELLOW": "⚠️", "RED": "🔴"}.get(mt5_status, "⚪")
+        
+        # Check if MT5 needs configuration and connection status
+        needs_config = mt5_info.get("needs_config", False)
+        connected = mt5_info.get("connected", False)
+        
+        # Get existing MT5 broker accounts
+        all_accounts = storage.get_broker_accounts(enabled_only=False)
+        mt5_accounts = [acc for acc in all_accounts if acc.get('platform_id') == 'mt5']
+        has_saved_accounts = len(mt5_accounts) > 0
+        
+        # Configuration form if needed
+        if needs_config and not connected:
+            st.warning("⚠️ MetaTrader 5 requiere configuración")
+            
+            # Show saved accounts if any exist
+            if has_saved_accounts:
+                with st.expander("🔑 Usar cuenta guardada", expanded=True):
+                    st.markdown("**Seleccione una cuenta MT5 guardada:**")
+                    
+                    account_options = {}
+                    for acc in mt5_accounts:
+                        account_label = f"{acc.get('account_name', 'Sin nombre')} - {acc.get('account_number', 'N/A')} ({acc.get('account_type', 'N/A')})"
+                        account_options[account_label] = acc
+                    
+                    selected_account_label = st.selectbox(
+                        "Cuenta",
+                        options=list(account_options.keys()),
+                        help="Seleccione la cuenta MT5 que desea usar"
+                    )
+                    
+                    if selected_account_label:
+                        selected_account = account_options[selected_account_label]
+                        
+                        col_info1, col_info2 = st.columns(2)
+                        with col_info1:
+                            st.info(f"**Servidor:** {selected_account.get('server', 'N/A')}")
+                        with col_info2:
+                            st.info(f"**Tipo:** {selected_account.get('account_type', 'N/A')}")
+                        
+                        # Check if credentials exist
+                        account_id = selected_account.get('account_id')
+                        has_credentials = False
+                        
+                        try:
+                            credentials = storage.get_credentials(account_id)
+                            has_credentials = bool(credentials.get('password'))
+                        except:
+                            pass
+                        
+                        if not has_credentials:
+                            st.warning("⚠️ Esta cuenta no tiene contraseña guardada. Ingrese la contraseña:")
+                            
+                            password_input = st.text_input(
+                                "Contraseña de MT5",
+                                type="password",
+                                key=f"pwd_{account_id}",
+                                help="Ingrese la contraseña de su cuenta MT5"
+                            )
+                            
+                            if st.button("💾 Guardar contraseña y conectar", key=f"save_{account_id}"):
+                                if not password_input:
+                                    st.error("❌ Debe ingresar la contraseña")
+                                else:
+                                    try:
+                                        # Save password to database
+                                        storage.save_credential(
+                                            account_id=account_id,
+                                            credential_type="password",
+                                            credential_key="password",
+                                            value=password_input
+                                        )
+                                        st.success("✅ Contraseña guardada de forma segura en base de datos")
+                                        st.rerun()
+                                        
+                                    except Exception as e:
+                                        st.error(f"❌ Error al guardar contraseña: {e}")
+                        
+                        else:
+                            # Has credentials already, just connect
+                            if st.button("✅ Conectar con esta cuenta", key=f"connect_{account_id}"):
+                                try:
+                                    # Get credentials from database
+                                    credentials = storage.get_credentials(account_id)
+                                    
+                                    if not credentials.get('password'):
+                                        st.error("❌ No se encontró la contraseña guardada para esta cuenta")
+                                    else:
+                                        st.success("✅ Cuenta lista para usar (configuración en base de datos)")
+                                        st.rerun()
+                                        
+                                except Exception as e:
+                                    st.error(f"❌ Error al aplicar configuración: {e}")
+                    
+                    st.markdown("---")
+                    st.markdown("**O configure una nueva cuenta manualmente:**")
+            
+            with st.expander("📝 Configurar nueva cuenta MT5", expanded=not has_saved_accounts):
+                st.markdown("""
+                **Pasos para configurar MT5:**
+                1. Asegúrese de tener MetaTrader 5 instalado y abierto
+                2. Ingrese los datos de su cuenta DEMO a continuación
+                3. Guarde la configuración
+                4. Pruebe la conexión
+                """)
+                
+                with st.form("mt5_config_form"):
+                    st.markdown("**📋 Datos de Cuenta MT5**")
+                    
+                    login = st.text_input(
+                        "Login (Número de Cuenta)", 
+                        max_chars=None,  # Sin límite de caracteres
+                        help="El número COMPLETO de cuenta que aparece en MetaTrader 5 (sin truncar)"
+                    )
+                    
+                    password = st.text_input(
+                        "Contraseña", 
+                        type="password",
+                        help="Contraseña de su cuenta MT5 (DEMO recomendado)"
+                    )
+                    
+                    server = st.text_input(
+                        "Servidor", 
+                        placeholder="Ej: XMGlobal-Demo 3",
+                        help="Servidor de su broker (visible en MT5)"
+                    )
+                    
+                    st.markdown("---")
+                    st.info("💡 **Importante**: Use solo cuentas DEMO para pruebas. El sistema bloqueará cuentas REAL por seguridad.")
+                    
+                    submitted = st.form_submit_button("💾 Guardar Configuración")
+                    
+                    if submitted:
+                        if not login or not password or not server:
+                            st.error("❌ Complete todos los campos")
+                        else:
+                            try:
+                                import json
+                                from pathlib import Path
+                                
+                                # Create config directory if needed
+                                config_dir = Path("config")
+                                config_dir.mkdir(exist_ok=True)
+                                
+                                # Save mt5_config.json
+                                mt5_config = {
+                                    "enabled": True,
+                                    "login": login,
+                                    "server": server
+                                }
+                                
+                                config_path = config_dir / "mt5_config.json"
+                                with open(config_path, 'w') as f:
+                                    json.dump(mt5_config, f, indent=2)
+                                
+                                # Save password in mt5.env
+                                env_path = config_dir / "mt5.env"
+                                with open(env_path, 'w') as f:
+                                    f.write(f"MT5_PASSWORD={password}\n")
+                                
+                                st.success("✅ Configuración guardada correctamente")
+                                st.rerun()
+                                
+                            except Exception as e:
+                                st.error(f"❌ Error al guardar configuración: {e}")
+        
+        col_mt5_1, col_mt5_2, col_mt5_3 = st.columns(3)
+        with col_mt5_1:
+            installed = mt5_info.get("installed", False)
+            st.metric("Instalación", "✅ Instalado" if installed else "❌ No Instalado")
+        with col_mt5_2:
+            connected = mt5_info.get("connected", False)
+            st.metric("Conexión", "✅ Conectado" if connected else "🔴 Desconectado")
+        with col_mt5_3:
+            account_type = mt5_info.get("account_type", "N/A")
+            st.metric("Tipo de Cuenta", account_type or "N/A")
+        
+        # Account Information
+        if mt5_info.get("account_info"):
+            st.markdown("**📊 Información de Cuenta MT5:**")
+            acc_info = mt5_info["account_info"]
+            
+            col_acc1, col_acc2, col_acc3, col_acc4 = st.columns(4)
+            with col_acc1:
+                st.metric("Login", acc_info.get("login", "N/A"))
+            with col_acc2:
+                st.metric("Servidor", acc_info.get("server", "N/A"))
+            with col_acc3:
+                balance = acc_info.get("balance", 0)
+                currency = acc_info.get("currency", "USD")
+                st.metric("Balance", f"{balance:,.2f} {currency}")
+            with col_acc4:
+                equity = acc_info.get("equity", 0)
+                st.metric("Equity", f"{equity:,.2f} {currency}")
+        
+        # Open Positions from MT5
+        open_positions = mt5_info.get("open_positions", [])
+        if open_positions:
+            st.markdown(f"**🚀 Posiciones Abiertas en MT5:** ({len(open_positions)})")
+            
+            pos_data = []
+            for pos in open_positions:
+                pos_data.append({
+                    "Ticket": pos.get("ticket", "N/A"),
+                    "Símbolo": pos.get("symbol", "N/A"),
+                    "Tipo": pos.get("type", "N/A"),
+                    "Volumen": pos.get("volume", 0),
+                    "Precio Entrada": f"{pos.get('price_open', 0):.5f}",
+                    "Precio Actual": f"{pos.get('price_current', 0):.5f}",
+                    "P/L": f"{pos.get('profit', 0):+.2f}",
+                    "SL": f"{pos.get('sl', 0):.5f}" if pos.get('sl', 0) != 0 else "-",
+                    "TP": f"{pos.get('tp', 0):.5f}" if pos.get('tp', 0) != 0 else "-"
+                })
+            
+            df_mt5_positions = pd.DataFrame(pos_data)
+            st.dataframe(df_mt5_positions, use_container_width=True, hide_index=True)
+        else:
+            if connected:
+                st.info("✅ Conectado a MT5 - No hay posiciones abiertas")
+        
+        # MT5 Status Details
+        with st.expander(f"{mt5_status_emoji} Detalles de Diagnóstico MT5", expanded=not connected):
+            for detail in mt5_info.get("details", []):
+                # Check for emoji-based formatting (new style)
+                if "✅" in detail or "💰" in detail or "📊" in detail:
+                    st.success(detail)
+                elif "⚠️" in detail or "💡" in detail:
+                    st.warning(detail)
+                elif "❌" in detail:
+                    st.error(detail)
+                # Legacy support for old-style messages
+                elif "SUCCESS" in detail or "INFO" in detail:
+                    st.success(detail)
+                elif "WARNING" in detail:
+                    st.warning(detail)
+                else:
+                    st.info(detail)
 
         st.markdown("---")
         c1, c2 = st.columns(2)
@@ -1423,9 +1725,7 @@ def main():
             st.error(f"Error en análisis de activos: {e}")
             logger.error(f"Error en tab análisis de activos: {e}", exc_info=True)
         
-        # Auto-refresh cada 3 segundos
-        import time
-        time.sleep(3)
+        # Auto-refresh
         st.rerun()
     
     # TAB 9: Configuración de Brokers (DEBUG MODE)
@@ -1491,15 +1791,101 @@ def main():
                             st.write(f"**Login:** {account.get('login', 'N/A')}")
                         
                         with col2:
-                            if st.button("🗑️ Eliminar", key=f"del_{account_id}"):
-                                storage.delete_account(account_id)
-                                st.success("Eliminado")
-                                st.rerun()
+                            col_actions = st.columns(2)
+                            with col_actions[0]:
+                                if st.button("✏️ Editar", key=f"edit_{account_id}"):
+                                    st.session_state[f'editing_{account_id}'] = True
+                                    st.rerun()
+                            
+                            with col_actions[1]:
+                                if st.button("🗑️ Eliminar", key=f"del_{account_id}"):
+                                    storage.delete_account(account_id)
+                                    st.success("Eliminado")
+                                    st.rerun()
                             
                             new_state = st.checkbox("Habilitada", value=enabled, key=f"en_{account_id}")
                             if new_state != enabled:
                                 storage.update_account_enabled(account_id, new_state)
                                 st.rerun()
+                        
+                        # Show edit form if editing
+                        if st.session_state.get(f'editing_{account_id}', False):
+                            st.markdown("---")
+                            st.subheader("✏️ Editar Cuenta")
+                            
+                            # Get current credentials
+                            try:
+                                current_creds = storage.get_credentials(account_id)
+                            except:
+                                current_creds = {}
+                            
+                            with st.form(f"edit_form_{account_id}"):
+                                col_e1, col_e2 = st.columns(2)
+                                with col_e1:
+                                    edit_name = st.text_input(
+                                        "Nombre de Cuenta", 
+                                        value=account['account_name'],
+                                        key=f"edit_name_{account_id}"
+                                    )
+                                    edit_login = st.text_input(
+                                        "Login (Número de Cuenta)", 
+                                        value=account.get('login', ''),
+                                        max_chars=None,  # Sin límite
+                                        help="Ingrese el número completo de cuenta",
+                                        key=f"edit_login_{account_id}"
+                                    )
+                                
+                                with col_e2:
+                                    edit_server = st.text_input(
+                                        "Servidor", 
+                                        value=account.get('server', ''),
+                                        help="Ejemplo: XMGlobal-MT5 5",
+                                        key=f"edit_server_{account_id}"
+                                    )
+                                    edit_type = st.selectbox(
+                                        "Tipo", 
+                                        ["demo", "real"],
+                                        index=0 if account.get('account_type') == 'demo' else 1,
+                                        key=f"edit_type_{account_id}"
+                                    )
+                                
+                                st.markdown("**Contraseña (opcional)**")
+                                edit_pwd = st.text_input(
+                                    "Nueva Contraseña (dejar vacío para mantener la actual)", 
+                                    type="password",
+                                    help="Solo ingrese si desea cambiar la contraseña",
+                                    key=f"edit_pwd_{account_id}"
+                                )
+                                
+                                col_btn = st.columns(2)
+                                with col_btn[0]:
+                                    if st.form_submit_button("💾 Guardar Cambios"):
+                                        try:
+                                            # Update account with named parameters
+                                            storage.update_account(
+                                                account_id=account_id,
+                                                account_name=edit_name,
+                                                login=edit_login,  # Este es el importante - pasa como login
+                                                server=edit_server,
+                                                password=edit_pwd if edit_pwd else None
+                                            )
+                                            
+                                            # Also update account_type separately if changed
+                                            if edit_type != account.get('account_type'):
+                                                storage.update_account_type(account_id, edit_type)
+                                            
+                                            st.success("✅ Cuenta actualizada correctamente")
+                                            del st.session_state[f'editing_{account_id}']
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f"❌ Error al actualizar: {e}")
+                                            import traceback
+                                            st.code(traceback.format_exc())
+                                
+                                with col_btn[1]:
+                                    if st.form_submit_button("❌ Cancelar"):
+                                        del st.session_state[f'editing_{account_id}']
+                                        st.rerun()
 
             else:
                 st.info("No tienes cuentas configuradas.")
@@ -1522,8 +1908,15 @@ def main():
                     
                     col3, col4 = st.columns(2)
                     with col3:
-                        login = st.text_input("Login (Cuenta)", help="Tu número de cuenta de MT5")
-                        server = st.text_input("Servidor", help="Ejemplo: XMGlobal-Demo")
+                        login = st.text_input(
+                            "Login (Número de Cuenta)", 
+                            max_chars=None,  # Sin límite de caracteres
+                            help="Ingrese el número COMPLETO de cuenta (sin truncar)"
+                        )
+                        server = st.text_input(
+                            "Servidor", 
+                            help="Ejemplo: XMGlobal-MT5 5 (con espacios si aplica)"
+                        )
                     with col4:
                         pwd = st.text_input("Password", type="password", help="Tu contraseña se guardará de forma encriptada en la base de datos.")
                         st.caption("ℹ️ El Broker ID se asigna según tu selección arriba (ej. XM).")

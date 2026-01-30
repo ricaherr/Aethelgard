@@ -2,6 +2,7 @@
 Proveedor de datos OHLC desde MetaTrader 5.
 Obtiene datos de forma autónoma vía copy_rates_from_pos, sin gráficas abiertas.
 Usado por el Scanner Engine para ingestión proactiva.
+ARCHITECTURE: Single source of truth = DATABASE (reads from broker_accounts)
 """
 from __future__ import annotations
 
@@ -14,6 +15,8 @@ try:
     import MetaTrader5 as mt5
 except ImportError:
     mt5 = None
+
+from data_vault.storage import StorageManager
 
 logger = logging.getLogger(__name__)
 
@@ -35,17 +38,80 @@ class MT5DataProvider:
     """
     Obtiene OHLC desde MT5 mediante copy_rates_from_pos.
     No requiere gráficas abiertas; los símbolos deben estar en Market Watch.
+    ARCHITECTURE: Configuration from DATABASE only (broker_accounts table)
     """
 
-    def __init__(self, login: Optional[int] = None, password: str = "", server: str = "", init_mt5: bool = True):
+    def __init__(self, account_id: Optional[str] = None, login: Optional[int] = None, password: str = "", server: str = "", init_mt5: bool = True):
+        """
+        Initialize MT5 Data Provider
+        
+        Args:
+            account_id: Optional account ID to load from DB. Preferred method.
+            login: Legacy parameter for compatibility. If None, loads from DB.
+            password: Legacy parameter for compatibility. If empty, loads from DB.
+            server: Legacy parameter for compatibility. If empty, loads from DB.
+            init_mt5: Whether to initialize MT5 on construction
+        """
         self._initialized = False
-        self.login = login
-        self.password = str(password).strip() if password else ""
-        self.server = str(server).strip() if server else ""
+        self.storage = StorageManager()
+        self.account_id = account_id
+        
+        # Load from DB if account_id provided or no credentials given
+        if account_id or (not login and not password):
+            self._load_from_db()
+        else:
+            # Legacy mode: use provided credentials
+            self.login = login
+            self.password = str(password).strip() if password else ""
+            self.server = str(server).strip() if server else ""
+        
         self.init_mt5 = init_mt5
         
         if init_mt5 and mt5:
             self._try_initialize()
+    
+    def _load_from_db(self):
+        """Load MT5 credentials from database"""
+        try:
+            all_accounts = self.storage.get_broker_accounts()
+            mt5_accounts = [acc for acc in all_accounts if acc.get('platform_id') == 'mt5' and acc.get('enabled', True)]
+            
+            if not mt5_accounts:
+                logger.warning("No MT5 accounts found in database")
+                self.login = None
+                self.password = ""
+                self.server = ""
+                return
+            
+            # Select account
+            account = None
+            if self.account_id:
+                account = next((acc for acc in mt5_accounts if acc['account_id'] == self.account_id), None)
+            else:
+                account = mt5_accounts[0]
+            
+            if not account:
+                logger.warning(f"MT5 account {self.account_id} not found")
+                self.login = None
+                self.password = ""
+                self.server = ""
+                return
+            
+            # Get credentials
+            self.account_id = account['account_id']
+            credentials = self.storage.get_credentials(self.account_id)
+            
+            self.login = int(account.get('login') or account.get('account_number'))
+            self.server = str(account.get('server', '')).strip()
+            self.password = str(credentials.get('password', '')).strip() if credentials else ""
+            
+            logger.info(f"MT5DataProvider loaded from DB: {account.get('account_name')} (Login: {self.login})")
+            
+        except Exception as e:
+            logger.error(f"Error loading MT5 config from database: {e}", exc_info=True)
+            self.login = None
+            self.password = ""
+            self.server = ""
 
     def _try_initialize(self) -> bool:
         """Intenta inicializar y loguear en MT5."""

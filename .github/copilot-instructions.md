@@ -14,7 +14,10 @@ Sistema autónomo, proactivo y agnóstico de trading multihilo. Capacidad de aut
 8. **Auto-Provisioning**: El sistema debe crear cuentas demo automáticamente en brokers que lo permitan (sin intervención humana). Clasificar brokers: automático vs manual.
 9. **Modo DEMO Autónomo**: Si el usuario elige modo DEMO y no existe cuenta, el sistema debe crearla automáticamente. Solo pedir credenciales en brokers que requieren registro manual.
 10. **Codigo en el chat**: no agregar codigo completo directamente en la conversación, solo fragmentos relevantes y explicaciones.
-11. **Sin Documentos de Tareas**: NO crear archivos markdown explicando tareas completadas. Entregar SOLO resumen ejecutivo directo en el chat.
+11. **Informes Ejecutivos en Chat**: NUNCA crear archivos markdown para reportes, resúmenes o informes de tareas completadas. Entregar SOLO resumen ejecutivo directo en el chat. Los archivos .md son EXCLUSIVAMENTE para documentación técnica permanente (MANIFESTO, ROADMAP).
+12. **ROADMAP Obligatorio**: SIEMPRE actualizar ROADMAP.md al inicio de cada tarea mayor con el plan de trabajo. Marcar tareas completadas (✅) conforme se finalizan. El ROADMAP debe reflejar en tiempo real qué se hizo y qué falta.
+13. **Single Source of Truth (DB)**: Configuración, credenciales y datos del sistema deben residir en la BASE DE DATOS. NO crear archivos JSON/ENV redundantes. La DB es la única fuente de verdad.
+14. **Scripts Mínimos y Útiles**: NO crear scripts de validación/debugging redundantes. Mantener solo los scripts que agregan valor real al usuario final (setup, diagnóstico end-to-end, tests de flujo completo).
 
 ## 🛠️ Stack Tecnológico
 - **Backend**: Python 3.12+ (Asyncio, FastAPI).
@@ -37,9 +40,11 @@ Sistema autónomo, proactivo y agnóstico de trading multihilo. Capacidad de aut
 - 3 pérdidas consecutivas = Lockdown mode
 
 ## Flujo de Trabajo (Workflow)
-1. Definir requerimientos técnicos.
-2. Crear archivo de test en `tests/`.
-3. Ejecutar test (debe fallar).
-4. Implementar código mínimo en `core_brain/`.
-5. Ejecutar test (debe pasar).
-6. Actualizar `AETHELGARD_MANIFESTO.md`.
+1. **Actualizar ROADMAP.md** con el plan de tareas.
+2. Definir requerimientos técnicos.
+3. Crear archivo de test en `tests/`.
+4. Ejecutar test (debe fallar).
+5. Implementar código mínimo en `core_brain/`.
+6. Ejecutar test (debe pasar).
+7. **Actualizar ROADMAP.md** marcando tarea como completada (✅).
+8. Actualizar `AETHELGARD_MANIFESTO.md`.
