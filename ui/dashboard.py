@@ -138,20 +138,18 @@ def main():
     with st.sidebar:
         st.markdown("---")
         st.subheader("🧭 Navegación")
-        
         # Categorías de navegación
         category = st.selectbox(
             "Categoría",
             ["🏠 Inicio", "Operación Hub", "Análisis & Mercado", "Configuración"],
             index=0
         )
-        
         if category == "🏠 Inicio":
             menu_selection = "🏠 Inicio"
         elif category == "Operación Hub":
             menu_selection = st.radio(
                 "Módulo",
-                ["🛡️ Sistema & Diagnóstico", "🔌 Configuración de Brokers", "🛡️ Monitor de Resiliencia", "⚡ Señales de Trading"]
+                ["📋 Operación Hub", "🛡️ Sistema & Diagnóstico", "🔌 Configuración de Brokers", "🛡️ Monitor de Resiliencia", "⚡ Señales de Trading"]
             )
         elif category == "Análisis & Mercado":
             menu_selection = st.radio(
@@ -163,6 +161,112 @@ def main():
                 "Ajustes",
                 ["🎛️ Gestión de Módulos", "⚙️ Parámetros Dinámicos", "📡 Proveedores de Datos", "🎯 Gestión de Instrumentos"]
             )
+        # TAB: Operación Hub (NUEVO)
+        if menu_selection == "📋 Operación Hub":
+            st.header("📋 Operación Hub - Tabla Detallada de Señales")
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                filter_status = st.selectbox(
+                    "Estado",
+                    options=["Activas", "Todas", "Ejecutadas", "Pendientes", "Fallidas"],
+                    index=0,
+                    key="hub_status_filter"
+                )
+            with col2:
+                filter_type = st.selectbox(
+                    "Tipo",
+                    options=["Todos", "BUY", "SELL"],
+                    index=0,
+                    key="hub_type_filter"
+                )
+            with col3:
+                filter_symbol = st.text_input("Símbolo (filtro)", value="", key="hub_symbol_filter")
+            with col4:
+                limit_signals = st.number_input(
+                    "Mostrar últimas N",
+                    min_value=5,
+                    max_value=100,
+                    value=20,
+                    step=5,
+                    key="hub_limit_signals"
+                )
+            st.markdown("---")
+            try:
+                # Preferir señales activas si existen, si no, fallback a señales recientes
+                signals_source = []
+                if hasattr(storage, 'get_open_operations'):
+                    signals_source = storage.get_open_operations()
+                if not signals_source and hasattr(storage, 'get_recent_signals'):
+                    signals_source = storage.get_recent_signals(limit=200)
+                if not signals_source:
+                    signals_source = storage.get_signals_today()
+                all_signals = signals_source or []
+                # Filtro por estado
+                if filter_status == "Activas":
+                    signals = [s for s in all_signals if s.get('status', '').upper() in ("OPEN", "EXECUTED", "PENDING") and not s.get('closed', False)]
+                elif filter_status == "Ejecutadas":
+                    signals = [s for s in all_signals if s.get('status', '').upper() == "EXECUTED"]
+                elif filter_status == "Pendientes":
+                    signals = [s for s in all_signals if s.get('status', '').upper() == "PENDING"]
+                elif filter_status == "Fallidas":
+                    signals = [s for s in all_signals if s.get('status', '').upper() == "FAILED"]
+                else:
+                    signals = all_signals
+                if filter_type != "Todos":
+                    signals = [s for s in signals if s.get('signal_type') == filter_type]
+                if filter_symbol:
+                    signals = [s for s in signals if filter_symbol.upper() in s.get('symbol', '').upper()]
+                signals = signals[-limit_signals:]
+                table_data = []
+                for s in reversed(signals):
+                    meta = s.get('metadata', {})
+                    connector_type = s.get('connector_type', 'PAPER')
+                    account_type = s.get('account_type', 'DEMO')
+                    if connector_type == 'PAPER' or not connector_type:
+                        origin_label = "🔵 PAPER (Sistema)"
+                    elif account_type == 'REAL':
+                        origin_label = f"🔴 REAL ({connector_type.upper()})"
+                    else:
+                        origin_label = f"🟢 DEMO ({connector_type.upper()})"
+                    table_data.append({
+                        "ID": s.get('id', '')[:8],
+                        "Origen": origin_label,
+                        "Símbolo": s.get('symbol', ''),
+                        "Timeframe": s.get('timeframe', meta.get('timeframe', 'N/A')),
+                        "Tipo": s.get('signal_type', ''),
+                        "Entrada": s.get('entry_price', ''),
+                        "SL": s.get('stop_loss', ''),
+                        "TP": s.get('take_profit', ''),
+                        "Score": f"{meta.get('score', 0):.1f}",
+                        "Estado": s.get('status', 'N/A'),
+                        "Ejecución": meta.get('execution_observation', ''),
+                    })
+                df_signals = pd.DataFrame(table_data)
+                def color_estado(val):
+                    if not isinstance(val, str): return ''
+                    v = val.upper()
+                    if v in ("EXECUTED", "OPEN"): return 'background-color: #d4edda; color: #155724; font-weight: bold;'
+                    if v == "FAILED": return 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
+                    if v == "PENDING": return 'background-color: #fff3cd; color: #856404; font-weight: bold;'
+                    return ''
+                def color_ejecucion(val):
+                    if not isinstance(val, str): return ''
+                    val_lower = val.lower()
+                    if any(x in val_lower for x in ["éxito", "ejecutada correctamente", "success", "completada"]):
+                        return 'background-color: #d4edda; color: #155724; font-weight: bold;'
+                    elif any(x in val_lower for x in ["advertencia", "warning", "parcial", "atención"]):
+                        return 'background-color: #fff3cd; color: #856404; font-weight: bold;'
+                    elif val:
+                        return 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
+                    return ''
+                if not df_signals.empty:
+                    styled_df = df_signals.style.applymap(color_estado, subset=['Estado']).applymap(color_ejecucion, subset=['Ejecución'])
+                    st.dataframe(styled_df, width='stretch', hide_index=True)
+                else:
+                    st.info("No hay señales para mostrar con los filtros actuales.")
+            except Exception as e:
+                st.error(f"Error cargando señales: {e}")
+                logger.error(f"Error en Operación Hub: {e}", exc_info=True)
     
     
     # Renderizar vista seleccionada
@@ -251,11 +355,13 @@ def main():
                     "ID": t.get('id')[:8],
                     "Origen": origin_label,
                     "Símbolo": t.get('symbol'),
+                    "Timeframe": t.get('timeframe', meta.get('timeframe', 'N/A')),
                     "Tipo": t.get('signal_type'),
                     "Entrada": t.get('entry_price'),
                     "SL": t.get('stop_loss'),
                     "TP": t.get('take_profit'),
                     "Score": f"{meta.get('score', 0):.1f}",
+                    "Estado": "Ejecutada" if t.get('status', '').upper() == "EXECUTED" or meta.get('order_id') else "Pendiente",
                     "Tiempo": t.get('timestamp', '').split('T')[-1][:5],
                     "Ejecución": meta.get('execution_observation', '')
                 })
@@ -1265,49 +1371,87 @@ def main():
                     
                     # Tabla de señales
                     st.subheader("📋 Señales Detalladas")
-                    
+                    # Mostrar tabla tipo dataframe antes de los expanders
+                    table_data = []
+                    for s in reversed(filtered_signals):
+                        meta = s.get('metadata', {})
+                        connector_type = s.get('connector_type', 'PAPER')
+                        account_type = s.get('account_type', 'DEMO')
+                        if connector_type == 'PAPER' or not connector_type:
+                            origin_label = "🔵 PAPER (Sistema)"
+                        elif account_type == 'REAL':
+                            origin_label = f"🔴 REAL ({connector_type.upper()})"
+                        else:
+                            origin_label = f"🟢 DEMO ({connector_type.upper()})"
+                        table_data.append({
+                            "ID": s.get('id', '')[:8],
+                            "Origen": origin_label,
+                            "Símbolo": s.get('symbol', ''),
+                            "Timeframe": s.get('timeframe', meta.get('timeframe', 'N/A')),
+                            "Tipo": s.get('signal_type', ''),
+                            "Entrada": s.get('entry_price', ''),
+                            "SL": s.get('stop_loss', ''),
+                            "TP": s.get('take_profit', ''),
+                            "Score": f"{meta.get('score', 0):.1f}",
+                            "Estado": s.get('status', 'N/A'),
+                            "Ejecución": meta.get('execution_observation', ''),
+                        })
+                    df_signals = pd.DataFrame(table_data)
+                    def color_estado(val):
+                        if not isinstance(val, str): return ''
+                        v = val.upper()
+                        if v in ("EXECUTED", "OPEN"): return 'background-color: #d4edda; color: #155724; font-weight: bold;'
+                        if v == "FAILED": return 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
+                        if v == "PENDING": return 'background-color: #fff3cd; color: #856404; font-weight: bold;'
+                        return ''
+                    def color_ejecucion(val):
+                        if not isinstance(val, str): return ''
+                        val_lower = val.lower()
+                        if any(x in val_lower for x in ["éxito", "ejecutada correctamente", "success", "completada"]):
+                            return 'background-color: #d4edda; color: #155724; font-weight: bold;'
+                        elif any(x in val_lower for x in ["advertencia", "warning", "parcial", "atención"]):
+                            return 'background-color: #fff3cd; color: #856404; font-weight: bold;'
+                        elif val:
+                            return 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
+                        return ''
+                    if not df_signals.empty:
+                        styled_df = df_signals.style.applymap(color_estado, subset=['Estado']).applymap(color_ejecucion, subset=['Ejecución'])
+                        st.dataframe(styled_df, width='stretch', hide_index=True)
+                    else:
+                        st.info("No hay señales para mostrar con los filtros actuales.")
+                    # Expanders detallados (como antes)
                     for idx, signal in enumerate(reversed(filtered_signals)):
-                        # Crear un expander para cada señal
                         metadata = signal.get('metadata', {})
                         signal_type = signal.get('signal_type', 'N/A')
                         symbol = signal.get('symbol', 'N/A')
                         score = metadata.get('score', 0)
                         tier = metadata.get('membership_tier', 'FREE')
                         timestamp = signal.get('timestamp', 'N/A')
-                        
-                        # Emoji según tipo
                         type_emoji = "🟢" if signal_type == "BUY" else "🔴"
-                        
-                        # Color según tier
                         tier_color = {
                             'ELITE': '🌟',
                             'PREMIUM': '💎',
                             'FREE': '📌'
                         }.get(tier, '📌')
-                        
                         with st.expander(f"{type_emoji} {symbol} - {signal_type} | Score: {score:.1f} {tier_color} {tier} | {timestamp}"):
                             col1, col2, col3 = st.columns(3)
-                            
                             with col1:
                                 st.markdown("**📊 Precios**")
                                 st.write(f"Entry: `{signal.get('entry_price', 'N/A')}`")
                                 st.write(f"Stop Loss: `{signal.get('stop_loss', 'N/A')}`")
                                 st.write(f"Take Profit: `{signal.get('take_profit', 'N/A')}`")
-                            
                             with col2:
                                 st.markdown("**🎯 Indicadores Técnicos**")
                                 st.write(f"Régimen: `{metadata.get('regime', 'N/A')}`")
                                 st.write(f"ATR: `{metadata.get('atr', 'N/A')}`")
                                 st.write(f"Body/ATR Ratio: `{metadata.get('body_atr_ratio', 'N/A')}`")
                                 st.write(f"SMA20 Dist: `{metadata.get('sma20_dist_pct', 'N/A')}%`")
-                            
                             with col3:
                                 st.markdown("**✅ Validaciones**")
                                 st.write(f"Vela Elefante: `{'✅' if metadata.get('is_elephant_candle') else '❌'}`")
                                 st.write(f"Cerca de SMA20: `{'✅' if metadata.get('near_sma20') else '❌'}`")
                                 st.write(f"Confidence: `{signal.get('confidence', 0):.2%}`")
                                 st.write(f"Strategy: `{metadata.get('strategy_id', 'N/A')}`")
-                            # Mostrar observación de ejecución con semáforo visual
                             execution_obs = metadata.get('execution_observation')
                             if execution_obs:
                                 obs_lower = execution_obs.lower()
@@ -1317,8 +1461,6 @@ def main():
                                     st.warning(f"🟡 Observación de ejecución: {execution_obs}")
                                 else:
                                     st.error(f"🔴 Observación de ejecución: {execution_obs}")
-                            
-                            # Mostrar metadata completa en JSON
                             if st.checkbox(f"Ver JSON completo (señal #{len(filtered_signals) - idx})", key=f"json_{signal.get('id', idx)}"):
                                 st.json(signal)
                     
