@@ -8,6 +8,7 @@ from models.signal import (
 )
 from core_brain.strategies.base_strategy import BaseStrategy
 from core_brain.instrument_manager import InstrumentManager
+from data_vault.storage import StorageManager
 
 logger = logging.getLogger(__name__)
 
@@ -66,12 +67,20 @@ class OliverVelezStrategy(BaseStrategy):
         
         Esto mantiene el agnosticismo: la estrategia no depende de un conector específico.
         """
-        from pathlib import Path
-        
-        # Verificar MT5
-        if Path('config/mt5_config.json').exists():
-            logger.info(f"[{self.strategy_id}] Usando MT5 connector (config detectada)")
-            return ConnectorType.METATRADER5
+        # Verificar MT5 vía DB (single source of truth)
+        try:
+            storage = StorageManager()
+            accounts = storage.get_broker_accounts(enabled_only=True)
+            has_mt5_demo = any(
+                acc.get('platform_id') == 'mt5'
+                and str(acc.get('account_type', '')).lower() == 'demo'
+                for acc in accounts
+            )
+            if has_mt5_demo:
+                logger.info(f"[{self.strategy_id}] Usando MT5 connector (DB detectada)")
+                return ConnectorType.METATRADER5
+        except Exception as e:
+            logger.warning(f"[{self.strategy_id}] MT5 detection failed: {e}")
         
         # Verificar NT8 (si existe configuración en el futuro)
         # if Path('config/nt8_config.json').exists():

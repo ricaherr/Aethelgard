@@ -4,7 +4,7 @@ Tests the execution of trading signals with RiskManager validation and agnostic 
 Follows TDD methodology as per Aethelgard's golden rules.
 """
 import pytest
-from unittest.mock import Mock, MagicMock, patch, call
+from unittest.mock import Mock, call
 from datetime import datetime
 
 from core_brain.executor import OrderExecutor
@@ -80,7 +80,7 @@ class TestOrderExecutor:
             take_profit=1.1150,
             volume=0.01
         )
-    
+
     @pytest.mark.asyncio
     async def test_executor_blocks_signal_when_risk_manager_locked(self, executor, mock_risk_manager, sample_signal, mock_storage):
         """

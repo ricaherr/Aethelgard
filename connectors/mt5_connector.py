@@ -4,16 +4,19 @@ Simplified connector for OrderExecutor and ClosingMonitor
 ARCHITECTURE: Single source of truth = DATABASE (no JSON files)
 """
 import logging
-import json
-from pathlib import Path
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Any, TYPE_CHECKING
 from datetime import datetime, timedelta
 
-try:
+if TYPE_CHECKING:
     import MetaTrader5 as mt5
+
+try:
+    import MetaTrader5 as _mt5
+    mt5: Any = _mt5
     MT5_AVAILABLE = True
 except ImportError:
     MT5_AVAILABLE = False
+    mt5: Any = None
     logging.warning("MetaTrader5 library not installed. MT5 connector disabled.")
 
 from models.signal import Signal, SignalType
@@ -27,7 +30,7 @@ class MT5Connector:
     Production MT5 Connector for Aethelgard
     
     Features:
-    - Auto-loads configuration from config/mt5_config.json
+    - Auto-loads configuration from database (broker_accounts + broker_credentials)
     - Validates demo account before executing
     - Implements standard connector interface
     - Thread-safe operations
@@ -232,7 +235,7 @@ class MT5Connector:
                 "tp": signal.take_profit if signal.take_profit else 0.0,
                 "deviation": 20,
                 "magic": self.magic_number,
-                "comment": f"Aethelgard_{signal.id if hasattr(signal, 'id') else 'signal'}",
+                "comment": f"Aethelgard_{signal.symbol}",
                 "type_time": mt5.ORDER_TIME_GTC,
                 "type_filling": mt5.ORDER_FILLING_IOC,
             }

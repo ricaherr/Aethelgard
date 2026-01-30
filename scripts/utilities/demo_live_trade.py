@@ -11,7 +11,7 @@ import logging
 from datetime import datetime
 import time
 
-from models.signal import Signal, SignalType
+from models.signal import Signal, SignalType, ConnectorType
 from core_brain.executor import OrderExecutor
 from core_brain.risk_manager import RiskManager
 from core_brain.monitor import ClosingMonitor
@@ -49,18 +49,19 @@ async def demo_complete_trade():
         print("   Run: python scripts/setup_mt5_demo.py")
         return
     
-    connectors = {'MT5': mt5_connector}
+    connectors_executor = {ConnectorType.METATRADER5: mt5_connector}
+    connectors_monitor = {"MT5": mt5_connector}
     
     # Initialize executor and monitor
     executor = OrderExecutor(
         risk_manager=risk_manager,
         storage=storage,
-        connectors=connectors
+        connectors=connectors_executor
     )
     
     monitor = ClosingMonitor(
         storage=storage,
-        connectors=connectors,
+        connectors=connectors_monitor,
         interval_seconds=30  # Check every 30s for demo
     )
     
@@ -80,6 +81,8 @@ async def demo_complete_trade():
     
     # Get current price from MT5
     import MetaTrader5 as mt5
+    from typing import Any, cast
+    mt5 = cast(Any, mt5)
     tick = mt5.symbol_info_tick("EURUSD")
     
     if tick is None:
@@ -97,7 +100,7 @@ async def demo_complete_trade():
         stop_loss=stop_loss,
         take_profit=take_profit,
         confidence=0.75,
-        connector_type='MT5'
+        connector_type=ConnectorType.METATRADER5
     )
     
     print(f"   Entry: {entry_price:.5f}")

@@ -6,9 +6,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-import os
-import json
-from datetime import datetime
+from data_vault.storage import StorageManager
 
 try:
     import MetaTrader5 as mt5
@@ -200,42 +198,39 @@ def test_connection(credentials):
 
 
 def save_configuration(credentials):
-    """Save broker configuration to .env file"""
+    """Save broker configuration to database (single source of truth)"""
     print()
     print("💾 Saving configuration...")
     
-    env_path = Path(__file__).parent.parent / 'config' / 'mt5.env'
-    env_path.parent.mkdir(exist_ok=True)
+    broker_id = credentials['broker_name'].lower().replace(" ", "_")
+    account_name = f"{credentials['broker_name']} Demo"
     
-    with open(env_path, 'w') as f:
-        f.write(f"# MetaTrader 5 Configuration\n")
-        f.write(f"# Generated: {datetime.now().isoformat()}\n")
-        f.write(f"# Broker: {credentials['broker_name']}\n\n")
-        f.write(f"MT5_LOGIN={credentials['login']}\n")
-        f.write(f"MT5_PASSWORD={credentials['password']}\n")
-        f.write(f"MT5_SERVER={credentials['server']}\n")
-        f.write(f"MT5_ENABLED=true\n")
+    storage = StorageManager()
+    account_id = storage.save_broker_account(
+        broker_id=broker_id,
+        platform_id="mt5",
+        account_name=account_name,
+        account_type="demo",
+        server=credentials['server'],
+        login=credentials['login'],
+        password=credentials['password'],
+        enabled=True
+    )
     
-    print(f"✅ Configuration saved to: {env_path}")
+    storage.save_data_provider(
+        name="mt5",
+        enabled=True,
+        priority=95,
+        requires_auth=True,
+        additional_config={
+            "login": credentials['login'],
+            "server": credentials['server'],
+            "password": credentials['password']
+        }
+    )
     
-    # Also save to JSON for easier Python access
-    json_path = Path(__file__).parent.parent / 'config' / 'mt5_config.json'
-    
-    config_data = {
-        'login': credentials['login'],
-        'server': credentials['server'],
-        'broker_name': credentials['broker_name'],
-        'enabled': True,
-        'configured_at': datetime.now().isoformat()
-    }
-    
-    with open(json_path, 'w') as f:
-        json.dump(config_data, f, indent=2)
-    
-    print(f"✅ JSON config saved to: {json_path}")
-    print()
-    print("⚠️  Security Note: Password is stored locally in plain text.")
-    print("   Keep config/mt5.env secure and never commit to version control!")
+    print(f"✅ Cuenta guardada en DB (ID: {account_id})")
+    print("✅ Configuración MT5 guardada en data_providers")
 
 
 def run_test_trade():

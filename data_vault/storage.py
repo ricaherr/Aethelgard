@@ -1154,10 +1154,6 @@ class StorageManager:
             if password:
                 self.save_credential(account_id, "password", "password", password)
             
-            # Special synchronization for MT5 (Aethelgard specific)
-            if platform_id == 'mt5' and password:
-                self._sync_mt5_config(login, password, server, broker_id)
-            
             logger.info(f"Account saved: {account_id}")
             return account_id
                 
@@ -1165,53 +1161,6 @@ class StorageManager:
             logger.error(f"Error saving broker account: {e}")
             raise
     
-    def _sync_mt5_config(self, login: str, password: str, server: str, broker_id: str):
-        """Sync MT5 credentials to local config files (mt5.env and mt5_config.json)"""
-        try:
-            from pathlib import Path
-            # Sync to mt5.env
-            env_path = Path('config/mt5.env')
-            env_path.parent.mkdir(exist_ok=True)
-            
-            with open(env_path, 'w') as f:
-                f.write(f"# MetaTrader 5 Configuration (Sync from Dashboard)\n")
-                f.write(f"MT5_LOGIN={login}\n")
-                f.write(f"MT5_PASSWORD={password}\n")
-                f.write(f"MT5_SERVER={server}\n")
-                f.write(f"MT5_ENABLED=true\n")
-            
-            # Sync to mt5_config.json
-            json_path = Path('config/mt5_config.json')
-            config_data = {
-                'login': login,
-                'server': server,
-                'broker_name': broker_id,
-                'enabled': True,
-                'configured_at': datetime.now().isoformat()
-            }
-            with open(json_path, 'w') as f:
-                json.dump(config_data, f, indent=2)
-                
-            # Sync to data_providers table (DB) for the MT5 data provider
-            try:
-                self.save_data_provider(
-                    name='mt5',
-                    enabled=True,
-                    priority=95,
-                    requires_auth=True,
-                    additional_config={
-                        'login': login,
-                        'server': server,
-                        'password': password
-                    }
-                )
-                logger.info("MT5 Data Provider configuration synchronized in DB.")
-            except Exception as ex:
-                logger.error(f"Error syncing MT5 to data_providers table: {ex}")
-                
-            logger.info("MT5 configuration files synchronized with database.")
-        except Exception as e:
-            logger.error(f"Error syncing MT5 config files: {e}")
 
     def get_brokers(self) -> List[Dict]:
         """Get all brokers (providers)"""

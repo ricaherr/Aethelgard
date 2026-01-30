@@ -6,7 +6,6 @@ Aligned with Aethelgard's principles: Autonomy, Resilience, Agnosticism, and Sec
 import logging
 from typing import Dict, Optional, Any
 from datetime import datetime
-from pathlib import Path
 
 from models.signal import Signal, ConnectorType
 from core_brain.risk_manager import RiskManager
@@ -63,17 +62,11 @@ class OrderExecutor:
         Follows Aethelgard's agnosticism principle: core doesn't require MT5,
         but will use it opportunistically if configured.
         """
-        mt5_config_path = Path('config/mt5_config.json')
-        
-        if not mt5_config_path.exists():
-            logger.debug("MT5 config not found, skipping MT5Connector auto-load")
-            return
-        
         try:
             # Import only when needed (lazy loading)
             from connectors.mt5_connector import MT5Connector
             
-            logger.info("🔌 MT5 configuration detected, attempting to load connector...")
+            logger.info("🔌 Checking MT5 connector availability from DB...")
             
             mt5_connector = MT5Connector()
             
@@ -81,12 +74,10 @@ class OrderExecutor:
                 self.connectors[ConnectorType.METATRADER5] = mt5_connector
                 logger.info("✅ MT5Connector loaded and connected successfully")
             else:
-                logger.warning("⚠️  MT5Connector failed to connect, skipping")
+                logger.warning("⚠️  MT5Connector not connected (disabled or unavailable)")
                 
         except ImportError:
             logger.warning("MT5Connector not available (MetaTrader5 library not installed)")
-        except FileNotFoundError as e:
-            logger.warning(f"MT5 configuration incomplete: {e}")
         except Exception as e:
             logger.error(f"Error loading MT5Connector: {e}", exc_info=True)
     

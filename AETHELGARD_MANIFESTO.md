@@ -478,6 +478,20 @@ La arquitectura ha sido **100% unificada** para garantizar que TODOS los compone
   st.rerun()  # NO time.sleep() innecesario
   ```
 
+- **Scripts de Utilidad MT5**:
+  ```python
+  # setup_mt5_demo.py y diagnose_mt5_connection.py operan DB-first
+  storage.save_broker_account(...)
+  storage.get_broker_accounts()
+  storage.get_credentials(account_id)
+  ```
+
+- **StorageManager**:
+  ```python
+  # No sincroniza archivos locales (mt5_config.json / mt5.env)
+  # Toda la configuración vive en DB
+  ```
+
 - **HealthManager**:
   ```python
   def check_mt5_connection(self):

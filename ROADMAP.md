@@ -1,6 +1,6 @@
 # Aethelgard – Roadmap
 
-**Última actualización**: 2026-01-29
+**Última actualización**: 2026-01-30
 
 ---
 
@@ -29,6 +29,51 @@
 Resumen del roadmap de implementación. Detalle completo en [AETHELGARD_MANIFESTO.md](AETHELGARD_MANIFESTO.md#roadmap-de-implementación).
 
 ---
+
+## 🧪 Fase 2.7: Validación de Auto-Trading MT5 Demo ⏳ EN PROGRESO
+
+**Objetivo:** Probar ejecución automática de trades en cuenta DEMO MT5 end-to-end.
+
+**Plan de Trabajo (hoy):**
+
+1. **Pre-check de entorno MT5** ⏳
+  - Verificar conexión demo vía `MT5Connector`.
+  - Confirmar credenciales y cuenta DEMO activa.
+
+2. **Prueba End-to-End de Auto-Trading** ⏳
+  - Ejecutar script: `scripts/utilities/test_auto_trading.py`.
+  - Validar apertura y cierre de posición.
+
+3. **Validación de Registro en DB** ⏳
+  - Confirmar que la operación queda registrada en SQLite.
+
+4. **Reporte Ejecutivo en Chat** ⏳
+  - Resumen de resultados y cualquier bloqueo.
+
+**Evidencia técnica (2026-01-30):**
+- ✅ Suite de tests ejecutada completa: **148/148 PASSED**.
+- ✅ Sistema iniciado y monitoreo activo.
+
+**Criterios de Éxito:**
+- Conexión MT5 demo exitosa.
+- Orden BUY ejecutada y cerrada correctamente.
+- Resultado registrado en DB sin errores.
+
+---
+
+## 🧹 Fase 2.8: Eliminación de Dependencias `mt5_config.json` ✅ COMPLETADA
+
+**Objetivo:** Eliminar cualquier uso de archivos `mt5_config.json`/`mt5.env` y mantener MT5 100% DB-first.
+
+**Cambios Aplicados:**
+
+- Eliminado sync a archivos desde `StorageManager`.
+- Dashboard y utilidades MT5 guardan configuración exclusivamente en DB.
+- Diagnóstico MT5 compara contra DB, no archivos locales.
+
+**Resultado:**
+- ✅ No existe dependencia de archivos locales para MT5.
+- ✅ Configuración y credenciales centralizadas en DB.
 
 ## 🔧 Fase 2.6: Migración Streamlit - Deprecación `use_container_width` ✅ COMPLETADA
 

@@ -4,9 +4,9 @@ Helps identify authentication issues
 """
 import sys
 from pathlib import Path
+from typing import Any, Optional, cast
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-import json
 from data_vault.storage import StorageManager
 
 print("=" * 70)
@@ -32,51 +32,31 @@ else:
         print(f"   Tipo: {acc.get('account_type')}")
         
         # Check credentials
-        account_id = acc.get('account_id')
-        try:
-            credentials = storage.get_credentials(account_id)
-            if credentials.get('password'):
-                print(f"   Contraseña: ✅ Guardada (longitud: {len(credentials['password'])} caracteres)")
-            else:
-                print(f"   Contraseña: ❌ NO guardada")
-        except Exception as e:
-            print(f"   Contraseña: ❌ Error al leer: {e}")
+        account_id: Optional[str] = acc.get('account_id')
+        if not account_id:
+            print("   Contraseña: ❌ account_id inválido")
+        else:
+            try:
+                credentials = storage.get_credentials(account_id)
+                if credentials.get('password'):
+                    print(f"   Contraseña: ✅ Guardada (longitud: {len(credentials['password'])} caracteres)")
+                else:
+                    print(f"   Contraseña: ❌ NO guardada")
+            except Exception as e:
+                print(f"   Contraseña: ❌ Error al leer: {e}")
 
-# Step 2: Check config files
-print("\n\n📁 PASO 2: Verificar archivos de configuración")
+# Step 2: Validate DB configuration state
+print("\n\n📁 PASO 2: Verificar configuración en base de datos")
 print("-" * 70)
 
-config_path = Path("config/mt5_config.json")
-env_path = Path("config/mt5.env")
+enabled_mt5 = [acc for acc in mt5_accounts if str(acc.get('account_type', '')).lower() == 'demo' and acc.get('enabled', 1)]
 
-if config_path.exists():
-    print(f"✅ {config_path} existe")
-    try:
-        with open(config_path, 'r') as f:
-            config = json.load(f)
-        print(f"   Login configurado: {config.get('login')}")
-        print(f"   Servidor configurado: {config.get('server')}")
-        print(f"   Habilitado: {config.get('enabled')}")
-    except Exception as e:
-        print(f"   ❌ Error al leer: {e}")
+if enabled_mt5:
+    print(f"✅ Cuentas DEMO habilitadas: {len(enabled_mt5)}")
+    for acc in enabled_mt5:
+        print(f"   - {acc.get('account_name', 'Sin nombre')} | {acc.get('account_number')} | {acc.get('server')}")
 else:
-    print(f"❌ {config_path} NO existe")
-
-if env_path.exists():
-    print(f"✅ {env_path} existe")
-    try:
-        with open(env_path, 'r') as f:
-            content = f.read()
-        if 'MT5_PASSWORD=' in content:
-            pwd_line = [line for line in content.split('\n') if 'MT5_PASSWORD=' in line][0]
-            pwd_value = pwd_line.split('=', 1)[1].strip()
-            print(f"   Contraseña configurada: {'*' * len(pwd_value)} (longitud: {len(pwd_value)})")
-        else:
-            print(f"   ❌ No se encontró MT5_PASSWORD en el archivo")
-    except Exception as e:
-        print(f"   ❌ Error al leer: {e}")
-else:
-    print(f"❌ {env_path} NO existe")
+    print("⚠️  No hay cuentas DEMO habilitadas en DB")
 
 # Step 3: Test MT5 connection
 print("\n\n🔌 PASO 3: Probar conexión a MT5")
@@ -84,6 +64,7 @@ print("-" * 70)
 
 try:
     import MetaTrader5 as mt5
+    mt5 = cast(Any, mt5)
     print("✅ Librería MetaTrader5 instalada")
     
     # Initialize
@@ -112,35 +93,23 @@ try:
             print(f"   Compañía: {account_info.company}")
             print(f"   Tipo: {'DEMO' if account_info.trade_mode == 0 else 'REAL'}")
             
-            # Compare with config
-            if config_path.exists():
-                with open(config_path, 'r') as f:
-                    config = json.load(f)
-                
-                config_login = str(config.get('login'))
+            # Compare with DB
+            if enabled_mt5:
                 actual_login = str(account_info.login)
-                
-                print(f"\n🔍 Comparación:")
-                print(f"   Login en config: '{config_login}' (longitud: {len(config_login)})")
-                print(f"   Login en MT5:    '{actual_login}' (longitud: {len(actual_login)})")
-                
-                if config_login == actual_login:
-                    print(f"   ✅ Los números coinciden")
-                else:
-                    print(f"   ❌ LOS NÚMEROS NO COINCIDEN!")
-                    print(f"   💡 Corrija el número en la base de datos")
-                
-                config_server = config.get('server', '').strip()
                 actual_server = account_info.server.strip()
                 
-                print(f"\n   Servidor en config: '{config_server}'")
-                print(f"   Servidor en MT5:    '{actual_server}'")
+                print("\n🔍 Comparación contra DB (cuentas DEMO habilitadas):")
+                matches = [
+                    acc for acc in enabled_mt5
+                    if str(acc.get('account_number')) == actual_login
+                    and str(acc.get('server', '')).strip() == actual_server
+                ]
                 
-                if config_server == actual_server:
-                    print(f"   ✅ Los servidores coinciden")
+                if matches:
+                    print("   ✅ MT5 coincide con la cuenta DEMO en DB")
                 else:
-                    print(f"   ❌ LOS SERVIDORES NO COINCIDEN!")
-                    print(f"   💡 Corrija el servidor en la base de datos")
+                    print("   ❌ MT5 NO coincide con ninguna cuenta DEMO habilitada en DB")
+                    print("   💡 Corrija login/servidor en la base de datos")
         else:
             print("❌ No hay cuenta conectada en MT5")
             print("💡 Asegúrese de conectarse manualmente primero en MT5")

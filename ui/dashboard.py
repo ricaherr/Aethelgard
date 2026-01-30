@@ -504,6 +504,18 @@ def main():
                 
                 with st.form("mt5_config_form"):
                     st.markdown("**📋 Datos de Cuenta MT5**")
+
+                    account_name = st.text_input(
+                        "Nombre de la cuenta",
+                        value="MT5 Demo",
+                        help="Etiqueta interna para identificar la cuenta"
+                    )
+
+                    broker_id = st.text_input(
+                        "Broker ID",
+                        value="manual",
+                        help="Identificador del broker en DB (ej: pepperstone, icmarkets)."
+                    )
                     
                     login = st.text_input(
                         "Login (Número de Cuenta)", 
@@ -533,34 +545,20 @@ def main():
                             st.error("❌ Complete todos los campos")
                         else:
                             try:
-                                import json
-                                from pathlib import Path
-                                
-                                # Create config directory if needed
-                                config_dir = Path("config")
-                                config_dir.mkdir(exist_ok=True)
-                                
-                                # Save mt5_config.json
-                                mt5_config = {
-                                    "enabled": True,
-                                    "login": login,
-                                    "server": server
-                                }
-                                
-                                config_path = config_dir / "mt5_config.json"
-                                with open(config_path, 'w') as f:
-                                    json.dump(mt5_config, f, indent=2)
-                                
-                                # Save password in mt5.env
-                                env_path = config_dir / "mt5.env"
-                                with open(env_path, 'w') as f:
-                                    f.write(f"MT5_PASSWORD={password}\n")
-                                
-                                st.success("✅ Configuración guardada correctamente")
+                                account_id = storage.save_broker_account(
+                                    broker_id=broker_id.strip() or "manual",
+                                    platform_id="mt5",
+                                    account_name=account_name.strip() or "MT5 Demo",
+                                    account_type="demo",
+                                    server=server.strip(),
+                                    login=login.strip(),
+                                    password=password.strip(),
+                                    enabled=True
+                                )
+                                st.success(f"✅ Cuenta guardada en DB (ID: {account_id})")
                                 st.rerun()
-                                
                             except Exception as e:
-                                st.error(f"❌ Error al guardar configuración: {e}")
+                                st.error(f"❌ Error al guardar configuración en DB: {e}")
         
         col_mt5_1, col_mt5_2, col_mt5_3 = st.columns(3)
         with col_mt5_1:
