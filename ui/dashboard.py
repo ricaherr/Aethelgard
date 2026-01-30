@@ -149,7 +149,7 @@ def main():
         elif category == "Operación Hub":
             menu_selection = st.radio(
                 "Módulo",
-                ["📋 Operación Hub", "🛡️ Sistema & Diagnóstico", "🔌 Configuración de Brokers", "🛡️ Monitor de Resiliencia", "⚡ Señales de Trading"]
+                ["📋 Operación Hub", "🛡️ Sistema & Diagnóstico", "️ Monitor de Resiliencia", "⚡ Señales de Trading"]
             )
         elif category == "Análisis & Mercado":
             menu_selection = st.radio(
@@ -159,114 +159,8 @@ def main():
         else: # Configuración
             menu_selection = st.radio(
                 "Ajustes",
-                ["🎛️ Gestión de Módulos", "⚙️ Parámetros Dinámicos", "📡 Proveedores de Datos", "🎯 Gestión de Instrumentos"]
+                ["🎛️ Gestión de Módulos", "⚙️ Parámetros Dinámicos", "📡 Proveedores de Datos", "🎯 Gestión de Instrumentos", "🔌 Configuración de Brokers"]
             )
-        # TAB: Operación Hub (NUEVO)
-        if menu_selection == "📋 Operación Hub":
-            st.header("📋 Operación Hub - Tabla Detallada de Señales")
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                filter_status = st.selectbox(
-                    "Estado",
-                    options=["Activas", "Todas", "Ejecutadas", "Pendientes", "Fallidas"],
-                    index=0,
-                    key="hub_status_filter"
-                )
-            with col2:
-                filter_type = st.selectbox(
-                    "Tipo",
-                    options=["Todos", "BUY", "SELL"],
-                    index=0,
-                    key="hub_type_filter"
-                )
-            with col3:
-                filter_symbol = st.text_input("Símbolo (filtro)", value="", key="hub_symbol_filter")
-            with col4:
-                limit_signals = st.number_input(
-                    "Mostrar últimas N",
-                    min_value=5,
-                    max_value=100,
-                    value=20,
-                    step=5,
-                    key="hub_limit_signals"
-                )
-            st.markdown("---")
-            try:
-                # Preferir señales activas si existen, si no, fallback a señales recientes
-                signals_source = []
-                if hasattr(storage, 'get_open_operations'):
-                    signals_source = storage.get_open_operations()
-                if not signals_source and hasattr(storage, 'get_recent_signals'):
-                    signals_source = storage.get_recent_signals(limit=200)
-                if not signals_source:
-                    signals_source = storage.get_signals_today()
-                all_signals = signals_source or []
-                # Filtro por estado
-                if filter_status == "Activas":
-                    signals = [s for s in all_signals if s.get('status', '').upper() in ("OPEN", "EXECUTED", "PENDING") and not s.get('closed', False)]
-                elif filter_status == "Ejecutadas":
-                    signals = [s for s in all_signals if s.get('status', '').upper() == "EXECUTED"]
-                elif filter_status == "Pendientes":
-                    signals = [s for s in all_signals if s.get('status', '').upper() == "PENDING"]
-                elif filter_status == "Fallidas":
-                    signals = [s for s in all_signals if s.get('status', '').upper() == "FAILED"]
-                else:
-                    signals = all_signals
-                if filter_type != "Todos":
-                    signals = [s for s in signals if s.get('signal_type') == filter_type]
-                if filter_symbol:
-                    signals = [s for s in signals if filter_symbol.upper() in s.get('symbol', '').upper()]
-                signals = signals[-limit_signals:]
-                table_data = []
-                for s in reversed(signals):
-                    meta = s.get('metadata', {})
-                    connector_type = s.get('connector_type', 'PAPER')
-                    account_type = s.get('account_type', 'DEMO')
-                    if connector_type == 'PAPER' or not connector_type:
-                        origin_label = "🔵 PAPER (Sistema)"
-                    elif account_type == 'REAL':
-                        origin_label = f"🔴 REAL ({connector_type.upper()})"
-                    else:
-                        origin_label = f"🟢 DEMO ({connector_type.upper()})"
-                    table_data.append({
-                        "ID": s.get('id', '')[:8],
-                        "Origen": origin_label,
-                        "Símbolo": s.get('symbol', ''),
-                        "Timeframe": s.get('timeframe', meta.get('timeframe', 'N/A')),
-                        "Tipo": s.get('signal_type', ''),
-                        "Entrada": s.get('entry_price', ''),
-                        "SL": s.get('stop_loss', ''),
-                        "TP": s.get('take_profit', ''),
-                        "Score": f"{meta.get('score', 0):.1f}",
-                        "Estado": s.get('status', 'N/A'),
-                        "Ejecución": meta.get('execution_observation', ''),
-                    })
-                df_signals = pd.DataFrame(table_data)
-                def color_estado(val):
-                    if not isinstance(val, str): return ''
-                    v = val.upper()
-                    if v in ("EXECUTED", "OPEN"): return 'background-color: #d4edda; color: #155724; font-weight: bold;'
-                    if v == "FAILED": return 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
-                    if v == "PENDING": return 'background-color: #fff3cd; color: #856404; font-weight: bold;'
-                    return ''
-                def color_ejecucion(val):
-                    if not isinstance(val, str): return ''
-                    val_lower = val.lower()
-                    if any(x in val_lower for x in ["éxito", "ejecutada correctamente", "success", "completada"]):
-                        return 'background-color: #d4edda; color: #155724; font-weight: bold;'
-                    elif any(x in val_lower for x in ["advertencia", "warning", "parcial", "atención"]):
-                        return 'background-color: #fff3cd; color: #856404; font-weight: bold;'
-                    elif val:
-                        return 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
-                    return ''
-                if not df_signals.empty:
-                    styled_df = df_signals.style.applymap(color_estado, subset=['Estado']).applymap(color_ejecucion, subset=['Ejecución'])
-                    st.dataframe(styled_df, width='stretch', hide_index=True)
-                else:
-                    st.info("No hay señales para mostrar con los filtros actuales.")
-            except Exception as e:
-                st.error(f"Error cargando señales: {e}")
-                logger.error(f"Error en Operación Hub: {e}", exc_info=True)
     
     
     # Renderizar vista seleccionada
@@ -329,37 +223,7 @@ def main():
             open_trades = []
             recent_trades = []
 
-        # --- ESTADO DE BROKERS / CONECTORES (al final) ---
-        st.markdown("---")
-        st.caption("Estado de Brokers/Conectores")
-        try:
-            broker_status = storage.get_broker_provision_status()
-            if broker_status:
-                total = len(broker_status)
-                mercados = {}
-                demo_count = 0
-                real_count = 0
-                direct_count = 0
-                for b in broker_status:
-                    # Clasificación por mercado (puede ser lista o string)
-                    mercados_broker = b.get('markets') or b.get('type') or 'Otro'
-                    if isinstance(mercados_broker, str):
-                        mercados_broker = [mercados_broker]
-                    for mercado in mercados_broker:
-                        mercados[mercado] = mercados.get(mercado, 0) + 1
-                    demo_count += len([a for a in b['demo_accounts'] if a.get('account_type','').lower() == 'demo'])
-                    real_count += len([a for a in b['demo_accounts'] if a.get('account_type','').lower() == 'real'])
-                    if b.get('auto_provision'):
-                        direct_count += 1
-                st.markdown(f"**Total de brokers registrados:** {total}")
-                st.markdown(f"**Por mercado:** {', '.join([f'{k}: {v}' for k,v in mercados.items()])}")
-                st.markdown(f"**Cuentas DEMO:** {demo_count} &nbsp;&nbsp;|&nbsp;&nbsp; **Cuentas REAL:** {real_count}")
-                st.markdown(f"**Brokers con conexión directa:** {direct_count}")
-            else:
-                st.info("No hay brokers registrados en el sistema.")
-        except Exception as e:
-            st.error(f"Error al cargar estado de brokers: {e}")
-        
+
         # --- ACTIVE OPERATIONS ---
         st.subheader("🚀 Operaciones Activas")
         if open_trades:
@@ -518,6 +382,46 @@ def main():
                     st.info(f"{status_color} **{acc.get('broker_id', 'N/A').upper()}**\n\n{acc.get('account_number', 'N/A')}\n\nBalance: ${acc.get('balance', 0):,.2f}")
         else:
             st.info("No hay cuentas de broker configuradas.")
+
+        # Estadísticas agregadas
+        st.markdown("### 📊 Estadísticas")
+        try:
+            broker_status = storage.get_broker_provision_status()
+            if broker_status:
+                total = len(broker_status)
+                mercados = {}
+                demo_count = 0
+                real_count = 0
+                direct_count = 0
+                for b in broker_status:
+                    # Clasificación por mercado (puede ser lista o string)
+                    mercados_broker = b.get('markets') or b.get('type') or 'Otro'
+                    if isinstance(mercados_broker, str):
+                        mercados_broker = [mercados_broker]
+                    for mercado in mercados_broker:
+                        mercados[mercado] = mercados.get(mercado, 0) + 1
+                    demo_count += len([a for a in b['demo_accounts'] if a.get('account_type','').lower() == 'demo'])
+                    real_count += len([a for a in b['demo_accounts'] if a.get('account_type','').lower() == 'real'])
+                    if b.get('auto_provision'):
+                        direct_count += 1
+                
+                # Presentar en columnas para formato en línea
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Total Brokers", total)
+                with col2:
+                    st.metric("Cuentas DEMO", demo_count)
+                with col3:
+                    st.metric("Cuentas REAL", real_count)
+                with col4:
+                    st.metric("Conexión Directa", direct_count)
+                
+                # Mercados abajo
+                st.caption(f"Por mercado: {', '.join([f'{k}: {v}' for k,v in mercados.items()])}")
+            else:
+                st.caption("No hay brokers registrados en el sistema.")
+        except Exception as e:
+            st.error(f"Error al cargar estadísticas: {e}")
 
     elif menu_selection == "🛡️ Sistema & Diagnóstico":
         st.header("🛡️ Aethelgard System Monitor")
@@ -805,6 +709,113 @@ def main():
             st.subheader("🗄️ Base de Datos")
             for d in summary["db"]["details"]:
                 st.write(f"{'🟢' if 'SUCCESS' in d else '🟡' if 'WARNING' in d else '🔴'} {d}")
+    
+    # TAB: Operación Hub
+    elif menu_selection == "📋 Operación Hub":
+        st.header("📋 Operación Hub - Tabla Detallada de Señales")
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            filter_status = st.selectbox(
+                "Estado",
+                options=["Activas", "Todas", "Ejecutadas", "Pendientes", "Fallidas"],
+                index=0,
+                key="hub_status_filter"
+            )
+        with col2:
+            filter_type = st.selectbox(
+                "Tipo",
+                options=["Todos", "BUY", "SELL"],
+                index=0,
+                key="hub_type_filter"
+            )
+        with col3:
+            filter_symbol = st.text_input("Símbolo (filtro)", value="", key="hub_symbol_filter")
+        with col4:
+            limit_signals = st.number_input(
+                "Mostrar últimas N",
+                min_value=5,
+                max_value=100,
+                value=20,
+                step=5,
+                key="hub_limit_signals"
+            )
+        st.markdown("---")
+        try:
+            # Preferir señales activas si existen, si no, fallback a señales recientes
+            signals_source = []
+            if hasattr(storage, 'get_open_operations'):
+                signals_source = storage.get_open_operations()
+            if not signals_source and hasattr(storage, 'get_recent_signals'):
+                signals_source = storage.get_recent_signals(limit=200)
+            if not signals_source:
+                signals_source = storage.get_signals_today()
+            all_signals = signals_source or []
+            # Filtro por estado
+            if filter_status == "Activas":
+                signals = [s for s in all_signals if s.get('status', '').upper() in ("OPEN", "EXECUTED", "PENDING") and not s.get('closed', False)]
+            elif filter_status == "Ejecutadas":
+                signals = [s for s in all_signals if s.get('status', '').upper() == "EXECUTED"]
+            elif filter_status == "Pendientes":
+                signals = [s for s in all_signals if s.get('status', '').upper() == "PENDING"]
+            elif filter_status == "Fallidas":
+                signals = [s for s in all_signals if s.get('status', '').upper() == "FAILED"]
+            else:
+                signals = all_signals
+            if filter_type != "Todos":
+                signals = [s for s in signals if s.get('signal_type') == filter_type]
+            if filter_symbol:
+                signals = [s for s in signals if filter_symbol.upper() in s.get('symbol', '').upper()]
+            signals = signals[-limit_signals:]
+            table_data = []
+            for s in reversed(signals):
+                meta = s.get('metadata', {})
+                connector_type = s.get('connector_type', 'PAPER')
+                account_type = s.get('account_type', 'DEMO')
+                if connector_type == 'PAPER' or not connector_type:
+                    origin_label = "🔵 PAPER (Sistema)"
+                elif account_type == 'REAL':
+                    origin_label = f"🔴 REAL ({connector_type.upper()})"
+                else:
+                    origin_label = f"🟢 DEMO ({connector_type.upper()})"
+                table_data.append({
+                    "ID": s.get('id', '')[:8],
+                    "Origen": origin_label,
+                    "Símbolo": s.get('symbol', ''),
+                    "Timeframe": s.get('timeframe', meta.get('timeframe', 'N/A')),
+                    "Tipo": s.get('signal_type', ''),
+                    "Entrada": s.get('entry_price', ''),
+                    "SL": s.get('stop_loss', ''),
+                    "TP": s.get('take_profit', ''),
+                    "Score": f"{meta.get('score', 0):.1f}",
+                    "Estado": s.get('status', 'N/A'),
+                    "Ejecución": meta.get('execution_observation', ''),
+                })
+            df_signals = pd.DataFrame(table_data)
+            def color_estado(val):
+                if not isinstance(val, str): return ''
+                v = val.upper()
+                if v in ("EXECUTED", "OPEN"): return 'background-color: #d4edda; color: #155724; font-weight: bold;'
+                if v == "FAILED": return 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
+                if v == "PENDING": return 'background-color: #fff3cd; color: #856404; font-weight: bold;'
+                return ''
+            def color_ejecucion(val):
+                if not isinstance(val, str): return ''
+                val_lower = val.lower()
+                if any(x in val_lower for x in ["éxito", "ejecutada correctamente", "success", "completada"]):
+                    return 'background-color: #d4edda; color: #155724; font-weight: bold;'
+                elif any(x in val_lower for x in ["advertencia", "warning", "parcial", "atención"]):
+                    return 'background-color: #fff3cd; color: #856404; font-weight: bold;'
+                elif val:
+                    return 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
+                return ''
+            if not df_signals.empty:
+                styled_df = df_signals.style.applymap(color_estado, subset=['Estado']).applymap(color_ejecucion, subset=['Ejecución'])
+                st.dataframe(styled_df, width='stretch', hide_index=True)
+            else:
+                st.info("No hay señales para mostrar con los filtros actuales.")
+        except Exception as e:
+            st.error(f"Error cargando señales: {e}")
+            logger.error(f"Error en Operación Hub: {e}", exc_info=True)
     
     # TAB 1: Monitor de Resiliencia
     elif menu_selection == "🛡️ Monitor de Resiliencia":
