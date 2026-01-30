@@ -260,7 +260,7 @@ def main():
                 })
             
             df_open = pd.DataFrame(trade_data)
-            st.dataframe(df_open, use_container_width=True, hide_index=True)
+            st.dataframe(df_open, width='stretch', hide_index=True)
             
             # Action buttons for first few trades
             for t in open_trades[:3]:
@@ -329,7 +329,7 @@ def main():
                 df_pnl = pd.DataFrame(pnl_history)
                 fig = px.line(df_pnl, x="time", y="pnl", title="Curva de P/L (Reciente)")
                 fig.update_layout(height=300, margin=dict(l=20, r=20, t=40, b=20))
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
             else:
                 st.caption("No hay datos históricos suficientes para graficar.")
                 
@@ -341,7 +341,7 @@ def main():
                 fig_pie = px.pie(values=[wins, losses], names=['Wins', 'Losses'], 
                                 color_discrete_sequence=['#00CC96', '#EF553B'])
                 fig_pie.update_layout(height=300, margin=dict(l=20, r=20, t=40, b=20))
-                st.plotly_chart(fig_pie, use_container_width=True)
+                st.plotly_chart(fig_pie, width='stretch')
 
         st.markdown("---")
         # --- BROKER HEALTH CARDS ---
@@ -611,7 +611,7 @@ def main():
                 })
             
             df_mt5_positions = pd.DataFrame(pos_data)
-            st.dataframe(df_mt5_positions, use_container_width=True, hide_index=True)
+            st.dataframe(df_mt5_positions, width='stretch', hide_index=True)
         else:
             if connected:
                 st.info("✅ Conectado a MT5 - No hay posiciones abiertas")
@@ -1641,7 +1641,7 @@ def main():
                 fig.update_traces(texttemplate='$%{text:.2f}', textposition='outside')
                 fig.update_layout(showlegend=False)
                 
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
                 
                 st.markdown("---")
                 
@@ -1673,7 +1673,7 @@ def main():
                         'Profit Promedio ($)': '${:.2f}',
                         'PIPs Totales': '{:.1f}'
                     }),
-                    use_container_width=True
+                    width='stretch'
                 )
                 
                 st.markdown("---")
@@ -1713,7 +1713,7 @@ def main():
                             'PIPs': '{:.2f}',
                             'Profit ($)': '${:.2f}'
                         }).hide(['Win'], axis=1),
-                        use_container_width=True
+                        width='stretch'
                     )
                 else:
                     st.info("📭 No hay trades cerrados aún. Los resultados aparecerán cuando el Monitor cierre posiciones.")
