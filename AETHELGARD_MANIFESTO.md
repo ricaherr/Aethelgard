@@ -356,6 +356,7 @@ manager.configure_provider("alphavantage", api_key="YOUR_KEY_HERE")
 
 #### 3. **Data Vault** (`data_vault/`)
 
+
 ##### `storage.py` - Sistema de Persistencia SQLite
 - **Base de Datos**: `data_vault/aethelgard.db` (**SINGLE SOURCE OF TRUTH**)
 - **Tablas**:
@@ -367,7 +368,7 @@ manager.configure_provider("alphavantage", api_key="YOUR_KEY_HERE")
   - `trades`: Registro completo de operaciones ejecutadas
   - `data_providers`: Proveedores de datos históricos configurados
 
-**Funcionalidades:**
+**Funcionalidades clave:**
 - Guardar señales con régimen detectado
 - Registrar resultados de trades (PNL, feedback)
 - Almacenar estados de mercado con todos los indicadores
@@ -375,6 +376,8 @@ manager.configure_provider("alphavantage", api_key="YOUR_KEY_HERE")
 - **Configuración Centralizada**: Credenciales, cuentas y proveedores en DB (NO archivos JSON/ENV)
 - **Credenciales Encriptadas**: Passwords almacenados con Fernet encryption
 - **Único Punto de Verdad**: Connectors y Dashboard leen SOLO de base de datos
+- **Serialización y retry/backoff en escrituras críticas**: Todas las operaciones de escritura relevantes (señales, estado, cuentas) usan locking y reintentos automáticos para evitar bloqueos de base de datos y garantizar robustez en entornos concurrentes.
+- **Control de cuenta activa única por broker**: Si existen varias cuentas demo activas para un broker, el sistema selecciona la primera como default y lo informa en logs/dashboard, asegurando que nunca se opere con más de una cuenta simultáneamente por broker.
 
 #### 4. **Models** (`models/`)
 
@@ -389,6 +392,16 @@ manager.configure_provider("alphavantage", api_key="YOUR_KEY_HERE")
 
 
 ## 🤖 Reglas de Autonomía
+
+### 6. Robustez y concurrencia en provisión de cuentas demo/real
+
+**Principio:** El sistema debe garantizar que nunca existan bloqueos de base de datos ni duplicidad de cuentas activas por broker, incluso bajo alta concurrencia o provisión automática.
+
+**Reglas implementadas:**
+- Todas las escrituras críticas en la base de datos usan locking y retry/backoff.
+- Si existen varias cuentas demo activas para un broker, se selecciona la primera como default y se informa explícitamente.
+- Solo una cuenta demo activa por broker es utilizada para operar.
+- Logs y dashboard reflejan siempre la cuenta seleccionada y el estado de provisión.
 
 
 ### 1. Auto-Calibración

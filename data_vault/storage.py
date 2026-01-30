@@ -1,3 +1,5 @@
+import threading
+import time
 import json
 import os
 import sqlite3
@@ -92,24 +94,76 @@ def calculate_deduplication_window(timeframe: Optional[str]) -> int:
     return 60
 
 class StorageManager:
-    """
-    Manages persistence of system state using SQLite for production reliability.
-    Enhanced with signal tracking and open operation management for session recovery.
-    """
+    _db_lock = threading.Lock()
+
+    def _execute_serialized(self, func, *args, retries=5, backoff=0.2, **kwargs):
+        """
+        Ejecuta una función crítica de DB serializadamente, con retry/backoff si la DB está locked.
+        """
+        last_exc = None
+        for attempt in range(retries):
+            with self._db_lock:
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    last_exc = e
+                    if 'locked' in str(e).lower():
+                        logger.warning(f"DB locked, retrying ({attempt+1}/{retries})...")
+                        time.sleep(backoff * (attempt+1))
+                        continue
+                    logger.error(f"DB error: {e}")
+                    raise
+        logger.error(f"DB error after retries: {last_exc}")
+        if last_exc is not None:
+            raise last_exc
+        else:
+            raise RuntimeError("DB error after retries, pero no se capturó excepción original.")
+
+    def get_broker_provision_status(self) -> list:
+        """
+        Devuelve para cada broker:
+        - broker_id, name, auto_provision_available
+        - estado: demo_ready, manual_required, no_demo, error
+        - cuentas DEMO asociadas (si existen)
+        - mensaje/instrucción si aplica
+        """
+        brokers = self.get_brokers()
+        status_list = []
+        for broker in brokers:
+            broker_id = broker['broker_id']
+            auto_prov = broker.get('auto_provision_available', False)
+            demo_accounts = self.get_broker_accounts(broker_id=broker_id, account_type='demo')
+            if demo_accounts:
+                status = 'demo_ready'
+                msg = f"{len(demo_accounts)} cuenta(s) DEMO activa(s)"
+            elif auto_prov:
+                status = 'no_demo'
+                msg = "Broker permite provisión automática, pero no hay cuenta DEMO creada aún."
+            else:
+                status = 'manual_required'
+                msg = f"Requiere provisión manual. Ir a {broker.get('website','')} o usar script de setup."
+            status_list.append({
+                'broker_id': broker_id,
+                'name': broker.get('name',''),
+                'auto_provision': auto_prov,
+                'status': status,
+                'demo_accounts': demo_accounts,
+                'message': msg
+            })
+        return status_list
     def __init__(self, db_path='data_vault/aethelgard.db'):
         self.db_path = db_path
-        self._conn = None  # Persistent connection for :memory: databases
-        self._initialize_db()
-    
-    def _get_conn(self):
-        """Creates or returns a database connection"""
-        # For in-memory databases, reuse the same connection
+        self._conn = None
         if self.db_path == ':memory:':
-            if self._conn is None:
-                self._conn = sqlite3.connect(self.db_path)
-            return self._conn
-        # For file databases, create new connection each time
-        return sqlite3.connect(self.db_path)
+            self._conn = sqlite3.connect(self.db_path)
+        else:
+            # Conexión persistente, permite acceso multihilo
+            self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self._initialize_db()
+
+    def _get_conn(self):
+        """Devuelve la conexión persistente (siempre la misma, excepto :memory:)"""
+        return self._conn
 
     def _initialize_db(self):
         """Initialize SQLite database with proper schema"""
@@ -324,16 +378,20 @@ class StorageManager:
 
     def update_system_state(self, new_state: dict):
         """Updates and saves the system state."""
+        def _update(conn, new_state):
+            cursor = conn.cursor()
+            for key, value in new_state.items():
+                json_value = json.dumps(value)
+                cursor.execute(
+                    "INSERT OR REPLACE INTO system_state (key, value) VALUES (?, ?)",
+                    (key, json_value)
+                )
+            conn.commit()
         try:
-            with self._get_conn() as conn:
-                cursor = conn.cursor()
-                for key, value in new_state.items():
-                    json_value = json.dumps(value)
-                    cursor.execute(
-                        "INSERT OR REPLACE INTO system_state (key, value) VALUES (?, ?)",
-                        (key, json_value)
-                    )
-                conn.commit()
+            def op():
+                with self._get_conn() as conn:
+                    _update(conn, new_state)
+            self._execute_serialized(op)
         except Exception as e:
             logger.error(f"Error updating system state: {e}")
 
@@ -343,7 +401,6 @@ class StorageManager:
         Includes connector, account, platform, and market information.
         """
         signal_id = str(uuid.uuid4())
-        
         # Serialize metadata properly (convert non-JSON types)
         metadata = getattr(signal, 'metadata', {})
         serialized_metadata = {}
@@ -354,59 +411,58 @@ class StorageManager:
                 serialized_metadata[key] = value.value
             else:
                 serialized_metadata[key] = str(value)
-        
-        # Extract traceability fields
         connector_type = None
         if hasattr(signal, 'connector_type'):
             connector_type = signal.connector_type if isinstance(signal.connector_type, str) else signal.connector_type.value
-        
-        try:
-            with self._get_conn() as conn:
-                cursor = conn.cursor()
-                cursor.execute('''
-                    INSERT INTO signals (
-                        id, symbol, signal_type, confidence, 
-                        entry_price, stop_loss, take_profit, 
-                        timestamp, date, status, metadata,
-                        connector_type, account_id, account_type, 
-                        market_type, platform, order_id, volume, timeframe
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (
-                    signal_id,
-                    signal.symbol,
-                    signal.signal_type if isinstance(signal.signal_type, str) else signal.signal_type.value,
-                    getattr(signal, 'confidence', 0.0),
-                    signal.entry_price,
-                    signal.stop_loss,
-                    signal.take_profit,
-                    signal.timestamp.isoformat() if hasattr(signal, 'timestamp') and signal.timestamp else datetime.now().isoformat(),
-                    date.today().isoformat(),
-                    "executed",
-                    json.dumps(serialized_metadata),
-                    # Traceability fields
-                    connector_type,
-                    getattr(signal, 'account_id', None),
-                    getattr(signal, 'account_type', 'DEMO'),
-                    getattr(signal, 'market_type', 'FOREX'),
-                    getattr(signal, 'platform', None),
-                    getattr(signal, 'order_id', None),
-                    getattr(signal, 'volume', 0.01),
-                    getattr(signal, 'timeframe', 'M5')  # Timeframe added for multi-timeframe support
-                ))
-                conn.commit()
-                
-                logger.debug(
-                    f"Signal saved: {signal_id} | {signal.symbol} {signal.signal_type} | "
-                    f"Platform: {getattr(signal, 'platform', 'N/A')} | "
-                    f"Account: {getattr(signal, 'account_type', 'DEMO')} | "
-                    f"Market: {getattr(signal, 'market_type', 'FOREX')}"
+        def _save(conn, signal_id):
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO signals (
+                    id, symbol, signal_type, confidence, 
+                    entry_price, stop_loss, take_profit, 
+                    timestamp, date, status, metadata,
+                    connector_type, account_id, account_type, 
+                    market_type, platform, order_id, volume, timeframe
                 )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                signal_id,
+                signal.symbol,
+                signal.signal_type if isinstance(signal.signal_type, str) else signal.signal_type.value,
+                getattr(signal, 'confidence', 0.0),
+                signal.entry_price,
+                signal.stop_loss,
+                signal.take_profit,
+                signal.timestamp.isoformat() if hasattr(signal, 'timestamp') and signal.timestamp else datetime.now().isoformat(),
+                date.today().isoformat(),
+                "executed",
+                json.dumps(serialized_metadata),
+                # Traceability fields
+                connector_type,
+                getattr(signal, 'account_id', None),
+                getattr(signal, 'account_type', 'DEMO'),
+                getattr(signal, 'market_type', 'FOREX'),
+                getattr(signal, 'platform', None),
+                getattr(signal, 'order_id', None),
+                getattr(signal, 'volume', 0.01),
+                getattr(signal, 'timeframe', 'M5')
+            ))
+            conn.commit()
+            logger.debug(
+                f"Signal saved: {signal_id} | {signal.symbol} {signal.signal_type} | "
+                f"Platform: {getattr(signal, 'platform', 'N/A')} | "
+                f"Account: {getattr(signal, 'account_type', 'DEMO')} | "
+                f"Market: {getattr(signal, 'market_type', 'FOREX')}"
+            )
+        try:
+            def op():
+                with self._get_conn() as conn:
+                    _save(conn, signal_id)
+            self._execute_serialized(op)
+            return signal_id
         except Exception as e:
             logger.error(f"Error saving signal: {e}")
             raise
-        
-        return signal_id
     
     def count_executed_signals(self, target_date: Optional[date] = None) -> int:
         """
@@ -1249,36 +1305,31 @@ class StorageManager:
                           account_type: str = 'demo', server: str = '', login: str = '', 
                           password: str = '', enabled: bool = True):
         """
-        Save or update broker account.
+        Save or update broker account. Serializado y con retry/backoff para evitar database is locked.
         """
+        account_id = str(uuid.uuid4())
+        now = datetime.now().isoformat()
+        logger.info(f"Saving broker account - login: '{login}' (type: {type(login)}, length: {len(str(login))})")
+
+        def _save(conn):
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO broker_accounts 
+                (account_id, broker_id, platform_id, account_name, account_number, 
+                    server, account_type, enabled, balance, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (account_id, broker_id, platform_id, account_name, login, 
+                    server, account_type, enabled, 0.0, now, now))
+            conn.commit()
+            logger.info(f"Account saved successfully with account_number: '{login}'")
+
         try:
-            account_id = str(uuid.uuid4())
-            now = datetime.now().isoformat()
-            
-            logger.info(f"Saving broker account - login: '{login}' (type: {type(login)}, length: {len(str(login))})")
-            
-            with self._get_conn() as conn:
-                cursor = conn.cursor()
-                
-                # Insert account
-                cursor.execute("""
-                    INSERT INTO broker_accounts 
-                    (account_id, broker_id, platform_id, account_name, account_number, 
-                        server, account_type, enabled, balance, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (account_id, broker_id, platform_id, account_name, login, 
-                        server, account_type, enabled, 0.0, now, now))
-                
-                conn.commit()
-                logger.info(f"Account saved successfully with account_number: '{login}'")
-            
+            self._execute_serialized(lambda: _save(self._get_conn()))
             # Save credentials if provided
             if password:
                 self.save_credential(account_id, "password", "password", password)
-            
             logger.info(f"Account saved: {account_id}")
             return account_id
-                
         except Exception as e:
             logger.error(f"Error saving broker account: {e}")
             raise

@@ -329,28 +329,36 @@ def main():
             open_trades = []
             recent_trades = []
 
+        # --- ESTADO DE BROKERS / CONECTORES (al final) ---
         st.markdown("---")
-        # --- BROKERS DETECTADOS AUTOMÁTICAMENTE ---
-        st.subheader("🔎 Brokers Detectados Automáticamente")
+        st.caption("Estado de Brokers/Conectores")
         try:
-            brokers = storage.get_brokers_detected() if hasattr(storage, 'get_brokers_detected') else []
-            if brokers:
-                st.table(brokers)
+            broker_status = storage.get_broker_provision_status()
+            if broker_status:
+                total = len(broker_status)
+                mercados = {}
+                demo_count = 0
+                real_count = 0
+                direct_count = 0
+                for b in broker_status:
+                    # Clasificación por mercado (puede ser lista o string)
+                    mercados_broker = b.get('markets') or b.get('type') or 'Otro'
+                    if isinstance(mercados_broker, str):
+                        mercados_broker = [mercados_broker]
+                    for mercado in mercados_broker:
+                        mercados[mercado] = mercados.get(mercado, 0) + 1
+                    demo_count += len([a for a in b['demo_accounts'] if a.get('account_type','').lower() == 'demo'])
+                    real_count += len([a for a in b['demo_accounts'] if a.get('account_type','').lower() == 'real'])
+                    if b.get('auto_provision'):
+                        direct_count += 1
+                st.markdown(f"**Total de brokers registrados:** {total}")
+                st.markdown(f"**Por mercado:** {', '.join([f'{k}: {v}' for k,v in mercados.items()])}")
+                st.markdown(f"**Cuentas DEMO:** {demo_count} &nbsp;&nbsp;|&nbsp;&nbsp; **Cuentas REAL:** {real_count}")
+                st.markdown(f"**Brokers con conexión directa:** {direct_count}")
             else:
-                st.info("No se han detectado brokers automáticamente.")
+                st.info("No hay brokers registrados en el sistema.")
         except Exception as e:
-            st.error(f"Error al cargar brokers detectados: {e}")
-
-        # --- CUENTAS DEMO CREADAS AUTOMÁTICAMENTE ---
-        st.subheader("🧪 Cuentas DEMO Creadas")
-        try:
-            demo_accounts = storage.get_demo_accounts() if hasattr(storage, 'get_demo_accounts') else []
-            if demo_accounts:
-                st.table(demo_accounts)
-            else:
-                st.info("No se han creado cuentas DEMO automáticamente.")
-        except Exception as e:
-            st.error(f"Error al cargar cuentas DEMO: {e}")
+            st.error(f"Error al cargar estado de brokers: {e}")
         
         # --- ACTIVE OPERATIONS ---
         st.subheader("🚀 Operaciones Activas")

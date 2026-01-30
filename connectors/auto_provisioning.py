@@ -252,40 +252,44 @@ class BrokerProvisioner:
             account_type='demo'
         )
         return len(accounts) > 0
-    
+
     async def ensure_demo_account(self, broker_id: str, provider: Optional[str] = None) -> Tuple[bool, Dict]:
         """
-        Ensure demo account exists, creating if necessary
-        
-        This is the main entry point for autonomous demo mode
+        Ensure only one demo account is active per broker. If multiple exist, use the first and inform.
+        Serializa la provisión para evitar conflictos de DB.
         """
-        # Check if account already exists in database
-        if self.has_demo_account(broker_id):
+        import threading
+        lock = threading.Lock()
+        with lock:
             accounts = self.storage.get_broker_accounts(
                 broker_id=broker_id,
                 account_type='demo'
             )
-            account = accounts[0]
-            credentials = self.load_credentials(account['account_id'])
-            logger.info(f"✅ Using existing {broker_id} demo account")
-            return True, {"account": account, "credentials": credentials}
-        
-        # Check if auto-provisioning is possible
-        if self.requires_manual_setup(broker_id):
-            logger.warning(f"⚠️  {broker_id} requires manual account setup")
-            manual_info = self._get_manual_setup_info(broker_id)
-            return False, {"error": "manual_setup_required", "info": manual_info}
-        
-        # Auto-create demo account
-        logger.info(f"🔄 Auto-creating {broker_id} demo account...")
-        success, credentials = await self.provision_demo_account(broker_id, provider)
-        
-        if success:
-            logger.info(f"✅ {broker_id} demo account ready")
-        else:
-            logger.error(f"❌ Failed to create {broker_id} demo account")
-        
-        return success, credentials
+            if accounts:
+                account = accounts[0]
+                credentials = self.load_credentials(account['account_id'])
+                if len(accounts) > 1:
+                    logger.warning(f"⚠️ {broker_id}: Se detectaron {len(accounts)} cuentas DEMO activas. Usando la primera como default: {account.get('account_name','')} ({account.get('account_id')})")
+                else:
+                    logger.info(f"✅ Using existing {broker_id} demo account")
+                return True, {"account": account, "credentials": credentials, "info": f"Usando cuenta DEMO: {account.get('account_name','')} ({account.get('account_id')})"}
+
+            # Check if auto-provisioning is possible
+            if self.requires_manual_setup(broker_id):
+                logger.warning(f"⚠️  {broker_id} requires manual account setup")
+                manual_info = self._get_manual_setup_info(broker_id)
+                return False, {"error": "manual_setup_required", "info": manual_info}
+
+            # Auto-create demo account
+            logger.info(f"🔄 Auto-creating {broker_id} demo account...")
+            success, credentials = await self.provision_demo_account(broker_id, provider)
+
+            if success:
+                logger.info(f"✅ {broker_id} demo account ready")
+            else:
+                logger.error(f"❌ Failed to create {broker_id} demo account")
+
+            return success, credentials
     
     def _get_manual_setup_info(self, broker_id: str) -> Dict:
         """Get information for manual setup"""

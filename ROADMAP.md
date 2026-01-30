@@ -58,6 +58,28 @@ Resumen del roadmap de implementación. Detalle completo en [AETHELGARD_MANIFEST
 
 
 ## 🟢 Fase 2.7: Provisión EDGE de cuentas demo maestras y brokers ✅ COMPLETADA
+
+---
+
+## 🟢 Hotfix 2026-01-30: Serialización, retry/backoff y control de cuenta activa única por broker ✅ COMPLETADA
+
+**Objetivo:**
+Garantizar robustez y operación concurrente segura en la provisión y uso de cuentas demo/real, evitando bloqueos de base de datos y duplicidad de cuentas activas.
+
+**Cambios aplicados:**
+- Todas las escrituras críticas en la base de datos (StorageManager) ahora usan serialización y retry/backoff para evitar errores "database is locked".
+- En la provisión de cuentas demo, si existen varias cuentas activas para un broker, el sistema selecciona la primera como default y lo informa en logs/dashboard.
+- Se asegura que solo una cuenta demo activa por broker sea utilizada para operar.
+- Cumplimiento estricto de Single Source of Truth (DB-first).
+
+**Criterios de éxito:**
+- Sin bloqueos de base de datos en escenarios concurrentes.
+- No se crean ni usan cuentas demo duplicadas.
+- Logs y dashboard informan claramente la cuenta seleccionada si hay más de una activa.
+- Todos los tests relevantes pasados.
+
+**Resumen Ejecutivo:**
+El sistema ahora es resiliente ante concurrencia y multi-cuenta, garantizando operación autónoma y profesional. La lógica de provisión y uso de cuentas demo es óptima y segura, cumpliendo las mejores prácticas de trading algorítmico SaaS.
 **Objetivo:** Registrar y provisionar automáticamente todas las cuentas demo maestras en brokers disponibles, validando conexión y lógica óptima (no redundante).
 
 **Plan de Trabajo:**
@@ -464,6 +486,32 @@ La provisión EDGE de cuentas demo maestras y la validación de brokers se compl
 - **Multi-tenant**: Soporte para múltiples usuarios aislados.
 - **Módulos bajo demanda**: Activación de features vía licencia.
 - **Notificaciones**: Integración profunda con Telegram/Discord.
+
+---
+
+## 🚀 Provisión y Reporte Automático de Brokers/Cuentas DEMO (2026-01-30)
+
+**Objetivo:**
+Implementar detección automática de brokers, provisión de cuentas DEMO (cuando sea posible), y reporte del estado/resultados en el dashboard, informando claramente si requiere acción manual o si hubo errores.
+
+**Plan de Trabajo:**
+
+1. Implementar lógica de escaneo y provisión automática de brokers/cuentas DEMO en el backend (core_brain/main_orchestrator.py, connectors/auto_provisioning.py).
+2. Registrar en la base de datos el estado de provisión, cuentas DEMO creadas, y motivos de fallo si aplica (data_vault/storage.py).
+3. Exponer métodos en StorageManager para consultar brokers detectados, estado de provisión, cuentas DEMO creadas y motivos de fallo.
+4. Actualizar el dashboard (ui/dashboard.py) para mostrar:
+   - Lista de brokers detectados
+   - Estado de provisión/conexión
+   - Cuentas DEMO creadas
+   - Mensajes claros de error o requerimientos manuales
+5. Crear test end-to-end en tests/ para validar el flujo completo y la visualización en la UI.
+
+**Checklist:**
+- [ ] Lógica de escaneo y provisión automática implementada
+- [ ] Estado/resultados registrados en DB
+- [ ] Métodos de consulta en StorageManager
+- [ ] Dashboard actualizado con reporte claro
+- [ ] Test end-to-end validando el flujo
 
 ---
 
