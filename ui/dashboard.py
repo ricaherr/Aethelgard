@@ -330,6 +330,27 @@ def main():
             recent_trades = []
 
         st.markdown("---")
+        # --- BROKERS DETECTADOS AUTOMÁTICAMENTE ---
+        st.subheader("🔎 Brokers Detectados Automáticamente")
+        try:
+            brokers = storage.get_brokers_detected() if hasattr(storage, 'get_brokers_detected') else []
+            if brokers:
+                st.table(brokers)
+            else:
+                st.info("No se han detectado brokers automáticamente.")
+        except Exception as e:
+            st.error(f"Error al cargar brokers detectados: {e}")
+
+        # --- CUENTAS DEMO CREADAS AUTOMÁTICAMENTE ---
+        st.subheader("🧪 Cuentas DEMO Creadas")
+        try:
+            demo_accounts = storage.get_demo_accounts() if hasattr(storage, 'get_demo_accounts') else []
+            if demo_accounts:
+                st.table(demo_accounts)
+            else:
+                st.info("No se han creado cuentas DEMO automáticamente.")
+        except Exception as e:
+            st.error(f"Error al cargar cuentas DEMO: {e}")
         
         # --- ACTIVE OPERATIONS ---
         st.subheader("🚀 Operaciones Activas")
