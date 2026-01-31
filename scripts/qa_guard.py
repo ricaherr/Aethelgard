@@ -115,12 +115,11 @@ def main():
             print(f"🚫 ESTRUCTURA: {rel_path} -> {issue}")
             all_passed = False
 
-        # 3. Type Hints (Advertencia fuerte)
+        # 3. Type Hints (Obligatorio)
         hint_issues = check_type_hints(f)
         for issue in hint_issues:
-            print(f"⚠️  TYPE HINT: {rel_path} -> {issue}")
-            # Descomenta la siguiente línea si quieres que los Type Hints sean obligatorios para pasar
-            # all_passed = False 
+            print(f"❌ TYPE HINT: {rel_path} -> {issue}")
+            all_passed = False 
 
     print("\n" + "="*40)
     if all_passed:
