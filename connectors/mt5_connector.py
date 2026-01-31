@@ -193,7 +193,7 @@ class MT5Connector:
             logger.error(f"Error connecting to MT5: {e}")
             return False
     
-    def disconnect(self):
+    def disconnect(self) -> None:
         """Disconnect from MT5"""
         if self.is_connected:
             mt5.shutdown()
@@ -345,7 +345,7 @@ class MT5Connector:
             logger.error(f"Error getting closed positions: {e}")
             return []
     
-    def _find_entry_deal(self, position_id: int, from_date: datetime, to_date: datetime):
+    def _find_entry_deal(self, position_id: int, from_date: datetime, to_date: datetime) -> None:
         """Find the entry deal for a position"""
         try:
             deals = mt5.history_deals_get(from_date, to_date, position=position_id)
@@ -358,7 +358,7 @@ class MT5Connector:
             logger.error(f"Error finding entry deal: {e}")
             return None
     
-    def _detect_exit_reason(self, deal) -> str:
+    def _detect_exit_reason(self, deal: Any) -> str:
         """Detect why a position was closed"""
         comment = deal.comment.lower()
         

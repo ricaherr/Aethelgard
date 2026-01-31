@@ -130,7 +130,7 @@ class SessionStats:
 
 
 class MainOrchestrator:
-    async def ensure_optimal_demo_accounts(self):
+    async def ensure_optimal_demo_accounts(self) -> None:
         """
         Provisiona cuentas demo maestras solo cuando sea óptimo:
         - Al inicio si no existe cuenta válida
@@ -261,7 +261,7 @@ class MainOrchestrator:
             }
         return status
 
-    async def provision_all_demo_accounts(self):
+    async def provision_all_demo_accounts(self) -> None:
         """Provisiona cuentas demo maestras para todos los brokers con provisión automática."""
         from connectors.auto_provisioning import BrokerProvisioner
         provisioner = BrokerProvisioner(storage=self.storage)
@@ -584,7 +584,7 @@ class MainOrchestrator:
     
     def _register_signal_handlers(self) -> None:
         """Register signal handlers for Ctrl+C and SIGTERM"""
-        def signal_handler(signum, frame):
+        def signal_handler(signum: int, frame: Any) -> None:
             logger.info(f"Received signal {signum}. Requesting shutdown...")
             self._shutdown_requested = True
         
@@ -593,7 +593,7 @@ class MainOrchestrator:
         signal.signal(signal.SIGTERM, signal_handler)  # Kill command
 
 
-async def main():
+async def main() -> None:
     """
     Main entry point for Aethelgard.
     Includes pre-flight health checks and component initialization.

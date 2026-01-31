@@ -33,7 +33,7 @@ class ModuleManager:
         self.config: Dict = {}
         self._load_config()
     
-    def _load_config(self):
+    def _load_config(self) -> None:
         """Carga la configuración desde el archivo JSON"""
         if not self.config_path.exists():
             logger.warning(f"Archivo de configuración no encontrado: {self.config_path}. Usando valores por defecto.")
@@ -48,7 +48,7 @@ class ModuleManager:
             logger.error(f"Error cargando configuración de módulos: {e}")
             self._create_default_config()
     
-    def _create_default_config(self):
+    def _create_default_config(self) -> None:
         """Crea una configuración por defecto si no existe el archivo"""
         self.config = {
             "active_modules": {
@@ -171,7 +171,7 @@ class ModuleManager:
         
         return available_modules
     
-    def enable_module(self, module_name: str):
+    def enable_module(self, module_name: str) -> None:
         """Habilita un módulo"""
         if "active_modules" not in self.config:
             self.config["active_modules"] = {}
@@ -184,7 +184,7 @@ class ModuleManager:
         self._save_config()
         logger.info(f"Módulo {module_name} habilitado")
     
-    def disable_module(self, module_name: str):
+    def disable_module(self, module_name: str) -> None:
         """Deshabilita un módulo"""
         if "active_modules" not in self.config:
             return
@@ -197,7 +197,7 @@ class ModuleManager:
         self._save_config()
         logger.info(f"Módulo {module_name} deshabilitado")
     
-    def _save_config(self):
+    def _save_config(self) -> None:
         """Guarda la configuración en el archivo JSON"""
         try:
             self.config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -207,7 +207,7 @@ class ModuleManager:
         except Exception as e:
             logger.error(f"Error guardando configuración: {e}")
     
-    def reload_config(self):
+    def reload_config(self) -> None:
         """Recarga la configuración desde el archivo"""
         self._load_config()
         logger.info("Configuración de módulos recargada")

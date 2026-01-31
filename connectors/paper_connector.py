@@ -12,7 +12,7 @@ class PaperConnector:
     Simulates execution of signals without real broker interaction.
     """
     
-    def __init__(self):
+    def __init__(self) -> None:
         logger.info("PaperConnector initialized")
         
     def connect(self) -> bool:
@@ -46,6 +46,6 @@ class PaperConnector:
         """Return empty list for paper mode (no real closed positions)."""
         return []
         
-    def close_connections(self):
+    def close_connections(self) -> None:
         """Cleanup"""
         logger.info("PaperConnector connections closed")

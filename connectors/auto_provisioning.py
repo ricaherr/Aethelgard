@@ -310,7 +310,7 @@ class BrokerProvisioner:
         }
 
 
-async def main():
+async def main() -> None:
     """Test auto-provisioning"""
     provisioner = BrokerProvisioner()
     

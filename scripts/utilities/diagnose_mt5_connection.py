@@ -63,7 +63,7 @@ print("\n\n🔌 PASO 3: Probar conexión a MT5")
 print("-" * 70)
 
 try:
-    import MetaTrader5 as mt5
+    from connectors.mt5_wrapper import MT5 as mt5
     mt5 = cast(Any, mt5)
     print("✅ Librería MetaTrader5 instalada")
     

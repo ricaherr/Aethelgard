@@ -19,7 +19,7 @@ class CredentialEncryption:
         self._cipher = None
         self._load_or_generate_key()
     
-    def _load_or_generate_key(self):
+    def _load_or_generate_key(self) -> None:
         """Load existing key or generate new one"""
         if self.key_path.exists():
             with open(self.key_path, 'rb') as f:
@@ -49,7 +49,7 @@ class CredentialEncryption:
             raise RuntimeError("Cipher not initialized: encryption key missing or failed to load.")
         return self._cipher.decrypt(encrypted_value).decode('utf-8')
     
-    def rotate_key(self, new_key_path: Optional[str] = None):
+    def rotate_key(self, new_key_path: Optional[str] = None) -> None:
         """
         Rotate encryption key (for security)
         WARNING: Must re-encrypt all credentials after rotation

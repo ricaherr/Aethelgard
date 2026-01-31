@@ -89,7 +89,7 @@ class TelegramNotifier:
                                   new_regime: MarketRegime,
                                   price: float,
                                   membership: MembershipLevel = MembershipLevel.BASIC,
-                                  metrics: Optional[Dict] = None):
+                                  metrics: Optional[Dict] = None) -> None:
         """
         Envía una alerta cuando el régimen de mercado cambia
         
@@ -143,7 +143,7 @@ class TelegramNotifier:
     async def notify_oliver_velez_signal(self,
                                         signal: Signal,
                                         membership: MembershipLevel = MembershipLevel.BASIC,
-                                        strategy_details: Optional[Dict] = None):
+                                        strategy_details: Optional[Dict] = None) -> None:
         """
         Envía una alerta cuando se detecta una señal de Oliver Vélez
         
@@ -200,7 +200,7 @@ class TelegramNotifier:
                                  title: str,
                                  message: str,
                                  membership: MembershipLevel = MembershipLevel.PREMIUM,
-                                 alert_type: str = "info"):
+                                 alert_type: str = "info") -> None:
         """
         Envía una alerta del sistema (errores, modo seguridad, etc.)
         
@@ -235,7 +235,7 @@ class TelegramNotifier:
         
         await self._send_message(chat_id, formatted_message)
 
-    async def send_alert(self, message: str, title: str = "Aethelgard Alert"):
+    async def send_alert(self, message: str, title: str = "Aethelgard Alert") -> None:
         """Alias para notify_system_alert usado por algunos componentes."""
         await self.notify_system_alert(title=title, message=message, alert_type="warning")
     
@@ -253,7 +253,7 @@ class TelegramNotifier:
         """Verifica si el notificador está correctamente configurado"""
         return bool(self.bot_token and (self.basic_chat_id or self.premium_chat_id))
     
-    def set_enabled(self, enabled: bool):
+    def set_enabled(self, enabled: bool) -> None:
         """Habilita o deshabilita las notificaciones"""
         self.enabled = enabled
         logger.info(f"Notificaciones de Telegram {'habilitadas' if enabled else 'deshabilitadas'}")

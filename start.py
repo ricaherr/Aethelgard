@@ -52,7 +52,7 @@ streamlit_process = None
 server_process = None
 
 
-def launch_dashboard():
+def launch_dashboard() -> None:
     """Lanza el dashboard de Streamlit en un proceso separado."""
     global streamlit_process
     try:
@@ -86,7 +86,7 @@ def launch_dashboard():
     except Exception as e:
         logger.error(f"❌ Error al iniciar dashboard: {e}")
 
-def launch_server():
+def launch_server() -> None:
     """Lanza el servidor FastAPI (Uvicorn) en un proceso separado."""
     global server_process
     try:
@@ -104,7 +104,7 @@ def launch_server():
     except Exception as e:
         logger.error(f"❌ Error al iniciar servidor API: {e}")
 
-async def main():
+async def main() -> None:
     """
     Lanzador unificado de Aethelgard.
     Inicializa motor de trading + dashboard.
@@ -217,7 +217,7 @@ async def main():
         
         
         # === FUNCIONES AUXILIARES EDGE ===
-        async def run_edge_tuner_loop(edge_tuner: EdgeTuner):
+        async def run_edge_tuner_loop(edge_tuner: EdgeTuner) -> None:
             """
             Tarea asíncrona que ejecuta el EDGE Tuner cada hora.
             Ajusta parámetros basándose en resultados de trades.

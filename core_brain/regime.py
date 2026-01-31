@@ -67,7 +67,7 @@ class RegimeClassifier:
             return {}
     
     @staticmethod
-    def reload_params():
+    def reload_params() -> None:
         """
         Invalida cache de parámetros para forzar recarga.
         Útil cuando dynamic_params.json es modificado por EdgeTuner.
@@ -133,7 +133,7 @@ class RegimeClassifier:
                    high: Optional[float] = None,
                    low: Optional[float] = None,
                    open_price: Optional[float] = None,
-                   timestamp: Optional[datetime] = None):
+                   timestamp: Optional[datetime] = None) -> None:
         """
         Añade una vela al historial para análisis
         
@@ -169,7 +169,7 @@ class RegimeClassifier:
         if len(self.df) > self.max_history:
             self.df = self.df.tail(self.max_history).reset_index(drop=True)
     
-    def add_price(self, price: float, timestamp: Optional[datetime] = None):
+    def add_price(self, price: float, timestamp: Optional[datetime] = None) -> None:
         """
         Método de compatibilidad: añade solo precio (se usa como close)
         Para mejor precisión, usar add_candle() con datos OHLC completos
@@ -486,7 +486,7 @@ class RegimeClassifier:
             'atr_pct': self._get_atr_pct(),
         }
     
-    def reload_params(self):
+    def reload_params(self) -> None:
         """Recarga los parámetros desde el archivo de configuración"""
         config = self._load_params_from_config(self.config_path)
         
@@ -502,7 +502,7 @@ class RegimeClassifier:
         
         logger.info("Parámetros recargados desde configuración")
     
-    def reset(self):
+    def reset(self) -> None:
         """Resetea el historial y el estado de persistencia/histéresis"""
         self.df = None
         self._confirmed_regime = None
@@ -510,7 +510,7 @@ class RegimeClassifier:
         self._pending_count = 0
         self._last_classify_len = 0
 
-    def load_ohlc(self, df: pd.DataFrame):
+    def load_ohlc(self, df: pd.DataFrame) -> None:
         """
         Reemplaza el historial OHLC interno con el DataFrame proporcionado.
         Resetea el estado de persistencia/histéresis.

@@ -7,6 +7,8 @@ Rules:
 import json
 import logging
 import os
+from sqlite3 import Connection
+from sqlite3 import Cursor
 import sys
 import psutil
 from pathlib import Path
@@ -14,23 +16,23 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional
 
 # Path configuration
-BASE_DIR = Path(__file__).parent.parent
-CONFIG_DIR = BASE_DIR / "config"
-DATA_DIR = BASE_DIR / "data_vault"
+BASE_DIR: Path = Path(__file__).parent.parent
+CONFIG_DIR: Path = BASE_DIR / "config"
+DATA_DIR: Path = BASE_DIR / "data_vault"
 
-logger = logging.getLogger("HEALTH_CORE")
+logger: logging.Logger = logging.getLogger("HEALTH_CORE")
 
 class HealthManager:
-    def __init__(self):
-        self.db_path = DATA_DIR / "aethelgard.db"
+    def __init__(self) -> None:
+        self.db_path: Path = DATA_DIR / "aethelgard.db"
     
     def check_config_integrity(self) -> Dict[str, Any]:
         """Checks if critical JSON config files are present and valid."""
         results = {"status": "GREEN", "details": []}
-        critical_files = ["modules.json", "dynamic_params.json"]
+        critical_files: List[str] = ["modules.json", "dynamic_params.json"]
         
         for cf in critical_files:
-            file_path = CONFIG_DIR / cf
+            file_path: Path = CONFIG_DIR / cf
             if not file_path.exists():
                 results["status"] = "RED"
                 results["details"].append(f"CRITICAL: {cf} is missing.")
@@ -57,14 +59,14 @@ class HealthManager:
             
         try:
             import sqlite3
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
+            conn: Connection = sqlite3.connect(self.db_path)
+            cursor: Cursor = conn.cursor()
             # Simple check of critical tables
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-            tables = [r[0] for r in cursor.fetchall()]
+            tables: List[Any] = [r[0] for r in cursor.fetchall()]
             
             # Correct tables based on StorageManager schema
-            needed_tables = ['system_state', 'signals', 'trades', 'market_states']
+            needed_tables: List[str] = ['system_state', 'signals', 'trades', 'market_states']
             for t in needed_tables:
                 if t not in tables:
                     results["status"] = "YELLOW"
@@ -94,7 +96,7 @@ class HealthManager:
         """Gets CPU and Memory usage of the current process group."""
         try:
             process = psutil.Process(os.getpid())
-            mem_info = process.memory_info()
+            mem_info: psutil.pmem = process.memory_info()
             return {
                 "cpu_percent": psutil.cpu_percent(interval=0.1),
                 "memory_mb": mem_info.rss / (1024 * 1024),
@@ -124,7 +126,7 @@ class HealthManager:
         try:
             # Check if MT5 library is available
             try:
-                import MetaTrader5 as mt5
+                from connectors.mt5_wrapper import MT5 as mt5
                 results["installed"] = True
                 results["details"].append("✅ Librería MetaTrader5 instalada correctamente")
             except ImportError:
@@ -167,7 +169,7 @@ class HealthManager:
             # Check if accounts have credentials
             account_with_creds = None
             for acc in mt5_accounts:
-                creds = storage.get_credentials(acc['account_id'])
+                creds: Dict[str, str] = storage.get_credentials(acc['account_id'])
                 if creds and creds.get('password'):
                     account_with_creds = acc
                     break
@@ -309,10 +311,10 @@ class HealthManager:
 
     def run_full_diagnostic(self) -> Dict[str, Any]:
         """Runs all checks and returns a summary."""
-        config = self.check_config_integrity()
-        db = self.check_db_integrity()
-        resources = self.get_resource_usage()
-        mt5 = self.check_mt5_connection()
+        config: Dict[str, Any] = self.check_config_integrity()
+        db: Dict[str, Any] = self.check_db_integrity()
+        resources: Dict[str, Any] = self.get_resource_usage()
+        mt5: Dict[str, Any] = self.check_mt5_connection()
         
         # Overall status logic
         status = "GREEN"
@@ -333,5 +335,5 @@ class HealthManager:
 if __name__ == "__main__":
     # Quick CLI test
     hm = HealthManager()
-    summary = hm.run_full_diagnostic()
+    summary: Dict[str, Any] = hm.run_full_diagnostic()
     print(json.dumps(summary, indent=2))

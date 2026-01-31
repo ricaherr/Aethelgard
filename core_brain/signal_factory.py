@@ -99,7 +99,7 @@ class SignalFactory:
             logger.error(f"Error loading config: {e}. Using empty config.")
             return {}
 
-    def _register_default_strategies(self):
+    def _register_default_strategies(self) -> None:
         """Registra las estrategias por defecto."""
         # En el futuro, esto podría ser dinámico o vía plugin
         try:
@@ -189,7 +189,7 @@ class SignalFactory:
         
         return False
 
-    async def _process_valid_signal(self, signal: Signal):
+    async def _process_valid_signal(self, signal: Signal) -> None:
         """Maneja persistencia y notificación de una señal válida."""
         try:
             # 1. Persistencia

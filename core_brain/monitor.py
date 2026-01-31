@@ -133,7 +133,7 @@ class ClosingMonitor:
         exit_reason: str,
         close_time: Optional[datetime] = None,
         symbol: Optional[str] = None
-    ):
+    ) -> None:
         """
         Update database with trade result.
         
@@ -234,7 +234,7 @@ class ClosingMonitor:
         
         return round(pips, 2)
     
-    async def start(self):
+    async def start(self) -> None:
         """Start monitoring loop (async)"""
         self.is_running = True
         logger.info("ClosingMonitor started")
@@ -247,7 +247,7 @@ class ClosingMonitor:
                 logger.error(f"Error in monitoring loop: {e}")
                 await asyncio.sleep(self.interval_seconds)
     
-    async def stop(self):
+    async def stop(self) -> None:
         """Stop monitoring loop"""
         self.is_running = False
         logger.info("ClosingMonitor stopped")

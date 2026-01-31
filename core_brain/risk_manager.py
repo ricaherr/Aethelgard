@@ -129,7 +129,7 @@ class RiskManager:
             if self.consecutive_losses >= self.max_consecutive_losses:
                 self._activate_lockdown()
 
-    def _activate_lockdown(self):
+    def _activate_lockdown(self) -> None:
         """Activa y persiste el modo lockdown."""
         if not self.lockdown_mode:
             self.lockdown_mode = True
@@ -139,7 +139,7 @@ class RiskManager:
                 "Trading disabled."
             )
 
-    def _deactivate_lockdown(self):
+    def _deactivate_lockdown(self) -> None:
         """Desactiva y persiste el modo lockdown."""
         if self.lockdown_mode:
             self.lockdown_mode = False

@@ -58,7 +58,7 @@ class ParameterTuner:
             logger.error(f"Error cargando configuración: {e}")
             raise
     
-    def _save_config(self, config: Dict):
+    def _save_config(self, config: Dict) -> None:
         """Guarda la configuración en el archivo JSON"""
         config["last_updated"] = datetime.now().isoformat()
         try:
@@ -313,7 +313,7 @@ class EdgeTuner:
             self.logger.error(f"Config file not found: {self.config_path}")
             raise
     
-    def _save_config(self, config: Dict):
+    def _save_config(self, config: Dict) -> None:
         """Guarda configuración actualizada"""
         with open(self.config_path, 'w', encoding='utf-8') as f:
             json.dump(config, f, indent=2, ensure_ascii=False)

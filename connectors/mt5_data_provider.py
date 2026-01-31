@@ -70,7 +70,7 @@ class MT5DataProvider:
         if init_mt5 and mt5:
             self._try_initialize()
     
-    def _load_from_db(self):
+    def _load_from_db(self) -> None:
         """Load MT5 credentials from database"""
         try:
             all_accounts = self.storage.get_broker_accounts()
@@ -154,7 +154,7 @@ class MT5DataProvider:
             self._initialized = False
             logger.info("MT5DataProvider cerrado.")
 
-    def _resolve_timeframe(self, timeframe: str):
+    def _resolve_timeframe(self, timeframe: str) -> int:
         t = (timeframe or "M5").upper()
         if t not in TIMEFRAME_MAP:
             logger.warning("Timeframe '%s' desconocido, usando M5.", timeframe)

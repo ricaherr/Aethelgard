@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from data_vault.storage import StorageManager
 
 try:
-    import MetaTrader5 as mt5
+    from connectors.mt5_wrapper import MT5 as mt5
 except ImportError:
     print("❌ MetaTrader5 library not installed!")
     print("   Install with: pip install MetaTrader5")

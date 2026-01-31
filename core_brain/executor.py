@@ -57,7 +57,7 @@ class OrderExecutor:
             f"{[ct.value for ct in self.connectors.keys()]}"
         )
     
-    def _try_load_mt5_connector(self):
+    def _try_load_mt5_connector(self) -> None:
         """
         Attempt to load MT5Connector if configuration exists.
         Follows Aethelgard's agnosticism principle: core doesn't require MT5,
@@ -266,7 +266,7 @@ class OrderExecutor:
         """
         return self.connectors.get(connector_type)
     
-    def _register_pending_signal(self, signal: Signal):
+    def _register_pending_signal(self, signal: Signal) -> None:
         """Register signal with PENDING status in data_vault."""
         signal_record = {
             "timestamp": datetime.now().isoformat(),
@@ -287,7 +287,7 @@ class OrderExecutor:
         
         logger.debug(f"Signal registered as PENDING: {signal.symbol}")
     
-    def _register_successful_signal(self, signal: Signal, result: Dict):
+    def _register_successful_signal(self, signal: Signal, result: Dict) -> None:
         """Register successfully executed signal."""
         # Extract ticket from result (supports both formats)
         ticket = result.get('ticket') or result.get('order_id')
@@ -306,7 +306,7 @@ class OrderExecutor:
         
         logger.debug(f"Signal registered as EXECUTED: {signal.symbol}, Ticket: {ticket}")
     
-    def _register_failed_signal(self, signal: Signal, reason: str):
+    def _register_failed_signal(self, signal: Signal, reason: str) -> None:
         """Register failed signal attempt in data_vault."""
         signal_record = {
             "timestamp": datetime.now().isoformat(),
@@ -322,7 +322,7 @@ class OrderExecutor:
             "rejected_signals": [signal_record]
         })
     
-    async def _handle_connector_failure(self, signal: Signal, error_message: str):
+    async def _handle_connector_failure(self, signal: Signal, error_message: str) -> None:
         """
         Handle connector failures with resilience:
         1. Mark signal as REJECTED_CONNECTION in database

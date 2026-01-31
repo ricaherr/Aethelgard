@@ -54,7 +54,7 @@ def test_auto_trading():
     logger.info("\n📌 Step 2: Creating test signal...")
     
     # Get current market price
-    import MetaTrader5 as mt5
+    from connectors.mt5_wrapper import MT5 as mt5
     symbol_info = mt5.symbol_info_tick("EURUSD")
     if not symbol_info:
         logger.error("❌ Could not get EURUSD price")

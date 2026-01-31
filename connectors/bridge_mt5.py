@@ -7,7 +7,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Any
 import websockets
 from websockets.exceptions import ConnectionClosed
 
@@ -18,7 +18,7 @@ except ImportError:
     mt5 = None
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger: logging.Logger = logging.getLogger(__name__)
 
 
 class MT5Bridge:
@@ -31,7 +31,7 @@ class MT5Bridge:
                  auto_execute: bool = True,
                  demo_mode: bool = True,
                  default_volume: float = 0.01,
-                 magic_number: int = 234000):
+                 magic_number: int = 234000) -> None:
         """
         Args:
             server_url: URL del servidor Aethelgard
@@ -42,16 +42,16 @@ class MT5Bridge:
             default_volume: Volumen por defecto para operaciones
             magic_number: Número mágico para identificar operaciones de Aethelgard
         """
-        self.server_url = server_url
-        self.client_id = client_id or f"MT5_{symbol}"
-        self.symbol = symbol
+        self.server_url: str = server_url
+        self.client_id: str = client_id or f"MT5_{symbol}"
+        self.symbol: str = symbol
         self.websocket = None
         self.is_connected = False
         self.running = False
-        self.auto_execute = auto_execute
-        self.demo_mode = demo_mode
-        self.default_volume = default_volume
-        self.magic_number = magic_number
+        self.auto_execute: bool = auto_execute
+        self.demo_mode: bool = demo_mode
+        self.default_volume: float = default_volume
+        self.magic_number: int = magic_number
         
         # Tracking de operaciones
         self.active_positions: Dict[int, Dict] = {}  # ticket -> position_info
@@ -79,13 +79,13 @@ class MT5Bridge:
         logger.info(f"MT5 inicializado. Versión: {mt5.version()}")
         logger.info(f"Cuenta: {account_info.login} | Demo: {is_demo} | Auto-Execute: {self.auto_execute}")
     
-    async def connect(self):
+    async def connect(self) -> None:
         """Conecta al servidor Aethelgard"""
         try:
-            full_url = f"{self.server_url}{self.client_id}"
+            full_url: str = f"{self.server_url}{self.client_id}"
             logger.info(f"Conectando a Aethelgard: {full_url}")
             
-            self.websocket = await websockets.connect(full_url)
+            self.websocket: websockets.ClientConnection = await websockets.connect(full_url)
             self.is_connected = True
             
             logger.info("Conectado a Aethelgard exitosamente")
@@ -103,7 +103,7 @@ class MT5Bridge:
             self.is_connected = False
             raise
     
-    async def disconnect(self):
+    async def disconnect(self) -> None:
         """Desconecta del servidor"""
         try:
             self.running = False
@@ -119,19 +119,19 @@ class MT5Bridge:
             if mt5:
                 mt5.shutdown()
     
-    async def send_message(self, data: dict):
+    async def send_message(self, data: dict) -> None:
         """Envía un mensaje al servidor"""
         if not self.is_connected or not self.websocket:
             return
         
         try:
-            message = json.dumps(data)
+            message: str = json.dumps(data)
             await self.websocket.send(message)
         except Exception as e:
             logger.error(f"Error enviando mensaje: {e}")
             self.is_connected = False
     
-    async def receive_messages(self):
+    async def receive_messages(self) -> None:
         """Recibe mensajes del servidor"""
         try:
             while self.running and self.is_connected:
@@ -148,7 +148,7 @@ class MT5Bridge:
         except Exception as e:
             logger.error(f"Error en receive_messages: {e}")
     
-    async def process_message(self, message: str):
+    async def process_message(self, message: str) -> None:
         """Procesa un mensaje recibido del servidor"""
         try:
             data = json.loads(message)
@@ -175,7 +175,7 @@ class MT5Bridge:
         except Exception as e:
             logger.error(f"Error procesando mensaje: {e}")
     
-    async def handle_signal(self, signal_data: dict):
+    async def handle_signal(self, signal_data: dict) -> None:
         """
         Procesa una señal recibida desde Aethelgard Signal Factory
         
@@ -482,8 +482,8 @@ class MT5Bridge:
             from datetime import timedelta
             
             # Calculate time range
-            now = datetime.now()
-            from_date = now - timedelta(hours=hours)
+            now: datetime = datetime.now()
+            from_date: datetime = now - timedelta(hours=hours)
             
             # Get history deals
             deals = mt5.history_deals_get(from_date, now)
@@ -531,7 +531,7 @@ class MT5Bridge:
             logger.error(f"Error getting closed positions: {e}")
             return []
     
-    def _find_entry_deal(self, position_id: int, from_date: datetime, to_date: datetime):
+    def _find_entry_deal(self, position_id: int, from_date: datetime, to_date: datetime) -> None:
         """Find the entry deal for a position"""
         try:
             deals = mt5.history_deals_get(from_date, to_date, position=position_id)
@@ -545,7 +545,7 @@ class MT5Bridge:
             logger.error(f"Error finding entry deal: {e}")
             return None
     
-    def _detect_exit_reason(self, deal) -> str:
+    def _detect_exit_reason(self, deal: Any) -> str:
         """Detect why a position was closed"""
         comment = deal.comment.lower()
         
@@ -563,14 +563,14 @@ class MT5Bridge:
         try:
             # Comment format: "Aethelgard_strategy_id" or custom format
             if 'signal_' in comment:
-                parts = comment.split('signal_')
+                parts: List[str] = comment.split('signal_')
                 if len(parts) > 1:
                     return f"signal_{parts[1].split('_')[0]}"
             return None
         except Exception:
             return None
     
-    async def send_market_data(self):
+    async def send_market_data(self) -> None:
         """Envía datos de mercado actuales"""
         try:
             tick = mt5.symbol_info_tick(self.symbol)
@@ -597,7 +597,7 @@ class MT5Bridge:
                          volume: float = 0.01,
                          stop_loss: Optional[float] = None,
                          take_profit: Optional[float] = None,
-                         strategy_id: Optional[str] = None):
+                         strategy_id: Optional[str] = None) -> None:
         """
         Envía una señal de trading a Aethelgard
         
@@ -626,7 +626,7 @@ class MT5Bridge:
             }
         })
     
-    async def monitor_ticks(self, interval: float = 1.0):
+    async def monitor_ticks(self, interval: float = 1.0) -> None:
         """
         Monitorea ticks y envía datos periódicamente
         
@@ -646,7 +646,7 @@ class MT5Bridge:
                 logger.error(f"Error en monitor_ticks: {e}")
                 break
     
-    async def run(self, tick_interval: float = 1.0):
+    async def run(self, tick_interval: float = 1.0) -> None:
         """
         Ejecuta el bridge (conecta y monitorea)
         
@@ -657,8 +657,8 @@ class MT5Bridge:
             await self.connect()
             
             # Iniciar tareas en paralelo
-            receive_task = asyncio.create_task(self.receive_messages())
-            monitor_task = asyncio.create_task(self.monitor_ticks(tick_interval))
+            receive_task: asyncio.Task[None] = asyncio.create_task(self.receive_messages())
+            monitor_task: asyncio.Task[None] = asyncio.create_task(self.monitor_ticks(tick_interval))
             
             # Esperar a que terminen
             await asyncio.gather(receive_task, monitor_task)
@@ -671,7 +671,7 @@ class MT5Bridge:
             await self.disconnect()
 
 
-async def main():
+async def main() -> None:
     """Función principal para ejecutar el bridge"""
     bridge = MT5Bridge(
         server_url="ws://localhost:8000/ws/MT5/",

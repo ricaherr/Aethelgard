@@ -18,7 +18,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def load_telegram_config():
+def load_telegram_config() -> None:
     """Carga la configuración de Telegram desde variables de entorno"""
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
     basic_chat_id = os.getenv("TELEGRAM_BASIC_CHAT_ID")
@@ -37,7 +37,7 @@ def load_telegram_config():
         logger.info("Notificador de Telegram no configurado (TELEGRAM_BOT_TOKEN no encontrado)")
 
 
-def verify_active_modules():
+def verify_active_modules() -> None:
     """Verifica y muestra los módulos activos al iniciar"""
     module_manager = get_module_manager()
     

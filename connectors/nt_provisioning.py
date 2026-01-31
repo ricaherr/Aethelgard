@@ -84,7 +84,7 @@ class AccountRotator:
                 active.append(info)
         return active
 
-    def refresh_accounts(self):
+    def refresh_accounts(self) -> None:
         """
         En una implementación real, esto verificaría el estado de las cuentas
         con el proveedor externo y las renovaría o registraría nuevas si fuera necesario.

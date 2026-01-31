@@ -4,7 +4,7 @@ Gestiona múltiples conexiones simultáneas y diferencia entre conectores
 """
 import json
 import logging
-from typing import Dict, Set
+from typing import Dict, Set, Any
 from datetime import datetime
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import JSONResponse
@@ -28,14 +28,14 @@ class ConnectionManager:
         self.active_connections: Dict[str, WebSocket] = {}
         self.connector_types: Dict[str, ConnectorType] = {}
     
-    async def connect(self, websocket: WebSocket, client_id: str, connector: ConnectorType):
+    async def connect(self, websocket: WebSocket, client_id: str, connector: ConnectorType) -> None:
         """Acepta una nueva conexión WebSocket"""
         await websocket.accept()
         self.active_connections[client_id] = websocket
         self.connector_types[client_id] = connector
         logger.info(f"Conexión establecida: {client_id} ({connector.value})")
     
-    def disconnect(self, client_id: str):
+    def disconnect(self, client_id: str) -> None:
         """Elimina una conexión"""
         if client_id in self.active_connections:
             connector = self.connector_types.get(client_id, "Unknown")
@@ -43,7 +43,7 @@ class ConnectionManager:
             del self.connector_types[client_id]
             logger.info(f"Conexión cerrada: {client_id} ({connector})")
     
-    async def send_personal_message(self, message: dict, client_id: str):
+    async def send_personal_message(self, message: dict, client_id: str) -> None:
         """Envía un mensaje a un cliente específico"""
         if client_id in self.active_connections:
             try:
@@ -52,7 +52,7 @@ class ConnectionManager:
                 logger.error(f"Error enviando mensaje a {client_id}: {e}")
                 self.disconnect(client_id)
     
-    async def broadcast(self, message: dict, exclude: Set[str] = None):
+    async def broadcast(self, message: dict, exclude: Set[str] = None) -> None:
         """Envía un mensaje a todos los clientes conectados"""
         if exclude is None:
             exclude = set()
@@ -88,7 +88,7 @@ def create_app() -> FastAPI:
     )
     
     @app.get("/")
-    async def root():
+    async def root() -> Dict[str, Any]:
         """Endpoint raíz"""
         return {
             "name": "Aethelgard",
@@ -98,12 +98,12 @@ def create_app() -> FastAPI:
         }
     
     @app.get("/health")
-    async def health():
+    async def health() -> Dict[str, Any]:
         """Health check endpoint"""
         return {"status": "healthy", "timestamp": datetime.now().isoformat()}
     
     @app.websocket("/ws/{connector}/{client_id}")
-    async def websocket_endpoint(websocket: WebSocket, connector: str, client_id: str):
+    async def websocket_endpoint(websocket: WebSocket, connector: str, client_id: str) -> None:
         """
         Endpoint WebSocket principal
         Formato: /ws/{connector}/{client_id}
@@ -164,7 +164,7 @@ def create_app() -> FastAPI:
             manager.disconnect(client_id)
     
     @app.post("/api/signal")
-    async def receive_signal_http(signal_data: dict):
+    async def receive_signal_http(signal_data: dict) -> JSONResponse:
         """
         Endpoint HTTP alternativo para recibir señales
         Útil para webhooks (TradingView)
@@ -191,7 +191,7 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail=str(e))
     
     @app.get("/api/regime/{symbol}")
-    async def get_regime(symbol: str):
+    async def get_regime(symbol: str) -> Dict[str, Any]:
         """Obtiene el régimen de mercado actual para un símbolo"""
         regime = regime_classifier.classify()
         return {
@@ -201,7 +201,7 @@ def create_app() -> FastAPI:
         }
     
     @app.get("/api/signals")
-    async def get_signals(limit: int = 100):
+    async def get_signals(limit: int = 100) -> Dict[str, Any]:
         """Obtiene las últimas señales registradas"""
         signals = storage.get_recent_signals(limit)
         return {"signals": signals, "count": len(signals)}
@@ -209,7 +209,7 @@ def create_app() -> FastAPI:
     return app
 
 
-async def process_signal(message: dict, client_id: str, connector_type: ConnectorType):
+async def process_signal(message: dict, client_id: str, connector_type: ConnectorType) -> None:
     """
     Procesa una señal recibida:
     1. Valida y crea el modelo Signal

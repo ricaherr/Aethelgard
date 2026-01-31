@@ -34,7 +34,7 @@ from core_brain.health import HealthManager
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger: logging.Logger = logging.getLogger(__name__)
 
 # Configuración de la página
 st.set_page_config(
@@ -45,39 +45,39 @@ st.set_page_config(
 )
 
 @st.cache_resource
-def get_classifier():
+def get_classifier() -> RegimeClassifier:
     """Obtiene una instancia del clasificador de régimen"""
     return RegimeClassifier()
 
 @st.cache_resource
-def get_storage():
+def get_storage() -> StorageManager:
     """Obtiene una instancia del gestor de almacenamiento"""
     return StorageManager()
 
 @st.cache_resource
-def get_tuner():
+def get_tuner() -> ParameterTuner:
     """Obtiene una instancia del tuner de parámetros"""
-    storage = get_storage()
+    storage: StorageManager = get_storage()
     return ParameterTuner(storage)
 
 @st.cache_resource
-def get_provider_manager():
+def get_provider_manager() -> DataProviderManager:
     """Obtiene una instancia del gestor de proveedores de datos"""
     return DataProviderManager()
 
 @st.cache_resource
-def get_health_manager():
+def get_health_manager() -> HealthManager:
     """Obtiene una instancia del motor de diagnóstico"""
     return HealthManager()
 
 @st.cache_resource
-def get_instrument_manager():
+def get_instrument_manager() -> InstrumentManager:
     """Obtiene una instancia del gestor de instrumentos"""
     return InstrumentManager()
 
 def get_regime_color(regime: str) -> str:
     """Retorna un color para cada régimen"""
-    color_map = {
+    color_map: Dict[str, str] = {
         "TREND": "🟢",
         "RANGE": "🟡",
         "CRASH": "🔴",
@@ -85,7 +85,7 @@ def get_regime_color(regime: str) -> str:
     }
     return color_map.get(regime, "⚪")
 
-def main():
+def main() -> None:
     """Función principal del dashboard"""
     # Fix for UnboundLocalError by ensuring global access to plotly and pandas
     global pd, px, go
@@ -128,10 +128,10 @@ def main():
             st.rerun()
     
     # Obtener instancias
-    classifier = get_classifier()
-    storage = get_storage()
+    classifier: RegimeClassifier = get_classifier()
+    storage: StorageManager = get_storage()
     module_manager = get_module_manager()
-    tuner = get_tuner()
+    tuner: ParameterTuner = get_tuner()
     
     # Navegación Principal en Sidebar
     menu_selection = None
@@ -172,18 +172,18 @@ def main():
         # Get statistics and active trades
         try:
             # Check if storage or provider_manager are stale
-            storage_stale = not hasattr(storage, 'get_open_operations')
+            storage_stale: bool = not hasattr(storage, 'get_open_operations')
             
             # We also check ProviderConfig indirectly via DataProviderManager
             # But simpler to just check if we have the new fields
-            prov_manager = get_provider_manager()
+            prov_manager: DataProviderManager = get_provider_manager()
             config_sample = prov_manager.get_active_providers()
             # If active providers don't have is_system in their metadata or config
             prov_stale = False
             if config_sample:
                 test_name = config_sample[0]['name']
                 test_conf = prov_manager.get_provider_config(test_name)
-                prov_stale = not hasattr(test_conf, 'is_system')
+                prov_stale: bool = not hasattr(test_conf, 'is_system')
 
             if storage_stale or prov_stale:
                 # Force reload of core modules and clear cache
@@ -205,7 +205,7 @@ def main():
             recent_trades = storage.get_recent_trades(limit=50)
             
             # Calculate daily P/L and Balance (simulated or real from broker if connected)
-            total_pnl = sum(t.get('profit_loss', 0) for t in recent_trades)
+            total_pnl: int = sum(t.get('profit_loss', 0) for t in recent_trades)
             win_rate = stats.get('executed_signals', {}).get('win_rate', 0)
             
             with col1:
@@ -240,9 +240,9 @@ def main():
                 if connector_type == 'PAPER' or not connector_type:
                     origin_label = "🔵 PAPER (Sistema)"
                 elif account_type == 'REAL':
-                    origin_label = f"🔴 REAL ({connector_type.upper()})"
+                    origin_label: str = f"🔴 REAL ({connector_type.upper()})"
                 else:  # DEMO
-                    origin_label = f"🟢 DEMO ({connector_type.upper()})"
+                    origin_label: str = f"🟢 DEMO ({connector_type.upper()})"
                 
                 trade_data.append({
                     "ID": t.get('id')[:8],
@@ -261,10 +261,10 @@ def main():
             
             df_open = pd.DataFrame(trade_data)
             # Resaltado visual en la columna de ejecución
-            def color_ejecucion(val):
+            def color_ejecucion(val: Any) -> str:
                 if not isinstance(val, str):
                     return ''
-                val_lower = val.lower()
+                val_lower: str = val.lower()
                 if any(x in val_lower for x in ["éxito", "ejecutada correctamente", "success", "completada"]):
                     return 'background-color: #d4edda; color: #155724; font-weight: bold;'
                 elif any(x in val_lower for x in ["advertencia", "warning", "parcial", "atención"]):
@@ -287,9 +287,9 @@ def main():
                 if connector_type == 'PAPER' or not connector_type:
                     origin_badge = "🔵 PAPER"
                 elif account_type == 'REAL':
-                    origin_badge = f"🔴 REAL ({connector_type.upper()})"
+                    origin_badge: str = f"🔴 REAL ({connector_type.upper()})"
                 else:
-                    origin_badge = f"🟢 DEMO ({connector_type.upper()})"
+                    origin_badge: str = f"🟢 DEMO ({connector_type.upper()})"
                 
                 with st.expander(f"Gestionar {t['symbol']} ({t['signal_type']}) - {origin_badge}"):
                     c1, c2, c3 = st.columns(3)
@@ -354,7 +354,7 @@ def main():
                     pnl_history.append({"time": t.get('timestamp'), "pnl": current_acc})
                 
                 df_pnl = pd.DataFrame(pnl_history)
-                fig = px.line(df_pnl, x="time", y="pnl", title="Curva de P/L (Reciente)")
+                fig: go.Figure = px.line(df_pnl, x="time", y="pnl", title="Curva de P/L (Reciente)")
                 fig.update_layout(height=300, margin=dict(l=20, r=20, t=40, b=20))
                 st.plotly_chart(fig, width='stretch')
             else:
@@ -363,9 +363,9 @@ def main():
         with col_c2:
             st.subheader("🎯 Win/Loss")
             if recent_trades:
-                wins = sum(1 for t in recent_trades if t.get('is_win'))
+                wins: int = sum(1 for t in recent_trades if t.get('is_win'))
                 losses = len(recent_trades) - wins
-                fig_pie = px.pie(values=[wins, losses], names=['Wins', 'Losses'], 
+                fig_pie: go.Figure = px.pie(values=[wins, losses], names=['Wins', 'Losses'], 
                                 color_discrete_sequence=['#00CC96', '#EF553B'])
                 fig_pie.update_layout(height=300, margin=dict(l=20, r=20, t=40, b=20))
                 st.plotly_chart(fig_pie, width='stretch')
@@ -378,7 +378,7 @@ def main():
             cols = st.columns(len(accounts) if len(accounts) < 5 else 4)
             for i, acc in enumerate(accounts):
                 with cols[i % 4]:
-                    status_color = "🟢" if acc.get('enabled') else "🔴"
+                    status_color: str = "🟢" if acc.get('enabled') else "🔴"
                     st.info(f"{status_color} **{acc.get('broker_id', 'N/A').upper()}**\n\n{acc.get('account_number', 'N/A')}\n\nBalance: ${acc.get('balance', 0):,.2f}")
         else:
             st.info("No hay cuentas de broker configuradas.")
@@ -388,7 +388,7 @@ def main():
         try:
             broker_status = storage.get_broker_provision_status()
             if broker_status:
-                total = len(broker_status)
+                total: int = len(broker_status)
                 mercados = {}
                 demo_count = 0
                 real_count = 0
@@ -425,7 +425,7 @@ def main():
 
     elif menu_selection == "🛡️ Sistema & Diagnóstico":
         st.header("🛡️ Aethelgard System Monitor")
-        health_manager = get_health_manager()
+        health_manager: HealthManager = get_health_manager()
         
         col_btns = st.columns([1, 1, 2])
         with col_btns[0]:
@@ -443,7 +443,7 @@ def main():
 
         summary = health_manager.run_full_diagnostic()
         status = summary["overall_status"]
-        status_emoji = {"GREEN": "✅", "YELLOW": "⚠️", "RED": "🚨"}.get(status, "⚪")
+        status_emoji: str = {"GREEN": "✅", "YELLOW": "⚠️", "RED": "🚨"}.get(status, "⚪")
         
         st.subheader(f"Estado Global: {status_emoji} {status}")
         
@@ -463,7 +463,7 @@ def main():
         st.subheader("🔌 Estado de Conexión MT5")
         mt5_info = summary.get("mt5", {})
         mt5_status = mt5_info.get("status", "YELLOW")
-        mt5_status_emoji = {"GREEN": "✅", "YELLOW": "⚠️", "RED": "🔴"}.get(mt5_status, "⚪")
+        mt5_status_emoji: str = {"GREEN": "✅", "YELLOW": "⚠️", "RED": "🔴"}.get(mt5_status, "⚪")
         
         # Check if MT5 needs configuration and connection status
         needs_config = mt5_info.get("needs_config", False)
@@ -472,7 +472,7 @@ def main():
         # Get existing MT5 broker accounts
         all_accounts = storage.get_broker_accounts(enabled_only=False)
         mt5_accounts = [acc for acc in all_accounts if acc.get('platform_id') == 'mt5']
-        has_saved_accounts = len(mt5_accounts) > 0
+        has_saved_accounts: bool = len(mt5_accounts) > 0
         
         # Configuration form if needed
         if needs_config and not connected:
@@ -485,7 +485,7 @@ def main():
                     
                     account_options = {}
                     for acc in mt5_accounts:
-                        account_label = f"{acc.get('account_name', 'Sin nombre')} - {acc.get('account_number', 'N/A')} ({acc.get('account_type', 'N/A')})"
+                        account_label: str = f"{acc.get('account_name', 'Sin nombre')} - {acc.get('account_number', 'N/A')} ({acc.get('account_type', 'N/A')})"
                         account_options[account_label] = acc
                     
                     selected_account_label = st.selectbox(
@@ -774,9 +774,9 @@ def main():
                 if connector_type == 'PAPER' or not connector_type:
                     origin_label = "🔵 PAPER (Sistema)"
                 elif account_type == 'REAL':
-                    origin_label = f"🔴 REAL ({connector_type.upper()})"
+                    origin_label: str = f"🔴 REAL ({connector_type.upper()})"
                 else:
-                    origin_label = f"🟢 DEMO ({connector_type.upper()})"
+                    origin_label: str = f"🟢 DEMO ({connector_type.upper()})"
                 table_data.append({
                     "ID": s.get('id', '')[:8],
                     "Origen": origin_label,
@@ -791,16 +791,16 @@ def main():
                     "Ejecución": meta.get('execution_observation', ''),
                 })
             df_signals = pd.DataFrame(table_data)
-            def color_estado(val):
+            def color_estado(val: Any) -> str:
                 if not isinstance(val, str): return ''
-                v = val.upper()
+                v: str = val.upper()
                 if v in ("EXECUTED", "OPEN"): return 'background-color: #d4edda; color: #155724; font-weight: bold;'
                 if v == "FAILED": return 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
                 if v == "PENDING": return 'background-color: #fff3cd; color: #856404; font-weight: bold;'
                 return ''
-            def color_ejecucion(val):
+            def color_ejecucion(val: Any) -> str:
                 if not isinstance(val, str): return ''
-                val_lower = val.lower()
+                val_lower: str = val.lower()
                 if any(x in val_lower for x in ["éxito", "ejecutada correctamente", "success", "completada"]):
                     return 'background-color: #d4edda; color: #155724; font-weight: bold;'
                 elif any(x in val_lower for x in ["advertencia", "warning", "parcial", "atención"]):
@@ -934,7 +934,7 @@ def main():
             current_regime_str = st.session_state.get('current_regime', 'RANGE')
             
             # Mapear régimen a intervalo de sleep
-            regime_sleep_map = {
+            regime_sleep_map: Dict[str, int] = {
                 "TREND": 5,
                 "RANGE": 30,
                 "VOLATILE": 15,
@@ -968,7 +968,7 @@ def main():
             )
             
             # Descripción del régimen
-            regime_descriptions = {
+            regime_descriptions: Dict[str, str] = {
                 "TREND": "Mercado en tendencia clara - Ciclos rápidos para capturar movimientos",
                 "RANGE": "Mercado lateral - Ciclos lentos para evitar sobre-operación",
                 "VOLATILE": "Volatilidad elevada - Ciclos medios para balance entre oportunidad y riesgo",
@@ -1009,7 +1009,7 @@ def main():
                 log_entries.append(f"[{datetime.now().strftime('%H:%M:%S')}] 💓 Próximo ciclo en {sleep_interval}s...")
                 
                 # Mostrar en el contenedor
-                log_text = "\n".join(log_entries[-10:])  # Últimas 10 líneas
+                log_text: str = "\n".join(log_entries[-10:])  # Últimas 10 líneas
                 live_feed_container.code(log_text, language="log")
             else:
                 live_feed_container.info("⏳ Esperando actividad del orquestador...")
@@ -1050,7 +1050,7 @@ def main():
             st.subheader("Estado Actual")
             
             if 'current_regime' in st.session_state:
-                regime_emoji = get_regime_color(st.session_state['current_regime'])
+                regime_emoji: str = get_regime_color(st.session_state['current_regime'])
                 st.metric(
                     "Régimen Detectado",
                     f"{regime_emoji} {st.session_state['current_regime']}"
@@ -1130,7 +1130,7 @@ def main():
                 else:
                     st.error("❌ No permitido")
                 
-                regimes = ", ".join(module_config.get("required_regime", []))
+                regimes: str = ", ".join(module_config.get("required_regime", []))
                 st.caption(f"Régimen: {regimes}")
         
         # Botón para aplicar cambios
@@ -1249,12 +1249,12 @@ def main():
             
             with col2:
                 signals_by_connector = stats.get('signals_by_connector', {})
-                total_connectors = len(signals_by_connector)
+                total_connectors: int = len(signals_by_connector)
                 st.metric("Conectores Activos", total_connectors)
             
             with col3:
                 signals_by_regime = stats.get('signals_by_regime', {})
-                total_regimes = len(signals_by_regime)
+                total_regimes: int = len(signals_by_regime)
                 st.metric("Regímenes Detectados", total_regimes)
             
             # Señales por conector
@@ -1392,19 +1392,19 @@ def main():
                     col1, col2, col3, col4 = st.columns(4)
                     
                     with col1:
-                        buy_signals = sum(1 for s in filtered_signals if s.get('signal_type') == 'BUY')
+                        buy_signals: int = sum(1 for s in filtered_signals if s.get('signal_type') == 'BUY')
                         st.metric("🟢 Señales BUY", buy_signals)
                     
                     with col2:
-                        sell_signals = sum(1 for s in filtered_signals if s.get('signal_type') == 'SELL')
+                        sell_signals: int = sum(1 for s in filtered_signals if s.get('signal_type') == 'SELL')
                         st.metric("🔴 Señales SELL", sell_signals)
                     
                     with col3:
-                        premium_signals = sum(1 for s in filtered_signals if s.get('metadata', {}).get('membership_tier') in ['PREMIUM', 'ELITE'])
+                        premium_signals: int = sum(1 for s in filtered_signals if s.get('metadata', {}).get('membership_tier') in ['PREMIUM', 'ELITE'])
                         st.metric("💎 Premium/Elite", premium_signals)
                     
                     with col4:
-                        avg_score = sum(s.get('metadata', {}).get('score', 0) for s in filtered_signals) / len(filtered_signals) if filtered_signals else 0
+                        avg_score: float | int = sum(s.get('metadata', {}).get('score', 0) for s in filtered_signals) / len(filtered_signals) if filtered_signals else 0
                         st.metric("⭐ Score Promedio", f"{avg_score:.1f}")
                     
                     st.markdown("---")
@@ -1420,9 +1420,9 @@ def main():
                         if connector_type == 'PAPER' or not connector_type:
                             origin_label = "🔵 PAPER (Sistema)"
                         elif account_type == 'REAL':
-                            origin_label = f"🔴 REAL ({connector_type.upper()})"
+                            origin_label: str = f"🔴 REAL ({connector_type.upper()})"
                         else:
-                            origin_label = f"🟢 DEMO ({connector_type.upper()})"
+                            origin_label: str = f"🟢 DEMO ({connector_type.upper()})"
                         table_data.append({
                             "ID": s.get('id', '')[:8],
                             "Origen": origin_label,
@@ -1437,16 +1437,16 @@ def main():
                             "Ejecución": meta.get('execution_observation', ''),
                         })
                     df_signals = pd.DataFrame(table_data)
-                    def color_estado(val):
+                    def color_estado(val: Any) -> str:
                         if not isinstance(val, str): return ''
-                        v = val.upper()
+                        v: str = val.upper()
                         if v in ("EXECUTED", "OPEN"): return 'background-color: #d4edda; color: #155724; font-weight: bold;'
                         if v == "FAILED": return 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
                         if v == "PENDING": return 'background-color: #fff3cd; color: #856404; font-weight: bold;'
                         return ''
-                    def color_ejecucion(val):
+                    def color_ejecucion(val: Any) -> str:
                         if not isinstance(val, str): return ''
-                        val_lower = val.lower()
+                        val_lower: str = val.lower()
                         if any(x in val_lower for x in ["éxito", "ejecutada correctamente", "success", "completada"]):
                             return 'background-color: #d4edda; color: #155724; font-weight: bold;'
                         elif any(x in val_lower for x in ["advertencia", "warning", "parcial", "atención"]):
@@ -1467,8 +1467,8 @@ def main():
                         score = metadata.get('score', 0)
                         tier = metadata.get('membership_tier', 'FREE')
                         timestamp = signal.get('timestamp', 'N/A')
-                        type_emoji = "🟢" if signal_type == "BUY" else "🔴"
-                        tier_color = {
+                        type_emoji: str = "🟢" if signal_type == "BUY" else "🔴"
+                        tier_color: str = {
                             'ELITE': '🌟',
                             'PREMIUM': '💎',
                             'FREE': '📌'
@@ -1513,7 +1513,7 @@ def main():
         st.header("📡 Gestión de Proveedores de Datos")
         
         try:
-            provider_manager = get_provider_manager()
+            provider_manager: DataProviderManager = get_provider_manager()
             
             # Información general
             st.markdown("""
@@ -1604,7 +1604,7 @@ def main():
                     supports = provider_info.get("supports", [])
                     
                     # Emoji de estado
-                    status_emoji = "✅" if enabled and configured else "⚙️" if enabled else "❌"
+                    status_emoji: str = "✅" if enabled and configured else "⚙️" if enabled else "❌"
                     
                     with st.expander(f"{status_emoji} {name.upper()} - {description}", expanded=False):
                         col1, col2 = st.columns([3, 1])
@@ -1620,13 +1620,13 @@ def main():
                                     if name == "mt5":
                                         st.caption("💡 Para MT5: Asegúrate de tener MetaTrader 5 instalado y configurado.")
                                 elif not status.credentials_configured:
-                                    msg = "⚠️ Credenciales no configuradas" if name == "mt5" else "⚠️ API Key no configurada"
+                                    msg: str = "⚠️ Credenciales no configuradas" if name == "mt5" else "⚠️ API Key no configurada"
                                     st.warning(msg)
                                 else:
                                     st.success("✅ Configurado y listo")
                             
                             # Links para obtener API keys
-                            api_key_links = {
+                            api_key_links: Dict[str, str] = {
                                 "alphavantage": "https://www.alphavantage.co/support/#api-key",
                                 "twelvedata": "https://twelvedata.com/pricing",
                                 "polygon": "https://polygon.io/",
@@ -1691,7 +1691,7 @@ def main():
                                 
                                 # Hint visual para contraseña guardada
                                 has_pwd = bool(mt5_config.get("password"))
-                                pwd_label = "Password" + (" (🔒 Guardado)" if has_pwd else "")
+                                pwd_label: str = "Password" + (" (🔒 Guardado)" if has_pwd else "")
                                 password = st.text_input(pwd_label, value="", type="password", help="Deja vacío para mantener la contraseña actual. Si es la primera vez, ingrésala aquí.")
                                 
                                 
@@ -1794,7 +1794,7 @@ def main():
             
             with col1:
                 total_profit = storage.get_total_profit(days=days_filter)
-                delta_color = "normal" if total_profit >= 0 else "inverse"
+                delta_color: str = "normal" if total_profit >= 0 else "inverse"
                 st.metric(
                     "Profit Total",
                     f"${total_profit:,.2f}",
@@ -1813,7 +1813,7 @@ def main():
             with col3:
                 all_trades = storage.get_all_trades(limit=1000)
                 recent_trades = [t for t in all_trades if t.get('date') >= (datetime.now().date() - __import__('datetime').timedelta(days=days_filter)).isoformat()]
-                total_trades = len(recent_trades)
+                total_trades: int = len(recent_trades)
                 st.metric(
                     "Total Trades",
                     total_trades
@@ -1845,7 +1845,7 @@ def main():
                 # Gráfico de barras con colores
                 import plotly.express as px
                 
-                fig = px.bar(
+                fig: go.Figure = px.bar(
                     df_profit,
                     x='symbol',
                     y='profit',
@@ -1876,7 +1876,7 @@ def main():
                 df_display.columns = ['Símbolo', 'Total Trades', 'Win Rate (%)', 'Profit Total ($)', 'Profit Promedio ($)', 'PIPs Totales', 'Resultado']
                 
                 # Aplicar estilo condicional
-                def color_resultado(row):
+                def color_resultado(row: Any) -> List[str]:
                     if row['Profit Total ($)'] > 0:
                         return ['background-color: #90EE90'] * len(row)
                     elif row['Profit Total ($)'] < 0:
@@ -1918,7 +1918,7 @@ def main():
                     df_trades_display.columns = ['Símbolo', 'Entrada', 'Salida', 'PIPs', 'Profit ($)', 'Win', 'Razón Salida', 'Fecha/Hora', 'Resultado']
                     
                     # Aplicar color por resultado
-                    def color_trade(row):
+                    def color_trade(row: Any) -> List[str]:
                         if row['Resultado'] == '🟢 Ganada':
                             return ['background-color: #90EE90'] * len(row)
                         else:
@@ -1997,8 +1997,8 @@ def main():
                     account_type = account['account_type']
                     enabled = bool(account['enabled'])
                     
-                    status_emoji = "🟢" if enabled else "🔴"
-                    type_emoji = "🎮" if account_type == "demo" else "💰"
+                    status_emoji: str = "🟢" if enabled else "🔴"
+                    type_emoji: str = "🎮" if account_type == "demo" else "💰"
                     
                     with st.expander(f"{status_emoji} {type_emoji} **{account_name}** ({broker_id})"):
                         
@@ -2175,14 +2175,14 @@ def main():
         """)
         
         try:
-            instrument_manager = get_instrument_manager()
+            instrument_manager: InstrumentManager = get_instrument_manager()
             
             # Información general del sistema
             st.markdown("---")
             col1, col2, col3 = st.columns(3)
             
             enabled_symbols = instrument_manager.get_enabled_symbols()
-            total_symbols = len(instrument_manager.symbol_cache)
+            total_symbols: int = len(instrument_manager.symbol_cache)
             
             with col1:
                 st.metric("Total Símbolos", total_symbols)

@@ -90,7 +90,7 @@ class MultiTimeframeConfluenceAnalyzer:
             logger.warning(f"Error loading confluence config: {e}. Using defaults.")
             return self.DEFAULT_WEIGHTS.copy()
     
-    def update_weights(self, new_weights: Dict[str, float]):
+    def update_weights(self, new_weights: Dict[str, float]) -> None:
         """
         Update confluence weights (called by EdgeTuner after optimization)
         
@@ -103,7 +103,7 @@ class MultiTimeframeConfluenceAnalyzer:
         # Persist to config for next restart
         self._save_weights()
     
-    def _save_weights(self):
+    def _save_weights(self) -> None:
         """Save weights to dynamic_params.json"""
         try:
             # Load existing config

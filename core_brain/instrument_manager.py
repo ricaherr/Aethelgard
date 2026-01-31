@@ -39,7 +39,7 @@ class InstrumentConfig:
     priority: int = 2
     instruments: List[str] = field(default_factory=list)
     
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         # instruments ya tiene default_factory, no necesita validación
         pass
 

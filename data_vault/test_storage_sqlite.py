@@ -6,21 +6,22 @@ import pytest
 import os
 import json
 from datetime import date, datetime
+from typing import Any
 from data_vault.storage import StorageManager
 from models.signal import Signal, ConnectorType, MarketRegime, SignalType
 
 @pytest.fixture
-def temp_db_path(tmp_path):
+def temp_db_path(tmp_path: Any) -> str:
     """Create a temporary database path"""
     db_file = tmp_path / "test_aethelgard.db"
     return str(db_file)
 
 @pytest.fixture
-def storage(temp_db_path):
+def storage(temp_db_path: str) -> StorageManager:
     """Initialize StorageManager with temp DB"""
     return StorageManager(db_path=temp_db_path)
 
-def test_system_state_persistence(storage):
+def test_system_state_persistence(storage: StorageManager) -> None:
     """Test saving and retrieving system state"""
     state = {
         "lockdown_mode": True,
@@ -38,7 +39,7 @@ def test_system_state_persistence(storage):
     assert loaded_state["consecutive_losses"] == 3
     assert loaded_state["session_stats"]["processed"] == 100
 
-def test_signal_persistence(storage):
+def test_signal_persistence(storage: StorageManager) -> None:
     """Test saving and retrieving signals"""
     signal = Signal(
         symbol="EURUSD",
@@ -63,7 +64,7 @@ def test_signal_persistence(storage):
     assert saved_signal["status"] == "executed"
     assert saved_signal["metadata"]["score"] == 95
 
-def test_trade_result_persistence(storage):
+def test_trade_result_persistence(storage: StorageManager) -> None:
     """Test saving trade results for EDGE tuner"""
     trade = {
         "signal_id": "test-sig-1",
@@ -88,7 +89,7 @@ def test_trade_result_persistence(storage):
     assert trades[0]["is_win"] is True
     assert trades[0]["parameters_used"]["adx_threshold"] == 25
 
-def test_market_state_logging(storage):
+def test_market_state_logging(storage: StorageManager) -> None:
     """Test logging market states for tuner"""
     state = {
         "symbol": "EURUSD",

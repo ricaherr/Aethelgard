@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional, Protocol
 
 from data_vault.storage import StorageManager
 
-logger = logging.getLogger(__name__)
+logger: logging.Logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -146,14 +146,14 @@ class DataProviderManager:
         }
     }
     
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(self, config_path: Optional[str] = None) -> None:
         """
         Initialize DataProviderManager
         
         Args:
             config_path: Optional path to legacy provider configuration file for migration
         """
-        self.config_path = Path(config_path) if config_path else None
+        self.config_path: Path | None = Path(config_path) if config_path else None
         self.storage = StorageManager()
         self.providers: Dict[str, ProviderConfig] = {}
         self.provider_instances: Dict[str, Any] = {}
@@ -161,7 +161,7 @@ class DataProviderManager:
         
         self._load_configuration()
     
-    def _load_configuration(self):
+    def _load_configuration(self) -> None:
         """Load provider configuration from DB with fallback to JSON migration"""
         try:
             db_providers = self.storage.get_data_providers()
@@ -213,7 +213,7 @@ class DataProviderManager:
             logger.error(f"Error loading provider config from DB: {e}")
             self._initialize_defaults()
     
-    def _initialize_defaults(self):
+    def _initialize_defaults(self) -> None:
         """Initialize default provider configurations and save to DB"""
         for name, metadata in self.provider_metadata.items():
             config = ProviderConfig(
@@ -239,7 +239,7 @@ class DataProviderManager:
         
         logger.info("Initialized default provider configurations in database")
     
-    def save_configuration(self):
+    def save_configuration(self) -> None:
         """Save current provider configuration to DB"""
         try:
             for name, config in self.providers.items():
@@ -348,7 +348,7 @@ class DataProviderManager:
         logger.info(f"Provider '{name}' system status set to: {is_system}")
         return True
     
-    def reload_providers(self):
+    def reload_providers(self) -> None:
         """
         Reload provider configuration from DB and clear provider instance cache.
         
@@ -379,7 +379,7 @@ class DataProviderManager:
             logger.error(f"Provider '{name}' not found")
             return False
         
-        config = self.providers[name]
+        config: ProviderConfig = self.providers[name]
         
         if 'api_key' in kwargs:
             config.api_key = kwargs['api_key']
@@ -404,17 +404,17 @@ class DataProviderManager:
         if name not in self.providers:
             return None
         
-        config = self.providers[name]
+        config: ProviderConfig = self.providers[name]
         
         # Check if provider is available
-        available = self._check_provider_availability(name)
+        available: bool = self._check_provider_availability(name)
         
         # Check if credentials are configured
         credentials_configured = True
         if config.requires_auth:
             if name == "mt5":
                 # Special check for MT5 (requires login, password, and server)
-                mt5_cfg = config.additional_config
+                mt5_cfg: Dict[str, Any] = config.additional_config
                 credentials_configured = bool(mt5_cfg.get("login") and mt5_cfg.get("server"))
                 # Note: password might be empty if already saved, but login/server are mandatory
             else:
@@ -468,7 +468,7 @@ class DataProviderManager:
             provider_class = getattr(module, class_name)
             
             # Get configuration
-            config = self.providers[name]
+            config: ProviderConfig = self.providers[name]
             
             # Create instance with configuration
             kwargs = {}
@@ -502,13 +502,13 @@ class DataProviderManager:
             name = provider_info["name"]
             
             # Check if credentials configured if required
-            config = self.providers[name]
+            config: ProviderConfig = self.providers[name]
             if config.requires_auth and not config.api_key:
                 logger.debug(f"Skipping {name}: credentials not configured")
                 continue
             
             # Try to get instance
-            instance = self._get_provider_instance(name)
+            instance: Any | None = self._get_provider_instance(name)
             if instance:
                 logger.info(f"Selected provider: {name} (priority: {config.priority})")
                 return instance
@@ -517,11 +517,11 @@ class DataProviderManager:
         if "yahoo" in self.providers:
             logger.info("No configured providers available - forcing Yahoo fallback")
             # Temporarily enable yahoo for fallback (don't save to DB)
-            yahoo_was_enabled = self.providers["yahoo"].enabled
+            yahoo_was_enabled: bool = self.providers["yahoo"].enabled
             self.providers["yahoo"].enabled = True
             
             try:
-                instance = self._get_provider_instance("yahoo")
+                instance: Any | None = self._get_provider_instance("yahoo")
                 if instance:
                     logger.info("Yahoo fallback activated successfully")
                     return instance
@@ -535,7 +535,7 @@ class DataProviderManager:
     def get_provider_for_symbol(self, symbol: str) -> Optional[Any]:
         """Get best provider for a specific symbol type"""
         # Detect symbol type
-        symbol_type = self._detect_symbol_type(symbol)
+        symbol_type: str = self._detect_symbol_type(symbol)
         
         # Get active providers that support this type
         active = self.get_active_providers()
@@ -543,7 +543,7 @@ class DataProviderManager:
         for provider_info in active:
             if symbol_type in provider_info.get("supports", []):
                 name = provider_info["name"]
-                instance = self._get_provider_instance(name)
+                instance: Any | None = self._get_provider_instance(name)
                 if instance:
                     return instance
         
@@ -552,7 +552,7 @@ class DataProviderManager:
     
     def _detect_symbol_type(self, symbol: str) -> str:
         """Detect symbol type (stock, forex, crypto, etc.)"""
-        symbol_upper = symbol.upper()
+        symbol_upper: str = symbol.upper()
         
         # Crypto patterns
         if "BTC" in symbol_upper or "ETH" in symbol_upper or symbol_upper.endswith("USD"):
@@ -572,7 +572,7 @@ class DataProviderManager:
     
     def validate_provider(self, name: str) -> bool:
         """Validate provider connection and credentials"""
-        instance = self._get_provider_instance(name)
+        instance: Any | None = self._get_provider_instance(name)
         
         if not instance:
             return False
@@ -621,7 +621,7 @@ class DataProviderManager:
         
         return auth_required
     
-    def set_provider_priority(self, name: str, priority: int):
+    def set_provider_priority(self, name: str, priority: int) -> None:
         """Set provider priority (higher = more priority)"""
         if name not in self.providers:
             logger.error(f"Provider '{name}' not found")
@@ -669,7 +669,7 @@ class DataProviderManager:
         """
         if provider_name:
             # Use specific provider
-            instance = self._get_provider_instance(provider_name)
+            instance: Any | None = self._get_provider_instance(provider_name)
             if instance:
                 try:
                     return instance.fetch_ohlc(symbol, timeframe, count)
@@ -686,7 +686,7 @@ class DataProviderManager:
         
         for provider_info in active:
             name = provider_info["name"]
-            instance = self._get_provider_instance(name)
+            instance: Any | None = self._get_provider_instance(name)
             
             if instance:
                 try:

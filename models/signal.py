@@ -89,7 +89,7 @@ class Signal(BaseModel):
         return None
 
     @regime.setter
-    def regime(self, value: MarketRegime):
+    def regime(self, value: MarketRegime) -> None:
         """Establece el régimen en los metadatos."""
         if hasattr(value, 'value'):
             self.metadata["regime"] = value.value

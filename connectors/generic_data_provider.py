@@ -74,7 +74,7 @@ class GenericDataProvider:
         "MN1": "1mo",
     }
     
-    def __init__(self):
+    def __init__(self) -> None:
         """Inicializa el proveedor de datos genérico"""
         if yf is None:
             raise ImportError(

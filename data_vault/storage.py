@@ -1,3 +1,4 @@
+from _thread import lock
 import threading
 import time
 import json
@@ -7,11 +8,11 @@ import logging
 import uuid
 from datetime import date, datetime
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Callable, Any
 from contextlib import contextmanager
-from utils.encryption import get_encryptor
+from utils.encryption import CredentialEncryption, get_encryptor
 
-logger = logging.getLogger(__name__)
+logger: logging.Logger = logging.getLogger(__name__)
 
 
 def calculate_deduplication_window(timeframe: Optional[str]) -> int:
@@ -36,10 +37,10 @@ def calculate_deduplication_window(timeframe: Optional[str]) -> int:
         return 60  # Default 1 hour
     
     # Normalize timeframe to uppercase
-    tf = timeframe.upper().strip()
+    tf: str = timeframe.upper().strip()
     
     # Timeframe mapping: timeframe -> window in minutes
-    timeframe_windows = {
+    timeframe_windows: Dict[str, int] = {
         # Minutes
         "1M": 10,
         "M1": 10,
@@ -95,9 +96,149 @@ def calculate_deduplication_window(timeframe: Optional[str]) -> int:
     return 60
 
 class StorageManager:
-    _db_lock = threading.Lock()
+    _db_lock: lock = threading.Lock()
 
-    def _execute_serialized(self, func, *args, retries=5, backoff=0.2, **kwargs):
+    def __init__(self, db_path: Optional[str] = None) -> None:
+        self.db_path = db_path or os.path.join(os.path.dirname(__file__), "aethelgard.db")
+        self._initialize_db()
+
+    def _get_conn(self) -> sqlite3.Generator[sqlite3.Connection, threading.Any, None]:
+        """Get database connection with row factory"""
+        conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def _initialize_db(self) -> None:
+        """Initialize database tables if they don't exist"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            
+            # System state table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS system_state (
+                    key TEXT PRIMARY KEY,
+                    value TEXT,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Signals table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS signals (
+                    id TEXT PRIMARY KEY,
+                    symbol TEXT NOT NULL,
+                    signal_type TEXT NOT NULL,
+                    confidence REAL,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    metadata TEXT,
+                    connector_type TEXT,
+                    timeframe TEXT,
+                    price REAL,
+                    direction TEXT,
+                    status TEXT DEFAULT 'active',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Trade results table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS trade_results (
+                    id TEXT PRIMARY KEY,
+                    signal_id TEXT,
+                    symbol TEXT,
+                    entry_price REAL,
+                    exit_price REAL,
+                    profit REAL,
+                    exit_reason TEXT,
+                    close_time TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (signal_id) REFERENCES signals (id)
+                )
+            """)
+            
+            # Market state logging table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS market_state (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    symbol TEXT NOT NULL,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    data TEXT
+                )
+            """)
+            
+            # Broker accounts table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS broker_accounts (
+                    id TEXT PRIMARY KEY,
+                    platform_id TEXT NOT NULL,
+                    login TEXT NOT NULL,
+                    password TEXT,
+                    server TEXT,
+                    type TEXT DEFAULT 'demo',
+                    enabled BOOLEAN DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Brokers table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS brokers (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    platform_id TEXT NOT NULL,
+                    config TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Platforms table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS platforms (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    type TEXT NOT NULL,
+                    config TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Credentials table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS credentials (
+                    id TEXT PRIMARY KEY,
+                    broker_account_id TEXT,
+                    encrypted_data TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (broker_account_id) REFERENCES broker_accounts (id)
+                )
+            """)
+            
+            # Data providers table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS data_providers (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    type TEXT NOT NULL,
+                    config TEXT,
+                    enabled BOOLEAN DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Tuning adjustments table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS tuning_adjustments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    adjustment_data TEXT
+                )
+            """)
+            
+            conn.commit()
+
+    def _execute_serialized(self, func: Callable, *args, retries: int = 5, backoff: float = 0.2, **kwargs) -> Any:
         """
         Ejecuta una función crítica de DB serializadamente, con retry/backoff si la DB está locked.
         """
@@ -122,287 +263,56 @@ class StorageManager:
 
     def get_broker_provision_status(self) -> list:
         """
-        Devuelve para cada broker:
-        - broker_id, name, auto_provision_available
-        - estado: demo_ready, manual_required, no_demo, error
-        - cuentas DEMO asociadas (si existen)
-        - mensaje/instrucción si aplica
+        Get current broker provisioning status.
+        Returns list of broker account dicts with provisioning info.
         """
-        brokers = self.get_brokers()
-        status_list = []
-        for broker in brokers:
-            broker_id = broker['broker_id']
-            auto_prov = broker.get('auto_provision_available', False)
-            demo_accounts = self.get_broker_accounts(broker_id=broker_id, account_type='demo')
-            if demo_accounts:
-                status = 'demo_ready'
-                msg = f"{len(demo_accounts)} cuenta(s) DEMO activa(s)"
-            elif auto_prov:
-                status = 'no_demo'
-                msg = "Broker permite provisión automática, pero no hay cuenta DEMO creada aún."
-            else:
-                status = 'manual_required'
-                msg = f"Requiere provisión manual. Ir a {broker.get('website','')} o usar script de setup."
-            status_list.append({
-                'broker_id': broker_id,
-                'name': broker.get('name',''),
-                'auto_provision': auto_prov,
-                'status': status,
-                'demo_accounts': demo_accounts,
-                'message': msg
+        accounts = self.get_broker_accounts()
+        status = []
+        for acc in accounts:
+            status.append({
+                'id': acc['id'],
+                'platform_id': acc['platform_id'],
+                'login': acc['login'],
+                'type': acc['type'],
+                'enabled': acc['enabled'],
+                'has_credentials': bool(acc.get('password') or self.get_credentials(acc['id'])),
+                'provisioned': True  # All accounts in DB are considered provisioned
             })
-        return status_list
-    def __init__(self, db_path='data_vault/aethelgard.db'):
-        self.db_path = db_path
-        if self.db_path == ':memory:':
-            self._conn: sqlite3.Connection = sqlite3.connect(self.db_path)
-        else:
-            # Conexión persistente, permite acceso multihilo
-            self._conn: sqlite3.Connection = sqlite3.connect(self.db_path, check_same_thread=False)
-        self._initialize_db()
+        return status
 
-    @contextmanager
-    def _get_conn(self):
-        """Context manager para la conexión que hace commit al final"""
-        conn = self._conn
-        if conn is None:
-            raise RuntimeError("Database connection not initialized")
-        try:
-            yield conn
-        finally:
-            conn.commit()
-
-    def _initialize_db(self):
-        """Initialize SQLite database with proper schema"""
-        # Only create directories for file-based databases, not :memory:
-        if self.db_path != ':memory:':
-            os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
-        logger.info(f"Checking database schema at {self.db_path}...")
-        
-        with self._get_conn() as conn:
-            cursor = conn.cursor()
-            
-            # Tabla de Señales
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS signals (
-                    id TEXT PRIMARY KEY,
-                    symbol TEXT,
-                    signal_type TEXT,
-                    confidence REAL,
-                    entry_price REAL,
-                    stop_loss REAL,
-                    take_profit REAL,
-                    timestamp TEXT,
-                    date TEXT,
-                    status TEXT,
-                    metadata TEXT,
-                    connector_type TEXT,
-                    account_id TEXT,
-                    account_type TEXT,
-                    market_type TEXT,
-                    platform TEXT,
-                    order_id TEXT,
-                    volume REAL,
-                    timeframe TEXT DEFAULT 'M5'
-                )
-            ''')
-            
-            # Tabla de Trades (Resultados)
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS trades (
-                    id TEXT PRIMARY KEY,
-                    signal_id TEXT,
-                    symbol TEXT,
-                    entry_price REAL,
-                    exit_price REAL,
-                    pips REAL,
-                    profit_loss REAL,
-                    duration_minutes INTEGER,
-                    is_win BOOLEAN,
-                    exit_reason TEXT,
-                    market_regime TEXT,
-                    volatility_atr REAL,
-                    parameters_used TEXT,
-                    timestamp TEXT,
-                    date TEXT,
-                    connector_type TEXT,
-                    account_id TEXT,
-                    account_type TEXT,
-                    market_type TEXT,
-                    platform TEXT,
-                    volume REAL,
-                    commission REAL,
-                    swap REAL
-                )
-            ''')
-
-            # Tabla de Coherencia (monitor end-to-end, trazabilidad avanzada)
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS coherence_events (
-                    id TEXT PRIMARY KEY,
-                    signal_id TEXT,
-                    symbol TEXT,
-                    timeframe TEXT,
-                    strategy TEXT,
-                    stage TEXT,
-                    status TEXT,
-                    incoherence_type TEXT,
-                    reason TEXT,
-                    details TEXT,
-                    connector_type TEXT,
-                    created_at TEXT
-                )
-            ''')
-            
-            # Tabla Key-Value para estado del sistema (SessionStats, Lockdown, etc)
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS system_state (
-                    key TEXT PRIMARY KEY,
-                    value TEXT
-                )
-            ''')
-            
-            # Historial de Tuning
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS tuning_history (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    timestamp TEXT,
-                    data TEXT
-                )
-            ''')
-            
-            # Estados de Mercado (para análisis histórico)
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS market_states (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    symbol TEXT,
-                    timestamp TEXT,
-                    regime TEXT,
-                    data TEXT
-                )
-            ''')
-            
-            # Tabla de Brokers (Proveedores de liquidez)
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS brokers (
-                    broker_id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    type TEXT,
-                    website TEXT,
-                    platforms_available TEXT,
-                    data_server TEXT,
-                    auto_provision_available BOOLEAN DEFAULT 0,
-                    registration_url TEXT,
-                    created_at TEXT,
-                    updated_at TEXT
-                )
-            ''')
-            
-            # Tabla de Plataformas (Software de ejecución)
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS platforms (
-                    platform_id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    vendor TEXT,
-                    type TEXT,
-                    capabilities TEXT,
-                    connector_class TEXT,
-                    created_at TEXT
-                )
-            ''')
-            
-            # Tabla de Cuentas (Cuentas configuradas por usuario)
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS broker_accounts (
-                    account_id TEXT PRIMARY KEY,
-                    broker_id TEXT,
-                    platform_id TEXT,
-                    account_name TEXT,
-                    account_number TEXT,
-                    server TEXT,
-                    account_type TEXT,
-                    credentials_path TEXT,
-                    enabled BOOLEAN DEFAULT 1,
-                    last_connection TEXT,
-                    balance REAL,
-                    created_at TEXT,
-                    updated_at TEXT,
-                    FOREIGN KEY (broker_id) REFERENCES brokers(broker_id),
-                    FOREIGN KEY (platform_id) REFERENCES platforms(platform_id)
-                )
-            ''')
-            
-            # Tabla de Credenciales Encriptadas
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS broker_credentials (
-                    credential_id TEXT PRIMARY KEY,
-                    account_id TEXT NOT NULL,
-                    credential_type TEXT NOT NULL,
-                    credential_key TEXT NOT NULL,
-                    encrypted_value BLOB NOT NULL,
-                    created_at TEXT,
-                    expires_at TEXT,
-                    FOREIGN KEY (account_id) REFERENCES broker_accounts(account_id) ON DELETE CASCADE
-                )
-            ''')
-            
-            # Tabla de Configuración de Proveedores de Datos (MIGRE FROM JSON TO DB)
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS data_providers (
-                    name TEXT PRIMARY KEY,
-                    enabled BOOLEAN DEFAULT 0,
-                    priority INTEGER DEFAULT 50,
-                    requires_auth BOOLEAN DEFAULT 0,
-                    api_key TEXT,
-                    api_secret TEXT,
-                    additional_config TEXT,
-                    is_system BOOLEAN DEFAULT 0,
-                    updated_at TEXT
-                )
-            ''')
-            
-            conn.commit()
-            logger.info("Database schema verified/initialized successfully.")
-
-    def get_system_state(self) -> dict:
-        """Retrieves the current system state from the database."""
-        try:
-            with self._get_conn() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT key, value FROM system_state")
-                rows = cursor.fetchall()
-                
-                state = {}
-                for key, value in rows:
-                    try:
-                        state[key] = json.loads(value)
-                    except json.JSONDecodeError:
-                        state[key] = value
-                return state
-        except Exception as e:
-            logger.error(f"Error reading system state: {e}")
-            return {}
-
-    def update_system_state(self, new_state: dict):
-        """Updates and saves the system state."""
-        def _update(conn, new_state):
+    def update_system_state(self, new_state: dict) -> None:
+        """Update system state in database"""
+        def _update(conn: sqlite3.Connection, new_state: dict) -> None:
             cursor = conn.cursor()
             for key, value in new_state.items():
-                json_value = json.dumps(value)
-                cursor.execute(
-                    "INSERT OR REPLACE INTO system_state (key, value) VALUES (?, ?)",
-                    (key, json_value)
-                )
+                cursor.execute("""
+                    INSERT OR REPLACE INTO system_state (key, value, updated_at)
+                    VALUES (?, ?, ?)
+                """, (key, json.dumps(value), datetime.now()))
             conn.commit()
+        
         try:
-            def op():
-                with self._get_conn() as conn:
-                    _update(conn, new_state)
-            self._execute_serialized(op)
+            with self._get_conn() as conn:
+                _update(conn, new_state)
+            self._execute_serialized(_update, new_state)
         except Exception as e:
             logger.error(f"Error updating system state: {e}")
 
-    def save_signal(self, signal) -> str:
+    def get_system_state(self) -> Dict[str, Any]:
+        """Get current system state from database"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT key, value FROM system_state")
+            rows = cursor.fetchall()
+            state = {}
+            for row in rows:
+                try:
+                    state[row['key']] = json.loads(row['value'])
+                except json.JSONDecodeError:
+                    state[row['key']] = row['value']
+            return state
+
+    def save_signal(self, signal: dict) -> str:
         """
         Save a signal to persistent storage with full traceability.
         Includes connector, account, platform, and market information.
@@ -417,1406 +327,470 @@ class StorageManager:
             elif isinstance(value, Enum):
                 serialized_metadata[key] = value.value
             else:
-                serialized_metadata[key] = str(value)
-        connector_type = None
+                serialized_metadata[key] = str(value)  # Fallback to string
+        
+        connector_type = getattr(signal, 'connector_type', 'unknown')
         if hasattr(signal, 'connector_type'):
             connector_type = signal.connector_type if isinstance(signal.connector_type, str) else signal.connector_type.value
-        def _save(conn, signal_id):
+        
+        def _save(conn: sqlite3.Connection, signal_id: str) -> None:
             cursor = conn.cursor()
-            cursor.execute('''
+            cursor.execute("""
                 INSERT INTO signals (
                     id, symbol, signal_type, confidence, 
-                    entry_price, stop_loss, take_profit, 
-                    timestamp, date, status, metadata,
-                    connector_type, account_id, account_type, 
-                    market_type, platform, order_id, volume, timeframe
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
+                    metadata, connector_type, timeframe, price, direction
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
                 signal_id,
                 signal.symbol,
                 signal.signal_type if isinstance(signal.signal_type, str) else signal.signal_type.value,
-                getattr(signal, 'confidence', 0.0),
-                signal.entry_price,
-                signal.stop_loss,
-                signal.take_profit,
-                signal.timestamp.isoformat() if hasattr(signal, 'timestamp') and signal.timestamp else datetime.now().isoformat(),
-                date.today().isoformat(),
-                "executed",
+                getattr(signal, 'confidence', None),
                 json.dumps(serialized_metadata),
-                # Traceability fields
                 connector_type,
-                getattr(signal, 'account_id', None),
-                getattr(signal, 'account_type', 'DEMO'),
-                getattr(signal, 'market_type', 'FOREX'),
-                getattr(signal, 'platform', None),
-                getattr(signal, 'order_id', None),
-                getattr(signal, 'volume', 0.01),
-                getattr(signal, 'timeframe', 'M5')
+                getattr(signal, 'timeframe', None),
+                getattr(signal, 'price', None),
+                getattr(signal, 'direction', None)
             ))
             conn.commit()
-            logger.debug(
-                f"Signal saved: {signal_id} | {signal.symbol} {signal.signal_type} | "
-                f"Platform: {getattr(signal, 'platform', 'N/A')} | "
-                f"Account: {getattr(signal, 'account_type', 'DEMO')} | "
-                f"Market: {getattr(signal, 'market_type', 'FOREX')}"
-            )
-        try:
-            def op():
-                with self._get_conn() as conn:
-                    _save(conn, signal_id)
-            self._execute_serialized(op)
-            return signal_id
-        except Exception as e:
-            logger.error(f"Error saving signal: {e}")
-            raise
-    
-    def count_executed_signals(self, target_date: Optional[date] = None) -> int:
-        """
-        Count signals executed on a specific date.
-        """
-        if target_date is None:
-            target_date = date.today()
         
-        target_date_str = target_date.isoformat()
-        
-        try:
-            with self._get_conn() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT COUNT(*) FROM signals WHERE date = ? AND status = 'executed'",
-                    (target_date_str,)
-                )
-                return cursor.fetchone()[0]
-        except Exception as e:
-            logger.error(f"Error counting signals: {e}")
-            return 0
-    
-    def get_signals_by_date(self, target_date: Optional[date] = None) -> List[Dict]:
-        """
-        Retrieve all signals for a specific date.
-        """
-        if target_date is None:
-            target_date = date.today()
-        
-        target_date_str = target_date.isoformat()
-        
-        try:
-            with self._get_conn() as conn:
-                conn.row_factory = sqlite3.Row
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT * FROM signals WHERE date = ?",
-                    (target_date_str,)
-                )
-                rows = cursor.fetchall()
-                
-                signals = []
-                for row in rows:
-                    sig = dict(row)
-                    sig['metadata'] = json.loads(sig['metadata']) if sig['metadata'] else {}
-                    signals.append(sig)
-                return signals
-        except Exception as e:
-            logger.error(f"Error getting signals: {e}")
-            return []
-    
-    def get_signals_today(self) -> List[Dict]:
-        """
-        Retrieve all signals for today.
-        Alias for get_signals_by_date() with no arguments.
-        
-        Returns:
-            List of today's signal records
-        """
-        return self.get_signals_by_date()
-    
-    def get_all_signals(self, limit: int = 100) -> List[Dict]:
-        """
-        Retrieve all signals with an optional limit.
-        
-        Args:
-            limit: Maximum number of signals to return (most recent)
-        
-        Returns:
-            List of signal records
-        """
-        try:
-            with self._get_conn() as conn:
-                conn.row_factory = sqlite3.Row
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT * FROM signals ORDER BY timestamp DESC LIMIT ?",
-                    (limit,)
-                )
-                rows = cursor.fetchall()
-                
-                signals = []
-                for row in rows:
-                    sig = dict(row)
-                    sig['metadata'] = json.loads(sig['metadata']) if sig['metadata'] else {}
-                    signals.append(sig)
-                return signals
-        except Exception as e:
-            logger.error(f"Error getting all signals: {e}")
-            return []
-    
-    def get_statistics(self) -> Dict:
-        """
-        Get comprehensive statistics about the system.
-        Used by the dashboard to display current state.
-        
-        Returns:
-            Dictionary with system statistics
-        """
-        try:
-            with self._get_conn() as conn:
-                cursor = conn.cursor()
-                
-                # Total signals
-                cursor.execute("SELECT COUNT(*) FROM signals")
-                total_signals = cursor.fetchone()[0]
-                
-                # Signals today
-                today_str = date.today().isoformat()
-                cursor.execute("SELECT COUNT(*) FROM signals WHERE date = ?", (today_str,))
-                signals_today = cursor.fetchone()[0]
-                
-                # Executed today
-                cursor.execute("SELECT COUNT(*) FROM signals WHERE date = ? AND status = 'executed'", (today_str,))
-                executed_today = cursor.fetchone()[0]
-                
-                # System state
-                system_state = self.get_system_state()
-                
-                return {
-                    "total_signals": total_signals,
-                    "signals_today": signals_today,
-                    "executed_today": executed_today,
-                    "system_state": system_state
-                }
-        except Exception as e:
-            logger.error(f"Error getting statistics: {e}")
-            return {
-                "total_signals": 0,
-                "signals_today": 0,
-                "executed_today": 0,
-                "system_state": {}
-            }
-    
-    def save_trade_result(self, trade_result: Dict) -> str:
-        """
-        Save trade result for EDGE learning.
-        
-        Args:
-            trade_result: Dictionary with trade outcome data
-                {
-                    "signal_id": str,
-                    "symbol": str,
-                    "entry_price": float,
-                    "exit_price": float,
-                    "pips": float,
-                    "profit_loss": float,  # En moneda base
-                    "duration_minutes": int,
-                    "is_win": bool,
-                    "exit_reason": str,  # "take_profit", "stop_loss", "manual"
-                    "market_regime": str,
-                    "volatility_atr": float,
-                    "parameters_used": dict  # Parámetros activos al generar la señal
-                }
-        
-        Returns:
-            Trade ID (UUID)
-        """
-        trade_id = str(uuid.uuid4())
-        
-        try:
-            with self._get_conn() as conn:
-                cursor = conn.cursor()
-                cursor.execute('''
-                    INSERT INTO trades (
-                        id, signal_id, symbol, entry_price, exit_price, pips, profit_loss,
-                        duration_minutes, is_win, exit_reason, market_regime, volatility_atr,
-                        parameters_used, timestamp, date
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (
-                    trade_id,
-                    trade_result.get("signal_id"),
-                    trade_result.get("symbol"),
-                    trade_result.get("entry_price"),
-                    trade_result.get("exit_price"),
-                    trade_result.get("pips"),
-                    trade_result.get("profit_loss"),
-                    trade_result.get("duration_minutes"),
-                    trade_result.get("is_win"),
-                    trade_result.get("exit_reason"),
-                    trade_result.get("market_regime"),
-                    trade_result.get("volatility_atr"),
-                    json.dumps(trade_result.get("parameters_used", {})),
-                    datetime.now().isoformat(),
-                    date.today().isoformat()
-                ))
-                conn.commit()
-        except Exception as e:
-            logger.error(f"Error saving trade result: {e}")
-            raise
-        
-        return trade_id
-    
-    def get_recent_trades(self, limit: int = 100) -> List[Dict]:
-        """
-        Get recent trade results for EDGE analysis.
-        """
-        try:
-            with self._get_conn() as conn:
-                conn.row_factory = sqlite3.Row
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT * FROM trades ORDER BY timestamp DESC LIMIT ?",
-                    (limit,)
-                )
-                rows = cursor.fetchall()
-                
-                trades = []
-                for row in rows:
-                    trade = dict(row)
-                    trade['parameters_used'] = json.loads(trade['parameters_used']) if trade['parameters_used'] else {}
-                    trade['is_win'] = bool(trade['is_win'])
-                    trades.append(trade)
-                return trades
-        except Exception as e:
-            logger.error(f"Error getting recent trades: {e}")
-            return []
-    
-    def save_tuning_adjustment(self, adjustment: Dict):
-        """
-        Save parameter adjustment made by tuner for audit trail.
-        """
-        try:
-            with self._get_conn() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "INSERT INTO tuning_history (timestamp, data) VALUES (?, ?)",
-                    (datetime.now().isoformat(), json.dumps(adjustment))
-                )
-                # Cleanup old records (keep last 500)
-                cursor.execute("""
-                    DELETE FROM tuning_history 
-                    WHERE id NOT IN (
-                        SELECT id FROM tuning_history ORDER BY id DESC LIMIT 500
-                    )
-                """)
-                conn.commit()
-        except Exception as e:
-            logger.error(f"Error saving tuning adjustment: {e}")
+        self._execute_serialized(_save, signal_id)
+        return signal_id
 
-    def log_market_state(self, state_data: Dict):
-        """
-        Log market state for historical analysis and auto-calibration.
-        """
-        try:
-            with self._get_conn() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "INSERT INTO market_states (symbol, timestamp, regime, data) VALUES (?, ?, ?, ?)",
-                    (
-                        state_data.get('symbol'),
-                        state_data.get('timestamp'),
-                        state_data.get('regime'),
-                        json.dumps(state_data)
-                    )
-                )
-                conn.commit()
-        except Exception as e:
-            logger.error(f"Error logging market state: {e}")
-
-    def get_market_states(self, limit: int = 1000, symbol: Optional[str] = None) -> List[Dict]:
-        """
-        Retrieve historical market states for analysis.
-        """
-        try:
-            with self._get_conn() as conn:
-                conn.row_factory = sqlite3.Row
-                cursor = conn.cursor()
-                
-                query = "SELECT data FROM market_states"
-                params = []
-                
-                if symbol:
-                    query += " WHERE symbol = ?"
-                    params.append(symbol)
-                
-                query += " ORDER BY timestamp DESC LIMIT ?"
-                params.append(limit)
-                
-                cursor.execute(query, tuple(params))
-                rows = cursor.fetchall()
-                
-                return [json.loads(row['data']) for row in rows]
-        except Exception as e:
-            logger.error(f"Error getting market states: {e}")
-            return []
-    
-    # ==================== FEEDBACK LOOP METHODS ====================
-    
-    def get_signals_by_status(self, status: str) -> List[Dict]:
-        """
-        Get all signals with a specific status (for monitoring loop).
-        
-        Args:
-            status: Signal status ('EXECUTED', 'PENDING', 'CLOSED', etc.)
-        
-        Returns:
-            List of matching signals
-        """
-        try:
-            with self._get_conn() as conn:
-                conn.row_factory = sqlite3.Row
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT * FROM signals WHERE status = ? ORDER BY timestamp DESC",
-                    (status,)
-                )
-                rows = cursor.fetchall()
-                
-                signals = []
-                for row in rows:
-                    sig = dict(row)
-                    sig['metadata'] = json.loads(sig['metadata']) if sig['metadata'] else {}
-                    signals.append(sig)
-                return signals
-        except Exception as e:
-            logger.error(f"Error getting signals by status: {e}")
-            return []
-    
-    def get_signal_by_id(self, signal_id: str) -> Optional[Dict]:
-        """
-        Get a specific signal by ID.
-        
-        Args:
-            signal_id: Signal UUID
-        
-        Returns:
-            Signal dict or None if not found
-        """
-        try:
-            with self._get_conn() as conn:
-                conn.row_factory = sqlite3.Row
-                cursor = conn.cursor()
-                cursor.execute("SELECT * FROM signals WHERE id = ?", (signal_id,))
-                row = cursor.fetchone()
-                if row:
-                    sig = dict(row)
-                    sig['metadata'] = json.loads(sig['metadata']) if sig['metadata'] else {}
-                    return sig
-                return None
-        except Exception as e:
-            logger.error(f"Error getting signal by id {signal_id}: {e}")
-            return None
-
-    def get_recent_signals(self, minutes: int = 120) -> List[Dict]:
-        """
-        Get recent signals for coherence monitoring.
-        """
-        try:
-            from datetime import datetime, timedelta
-            cutoff_time = (datetime.now() - timedelta(minutes=minutes)).isoformat()
-            with self._get_conn() as conn:
-                conn.row_factory = sqlite3.Row
-                cursor = conn.cursor()
-                cursor.execute(
-                    """
-                    SELECT id, symbol, status, connector_type, order_id, timestamp
-                    FROM signals
-                    WHERE timestamp >= ?
-                    ORDER BY timestamp DESC
-                    """,
-                    (cutoff_time,)
-                )
-                rows = cursor.fetchall()
-                return [dict(row) for row in rows]
-        except Exception as e:
-            logger.error(f"Error getting recent signals: {e}")
-            return []
-
-    def log_coherence_event(
-        self,
-        signal_id: Optional[str],
-        symbol: str,
-        timeframe: Optional[str] = None,
-        strategy: Optional[str] = None,
-        stage: str = "",
-        status: str = "",
-        incoherence_type: Optional[str] = None,
-        reason: str = "",
-        details: Optional[str] = None,
-        connector_type: Optional[str] = None
-    ) -> str:
-        """
-        Log a coherence event for auditing (trazabilidad avanzada).
-        """
-        event_id = str(uuid.uuid4())
-        try:
-            with self._get_conn() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    """
-                    INSERT INTO coherence_events (
-                        id, signal_id, symbol, timeframe, strategy, stage, status, incoherence_type, reason, details, connector_type, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        event_id,
-                        signal_id,
-                        symbol,
-                        timeframe,
-                        strategy,
-                        stage,
-                        status,
-                        incoherence_type,
-                        reason,
-                        details,
-                        connector_type,
-                        datetime.now().isoformat()
-                    )
-                )
-                conn.commit()
-                return event_id
-        except Exception as e:
-            logger.error(f"Error logging coherence event: {e}")
-            return event_id
-
-    def get_recent_coherence_events(self, limit: int = 100) -> List[Dict]:
-        """
-        Get recent coherence events.
-        """
-        try:
-            with self._get_conn() as conn:
-                conn.row_factory = sqlite3.Row
-                cursor = conn.cursor()
-                cursor.execute(
-                    """
-                    SELECT * FROM coherence_events
-                    ORDER BY created_at DESC
-                    LIMIT ?
-                    """,
-                    (limit,)
-                )
-                rows = cursor.fetchall()
-                return [dict(row) for row in rows]
-        except Exception as e:
-            logger.error(f"Error getting coherence events: {e}")
-            return []
-
-    def get_open_operations(self) -> List[Dict]:
-        """
-        Get signals that are currently considered 'open' (executed but not closed).
-        """
-        try:
-            with self._get_conn() as conn:
-                conn.row_factory = sqlite3.Row
-                cursor = conn.cursor()
-                # Signals with status 'executed' that don't have a corresponding entry in 'trades'
-                cursor.execute("""
-                    SELECT s.* FROM signals s
-                    LEFT JOIN trades t ON s.id = t.signal_id
-                    WHERE s.status = 'executed' AND t.id IS NULL
-                    ORDER BY s.timestamp DESC
-                """)
-                rows = cursor.fetchall()
-                signals = []
-                for row in rows:
-                    sig = dict(row)
-                    sig['metadata'] = json.loads(sig['metadata']) if sig['metadata'] else {}
-                    signals.append(sig)
-                return signals
-        except Exception as e:
-            logger.error(f"Error getting open operations: {e}")
-            return []
-    
-    def has_open_position(self, symbol: str) -> bool:
-        """
-        Check if there is an open position for the given symbol.
-        
-        Args:
-            symbol: Trading symbol
-        
-        Returns:
-            True if there's an open position, False otherwise
-        """
-        try:
-            with self._get_conn() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT COUNT(*) FROM signals s
-                    LEFT JOIN trades t ON s.id = t.signal_id
-                    WHERE s.symbol = ? AND s.status = 'EXECUTED' AND t.id IS NULL
-                """, (symbol,))
-                count = cursor.fetchone()[0]
-                return count > 0
-        except Exception as e:
-            logger.error(f"Error checking open position for {symbol}: {e}")
-            return False
-    
-    def has_recent_signal(self, symbol: str, signal_type: str, minutes: Optional[int] = None, timeframe: Optional[str] = None) -> bool:
-        """
-        Check if there's a recent signal (PENDING or EXECUTED) for the same symbol, type AND timeframe.
-        
-        This allows multiple signals for the same symbol if they use different timeframes
-        (e.g., scalping on M5 and swing trading on H4 simultaneously).
-        
-        Args:
-            symbol: Trading symbol
-            signal_type: Signal type (BUY, SELL)
-            minutes: Time window in minutes to check for duplicates (overrides timeframe calculation)
-            timeframe: Trading timeframe (e.g., "1m", "5m", "1h"). Part of unique key for deduplication.
-        
-        Returns:
-            True if a recent signal exists for this (symbol, signal_type, timeframe) combination
-        """
-        try:
-            from datetime import datetime, timedelta
+    def get_signals(self, limit: int = 100, status: Optional[str] = None) -> List[Dict]:
+        """Get signals from database"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            query = "SELECT * FROM signals"
+            params = []
+            if status:
+                query += " WHERE status = ?"
+                params.append(status)
+            query += " ORDER BY timestamp DESC LIMIT ?"
+            params.append(limit)
             
-            # Calculate window: explicit minutes > timeframe calculation > default 60
-            if minutes is not None:
-                window_minutes = minutes
-            elif timeframe:
-                window_minutes = calculate_deduplication_window(timeframe)
-                logger.debug(f"Calculated deduplication window for {timeframe}: {window_minutes} minutes")
-            else:
-                window_minutes = 60  # Default fallback
-            
-            cutoff_time = (datetime.now() - timedelta(minutes=window_minutes)).isoformat()
-            
-            with self._get_conn() as conn:
-                cursor = conn.cursor()
-                
-                # Include timeframe in deduplication key
-                if timeframe:
-                    cursor.execute("""
-                        SELECT COUNT(*) FROM signals
-                        WHERE symbol = ? 
-                        AND signal_type = ?
-                        AND timeframe = ?
-                        AND timestamp >= ?
-                    """, (symbol, signal_type, timeframe, cutoff_time))
-                else:
-                    # Fallback if timeframe not provided (should not happen in production)
-                    cursor.execute("""
-                        SELECT COUNT(*) FROM signals
-                        WHERE symbol = ? 
-                        AND signal_type = ?
-                        AND timestamp >= ?
-                    """, (symbol, signal_type, cutoff_time))
-                
-                count = cursor.fetchone()[0]
-                return count > 0
-        except Exception as e:
-            logger.error(f"Error checking recent signal for {symbol}: {e}")
-            return False
-    
-    def update_signal_status(self, signal_id: str, status: str, metadata_update: Optional[Dict] = None):
-        """
-        Update signal status and optionally merge metadata.
-        
-        Args:
-            signal_id: Signal UUID
-            status: New status
-            metadata_update: Additional metadata to merge
-        """
-        try:
-            with self._get_conn() as conn:
-                cursor = conn.cursor()
-                
-                # Get current signal
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            signals = []
+            for row in rows:
+                signal = dict(row)
+                signal['metadata'] = json.loads(signal['metadata']) if signal['metadata'] else {}
+                signals.append(signal)
+            return signals
+
+    def update_signal_status(self, signal_id: str, status: str, metadata_update: Optional[Dict] = None) -> None:
+        """Update signal status and optionally metadata"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            if metadata_update:
+                # Get current metadata
                 cursor.execute("SELECT metadata FROM signals WHERE id = ?", (signal_id,))
                 row = cursor.fetchone()
-                
-                if not row:
-                    logger.warning(f"Signal {signal_id} not found for update")
-                    return
-                
-                # Merge metadata
-                current_metadata = json.loads(row[0]) if row[0] else {}
-                if metadata_update:
+                if row:
+                    current_metadata = json.loads(row['metadata']) if row['metadata'] else {}
                     current_metadata.update(metadata_update)
-
-                order_id = None
-                if metadata_update:
-                    order_id = metadata_update.get('ticket') or metadata_update.get('order_id')
-                
-                # Update signal
-                if order_id is not None:
-                    cursor.execute(
-                        "UPDATE signals SET status = ?, metadata = ?, order_id = ? WHERE id = ?",
-                        (status, json.dumps(current_metadata), str(order_id), signal_id)
-                    )
-                else:
-                    cursor.execute(
-                        "UPDATE signals SET status = ?, metadata = ? WHERE id = ?",
-                        (status, json.dumps(current_metadata), signal_id)
-                    )
-                conn.commit()
-                
-                logger.debug(f"Signal {signal_id} updated to status: {status}")
-        except Exception as e:
-            logger.error(f"Error updating signal status: {e}")
-    
-    def get_all_trades(self, limit: int = 100) -> List[Dict]:
-        """
-        Get all trade results (alias for get_recent_trades for clarity).
-        
-        Args:
-            limit: Maximum number of trades to return
-        
-        Returns:
-            List of trade records
-        """
-        return self.get_recent_trades(limit)
-    
-    def get_win_rate(self, symbol: Optional[str] = None, days: int = 30) -> float:
-        """
-        Calculate win rate percentage.
-        
-        Args:
-            symbol: Optional filter by symbol
-            days: Number of days to look back
-        
-        Returns:
-            Win rate as percentage (0-100)
-        """
-        try:
-            with self._get_conn() as conn:
-                cursor = conn.cursor()
-                
-                # Build query
-                base_query = "SELECT COUNT(*) FROM trades WHERE 1=1"
-                params = []
-                
-                if symbol:
-                    base_query += " AND symbol = ?"
-                    params.append(symbol)
-                
-                if days:
-                    from datetime import timedelta
-                    cutoff_date = (date.today() - timedelta(days=days)).isoformat()
-                    base_query += " AND date >= ?"
-                    params.append(cutoff_date)
-                
-                # Total trades
-                cursor.execute(base_query, tuple(params))
-                total = cursor.fetchone()[0]
-                
-                if total == 0:
-                    return 0.0
-                
-                # Winning trades
-                win_query = base_query + " AND is_win = 1"
-                cursor.execute(win_query, tuple(params))
-                wins = cursor.fetchone()[0]
-                
-                win_rate = (wins / total) * 100
-                return round(win_rate, 2)
-        except Exception as e:
-            logger.error(f"Error calculating win rate: {e}")
-            return 0.0
-    
-    def get_total_profit(self, symbol: Optional[str] = None, days: int = 30) -> float:
-        """
-        Calculate total profit/loss.
-        
-        Args:
-            symbol: Optional filter by symbol
-            days: Number of days to look back
-        
-        Returns:
-            Total profit in account currency
-        """
-        try:
-            with self._get_conn() as conn:
-                cursor = conn.cursor()
-                
-                query = "SELECT SUM(profit_loss) FROM trades WHERE 1=1"
-                params = []
-                
-                if symbol:
-                    query += " AND symbol = ?"
-                    params.append(symbol)
-                
-                if days:
-                    from datetime import timedelta
-                    cutoff_date = (date.today() - timedelta(days=days)).isoformat()
-                    query += " AND date >= ?"
-                    params.append(cutoff_date)
-                
-                cursor.execute(query, tuple(params))
-                result = cursor.fetchone()[0]
-                
-                return round(result or 0.0, 2)
-        except Exception as e:
-            logger.error(f"Error calculating total profit: {e}")
-            return 0.0
-    
-    def get_profit_by_symbol(self, days: int = 30) -> List[Dict]:
-        """
-        Get profit breakdown by symbol (for asset analysis).
-        
-        Args:
-            days: Number of days to look back
-        
-        Returns:
-            List of dicts: [{'symbol': 'EURUSD', 'total_trades': 10, 'win_rate': 60.0, 'profit': 150.50}]
-        """
-        try:
-            with self._get_conn() as conn:
-                conn.row_factory = sqlite3.Row
-                cursor = conn.cursor()
-                
-                # Date filter
-                params = []
-                date_filter = ""
-                if days:
-                    from datetime import timedelta
-                    cutoff_date = (date.today() - timedelta(days=days)).isoformat()
-                    date_filter = "WHERE date >= ?"
-                    params.append(cutoff_date)
-                
-                # Query with grouping and aggregation
-                query = f"""
-                    SELECT 
-                        symbol,
-                        COUNT(*) as total_trades,
-                        SUM(CASE WHEN is_win = 1 THEN 1 ELSE 0 END) as wins,
-                        SUM(profit_loss) as total_profit,
-                        AVG(profit_loss) as avg_profit,
-                        SUM(pips) as total_pips
-                    FROM trades
-                    {date_filter}
-                    GROUP BY symbol
-                    ORDER BY total_profit DESC
-                """
-                
-                cursor.execute(query, tuple(params))
-                rows = cursor.fetchall()
-                
-                results = []
-                for row in rows:
-                    results.append({
-                        'symbol': row['symbol'],
-                        'total_trades': row['total_trades'],
-                        'win_rate': round((row['wins'] / row['total_trades'] * 100), 2) if row['total_trades'] > 0 else 0.0,
-                        'profit': round(row['total_profit'] or 0.0, 2),
-                        'avg_profit': round(row['avg_profit'] or 0.0, 2),
-                        'total_pips': round(row['total_pips'] or 0.0, 1)
-                    })
-                
-                return results
-        except Exception as e:
-            logger.error(f"Error getting profit by symbol: {e}")
-            return []
-    
-    # ==================== BROKER MANAGEMENT ====================
-    
-    def save_broker(self, broker_config: Dict):
-        """
-        Save or update broker (provider) configuration.
-        
-        Args:
-            broker_config: Dict with keys: broker_id, name, type, website, platforms_available, etc.
-        """
-        try:
-            broker_id = broker_config['broker_id']
-            name = broker_config['name']
-            broker_type = broker_config.get('type', '')
-            website = broker_config.get('website', '')
-            platforms = broker_config.get('platforms_available', [])
-            data_server = broker_config.get('data_server', '')
-            auto_provision = broker_config.get('auto_provision_available', False)
-            registration_url = broker_config.get('registration_url', '')
-            
-            # Serialize platforms list to JSON
-            platforms_json = json.dumps(platforms)
-            
-            now = datetime.now().isoformat()
-            
-            with self._get_conn() as conn:
-                cursor = conn.cursor()
-                
-                # Check if exists
-                cursor.execute("SELECT broker_id FROM brokers WHERE broker_id = ?", (broker_id,))
-                exists = cursor.fetchone() is not None
-                
-                if exists:
-                    # Update
                     cursor.execute("""
-                        UPDATE brokers 
-                        SET name = ?, type = ?, website = ?, platforms_available = ?, 
-                            data_server = ?, auto_provision_available = ?, 
-                            registration_url = ?, updated_at = ?
-                        WHERE broker_id = ?
-                    """, (name, broker_type, website, platforms_json, data_server, 
-                          auto_provision, registration_url, now, broker_id))
+                        UPDATE signals 
+                        SET status = ?, metadata = ?, updated_at = ?
+                        WHERE id = ?
+                    """, (status, json.dumps(current_metadata), datetime.now(), signal_id))
                 else:
-                    # Insert
-                    cursor.execute("""
-                        INSERT INTO brokers 
-                        (broker_id, name, type, website, platforms_available, 
-                         data_server, auto_provision_available, registration_url, 
-                         created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (broker_id, name, broker_type, website, platforms_json, 
-                          data_server, auto_provision, registration_url, now, now))
-                
-                conn.commit()
-                logger.info(f"Broker saved: {broker_id}")
-                
-        except Exception as e:
-            logger.error(f"Error saving broker: {e}")
-            raise
-    
-    def save_platform(self, platform_config: Dict):
-        """
-        Save platform configuration.
-        
-        Args:
-            platform_config: Dict with keys: platform_id, name, vendor, type, capabilities, connector_class
-        """
-        try:
-            platform_id = platform_config['platform_id']
-            name = platform_config['name']
-            vendor = platform_config.get('vendor', '')
-            platform_type = platform_config.get('type', '')
-            capabilities = platform_config.get('capabilities', [])
-            connector_class = platform_config.get('connector_class', '')
-            
-            # Serialize capabilities
-            capabilities_json = json.dumps(capabilities)
-            now = datetime.now().isoformat()
-            
-            with self._get_conn() as conn:
-                cursor = conn.cursor()
+                    logger.warning(f"Signal {signal_id} not found for status update")
+            else:
                 cursor.execute("""
-                    INSERT OR REPLACE INTO platforms 
-                    (platform_id, name, vendor, type, capabilities, connector_class, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (platform_id, name, vendor, platform_type, capabilities_json, 
-                      connector_class, now))
-                conn.commit()
-                logger.info(f"Platform saved: {platform_id}")
-                
-        except Exception as e:
-            logger.error(f"Error saving platform: {e}")
-            raise
-    
-    def save_broker_account(self, broker_id: str, platform_id: str, account_name: str, 
-                          account_type: str = 'demo', server: str = '', login: str = '', 
-                          password: str = '', enabled: bool = True):
-        """
-        Save or update broker account. Serializado y con retry/backoff para evitar database is locked.
-        """
-        account_id = str(uuid.uuid4())
-        now = datetime.now().isoformat()
-        logger.info(f"Saving broker account - login: '{login}' (type: {type(login)}, length: {len(str(login))})")
+                    UPDATE signals 
+                    SET status = ?, updated_at = ?
+                    WHERE id = ?
+                """, (status, datetime.now(), signal_id))
+            conn.commit()
 
-        def _save(conn):
+    def save_trade_result(self, trade_data: Dict) -> None:
+        """Save trade result to database"""
+        with self._get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT INTO broker_accounts 
-                (account_id, broker_id, platform_id, account_name, account_number, 
-                    server, account_type, enabled, balance, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (account_id, broker_id, platform_id, account_name, login, 
-                    server, account_type, enabled, 0.0, now, now))
+                INSERT INTO trade_results (
+                    id, signal_id, symbol, entry_price, exit_price, 
+                    profit, exit_reason, close_time
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                str(uuid.uuid4()),
+                trade_data.get('signal_id'),
+                trade_data.get('symbol'),
+                trade_data.get('entry_price'),
+                trade_data.get('exit_price'),
+                trade_data.get('profit'),
+                trade_data.get('exit_reason'),
+                trade_data.get('close_time')
+            ))
             conn.commit()
-            logger.info(f"Account saved successfully with account_number: '{login}'")
 
-        try:
-            self._execute_serialized(lambda: _save(self._get_conn()))
-            # Save credentials if provided
-            if password:
-                self.save_credential(account_id, "password", "password", password)
-            logger.info(f"Account saved: {account_id}")
-            return account_id
-        except Exception as e:
-            logger.error(f"Error saving broker account: {e}")
-            raise
-    
+    def get_trade_results(self, limit: int = 100) -> List[Dict]:
+        """Get trade results from database"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM trade_results 
+                ORDER BY close_time DESC 
+                LIMIT ?
+            """, (limit,))
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    def save_tuning_adjustment(self, adjustment: Dict) -> None:
+        """Save tuning adjustment to database"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO tuning_adjustments (adjustment_data)
+                VALUES (?)
+            """, (json.dumps(adjustment),))
+            conn.commit()
+
+    def get_tuning_history(self, limit: int = 50) -> List[Dict]:
+        """Get tuning adjustment history"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM tuning_adjustments 
+                ORDER BY timestamp DESC 
+                LIMIT ?
+            """, (limit,))
+            rows = cursor.fetchall()
+            history = []
+            for row in rows:
+                adjustment = dict(row)
+                adjustment['adjustment_data'] = json.loads(adjustment['adjustment_data'])
+                history.append(adjustment)
+            return history
+
+    def log_market_state(self, state_data: Dict) -> None:
+        """Log market state data"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO market_state (symbol, data)
+                VALUES (?, ?)
+            """, (state_data.get('symbol'), json.dumps(state_data)))
+            conn.commit()
+
+    def get_market_state_history(self, symbol: str, limit: int = 100) -> List[Dict]:
+        """Get market state history for a symbol"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM market_state 
+                WHERE symbol = ? 
+                ORDER BY timestamp DESC 
+                LIMIT ?
+            """, (symbol, limit))
+            rows = cursor.fetchall()
+            history = []
+            for row in rows:
+                state = dict(row)
+                state['data'] = json.loads(state['data'])
+                history.append(state)
+            return history
+
+    def save_broker(self, broker_data: Dict) -> None:
+        """Save broker configuration"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO brokers (id, name, platform_id, config)
+                VALUES (?, ?, ?, ?)
+            """, (
+                broker_data['id'],
+                broker_data['name'],
+                broker_data['platform_id'],
+                json.dumps(broker_data.get('config', {}))
+            ))
+            conn.commit()
 
     def get_brokers(self) -> List[Dict]:
-        """Get all brokers (providers)"""
-        try:
-            with self._get_conn() as conn:
-                conn.row_factory = sqlite3.Row
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT broker_id, name, type, website, platforms_available, 
-                           data_server, auto_provision_available, registration_url,
-                           created_at, updated_at
-                    FROM brokers
-                    ORDER BY name
-                """)
-                rows = cursor.fetchall()
-                brokers = []
-                for row in rows:
-                    broker = dict(row)
-                    # Alias for backward compatibility
-                    broker['auto_provisioning'] = 'full' if broker.get('auto_provision_available') else 'none'
-                    brokers.append(broker)
-                return brokers
-        except Exception as e:
-            logger.error(f"Error getting brokers: {e}")
-            return []
-    
-    def get_broker(self, broker_id: str) -> Optional[Dict]:
-        """Get specific broker"""
-        try:
-            with self._get_conn() as conn:
-                conn.row_factory = sqlite3.Row
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT broker_id, name, type, website, platforms_available, 
-                           data_server, auto_provision_available, registration_url,
-                           created_at, updated_at
-                    FROM brokers
-                    WHERE broker_id = ?
-                """, (broker_id,))
-                row = cursor.fetchone()
-                return dict(row) if row else None
-        except Exception as e:
-            logger.error(f"Error getting broker {broker_id}: {e}")
-            return None
-    
+        """Get all brokers"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM brokers")
+            rows = cursor.fetchall()
+            brokers = []
+            for row in rows:
+                broker = dict(row)
+                broker['config'] = json.loads(broker['config']) if broker['config'] else {}
+                brokers.append(broker)
+            return brokers
+
+    def save_platform(self, platform_data: Dict) -> None:
+        """Save platform configuration"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO platforms (id, name, type, config)
+                VALUES (?, ?, ?, ?)
+            """, (
+                platform_data['id'],
+                platform_data['name'],
+                platform_data['type'],
+                json.dumps(platform_data.get('config', {}))
+            ))
+            conn.commit()
+
     def get_platforms(self) -> List[Dict]:
         """Get all platforms"""
-        try:
-            with self._get_conn() as conn:
-                conn.row_factory = sqlite3.Row
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT platform_id, name, vendor, type, capabilities, 
-                           connector_class, created_at
-                    FROM platforms
-                    ORDER BY name
-                """)
-                rows = cursor.fetchall()
-                return [dict(row) for row in rows]
-        except Exception as e:
-            logger.error(f"Error getting platforms: {e}")
-            return []
-    
-    def get_broker_accounts(self, broker_id: Optional[str] = None, 
-                           enabled_only: bool = False,
-                           account_type: Optional[str] = None) -> List[Dict]:
-        """
-        Get broker accounts, optionally filtered by broker_id and account_type
-        
-        Args:
-            broker_id: Filter by specific broker (None = all)
-            enabled_only: Only return enabled accounts
-            account_type: Filter by account type ('demo' or 'real')
-        """
-        try:
-            with self._get_conn() as conn:
-                conn.row_factory = sqlite3.Row
-                cursor = conn.cursor()
-                
-                query = """
-                    SELECT account_id, broker_id, platform_id, account_name, 
-                           account_number, server, account_type, credentials_path,
-                           enabled, last_connection, balance, created_at, updated_at
-                    FROM broker_accounts
-                """
-                
-                params = []
-                conditions = []
-                
-                if broker_id:
-                    conditions.append("broker_id = ?")
-                    params.append(broker_id)
-                
-                if enabled_only:
-                    conditions.append("enabled = 1")
-                
-                if account_type:
-                    conditions.append("account_type = ?")
-                    params.append(account_type)
-                
-                if conditions:
-                    query += " WHERE " + " AND ".join(conditions)
-                
-                query += " ORDER BY account_name"
-                
-                cursor.execute(query, tuple(params))
-                rows = cursor.fetchall()
-                accounts = []
-                for row in rows:
-                    acc = dict(row)
-                    # Alias account_number to login for consistency
-                    acc['login'] = acc.get('account_number')
-                    accounts.append(acc)
-                return accounts
-        except Exception as e:
-            logger.error(f"Error getting broker accounts: {e}")
-            return []
-    
-    def get_account(self, account_id: str) -> Optional[Dict]:
-        """Get specific account"""
-        try:
-            with self._get_conn() as conn:
-                conn.row_factory = sqlite3.Row
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT account_id, broker_id, platform_id, account_name, 
-                           account_number, server, account_type, credentials_path,
-                           enabled, last_connection, balance, created_at, updated_at
-                    FROM broker_accounts
-                    WHERE account_id = ?
-                """, (account_id,))
-                row = cursor.fetchone()
-                return dict(row) if row else None
-        except Exception as e:
-            logger.error(f"Error getting account {account_id}: {e}")
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM platforms")
+            rows = cursor.fetchall()
+            platforms = []
+            for row in rows:
+                platform = dict(row)
+                platform['config'] = json.loads(platform['config']) if platform['config'] else {}
+                platforms.append(platform)
+            return platforms
+
+    def save_broker_account(self, account_data: Dict) -> None:
+        """Save broker account"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO broker_accounts 
+                (id, platform_id, login, password, server, type, enabled)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                account_data['id'],
+                account_data['platform_id'],
+                account_data['login'],
+                account_data.get('password'),
+                account_data.get('server'),
+                account_data.get('type', 'demo'),
+                account_data.get('enabled', True)
+            ))
+            conn.commit()
+
+    def get_broker_accounts(self) -> List[Dict]:
+        """Get all broker accounts"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM broker_accounts")
+            rows = cursor.fetchall()
+            accounts = []
+            for row in rows:
+                account = dict(row)
+                accounts.append(account)
+            return accounts
+
+    def update_account_status(self, account_id: str, enabled: bool) -> None:
+        """Update account enabled status"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE broker_accounts 
+                SET enabled = ?, updated_at = ?
+                WHERE id = ?
+            """, (enabled, datetime.now(), account_id))
+            conn.commit()
+
+    def update_account_connection(self, account_id: str, connected: bool) -> None:
+        """Update account connection status (placeholder for future use)"""
+        # This could be extended to track connection status
+        logger.info(f"Account {account_id} connection status: {connected}")
+
+    def save_broker_config(self, config_data: Dict) -> None:
+        """Save broker configuration (placeholder)"""
+        logger.info(f"Saving broker config: {config_data}")
+
+    def update_account_type(self, account_id: str, account_type: str) -> None:
+        """Update account type (demo/live)"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE broker_accounts 
+                SET type = ?, updated_at = ?
+                WHERE id = ?
+            """, (account_type, datetime.now(), account_id))
+            conn.commit()
+
+    def update_account_enabled(self, account_id: str, enabled: bool) -> None:
+        """Update account enabled status"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE broker_accounts 
+                SET enabled = ?, updated_at = ?
+                WHERE id = ?
+            """, (enabled, datetime.now(), account_id))
+            conn.commit()
+
+    def update_account(self, account_id: str, updates: Dict) -> None:
+        """Update account with multiple fields"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            set_clause = ", ".join(f"{k} = ?" for k in updates.keys())
+            values = list(updates.values()) + [datetime.now(), account_id]
+            cursor.execute(f"""
+                UPDATE broker_accounts 
+                SET {set_clause}, updated_at = ?
+                WHERE id = ?
+            """, values)
+            conn.commit()
+
+    def update_credential(self, account_id: str, credential_data: Dict) -> None:
+        """Update encrypted credentials for account"""
+        encrypted_data = get_encryptor().encrypt(json.dumps(credential_data))
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO credentials (broker_account_id, encrypted_data)
+                VALUES (?, ?)
+            """, (account_id, encrypted_data))
+            conn.commit()
+
+    def get_credentials(self, account_id: str) -> Optional[Dict]:
+        """Get decrypted credentials for account"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT encrypted_data FROM credentials 
+                WHERE broker_account_id = ?
+            """, (account_id,))
+            row = cursor.fetchone()
+            if row:
+                decrypted = get_encryptor().decrypt(row['encrypted_data'])
+                return json.loads(decrypted)
             return None
-    
-    def update_account_status(self, account_id: str, enabled: bool):
-        """Enable or disable an account"""
-        try:
-            with self._get_conn() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    UPDATE broker_accounts 
-                    SET enabled = ?, updated_at = ?
-                    WHERE account_id = ?
-                """, (enabled, datetime.now().isoformat(), account_id))
-                conn.commit()
-                logger.info(f"Account {account_id} {'enabled' if enabled else 'disabled'}")
-        except Exception as e:
-            logger.error(f"Error updating account status: {e}")
-            raise
-    
-    def update_account_connection(self, account_id: str, balance: Optional[float] = None):
-        """Update last connection timestamp and optionally balance"""
-        try:
-            with self._get_conn() as conn:
-                cursor = conn.cursor()
-                if balance is not None:
-                    cursor.execute("""
-                        UPDATE broker_accounts 
-                        SET last_connection = ?, balance = ?
-                        WHERE account_id = ?
-                    """, (datetime.now().isoformat(), balance, account_id))
-                else:
-                    cursor.execute("""
-                        UPDATE broker_accounts 
-                        SET last_connection = ?
-                        WHERE account_id = ?
-                    """, (datetime.now().isoformat(), account_id))
-                conn.commit()
-        except Exception as e:
-            logger.error(f"Error updating account connection: {e}")
-    
-    # Legacy methods for backwards compatibility (deprecated)
-    def save_broker_config(self, broker_config: Dict):
-        """DEPRECATED: Use save_broker() instead"""
-        logger.warning("save_broker_config() is deprecated, use save_broker()")
-        return self.save_broker(broker_config)
-    
-    def get_enabled_brokers(self) -> List[Dict]:
-        """DEPRECATED: Use get_broker_accounts(enabled_only=True) instead"""
-        logger.warning("get_enabled_brokers() is deprecated")
-        return self.get_broker_accounts(enabled_only=True)
-    
-    # Account management methods for Dashboard
-    def update_account_type(self, account_id: str, account_type: str):
-        """Update account type (demo/real)"""
-        try:
-            if account_type not in ['demo', 'real']:
-                raise ValueError("account_type must be 'demo' or 'real'")
-            
-            with self._get_conn() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    UPDATE broker_accounts 
-                    SET account_type = ?, updated_at = ?
-                    WHERE account_id = ?
-                """, (account_type, datetime.now().isoformat(), account_id))
-                conn.commit()
-                logger.info(f"Account {account_id} type changed to {account_type}")
-        except Exception as e:
-            logger.error(f"Error updating account type: {e}")
-            raise
-    
-    def update_account_enabled(self, account_id: str, enabled: bool):
-        """Update account enabled status (alias for update_account_status)"""
-        return self.update_account_status(account_id, enabled)
-    
-    def update_account(self, account_id: str, account_name: Optional[str] = None,
-                      server: Optional[str] = None, login: Optional[str] = None, password: Optional[str] = None):
-        """Update account details"""
-        try:
-            updates = []
-            params = []
-            
-            if account_name is not None:
-                updates.append("account_name = ?")
-                params.append(account_name)
-                logger.info(f"Updating account_name to: {account_name}")
-            
-            if server is not None:
-                updates.append("server = ?")
-                params.append(server)
-                logger.info(f"Updating server to: {server}")
-            
-            if login is not None:
-                updates.append("account_number = ?")
-                params.append(login)
-                logger.info(f"Updating account_number (login) to: '{login}' (type: {type(login)}, length: {len(str(login))})")
-            
-            if password is not None:
-                # Save password safely using encrypted credentials
-                try:
-                    # Check if credential exists
-                    existing = self.get_credentials(account_id, "password")
-                    if existing:
-                        self.update_credential(account_id, "password", password)
-                    else:
-                        self.save_credential(account_id, "password", "password", password)
-                except Exception as e:
-                    logger.error(f"Error updating password credential: {e}")
-            
-            if not updates:
-                # Still might need to update password even if no other fields changed
-                if password is None:
-                    logger.warning("No updates provided for account")
-                    return
-            else:
-                updates.append("updated_at = ?")
-                params.append(datetime.now().isoformat())
-                params.append(account_id)
-                
-                with self._get_conn() as conn:
-                    cursor = conn.cursor()
-                    query = f"UPDATE broker_accounts SET {', '.join(updates)} WHERE account_id = ?"
-                    cursor.execute(query, params)
-                    conn.commit()
-                    
-            logger.info(f"Account {account_id} updated successfully")
-        except Exception as e:
-            logger.error(f"Error updating account: {e}")
-            raise
-    
-    # ========================================
-    # Credential Management (Encrypted)
-    # ========================================
-    
-    def save_credential(self, account_id: str, credential_type: str, 
-                       credential_key: str, value: str, expires_at: Optional[str] = None) -> str:
-        """
-        Save encrypted credential for a broker account
-        
-        Args:
-            account_id: Account ID (FK to broker_accounts)
-            credential_type: Type of credential (api_key, password, oauth_token, etc)
-            credential_key: Name/key of the credential (e.g., 'api_key', 'api_secret', 'password')
-            value: Plain text value to encrypt and store
-            expires_at: Optional expiration timestamp
-        
-        Returns:
-            credential_id: ID of saved credential
-        """
-        try:
-            encryptor = get_encryptor()
-            encrypted_value = encryptor.encrypt(value)
-            credential_id = str(uuid.uuid4())
-            
-            with self._get_conn() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT INTO broker_credentials 
-                    (credential_id, account_id, credential_type, credential_key, 
-                     encrypted_value, created_at, expires_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    credential_id,
-                    account_id,
-                    credential_type,
-                    credential_key,
-                    encrypted_value,
-                    datetime.now().isoformat(),
-                    expires_at
-                ))
-                conn.commit()
-                logger.info(f"Saved encrypted credential {credential_key} for account {account_id}")
-                return credential_id
-        except Exception as e:
-            logger.error(f"Error saving credential: {e}")
-            raise
-    
-    def get_credentials(self, account_id: str, credential_type: Optional[str] = None) -> Dict[str, str]:
-        """
-        Get decrypted credentials for an account
-        
-        Args:
-            account_id: Account ID
-            credential_type: Optional filter by credential type
-        
-        Returns:
-            Dict mapping credential_key -> decrypted_value
-        """
-        try:
-            encryptor = get_encryptor()
-            
-            with self._get_conn() as conn:
-                cursor = conn.cursor()
-                
-                if credential_type:
-                    cursor.execute("""
-                        SELECT credential_key, encrypted_value 
-                        FROM broker_credentials
-                        WHERE account_id = ? AND credential_type = ?
-                    """, (account_id, credential_type))
-                else:
-                    cursor.execute("""
-                        SELECT credential_key, encrypted_value 
-                        FROM broker_credentials
-                        WHERE account_id = ?
-                    """, (account_id,))
-                
-                rows = cursor.fetchall()
-                
-                credentials = {}
-                for key, encrypted_value in rows:
-                    try:
-                        credentials[key] = encryptor.decrypt(encrypted_value)
-                    except Exception as e:
-                        logger.error(f"Failed to decrypt credential {key}: {e}")
-                
-                return credentials
-        except Exception as e:
-            logger.error(f"Error getting credentials: {e}")
-            return {}
-    
-    def update_credential(self, account_id: str, credential_key: str, new_value: str):
-        """Update an existing credential value"""
-        try:
-            encryptor = get_encryptor()
-            encrypted_value = encryptor.encrypt(new_value)
-            
-            with self._get_conn() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    UPDATE broker_credentials 
-                    SET encrypted_value = ?
-                    WHERE account_id = ? AND credential_key = ?
-                """, (encrypted_value, account_id, credential_key))
-                conn.commit()
-                logger.info(f"Updated encrypted credential {credential_key} for account {account_id}")
-        except Exception as e:
-            logger.error(f"Error updating credential: {e}")
-            raise
 
-    # ========================================
-    # Data Provider Management (DB BACKEND)
-    # ========================================
-    
+    def delete_credential(self, account_id: str) -> None:
+        """Delete credentials for account"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM credentials WHERE broker_account_id = ?", (account_id,))
+            conn.commit()
+
+    def delete_account(self, account_id: str) -> None:
+        """Delete broker account and associated credentials"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            # Delete credentials first (foreign key)
+            cursor.execute("DELETE FROM credentials WHERE broker_account_id = ?", (account_id,))
+            # Delete account
+            cursor.execute("DELETE FROM broker_accounts WHERE id = ?", (account_id,))
+            conn.commit()
+
+    def save_data_provider(self, provider_data: Dict) -> None:
+        """Save data provider configuration"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO data_providers 
+                (id, name, type, config, enabled)
+                VALUES (?, ?, ?, ?, ?)
+            """, (
+                provider_data['id'],
+                provider_data['name'],
+                provider_data['type'],
+                json.dumps(provider_data.get('config', {})),
+                provider_data.get('enabled', True)
+            ))
+            conn.commit()
+
     def get_data_providers(self) -> List[Dict]:
-        """Get all data provider configurations from DB"""
-        try:
-            with self._get_conn() as conn:
-                conn.row_factory = sqlite3.Row
-                cursor = conn.cursor()
-                cursor.execute("SELECT * FROM data_providers ORDER BY priority DESC")
-                rows = cursor.fetchall()
-                
-                providers = []
-                for row in rows:
-                    p = dict(row)
-                    # Deserialize additional_config
-                    if p.get('additional_config'):
-                        p['additional_config'] = json.loads(p['additional_config'])
-                    else:
-                        p['additional_config'] = {}
-                    providers.append(p)
-                return providers
-        except Exception as e:
-            logger.error(f"Error getting data providers from DB: {e}")
-            return []
+        """Get all data providers"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM data_providers")
+            rows = cursor.fetchall()
+            providers = []
+            for row in rows:
+                provider = dict(row)
+                provider['config'] = json.loads(provider['config']) if provider['config'] else {}
+                providers.append(provider)
+            return providers
 
-    def save_data_provider(self, name: str, enabled: bool, priority: int, 
-                          requires_auth: bool, api_key: Optional[str] = None,
-                          api_secret: Optional[str] = None, additional_config: Optional[Dict] = None,
-                          is_system: bool = False):
-        """Save or update data provider configuration in DB"""
-        try:
-            config_json = json.dumps(additional_config or {})
-            now = datetime.now().isoformat()
-            
-            with self._get_conn() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT OR REPLACE INTO data_providers 
-                    (name, enabled, priority, requires_auth, api_key, api_secret, additional_config, is_system, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (name, enabled, priority, requires_auth, api_key, api_secret, config_json, 1 if is_system else 0, now))
-                conn.commit()
-                logger.info(f"Data provider {name} saved to DB (is_system={is_system})")
-        except Exception as e:
-            logger.error(f"Error saving data provider {name} to DB: {e}")
-            raise
+    def update_provider_enabled(self, provider_id: str, enabled: bool) -> None:
+        """Update data provider enabled status"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE data_providers 
+                SET enabled = ?
+                WHERE id = ?
+            """, (enabled, provider_id))
+            conn.commit()
 
-    def update_provider_enabled(self, name: str, enabled: bool):
-        """Update enabled status for a provider"""
+    @contextmanager
+    def op(self) -> None:
+        """Context manager for database operations"""
+        conn = self._get_conn()
         try:
-            with self._get_conn() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    UPDATE data_providers 
-                    SET enabled = ?, updated_at = ?
-                    WHERE name = ?
-                """, (enabled, datetime.now().isoformat(), name))
-                conn.commit()
-        except Exception as e:
-            logger.error(f"Error updating provider {name} status: {e}")
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
             raise
-    
-    def delete_credential(self, account_id: str, credential_key: Optional[str] = None):
-        """Delete credential(s) for an account"""
+        finally:
+            conn.close()
+
+    @contextmanager  
+    def op(self) -> None:
+        """Alternative context manager for database operations"""
+        conn = self._get_conn()
         try:
-            with self._get_conn() as conn:
-                cursor = conn.cursor()
-                
-                if credential_key:
-                    cursor.execute("""
-                        DELETE FROM broker_credentials 
-                        WHERE account_id = ? AND credential_key = ?
-                    """, (account_id, credential_key))
-                    logger.info(f"Deleted credential {credential_key} for account {account_id}")
-                else:
-                    cursor.execute("""
-                        DELETE FROM broker_credentials 
-                        WHERE account_id = ?
-                    """, (account_id,))
-                    logger.info(f"Deleted all credentials for account {account_id}")
-                
-                conn.commit()
-        except Exception as e:
-            logger.error(f"Error deleting credential: {e}")
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
             raise
-    
-    def delete_account(self, account_id: str):
-        """Delete account and all its credentials (CASCADE)"""
-        try:
-            with self._get_conn() as conn:
-                cursor = conn.cursor()
-                
-                # Delete credentials first
-                cursor.execute("DELETE FROM broker_credentials WHERE account_id = ?", (account_id,))
-                
-                # Delete account
-                cursor.execute("DELETE FROM broker_accounts WHERE account_id = ?", (account_id,))
-                
-                conn.commit()
-                logger.info(f"Deleted account {account_id} and all credentials")
-        except Exception as e:
-            logger.error(f"Error deleting account: {e}")
-            raise
+        finally:
+            conn.close()
+
+# Test utilities
+def temp_db_path(tmp_path: str) -> str:
+    """Create temporary database path for testing"""
+    return os.path.join(tmp_path, "test.db")
+
+def storage(tmp_path: str) -> StorageManager:
+    """Create storage manager for testing"""
+    return StorageManager(temp_db_path(tmp_path))
+
+def test_system_state_persistence(storage: StorageManager) -> None:
+    """Test system state persistence"""
+    test_state = {"test_key": "test_value", "number": 42}
+    storage.update_system_state(test_state)
+    retrieved = storage.get_system_state()
+    assert retrieved["test_key"] == "test_value"
+    assert retrieved["number"] == 42
+
+def test_signal_persistence(storage: StorageManager) -> None:
+    """Test signal persistence"""
+    test_signal = {
+        "symbol": "EURUSD",
+        "signal_type": "BUY",
+        "confidence": 0.8,
+        "metadata": {"test": True}
+    }
+    signal_id = storage.save_signal(test_signal)
+    signals = storage.get_signals()
+    assert len(signals) == 1
+    assert signals[0]["symbol"] == "EURUSD"
+
+def test_trade_result_persistence(storage: StorageManager) -> None:
+    """Test trade result persistence"""
+    test_trade = {
+        "signal_id": "test_signal",
+        "symbol": "EURUSD",
+        "entry_price": 1.1000,
+        "exit_price": 1.1050,
+        "profit": 50.0,
+        "exit_reason": "TAKE_PROFIT"
+    }
+    storage.save_trade_result(test_trade)
+    results = storage.get_trade_results()
+    assert len(results) == 1
+    assert results[0]["profit"] == 50.0
+
+def test_market_state_logging(storage: StorageManager) -> None:
+    """Test market state logging"""
+    test_state = {"symbol": "EURUSD", "price": 1.1000}
+    storage.log_market_state(test_state)
+    history = storage.get_market_state_history("EURUSD")
+    assert len(history) == 1
+    assert history[0]["data"]["price"] == 1.1000

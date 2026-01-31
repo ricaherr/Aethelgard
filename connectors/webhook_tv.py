@@ -6,7 +6,7 @@ import json
 import logging
 import asyncio
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict, Any
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 import httpx
@@ -116,7 +116,7 @@ async def send_to_aethelgard(signal_data: dict) -> dict:
 
 
 @app.post("/webhook")
-async def tradingview_webhook(request: Request):
+async def tradingview_webhook(request: Request) -> JSONResponse:
     """
     Endpoint para recibir alertas de TradingView
     
@@ -172,13 +172,13 @@ async def tradingview_webhook(request: Request):
 
 
 @app.get("/health")
-async def health():
+async def health() -> Dict[str, str]:
     """Health check endpoint"""
     return {"status": "healthy", "service": "TradingView Webhook Bridge"}
 
 
 @app.get("/")
-async def root():
+async def root() -> Dict[str, Any]:
     """Endpoint raíz"""
     return {
         "service": "TradingView Webhook Bridge",
