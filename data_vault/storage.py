@@ -8,6 +8,7 @@ import uuid
 from datetime import date, datetime
 from enum import Enum
 from typing import Dict, List, Optional
+from contextlib import contextmanager
 from utils.encryption import get_encryptor
 
 logger = logging.getLogger(__name__)
@@ -153,17 +154,23 @@ class StorageManager:
         return status_list
     def __init__(self, db_path='data_vault/aethelgard.db'):
         self.db_path = db_path
-        self._conn = None
         if self.db_path == ':memory:':
-            self._conn = sqlite3.connect(self.db_path)
+            self._conn: sqlite3.Connection = sqlite3.connect(self.db_path)
         else:
             # Conexión persistente, permite acceso multihilo
-            self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            self._conn: sqlite3.Connection = sqlite3.connect(self.db_path, check_same_thread=False)
         self._initialize_db()
 
+    @contextmanager
     def _get_conn(self):
-        """Devuelve la conexión persistente (siempre la misma, excepto :memory:)"""
-        return self._conn
+        """Context manager para la conexión que hace commit al final"""
+        conn = self._conn
+        if conn is None:
+            raise RuntimeError("Database connection not initialized")
+        try:
+            yield conn
+        finally:
+            conn.commit()
 
     def _initialize_db(self):
         """Initialize SQLite database with proper schema"""

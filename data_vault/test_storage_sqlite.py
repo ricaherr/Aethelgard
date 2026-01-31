@@ -7,7 +7,7 @@ import os
 import json
 from datetime import date, datetime
 from data_vault.storage import StorageManager
-from models.signal import Signal, ConnectorType, MarketRegime
+from models.signal import Signal, ConnectorType, MarketRegime, SignalType
 
 @pytest.fixture
 def temp_db_path(tmp_path):
@@ -42,7 +42,7 @@ def test_signal_persistence(storage):
     """Test saving and retrieving signals"""
     signal = Signal(
         symbol="EURUSD",
-        signal_type="BUY",
+        signal_type=SignalType.BUY,
         confidence=0.95,
         connector_type=ConnectorType.METATRADER5,
         entry_price=1.1000,
