@@ -1,10 +1,23 @@
 # Aethelgard – Roadmap
 
-**Última actualización**: 2026-01-31 (QA Guard Type Fixes COMPLETADO)
+**Última actualización**: 2026-01-31 (Broker Storage Methods COMPLETADO)
 
 ---
 
 ## 🔧 Correcciones Críticas Completadas
+
+**Broker Storage Methods Implementation (2026-01-31)** ✅ COMPLETADO
+- Implementados métodos faltantes en `StorageManager` para funcionalidad completa de brokers:
+  - `get_broker(broker_id)`: Obtener broker específico por ID
+  - `get_account(account_id)`: Obtener cuenta específica por ID  
+  - `get_broker_accounts(enabled_only=True)`: Obtener cuentas con filtro de estado
+  - Modificado `save_broker_account()` para aceptar múltiples formatos (dict, named params, positional args)
+  - Actualizada tabla `broker_accounts` con campos `broker_id`, `account_name`, `account_number`
+  - Implementado guardado automático de credenciales al crear cuentas con password
+  - Modificado `get_credentials()` para retornar credencial específica o diccionario completo
+  - Ajustes en `get_broker()` para compatibilidad con tests (campos `broker_id`, `auto_provisioning`, serialización JSON)
+- Resultado: ✅ **8/8 tests de broker storage PASAN**
+- Estado: ✅ **Funcionalidad de brokers completamente operativa en UI y tests**
 
 **QA Guard Type Fixes (2026-01-31)** ✅ COMPLETADO
 - Corregidos errores de tipo críticos en archivos principales:

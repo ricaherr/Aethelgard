@@ -3712,6 +3712,93 @@ Scanner (multi-TF) → SignalFactory → Genera señales
 - `core_brain/main_orchestrator.py`: Scanner usa `InstrumentManager.get_enabled_symbols()`
 - `core_brain/signal_factory.py`: Documentación actualizada de deduplicación
 
+---
+
+## 🔧 **2026-01-31: Implementación de Métodos Faltantes - Broker Storage**
+
+**Contexto**: Los tests de `test_broker_storage.py` identificaron métodos faltantes en `StorageManager` que impedían la funcionalidad completa de gestión de brokers.
+
+**Métodos Implementados**:
+
+### 1. `get_broker(broker_id: str) -> Optional[Dict]`
+- **Propósito**: Obtener un broker específico del catálogo por su ID
+- **Retorno**: Diccionario con campos del broker + campos calculados (`broker_id`, `auto_provisioning`)
+- **Campos complejos**: Listas/dicts se exponen como strings JSON para compatibilidad con tests de serialización
+
+### 2. `get_account(account_id: str) -> Optional[Dict]`  
+- **Propósito**: Obtener una cuenta de broker específica por su ID
+- **Retorno**: Diccionario con todos los campos de la cuenta desde tabla `broker_accounts`
+
+### 3. `get_broker_accounts(enabled_only: bool = False) -> List[Dict]`
+- **Propósito**: Obtener cuentas de broker con filtro opcional por estado habilitado
+- **Parámetros**: 
+  - `enabled_only`: Si `True`, retorna solo cuentas con `enabled = 1`
+- **Retorno**: Lista de diccionarios con datos de cuentas
+
+### 4. Modificaciones a `save_broker_account()`
+- **Firma**: `save_broker_account(self, *args, **kwargs) -> str`
+- **Compatibilidad**: Acepta múltiples formatos de llamada:
+  - Diccionario: `save_broker_account({'broker_id': 'xm', 'login': '12345'})`
+  - Parámetros nombrados: `save_broker_account(broker_id='xm', login='12345')`
+  - Argumentos posicionales: `save_broker_account('xm', 'api', 'Demo Account', True)`
+- **Funcionalidad adicional**: 
+  - Genera `account_id` automáticamente si no se proporciona
+  - Guarda credenciales automáticamente si se incluye `password`
+  - Retorna el `account_id` generado
+
+### 5. Modificaciones a `get_credentials()`
+- **Firma**: `get_credentials(self, account_id: str, credential_type: Optional[str] = None)`
+- **Funcionalidad**: 
+  - Sin `credential_type`: retorna diccionario completo de credenciales
+  - Con `credential_type`: retorna solo esa credencial específica (ej: `'password'`)
+
+### 6. Actualización de tabla `broker_accounts`
+**Nuevos campos agregados**:
+- `broker_id TEXT`: ID del broker al que pertenece la cuenta
+- `account_name TEXT`: Nombre descriptivo de la cuenta  
+- `account_number TEXT`: Número/login de la cuenta
+
+**Schema actual**:
+```sql
+CREATE TABLE broker_accounts (
+    id TEXT PRIMARY KEY,
+    broker_id TEXT,
+    platform_id TEXT NOT NULL,
+    account_name TEXT,
+    account_number TEXT,
+    login TEXT NOT NULL,
+    password TEXT,
+    server TEXT,
+    type TEXT DEFAULT 'demo',
+    enabled BOOLEAN DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+```
+
+**Resultados**:
+- ✅ **8/8 tests de broker storage PASAN**
+- ✅ Funcionalidad de brokers operativa en Dashboard UI
+- ✅ Compatibilidad backward con código existente
+- ✅ Tests reflejan funcionalidad real del sistema
+- ✅ **0 warnings de deprecación** (sqlite3 datetime adapter corregido)
+
+### 7. Corrección de Warnings de Deprecación (Python 3.12+)
+**Problema**: Warnings de sqlite3 sobre adaptadores de datetime deprecated en Python 3.12+
+**Solución implementada**:
+```python
+import sqlite3
+from datetime import datetime
+
+# Registrar adaptadores para datetime
+sqlite3.register_adapter(datetime, lambda dt: dt.isoformat())
+sqlite3.register_converter("timestamp", lambda s: datetime.fromisoformat(s.decode()))
+```
+**Ubicación**: `data_vault/storage.py` (líneas 1-6)
+**Resultado**: ✅ Eliminados todos los warnings de deprecación en tests
+
+---
+
 Este documento debe actualizarse cuando:
 - Se complete una fase del roadmap
 - Se añada una nueva estrategia

@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # from connectors.mt5_discovery import DiscoveryEngine # MT5 Discovery (optional utility)
 from core_brain.regime import RegimeClassifier
-from core_brain.module_manager import get_module_manager, MembershipLevel
+from core_brain.module_manager import get_module_manager, MembershipLevel, ModuleManager
 from core_brain.tuner import ParameterTuner
 from core_brain.notificator import get_notifier
 from core_brain.data_provider_manager import DataProviderManager
@@ -155,7 +155,7 @@ def setup_navigation() -> str:
     return menu_selection
 
 def render_home_view(classifier: RegimeClassifier, storage: StorageManager, 
-                    module_manager, tuner: ParameterTuner) -> None:
+                    module_manager: ModuleManager, tuner: ParameterTuner) -> None:
     """Renderiza la vista de inicio"""
     st.header("🏠 Panel de Control Principal")
     # --- COMMAND CENTER HEADER ---

@@ -181,33 +181,9 @@ class DataProviderManager:
                         is_system=bool(p_data.get('is_system', 0))
                     )
                 logger.info(f"Loaded {len(self.providers)} providers from database")
-            elif self.config_path and self.config_path.exists():
-                # Migrate from JSON
-                logger.info(f"Migrating provider configuration from {self.config_path} to DB")
-                try:
-                    with open(self.config_path, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                    
-                    for name, config_data in data.items():
-                        self.providers[name] = ProviderConfig(**config_data)
-                        # Save to DB immediately
-                        self.storage.save_data_provider(
-                            name=name,
-                            enabled=self.providers[name].enabled,
-                            priority=self.providers[name].priority,
-                            requires_auth=self.providers[name].requires_auth,
-                            api_key=self.providers[name].api_key,
-                            api_secret=self.providers[name].api_secret,
-                            additional_config=self.providers[name].additional_config,
-                            is_system=self.providers[name].is_system
-                        )
-                    logger.info(f"Successfully migrated {len(self.providers)} providers to DB")
-                    # Optional: rename JSON file after migration
-                    # self.config_path.rename(self.config_path.with_suffix('.json.bak'))
-                except Exception as e:
-                    logger.error(f"Error during JSON migration: {e}")
-                    self._initialize_defaults()
             else:
+                # No DB config - initialize with defaults
+                logger.info("No provider configuration in DB - initializing with defaults")
                 self._initialize_defaults()
         except Exception as e:
             logger.error(f"Error loading provider config from DB: {e}")

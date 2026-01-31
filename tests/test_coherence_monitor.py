@@ -19,6 +19,9 @@ def test_coherence_detects_unnormalized_and_missing_ticket():
         entry_price=150.0
     ))
 
+    # Set signal to EXECUTED status to trigger EXECUTED_WITHOUT_TICKET check
+    storage.update_signal_status(signal_id, "EXECUTED")
+
     monitor = CoherenceMonitor(storage=storage, pending_timeout_minutes=15, lookback_minutes=120)
     events = monitor.run_once()
 
