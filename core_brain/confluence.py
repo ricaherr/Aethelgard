@@ -9,6 +9,7 @@ import logging
 from pathlib import Path
 from typing import Dict, Optional
 from dataclasses import dataclass
+import pandas as pd
 
 from models.signal import Signal, SignalType, MarketRegime
 

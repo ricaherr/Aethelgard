@@ -480,24 +480,28 @@ def test_count_executed_signals_filters_by_date(storage):
     # Manually insert yesterday's signal into database
     conn = storage._get_conn()
     cursor = conn.cursor()
+    
+    # Put additional fields in metadata
+    metadata = {
+        "entry_price": signal_yesterday_record["entry_price"],
+        "stop_loss": signal_yesterday_record["stop_loss"], 
+        "take_profit": signal_yesterday_record["take_profit"],
+        "date": signal_yesterday_record["date"]
+    }
+    
     cursor.execute("""
         INSERT INTO signals 
-        (id, symbol, connector_type, signal_type, confidence, entry_price, stop_loss, take_profit, 
-         timestamp, date, status, metadata)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, symbol, signal_type, confidence, timestamp, metadata, connector_type, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         signal_yesterday_record["id"],
         signal_yesterday_record["symbol"],
-        signal_yesterday_record["connector_type"],
         signal_yesterday_record["signal_type"],
         signal_yesterday_record["confidence"],
-        signal_yesterday_record["entry_price"],
-        signal_yesterday_record["stop_loss"],
-        signal_yesterday_record["take_profit"],
         signal_yesterday_record["timestamp"],
-        signal_yesterday_record["date"],
-        signal_yesterday_record["status"],
-        signal_yesterday_record["metadata"]
+        json.dumps(metadata),
+        signal_yesterday_record["connector_type"],
+        signal_yesterday_record["status"]
     ))
     conn.commit()
     

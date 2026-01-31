@@ -26,7 +26,7 @@ class MT5Bridge:
     
     def __init__(self, 
                  server_url: str = "ws://localhost:8000/ws/MT5/",
-                 client_id: str = None,
+                 client_id: Optional[str] = None,
                  symbol: str = "EURUSD",
                  auto_execute: bool = True,
                  demo_mode: bool = True,
@@ -45,7 +45,7 @@ class MT5Bridge:
         self.server_url: str = server_url
         self.client_id: str = client_id or f"MT5_{symbol}"
         self.symbol: str = symbol
-        self.websocket = None
+        self.websocket: Optional[websockets.ClientConnection] = None
         self.is_connected = False
         self.running = False
         self.auto_execute: bool = auto_execute
@@ -61,22 +61,22 @@ class MT5Bridge:
         if mt5 is None:
             raise ImportError("MetaTrader5 no está disponible")
         
-        if not mt5.initialize():
-            raise RuntimeError(f"Error inicializando MT5: {mt5.last_error()}")
+        if not mt5.initialize():  # type: ignore
+            raise RuntimeError(f"Error inicializando MT5: {mt5.last_error()}")  # type: ignore
         
         # Verificar modo demo
-        account_info = mt5.account_info()
+        account_info = mt5.account_info()  # type: ignore
         if account_info is None:
             raise RuntimeError("No se pudo obtener información de la cuenta")
         
-        is_demo = account_info.trade_mode == mt5.ACCOUNT_TRADE_MODE_DEMO
+        is_demo = account_info.trade_mode == mt5.ACCOUNT_TRADE_MODE_DEMO  # type: ignore
         
         if self.demo_mode and not is_demo:
             logger.warning("⚠️  ADVERTENCIA: demo_mode=True pero conectado a cuenta REAL")
             logger.warning("⚠️  Auto-ejecución deshabilitada por seguridad")
             self.auto_execute = False
         
-        logger.info(f"MT5 inicializado. Versión: {mt5.version()}")
+        logger.info(f"MT5 inicializado. Versión: {mt5.version()}")  # type: ignore
         logger.info(f"Cuenta: {account_info.login} | Demo: {is_demo} | Auto-Execute: {self.auto_execute}")
     
     async def connect(self) -> None:
@@ -85,7 +85,7 @@ class MT5Bridge:
             full_url: str = f"{self.server_url}{self.client_id}"
             logger.info(f"Conectando a Aethelgard: {full_url}")
             
-            self.websocket: websockets.ClientConnection = await websockets.connect(full_url)
+            self.websocket = await websockets.connect(full_url)
             self.is_connected = True
             
             logger.info("Conectado a Aethelgard exitosamente")
@@ -117,7 +117,7 @@ class MT5Bridge:
             logger.error(f"Error desconectando: {e}")
         finally:
             if mt5:
-                mt5.shutdown()
+                mt5.shutdown()  # type: ignore
     
     async def send_message(self, data: dict) -> None:
         """Envía un mensaje al servidor"""
@@ -136,8 +136,10 @@ class MT5Bridge:
         try:
             while self.running and self.is_connected:
                 try:
+                    if self.websocket is None:
+                        break
                     message = await self.websocket.recv()
-                    await self.process_message(message)
+                    await self.process_message(str(message))
                 except ConnectionClosed:
                     logger.warning("Conexión cerrada por el servidor")
                     self.is_connected = False
@@ -201,6 +203,14 @@ class MT5Bridge:
                 logger.info("Auto-ejecución deshabilitada. Señal registrada pero no ejecutada.")
                 return
             
+            # Obtener precio si no está especificado
+            if price is None:
+                tick = mt5.symbol_info_tick(symbol)  # type: ignore
+                if tick is None:
+                    logger.error(f"No se pudo obtener precio para {symbol}")
+                    return
+                price = tick.ask if signal_type == "BUY" else tick.bid
+            
             # Ejecutar señal según tipo
             if signal_type == "BUY":
                 result = await self.execute_buy(
@@ -250,28 +260,28 @@ class MT5Bridge:
         try:
             # Preparar la orden
             request = {
-                "action": mt5.TRADE_ACTION_DEAL,
+                "action": mt5.TRADE_ACTION_DEAL,  # type: ignore
                 "symbol": symbol,
                 "volume": volume,
-                "type": mt5.ORDER_TYPE_BUY,
-                "price": mt5.symbol_info_tick(symbol).ask,
+                "type": mt5.ORDER_TYPE_BUY,  # type: ignore
+                "price": mt5.symbol_info_tick(symbol).ask,  # type: ignore
                 "sl": stop_loss if stop_loss else 0.0,
                 "tp": take_profit if take_profit else 0.0,
                 "deviation": 20,
                 "magic": self.magic_number,
-                "comment": f"Aethelgard_{signal_data.get('strategy_id', 'unknown')}",
-                "type_time": mt5.ORDER_TIME_GTC,
-                "type_filling": mt5.ORDER_FILLING_IOC,
+                "comment": f"Aethelgard_{signal_data.get('strategy_id', 'unknown') if signal_data else 'unknown'}",
+                "type_time": mt5.ORDER_TIME_GTC,  # type: ignore
+                "type_filling": mt5.ORDER_FILLING_IOC,  # type: ignore
             }
             
             # Enviar orden
-            result = mt5.order_send(request)
+            result = mt5.order_send(request)  # type: ignore
             
             if result is None:
-                logger.error(f"Error enviando orden BUY: {mt5.last_error()}")
+                logger.error(f"Error enviando orden BUY: {mt5.last_error()}")  # type: ignore
                 return None
             
-            if result.retcode != mt5.TRADE_RETCODE_DONE:
+            if result.retcode != mt5.TRADE_RETCODE_DONE:  # type: ignore
                 logger.error(f"Orden BUY rechazada: {result.retcode} - {result.comment}")
                 return None
             
@@ -333,28 +343,28 @@ class MT5Bridge:
         try:
             # Preparar la orden
             request = {
-                "action": mt5.TRADE_ACTION_DEAL,
+                "action": mt5.TRADE_ACTION_DEAL,  # type: ignore
                 "symbol": symbol,
                 "volume": volume,
-                "type": mt5.ORDER_TYPE_SELL,
-                "price": mt5.symbol_info_tick(symbol).bid,
+                "type": mt5.ORDER_TYPE_SELL,  # type: ignore
+                "price": mt5.symbol_info_tick(symbol).bid,  # type: ignore
                 "sl": stop_loss if stop_loss else 0.0,
                 "tp": take_profit if take_profit else 0.0,
                 "deviation": 20,
                 "magic": self.magic_number,
-                "comment": f"Aethelgard_{signal_data.get('strategy_id', 'unknown')}",
-                "type_time": mt5.ORDER_TIME_GTC,
-                "type_filling": mt5.ORDER_FILLING_IOC,
+                "comment": f"Aethelgard_{signal_data.get('strategy_id', 'unknown') if signal_data else 'unknown'}",
+                "type_time": mt5.ORDER_TIME_GTC,  # type: ignore
+                "type_filling": mt5.ORDER_FILLING_IOC,  # type: ignore
             }
             
             # Enviar orden
-            result = mt5.order_send(request)
+            result = mt5.order_send(request)  # type: ignore
             
             if result is None:
-                logger.error(f"Error enviando orden SELL: {mt5.last_error()}")
+                logger.error(f"Error enviando orden SELL: {mt5.last_error()}")  # type: ignore
                 return None
             
-            if result.retcode != mt5.TRADE_RETCODE_DONE:
+            if result.retcode != mt5.TRADE_RETCODE_DONE:  # type: ignore
                 logger.error(f"Orden SELL rechazada: {result.retcode} - {result.comment}")
                 return None
             
@@ -401,7 +411,7 @@ class MT5Bridge:
             Diccionario con resumen de cierres
         """
         try:
-            positions = mt5.positions_get(symbol=symbol) if symbol else mt5.positions_get()
+            positions = mt5.positions_get(symbol=symbol) if symbol else mt5.positions_get()  # type: ignore
             
             if positions is None or len(positions) == 0:
                 logger.info("No hay posiciones abiertas para cerrar")
@@ -417,22 +427,22 @@ class MT5Bridge:
                 
                 # Preparar orden de cierre
                 close_request = {
-                    "action": mt5.TRADE_ACTION_DEAL,
+                    "action": mt5.TRADE_ACTION_DEAL,  # type: ignore
                     "symbol": position.symbol,
                     "volume": position.volume,
-                    "type": mt5.ORDER_TYPE_SELL if position.type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY,
+                    "type": mt5.ORDER_TYPE_SELL if position.type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY,  # type: ignore
                     "position": position.ticket,
-                    "price": mt5.symbol_info_tick(position.symbol).bid if position.type == mt5.ORDER_TYPE_BUY else mt5.symbol_info_tick(position.symbol).ask,
+                    "price": mt5.symbol_info_tick(position.symbol).bid if position.type == mt5.ORDER_TYPE_BUY else mt5.symbol_info_tick(position.symbol).ask,  # type: ignore
                     "deviation": 20,
                     "magic": self.magic_number,
                     "comment": "Aethelgard_Close",
-                    "type_time": mt5.ORDER_TIME_GTC,
-                    "type_filling": mt5.ORDER_FILLING_IOC,
+                    "type_time": mt5.ORDER_TIME_GTC,  # type: ignore
+                    "type_filling": mt5.ORDER_FILLING_IOC,  # type: ignore
                 }
                 
-                result = mt5.order_send(close_request)
+                result = mt5.order_send(close_request)  # type: ignore
                 
-                if result and result.retcode == mt5.TRADE_RETCODE_DONE:
+                if result and result.retcode == mt5.TRADE_RETCODE_DONE:  # type: ignore
                     closed += 1
                     logger.info(f"✅ Posición cerrada: Ticket {position.ticket}")
                     
@@ -460,7 +470,7 @@ class MT5Bridge:
             P&L en la moneda de la cuenta
         """
         try:
-            positions = mt5.positions_get(ticket=ticket)
+            positions = mt5.positions_get(ticket=ticket)  # type: ignore
             if positions and len(positions) > 0:
                 return positions[0].profit
             return None
@@ -486,7 +496,7 @@ class MT5Bridge:
             from_date: datetime = now - timedelta(hours=hours)
             
             # Get history deals
-            deals = mt5.history_deals_get(from_date, now)
+            deals = mt5.history_deals_get(from_date, now)  # type: ignore
             
             if deals is None:
                 logger.warning("No history deals found")
@@ -501,7 +511,7 @@ class MT5Bridge:
                     continue
                 
                 # Only process exits (DEAL_ENTRY_OUT)
-                if deal.entry != mt5.DEAL_ENTRY_OUT:
+                if deal.entry != mt5.DEAL_ENTRY_OUT:  # type: ignore
                     continue
                 
                 # Build position info
@@ -534,11 +544,11 @@ class MT5Bridge:
     def _find_entry_deal(self, position_id: int, from_date: datetime, to_date: datetime) -> None:
         """Find the entry deal for a position"""
         try:
-            deals = mt5.history_deals_get(from_date, to_date, position=position_id)
+            deals = mt5.history_deals_get(from_date, to_date, position=position_id)  # type: ignore
             if deals:
                 # Find DEAL_ENTRY_IN
                 for deal in deals:
-                    if deal.entry == mt5.DEAL_ENTRY_IN:
+                    if deal.entry == mt5.DEAL_ENTRY_IN:  # type: ignore
                         return deal
             return None
         except Exception as e:
@@ -573,7 +583,7 @@ class MT5Bridge:
     async def send_market_data(self) -> None:
         """Envía datos de mercado actuales"""
         try:
-            tick = mt5.symbol_info_tick(self.symbol)
+            tick = mt5.symbol_info_tick(self.symbol)  # type: ignore
             if tick is None:
                 logger.warning(f"No se pudo obtener tick para {self.symbol}")
                 return
@@ -621,7 +631,7 @@ class MT5Bridge:
             "take_profit": take_profit,
             "strategy_id": strategy_id,
             "metadata": {
-                "account": mt5.account_info().login if mt5.account_info() else None,
+                "account": mt5.account_info().login if mt5.account_info() else None,  # type: ignore
                 "terminal": "MT5"
             }
         })

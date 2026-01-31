@@ -96,7 +96,7 @@ class HealthManager:
         """Gets CPU and Memory usage of the current process group."""
         try:
             process = psutil.Process(os.getpid())
-            mem_info: psutil.pmem = process.memory_info()
+            mem_info = process.memory_info()
             return {
                 "cpu_percent": psutil.cpu_percent(interval=0.1),
                 "memory_mb": mem_info.rss / (1024 * 1024),
@@ -169,7 +169,7 @@ class HealthManager:
             # Check if accounts have credentials
             account_with_creds = None
             for acc in mt5_accounts:
-                creds: Dict[str, str] = storage.get_credentials(acc['account_id'])
+                creds: Optional[Dict[str, str]] = storage.get_credentials(acc['account_id'])
                 if creds and creds.get('password'):
                     account_with_creds = acc
                     break
@@ -201,7 +201,7 @@ class HealthManager:
                     results["status"] = "GREEN"
                     
                     # Get account info
-                    account_info = mt5.account_info()
+                    account_info = mt5.account_info()  # type: ignore
                     if account_info:
                         results["account_type"] = "DEMO" if connector.is_demo else "REAL"
                         results["account_info"] = {
@@ -224,7 +224,7 @@ class HealthManager:
                         )
                     
                     # Check AutoTrading status
-                    terminal_info = mt5.terminal_info()
+                    terminal_info = mt5.terminal_info()  # type: ignore
                     if terminal_info:
                         if terminal_info.trade_allowed:
                             results["details"].append("✅ AutoTrading habilitado en MT5")

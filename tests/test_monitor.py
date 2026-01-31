@@ -15,9 +15,12 @@ class TestClosingMonitor:
     """Test cases for ClosingMonitor functionality"""
     
     @pytest.fixture
-    def storage(self):
-        """Create in-memory storage for testing"""
-        storage = StorageManager(db_path=':memory:')
+    def storage(self, tmp_path):
+        """Create temporary storage for testing"""
+        import tempfile
+        import os
+        db_path = os.path.join(tmp_path, "test.db")
+        storage = StorageManager(db_path=db_path)
         return storage
     
     @pytest.fixture
@@ -87,7 +90,7 @@ class TestClosingMonitor:
         assert updates == 1
         
         # Verify database was updated
-        signals = storage.get_all_signals()
+        signals = storage.get_signals()
         updated_signal = next(s for s in signals if s['id'] == signal_id)
         assert updated_signal['status'] == 'CLOSED'
     
@@ -127,10 +130,10 @@ class TestClosingMonitor:
         )
         
         # Verify trade was saved
-        trades = storage.get_all_trades()
+        trades = storage.get_recent_trades()
         assert len(trades) == 1
         assert trades[0]['is_win'] is True
-        assert trades[0]['profit_loss'] == 50.0
+        assert trades[0]['profit'] == 50.0
     
     def test_update_trade_result_loss(self, monitor, storage):
         """Test updating a losing trade"""
@@ -153,10 +156,10 @@ class TestClosingMonitor:
         )
         
         # Verify trade was saved
-        trades = storage.get_all_trades()
+        trades = storage.get_recent_trades()
         assert len(trades) == 1
         assert trades[0]['is_win'] is False
-        assert trades[0]['profit_loss'] == -50.0
+        assert trades[0]['profit'] == -50.0
     
     @pytest.mark.asyncio
     async def test_run_monitoring_loop(self, monitor):

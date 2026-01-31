@@ -154,7 +154,11 @@ class ClosingMonitor:
                 return
             
             # Calculate PIPs
-            entry_price = signal['entry_price']
+            entry_price = signal.get('price') or signal.get('entry_price')
+            if entry_price is None:
+                logger.error(f"Signal {signal_id} has no entry price")
+                return
+            
             symbol = symbol or signal['symbol']
             pips = self._calculate_pips(symbol, entry_price, exit_price)
             
@@ -172,14 +176,9 @@ class ClosingMonitor:
                 'symbol': symbol,
                 'entry_price': entry_price,
                 'exit_price': exit_price,
-                'pips': pips,
-                'profit_loss': profit,
-                'duration_minutes': duration_minutes,
-                'is_win': is_win,
+                'profit': profit,
                 'exit_reason': exit_reason,
-                'market_regime': signal.get('metadata', {}).get('regime', 'UNKNOWN'),
-                'volatility_atr': signal.get('metadata', {}).get('atr', 0.0),
-                'parameters_used': signal.get('metadata', {})
+                'close_time': close_time
             })
             
             # Update signal status to CLOSED

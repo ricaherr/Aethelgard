@@ -8,7 +8,7 @@ import logging
 import uuid
 from datetime import date, datetime
 from enum import Enum
-from typing import Dict, List, Optional, Callable, Any
+from typing import Dict, List, Optional, Callable, Any, Generator
 from contextlib import contextmanager
 from utils.encryption import CredentialEncryption, get_encryptor
 
@@ -102,7 +102,7 @@ class StorageManager:
         self.db_path = db_path or os.path.join(os.path.dirname(__file__), "aethelgard.db")
         self._initialize_db()
 
-    def _get_conn(self) -> sqlite3.Generator[sqlite3.Connection, threading.Any, None]:
+    def _get_conn(self) -> sqlite3.Connection:
         """Get database connection with row factory"""
         conn = sqlite3.connect(self.db_path, check_same_thread=False)
         conn.row_factory = sqlite3.Row
@@ -218,8 +218,7 @@ class StorageManager:
             # Data providers table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS data_providers (
-                    id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
+                    name TEXT PRIMARY KEY,
                     type TEXT NOT NULL,
                     config TEXT,
                     enabled BOOLEAN DEFAULT 1,
@@ -246,7 +245,8 @@ class StorageManager:
         for attempt in range(retries):
             with self._db_lock:
                 try:
-                    return func(*args, **kwargs)
+                    with self._get_conn() as conn:
+                        return func(conn, *args, **kwargs)
                 except Exception as e:
                     last_exc = e
                     if 'locked' in str(e).lower():
@@ -312,6 +312,17 @@ class StorageManager:
                     state[row['key']] = row['value']
             return state
 
+    def _get_signal_type_value(self, signal: Any) -> str:
+        """Extract signal type value, handling both string and Enum types"""
+        signal_type = getattr(signal, 'signal_type', None)
+        if signal_type is None:
+            return 'unknown'
+        if isinstance(signal_type, str):
+            return signal_type
+        if hasattr(signal_type, 'value'):
+            return signal_type.value
+        return str(signal_type)
+
     def save_signal(self, signal: dict) -> str:
         """
         Save a signal to persistent storage with full traceability.
@@ -331,7 +342,8 @@ class StorageManager:
         
         connector_type = getattr(signal, 'connector_type', 'unknown')
         if hasattr(signal, 'connector_type'):
-            connector_type = signal.connector_type if isinstance(signal.connector_type, str) else signal.connector_type.value
+            connector_type_value = getattr(signal, 'connector_type')
+            connector_type = connector_type_value if isinstance(connector_type_value, str) else connector_type_value.value
         
         def _save(conn: sqlite3.Connection, signal_id: str) -> None:
             cursor = conn.cursor()
@@ -342,8 +354,8 @@ class StorageManager:
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 signal_id,
-                signal.symbol,
-                signal.signal_type if isinstance(signal.signal_type, str) else signal.signal_type.value,
+                getattr(signal, 'symbol', 'unknown'),
+                self._get_signal_type_value(signal),
                 getattr(signal, 'confidence', None),
                 json.dumps(serialized_metadata),
                 connector_type,
@@ -376,6 +388,18 @@ class StorageManager:
                 signal['metadata'] = json.loads(signal['metadata']) if signal['metadata'] else {}
                 signals.append(signal)
             return signals
+
+    def get_signal_by_id(self, signal_id: str) -> Optional[Dict]:
+        """Get a signal by its ID"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM signals WHERE id = ?", (signal_id,))
+            row = cursor.fetchone()
+            if row:
+                signal = dict(row)
+                signal['metadata'] = json.loads(signal['metadata']) if signal['metadata'] else {}
+                return signal
+            return None
 
     def update_signal_status(self, signal_id: str, status: str, metadata_update: Optional[Dict] = None) -> None:
         """Update signal status and optionally metadata"""
@@ -675,20 +699,34 @@ class StorageManager:
             cursor.execute("DELETE FROM broker_accounts WHERE id = ?", (account_id,))
             conn.commit()
 
-    def save_data_provider(self, provider_data: Dict) -> None:
+    def save_data_provider(self, name: str, enabled: bool = True, priority: int = 50, 
+                          requires_auth: bool = False, api_key: Optional[str] = None, 
+                          api_secret: Optional[str] = None, additional_config: Optional[Dict] = None,
+                          is_system: bool = False, provider_type: str = "generic") -> None:
         """Save data provider configuration"""
+        if additional_config is None:
+            additional_config = {}
+        
+        config = {
+            'priority': priority,
+            'requires_auth': requires_auth,
+            'api_key': api_key,
+            'api_secret': api_secret,
+            'additional_config': additional_config,
+            'is_system': is_system
+        }
+        
         with self._get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT OR REPLACE INTO data_providers 
-                (id, name, type, config, enabled)
-                VALUES (?, ?, ?, ?, ?)
+                (name, type, config, enabled)
+                VALUES (?, ?, ?, ?)
             """, (
-                provider_data['id'],
-                provider_data['name'],
-                provider_data['type'],
-                json.dumps(provider_data.get('config', {})),
-                provider_data.get('enabled', True)
+                name,
+                provider_type,
+                json.dumps(config),
+                enabled
             ))
             conn.commit()
 
@@ -698,10 +736,21 @@ class StorageManager:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM data_providers")
             rows = cursor.fetchall()
+            
+            # Get column names
+            column_names = [description[0] for description in cursor.description]
+            
             providers = []
             for row in rows:
-                provider = dict(row)
-                provider['config'] = json.loads(provider['config']) if provider['config'] else {}
+                provider = dict(zip(column_names, row))
+                # Ensure config is parsed as JSON
+                if 'config' in provider and provider['config']:
+                    provider['config'] = json.loads(provider['config'])
+                else:
+                    provider['config'] = {}
+                # For backward compatibility, set id = name if no id column
+                if 'id' not in provider and 'name' in provider:
+                    provider['id'] = provider['name']
                 providers.append(provider)
             return providers
 
@@ -712,12 +761,12 @@ class StorageManager:
             cursor.execute("""
                 UPDATE data_providers 
                 SET enabled = ?
-                WHERE id = ?
+                WHERE name = ?
             """, (enabled, provider_id))
             conn.commit()
 
     @contextmanager
-    def op(self) -> None:
+    def op(self) -> Generator[sqlite3.Connection, None, None]:
         """Context manager for database operations"""
         conn = self._get_conn()
         try:
@@ -728,19 +777,102 @@ class StorageManager:
             raise
         finally:
             conn.close()
-
-    @contextmanager  
-    def op(self) -> None:
-        """Alternative context manager for database operations"""
-        conn = self._get_conn()
-        try:
-            yield conn
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
             conn.close()
+
+    def count_executed_signals(self, date_filter: Optional[date] = None) -> int:
+        """Count executed signals (signals with status 'executed')"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            if date_filter:
+                cursor.execute("""
+                    SELECT COUNT(*) 
+                    FROM signals 
+                    WHERE status = 'executed' AND DATE(timestamp) = ?
+                """, (date_filter.isoformat(),))
+            else:
+                cursor.execute("SELECT COUNT(*) FROM signals WHERE status = 'executed'")
+            return cursor.fetchone()[0]
+
+    def has_open_position(self, symbol: Optional[str] = None) -> bool:
+        """Check if there are open positions"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            if symbol:
+                cursor.execute("SELECT COUNT(*) FROM trade_results WHERE close_time IS NULL AND symbol = ?", (symbol,))
+            else:
+                cursor.execute("SELECT COUNT(*) FROM trade_results WHERE close_time IS NULL")
+            return cursor.fetchone()[0] > 0
+
+    def has_recent_signal(self, symbol: Optional[str] = None, signal_type: Optional[str] = None, 
+                        minutes: Optional[int] = None, timeframe: Optional[str] = None, hours: int = 1) -> bool:
+        """Check if there are recent signals within the last N hours/minutes"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            time_minutes = minutes if minutes is not None else hours * 60
+            
+            query = """
+                SELECT COUNT(*) FROM signals 
+                WHERE timestamp > datetime('now', '-{} minutes')
+            """.format(time_minutes)
+            
+            params = []
+            if symbol:
+                query += " AND symbol = ?"
+                params.append(symbol)
+            if signal_type:
+                query += " AND signal_type = ?"
+                params.append(signal_type)
+            if timeframe:
+                query += " AND timeframe = ?"
+                params.append(timeframe)
+            
+            cursor.execute(query, params)
+            return cursor.fetchone()[0] > 0
+
+    def get_recent_signals(self, minutes: int = 60, limit: int = 100) -> List[Dict]:
+        """Get recent signals within the last N minutes"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM signals 
+                WHERE timestamp > datetime('now', '-{} minutes')
+                ORDER BY timestamp DESC 
+                LIMIT ?
+            """.format(minutes), (limit,))
+            rows = cursor.fetchall()
+            signals = []
+            for row in rows:
+                signal = dict(row)
+                signal['metadata'] = json.loads(signal['metadata']) if signal['metadata'] else {}
+                signals.append(signal)
+            return signals
+
+    def get_recent_trades(self, limit: int = 10) -> List[Dict]:
+        """Get recent trades"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM trade_results 
+                ORDER BY created_at DESC 
+                LIMIT ?
+            """, (limit,))
+            rows = cursor.fetchall()
+            trades = []
+            for row in rows:
+                trade = {
+                    'id': row[0],
+                    'signal_id': row[1],
+                    'symbol': row[2],
+                    'entry_price': row[3],
+                    'exit_price': row[4],
+                    'profit': row[5],
+                    'exit_reason': row[6],
+                    'close_time': row[7],
+                    'created_at': row[8],
+                    'is_win': row[5] > 0 if row[5] is not None else None
+                }
+                trades.append(trade)
+            return trades
 
 # Test utilities
 def temp_db_path(tmp_path: str) -> str:
