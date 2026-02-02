@@ -118,6 +118,11 @@ class StorageManager:
         conn.row_factory = sqlite3.Row
         return conn
 
+    def _close_conn(self, conn: sqlite3.Connection) -> None:
+        """Close connection only if it's NOT the persistent connection"""
+        if conn is not self._persistent_conn:
+            conn.close()
+
     def _initialize_db(self) -> None:
         """Initialize database tables if they don't exist"""
         conn = self._get_conn()
@@ -274,7 +279,7 @@ class StorageManager:
             cursor.execute("ALTER TABLE data_providers ADD COLUMN type TEXT DEFAULT 'api'")
         
         conn.commit()
-        conn.close()
+        self._close_conn(conn)
 
     def _execute_serialized(self, func: Callable, *args, retries: int = 5, backoff: float = 0.2, **kwargs) -> Any:
         """
@@ -296,7 +301,7 @@ class StorageManager:
                     logger.error(f"DB error: {e}")
                     raise
                 finally:
-                    conn.close()
+                    self._close_conn(conn)
         logger.error(f"DB error after retries: {last_exc}")
         if last_exc is not None:
             raise last_exc
@@ -338,7 +343,7 @@ class StorageManager:
             try:
                 _update(conn, new_state)
             finally:
-                conn.close()
+                self._close_conn(conn)
             self._execute_serialized(_update, new_state)
         except Exception as e:
             logger.error(f"Error updating system state: {e}")
@@ -358,7 +363,7 @@ class StorageManager:
                     state[row['key']] = row['value']
             return state
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     def _get_signal_type_value(self, signal: Any) -> str:
         """Extract signal type value, handling both string and Enum types"""
@@ -468,7 +473,7 @@ class StorageManager:
                 signals.append(signal)
             return signals
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     def get_signal_by_id(self, signal_id: str) -> Optional[Dict]:
         """Get a signal by its ID"""
@@ -483,7 +488,7 @@ class StorageManager:
                 return signal
             return None
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     def update_signal_status(self, signal_id: str, status: str, metadata_update: Optional[Dict] = None) -> None:
         """Update signal status and optionally metadata"""
@@ -519,7 +524,7 @@ class StorageManager:
                 """, (status, datetime.now(), signal_id))
             conn.commit()
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     def save_trade_result(self, trade_data: Dict) -> None:
         """Save trade result to database"""
@@ -543,7 +548,7 @@ class StorageManager:
             ))
             conn.commit()
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     def get_trade_results(self, limit: int = 100) -> List[Dict]:
         """Get trade results from database"""
@@ -558,7 +563,7 @@ class StorageManager:
             rows = cursor.fetchall()
             return [dict(row) for row in rows]
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     def save_tuning_adjustment(self, adjustment: Dict) -> None:
         """Save tuning adjustment to database"""
@@ -571,7 +576,7 @@ class StorageManager:
             """, (json.dumps(adjustment),))
             conn.commit()
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     def get_tuning_history(self, limit: int = 50) -> List[Dict]:
         """Get tuning adjustment history"""
@@ -591,7 +596,7 @@ class StorageManager:
                 history.append(adjustment)
             return history
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     def log_market_state(self, state_data: Dict) -> None:
         """Log market state data"""
@@ -604,7 +609,7 @@ class StorageManager:
             """, (state_data.get('symbol'), json.dumps(state_data)))
             conn.commit()
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     def get_market_state_history(self, symbol: str, limit: int = 100) -> List[Dict]:
         """Get market state history for a symbol"""
@@ -625,7 +630,7 @@ class StorageManager:
                 history.append(state)
             return history
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     def save_broker(self, broker_data: Dict) -> None:
         """Save broker configuration"""
@@ -669,7 +674,7 @@ class StorageManager:
                 ))
             conn.commit()
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     def _get_broker_id_column(self, cursor: sqlite3.Cursor) -> str:
         """Detect broker identifier column for schema compatibility."""
@@ -705,7 +710,7 @@ class StorageManager:
             rows = cursor.fetchall()
             return [self._normalize_broker_row(dict(row)) for row in rows]
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     def get_broker(self, broker_id: str) -> Optional[Dict]:
         """Get specific broker by ID"""
@@ -721,7 +726,7 @@ class StorageManager:
                 return self._normalize_broker_row(dict(row))
             return None
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     def save_platform(self, platform_data: Dict) -> None:
         """Save platform configuration"""
@@ -739,7 +744,7 @@ class StorageManager:
             ))
             conn.commit()
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     def get_platforms(self) -> List[Dict]:
         """Get all platforms"""
@@ -757,7 +762,7 @@ class StorageManager:
                 platforms.append(platform)
             return platforms
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     def save_broker_account(self, *args, **kwargs) -> str:
         """Save broker account - accepts dict, named params, or positional args"""
@@ -807,7 +812,7 @@ class StorageManager:
             ))
             conn.commit()
         finally:
-            conn.close()
+            self._close_conn(conn)
         
         # Save credentials if password provided
         if account_data.get('password'):
@@ -831,7 +836,7 @@ class StorageManager:
                 accounts.append(account)
             return accounts
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     def get_account(self, account_id: str) -> Optional[Dict]:
         """Get specific broker account by ID"""
@@ -844,7 +849,7 @@ class StorageManager:
                 return dict(row)
             return None
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     def update_account_status(self, account_id: str, enabled: bool) -> None:
         """Update account enabled status"""
@@ -858,7 +863,7 @@ class StorageManager:
             """, (enabled, datetime.now(), account_id))
             conn.commit()
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     def update_account_connection(self, account_id: str, connected: bool) -> None:
         """Update account connection status (placeholder for future use)"""
@@ -881,7 +886,7 @@ class StorageManager:
             """, (account_type, datetime.now(), account_id))
             conn.commit()
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     def log_coherence_event(self, signal_id: Optional[str], symbol: str, timeframe: Optional[str],
                            strategy: Optional[str], stage: str, status: str, incoherence_type: Optional[str],
@@ -897,7 +902,7 @@ class StorageManager:
             """, (signal_id, symbol, timeframe, strategy, stage, status, incoherence_type, reason, details, connector_type))
             conn.commit()
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     def has_recent_signal(self, symbol: str, signal_type: str, timeframe: Optional[str] = None, minutes: Optional[int] = None) -> bool:
         """Check if there's a recent signal for the given symbol and type within the deduplication window"""
@@ -918,7 +923,7 @@ class StorageManager:
             count = cursor.fetchone()[0]
             return count > 0
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     def has_open_position(self, symbol: str) -> bool:
         """Check if there's an open position for the given symbol"""
@@ -934,7 +939,7 @@ class StorageManager:
             count = cursor.fetchone()[0]
             return count > 0
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     def get_recent_signals(self, minutes: int = 60, limit: int = 100) -> List[Dict]:
         """Get recent signals within the last N minutes"""
@@ -956,7 +961,7 @@ class StorageManager:
                 signals.append(signal)
             return signals
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     def get_open_operations(self) -> List[Dict]:
         """Get signals that are executed but not closed (open operations)"""
@@ -979,7 +984,7 @@ class StorageManager:
                 operations.append(operation)
             return operations
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     def count_executed_signals(self, date_filter: Optional[date] = None) -> int:
         """Count executed signals, optionally filtered by date"""
@@ -999,7 +1004,7 @@ class StorageManager:
                 """)
             return cursor.fetchone()[0]
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     def update_account_enabled(self, account_id: str, enabled: bool) -> None:
         """Update account enabled status"""
@@ -1013,7 +1018,7 @@ class StorageManager:
             """, (enabled, datetime.now(), account_id))
             conn.commit()
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     def update_account(self, account_id: str, updates: Dict) -> None:
         """Update account with multiple fields"""
@@ -1029,7 +1034,7 @@ class StorageManager:
             """, values)
             conn.commit()
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     def update_credential(self, account_id: str, credential_data: Dict) -> None:
         """Update encrypted credentials for account"""
@@ -1043,7 +1048,7 @@ class StorageManager:
             """, (account_id, encrypted_data))
             conn.commit()
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     def get_credentials(self, account_id: str, credential_type: Optional[str] = None) -> Optional[Union[Dict, str]]:
         """Get decrypted credentials for account. If credential_type specified, return just that credential."""
@@ -1064,7 +1069,7 @@ class StorageManager:
                 return credentials
             return None
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     def delete_credential(self, account_id: str) -> None:
         """Delete credentials for account"""
@@ -1074,7 +1079,7 @@ class StorageManager:
             cursor.execute("DELETE FROM credentials WHERE broker_account_id = ?", (account_id,))
             conn.commit()
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     def delete_account(self, account_id: str) -> None:
         """Delete broker account and associated credentials"""
@@ -1085,7 +1090,7 @@ class StorageManager:
             cursor.execute("DELETE FROM broker_accounts WHERE id = ?", (account_id,))
             conn.commit()
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     def save_data_provider(self, name: str, enabled: bool = True, priority: int = 50, 
                           requires_auth: bool = False, api_key: Optional[str] = None, 
@@ -1095,31 +1100,27 @@ class StorageManager:
         if additional_config is None:
             additional_config = {}
         
-        config = {
-            'priority': priority,
-            'requires_auth': requires_auth,
-            'api_key': api_key,
-            'api_secret': api_secret,
-            'additional_config': additional_config,
-            'is_system': is_system
-        }
-        
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT OR REPLACE INTO data_providers 
-                (name, type, config, enabled)
-                VALUES (?, ?, ?, ?)
+                (name, type, enabled, priority, requires_auth, api_key, api_secret, additional_config, is_system)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 name,
                 provider_type,
-                json.dumps(config),
-                enabled
+                enabled,
+                priority,
+                requires_auth,
+                api_key,
+                api_secret,
+                json.dumps(additional_config) if additional_config else "{}",
+                is_system
             ))
             conn.commit()
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     def get_data_providers(self) -> List[Dict]:
         """Get all data providers"""
@@ -1135,17 +1136,43 @@ class StorageManager:
             providers = []
             for row in rows:
                 provider = dict(zip(column_names, row))
+                
+                # Handle backward compatibility: if there's a 'config' column with JSON, extract fields
                 if 'config' in provider and provider['config']:
-                    provider['config'] = json.loads(provider['config'])
+                    try:
+                        config_data = json.loads(provider['config'])
+                        # Merge config fields into provider dict at top level
+                        provider.update(config_data)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                
+                # Also handle additional_config - it's stored as JSON string
+                if 'additional_config' in provider and provider['additional_config']:
+                    try:
+                        if isinstance(provider['additional_config'], str):
+                            provider['additional_config'] = json.loads(provider['additional_config'])
+                    except (json.JSONDecodeError, TypeError):
+                        provider['additional_config'] = {}
                 else:
-                    provider['config'] = {}
+                    provider['additional_config'] = {}
+                
+                # Wrap in 'config' dict for backward compatibility
+                provider['config'] = {
+                    'priority': provider.get('priority', 50),
+                    'requires_auth': provider.get('requires_auth', False),
+                    'api_key': provider.get('api_key'),
+                    'api_secret': provider.get('api_secret'),
+                    'additional_config': provider.get('additional_config', {}),
+                    'is_system': provider.get('is_system', False)
+                }
+                
                 # For backward compatibility, set id = name if no id column
                 if 'id' not in provider or not provider['id']:
                     provider['id'] = provider.get('name')
                 providers.append(provider)
             return providers
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     def update_provider_enabled(self, provider_id: str, enabled: bool) -> None:
         """Update data provider enabled status"""
@@ -1159,7 +1186,7 @@ class StorageManager:
             """, (enabled, provider_id))
             conn.commit()
         finally:
-            conn.close()
+            self._close_conn(conn)
 
     @contextmanager
     def op(self) -> Generator[sqlite3.Connection, None, None]:
@@ -1174,7 +1201,7 @@ class StorageManager:
         finally:
             # Don't close persistent connections
             if self._persistent_conn is None:
-                conn.close()
+                self._close_conn(conn)
 
     def close(self) -> None:
         """Close persistent connection if it exists"""
@@ -1215,7 +1242,7 @@ class StorageManager:
                     trades.append(trade)
             return trades
         finally:
-            conn.close()
+            self._close_conn(conn)
 
 
 # Test utilities

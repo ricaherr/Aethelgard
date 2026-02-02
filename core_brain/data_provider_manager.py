@@ -170,15 +170,25 @@ class DataProviderManager:
                 # Load from DB
                 for p_data in db_providers:
                     name = p_data['name']
+                    config_data = p_data.get('config', {})
+                    
+                    # Handle additional_config - might be string or dict
+                    additional_config = config_data.get('additional_config', {})
+                    if isinstance(additional_config, str):
+                        try:
+                            additional_config = json.loads(additional_config) if additional_config else {}
+                        except (json.JSONDecodeError, TypeError):
+                            additional_config = {}
+                    
                     self.providers[name] = ProviderConfig(
                         name=name,
                         enabled=bool(p_data['enabled']),
-                        priority=p_data['priority'],
-                        requires_auth=bool(p_data['requires_auth']),
-                        api_key=p_data.get('api_key'),
-                        api_secret=p_data.get('api_secret'),
-                        additional_config=p_data.get('additional_config', {}),
-                        is_system=bool(p_data.get('is_system', 0))
+                        priority=config_data.get('priority', 50),
+                        requires_auth=bool(config_data.get('requires_auth', False)),
+                        api_key=config_data.get('api_key'),
+                        api_secret=config_data.get('api_secret'),
+                        additional_config=additional_config,
+                        is_system=bool(config_data.get('is_system', 0))
                     )
                 logger.info(f"Loaded {len(self.providers)} providers from database")
             else:
