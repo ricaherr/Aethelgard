@@ -458,7 +458,8 @@ def test_count_executed_signals_filters_by_date(storage):
         metadata={"regime": MarketRegime.TREND.value}
     )
     
-    # Manually create signal for yesterday
+    # Manually create signal for yesterday (use yesterday's timestamp)
+    yesterday_datetime = datetime.combine(yesterday, datetime.min.time())
     signal_yesterday_record = {
         "id": "test-yesterday",
         "symbol": "GBPUSD",
@@ -468,7 +469,7 @@ def test_count_executed_signals_filters_by_date(storage):
         "entry_price": 1.3000,
         "stop_loss": 1.3050,
         "take_profit": 1.2900,
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": yesterday_datetime.isoformat(),
         "date": yesterday.isoformat(),
         "status": "executed",
         "metadata": "{}"

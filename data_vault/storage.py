@@ -563,6 +563,8 @@ class StorageManager:
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
+            # Accept both 'profit' and 'profit_loss' for compatibility
+            profit = trade_data.get('profit') or trade_data.get('profit_loss')
             cursor.execute("""
                 INSERT INTO trade_results (
                     id, signal_id, symbol, entry_price, exit_price, 
@@ -574,7 +576,7 @@ class StorageManager:
                 trade_data.get('symbol'),
                 trade_data.get('entry_price'),
                 trade_data.get('exit_price'),
-                trade_data.get('profit'),
+                profit,
                 trade_data.get('exit_reason'),
                 trade_data.get('close_time')
             ))
