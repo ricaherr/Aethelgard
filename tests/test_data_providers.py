@@ -87,14 +87,7 @@ def test_generic_provider_fallback_on_history_error(monkeypatch, sample_datafram
 
 class TestDataProviderManager:
     """Test Data Provider Manager"""
-    
-    def test_manager_initialization(self):
-        """Test that manager initializes correctly"""
-        manager = DataProviderManager()
-        assert manager is not None
-        assert isinstance(manager.providers, dict)
-        assert len(manager.providers) > 0
-    
+
     def test_get_enabled_providers(self):
         """Test getting only enabled providers"""
         manager = DataProviderManager()

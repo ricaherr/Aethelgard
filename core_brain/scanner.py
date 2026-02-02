@@ -11,12 +11,13 @@ import logging
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Protocol, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from models.signal import MarketRegime
 from core_brain.regime import RegimeClassifier
+from core_brain.data_provider_manager import DataProvider
 
 logger = logging.getLogger(__name__)
 
@@ -36,18 +37,6 @@ def _load_config(config_path: str = "config/config.json") -> dict:
     except Exception as e:
         logger.warning("No se pudo cargar %s: %s. Usando defaults.", config_path, e)
         return {}
-
-
-class DataProvider(Protocol):
-    """Protocolo para ingestión de datos OHLC. Implementado por MT5DataProvider."""
-
-    def fetch_ohlc(
-        self,
-        symbol: str,
-        timeframe: str = "M5",
-        count: int = 500,
-    ) -> Optional[Any]:
-        ...
 
 
 class CPUMonitor:

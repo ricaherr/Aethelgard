@@ -203,7 +203,7 @@ def create_app() -> FastAPI:
     @app.get("/api/signals")
     async def get_signals(limit: int = 100) -> Dict[str, Any]:
         """Obtiene las últimas señales registradas"""
-        signals = storage.get_recent_signals(limit)
+        signals = storage.get_recent_signals(limit=limit)
         return {"signals": signals, "count": len(signals)}
     
     return app

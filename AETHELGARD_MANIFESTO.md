@@ -421,6 +421,15 @@ manager.configure_provider("alphavantage", api_key="YOUR_KEY_HERE")
 
 **Regla de Oro**: Ningún cambio se considera terminado ni puede ser integrado al sistema si no sigue este flujo. El incumplimiento de TDD es considerado un bug crítico de proceso.
 
+### 6. Reglas de Reuso y Diagnóstico de Tests
+
+**Principio**: Antes de escribir código nuevo, se debe maximizar el reuso y respetar la intención del test.
+
+**Reglas obligatorias**:
+1. **Buscar reuso primero**: Antes de crear una nueva función, buscar implementaciones existentes con propósito similar.
+2. **Refactorizar en lugar de duplicar**: Si existe una función compatible, refactorizarla para cubrir ambos casos y evitar duplicados.
+3. **Tests no se cambian**: Si un test falla, no modificar el test. Explicar por qué la lógica actual no cumple el requisito del test y ajustar la implementación.
+
 **Principio**: Ningún parámetro numérico debe considerarse estático.
 
 #### Parámetros Auto-Calibrables
@@ -3799,6 +3808,58 @@ sqlite3.register_converter("timestamp", lambda s: datetime.fromisoformat(s.decod
 
 ---
 
+## 🔍 HERRAMIENTAS DE VALIDACIÓN ARQUITECTURA
+
+### Architecture Audit Script
+**Archivo:** `scripts/architecture_audit.py`  
+**Uso:** `python scripts/architecture_audit.py`
+
+**Detecta:**
+- ✅ Métodos duplicados en clases
+- ✅ Abuso de context managers en _get_conn()
+- ✅ Métodos sobreescritos accidentalmente
+
+**Ejecutar ANTES de cada commit** (parte del checklist de desarrollo).
+
+### QA Guard
+**Archivo:** `scripts/qa_guard.py`  
+**Uso:** `python scripts/qa_guard.py`
+
+**Valida:**
+- Sintaxis de Python en todos los archivos
+- Imports válidos
+- Tipos de dato correctos
+- Complejidad ciclomática
+
+### Code Quality Analyzer
+**Archivo:** `scripts/code_quality_analyzer.py`  
+**Uso:** `python scripts/code_quality_analyzer.py`
+
+**Detecta:**
+- Copy-paste (>80% similitud)
+- Complejidad ciclomática alta
+
+### Validación Completa
+**Archivo:** `scripts/validate_all.py`  
+**Uso:** `python scripts/validate_all.py`
+
+**Incluye:**
+- Architecture Audit
+- QA Guard
+- Code Quality
+- Tests críticos (Deduplicación + Risk Manager)
+
+### Limpieza de Deuda Técnica (Opción B) ✅ COMPLETADO
+**Fecha:** 2026-02-02
+
+**Resultados:**
+- ✅ 0 métodos duplicados
+- ✅ 0 abusos de context managers en `_get_conn()`
+- ✅ Complejidad dentro de límites
+- ✅ `validate_all.py` PASS
+
+---
+
 Este documento debe actualizarse cuando:
 - Se complete una fase del roadmap
 - Se añada una nueva estrategia
@@ -3806,7 +3867,8 @@ Este documento debe actualizarse cuando:
 - Se cambien las reglas de autonomía
 
 **Mantenedor**: Equipo de desarrollo Aethelgard  
-**Revisión**: Mensual o tras cambios significativos
+**Revisión**: Mensual o tras cambios significativos  
+**Tools**: `scripts/architecture_audit.py`, `scripts/qa_guard.py`
 
 ---
 

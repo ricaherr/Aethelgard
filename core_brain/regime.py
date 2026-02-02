@@ -67,7 +67,7 @@ class RegimeClassifier:
             return {}
     
     @staticmethod
-    def reload_params() -> None:
+    def clear_params_cache() -> None:
         """
         Invalida cache de parámetros para forzar recarga.
         Útil cuando dynamic_params.json es modificado por EdgeTuner.

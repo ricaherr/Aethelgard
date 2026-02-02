@@ -6,7 +6,7 @@ import os
 import sqlite3
 import logging
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Dict, List, Optional, Callable, Any, Generator
 from contextlib import contextmanager
@@ -120,160 +120,161 @@ class StorageManager:
 
     def _initialize_db(self) -> None:
         """Initialize database tables if they don't exist"""
-        with self.op() as conn:
-            cursor = conn.cursor()
-            
-            # System state table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS system_state (
-                    key TEXT PRIMARY KEY,
-                    value TEXT,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            
-            # Signals table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS signals (
-                    id TEXT PRIMARY KEY,
-                    symbol TEXT NOT NULL,
-                    signal_type TEXT NOT NULL,
-                    confidence REAL,
-                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    metadata TEXT,
-                    connector_type TEXT,
-                    timeframe TEXT,
-                    price REAL,
-                    direction TEXT,
-                    status TEXT DEFAULT 'active',
-                    order_id TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            
-            # Trade results table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS trade_results (
-                    id TEXT PRIMARY KEY,
-                    signal_id TEXT,
-                    symbol TEXT,
-                    entry_price REAL,
-                    exit_price REAL,
-                    profit REAL,
-                    exit_reason TEXT,
-                    close_time TIMESTAMP,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (signal_id) REFERENCES signals (id)
-                )
-            """)
-            
-            # Market state logging table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS market_state (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    symbol TEXT NOT NULL,
-                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    data TEXT
-                )
-            """)
-            
-            # Broker accounts table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS broker_accounts (
-                    id TEXT PRIMARY KEY,
-                    broker_id TEXT,
-                    platform_id TEXT NOT NULL,
-                    account_name TEXT,
-                    account_number TEXT,
-                    login TEXT NOT NULL,
-                    password TEXT,
-                    server TEXT,
-                    type TEXT DEFAULT 'demo',
-                    enabled BOOLEAN DEFAULT 1,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            
-            # Brokers table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS brokers (
-                    id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    platform_id TEXT NOT NULL,
-                    config TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            
-            # Platforms table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS platforms (
-                    id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    type TEXT NOT NULL,
-                    config TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            
-            # Credentials table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS credentials (
-                    id TEXT PRIMARY KEY,
-                    broker_account_id TEXT,
-                    encrypted_data TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (broker_account_id) REFERENCES broker_accounts (id)
-                )
-            """)
-            
-            # Data providers table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS data_providers (
-                    name TEXT PRIMARY KEY,
-                    type TEXT NOT NULL,
-                    config TEXT,
-                    enabled BOOLEAN DEFAULT 1,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            
-            # Tuning adjustments table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS tuning_adjustments (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    adjustment_data TEXT
-                )
-            """)
-            
-            # Coherence events table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS coherence_events (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    signal_id TEXT,
-                    symbol TEXT NOT NULL,
-                    timeframe TEXT,
-                    strategy TEXT,
-                    stage TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    incoherence_type TEXT,
-                    reason TEXT NOT NULL,
-                    details TEXT,
-                    connector_type TEXT,
-                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            
-            # Add type column to data_providers if it doesn't exist
-            cursor.execute("PRAGMA table_info(data_providers)")
-            columns = [row[1] for row in cursor.fetchall()]
-            if 'type' not in columns:
-                cursor.execute("ALTER TABLE data_providers ADD COLUMN type TEXT DEFAULT 'api'")
-            
-            conn.commit()
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        
+        # System state table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS system_state (
+                key TEXT PRIMARY KEY,
+                value TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Signals table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS signals (
+                id TEXT PRIMARY KEY,
+                symbol TEXT NOT NULL,
+                signal_type TEXT NOT NULL,
+                confidence REAL,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                metadata TEXT,
+                connector_type TEXT,
+                timeframe TEXT,
+                price REAL,
+                direction TEXT,
+                status TEXT DEFAULT 'active',
+                order_id TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Trade results table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS trade_results (
+                id TEXT PRIMARY KEY,
+                signal_id TEXT,
+                symbol TEXT,
+                entry_price REAL,
+                exit_price REAL,
+                profit REAL,
+                exit_reason TEXT,
+                close_time TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (signal_id) REFERENCES signals (id)
+            )
+        """)
+        
+        # Market state logging table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS market_state (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                data TEXT
+            )
+        """)
+        
+        # Broker accounts table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS broker_accounts (
+                id TEXT PRIMARY KEY,
+                broker_id TEXT,
+                platform_id TEXT NOT NULL,
+                account_name TEXT,
+                account_number TEXT,
+                login TEXT NOT NULL,
+                password TEXT,
+                server TEXT,
+                type TEXT DEFAULT 'demo',
+                enabled BOOLEAN DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Brokers table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS brokers (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                platform_id TEXT NOT NULL,
+                config TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Platforms table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS platforms (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                type TEXT NOT NULL,
+                config TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Credentials table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS credentials (
+                id TEXT PRIMARY KEY,
+                broker_account_id TEXT,
+                encrypted_data TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (broker_account_id) REFERENCES broker_accounts (id)
+            )
+        """)
+        
+        # Data providers table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS data_providers (
+                name TEXT PRIMARY KEY,
+                type TEXT NOT NULL,
+                config TEXT,
+                enabled BOOLEAN DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Tuning adjustments table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS tuning_adjustments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                adjustment_data TEXT
+            )
+        """)
+        
+        # Coherence events table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS coherence_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                signal_id TEXT,
+                symbol TEXT NOT NULL,
+                timeframe TEXT,
+                strategy TEXT,
+                stage TEXT NOT NULL,
+                status TEXT NOT NULL,
+                incoherence_type TEXT,
+                reason TEXT NOT NULL,
+                details TEXT,
+                connector_type TEXT,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Add type column to data_providers if it doesn't exist
+        cursor.execute("PRAGMA table_info(data_providers)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if 'type' not in columns:
+            cursor.execute("ALTER TABLE data_providers ADD COLUMN type TEXT DEFAULT 'api'")
+        
+        conn.commit()
+        conn.close()
 
     def _execute_serialized(self, func: Callable, *args, retries: int = 5, backoff: float = 0.2, **kwargs) -> Any:
         """
@@ -282,9 +283,10 @@ class StorageManager:
         last_exc = None
         for attempt in range(retries):
             with self._db_lock:
+                conn = self._get_conn()
                 try:
-                    with self._get_conn() as conn:
-                        return func(conn, *args, **kwargs)
+                    result = func(conn, *args, **kwargs)
+                    return result
                 except Exception as e:
                     last_exc = e
                     if 'locked' in str(e).lower():
@@ -293,6 +295,8 @@ class StorageManager:
                         continue
                     logger.error(f"DB error: {e}")
                     raise
+                finally:
+                    conn.close()
         logger.error(f"DB error after retries: {last_exc}")
         if last_exc is not None:
             raise last_exc
@@ -330,15 +334,19 @@ class StorageManager:
             conn.commit()
         
         try:
-            with self._get_conn() as conn:
+            conn = self._get_conn()
+            try:
                 _update(conn, new_state)
+            finally:
+                conn.close()
             self._execute_serialized(_update, new_state)
         except Exception as e:
             logger.error(f"Error updating system state: {e}")
 
     def get_system_state(self) -> Dict[str, Any]:
         """Get current system state from database"""
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
             cursor.execute("SELECT key, value FROM system_state")
             rows = cursor.fetchall()
@@ -349,6 +357,8 @@ class StorageManager:
                 except json.JSONDecodeError:
                     state[row['key']] = row['value']
             return state
+        finally:
+            conn.close()
 
     def _get_signal_type_value(self, signal: Any) -> str:
         """Extract signal type value, handling both string and Enum types"""
@@ -390,29 +400,47 @@ class StorageManager:
             timestamp = getattr(signal, 'timestamp', None)
             if timestamp:
                 if isinstance(timestamp, datetime):
-                    timestamp_value = timestamp.isoformat()
+                    # Keep naive datetimes as-is (they're in local time)
+                    # Only convert aware datetimes to UTC
+                    if timestamp.tzinfo is not None:
+                        timestamp_utc = timestamp.astimezone(timezone.utc)
+                        timestamp_value = timestamp_utc.strftime('%Y-%m-%d %H:%M:%S')
+                    else:
+                        # Naive datetime - keep as-is
+                        timestamp_value = timestamp.strftime('%Y-%m-%d %H:%M:%S')
                 else:
                     timestamp_value = str(timestamp)
             else:
                 timestamp_value = None  # Will use DEFAULT CURRENT_TIMESTAMP
             
-            cursor.execute("""
-                INSERT INTO signals (
-                    id, symbol, signal_type, confidence, timestamp,
-                    metadata, connector_type, timeframe, price, direction
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
+            # Build columns and values dynamically
+            base_columns = ['id', 'symbol', 'signal_type', 'confidence', 'metadata', 'connector_type', 'timeframe', 'price', 'direction']
+            base_values = [
                 signal_id,
                 getattr(signal, 'symbol', 'unknown'),
                 self._get_signal_type_value(signal),
                 getattr(signal, 'confidence', None),
-                timestamp_value,
                 json.dumps(serialized_metadata),
                 connector_type,
                 getattr(signal, 'timeframe', None),
                 getattr(signal, 'price', None),
                 getattr(signal, 'direction', None)
-            ))
+            ]
+            
+            if timestamp_value is not None:
+                columns = ['timestamp'] + base_columns
+                values = [timestamp_value] + base_values
+            else:
+                columns = base_columns
+                values = base_values
+            
+            placeholders = ','.join('?' for _ in values)
+            columns_str = ','.join(columns)
+            
+            cursor.execute(f"""
+                INSERT INTO signals ({columns_str})
+                VALUES ({placeholders})
+            """, values)
             conn.commit()
         
         self._execute_serialized(_save, signal_id)
@@ -420,7 +448,8 @@ class StorageManager:
 
     def get_signals(self, limit: int = 100, status: Optional[str] = None) -> List[Dict]:
         """Get signals from database"""
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
             query = "SELECT * FROM signals"
             params = []
@@ -429,7 +458,7 @@ class StorageManager:
                 params.append(status)
             query += " ORDER BY timestamp DESC LIMIT ?"
             params.append(limit)
-            
+
             cursor.execute(query, params)
             rows = cursor.fetchall()
             signals = []
@@ -438,10 +467,13 @@ class StorageManager:
                 signal['metadata'] = json.loads(signal['metadata']) if signal['metadata'] else {}
                 signals.append(signal)
             return signals
+        finally:
+            conn.close()
 
     def get_signal_by_id(self, signal_id: str) -> Optional[Dict]:
         """Get a signal by its ID"""
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM signals WHERE id = ?", (signal_id,))
             row = cursor.fetchone()
@@ -450,25 +482,35 @@ class StorageManager:
                 signal['metadata'] = json.loads(signal['metadata']) if signal['metadata'] else {}
                 return signal
             return None
+        finally:
+            conn.close()
 
     def update_signal_status(self, signal_id: str, status: str, metadata_update: Optional[Dict] = None) -> None:
         """Update signal status and optionally metadata"""
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
             if metadata_update:
-                # Get current metadata
                 cursor.execute("SELECT metadata FROM signals WHERE id = ?", (signal_id,))
                 row = cursor.fetchone()
                 if row:
                     current_metadata = json.loads(row['metadata']) if row['metadata'] else {}
                     current_metadata.update(metadata_update)
+                else:
+                    current_metadata = dict(metadata_update)
+
+                cursor.execute("""
+                    UPDATE signals 
+                    SET status = ?, metadata = ?, updated_at = ?
+                    WHERE id = ?
+                """, (status, json.dumps(current_metadata), datetime.now(), signal_id))
+
+                if 'ticket' in metadata_update:
                     cursor.execute("""
                         UPDATE signals 
-                        SET status = ?, metadata = ?, updated_at = ?
+                        SET order_id = ?
                         WHERE id = ?
-                    """, (status, json.dumps(current_metadata), datetime.now(), signal_id))
-                else:
-                    logger.warning(f"Signal {signal_id} not found for status update")
+                    """, (str(metadata_update['ticket']), signal_id))
             else:
                 cursor.execute("""
                     UPDATE signals 
@@ -476,10 +518,13 @@ class StorageManager:
                     WHERE id = ?
                 """, (status, datetime.now(), signal_id))
             conn.commit()
+        finally:
+            conn.close()
 
     def save_trade_result(self, trade_data: Dict) -> None:
         """Save trade result to database"""
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO trade_results (
@@ -497,10 +542,13 @@ class StorageManager:
                 trade_data.get('close_time')
             ))
             conn.commit()
+        finally:
+            conn.close()
 
     def get_trade_results(self, limit: int = 100) -> List[Dict]:
         """Get trade results from database"""
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT * FROM trade_results 
@@ -509,20 +557,26 @@ class StorageManager:
             """, (limit,))
             rows = cursor.fetchall()
             return [dict(row) for row in rows]
+        finally:
+            conn.close()
 
     def save_tuning_adjustment(self, adjustment: Dict) -> None:
         """Save tuning adjustment to database"""
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO tuning_adjustments (adjustment_data)
                 VALUES (?)
             """, (json.dumps(adjustment),))
             conn.commit()
+        finally:
+            conn.close()
 
     def get_tuning_history(self, limit: int = 50) -> List[Dict]:
         """Get tuning adjustment history"""
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT * FROM tuning_adjustments 
@@ -536,20 +590,26 @@ class StorageManager:
                 adjustment['adjustment_data'] = json.loads(adjustment['adjustment_data'])
                 history.append(adjustment)
             return history
+        finally:
+            conn.close()
 
     def log_market_state(self, state_data: Dict) -> None:
         """Log market state data"""
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO market_state (symbol, data)
                 VALUES (?, ?)
             """, (state_data.get('symbol'), json.dumps(state_data)))
             conn.commit()
+        finally:
+            conn.close()
 
     def get_market_state_history(self, symbol: str, limit: int = 100) -> List[Dict]:
         """Get market state history for a symbol"""
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT * FROM market_state 
@@ -564,15 +624,18 @@ class StorageManager:
                 state['data'] = json.loads(state['data'])
                 history.append(state)
             return history
+        finally:
+            conn.close()
 
     def save_broker(self, broker_data: Dict) -> None:
         """Save broker configuration"""
         # Check if table has broker_id column (existing data) or id column (new schema)
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
             cursor.execute("PRAGMA table_info(brokers)")
             columns = [row[1] for row in cursor.fetchall()]
-            
+
             if 'broker_id' in columns:
                 # Existing schema with broker_id column
                 cursor.execute("""
@@ -594,7 +657,7 @@ class StorageManager:
                 db_data = dict(broker_data)
                 if 'broker_id' in db_data:
                     db_data['id'] = db_data['broker_id']
-                
+
                 cursor.execute("""
                     INSERT OR REPLACE INTO brokers (id, name, platform_id, config)
                     VALUES (?, ?, ?, ?)
@@ -605,100 +668,65 @@ class StorageManager:
                     json.dumps(db_data)
                 ))
             conn.commit()
+        finally:
+            conn.close()
+
+    def _get_broker_id_column(self, cursor: sqlite3.Cursor) -> str:
+        """Detect broker identifier column for schema compatibility."""
+        cursor.execute("PRAGMA table_info(brokers)")
+        columns = [row[1] for row in cursor.fetchall()]
+        return "broker_id" if "broker_id" in columns else "id"
+
+    def _normalize_broker_row(self, broker: Dict) -> Dict:
+        """Normalize broker row for old/new schema compatibility."""
+        if 'config' in broker and broker['config']:
+            config = json.loads(broker['config'])
+            broker['broker_id'] = broker.get('broker_id') or broker.get('id')
+            broker['auto_provisioning'] = 'full' if config.get('auto_provision_available') else 'none'
+
+            for key, value in config.items():
+                if key not in broker:
+                    if isinstance(value, (str, int, float, bool)) or value is None:
+                        broker[key] = value
+                    elif isinstance(value, (list, dict)):
+                        broker[key] = json.dumps(value)
+        else:
+            broker['broker_id'] = broker.get('broker_id', broker.get('id'))
+            broker['auto_provisioning'] = 'full' if broker.get('auto_provision_available') else 'none'
+
+        return broker
 
     def get_brokers(self) -> List[Dict]:
         """Get all brokers"""
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM brokers")
             rows = cursor.fetchall()
-            brokers = []
-            for row in rows:
-                broker = dict(row)
-                
-                # Handle both old format (individual columns) and new format (config JSON)
-                if 'config' in broker and broker['config']:
-                    config = json.loads(broker['config'])
-                    # Add computed fields
-                    broker['broker_id'] = broker['id']
-                    # Add auto_provisioning field for compatibility
-                    if config.get('auto_provision_available'):
-                        broker['auto_provisioning'] = 'full'
-                    else:
-                        broker['auto_provisioning'] = 'none'
-                    
-                    # Add simple config fields (strings, numbers, booleans) but keep complex ones as JSON strings
-                    for key, value in config.items():
-                        if key not in broker:  # Don't overwrite existing fields
-                            if isinstance(value, (str, int, float, bool)) or value is None:
-                                broker[key] = value
-                            elif isinstance(value, (list, dict)):
-                                # For serialization tests, expose complex fields as JSON strings
-                                broker[key] = json.dumps(value)
-                else:
-                    # Old format: fields are already in the row
-                    broker['broker_id'] = broker.get('broker_id', broker.get('id'))
-                    # Add auto_provisioning field for compatibility
-                    if broker.get('auto_provision_available'):
-                        broker['auto_provisioning'] = 'full'
-                    else:
-                        broker['auto_provisioning'] = 'none'
-                
-                brokers.append(broker)
-            return brokers
+            return [self._normalize_broker_row(dict(row)) for row in rows]
+        finally:
+            conn.close()
 
     def get_broker(self, broker_id: str) -> Optional[Dict]:
         """Get specific broker by ID"""
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
-            
-            # Check which column to use for lookup
-            cursor.execute("PRAGMA table_info(brokers)")
-            columns = [row[1] for row in cursor.fetchall()]
-            
-            if 'broker_id' in columns:
-                cursor.execute("SELECT * FROM brokers WHERE broker_id = ?", (broker_id,))
-            else:
-                cursor.execute("SELECT * FROM brokers WHERE id = ?", (broker_id,))
-                
+
+            lookup_column = self._get_broker_id_column(cursor)
+            cursor.execute(f"SELECT * FROM brokers WHERE {lookup_column} = ?", (broker_id,))
+
             row = cursor.fetchone()
             if row:
-                broker = dict(row)
-                
-                # Handle both old format (individual columns) and new format (config JSON)
-                if 'config' in broker and broker['config']:
-                    config = json.loads(broker['config'])
-                    # Add computed fields
-                    broker['broker_id'] = broker.get('broker_id') or broker.get('id')
-                    # Add auto_provisioning field for compatibility
-                    if config.get('auto_provision_available'):
-                        broker['auto_provisioning'] = 'full'
-                    else:
-                        broker['auto_provisioning'] = 'none'
-                    
-                    # Add simple config fields (strings, numbers, booleans) but keep complex ones as JSON strings
-                    for key, value in config.items():
-                        if key not in broker:  # Don't overwrite existing fields
-                            if isinstance(value, (str, int, float, bool)) or value is None:
-                                broker[key] = value
-                            elif isinstance(value, (list, dict)):
-                                # For serialization tests, expose complex fields as JSON strings
-                                broker[key] = json.dumps(value)
-                else:
-                    # Old format: fields are already in the row
-                    broker['broker_id'] = broker.get('broker_id', broker.get('id', broker_id))
-                    # Add auto_provisioning field for compatibility
-                    if broker.get('auto_provision_available'):
-                        broker['auto_provisioning'] = 'full'
-                    else:
-                        broker['auto_provisioning'] = 'none'
-                
-                return broker
+                return self._normalize_broker_row(dict(row))
             return None
+        finally:
+            conn.close()
 
     def save_platform(self, platform_data: Dict) -> None:
         """Save platform configuration"""
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT OR REPLACE INTO platforms (id, name, type, config)
@@ -710,23 +738,26 @@ class StorageManager:
                 json.dumps(platform_data.get('config', {}))
             ))
             conn.commit()
+        finally:
+            conn.close()
 
     def get_platforms(self) -> List[Dict]:
         """Get all platforms"""
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM platforms")
             rows = cursor.fetchall()
             platforms = []
             for row in rows:
                 platform = dict(row)
-                # Handle both old format (individual columns) and new format (config JSON)
                 if 'config' in platform and platform['config']:
                     config = json.loads(platform['config']) if platform['config'] else {}
                     platform.update(config)
-                # For old format, fields are already in the row - no additional processing needed
                 platforms.append(platform)
             return platforms
+        finally:
+            conn.close()
 
     def save_broker_account(self, *args, **kwargs) -> str:
         """Save broker account - accepts dict, named params, or positional args"""
@@ -755,7 +786,8 @@ class StorageManager:
         elif 'account_id' in account_data:
             account_data['id'] = account_data['account_id']
         
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT OR REPLACE INTO broker_accounts 
@@ -774,6 +806,8 @@ class StorageManager:
                 account_data.get('enabled', True)
             ))
             conn.commit()
+        finally:
+            conn.close()
         
         # Save credentials if password provided
         if account_data.get('password'):
@@ -783,7 +817,8 @@ class StorageManager:
 
     def get_broker_accounts(self, enabled_only: bool = False) -> List[Dict]:
         """Get all broker accounts, optionally filtered by enabled status"""
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
             if enabled_only:
                 cursor.execute("SELECT * FROM broker_accounts WHERE enabled = 1")
@@ -795,20 +830,26 @@ class StorageManager:
                 account = dict(row)
                 accounts.append(account)
             return accounts
+        finally:
+            conn.close()
 
     def get_account(self, account_id: str) -> Optional[Dict]:
         """Get specific broker account by ID"""
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM broker_accounts WHERE id = ?", (account_id,))
             row = cursor.fetchone()
             if row:
                 return dict(row)
             return None
+        finally:
+            conn.close()
 
     def update_account_status(self, account_id: str, enabled: bool) -> None:
         """Update account enabled status"""
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE broker_accounts 
@@ -816,6 +857,8 @@ class StorageManager:
                 WHERE id = ?
             """, (enabled, datetime.now(), account_id))
             conn.commit()
+        finally:
+            conn.close()
 
     def update_account_connection(self, account_id: str, connected: bool) -> None:
         """Update account connection status (placeholder for future use)"""
@@ -828,7 +871,8 @@ class StorageManager:
 
     def update_account_type(self, account_id: str, account_type: str) -> None:
         """Update account type (demo/live)"""
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE broker_accounts 
@@ -836,12 +880,15 @@ class StorageManager:
                 WHERE id = ?
             """, (account_type, datetime.now(), account_id))
             conn.commit()
+        finally:
+            conn.close()
 
     def log_coherence_event(self, signal_id: Optional[str], symbol: str, timeframe: Optional[str],
                            strategy: Optional[str], stage: str, status: str, incoherence_type: Optional[str],
                            reason: str, details: Optional[str], connector_type: Optional[str]) -> None:
         """Log coherence monitoring event"""
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO coherence_events 
@@ -849,28 +896,34 @@ class StorageManager:
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (signal_id, symbol, timeframe, strategy, stage, status, incoherence_type, reason, details, connector_type))
             conn.commit()
+        finally:
+            conn.close()
 
     def has_recent_signal(self, symbol: str, signal_type: str, timeframe: Optional[str] = None, minutes: Optional[int] = None) -> bool:
         """Check if there's a recent signal for the given symbol and type within the deduplication window"""
         if minutes is None:
             minutes = calculate_deduplication_window(timeframe)
         
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
+            # Use 'localtime' to match the local time stored in timestamps
             cursor.execute("""
                 SELECT COUNT(*) FROM signals 
                 WHERE symbol = ? 
                 AND signal_type = ? 
-                AND status IN ('EXECUTED', 'PENDING')
-                AND timestamp > datetime('now', '-{} minutes')
+                AND timestamp >= datetime('now', 'localtime', '-' || ? || ' minutes')
                 AND (timeframe = ? OR ? IS NULL)
-            """.format(minutes), (symbol, signal_type, timeframe, timeframe))
+            """, (symbol, signal_type, minutes, timeframe, timeframe))
             count = cursor.fetchone()[0]
             return count > 0
+        finally:
+            conn.close()
 
     def has_open_position(self, symbol: str) -> bool:
         """Check if there's an open position for the given symbol"""
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT COUNT(*) FROM signals 
@@ -880,16 +933,20 @@ class StorageManager:
             """, (symbol,))
             count = cursor.fetchone()[0]
             return count > 0
+        finally:
+            conn.close()
 
-    def get_recent_signals(self, minutes: int = 120) -> List[Dict]:
-        """Get signals from the last N minutes"""
-        with self._get_conn() as conn:
+    def get_recent_signals(self, minutes: int = 60, limit: int = 100) -> List[Dict]:
+        """Get recent signals within the last N minutes"""
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT * FROM signals 
-                WHERE timestamp > datetime('now', '-{} minutes')
-                ORDER BY timestamp DESC
-            """.format(minutes))
+                WHERE timestamp >= datetime('now', 'localtime', '-' || ? || ' minutes')
+                ORDER BY timestamp DESC 
+                LIMIT ?
+            """, (minutes, limit))
             rows = cursor.fetchall()
             signals = []
             for row in rows:
@@ -898,10 +955,13 @@ class StorageManager:
                     signal['metadata'] = json.loads(signal['metadata'])
                 signals.append(signal)
             return signals
+        finally:
+            conn.close()
 
     def get_open_operations(self) -> List[Dict]:
         """Get signals that are executed but not closed (open operations)"""
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT s.* FROM signals s
@@ -918,10 +978,13 @@ class StorageManager:
                     operation['metadata'] = json.loads(operation['metadata'])
                 operations.append(operation)
             return operations
+        finally:
+            conn.close()
 
     def count_executed_signals(self, date_filter: Optional[date] = None) -> int:
         """Count executed signals, optionally filtered by date"""
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
             if date_filter:
                 cursor.execute("""
@@ -935,63 +998,13 @@ class StorageManager:
                     WHERE UPPER(status) = 'EXECUTED'
                 """)
             return cursor.fetchone()[0]
-
-    def get_signal_by_id(self, signal_id: str) -> Optional[Dict]:
-        """Get signal by ID"""
-        with self._get_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM signals WHERE id = ?", (signal_id,))
-            row = cursor.fetchone()
-            if row:
-                signal = dict(row)
-                if signal.get('metadata'):
-                    signal['metadata'] = json.loads(signal['metadata'])
-                return signal
-            return None
-
-    def update_signal_status(self, signal_id: str, status: str, metadata: Optional[Dict] = None) -> None:
-        """Update signal status and optionally add metadata"""
-        with self._get_conn() as conn:
-            cursor = conn.cursor()
-            
-            # Update status
-            cursor.execute("""
-                UPDATE signals 
-                SET status = ?, updated_at = ?
-                WHERE id = ?
-            """, (status, datetime.now(), signal_id))
-            
-            # If metadata provided, merge with existing metadata
-            if metadata:
-                # Get current metadata
-                cursor.execute("SELECT metadata FROM signals WHERE id = ?", (signal_id,))
-                row = cursor.fetchone()
-                if row and row[0]:
-                    current_metadata = json.loads(row[0])
-                    current_metadata.update(metadata)
-                else:
-                    current_metadata = metadata
-                
-                # Update metadata
-                cursor.execute("""
-                    UPDATE signals 
-                    SET metadata = ?
-                    WHERE id = ?
-                """, (json.dumps(current_metadata), signal_id))
-                
-                # Special handling for ticket -> order_id mapping
-                if 'ticket' in metadata:
-                    cursor.execute("""
-                        UPDATE signals 
-                        SET order_id = ?
-                        WHERE id = ?
-                    """, (str(metadata['ticket']), signal_id))
-            
-            conn.commit()
+        finally:
+            conn.close()
 
     def update_account_enabled(self, account_id: str, enabled: bool) -> None:
         """Update account enabled status"""
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE broker_accounts 
@@ -999,10 +1012,13 @@ class StorageManager:
                 WHERE id = ?
             """, (enabled, datetime.now(), account_id))
             conn.commit()
+        finally:
+            conn.close()
 
     def update_account(self, account_id: str, updates: Dict) -> None:
         """Update account with multiple fields"""
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
             set_clause = ", ".join(f"{k} = ?" for k in updates.keys())
             values = list(updates.values()) + [datetime.now(), account_id]
@@ -1012,21 +1028,27 @@ class StorageManager:
                 WHERE id = ?
             """, values)
             conn.commit()
+        finally:
+            conn.close()
 
     def update_credential(self, account_id: str, credential_data: Dict) -> None:
         """Update encrypted credentials for account"""
         encrypted_data = get_encryptor().encrypt(json.dumps(credential_data))
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT OR REPLACE INTO credentials (broker_account_id, encrypted_data)
                 VALUES (?, ?)
             """, (account_id, encrypted_data))
             conn.commit()
+        finally:
+            conn.close()
 
     def get_credentials(self, account_id: str, credential_type: Optional[str] = None) -> Optional[Union[Dict, str]]:
         """Get decrypted credentials for account. If credential_type specified, return just that credential."""
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT encrypted_data FROM credentials 
@@ -1036,28 +1058,34 @@ class StorageManager:
             if row:
                 decrypted = get_encryptor().decrypt(row['encrypted_data'])
                 credentials = json.loads(decrypted)
-                
+
                 if credential_type:
                     return credentials.get(credential_type)
                 return credentials
             return None
+        finally:
+            conn.close()
 
     def delete_credential(self, account_id: str) -> None:
         """Delete credentials for account"""
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM credentials WHERE broker_account_id = ?", (account_id,))
             conn.commit()
+        finally:
+            conn.close()
 
     def delete_account(self, account_id: str) -> None:
         """Delete broker account and associated credentials"""
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
-            # Delete credentials first (foreign key)
             cursor.execute("DELETE FROM credentials WHERE broker_account_id = ?", (account_id,))
-            # Delete account
             cursor.execute("DELETE FROM broker_accounts WHERE id = ?", (account_id,))
             conn.commit()
+        finally:
+            conn.close()
 
     def save_data_provider(self, name: str, enabled: bool = True, priority: int = 50, 
                           requires_auth: bool = False, api_key: Optional[str] = None, 
@@ -1076,7 +1104,8 @@ class StorageManager:
             'is_system': is_system
         }
         
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT OR REPLACE INTO data_providers 
@@ -1089,34 +1118,39 @@ class StorageManager:
                 enabled
             ))
             conn.commit()
+        finally:
+            conn.close()
 
     def get_data_providers(self) -> List[Dict]:
         """Get all data providers"""
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM data_providers")
             rows = cursor.fetchall()
-            
+
             # Get column names
             column_names = [description[0] for description in cursor.description]
-            
+
             providers = []
             for row in rows:
                 provider = dict(zip(column_names, row))
-                # Ensure config is parsed as JSON
                 if 'config' in provider and provider['config']:
                     provider['config'] = json.loads(provider['config'])
                 else:
                     provider['config'] = {}
                 # For backward compatibility, set id = name if no id column
-                if 'id' not in provider and 'name' in provider:
-                    provider['id'] = provider['name']
+                if 'id' not in provider or not provider['id']:
+                    provider['id'] = provider.get('name')
                 providers.append(provider)
             return providers
+        finally:
+            conn.close()
 
     def update_provider_enabled(self, provider_id: str, enabled: bool) -> None:
         """Update data provider enabled status"""
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE data_providers 
@@ -1124,6 +1158,8 @@ class StorageManager:
                 WHERE name = ?
             """, (enabled, provider_id))
             conn.commit()
+        finally:
+            conn.close()
 
     @contextmanager
     def op(self) -> Generator[sqlite3.Connection, None, None]:
@@ -1146,77 +1182,10 @@ class StorageManager:
             self._persistent_conn.close()
             self._persistent_conn = None
 
-    def count_executed_signals(self, date_filter: Optional[date] = None) -> int:
-        """Count executed signals (signals with status 'executed')"""
-        with self._get_conn() as conn:
-            cursor = conn.cursor()
-            if date_filter:
-                cursor.execute("""
-                    SELECT COUNT(*) 
-                    FROM signals 
-                    WHERE status = 'executed' AND DATE(timestamp) = ?
-                """, (date_filter.isoformat(),))
-            else:
-                cursor.execute("SELECT COUNT(*) FROM signals WHERE status = 'executed'")
-            return cursor.fetchone()[0]
-
-    def has_open_position(self, symbol: Optional[str] = None) -> bool:
-        """Check if there are open positions"""
-        with self._get_conn() as conn:
-            cursor = conn.cursor()
-            if symbol:
-                cursor.execute("SELECT COUNT(*) FROM trade_results WHERE close_time IS NULL AND symbol = ?", (symbol,))
-            else:
-                cursor.execute("SELECT COUNT(*) FROM trade_results WHERE close_time IS NULL")
-            return cursor.fetchone()[0] > 0
-
-    def has_recent_signal(self, symbol: Optional[str] = None, signal_type: Optional[str] = None, 
-                        minutes: Optional[int] = None, timeframe: Optional[str] = None, hours: int = 1) -> bool:
-        """Check if there are recent signals within the last N hours/minutes"""
-        with self._get_conn() as conn:
-            cursor = conn.cursor()
-            time_minutes = minutes if minutes is not None else hours * 60
-            
-            query = """
-                SELECT COUNT(*) FROM signals 
-                WHERE timestamp > datetime('now', '-{} minutes')
-            """.format(time_minutes)
-            
-            params = []
-            if symbol:
-                query += " AND symbol = ?"
-                params.append(symbol)
-            if signal_type:
-                query += " AND signal_type = ?"
-                params.append(signal_type)
-            if timeframe:
-                query += " AND timeframe = ?"
-                params.append(timeframe)
-            
-            cursor.execute(query, params)
-            return cursor.fetchone()[0] > 0
-
-    def get_recent_signals(self, minutes: int = 60, limit: int = 100) -> List[Dict]:
-        """Get recent signals within the last N minutes"""
-        with self._get_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT * FROM signals 
-                WHERE timestamp > datetime('now', '-{} minutes')
-                ORDER BY timestamp DESC 
-                LIMIT ?
-            """.format(minutes), (limit,))
-            rows = cursor.fetchall()
-            signals = []
-            for row in rows:
-                signal = dict(row)
-                signal['metadata'] = json.loads(signal['metadata']) if signal['metadata'] else {}
-                signals.append(signal)
-            return signals
-
     def get_recent_trades(self, limit: int = 10) -> List[Dict]:
         """Get recent trades"""
-        with self._get_conn() as conn:
+        conn = self._get_conn()
+        try:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT * FROM trade_results 
@@ -1245,6 +1214,9 @@ class StorageManager:
                     }
                     trades.append(trade)
             return trades
+        finally:
+            conn.close()
+
 
 # Test utilities
 def temp_db_path(tmp_path: str) -> str:
