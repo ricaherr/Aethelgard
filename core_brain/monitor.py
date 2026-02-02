@@ -62,7 +62,7 @@ class ClosingMonitor:
         """
         try:
             # Get all executed signals (not yet marked as closed)
-            executed_signals = self.storage.get_signals_by_status('EXECUTED')
+            executed_signals = self.storage.get_signals(status='EXECUTED')
             
             if not executed_signals:
                 logger.debug("No executed signals to monitor")

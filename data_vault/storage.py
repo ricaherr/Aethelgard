@@ -432,12 +432,19 @@ class StorageManager:
                 getattr(signal, 'direction', None)
             ]
             
+            # Auto-detect if signal was executed: if it has entry_price, stop_loss, and take_profit
+            entry_price = getattr(signal, 'entry_price', None)
+            stop_loss = getattr(signal, 'stop_loss', None)
+            take_profit = getattr(signal, 'take_profit', None)
+            is_executed = entry_price and stop_loss and take_profit
+            status = 'executed' if is_executed else 'active'
+            
             if timestamp_value is not None:
-                columns = ['timestamp'] + base_columns
-                values = [timestamp_value] + base_values
+                columns = ['timestamp', 'status'] + base_columns
+                values = [timestamp_value, status] + base_values
             else:
-                columns = base_columns
-                values = base_values
+                columns = ['status'] + base_columns
+                values = [status] + base_values
             
             placeholders = ','.join('?' for _ in values)
             columns_str = ','.join(columns)
@@ -487,6 +494,31 @@ class StorageManager:
                 signal['metadata'] = json.loads(signal['metadata']) if signal['metadata'] else {}
                 return signal
             return None
+        finally:
+            self._close_conn(conn)
+
+    def get_signals_by_date(self, target_date: 'date', status: Optional[str] = None) -> List[Dict]:
+        """Get all signals from a specific date"""
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            query = "SELECT * FROM signals WHERE DATE(timestamp) = ?"
+            params = [target_date.isoformat()]
+            
+            if status:
+                query += " AND status = ?"
+                params.append(status)
+            
+            query += " ORDER BY timestamp DESC"
+            
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            signals = []
+            for row in rows:
+                signal = dict(row)
+                signal['metadata'] = json.loads(signal['metadata']) if signal['metadata'] else {}
+                signals.append(signal)
+            return signals
         finally:
             self._close_conn(conn)
 
@@ -994,13 +1026,13 @@ class StorageManager:
             if date_filter:
                 cursor.execute("""
                     SELECT COUNT(*) FROM signals 
-                    WHERE UPPER(status) = 'EXECUTED' 
+                    WHERE LOWER(status) = 'executed' 
                     AND DATE(timestamp) = ?
                 """, (date_filter.isoformat(),))
             else:
                 cursor.execute("""
                     SELECT COUNT(*) FROM signals 
-                    WHERE UPPER(status) = 'EXECUTED'
+                    WHERE LOWER(status) = 'executed'
                 """)
             return cursor.fetchone()[0]
         finally:

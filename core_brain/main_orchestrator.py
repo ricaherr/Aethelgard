@@ -76,7 +76,7 @@ class SessionStats:
         """
         today = date.today()
         
-        # Query DB for today's executed signals
+        # Query DB for today's executed signals (marked with status='executed')
         executed_count = storage.count_executed_signals(today)
         
         # Retrieve system state for other metrics
