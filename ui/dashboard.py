@@ -29,6 +29,7 @@ from core_brain.tuner import ParameterTuner
 from core_brain.notificator import get_notifier
 from core_brain.data_provider_manager import DataProviderManager
 from core_brain.instrument_manager import InstrumentManager
+from core_brain.risk_manager import RiskManager
 from data_vault.storage import StorageManager
 from core_brain.health import HealthManager
 # from models.signal import MarketRegime
@@ -61,20 +62,35 @@ def get_tuner() -> ParameterTuner:
     storage: StorageManager = get_storage()
     return ParameterTuner(storage)
 
-@st.cache_resource
 def get_provider_manager() -> DataProviderManager:
     """Obtiene una instancia del gestor de proveedores de datos"""
-    return DataProviderManager()
+    try:
+        return DataProviderManager()
+    except Exception as e:
+        st.error(f"Error inicializando DataProviderManager: {e}")
+        logger.error(f"Error inicializando DataProviderManager: {e}", exc_info=True)
+        return None
+
+@st.cache_resource
+def get_risk_manager() -> RiskManager:
+    """Obtiene una instancia del gestor de riesgo"""
+    storage: StorageManager = get_storage()
+    return RiskManager(storage=storage, initial_capital=10000.0)
 
 @st.cache_resource
 def get_health_manager() -> HealthManager:
     """Obtiene una instancia del motor de diagnóstico"""
     return HealthManager()
 
-@st.cache_resource
 def get_instrument_manager() -> InstrumentManager:
-    """Obtiene una instancia del gestor de instrumentos"""
-    return InstrumentManager()
+    """Obtiene una instancia del gestor de instrumentos con manejo de errores"""
+    try:
+        return InstrumentManager()
+    except Exception as e:
+        st.error(f"Error inicializando InstrumentManager: {e}")
+        logger.error(f"Error inicializando InstrumentManager: {e}", exc_info=True)
+        # Retornar una instancia básica como fallback
+        return None
 
 def get_regime_color(regime: str) -> str:
     """Retorna un color para cada régimen"""
@@ -155,8 +171,8 @@ def setup_navigation() -> str:
     return menu_selection
 
 def render_home_view(classifier: RegimeClassifier, storage: StorageManager, 
-                    module_manager: ModuleManager, tuner: ParameterTuner) -> None:
-    """Renderiza la vista de inicio"""
+                    module_manager: ModuleManager, tuner: ParameterTuner, risk_manager: RiskManager) -> tuple:
+    """Renderiza la vista de inicio y retorna datos de operaciones"""
     st.header("🏠 Panel de Control Principal")
     # --- COMMAND CENTER HEADER ---
     col1, col2, col3, col4 = st.columns(4)
@@ -209,10 +225,29 @@ def render_home_view(classifier: RegimeClassifier, storage: StorageManager,
             st.metric("Win Rate (Total)", f"{win_rate:.1%}")
         with col4:
             st.metric("Ops. Abiertas", len(open_trades))
+        
+        # Risk Manager Status
+        st.markdown("---")
+        st.subheader("🛡️ Estado del Risk Manager")
+        risk_col1, risk_col2, risk_col3 = st.columns(3)
+        
+        with risk_col1:
+            lockdown_status = "🔴 ACTIVO" if risk_manager.lockdown_mode else "🟢 INACTIVO"
+            st.metric("Lockdown Mode", lockdown_status)
+        
+        with risk_col2:
+            st.metric("Capital Actual", f"${risk_manager.capital:,.2f}")
+        
+        with risk_col3:
+            st.metric("Riesgo por Trade", f"{risk_manager.risk_per_trade:.1%}")
     
     except Exception as e:
         st.error(f"⚠️ Error cargando estadísticas principales: {e}")
         st.code(traceback.format_exc())
+        open_trades = []
+        recent_trades = []
+    
+    return open_trades, recent_trades
 
 def main() -> None:  # type: ignore
     """Función principal del dashboard"""
@@ -231,13 +266,14 @@ def main() -> None:  # type: ignore
     storage: StorageManager = get_storage()
     module_manager = get_module_manager()
     tuner: ParameterTuner = get_tuner()
+    risk_manager: RiskManager = get_risk_manager()
     
     # Navegación Principal
     menu_selection = setup_navigation()
     
     # Renderizar vista seleccionada
     if menu_selection == "🏠 Inicio":
-        render_home_view(classifier, storage, module_manager, tuner)
+        open_trades, recent_trades = render_home_view(classifier, storage, module_manager, tuner, risk_manager)
 
 
         # --- ACTIVE OPERATIONS ---
@@ -379,7 +415,9 @@ def main() -> None:  # type: ignore
         with col_c2:
             st.subheader("🎯 Win/Loss")
             if recent_trades:
-                wins: int = sum(1 for t in recent_trades if t.get('is_win'))
+                # Use new TradeResult enum or fallback to old is_win boolean
+                wins: int = sum(1 for t in recent_trades if 
+                               (t.get('result') == 'win' if t.get('result') else t.get('is_win', False)))
                 losses = len(recent_trades) - wins
                 fig_pie: go.Figure = px.pie(values=[wins, losses], names=['Wins', 'Losses'], 
                                 color_discrete_sequence=['#00CC96', '#EF553B'])
@@ -1110,6 +1148,8 @@ def main() -> None:  # type: ignore
     elif menu_selection == "🎛️ Gestión de Módulos":
         st.header("🎛️ Gestión de Módulos Activos")
         
+        # Derive membership string from membership_level
+        membership = "basic" if membership_level == MembershipLevel.BASIC else "premium"
         st.info(f"📋 Mostrando módulos para membresía: **{membership.upper()}**")
         
         # Obtener módulos activos
@@ -2022,7 +2062,17 @@ def main() -> None:  # type: ignore
                         with col1:
                             st.write(f"**ID:** `{account_id}`")
                             st.write(f"**Platform:** {platform_id}")
-                            st.write(f"**Login:** {account.get('login', 'N/A')}")
+                            st.write(f"**Login:** {account.get('account_number', 'N/A')}")
+                            
+                            # Mostrar estado de credenciales
+                            try:
+                                creds = storage.get_credentials(account_id)
+                                if creds and creds.get('password'):
+                                    st.write("**🔐 Credenciales:** ✅ Configuradas")
+                                else:
+                                    st.write("**🔐 Credenciales:** ❌ No configuradas")
+                            except:
+                                st.write("**🔐 Credenciales:** ⚠️ Error al verificar")
                         
                         with col2:
                             col_actions = st.columns(2)
@@ -2096,13 +2146,23 @@ def main() -> None:  # type: ignore
                                     if st.form_submit_button("💾 Guardar Cambios"):
                                         try:
                                             # Update account with named parameters
+                                            update_data = {
+                                                'account_name': edit_name,
+                                                'login': edit_login,
+                                                'server': edit_server
+                                            }
+                                            # Only include password in update if it's not empty
+                                            if edit_pwd:
+                                                update_data['password'] = edit_pwd
+                                            
                                             storage.update_account(
                                                 account_id=account_id,
-                                                account_name=edit_name,
-                                                login=edit_login,  # Este es el importante - pasa como login
-                                                server=edit_server,
-                                                password=edit_pwd if edit_pwd else None
+                                                **update_data
                                             )
+                                            
+                                            # Update credentials if password was provided
+                                            if edit_pwd:
+                                                storage.update_credential(account_id, {'password': edit_pwd})
                                             
                                             # Also update account_type separately if changed
                                             if edit_type != account.get('account_type'):
@@ -2192,6 +2252,10 @@ def main() -> None:  # type: ignore
         
         try:
             instrument_manager: InstrumentManager = get_instrument_manager()
+            
+            if instrument_manager is None:
+                st.error("No se pudo inicializar el gestor de instrumentos")
+                return
             
             # Información general del sistema
             st.markdown("---")

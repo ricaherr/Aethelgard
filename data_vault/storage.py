@@ -186,16 +186,17 @@ class StorageManager:
         # Broker accounts table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS broker_accounts (
-                id TEXT PRIMARY KEY,
+                account_id TEXT PRIMARY KEY,
                 broker_id TEXT,
                 platform_id TEXT NOT NULL,
                 account_name TEXT,
                 account_number TEXT,
-                login TEXT NOT NULL,
-                password TEXT,
                 server TEXT,
-                type TEXT DEFAULT 'demo',
+                account_type TEXT DEFAULT 'demo',
+                credentials_path TEXT,
                 enabled BOOLEAN DEFAULT 1,
+                last_connection TEXT,
+                balance REAL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -230,7 +231,7 @@ class StorageManager:
                 broker_account_id TEXT,
                 encrypted_data TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (broker_account_id) REFERENCES broker_accounts (id)
+                FOREIGN KEY (broker_account_id) REFERENCES broker_accounts (account_id)
             )
         """)
         
@@ -311,21 +312,33 @@ class StorageManager:
     def get_broker_provision_status(self) -> list:
         """
         Get current broker provisioning status.
-        Returns list of broker account dicts with provisioning info.
+        Returns list of broker dicts with their associated accounts.
         """
         accounts = self.get_broker_accounts()
-        status = []
+        brokers = {}
+
+        # Group accounts by broker_id
         for acc in accounts:
-            status.append({
-                'id': acc['id'],
-                'platform_id': acc['platform_id'],
-                'login': acc['login'],
-                'type': acc['type'],
+            broker_id = acc['broker_id']
+            if broker_id not in brokers:
+                brokers[broker_id] = {
+                    'broker_id': broker_id,
+                    'platform_id': acc['platform_id'],
+                    'type': acc.get('type', 'unknown'),
+                    'auto_provision': False,  # Default, can be extended
+                    'demo_accounts': []
+                }
+
+            # Add account to broker's demo_accounts
+            brokers[broker_id]['demo_accounts'].append({
+                'id': acc['account_id'],
+                'login': acc['account_number'],
+                'account_type': acc['account_type'],
                 'enabled': acc['enabled'],
-                'has_credentials': bool(acc.get('password') or self.get_credentials(acc['id'])),
-                'provisioned': True  # All accounts in DB are considered provisioned
+                'has_credentials': bool(acc.get('password') or self.get_credentials(acc['account_id']))
             })
-        return status
+
+        return list(brokers.values())
 
     def update_system_state(self, new_state: dict) -> None:
         """Update system state in database"""
@@ -861,19 +874,19 @@ class StorageManager:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT OR REPLACE INTO broker_accounts 
-                (id, broker_id, platform_id, account_name, account_number, login, password, server, type, enabled)
+                (account_id, broker_id, platform_id, account_name, account_number, server, account_type, enabled, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 account_data['id'],
                 account_data.get('broker_id'),
                 account_data.get('platform_id'),
                 account_data.get('account_name'),
-                account_data.get('account_number', account_data.get('login')),  # Default account_number to login
-                account_data.get('login', account_data.get('account_name')),  # Default login to account_name
-                account_data.get('password'),
+                account_data.get('account_number', account_data.get('login')),  # Use account_number, default to login
                 account_data.get('server'),
                 account_data.get('account_type', account_data.get('type', 'demo')),
-                account_data.get('enabled', True)
+                account_data.get('enabled', True),
+                datetime.now(),
+                datetime.now()
             ))
             conn.commit()
         finally:
@@ -885,15 +898,26 @@ class StorageManager:
         
         return account_data['id']
 
-    def get_broker_accounts(self, enabled_only: bool = False) -> List[Dict]:
-        """Get all broker accounts, optionally filtered by enabled status"""
+    def get_broker_accounts(self, enabled_only: bool = False, broker_id: Optional[str] = None, account_type: Optional[str] = None) -> List[Dict]:
+        """Get all broker accounts, optionally filtered by enabled status, broker_id, and account_type"""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
+            query = "SELECT * FROM broker_accounts WHERE 1=1"
+            params = []
+            
             if enabled_only:
-                cursor.execute("SELECT * FROM broker_accounts WHERE enabled = 1")
-            else:
-                cursor.execute("SELECT * FROM broker_accounts")
+                query += " AND enabled = 1"
+            
+            if broker_id:
+                query += " AND broker_id = ?"
+                params.append(broker_id)
+            
+            if account_type:
+                query += " AND account_type = ?"
+                params.append(account_type)
+            
+            cursor.execute(query, params)
             rows = cursor.fetchall()
             accounts = []
             for row in rows:
@@ -908,7 +932,7 @@ class StorageManager:
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM broker_accounts WHERE id = ?", (account_id,))
+            cursor.execute("SELECT * FROM broker_accounts WHERE account_id = ?", (account_id,))
             row = cursor.fetchone()
             if row:
                 return dict(row)
@@ -916,7 +940,7 @@ class StorageManager:
         finally:
             self._close_conn(conn)
 
-    def update_account_status(self, account_id: str, enabled: bool) -> None:
+    def update_account_enabled(self, account_id: str, enabled: bool) -> None:
         """Update account enabled status"""
         conn = self._get_conn()
         try:
@@ -924,31 +948,8 @@ class StorageManager:
             cursor.execute("""
                 UPDATE broker_accounts 
                 SET enabled = ?, updated_at = ?
-                WHERE id = ?
+                WHERE account_id = ?
             """, (enabled, datetime.now(), account_id))
-            conn.commit()
-        finally:
-            self._close_conn(conn)
-
-    def update_account_connection(self, account_id: str, connected: bool) -> None:
-        """Update account connection status (placeholder for future use)"""
-        # This could be extended to track connection status
-        logger.info(f"Account {account_id} connection status: {connected}")
-
-    def save_broker_config(self, config_data: Dict) -> None:
-        """Save broker configuration (placeholder)"""
-        logger.info(f"Saving broker config: {config_data}")
-
-    def update_account_type(self, account_id: str, account_type: str) -> None:
-        """Update account type (demo/live)"""
-        conn = self._get_conn()
-        try:
-            cursor = conn.cursor()
-            cursor.execute("""
-                UPDATE broker_accounts 
-                SET type = ?, updated_at = ?
-                WHERE id = ?
-            """, (account_type, datetime.now(), account_id))
             conn.commit()
         finally:
             self._close_conn(conn)
@@ -1079,7 +1080,7 @@ class StorageManager:
             cursor.execute("""
                 UPDATE broker_accounts 
                 SET enabled = ?, updated_at = ?
-                WHERE id = ?
+                WHERE account_id = ?
             """, (enabled, datetime.now(), account_id))
             conn.commit()
         finally:
@@ -1087,16 +1088,25 @@ class StorageManager:
 
     def update_account(self, account_id: str, updates: Dict) -> None:
         """Update account with multiple fields"""
+        # Handle password separately - it should go to credentials table
+        password = updates.pop('password', None)
+        
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            set_clause = ", ".join(f"{k} = ?" for k in updates.keys())
-            values = list(updates.values()) + [datetime.now(), account_id]
-            cursor.execute(f"""
-                UPDATE broker_accounts 
-                SET {set_clause}, updated_at = ?
-                WHERE id = ?
-            """, values)
+            if updates:  # Only update if there are fields to update
+                set_clause = ", ".join(f"{k} = ?" for k in updates.keys())
+                values = list(updates.values()) + [datetime.now(), account_id]
+                cursor.execute(f"""
+                    UPDATE broker_accounts
+                    SET {set_clause}, updated_at = ?
+                    WHERE account_id = ?
+                """, values)
+            
+            # Update credentials if password was provided
+            if password is not None:
+                self.update_credential(account_id, {'password': password})
+                
             conn.commit()
         finally:
             self._close_conn(conn)
@@ -1114,6 +1124,17 @@ class StorageManager:
             conn.commit()
         finally:
             self._close_conn(conn)
+
+    def save_credential(self, account_id: str, credential_type: str, credential_key: str, value: str) -> None:
+        """Save a specific credential for an account"""
+        # Get existing credentials
+        existing = self.get_credentials(account_id) or {}
+        
+        # Update with new credential
+        existing[credential_key] = value
+        
+        # Save back
+        self.update_credential(account_id, existing)
 
     def get_credentials(self, account_id: str, credential_type: Optional[str] = None) -> Optional[Union[Dict, str]]:
         """Get decrypted credentials for account. If credential_type specified, return just that credential."""
@@ -1152,7 +1173,7 @@ class StorageManager:
         try:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM credentials WHERE broker_account_id = ?", (account_id,))
-            cursor.execute("DELETE FROM broker_accounts WHERE id = ?", (account_id,))
+            cursor.execute("DELETE FROM broker_accounts WHERE account_id = ?", (account_id,))
             conn.commit()
         finally:
             self._close_conn(conn)
@@ -1254,20 +1275,6 @@ class StorageManager:
             self._close_conn(conn)
 
     @contextmanager
-    def op(self) -> Generator[sqlite3.Connection, None, None]:
-        """Context manager for database operations"""
-        conn = self._get_conn()
-        try:
-            yield conn
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            # Don't close persistent connections
-            if self._persistent_conn is None:
-                self._close_conn(conn)
-
     def close(self) -> None:
         """Close persistent connection if it exists"""
         if self._persistent_conn is not None:
@@ -1305,6 +1312,143 @@ class StorageManager:
                         'pips': abs(profit) * 100  # Rough pips calculation
                     }
                     trades.append(trade)
+            return trades
+        finally:
+            self._close_conn(conn)
+
+    def get_signals_today(self) -> List[Dict]:
+        """Get signals from today (for dashboard compatibility)"""
+        from datetime import date
+        return self.get_signals_by_date(date.today())
+
+    def get_statistics(self) -> Dict[str, Any]:
+        """Get system statistics for dashboard"""
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            
+            # Total signals
+            cursor.execute("SELECT COUNT(*) FROM signals")
+            total_signals = cursor.fetchone()[0]
+            
+            # Executed signals
+            cursor.execute("SELECT COUNT(*) FROM signals WHERE status = 'executed'")
+            executed_signals_count = cursor.fetchone()[0]
+            
+            # Win rate calculation from trade results
+            cursor.execute("SELECT COUNT(*) FROM trade_results WHERE profit > 0")
+            wins = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT COUNT(*) FROM trade_results WHERE profit < 0")
+            losses = cursor.fetchone()[0]
+            
+            total_trades = wins + losses
+            win_rate = (wins / total_trades) if total_trades > 0 else 0
+            
+            # Average PNL from trade results
+            cursor.execute("SELECT AVG(profit) FROM trade_results")
+            avg_pnl_result = cursor.fetchone()[0]
+            avg_pnl = float(avg_pnl_result) if avg_pnl_result else 0.0
+            
+            # Executed signals statistics (nested dict as expected by dashboard)
+            executed_stats = {
+                'total': executed_signals_count,
+                'avg_pnl': avg_pnl,
+                'winning_trades': wins,
+                'win_rate': win_rate
+            }
+            
+            return {
+                'total_signals': total_signals,
+                'executed_signals': executed_stats,  # Now a dict, not just a count
+                'total_trades': total_trades,
+                'wins': wins,
+                'losses': losses,
+                'win_rate': win_rate
+            }
+        finally:
+            self._close_conn(conn)
+
+    def get_total_profit(self, days: int = 30) -> float:
+        """Get total profit for the last N days"""
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT COALESCE(SUM(profit), 0) 
+                FROM trade_results 
+                WHERE created_at >= datetime('now', '-{} days')
+            """.format(days))
+            result = cursor.fetchone()[0]
+            return float(result) if result else 0.0
+        finally:
+            self._close_conn(conn)
+
+    def get_all_accounts(self) -> List[Dict]:
+        """Get all broker accounts (alias for get_broker_accounts)"""
+        return self.get_broker_accounts()
+
+    def get_win_rate(self, days: int = 30) -> float:
+        """Get win rate for the last N days"""
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            
+            # Count wins and losses from trade results in the last N days
+            cursor.execute("""
+                SELECT 
+                    COUNT(CASE WHEN profit > 0 THEN 1 END) as wins,
+                    COUNT(CASE WHEN profit < 0 THEN 1 END) as losses
+                FROM trade_results 
+                WHERE created_at >= datetime('now', '-{} days')
+            """.format(days))
+            
+            row = cursor.fetchone()
+            wins = row[0] if row[0] else 0
+            losses = row[1] if row[1] else 0
+            
+            total_trades = wins + losses
+            win_rate = (wins / total_trades) if total_trades > 0 else 0.0
+            
+            return win_rate
+        finally:
+            self._close_conn(conn)
+
+    def get_profit_by_symbol(self, days: int = 30) -> Dict[str, float]:
+        """Get total profit grouped by symbol for the last N days"""
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT symbol, SUM(profit) as total_profit
+                FROM trade_results 
+                WHERE created_at >= datetime('now', '-{} days')
+                GROUP BY symbol
+                ORDER BY total_profit DESC
+            """.format(days))
+            
+            rows = cursor.fetchall()
+            profit_by_symbol = {row[0]: float(row[1]) for row in rows}
+            return profit_by_symbol
+        finally:
+            self._close_conn(conn)
+
+    def get_all_trades(self, limit: int = 1000) -> List[Dict]:
+        """Get all trade results with optional limit"""
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM trade_results 
+                ORDER BY created_at DESC 
+                LIMIT ?
+            """, (limit,))
+            
+            rows = cursor.fetchall()
+            trades = []
+            for row in rows:
+                trade = dict(row)
+                trades.append(trade)
             return trades
         finally:
             self._close_conn(conn)

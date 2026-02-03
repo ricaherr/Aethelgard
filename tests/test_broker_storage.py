@@ -106,12 +106,12 @@ class TestBrokerStorage:
         assert account['enabled'] == 1
         
         # Update account status (disable)
-        storage.update_account_status(account_id, enabled=False)
+        storage.update_account_enabled(account_id, enabled=False)
         account = storage.get_account(account_id)
         assert account['enabled'] == 0
         
         # Enable again
-        storage.update_account_status(account_id, enabled=True)
+        storage.update_account_enabled(account_id, enabled=True)
         account = storage.get_account(account_id)
         assert account['enabled'] == 1
     

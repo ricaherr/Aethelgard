@@ -3821,23 +3821,48 @@ Scanner (multi-TF) → SignalFactory → Genera señales
 
 ### 5. Modificaciones a `get_credentials()`
 - **Firma**: `get_credentials(self, account_id: str, credential_type: Optional[str] = None)`
-- **Funcionalidad**: 
+- **Funcionalidad**:
   - Sin `credential_type`: retorna diccionario completo de credenciales
   - Con `credential_type`: retorna solo esa credencial específica (ej: `'password'`)
+- **Seguridad**: Credenciales almacenadas en tabla separada `credentials` con encriptación Fernet
 
-### 6. Actualización de tabla `broker_accounts`
-**Nuevos campos agregados**:
-- `broker_id TEXT`: ID del broker al que pertenece la cuenta
-- `account_name TEXT`: Nombre descriptivo de la cuenta  
-- `account_number TEXT`: Número/login de la cuenta
+### 6. Nuevo método `save_credential()`
+- **Firma**: `save_credential(self, account_id: str, credential_type: str, credential_key: str, value: str)`
+- **Funcionalidad**: Guarda una credencial específica para una cuenta existente
+- **Uso**: Permite actualizar contraseñas sin modificar otros datos de la cuenta
+- **Implementación**: Actualiza el diccionario de credenciales existente y lo guarda encriptado
 
-**Schema actual**:
+### 7. Actualización de tabla `broker_accounts`
+**Schema actual** (2026-02-03):
 ```sql
 CREATE TABLE broker_accounts (
-    id TEXT PRIMARY KEY,
-    broker_id TEXT,
-    platform_id TEXT NOT NULL,
-    account_name TEXT,
+    account_id TEXT PRIMARY KEY,           -- ID único de la cuenta
+    broker_id TEXT,                        -- ID del broker
+    platform_id TEXT NOT NULL,             -- Plataforma (mt5, nt8, etc.)
+    account_name TEXT,                     -- Nombre descriptivo
+    account_number TEXT,                   -- Número/login de cuenta
+    server TEXT,                           -- Servidor MT5
+    account_type TEXT DEFAULT 'demo',      -- 'demo' o 'real'
+    credentials_path TEXT,                 -- Legacy (no usado)
+    enabled BOOLEAN DEFAULT 1,             -- Cuenta habilitada
+    last_connection TEXT,                  -- Última conexión
+    balance REAL,                          -- Balance actual
+    created_at TEXT,                       -- Fecha creación
+    updated_at TEXT                        -- Fecha actualización
+)
+```
+
+### 8. Tabla `credentials` (Nueva - 2026-02-03)
+**Schema para credenciales encriptadas**:
+```sql
+CREATE TABLE credentials (
+    id TEXT PRIMARY KEY,                   -- ID único del registro
+    broker_account_id TEXT,                -- FK a broker_accounts.account_id
+    encrypted_data TEXT NOT NULL,          -- Datos encriptados (JSON)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (broker_account_id) REFERENCES broker_accounts (account_id)
+)
+```
     account_number TEXT,
     login TEXT NOT NULL,
     password TEXT,
