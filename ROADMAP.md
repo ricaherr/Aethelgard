@@ -1,27 +1,92 @@
 # Aethelgard – Roadmap
 
-**Última actualización**: 2026-02-02 (MILESTONE: 155/155 Tests PASSING - 100% SUCCESS)
+**Última actualización**: 2026-02-02 (**REGLAS DE DESARROLLO EN COPILOT-INSTRUCTIONS** - Autonomía Completa)
 
 ---
 
-## ✅ MILESTONE: 155/155 Tests Passing (100%) - PRODUCTION READY
+## ✅ MILESTONE: Reglas de Desarrollo Agregadas a Copilot-Instructions (2026-02-02)
 
-**Estado Final:**
+**Estado del Sistema:**
 ```
-Test Coverage: 155/155 (100%)
-Critical Tests: 23/23 ✓
-Architecture: Clean & Deduped
+Reglas de Desarrollo: ✅ Agregadas al .github/copilot-instructions.md (resumen)
+Documentación: ✅ Referencia al MANIFESTO mantenida
+IA Compliance: ✅ Instrucciones actualizadas para futuras IAs
+```
+
+**Implementación en Copilot-Instructions:**
+- ✅ **Sección Agregada**: "## 📏 Reglas de Desarrollo de Código (Resumen - Ver MANIFESTO Completo)"
+- ✅ **Nota de Referencia**: Indica que las reglas completas están en AETHELGARD_MANIFESTO.md
+- ✅ **Resumen Completo**: Incluye las 5 reglas con ejemplos de código
+- ✅ **Principio Mantenido**: No duplicación completa, solo resumen con enlace a fuente única
+
+---
+
+## ✅ MILESTONE: Reglas de Desarrollo Agregadas al MANIFESTO (2026-02-02)
+
+**Estado del Sistema:**
+```
+Reglas de Desarrollo: ✅ Agregadas al AETHELGARD_MANIFESTO.md
+Documentación: ✅ Única fuente de verdad mantenida
+IA Compliance: ✅ Instrucciones actualizadas para futuras IAs
+```
+
+**Implementación Reglas de Desarrollo:**
+- ✅ **Inyección de Dependencias Obligatoria**: Agregada regla para clases de lógica (RiskManager, Tuner, etc.)
+- ✅ **Inmutabilidad de los Tests**: Regla que prohíbe modificar tests fallidos
+- ✅ **Single Source of Truth (SSOT)**: Valores críticos deben leerse de configuración única
+- ✅ **Limpieza de Deuda Técnica (DRY)**: Prohibido crear métodos gemelos
+- ✅ **Aislamiento de Tests**: Tests deben usar DB en memoria o temporales
+
+**Documentos para IAs:**
+- **AETHELGARD_MANIFESTO.md**: Reglas generales del proyecto y desarrollo
+- **ROADMAP.md**: Plan de trabajo actual y milestones
+- **.github/copilot-instructions.md**: Instrucciones específicas para IAs
+
+---
+
+## ✅ MILESTONE: Feedback Loop Autónomo Implementado (2026-02-02)
+
+## ✅ MILESTONE: Feedback Loop Autónomo Implementado (2026-02-02)
+
+**Estado del Sistema:**
+```
+Test Coverage: 156/156 (100%)
+Feedback Loop: OPERATIVO ✓
+Architecture: Dependency Injection ✓
 System Status: PRODUCTION READY
 ```
 
-**Cambios en esta sesión (Last Batch):**
-- ✅ data_vault/storage.py: save_trade_result() ahora acepta profit_loss
-- ✅ tests/test_orchestrator_recovery.py: Fixed timestamp para date filtering
+**Implementación Feedback Loop (Sesión Actual):**
+- ✅ **RiskManager** refactorizado: Storage ahora es argumento OBLIGATORIO (Dependency Injection)
+- ✅ **EdgeTuner** alineado con RiskManager: threshold unificado en `max_consecutive_losses=3`
+- ✅ **StorageManager** robustecido: `update_system_state()` maneja tablas sin columna `updated_at`
+- ✅ **Single Source of Truth**: `config/risk_settings.json` creado como fuente única de configuración de riesgo
+- ✅ **Test de Integración**: `test_feedback_loop_integration.py` creado y PASANDO
+  - Simula 3 pérdidas consecutivas
+  - Verifica activación de LOCKDOWN en RiskManager
+  - Verifica persistencia en BD
+  - Verifica ajuste automático de parámetros por EdgeTuner
+  - Verifica reconciliación tras reconexión
 
-**Tests arreglados (3/3 final batch):**
-- ✅ test_tuner_becomes_conservative_after_losing_streak → ATR multiplier 0.3→0.51
-- ✅ test_tuner_becomes_aggressive_after_winning_streak → Score reduction
-- ✅ test_count_executed_signals_filters_by_date → Correct date filtering
+**Flujo Operativo Implementado:**
+```
+Trade Closed (Loss) 
+  → RiskManager.record_trade_result()
+    → if consecutive_losses >= 3: LOCKDOWN
+      → storage.update_system_state({'lockdown_mode': True})
+  
+  → storage.save_trade_result(trade_data)
+  
+  → EdgeTuner.adjust_parameters()
+    → Reads trades from DB
+    → Calculates stats: consecutive_losses
+    → if >= 3: adjustment_factor = 1.7 (conservador)
+    → Updates dynamic_params.json:
+      - ADX: 25 → 35 (+40%)
+      - ATR: 0.3 → 0.51 (+70%)
+      - SMA20: 1.5% → 0.88% (-41%)
+      - Score: 60 → 80 (+33%)
+```
 
 ---
 

@@ -430,6 +430,47 @@ manager.configure_provider("alphavantage", api_key="YOUR_KEY_HERE")
 2. **Refactorizar en lugar de duplicar**: Si existe una función compatible, refactorizarla para cubrir ambos casos y evitar duplicados.
 3. **Tests no se cambian**: Si un test falla, no modificar el test. Explicar por qué la lógica actual no cumple el requisito del test y ajustar la implementación.
 
+### 7. Reglas de Desarrollo de Código
+
+**Principio**: Mantener un código limpio, modular y mantenible mediante prácticas estrictas de desarrollo.
+
+#### 1. Inyección de Dependencias Obligatoria
+
+Ninguna clase de lógica (RiskManager, Tuner, Executor, Monitor) puede instanciar el StorageManager o configuraciones dentro de su `__init__`.
+
+Todas las dependencias deben ser pasadas (inyectadas) desde el MainOrchestrator o los tests.
+
+**Prohibido:**
+```python
+self.storage = StorageManager()
+```
+
+**Obligatorio:**
+```python
+def __init__(self, storage, config):
+    self.storage = storage
+```
+
+#### 2. Inmutabilidad de los Tests
+
+Si un test de lógica de negocio falla, está prohibido modificar el archivo del test para "hacerlo pasar".
+
+El fallo se corrige en el código de producción. Si crees que el test tiene un bug, debes pedir permiso explícito explicando la falla lógica.
+
+#### 3. Single Source of Truth (SSOT)
+
+Los valores críticos (como max_consecutive_losses) no pueden estar hardcodeados. Deben leerse de un archivo de configuración único o de la base de datos que compartan todos los componentes.
+
+#### 4. Limpieza de Deuda Técnica (DRY)
+
+Antes de crear una función, busca si ya existe una similar. Si existe, refactoriza la original para que sea reutilizable.
+
+Queda prohibido crear métodos "gemelos" (ej. `_load_frrom_db` vs `_load_from_db`).
+
+#### 5. Aislamiento de Tests
+
+Los tests deben usar bases de datos en memoria (`:memory:`) o temporales. No se permite que un test dependa del estado dejado por un test anterior.
+
 **Principio**: Ningún parámetro numérico debe considerarse estático.
 
 #### Parámetros Auto-Calibrables

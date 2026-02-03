@@ -19,7 +19,35 @@ Sistema autónomo, proactivo y agnóstico de trading multihilo. Capacidad de aut
 13. **Single Source of Truth (DB)**: Configuración, credenciales y datos del sistema deben residir en la BASE DE DATOS. NO crear archivos JSON/ENV redundantes. La DB es la única fuente de verdad.
 14. **Scripts Mínimos y Útiles**: NO crear scripts de validación/debugging redundantes. Mantener solo los scripts que agregan valor real al usuario final (setup, diagnóstico end-to-end, tests de flujo completo).
 
-## 🛠️ Stack Tecnológico
+## � Reglas de Desarrollo de Código (Resumen - Ver MANIFESTO Completo)
+
+**Nota**: Estas reglas están detalladas en AETHELGARD_MANIFESTO.md (Sección 7: Reglas de Desarrollo de Código). Este es un resumen para referencia rápida de IAs.
+
+1. **Inyección de Dependencias Obligatoria**:
+   - Ninguna clase de lógica (RiskManager, Tuner, Executor, Monitor) puede instanciar StorageManager o configuraciones en `__init__`.
+   - Todas las dependencias deben pasarse (inyectarse) desde MainOrchestrator o tests.
+   - Prohibido: `self.storage = StorageManager()`
+   - Obligatorio: `def __init__(self, storage, config): self.storage = storage`
+
+2. **Inmutabilidad de los Tests**:
+   - Si un test de lógica de negocio falla, está prohibido modificar el test para "hacerlo pasar".
+   - El fallo se corrige en el código de producción.
+   - Si crees que el test tiene un bug, pedir permiso explícito explicando la falla lógica.
+
+3. **Single Source of Truth (SSOT)**:
+   - Valores críticos (como max_consecutive_losses) no pueden estar hardcodeados.
+   - Deben leerse de un archivo de configuración único o de la base de datos compartida por todos los componentes.
+
+4. **Limpieza de Deuda Técnica (DRY)**:
+   - Antes de crear una función, buscar si ya existe una similar.
+   - Si existe, refactorizar la original para que sea reutilizable.
+   - Prohibido crear métodos "gemelos" (ej. `_load_frrom_db` vs `_load_from_db`).
+
+5. **Aislamiento de Tests**:
+   - Los tests deben usar bases de datos en memoria (`:memory:`) o temporales.
+   - No se permite que un test dependa del estado dejado por un test anterior.
+
+## �🛠️ Stack Tecnológico
 - **Backend**: Python 3.12+ (Asyncio, FastAPI).
 - **UI**: Streamlit (Dashboard multi-pestaña).
 - **Data**: SQLite (Persistencia segmentada por mercado).
