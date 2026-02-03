@@ -497,8 +497,14 @@ class MT5Connector:
         Returns:
             BrokerTradeClosedEvent with mapped data
         """
-        # Calculate pips (simplified - would need symbol-specific pip calculation)
-        pips = (deal.price - position.price_open) * 10000  # Rough for EURUSD-like pairs
+        # Calculate pips dynamically based on symbol digits
+        symbol_info = mt5.symbol_info(position.symbol)
+        if symbol_info:
+            pip_multiplier = 10 ** symbol_info.digits
+            pips = (deal.price - position.price_open) * pip_multiplier
+        else:
+            # Fallback for EURUSD-like pairs if symbol info unavailable
+            pips = (deal.price - position.price_open) * 10000
         
         # Determine result
         if deal.profit > 0:

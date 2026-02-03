@@ -156,3 +156,48 @@ class TestMT5EventEmission:
         assert event.signal_id == "xyz789"
         assert event.exit_reason == "STOP_LOSS"
         assert abs(event.pips - (-50.0)) < 0.01
+
+    @patch('connectors.mt5_connector.mt5')
+    def test_mapping_mt5_deal_to_broker_event_xauusd_gold(self, mock_mt5):
+        """Test detailed mapping from MT5 deal/position to BrokerTradeClosedEvent for XAUUSD (Gold)"""
+        # Given - Gold has 2 decimal places
+        position = Mock(
+            ticket=12346,
+            symbol="XAUUSD",
+            price_open=2000.00,
+            time=1640995200,
+            comment="Aethelgard_gold123"
+        )
+
+        deal = Mock(
+            ticket=67891,
+            position_id=12346,
+            price=2010.00,  # 10 point gain
+            time=1641081600,
+            profit=100.0,  # Assuming 0.1 lot, gold moves $10 per point
+            reason=3,
+            comment="tp"
+        )
+
+        connector = MT5Connector()
+
+        # Mock symbol_info for XAUUSD (2 digits)
+        mock_symbol_info = Mock()
+        mock_symbol_info.digits = 2
+        mock_mt5.symbol_info.return_value = mock_symbol_info
+
+        # When
+        event = connector._create_trade_closed_event(position, deal)
+
+        # Then
+        assert event.ticket == "67891"
+        assert event.symbol == "XAUUSD"
+        assert event.entry_price == 2000.00
+        assert event.exit_price == 2010.00
+        assert event.profit_loss == 100.0
+        assert event.result == TradeResult.WIN
+        assert event.broker_id == "MT5"
+        assert event.signal_id == "gold123"
+        assert event.exit_reason == "TAKE_PROFIT"
+        # For Gold (2 digits): (2010.00 - 2000.00) * 100 = 1000 pips
+        assert abs(event.pips - 1000.0) < 0.01

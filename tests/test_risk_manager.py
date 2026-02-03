@@ -141,7 +141,7 @@ def test_lockdown_persistence_on_init():
 
         with patch('core_brain.risk_manager.StorageManager', return_value=mock_storage_in_lockdown):
 
-            rm = RiskManager(initial_capital=10000)
+            rm = RiskManager(storage=mock_storage_in_lockdown, initial_capital=10000)
 
 
 

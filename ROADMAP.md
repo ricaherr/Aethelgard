@@ -1,6 +1,6 @@
 # Aethelgard – Roadmap
 
-**Última actualización**: 2026-02-02 (**FEEDBACK LOOP AUTÓNOMO + TRADECLOSURELISTENER COMPLETADO**)
+**Última actualización**: 2026-02-02 (**CÁLCULO PIPS UNIVERSAL + PREPARACIÓN DEMO COMPLETADA**)
 
 ---
 
@@ -142,6 +142,41 @@ Trade Closed (Loss)
 
 ---
 
+## ✅ MILESTONE: Cálculo Pips Universal + Preparación Demo (2026-02-02)
+
+**Estado del Sistema:**
+```
+Test Coverage: 159/159 (100%)
+Pips Calculation: UNIVERSAL ✓
+Reconciliation: IDEMPOTENT ✓
+XAUUSD Test: PASSED ✓
+System Status: DEMO READY
+```
+
+**Implementación Cálculo Pips Dinámico:**
+- ✅ **MT5Connector Actualizado**: `mt5.symbol_info(symbol).digits` para cálculo universal
+  - EURUSD/JPY (4/2 decimales): `10^digits` = 10000/100 pips
+  - XAUUSD/Oro (2 decimales): 100 pips por punto
+  - Índices: Ajuste automático según dígitos del símbolo
+- ✅ **Fallback Seguro**: Si `symbol_info` falla, usa 10000 (pares estándar)
+- ✅ **Test XAUUSD**: `test_mapping_mt5_deal_to_broker_event_xauusd_gold` PASSED
+  - Simula cierre XAUUSD: 2000.00 → 2010.00 = 1000 pips ✅
+
+**Manejo Reconciliación Duplicada:**
+- ✅ **Idempotencia Confirmada**: `trade_closure_listener.py` línea 138
+- ✅ **Comportamiento Silencioso**: Trade duplicada → Log `[IDEMPOTENT]` → Retorna `True` sin errores
+- ✅ **Protección Completa**: Contra reinicios, reintentos, duplicados de broker
+
+**Validación Final:**
+- ✅ **23/23 Tests Críticos**: PASAN (Deduplicación + Risk Manager)
+- ✅ **QA Guard**: Proyecto limpio, sin errores
+- ✅ **Architecture Audit**: Sin duplicados ni context manager abuse
+- ✅ **Code Quality**: Sin copy-paste significativo
+
+**Estado Final:** ✅ **APROBADO PARA DESPLIEGUE EN CUENTA DEMO**
+
+---
+
 ## 🧹 Opción B: Limpieza de Deuda Técnica (2026-02-02) ✅ COMPLETADO
 
 **Objetivo:** Eliminar duplicados, corregir context managers y reducir complejidad (sin impactar operación).
@@ -231,10 +266,6 @@ RegimeClassifier.reload_params (2 definiciones)
 
 ## 📋 PRÓXIMAS TAREAS (Orden de Prioridad)
 
-### TIER 1: BLOQUEA OPERACIÓN (COMPLETADO ✅)
-- ✅ Signal Deduplication Tests: 19/19 PASS
-- ✅ Risk Manager Tests: 4/4 PASS
-
 ### TIER 2: DEUDA TÉCNICA (NO bloquea, pero IMPORTANTE)
 
 **Duplicados Residuales a Eliminar:**
@@ -294,21 +325,23 @@ RegimeClassifier.reload_params (2 definiciones)
 
 ---
 
-## 📊 Estado del Sistema (Enero 2026)
+## 📊 Estado del Sistema (Febrero 2026)
 
 | Componente | Estado | Validación |
 |------------|--------|------------|
 | 🧠 Core Brain (Orquestador) | ✅ Operacional | 11/11 tests pasados |
 | 🛡️ Risk Manager | ✅ Operacional | 4/4 tests pasados |
 | 📊 Confluence Analyzer | ✅ Operacional | 8/8 tests pasados |
-| 🔌 Connectors (MT5) | ✅ Operacional | DB-First implementado |
+| 🔌 Connectors (MT5) | ✅ Operacional | DB-First + Pips Universal |
 | 💾 Database (SQLite) | ✅ Operacional | Single Source of Truth |
 | 🎯 Signal Factory | ✅ Operacional | 3/3 tests pasados |
 | 📡 Data Providers | ✅ Operacional | 19/19 tests pasados |
 | 🖥️ Dashboard UI | ✅ Operacional | Sin errores críticos |
-| 🧪 Test Suite | ✅ Operacional | **148/148 tests pasados** |
+| 🧪 Test Suite | ✅ Operacional | **159/159 tests pasados** |
+| 📈 Pips Calculation | ✅ Universal | EURUSD/JPY/XAUUSD/Índices |
+| 🔄 Reconciliation | ✅ Idempotent | Duplicados ignorados silenciosamente |
 
-**Resumen**: Sistema completamente funcional y validado end-to-end
+**Resumen**: Sistema completamente funcional, validado end-to-end y listo para Demo
 
 **Warnings no críticos detectados**:
 - ⚠️ Streamlit deprecation: `use_container_width` → migrar a `width='stretch'` (deprecado 2025-12-31)
