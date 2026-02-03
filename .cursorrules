@@ -26,3 +26,35 @@
 2. **Feedback Loop Obligatorio**: Cada decisión tomada por el sistema debe ser contrastada con el resultado del mercado 5, 10 y 20 velas después.
 3. **Aprendizaje Continuo**: El sistema debe incluir un proceso de 'Auto-Tune' que re-ejecute tests de sensibilidad sobre los datos históricos guardados en `data_vault` para proponer mejores parámetros de forma autónoma.
 4. **Independencia**: El sistema debe ser capaz de detectar si sus predicciones están fallando (drift) y entrar en modo 'Seguridad' sin intervención humana.
+
+## [REGLAS DE ORE DE DESARROLLO - PROYECTO AETHELGARD]
+
+1. Inyección de Dependencias Obligatoria:
+
+Ninguna clase de lógica (RiskManager, Tuner, Executor, Monitor) puede instanciar el StorageManager o configuraciones dentro de su __init__.
+
+Todas las dependencias deben ser pasadas (inyectadas) desde el MainOrchestrator o los tests.
+
+Prohibido: self.storage = StorageManager().
+
+Obligatorio: def __init__(self, storage, config): self.storage = storage.
+
+2. Inmutabilidad de los Tests:
+
+Si un test de lógica de negocio falla, está prohibido modificar el archivo del test para "hacerlo pasar".
+
+El fallo se corrige en el código de producción. Si crees que el test tiene un bug, debes pedir permiso explícito explicando la falla lógica.
+
+3. Single Source of Truth (SSOT):
+
+Los valores críticos (como max_consecutive_losses) no pueden estar hardcodeados. Deben leerse de un archivo de configuración único o de la base de datos que compartan todos los componentes.
+
+4. Limpieza de Deuda Técnica (DRY):
+
+Antes de crear una función, busca si ya existe una similar. Si existe, refactoriza la original para que sea reutilizable.
+
+Queda prohibido crear métodos "gemelos" (ej. _load_frrom_db vs _load_from_db).
+
+5. Aislamiento de Tests:
+
+Los tests deben usar bases de datos en memoria (:memory:) o temporales. No se permite que un test dependa del estado dejado por un test anterior.
