@@ -542,6 +542,29 @@ La arquitectura ha sido **100% unificada** para garantizar que TODOS los compone
   def __init__(self, account_id: Optional[str] = None):
       self.storage = StorageManager()
       self._load_config_from_db(account_id)  # Lee broker_accounts + broker_credentials
+  
+  def reconcile_closed_trades(self, listener: TradeClosureListener, hours_back: int = 24):
+      """Reconciliación al inicio: procesa cierres ocurridos mientras offline"""
+      # Consulta MT5 history_deals_get() por deals con magic_number
+      # Para cada DEAL_ENTRY_OUT, encuentra posición y crea BrokerTradeClosedEvent
+      # Emite hacia listener.handle_trade_closed_event() (maneja idempotencia)
+  
+  def _create_trade_closed_event(self, position, deal) -> BrokerTradeClosedEvent:
+      """Mapping MT5 → BrokerTradeClosedEvent estándar"""
+      return BrokerTradeClosedEvent(
+          ticket=str(deal.ticket),
+          symbol=normalize_symbol(position.symbol),
+          entry_price=position.price_open,
+          exit_price=deal.price,
+          entry_time=datetime.fromtimestamp(position.time),
+          exit_time=datetime.fromtimestamp(deal.time),
+          pips=(deal.price - position.price_open) * 10000,  # Simplificado
+          profit_loss=deal.profit,
+          result=WIN if deal.profit > 0 else LOSS if deal.profit < 0 else BREAKEVEN,
+          exit_reason=_detect_exit_reason(deal),
+          broker_id="MT5",
+          signal_id=_extract_signal_id(position.comment)
+      )
   ```
 
 - **MT5DataProvider**:

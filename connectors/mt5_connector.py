@@ -21,6 +21,7 @@ except ImportError:
 
 from models.signal import Signal, SignalType
 from data_vault.storage import StorageManager
+from models.broker_event import BrokerTradeClosedEvent, TradeResult, BrokerEvent
 
 logger = logging.getLogger(__name__)
 
@@ -345,6 +346,109 @@ class MT5Connector:
             logger.error(f"Error getting closed positions: {e}")
             return []
     
+    def reconcile_closed_trades(self, listener: Any, hours_back: int = 24) -> None:
+        """
+        Reconcile closed trades from MT5 history with the listener.
+        
+        Called at startup to process any trades that closed while the bot was offline.
+        Uses idempotency to avoid duplicating already processed trades.
+        
+        Args:
+            listener: TradeClosureListener instance to emit events to
+            hours_back: How many hours to look back in history
+        """
+        if not self.is_connected:
+            logger.warning("MT5 not connected. Skipping reconciliation.")
+            return
+        
+        try:
+            from_date = datetime.now() - timedelta(hours=hours_back)
+            to_date = datetime.now()
+            
+            # Get all deals in the period
+            deals = mt5.history_deals_get(from_date, to_date)
+            
+            if deals is None or len(deals) == 0:
+                logger.info("No deals found in reconciliation period")
+                return
+            
+            processed_count = 0
+            
+            # Process exit deals only
+            for deal in deals:
+                # Only our trades
+                if deal.magic != self.magic_number:
+                    continue
+                
+                # Only exits
+                if deal.entry != mt5.DEAL_ENTRY_OUT:
+                    continue
+                
+                # Find the corresponding position (entry) data
+                position = self._find_position_for_deal(deal, from_date, to_date)
+                if not position:
+                    logger.warning(f"Could not find position data for deal {deal.ticket}")
+                    continue
+                
+                # Create the event
+                event = self._create_trade_closed_event(position, deal)
+                
+                # Wrap in BrokerEvent
+                broker_event = BrokerEvent.from_trade_closed(event)
+                
+                # Emit to listener (it handles idempotency)
+                try:
+                    success = listener.handle_trade_closed_event(broker_event)
+                    if success:
+                        processed_count += 1
+                        logger.info(f"Reconciled trade: {event.ticket} {event.symbol} {event.result.value}")
+                    else:
+                        logger.debug(f"Trade already processed: {event.ticket}")
+                except Exception as e:
+                    logger.error(f"Error processing reconciled trade {event.ticket}: {e}")
+            
+            logger.info(f"Reconciliation complete. Processed {processed_count} trades from last {hours_back}h")
+            
+        except Exception as e:
+            logger.error(f"Error during reconciliation: {e}")
+    
+    def _find_position_for_deal(self, deal: Any, from_date: datetime, to_date: datetime) -> Optional[Any]:
+        """
+        Find the position data for a given exit deal.
+        
+        This reconstructs position info from deals since MT5 positions are only available when open.
+        """
+        try:
+            # Get deals for this position
+            position_deals = mt5.history_deals_get(from_date, to_date, position=deal.position_id)
+            if not position_deals:
+                return None
+            
+            # Find entry deal
+            entry_deal = None
+            for d in position_deals:
+                if d.entry == mt5.DEAL_ENTRY_IN:
+                    entry_deal = d
+                    break
+            
+            if not entry_deal:
+                return None
+            
+            # Create a position-like object from the entry deal
+            class PositionData:
+                def __init__(self, entry_deal):
+                    self.ticket = entry_deal.position_id
+                    self.symbol = entry_deal.symbol
+                    self.price_open = entry_deal.price
+                    self.time = entry_deal.time
+                    self.comment = entry_deal.comment
+            
+            return PositionData(entry_deal)
+            
+        except Exception as e:
+            logger.error(f"Error finding position for deal {deal.ticket}: {e}")
+            return None
+    
     def _find_entry_deal(self, position_id: int, from_date: datetime, to_date: datetime) -> None:
         """Find the entry deal for a position"""
         try:
@@ -381,6 +485,43 @@ class MT5Connector:
             return None
         except Exception:
             return None
+    
+    def _create_trade_closed_event(self, position: Any, deal: Any) -> BrokerTradeClosedEvent:
+        """
+        Create BrokerTradeClosedEvent from MT5 position and deal data
+        
+        Args:
+            position: MT5 position object (entry data)
+            deal: MT5 deal object (exit data)
+        
+        Returns:
+            BrokerTradeClosedEvent with mapped data
+        """
+        # Calculate pips (simplified - would need symbol-specific pip calculation)
+        pips = (deal.price - position.price_open) * 10000  # Rough for EURUSD-like pairs
+        
+        # Determine result
+        if deal.profit > 0:
+            result = TradeResult.WIN
+        elif deal.profit < 0:
+            result = TradeResult.LOSS
+        else:
+            result = TradeResult.BREAKEVEN
+        
+        return BrokerTradeClosedEvent(
+            ticket=str(deal.ticket),  # Use deal ticket as unique identifier
+            symbol=self.normalize_symbol(position.symbol),
+            entry_price=position.price_open,
+            exit_price=deal.price,
+            entry_time=datetime.fromtimestamp(position.time),
+            exit_time=datetime.fromtimestamp(deal.time),
+            pips=pips,
+            profit_loss=deal.profit,
+            result=result,
+            exit_reason=self._detect_exit_reason(deal),
+            broker_id="MT5",
+            signal_id=self._extract_signal_id(position.comment)
+        )
     
     def get_open_positions(self) -> List[Dict]:
         """Get currently open positions"""

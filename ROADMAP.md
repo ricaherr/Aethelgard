@@ -413,7 +413,7 @@ Implementar detección automática de brokers, provisión de cuentas DEMO (cuand
 
 ---
 
-## 🔗 Próxima Tarea: Integración Real con MT5 - Emisión de Eventos y Reconciliación (2026-02-02)
+## ✅ Próxima Tarea: Integración Real con MT5 - Emisión de Eventos y Reconciliación (2026-02-02) ✅ COMPLETADA
 
 **Objetivo:** Actualizar MT5Connector para emitir BrokerTradeClosedEvent hacia TradeClosureListener e implementar reconciliación al inicio.
 
@@ -442,13 +442,13 @@ Implementar detección automática de brokers, provisión de cuentas DEMO (cuand
 - `signal_id`: extraer de position.comment si existe
 
 **Checklist:**
-- [ ] ROADMAP.md actualizado
-- [ ] Test creado (falla inicialmente)
-- [ ] Reconciliación implementada
-- [ ] Emisión de eventos implementada
-- [ ] Test pasa
-- [ ] Tarea marcada como completada
-- [ ] MANIFESTO actualizado
+- [x] ROADMAP.md actualizado
+- [x] Test creado (falla inicialmente)
+- [x] Reconciliación implementada
+- [x] Emisión de eventos implementada
+- [x] Test pasa
+- [x] Tarea marcada como completada
+- [x] MANIFESTO actualizado
 
 ---
 
