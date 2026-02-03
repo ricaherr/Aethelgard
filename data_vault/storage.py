@@ -332,18 +332,22 @@ class StorageManager:
         def _update(conn: sqlite3.Connection, new_state: dict) -> None:
             cursor = conn.cursor()
             for key, value in new_state.items():
-                cursor.execute("""
-                    INSERT OR REPLACE INTO system_state (key, value, updated_at)
-                    VALUES (?, ?, ?)
-                """, (key, json.dumps(value), datetime.now()))
+                # Try with updated_at first, fallback to key-value only
+                try:
+                    cursor.execute("""
+                        INSERT OR REPLACE INTO system_state (key, value, updated_at)
+                        VALUES (?, ?, ?)
+                    """, (key, json.dumps(value), datetime.now()))
+                except sqlite3.OperationalError:
+                    # Fallback: table might not have updated_at column
+                    cursor.execute("""
+                        INSERT OR REPLACE INTO system_state (key, value)
+                        VALUES (?, ?)
+                    """, (key, json.dumps(value)))
             conn.commit()
         
         try:
-            conn = self._get_conn()
-            try:
-                _update(conn, new_state)
-            finally:
-                self._close_conn(conn)
+            # Use _execute_serialized for thread-safe execution
             self._execute_serialized(_update, new_state)
         except Exception as e:
             logger.error(f"Error updating system state: {e}")
@@ -565,13 +569,15 @@ class StorageManager:
             cursor = conn.cursor()
             # Accept both 'profit' and 'profit_loss' for compatibility
             profit = trade_data.get('profit') or trade_data.get('profit_loss')
+            # Use provided ID (ticket from broker) or generate UUID as fallback
+            trade_id = trade_data.get('id') or str(uuid.uuid4())
             cursor.execute("""
                 INSERT INTO trade_results (
                     id, signal_id, symbol, entry_price, exit_price, 
                     profit, exit_reason, close_time
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                str(uuid.uuid4()),
+                trade_id,
                 trade_data.get('signal_id'),
                 trade_data.get('symbol'),
                 trade_data.get('entry_price'),
@@ -581,6 +587,31 @@ class StorageManager:
                 trade_data.get('close_time')
             ))
             conn.commit()
+        finally:
+            self._close_conn(conn)
+    
+    def trade_exists(self, ticket_id: str) -> bool:
+        """
+        Check if a trade with given ticket_id already exists in database.
+        
+        This is used for idempotent trade processing: prevents duplicate
+        processing of the same trade closure event.
+        
+        Args:
+            ticket_id: Unique trade identifier from broker
+        
+        Returns:
+            True if trade exists, False otherwise
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT 1 FROM trade_results WHERE id = ? LIMIT 1",
+                (ticket_id,)
+            )
+            result = cursor.fetchone()
+            return result is not None
         finally:
             self._close_conn(conn)
 

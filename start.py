@@ -125,8 +125,7 @@ async def main() -> None:
         storage = StorageManager()
         # 2. Risk Manager
         logger.info("⚖️  Inicializando Risk Manager...")
-        risk_manager = RiskManager(
-            initial_capital=10000.0,
+        risk_manager = RiskManager(            storage=storage,            initial_capital=10000.0,
             config_path='config/dynamic_params.json'
         )
         logger.info(f"   Capital: ${risk_manager.capital:,.2f}")

@@ -155,7 +155,9 @@ class TestDynamicDeduplicationWindow:
         from core_brain.risk_manager import RiskManager
         from unittest.mock import Mock
         
-        risk_manager = RiskManager(initial_capital=10000)
+        from data_vault.storage import StorageManager
+        storage = StorageManager(db_path=':memory:')
+        risk_manager = RiskManager(storage=storage, initial_capital=10000)
         risk_manager.storage = storage  # Inject storage for persistence
         executor = OrderExecutor(
             risk_manager=risk_manager,

@@ -24,17 +24,34 @@ class RiskManager:
     - Agnostic Sizing: Calculates position size based on explicit point/pip value.
     """
     
-    def __init__(self, initial_capital: float, config_path='config/dynamic_params.json'):
+    def __init__(
+        self, 
+        storage: StorageManager,
+        initial_capital: float, 
+        config_path: str = 'config/dynamic_params.json', 
+        risk_settings_path: str = 'config/risk_settings.json'
+    ):
         """
-        Initialize RiskManager.
+        Initialize RiskManager with dependency injection.
         
         Args:
+            storage: StorageManager instance (REQUIRED - dependency injection).
             initial_capital: Starting capital amount.
             config_path: Path to the dynamic parameters configuration file.
+            risk_settings_path: Path to risk settings (Single Source of Truth).
         """
+        self.storage = storage
         self.capital = initial_capital
         
-        # 1. Auto-ajuste: Cargar parámetros desde archivo dinámico
+        # 1. Load risk settings (Single Source of Truth)
+        try:
+            with open(risk_settings_path, 'r') as f:
+                risk_settings = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            logger.warning(f"Could not load {risk_settings_path}. Using defaults.")
+            risk_settings = {}
+        
+        # 2. Auto-ajuste: Cargar parámetros desde archivo dinámico
         try:
             with open(config_path, 'r') as f:
                 dynamic_params = json.load(f)
@@ -43,10 +60,11 @@ class RiskManager:
             dynamic_params = {}
 
         self.risk_per_trade = dynamic_params.get('risk_per_trade', 0.005) # Defensivo 0.5%
-        self.max_consecutive_losses = dynamic_params.get('max_consecutive_losses', 3)
+        # Read from risk_settings (Single Source of Truth), fallback to dynamic_params, then default
+        self.max_consecutive_losses = risk_settings.get('max_consecutive_losses', 
+                                                        dynamic_params.get('max_consecutive_losses', 3))
 
-        # 2. Persistencia de Lockdown: Integración con StorageManager
-        self.storage = StorageManager()
+        # 3. Persistencia de Lockdown: Storage inyectado, no creado aquí
         system_state = self.storage.get_system_state()
         self.lockdown_mode = system_state.get('lockdown_mode', False)
         

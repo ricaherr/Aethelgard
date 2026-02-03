@@ -605,6 +605,8 @@ async def main() -> None:
     from core_brain.risk_manager import RiskManager
     from core_brain.executor import OrderExecutor
     from core_brain.notificator import get_notifier
+    from core_brain.trade_closure_listener import TradeClosureListener
+    from core_brain.tuner import EdgeTuner
     
     print("=" * 50)
     print("🚀 AETHELGARD ORCHESTRATOR STARTUP")
@@ -661,8 +663,21 @@ async def main() -> None:
     # Signal Factory
     signal_factory = SignalFactory(storage_manager=storage)
     
-    # Risk Manager ($10k starting capital)
-    risk_manager = RiskManager(initial_capital=10000.0)
+    # Risk Manager ($10k starting capital) - Dependency Injection
+    risk_manager = RiskManager(storage=storage, initial_capital=10000.0)
+    
+    # EdgeTuner (Parameter auto-calibration)
+    edge_tuner = EdgeTuner(storage=storage, config_path="config/dynamic_params.json")
+    
+    # Trade Closure Listener (Autonomous feedback loop)
+    trade_listener = TradeClosureListener(
+        storage=storage,
+        risk_manager=risk_manager,
+        edge_tuner=edge_tuner,
+        max_retries=3,
+        retry_backoff=0.5
+    )
+    logger.info("✅ TradeClosureListener initialized with idempotent event handling")
     
     # Order Executor
     notifier = get_notifier()

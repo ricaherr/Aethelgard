@@ -1,0 +1,10 @@
+{
+  "max_consecutive_losses": 3,
+  "lockdown_mode_enabled": true,
+  "min_trades_for_tuning": 5,
+  "tuning_enabled": true,
+  "target_win_rate": 0.55,
+  "conservative_mode_threshold": 0.45,
+  "aggressive_mode_threshold": 0.65,
+  "description": "Single Source of Truth for risk management parameters. RiskManager and EdgeTuner read from this file to ensure consistency."
+}

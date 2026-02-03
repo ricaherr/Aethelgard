@@ -3849,7 +3849,156 @@ sqlite3.register_converter("timestamp", lambda s: datetime.fromisoformat(s.decod
 
 ---
 
-## 🔍 HERRAMIENTAS DE VALIDACIÓN ARQUITECTURA
+## � TRADECLOSURELISTENER: FEEDBACK LOOP AUTÓNOMO
+
+### Arquitectura del Feedback Loop
+
+**Archivo:** `core_brain/trade_closure_listener.py`  
+**Estado:** ✅ PRODUCCIÓN (2026-02-02)  
+**Tests:** `tests/test_trade_listener_stress.py` (3/3 PASSED)
+
+El **TradeClosureListener** es el componente que cierra el ciclo de aprendizaje del sistema, conectando los resultados reales de los trades con el ajuste automático de parámetros.
+
+### Principios de Diseño
+
+#### 1. **Idempotencia Obligatoria**
+- **Verificación:** `storage.trade_exists(ticket_id)` ANTES de procesar
+- **Protección contra:**
+  - Duplicados de eventos del broker
+  - Reinicios del sistema que reprocesen eventos
+  - Reintentos de red
+- **Ubicación del check:** Línea 138 (ANTES de RiskManager)
+
+```python
+# === STEP 0: Check Idempotence ===
+if await self._is_trade_already_processed(trade_event):
+    logger.info(f"[IDEMPOTENT] Trade already processed: Ticket={ticket}")
+    return True  # ← FLUJO SE DETIENE, RiskManager NUNCA LLAMADO
+```
+
+#### 2. **Encapsulación de StorageManager**
+- Listener usa SOLO métodos públicos: `trade_exists()`, `save_trade_result()`
+- NO acceso directo a conexiones SQLite
+- StorageManager es el ÚNICO que conoce la BD
+
+#### 3. **Retry Logic con Exponential Backoff**
+- **Intentos:** 3 máximo
+- **Backoff:** 0.5s → 1.0s → 1.5s (exponencial)
+- **Trigger:** DB locked o busy
+- **Objetivo:** Resiliencia ante concurrencia
+
+#### 4. **Throttling de EdgeTuner**
+- **Frecuencia:** Cada 5 trades O en lockdown
+- **Razón:** Evitar recálculos redundantes en carga alta
+- **Ejemplo:** 10 trades simultáneos → solo 2 llamadas al Tuner
+
+### Flujo Operativo
+
+```
+Broker Event (Trade Closed)
+  ↓
+TradeClosureListener.handle_trade_closed_event()
+  ↓
+[STEP 0] trade_exists(ticket)? 
+  → SI: return True (IDEMPOTENT, no duplicar)
+  → NO: continuar
+  ↓
+[STEP 1] save_trade_with_retry() 
+  → Retry con backoff si DB locked
+  → Max 3 intentos
+  ↓
+[STEP 2] RiskManager.record_trade_result(is_win, pnl)
+  → Actualiza consecutive_losses
+  → Si >= 3: activa LOCKDOWN
+  ↓
+[STEP 3] if lockdown: log error
+  ↓
+[STEP 4] Trigger Tuner?
+  → SI: trades_saved % 5 == 0 OR consecutive_losses >= 3
+  → EdgeTuner.adjust_parameters()
+  ↓
+[STEP 5] Audit log: [TRADE_CLOSED] Symbol | Ticket | Result | PnL
+```
+
+### Integración con MainOrchestrator
+
+**Ubicación:** `core_brain/main_orchestrator.py` línea 672-680
+
+```python
+# Trade Closure Listener (Autonomous feedback loop)
+trade_listener = TradeClosureListener(
+    storage=storage,
+    risk_manager=risk_manager,
+    edge_tuner=edge_tuner,
+    max_retries=3,
+    retry_backoff=0.5
+)
+```
+
+**Dependencias inyectadas:**
+- `storage`: Persistencia de trades y verificación idempotente
+- `risk_manager`: Actualización de estado de riesgo
+- `edge_tuner`: Ajuste automático de parámetros
+
+### Tests de Estrés
+
+**Archivo:** `tests/test_trade_listener_stress.py`
+
+#### Test 1: `test_concurrent_10_trades_no_collapse`
+- **Objetivo:** Verificar que 10 cierres simultáneos no colapsan el sistema
+- **Resultado:** ✅ PASSED
+  - Trades procesados: 10
+  - Trades guardados: 10
+  - Trades fallidos: 0
+  - Success rate: 100%
+  - Tuner calls: 2 (NO 10)
+
+#### Test 2: `test_idempotent_retry_same_trade_twice`
+- **Objetivo:** Verificar que trade duplicada es rechazada
+- **Resultado:** ✅ PASSED
+  - Evento 1: Procesado y guardado
+  - Evento 2: Detectado como duplicado, rechazado
+  - Métrica: trades_processed=2, trades_saved=1
+
+#### Test 3: `test_stress_with_concurrent_db_writes`
+- **Objetivo:** Verificar escrituras concurrentes sin pérdida de datos
+- **Resultado:** ✅ PASSED
+  - 10 escrituras simultáneas exitosas
+  - Sin locks permanentes
+  - Sin corrupción de datos
+
+### Métricas de Monitoreo
+
+El Listener expone métricas vía `get_metrics()`:
+
+```python
+{
+    "trades_processed": 10,      # Total eventos recibidos
+    "trades_saved": 10,          # Trades guardados en DB
+    "trades_failed": 0,          # Trades que fallaron tras 3 reintentos
+    "tuner_adjustments": 2,      # Veces que se ajustaron parámetros
+    "success_rate": 100.0        # % de trades guardados exitosamente
+}
+```
+
+### Próximos Pasos (Integración Broker)
+
+**Pendiente:**
+- Conectar MT5Connector para generar `BrokerTradeClosedEvent` en cierres reales
+- Conectar PaperConnector para simulación
+- Adaptar eventos de otros brokers (NT8, Interactive Brokers)
+
+**Patrón de Integración:**
+```python
+# En MT5Connector
+def on_trade_closed(mt5_trade_data):
+    event = adapt_mt5_trade_closed_to_event(mt5_trade_data)
+    await orchestrator.trade_listener.handle_trade_closed_event(event)
+```
+
+---
+
+## �🔍 HERRAMIENTAS DE VALIDACIÓN ARQUITECTURA
 
 ### Architecture Audit Script
 **Archivo:** `scripts/architecture_audit.py`  

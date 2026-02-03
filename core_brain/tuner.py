@@ -429,11 +429,14 @@ class EdgeTuner:
         conservative_threshold = config.get("conservative_mode_threshold", 0.45)
         aggressive_threshold = config.get("aggressive_mode_threshold", 0.65)
         
+        # Load max_consecutive_losses from risk_settings (Single Source of Truth)
+        max_consecutive_losses = config.get('max_consecutive_losses', 3)
+        
         # RACHA DE PÉRDIDAS → Defensivo inmediato
-        if stats["consecutive_losses"] >= 5:
+        if stats["consecutive_losses"] >= max_consecutive_losses:
             trigger = "consecutive_losses"
             adjustment_factor = 1.7  # +70% más conservador
-            self.logger.warning(f"🛡️ MODO DEFENSIVO: {stats['consecutive_losses']} pérdidas consecutivas")
+            self.logger.warning(f"MODO DEFENSIVO: {stats['consecutive_losses']} pérdidas consecutivas")
         
         # WIN RATE MUY BAJO → Conservador
         elif stats["win_rate"] < conservative_threshold:

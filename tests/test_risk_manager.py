@@ -59,20 +59,9 @@ def test_agnostic_position_sizing(mock_dynamic_params, mock_storage):
 
 
     with patch('builtins.open', mock_open(read_data=mock_dynamic_params)):
-
-
-
-        with patch('core_brain.risk_manager.StorageManager', return_value=mock_storage):
-
-
-
-            rm = RiskManager(initial_capital=10000)
-
-
-
-
-
-
+        from data_vault.storage import StorageManager
+        storage = StorageManager(db_path=':memory:')
+        rm = RiskManager(storage=storage, initial_capital=10000)
 
     account_balance = 10000
 
@@ -176,9 +165,7 @@ def test_defensive_posture_with_none_regime(mock_dynamic_params):
 
     with patch('builtins.open', mock_open(read_data=mock_dynamic_params)):
 
-        with patch('core_brain.risk_manager.StorageManager', MagicMock()):
-
-            rm = RiskManager(initial_capital=10000)
+        from data_vault.storage import StorageManager; storage = StorageManager(db_path=':memory:'); rm = RiskManager(storage=storage, initial_capital=10000)
 
     
 
@@ -212,12 +199,11 @@ def test_risk_auto_adjustment_from_params(mock_dynamic_params):
 
     with patch('builtins.open', mock_open(read_data=mock_dynamic_params)):
 
-        with patch('core_brain.risk_manager.StorageManager', MagicMock()):
-
-            rm = RiskManager(initial_capital=10000)
+        from data_vault.storage import StorageManager; storage = StorageManager(db_path=':memory:'); rm = RiskManager(storage=storage, initial_capital=10000)
 
     
 
     # El valor en mock_dynamic_params es 0.02
 
     assert rm.risk_per_trade == 0.02
+

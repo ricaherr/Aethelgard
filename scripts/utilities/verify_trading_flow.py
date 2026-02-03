@@ -42,7 +42,9 @@ async def verify_flow():
     # 1. Initialize Components
     logger.info("\nStep 1: Initializing Components...")
     storage = StorageManager()
-    risk_manager = RiskManager(initial_capital=10000.0)
+    from data_vault.storage import StorageManager
+    storage = StorageManager()
+    risk_manager = RiskManager(storage=storage, initial_capital=10000.0)
     
     # Try to connect MT5, fallback to Mock
     executor = OrderExecutor(risk_manager=risk_manager, storage=storage)

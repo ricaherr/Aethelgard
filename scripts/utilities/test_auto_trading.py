@@ -39,7 +39,9 @@ def test_auto_trading():
     
     # Initialize components
     storage = StorageManager()
-    risk_manager = RiskManager(initial_capital=10000.0)  # $10k demo capital
+    from data_vault.storage import StorageManager
+    storage = StorageManager()
+    risk_manager = RiskManager(storage=storage, initial_capital=10000.0)  # $10k demo capital
     mt5_connector = MT5Connector()
     
     # Step 1: Connect to MT5

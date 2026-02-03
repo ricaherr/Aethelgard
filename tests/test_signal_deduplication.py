@@ -24,7 +24,9 @@ class TestSignalDeduplication:
     @pytest.fixture
     def risk_manager(self):
         """Create risk manager"""
-        return RiskManager(initial_capital=10000.0)
+        from data_vault.storage import StorageManager
+        storage = StorageManager(db_path=':memory:')
+        return RiskManager(storage=storage, initial_capital=10000.0)
     
     @pytest.fixture
     def executor(self, risk_manager, storage):
