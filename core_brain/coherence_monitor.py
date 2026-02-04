@@ -101,6 +101,21 @@ class CoherenceMonitor:
                         connector_type=connector
                     ))
 
+            # Rule 4: No-ejecuciones para aprendizaje EDGE
+            execution_status = sig.get("execution_status")
+            reason = sig.get("reason")
+            if execution_status and execution_status.upper() in ["REJECTED", "FAILED"]:
+                events.append(self._emit(
+                    signal_id=signal_id,
+                    symbol=symbol,
+                    stage="EXECUTION",
+                    status="NO_EXECUTION",
+                    reason=f"{execution_status}: {reason}",
+                    connector_type=connector,
+                    incoherence_type="LEARNING_OPPORTUNITY",
+                    details=f"Signal score: {sig.get('score', 'N/A')}, Volume: {sig.get('volume', 'N/A')}"
+                ))
+
         return events
 
     def _emit(

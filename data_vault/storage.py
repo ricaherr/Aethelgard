@@ -553,11 +553,27 @@ class StorageManager:
                 else:
                     current_metadata = dict(metadata_update)
 
-                cursor.execute("""
+                # Build dynamic UPDATE query for new columns
+                update_fields = ["status = ?", "metadata = ?", "updated_at = ?"]
+                update_values = [status, json.dumps(current_metadata), datetime.now()]
+                
+                if 'execution_status' in metadata_update:
+                    update_fields.append("execution_status = ?")
+                    update_values.append(metadata_update['execution_status'])
+                
+                if 'reason' in metadata_update:
+                    update_fields.append("reason = ?")
+                    update_values.append(metadata_update['reason'])
+
+                update_values.append(signal_id)
+                
+                query = f"""
                     UPDATE signals 
-                    SET status = ?, metadata = ?, updated_at = ?
+                    SET {', '.join(update_fields)}
                     WHERE id = ?
-                """, (status, json.dumps(current_metadata), datetime.now(), signal_id))
+                """
+                
+                cursor.execute(query, update_values)
 
                 if 'ticket' in metadata_update:
                     cursor.execute("""

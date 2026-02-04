@@ -156,6 +156,14 @@ class OrderExecutor:
             self._register_failed_signal(signal, "REJECTED_LOCKDOWN")
             return False
         
+        # Step 3.5: Calculate position size
+        position_size = self._calculate_position_size(signal)
+        if position_size <= 0:
+            logger.warning(f"Position size calculation failed or too small: {position_size}")
+            self._register_failed_signal(signal, "INVALID_POSITION_SIZE")
+            return False
+        signal.volume = position_size
+        
         # Step 4: Register signal as PENDING
         self._register_pending_signal(signal)
         
@@ -264,6 +272,35 @@ class OrderExecutor:
         """
         return self.connectors.get(connector_type)
     
+    def _calculate_position_size(self, signal: Signal) -> float:
+        """Calculate position size for the signal"""
+        try:
+            connector = self._get_connector(signal.connector_type)
+            if connector and hasattr(connector, 'get_account_balance'):
+                account_balance = connector.get_account_balance()
+            else:
+                # Default balance for paper trading
+                account_balance = 10000.0
+            
+            # Get stop loss distance
+            stop_loss_distance = abs(signal.stop_loss - signal.entry_price) if signal.stop_loss and signal.entry_price else 100  # Default 100 pips
+            
+            # Get point value (assume 1 for forex)
+            point_value = 1.0
+            
+            # Get current regime (assume RANGE if not available)
+            from models.signal import MarketRegime
+            current_regime = MarketRegime.RANGE
+            
+            position_size = self.risk_manager.calculate_position_size(
+                account_balance, stop_loss_distance, point_value, current_regime
+            )
+            
+            return position_size
+        except Exception as e:
+            logger.error(f"Error calculating position size: {e}")
+            return 0.01  # Fallback
+    
     def _register_pending_signal(self, signal: Signal) -> None:
         """Register signal with PENDING status in data_vault."""
         signal_record = {
@@ -299,13 +336,24 @@ class OrderExecutor:
             'ticket': ticket,
             'execution_price': result.get('price'),
             'execution_time': datetime.now().isoformat(),
-            'connector': connector_str
+            'connector': connector_str,
+            'execution_status': 'ORDER_PLACED_SUCCESS',
+            'reason': f"Executed successfully. Ticket={ticket}"
         })
         
         logger.debug(f"Signal registered as EXECUTED: {signal.symbol}, Ticket: {ticket}")
     
     def _register_failed_signal(self, signal: Signal, reason: str) -> None:
         """Register failed signal attempt in data_vault."""
+        # Save signal to database first
+        signal_id = self.storage.save_signal(signal)
+        
+        # Update with execution status and reason
+        self.storage.update_signal_status(signal_id, 'REJECTED', {
+            'execution_status': 'REJECTED',
+            'reason': reason
+        })
+        
         signal_record = {
             "timestamp": datetime.now().isoformat(),
             "symbol": signal.symbol,

@@ -1,6 +1,50 @@
 # Aethelgard – Roadmap
 
-**Última actualización**: 2026-02-04 (**REPARACIÓN ESQUEMA DB Y SELF-HEALING**)
+**Última actualización**: 2026-02-04 (**CORRECCIONES LIMBO OPERATIVO**)
+
+---
+
+## 🚧 MILESTONE: Correcciones Limbo Operativo (2026-02-04)
+
+**Estado del Sistema:**
+```
+Señales Generadas: ✅
+Ejecución Señales: FALLANDO ❌ (limbo operativo)
+UI Congelada: ❌ (refresco 3s no funciona)
+Audit Log: INEXISTENTE ❌
+Aprendizaje EDGE: INACTIVO ❌
+```
+
+**Problemas Identificados:**
+- Señales no se ejecutan (EURGBP 98.4 no llega a MT5)
+- UI congelada, refresco no funciona
+- Falta audit log para debugging de ejecuciones
+- No captura no-ejecuciones para aprendizaje
+
+**Plan de Trabajo:**
+1. ✅ Agregar columnas execution_status y reason a tabla signals
+2. ✅ Modificar OrderExecutor para escribir audit log
+3. ✅ Actualizar UI para mostrar execution_status en 'Señales Detalladas'
+4. ✅ Reparar heartbeat UI con hilo independiente
+5. ✅ Debug EURGBP: verificar min_score_to_trade y cálculo lotaje
+6. ✅ Implementar aprendizaje EDGE para no-ejecuciones
+
+**Tareas Completadas:**
+- ✅ Columnas audit agregadas
+- ✅ OrderExecutor actualizado
+- ✅ UI audit log mostrado
+- ✅ Heartbeat UI reparado
+- ✅ Debug EURGBP completado
+- ✅ Aprendizaje EDGE implementado
+
+**Próximos Pasos:**
+- Ejecutar migración para nuevas columnas
+- Verificar ejecución señales
+- Probar UI refresco
+- Monitorear aprendizaje
+
+**Tiempo Estimado:** 45-60 minutos
+**Prioridad:** CRÍTICA (sistema parcialmente operativo)
 
 ---
 

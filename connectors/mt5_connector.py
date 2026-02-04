@@ -511,8 +511,11 @@ class MT5Connector:
             
             price = tick.ask if order_type == mt5.ORDER_TYPE_BUY else tick.bid
             
-            # Calculate volume (default 0.01 lot = micro lot)
-            volume = 0.01
+            # Calculate volume (use signal volume if available, else default 0.01 lot = micro lot)
+            volume = getattr(signal, 'volume', 0.01)
+            if volume <= 0:
+                volume = 0.01
+                logger.warning(f"Invalid volume {volume}, using default 0.01")
             
             request = {
                 "action": mt5.TRADE_ACTION_DEAL,

@@ -1495,7 +1495,8 @@ def main() -> None:  # type: ignore
                             "TP": s.get('take_profit', ''),
                             "Score": f"{meta.get('score', 0):.1f}",
                             "Estado": s.get('status', 'N/A'),
-                            "Ejecución": meta.get('execution_observation', ''),
+                            "Ejecución": s.get('execution_status', 'N/A'),
+                            "Razón": s.get('reason', meta.get('execution_observation', '')),
                         })
                     df_signals = pd.DataFrame(table_data)
                     def color_estado(val: Any) -> str:
@@ -1508,12 +1509,12 @@ def main() -> None:  # type: ignore
                     def color_ejecucion(val: Any) -> str:
                         if not isinstance(val, str): return ''
                         val_lower: str = val.lower()
-                        if any(x in val_lower for x in ["éxito", "ejecutada correctamente", "success", "completada"]):
+                        if val_lower in ["order_placed_success", "executed"]:
                             return 'background-color: #d4edda; color: #155724; font-weight: bold;'
-                        elif any(x in val_lower for x in ["advertencia", "warning", "parcial", "atención"]):
-                            return 'background-color: #fff3cd; color: #856404; font-weight: bold;'
-                        elif val:
+                        elif any(x in val_lower for x in ["rejected", "failed", "error"]):
                             return 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
+                        elif val and val != 'N/A':
+                            return 'background-color: #fff3cd; color: #856404; font-weight: bold;'
                         return ''
                     if not df_signals.empty:
                         styled_df = df_signals.style.applymap(color_estado, subset=['Estado']).applymap(color_ejecucion, subset=['Ejecución'])
@@ -2577,4 +2578,20 @@ def main() -> None:  # type: ignore
 
 
 if __name__ == "__main__":
+    import threading
+    import time
+    
+    def auto_refresh():
+        """Función para refresco automático cada 3 segundos"""
+        while True:
+            time.sleep(3)
+            try:
+                st.rerun()
+            except:
+                break
+    
+    # Iniciar hilo de refresco automático
+    refresh_thread = threading.Thread(target=auto_refresh, daemon=True)
+    refresh_thread.start()
+    
     main()
