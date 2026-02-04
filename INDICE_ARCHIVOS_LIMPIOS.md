@@ -170,5 +170,32 @@
 ✅ **Sin archivos temporales**: Repositorio completamente limpio  
 ✅ **Funciones verificadas**: Todos los métodos utilizados  
 
-**Estado**: Listo para integración MT5 🚀</content>
+**Estado**: Listo para integración MT5 🚀
+
+---
+
+## 🧹 Limpieza Reciente (2026-02-04)
+
+### 📋 Archivos Eliminados (Temporales/Diagnóstico)
+- `check_credentials.py` - Script de verificación de credenciales
+- `check_mt5_accounts.py` - Verificación de cuentas MT5
+- `check_mt5_config.py` - Diagnóstico de configuración MT5
+- `diagnose_credentials.py` - Diagnóstico completo de credenciales
+- `restore_mt5_credentials.py` - Script de restauración de credenciales
+- `restore_mt5_env.py` - Restauración de entorno MT5
+- `test_mt5_basic.py` - Test básico MT5
+- `test_mt5_direct.py` - Test directo MT5
+- `.aethelgard-context.md` - Documentación técnica de navegación
+- Directorios `__pycache__/` y `.pytest_cache/` - Cache de Python
+
+### ➕ Archivos Agregados
+- `tests/test_concurrent_mt5_startup.py` - Test de concurrencia para inicio MT5
+
+### 🔧 Mejoras Realizadas
+- **Configuración MT5 API**: Resuelta configuración requerida para conexiones Python
+- **MT5 Connector**: Actualizado con path específico de terminal IC Markets
+- **Documentación**: Actualizado ROADMAP.md y AETHELGARD_MANIFESTO.md
+- **Limpieza**: Repositorio completamente limpio de archivos temporales
+
+**Commit**: `a3cbad3` - "🧹 Limpieza y configuración MT5 API completada"</content>
 <parameter name="filePath">c:\Users\Jose Herrera\Documents\Proyectos\Aethelgard\INDICE_ARCHIVOS_LIMPIOS.md
