@@ -1539,6 +1539,55 @@ class StorageManager:
         finally:
             self._close_conn(conn)
 
+    def check_integrity(self) -> bool:
+        """
+        Verifica la integridad de la base de datos y repara esquemas si es necesario.
+        Retorna True si la DB está íntegra, False si hay problemas.
+        """
+        try:
+            conn = self._get_conn()
+            cursor = conn.cursor()
+
+            # Verificar tablas críticas
+            required_tables = ['signals', 'trade_results', 'system_state', 'broker_accounts']
+            for table in required_tables:
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
+                if not cursor.fetchone():
+                    logger.error(f"Tabla faltante: {table}")
+                    return False
+
+            # Verificar columnas críticas en signals
+            required_columns = ['symbol', 'timeframe', 'direction', 'price', 'sl', 'tp', 'score', 'timestamp']
+            cursor.execute("PRAGMA table_info(signals)")
+            columns = [row[1] for row in cursor.fetchall()]
+            for col in required_columns:
+                if col not in columns:
+                    logger.warning(f"Columna faltante en signals: {col}. Intentando agregar...")
+                    # Intentar agregar columna
+                    try:
+                        if col == 'direction':
+                            cursor.execute("ALTER TABLE signals ADD COLUMN direction TEXT")
+                        elif col == 'sl':
+                            cursor.execute("ALTER TABLE signals ADD COLUMN sl REAL")
+                        elif col == 'tp':
+                            cursor.execute("ALTER TABLE signals ADD COLUMN tp REAL")
+                        elif col == 'score':
+                            cursor.execute("ALTER TABLE signals ADD COLUMN score REAL")
+                        logger.info(f"Columna {col} agregada exitosamente.")
+                    except sqlite3.OperationalError as e:
+                        logger.error(f"No se pudo agregar columna {col}: {e}")
+                        return False
+
+            conn.commit()
+            logger.info("Integridad de base de datos verificada y reparada si fue necesario.")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error verificando integridad de DB: {e}")
+            return False
+        finally:
+            self._close_conn(conn)
+
 
 # Test utilities
 def temp_db_path(tmp_path: str) -> str:
