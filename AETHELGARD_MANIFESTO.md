@@ -4157,6 +4157,71 @@ def on_trade_closed(mt5_trade_data):
 
 ---
 
+## 🔧 **2026-02-04: Correcciones Completas Limbo Operativo**
+
+**Contexto:** Sistema en estado limbo operativo - señales no ejecutándose, UI congelada, falta audit trail.
+
+**Problemas Resueltos:**
+1. **Ejecución de Señales Fallando**: EURGBP 98.4 score no llegaba a MT5
+2. **UI Congelada**: Refresco cada 3s no funcionaba
+3. **Falta Audit Log**: No había trazabilidad de ejecuciones
+4. **Aprendizaje EDGE Inactivo**: No capturaba no-ejecuciones
+5. **Código Quality FAIL**: 6 funciones con CC >10
+
+**Soluciones Implementadas:**
+
+### 1. Sistema de Audit Trail
+- **Columnas agregadas**: `execution_status`, `reason` en tabla `signals`
+- **OrderExecutor**: Logging detallado de resultados (REJECTED_BY_SPREAD, ORDER_PLACED_SUCCESS, etc.)
+- **UI Dashboard**: Display de status en tabla 'Señales Detalladas'
+
+### 2. Reparación UI Heartbeat
+- **Threading independiente**: `auto_refresh()` ejecutándose cada 3s
+- **Prevención de bloqueo**: UI nunca se congela durante operaciones
+
+### 3. Debug EURGBP Execution
+- **Cálculo dinámico lotaje**: Basado en balance/capital disponible
+- **Score filtering**: Verificado min_score_to_trade = 75, señal 98.4 > umbral
+- **Validación**: Señales ahora llegan correctamente a MT5
+
+### 4. Aprendizaje EDGE Activado
+- **CoherenceMonitor**: Captura no-ejecuciones como eventos de aprendizaje
+- **Datos registrados**: score, volume, timestamp para análisis futuro
+- **Auto-calibración**: Sistema aprende de fallos para mejorar
+
+### 5. Refactorización Calidad Código
+**Funciones refactorizadas (CC >10 → CC <10):**
+- `check_integrity()`: Extracción `_check_required_tables()`, `_check_and_repair_signals_columns()`, `_add_missing_column()`
+- `update_account_credentials()`: Uso de métodos auxiliares `_update_account_fields()`, `_update_account_password()`, `_verify_account_update()`
+- `_connect_sync_once()`: Extracción `_initialize_mt5()`, `_validate_credentials()`, `_perform_mt5_login()`, `_verify_demo_account()`, `_log_connection_success()`
+- `save_signal()`: Extracción `_serialize_signal_data()`, `_get_signal_timestamp()`, `_build_signal_insert_data()`
+- `get_data_providers()`: Extracción `_process_provider_config()`, `_wrap_provider_config()`, `_set_provider_id()`
+- `reconcile_closed_trades()`: Extracción `_get_reconciliation_date_range()`, `_get_historical_deals()`, `_process_reconciliation_deals()`, `_is_our_exit_deal()`, `_process_reconciled_trade()`
+
+### 6. Type Hints Completados
+- **Funciones auxiliares**: Todos los parámetros con hints apropiados
+- **Compatibilidad**: `sqlite3.Cursor`, `Optional[str]`, `Dict[str, Any]`, etc.
+
+**Estado Post-Corrección:**
+```
+Señales Generadas: ✅
+Ejecución Señales: ✅ FUNCIONANDO
+UI Congelada: ✅ REPARADA
+Audit Log: ✅ IMPLEMENTADO
+Aprendizaje EDGE: ✅ ACTIVO
+Validaciones: ✅ TODAS PASAN
+```
+
+**Validaciones Finales:**
+- ✅ Architecture Audit: PASS
+- ✅ QA Guard: PASS  
+- ✅ Code Quality: PASS
+- ✅ Critical Tests: 23/23 PASS
+
+**Commit:** `5774e55` - "🔧 FIX: Correcciones completas limbo operativo + refactorización calidad código"
+
+---
+
 Este documento debe actualizarse cuando:
 - Se complete una fase del roadmap
 - Se añada una nueva estrategia
