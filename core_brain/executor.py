@@ -122,12 +122,16 @@ class OrderExecutor:
         
         # 2a. Check if there's an open position for this symbol
         if self.storage.has_open_position(signal.symbol):
-            logger.warning(
-                f"Signal rejected: Open position already exists for {signal.symbol}. "
-                f"Preventing duplicate operation."
-            )
-            self._register_failed_signal(signal, "DUPLICATE_OPEN_POSITION")
-            return False
+            # Perform immediate reconciliation before rejecting
+            if self._reconcile_positions(signal.symbol):
+                logger.info(f"Reconciliation cleared ghost position for {signal.symbol}, proceeding with signal")
+            else:
+                logger.warning(
+                    f"Signal rejected: Open position confirmed for {signal.symbol}. "
+                    f"Preventing duplicate operation."
+                )
+                self._register_failed_signal(signal, "DUPLICATE_OPEN_POSITION")
+                return False
         
         # 2b. Check if there's a recent signal (dynamic window based on timeframe)
         if self.storage.has_recent_signal(
@@ -296,6 +300,17 @@ class OrderExecutor:
                 account_balance, stop_loss_distance, point_value, current_regime
             )
             
+            # Memory dump for high-confidence signals (>90)
+            if signal.confidence > 0.9:
+                risk_amount = account_balance * 0.01  # 1% risk
+                memory_dump = {
+                    "Score": f"{signal.confidence * 100:.1f}%",
+                    "LotSize_Calculated": f"{position_size:.4f}",
+                    "Risk_Amount_$": f"{risk_amount:.2f}",
+                    "Ghost_Position_ID": self.storage.get_open_position_id(signal.symbol) or "None"
+                }
+                logger.info(f"🔍 HIGH-CONFIDENCE SIGNAL MEMORY DUMP: {memory_dump}")
+            
             return position_size
         except Exception as e:
             logger.error(f"Error calculating position size: {e}")
@@ -411,6 +426,49 @@ class OrderExecutor:
                 logger.error(f"Failed to send Telegram notification: {e}")
         else:
             logger.warning("Notificator not configured, skipping Telegram alert")
+    
+    def _reconcile_positions(self, symbol: str) -> bool:
+        """
+        Perform immediate reconciliation with MT5 reality.
+        
+        Checks if MT5 actually has open positions. If not, clears any ghost
+        positions from DB and returns True to allow new trade.
+        
+        Args:
+            symbol: Trading symbol to check
+            
+        Returns:
+            True if reconciliation cleared ghost positions, False if real position exists
+        """
+        try:
+            # Get MT5 connector
+            mt5_connector = self.connectors.get(ConnectorType.METATRADER5)
+            if not mt5_connector or not mt5_connector.is_connected:
+                logger.warning("MT5 connector not available for reconciliation")
+                return False
+            
+            # Query real MT5 positions
+            positions = mt5_connector.get_open_positions()
+            if positions is None:
+                logger.error("Failed to query MT5 positions for reconciliation")
+                return False
+            
+            # Check if symbol has real position
+            symbol_positions = [p for p in positions if p.get('symbol') == symbol]
+            
+            if symbol_positions:
+                # Real position exists, don't clear
+                logger.info(f"Real position confirmed in MT5 for {symbol}, rejecting duplicate")
+                return False
+            
+            # No real position, clear ghost from DB
+            logger.warning(f"No real position in MT5 for {symbol}, clearing ghost position from DB")
+            self.storage.clear_ghost_position(symbol)
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error during position reconciliation: {e}")
+            return False
     
     def get_status(self) -> Dict:
         """Get current executor status."""

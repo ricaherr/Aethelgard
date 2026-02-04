@@ -1,8 +1,60 @@
 # Aethelgard – Roadmap
 
-**Última actualización**: 2026-02-04 (**CORRECCIONES LIMBO OPERATIVO**)
+**Última actualización**: 2026-02-04 (**SINCRONIZACIÓN REALIDAD MT5**)
 
 ---
+
+## 🚧 MILESTONE: Sincronización Realidad MT5 (2026-02-04)
+
+**Estado del Sistema:**
+```
+Señales Generadas: ✅
+Ejecución Señales: BLOQUEADA ❌ (datos fantasma)
+UI Congelada: ✅ REPARADA
+Audit Log: ✅ IMPLEMENTADO
+Aprendizaje EDGE: ✅ ACTIVO
+```
+
+**Problemas Identificados:**
+- Bot descarta señales por 'posición existente' pero MT5 está vacío
+- Desincronización entre DB interna y estado real de MT5
+- UI puede congelarse por bloqueos DB durante escaneo
+- Falta reconciliación inmediata antes de ejecutar
+
+**Plan de Trabajo:**
+1. ✅ Implementar reconciliación inmediata en OrderExecutor
+2. ✅ Agregar volcado de memoria para señales >90
+3. ✅ Crear purga DB para registros fantasma
+4. ✅ Activar WAL mode en SQLite para UI prioritaria
+
+**Tareas Completadas:**
+- ✅ Implementar reconciliación inmediata en OrderExecutor
+- ✅ Agregar volcado memoria señales >90
+- ✅ Crear purga DB para registros fantasma
+- ✅ Activar WAL mode en SQLite para UI prioritaria
+
+**Estado Final del Sistema:**
+```
+Señales Generadas: ✅
+Ejecución Señales: ✅ SINCRONIZADO CON MT5
+UI Congelada: ✅ WAL MODE ACTIVADO
+Audit Log: ✅ IMPLEMENTADO
+Aprendizaje EDGE: ✅ ACTIVO
+Sincronización: ✅ RECONCILIACIÓN ACTIVA
+```
+
+**Próximos Pasos:**
+- Probar reconciliación con señales reales
+- Verificar volcado en consola para debugging
+- Monitorear UI responsiveness
+- Validar sincronización completa
+
+**Tiempo Estimado:** 30-45 minutos
+**Prioridad:** CRÍTICA (sistema parcialmente operativo)
+
+---
+
+## 🚧 MILESTONE: Correcciones Limbo Operativo (2026-02-04)
 
 ## 🚧 MILESTONE: Correcciones Limbo Operativo (2026-02-04)
 

@@ -589,6 +589,42 @@ class MT5Connector:
             logger.error(f"Error executing signal: {e}")
             return {'success': False, 'error': str(e)}
     
+    def get_open_positions(self) -> Optional[List[Dict]]:
+        """
+        Get all currently open positions from MT5
+        
+        Returns:
+            List of position dicts or None if error
+        """
+        if not self.is_connected:
+            logger.warning("MT5 not connected, cannot get positions")
+            return None
+        
+        try:
+            positions = mt5.positions_get()
+            if positions is None:
+                logger.error("Failed to get positions from MT5")
+                return None
+            
+            # Convert to dict format
+            position_list = []
+            for pos in positions:
+                position_list.append({
+                    'ticket': pos.ticket,
+                    'symbol': pos.symbol,
+                    'price_open': pos.price_open,
+                    'price_current': pos.price_current,
+                    'volume': pos.volume,
+                    'profit': pos.profit,
+                    'type': 'BUY' if pos.type == mt5.POSITION_TYPE_BUY else 'SELL'
+                })
+            
+            return position_list
+            
+        except Exception as e:
+            logger.error(f"Error getting open positions: {e}")
+            return None
+    
     def get_closed_positions(self, hours: int = 24) -> List[Dict]:
         """
         Get closed positions from MT5 history
@@ -848,41 +884,6 @@ class MT5Connector:
             broker_id="MT5",
             signal_id=self._extract_signal_id(position.comment)
         )
-    
-    def get_open_positions(self) -> List[Dict]:
-        """Get currently open positions"""
-        if not self.is_connected:
-            return []
-        
-        try:
-            positions = mt5.positions_get()
-            
-            if positions is None or len(positions) == 0:
-                return []
-            
-            open_positions = []
-            
-            for pos in positions:
-                if pos.magic != self.magic_number:
-                    continue
-                
-                open_positions.append({
-                    'ticket': pos.ticket,
-                    'symbol': pos.symbol,
-                    'type': 'BUY' if pos.type == mt5.ORDER_TYPE_BUY else 'SELL',
-                    'volume': pos.volume,
-                    'price_open': pos.price_open,
-                    'price_current': pos.price_current,
-                    'profit': pos.profit,
-                    'sl': pos.sl,
-                    'tp': pos.tp
-                })
-            
-            return open_positions
-        
-        except Exception as e:
-            logger.error(f"Error getting open positions: {e}")
-            return []
     
     def close_position(self, ticket: int) -> bool:
         """Close a specific position"""

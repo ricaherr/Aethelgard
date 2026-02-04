@@ -111,11 +111,15 @@ class StorageManager:
         self._initialize_db()
 
     def _get_conn(self) -> sqlite3.Connection:
-        """Get database connection with row factory"""
+        """Get database connection with row factory and WAL mode for concurrent access"""
         if self._persistent_conn is not None:
             return self._persistent_conn
         conn = sqlite3.connect(self.db_path, check_same_thread=False)
         conn.row_factory = sqlite3.Row
+        # Enable WAL mode for concurrent reads/writes without blocking UI
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA synchronous=NORMAL;")
+        conn.execute("PRAGMA wal_autocheckpoint=1000;")
         return conn
 
     def _close_conn(self, conn: sqlite3.Connection) -> None:
@@ -1721,6 +1725,39 @@ def test_trade_result_persistence(storage: StorageManager) -> None:
     results = storage.get_trade_results()
     assert len(results) == 1
     assert results[0]["profit"] == 50.0
+
+def clear_ghost_position(self, symbol: str) -> None:
+    """Clear ghost position from DB when MT5 shows no real position"""
+    conn = self._get_conn()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE signals 
+            SET status = 'GHOST_CLEARED', 
+                execution_status = 'GHOST_CLEARED',
+                reason = 'Cleared during reconciliation - no real MT5 position',
+                updated_at = ?
+            WHERE symbol = ? AND status = 'executed'
+        """, (datetime.now(), symbol))
+        conn.commit()
+        logger.info(f"Cleared ghost position for {symbol}")
+    finally:
+        self._close_conn(conn)
+
+def get_open_position_id(self, symbol: str) -> Optional[str]:
+    """Get the signal ID of any open position for debugging"""
+    conn = self._get_conn()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id FROM signals 
+            WHERE symbol = ? AND status = 'executed'
+            ORDER BY timestamp DESC LIMIT 1
+        """, (symbol,))
+        row = cursor.fetchone()
+        return row[0] if row else None
+    finally:
+        self._close_conn(conn)
 
 def test_market_state_logging(storage: StorageManager) -> None:
     """Test market state logging"""
