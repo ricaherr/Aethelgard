@@ -1,6 +1,33 @@
 # Aethelgard – Roadmap
 
-**Última actualización**: 2026-02-03 (**CONFIGURACIÓN MT5 API RESUELTA**)
+**Última actualización**: 2026-02-04 (**REPARACIÓN ESQUEMA DB Y SELF-HEALING**)
+
+---
+
+## 🚧 MILESTONE: Reparación Esquema DB y Self-Healing (2026-02-04)
+
+**Estado del Sistema:**
+```
+MT5 Conexión: ÉXITO ✅
+Almacenamiento Señales: FALLANDO ❌ (no such column: direction)
+Monitor de Errores: INACTIVO ❌
+Lockdown Mode: ACTIVO ❌
+Instrument Manager: USDTRY/USDNOK RECHAZADOS ❌
+```
+
+**Problema Crítico:** Error sqlite3.OperationalError: no such column: direction en tabla signals
+
+**Tareas Completadas:**
+- ✅ Script de migración creado (`scripts/migrate_signals_table.py`)
+
+**Próximos Pasos:**
+- Ejecutar migración automática
+- Implementar self-healing en monitor para errores DB
+- Desactivar Lockdown Mode tras verificación DB
+- Actualizar instruments.json con USDTRY/USDNOK
+
+**Tiempo Estimado:** 30-45 minutos
+**Prioridad:** CRÍTICA (sistema inoperable para señales)
 
 ---
 
