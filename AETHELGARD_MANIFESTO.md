@@ -2,7 +2,7 @@
 ## Única Fuente de Verdad del Proyecto
 
 > **Versión:** 1.0  
-> **Última Actualización:** Enero 2026  
+> **Última Actualización:** Febrero 2026  
 > **Estado del Proyecto:** Fase 2 - Implementación de Estrategias Modulares
 
 ---
@@ -3486,13 +3486,12 @@ python scripts/migrations/migrate_add_timeframe.py
 
 ## 🔄 Actualización del Manifiesto
 
-**Última Actualización**: 29 de Enero 2026
-- ✅ Implementado sistema multi-proveedor de datos con 6 proveedores
-- ✅ Fallback automático a Yahoo cuando no hay proveedores configurados
-- ✅ Suite de tests 100% funcional (147/147 passing)
-- ✅ Arquitectura de brokers migrada a DB (brokers + broker_accounts)
-- ✅ Dashboard con gestión de proveedores, brokers y cuentas
-- ✅ Correcciones de API deprecated en StorageManager
+**Última Actualización**: 4 de Febrero 2026
+- ✅ Reparación automática de esquema DB con self-healing
+- ✅ Verificación de integridad DB y migración automática de columnas faltantes
+- ✅ Desactivación automática de Lockdown Mode tras reparación
+- ✅ Soporte para señales con direction, sl, tp, score
+- ✅ Instrument Manager actualizado con USDTRY y USDNOK
 - ✅ **Deduplicación multi-timeframe**: Permite señales simultáneas del mismo instrumento en diferentes timeframes
 - ✅ **Scanner filtrado**: Solo escanea instrumentos habilitados en `instruments.json`
 - ✅ **Scanner multi-timeframe**: Escanea todos los timeframes activos configurables por el usuario
