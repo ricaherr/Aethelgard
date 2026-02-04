@@ -4,6 +4,9 @@ Simplified connector for OrderExecutor and ClosingMonitor
 ARCHITECTURE: Single source of truth = DATABASE (no JSON files)
 """
 import logging
+import threading
+import time
+from enum import Enum
 from typing import Optional, Dict, List, Any, TYPE_CHECKING
 from datetime import datetime, timedelta
 
@@ -26,39 +29,223 @@ from models.broker_event import BrokerTradeClosedEvent, TradeResult, BrokerEvent
 logger = logging.getLogger(__name__)
 
 
+class ConnectionState(Enum):
+    """MT5 Connection states for non-blocking startup"""
+    DISCONNECTED = "disconnected"
+    CONNECTING = "connecting"
+    CONNECTED = "connected"
+    FAILED = "failed"
+
+
 class MT5Connector:
     """
     Production MT5 Connector for Aethelgard
-    
+
     Features:
     - Auto-loads configuration from database (broker_accounts + broker_credentials)
     - Validates demo account before executing
     - Implements standard connector interface
     - Thread-safe operations
+    - Non-blocking connection with timeout and retry
     """
-    
+
     def __init__(self, account_id: Optional[str] = None):
         """
         Initialize MT5 Connector
-        
+
         Args:
             account_id: Optional account ID to use. If None, uses first enabled MT5 account from DB
-        
+
         ARCHITECTURE NOTE: Configuration comes from DATABASE ONLY (single source of truth)
         """
         if not MT5_AVAILABLE:
             raise ImportError("MetaTrader5 library not installed. Run: pip install MetaTrader5")
-        
+
         self.storage = StorageManager()
         self.account_id = account_id
         self.config = self._load_config_from_db()
         self.is_connected = False
         self.is_demo = False
         self.magic_number = 234000  # Aethelgard magic number
-        
+
+        # Connection state management
+        self.connection_state = ConnectionState.DISCONNECTED
+        self.connection_thread = None
+        self.retry_timer = None
+        self.last_attempt = 0
+
         logger.info(f"MT5Connector initialized from database")
     
     def _load_config_from_db(self) -> Dict:
+        """
+        Load MT5 configuration from DATABASE (single source of truth)
+        
+        Returns:
+            Dict with 'enabled', 'login', 'server', 'password', 'account_id'
+        """
+        try:
+            # Get all MT5 accounts
+            all_accounts = self.storage.get_broker_accounts()
+            mt5_accounts = [acc for acc in all_accounts if acc.get('platform_id') == 'mt5' and acc.get('enabled', True)]
+            
+            if not mt5_accounts:
+                logger.warning("No MT5 accounts found in database. MT5 connector disabled.")
+                return {'enabled': False}
+            
+            # Select account (by ID or first enabled)
+            account = None
+            if self.account_id:
+                account = next((acc for acc in mt5_accounts if acc['account_id'] == self.account_id), None)
+                if not account:
+                    logger.error(f"MT5 account {self.account_id} not found in database")
+                    return {'enabled': False}
+            else:
+                account = mt5_accounts[0]  # Use first enabled account
+            
+            # Store account ID for later use
+            self.account_id = account['account_id']
+            
+            # Get credentials
+            credentials = self.storage.get_credentials(self.account_id)
+            
+            if not credentials or not credentials.get('password'):
+                logger.error(f"No credentials found for MT5 account {self.account_id}")
+                return {'enabled': False}
+            
+            config = {
+                'enabled': True,
+                'login': account.get('login') or account.get('account_number'),
+                'server': account.get('server'),
+                'password': credentials['password'],
+                'account_id': self.account_id,
+                'account_name': account.get('account_name'),
+                'account_type': account.get('account_type')
+            }
+            
+            logger.info(f"Loaded MT5 config from DB: Account '{config['account_name']}' (Login: {config['login']})")
+            return config
+            
+        except Exception as e:
+            logger.error(f"Error loading MT5 config from database: {e}", exc_info=True)
+            return {'enabled': False}
+    
+    def start(self) -> None:
+        """
+        Start MT5 connection in background thread.
+        Call this after system initialization is complete.
+        """
+        if not self.config.get('enabled', False):
+            logger.warning("MT5 connector is disabled - not starting connection")
+            return
+            
+        if self.connection_state != ConnectionState.DISCONNECTED:
+            logger.info("MT5 connection already started or in progress")
+            return
+            
+        logger.info("🚀 Starting MT5 connection in background thread...")
+        
+        # Start connection in background thread
+        self.connection_thread = threading.Thread(
+            target=self._connect_background,
+            name="MT5-Background-Connector",
+            daemon=True
+        )
+        self.connection_thread.start()
+    
+    def _connect_background(self) -> None:
+        """
+        Background connection loop with retries.
+        Runs indefinitely until connected or system shutdown.
+        """
+        while True:
+            try:
+                if self.connection_state == ConnectionState.CONNECTED:
+                    # Already connected, just wait
+                    time.sleep(30)
+                    continue
+                    
+                self.connection_state = ConnectionState.CONNECTING
+                self.last_attempt = time.time()
+                
+                logger.info("🔌 Attempting MT5 connection...")
+                
+                # Try to connect with timeout
+                if self._connect_sync_once():
+                    logger.info("✅ MT5 connected successfully in background")
+                    return  # Exit loop when connected
+                    
+                # Connection failed, schedule retry
+                logger.warning("⚠️  MT5 connection failed, retrying in 30 seconds...")
+                self.connection_state = ConnectionState.FAILED
+                time.sleep(30)
+                
+            except Exception as e:
+                logger.error(f"❌ Error in MT5 background connection loop: {e}")
+                self.connection_state = ConnectionState.FAILED
+                time.sleep(30)
+    
+    def _connect_sync_once(self) -> bool:
+        """
+        Single synchronous connection attempt.
+        Returns True if successful, False otherwise.
+        """
+        try:
+            # Initialize MT5 with specific terminal path (IC Markets)
+            terminal_path = r"C:\Program Files\MetaTrader 5 IC Markets Global\terminal64.exe"
+            if not mt5.initialize(terminal_path):
+                error = mt5.last_error()
+                logger.error(f"MT5 initialization failed: {error}")
+                return False
+            
+            # Get credentials
+            login = self.config.get('login')
+            password = self.config.get('password')
+            server = self.config.get('server')
+            
+            if not login or not password or not server:
+                logger.error("Incomplete MT5 credentials")
+                return False
+            
+            # Login attempt
+            authorized = mt5.login(
+                login=int(login),
+                password=str(password).strip(),
+                server=str(server).strip()
+            )
+            
+            if not authorized:
+                error = mt5.last_error()
+                logger.error(f"MT5 login failed: {error}")
+                return False
+            
+            # Verify account
+            account_info = mt5.account_info()
+            if account_info is None:
+                logger.error("Could not retrieve MT5 account information")
+                return False
+            
+            # Check demo account
+            self.is_demo = account_info.trade_mode == mt5.ACCOUNT_TRADE_MODE_DEMO
+            if not self.is_demo:
+                logger.critical("⚠️  CONNECTED TO REAL ACCOUNT! Trading disabled.")
+                mt5.shutdown()
+                return False
+            
+            self.is_connected = True
+            self.connection_state = ConnectionState.CONNECTED
+            
+            logger.info("=" * 60)
+            logger.info("✅ MT5 Connected Successfully!")
+            logger.info(f"   Account: {account_info.login}")
+            logger.info(f"   Server: {account_info.server}")
+            logger.info(f"   Balance: {account_info.balance:,.2f} {account_info.currency}")
+            logger.info("=" * 60)
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error in MT5 connection attempt: {e}")
+            return False
         """
         Load MT5 configuration from DATABASE (single source of truth)
         
@@ -121,23 +308,54 @@ class MT5Connector:
         """
         return symbol.replace("=X", "") if symbol else symbol
     
-    def connect(self) -> bool:
+    def connect(self, timeout_seconds: int = 10) -> bool:
         """
-        Connect to MT5 terminal
+        Start asynchronous connection to MT5 terminal with timeout
         
+        Args:
+            timeout_seconds: Maximum time to wait for connection
+            
         Returns:
-            True if connection successful
+            True if connection successful within timeout
         """
         if not self.config.get('enabled', False):
             logger.warning("MT5 connector is disabled in configuration. skipping connection.")
+            self.connection_state = ConnectionState.FAILED
             return False
             
+        if self.connection_state == ConnectionState.CONNECTED:
+            return True
+            
+        if self.connection_state == ConnectionState.CONNECTING:
+            # Already attempting connection, wait for result
+            return self._wait_for_connection(timeout_seconds)
+        
+        # Start connection in background thread
+        self.connection_state = ConnectionState.CONNECTING
+        self.connection_thread = threading.Thread(
+            target=self._connect_sync,
+            name="MT5-Connector",
+            daemon=True
+        )
+        self.connection_thread.start()
+        
+        # Wait for connection with timeout
+        return self._wait_for_connection(timeout_seconds)
+    
+    def _connect_sync(self) -> None:
+        """
+        Synchronous connection attempt (runs in background thread)
+        """
         try:
+            self.last_attempt = time.time()
+            
             # Initialize MT5
             if not mt5.initialize():
                 error = mt5.last_error()
                 logger.error(f"MT5 initialization failed: {error}")
-                return False
+                self.connection_state = ConnectionState.FAILED
+                self._schedule_retry()
+                return
             
             # Get credentials from config (already loaded from DB)
             login = self.config.get('login')
@@ -146,28 +364,47 @@ class MT5Connector:
             
             if not login or not password or not server:
                 logger.error(f"Incomplete MT5 credentials: login={bool(login)}, password={bool(password)}, server={bool(server)}")
-                return False
+                self.connection_state = ConnectionState.FAILED
+                self._schedule_retry()
+                return
             
             # Log what we're about to send (without password)
             logger.info(f"Attempting MT5 login with: login={login} (type: {type(login)}, len: {len(str(login))}), server='{server}'")
+            logger.info(f"MT5 terminal status: initialized={mt5.initialize() is not None}, last_error={mt5.last_error()}")
             
-            # Login
+            # Login - FORZAR login específico, no asumir cuenta abierta por defecto
+            logger.info(f"Calling mt5.login(login={int(login)}, password=[HIDDEN], server='{str(server).strip()}')")
             authorized = mt5.login(
                 login=int(login),
                 password=str(password).strip(),
                 server=str(server).strip()
             )
             
+            logger.info(f"mt5.login() returned: {authorized}")
             if not authorized:
                 error = mt5.last_error()
                 logger.error(f"MT5 login failed: {error}")
-                return False
+                logger.error(f"MT5 terminal info: version={mt5.version()}, account_info={mt5.account_info()}")
+                self.connection_state = ConnectionState.FAILED
+                self._schedule_retry()
+                return
             
-            # Verify account info
+            # VERIFICAR que la cuenta conectada sea la correcta (no asumir)
             account_info = mt5.account_info()
             if account_info is None:
-                logger.error("Could not retrieve MT5 account information")
-                return False
+                logger.error("Could not retrieve MT5 account information after login")
+                self.connection_state = ConnectionState.FAILED
+                self._schedule_retry()
+                return
+            
+            # Verificar que el login de la cuenta conectada coincida con el solicitado
+            if account_info.login != int(login):
+                logger.error(f"Cuenta conectada ({account_info.login}) no coincide con la solicitada ({login})")
+                logger.error(f"Servidor conectado: {account_info.server}, Servidor solicitado: {server}")
+                mt5.shutdown()
+                self.connection_state = ConnectionState.FAILED
+                self._schedule_retry()
+                return
             
             # Check if demo account
             self.is_demo = account_info.trade_mode == mt5.ACCOUNT_TRADE_MODE_DEMO
@@ -176,9 +413,12 @@ class MT5Connector:
                 logger.critical("⚠️  CONNECTED TO REAL ACCOUNT! Trading disabled for safety.")
                 logger.critical("   Aethelgard will NOT execute on real accounts.")
                 mt5.shutdown()
-                return False
+                self.connection_state = ConnectionState.FAILED
+                self._schedule_retry()
+                return
             
             self.is_connected = True
+            self.connection_state = ConnectionState.CONNECTED
             
             logger.info("=" * 60)
             logger.info(f"✅ MT5 Connected Successfully!")
@@ -188,11 +428,47 @@ class MT5Connector:
             logger.info(f"   Type: DEMO")
             logger.info("=" * 60)
             
-            return True
-        
         except Exception as e:
             logger.error(f"Error connecting to MT5: {e}")
-            return False
+            self.connection_state = ConnectionState.FAILED
+            self._schedule_retry()
+    
+    def _wait_for_connection(self, timeout_seconds: int) -> bool:
+        """
+        Wait for connection to complete with timeout
+        
+        Args:
+            timeout_seconds: Maximum seconds to wait
+            
+        Returns:
+            True if connected successfully
+        """
+        start_time = time.time()
+        while time.time() - start_time < timeout_seconds:
+            if self.connection_state == ConnectionState.CONNECTED:
+                return True
+            elif self.connection_state == ConnectionState.FAILED:
+                return False
+            time.sleep(0.1)  # Small sleep to avoid busy waiting
+        
+        # Timeout reached
+        logger.warning(f"MT5 connection timeout after {timeout_seconds} seconds")
+        return False
+    
+    def _schedule_retry(self) -> None:
+        """
+        Schedule automatic retry in background
+        """
+        if self.retry_timer is not None:
+            self.retry_timer.cancel()
+        
+        def retry():
+            logger.info("🔄 Retrying MT5 connection...")
+            self.connect()
+        
+        self.retry_timer = threading.Timer(30.0, retry)  # Retry every 30 seconds
+        self.retry_timer.start()
+        logger.info("⏰ Next MT5 retry in 30 seconds")
     
     def disconnect(self) -> None:
         """Disconnect from MT5"""

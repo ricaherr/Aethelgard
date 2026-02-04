@@ -59,7 +59,7 @@ class OrderExecutor:
     
     def _try_load_mt5_connector(self) -> None:
         """
-        Attempt to load MT5Connector if configuration exists.
+        Attempt to load MT5Connector (lazy loading - no connection yet).
         Follows Aethelgard's agnosticism principle: core doesn't require MT5,
         but will use it opportunistically if configured.
         """
@@ -67,15 +67,13 @@ class OrderExecutor:
             # Import only when needed (lazy loading)
             from connectors.mt5_connector import MT5Connector
             
-            logger.info("🔌 Checking MT5 connector availability from DB...")
+            logger.info("🔌 Loading MT5 connector from DB (lazy loading)...")
             
             mt5_connector = MT5Connector()
             
-            if mt5_connector.connect():
-                self.connectors[ConnectorType.METATRADER5] = mt5_connector
-                logger.info("✅ MT5Connector loaded and connected successfully")
-            else:
-                logger.warning("⚠️  MT5Connector not connected (disabled or unavailable)")
+            # Store connector - connection will be started later via .start()
+            self.connectors[ConnectorType.METATRADER5] = mt5_connector
+            logger.info("✅ MT5Connector loaded (connection deferred)")
                 
         except ImportError:
             logger.warning("MT5Connector not available (MetaTrader5 library not installed)")

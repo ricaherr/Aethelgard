@@ -8,6 +8,7 @@ import json
 import logging
 import time
 import traceback
+import sqlite3
 from datetime import datetime, timedelta, date
 from pathlib import Path
 from typing import Dict, Optional, List, Any
@@ -180,7 +181,11 @@ def render_home_view(classifier: RegimeClassifier, storage: StorageManager,
     # Get statistics and active trades
     try:
         # Check if storage or provider_manager are stale
-        storage_stale: bool = not hasattr(storage, 'get_open_operations')
+        storage_stale: bool = not hasattr(storage, 'get_open_operations') or not hasattr(storage, 'update_account_credentials')
+        
+        # Additional check: if the method exists but is not callable, force reload
+        if hasattr(storage, 'update_account_credentials') and not callable(getattr(storage, 'update_account_credentials', None)):
+            storage_stale = True
         
         # We also check ProviderConfig indirectly via DataProviderManager
         # But simpler to just check if we have the new fields
@@ -2113,7 +2118,7 @@ def main() -> None:  # type: ignore
                                     )
                                     edit_login = st.text_input(
                                         "Login (Número de Cuenta)", 
-                                        value=account.get('login', ''),
+                                        value=account.get('account_number', ''),
                                         max_chars=None,  # Sin límite
                                         help="Ingrese el número completo de cuenta",
                                         key=f"edit_login_{account_id}"
@@ -2144,35 +2149,39 @@ def main() -> None:  # type: ignore
                                 col_btn = st.columns(2)
                                 with col_btn[0]:
                                     if st.form_submit_button("💾 Guardar Cambios"):
+                                        # Check if the new method exists
+                                        if not hasattr(storage, 'update_account_credentials'):
+                                            st.error("❌ El sistema necesita reiniciarse. El método de guardado de cuentas no está disponible.")
+                                            st.error("🔄 Por favor, reinicia el dashboard desde el launcher principal.")
+                                            st.stop()
+                                        
                                         try:
-                                            # Update account with named parameters
-                                            update_data = {
-                                                'account_name': edit_name,
-                                                'login': edit_login,
-                                                'server': edit_server
-                                            }
-                                            # Only include password in update if it's not empty
-                                            if edit_pwd:
-                                                update_data['password'] = edit_pwd
-                                            
-                                            storage.update_account(
+                                            # Use explicit method with post-write verification
+                                            storage.update_account_credentials(
                                                 account_id=account_id,
-                                                **update_data
+                                                account_name=edit_name,
+                                                account_number=edit_login,
+                                                server=edit_server,
+                                                password=edit_pwd if edit_pwd else None
                                             )
                                             
-                                            # Update credentials if password was provided
-                                            if edit_pwd:
-                                                storage.update_credential(account_id, {'password': edit_pwd})
-                                            
-                                            # Also update account_type separately if changed
+                                            # Update account_type using the new method
                                             if edit_type != account.get('account_type'):
-                                                storage.update_account_type(account_id, edit_type)
+                                                storage.update_account_credentials(account_id=account_id, account_type=edit_type)
                                             
                                             st.success("✅ Cuenta actualizada correctamente")
                                             del st.session_state[f'editing_{account_id}']
                                             st.rerun()
+                                        except sqlite3.Error as e:
+                                            # Show specific SQLite error
+                                            st.error(f"❌ Error de base de datos: {str(e)}")
+                                            st.code(f"Código de error SQLite: {e}")
+                                        except ValueError as e:
+                                            # Show verification errors
+                                            st.error(f"❌ Error de verificación: {str(e)}")
                                         except Exception as e:
-                                            st.error(f"❌ Error al actualizar: {e}")
+                                            # Show any other errors
+                                            st.error(f"❌ Error inesperado: {str(e)}")
                                             import traceback
                                             st.code(traceback.format_exc())
                                 

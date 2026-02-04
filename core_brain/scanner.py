@@ -129,7 +129,8 @@ class ScannerEngine:
         self._running = False
         
         # Calcular max_workers basado en el modo de escaneo y el número de activos
-        base_workers = min(32, (len(self.assets) or 1) + 4)
+        # Limitar workers iniciales para evitar saturación de CPU durante arranque
+        base_workers = min(8, (len(self.assets) or 1) + 4)  # Máximo 8 workers iniciales
         self._max_workers = int(base_workers * selected_mode["max_workers_multiplier"])
         
         logger.info("ScannerEngine inicializado en modo %s con CPU límite %.1f%% y %d workers.", self.scan_mode, self.cpu_limit_pct, self._max_workers)

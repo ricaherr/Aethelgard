@@ -461,6 +461,10 @@ El fallo se corrige en el código de producción. Si crees que el test tiene un 
 
 Los valores críticos (como max_consecutive_losses) no pueden estar hardcodeados. Deben leerse de un archivo de configuración único o de la base de datos que compartan todos los componentes.
 
+**Regla de Nombres de Columnas DB**: Los nombres de columnas en la base de datos deben ser consistentes en todo el código. Si la tabla `broker_accounts` usa `account_number`, todo el código (dashboard, storage, conectores) debe usar `account_number`, no aliases como `login`.
+
+**Verificación**: Antes de cualquier cambio que involucre operaciones DB, verificar la estructura real de las tablas con consultas directas, no asumir nombres de columnas.
+
 #### 4. Limpieza de Deuda Técnica (DRY)
 
 Antes de crear una función, busca si ya existe una similar. Si existe, refactoriza la original para que sea reutilizable.
@@ -470,6 +474,58 @@ Queda prohibido crear métodos "gemelos" (ej. `_load_frrom_db` vs `_load_from_db
 #### 5. Aislamiento de Tests
 
 Los tests deben usar bases de datos en memoria (`:memory:`) o temporales. No se permite que un test dependa del estado dejado por un test anterior.
+
+#### 7. Configuración MT5 API Obligatoria
+
+**Principio**: MT5 requiere configuración manual para permitir conexiones API desde Python.
+
+**Configuración Requerida:**
+1. Abrir terminal MT5 (ej: IC Markets, Pepperstone, XM)
+2. Ir a: Tools > Options > Expert Advisors
+3. Marcar las siguientes opciones:
+   - ✅ Allow automated trading
+   - ✅ Allow DLL imports  
+   - ✅ Allow external experts imports
+4. Reiniciar terminal MT5
+5. Verificar con: `python check_mt5_config.py`
+
+**Path del Terminal:**
+- El sistema detecta automáticamente terminales MT5 instalados
+- Path por defecto para IC Markets: `C:\Program Files\MetaTrader 5 IC Markets Global\terminal64.exe`
+- MT5Connector inicializa con path específico: `mt5.initialize(terminal_path)`
+
+**Diagnóstico:**
+- Error (-6, 'Terminal: Authorization failed') = Configuración API faltante
+- Script `check_mt5_config.py` valida configuración completa
+- Verifica inicialización, acceso a símbolos y datos de mercado
+
+**Implementación en Código:**
+```python
+# En MT5Connector._connect_sync_once()
+terminal_path = r"C:\Program Files\MetaTrader 5 IC Markets Global\terminal64.exe"
+if not mt5.initialize(terminal_path):
+    error = mt5.last_error()
+    logger.error(f"MT5 initialization failed: {error}")
+    return False
+```
+
+**Principio**: El arranque del sistema nunca debe bloquear esperando componentes externos (UI, APIs, conexiones remotas).
+
+**Regla de Arranque Asíncrono**:
+- El cerebro del sistema debe inicializar completamente en <5 segundos
+- UI (Streamlit) y APIs deben lanzarse en procesos completamente independientes (detached)
+- No usar time.sleep() para esperar componentes externos
+- El hilo principal continúa inmediatamente después de lanzar procesos detached
+- Usar subprocess.Popen con CREATE_NEW_PROCESS_GROUP para detached en Windows
+
+**Principio**: Toda operación de escritura en base de datos debe ser verificada inmediatamente.
+
+**Regla de Persistencia Verificada**:
+- Después de cada COMMIT, realizar SELECT para confirmar que los datos se guardaron
+- Si la verificación falla, lanzar excepción específica con detalles del error
+- Para passwords: DELETE explícito de credenciales anteriores + INSERT de nueva encriptada
+- UI debe mostrar errores específicos de SQLite vs errores de validación
+- Nunca asumir que una operación de DB fue exitosa sin verificación
 
 **Principio**: Ningún parámetro numérico debe considerarse estático.
 

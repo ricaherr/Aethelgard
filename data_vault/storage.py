@@ -940,20 +940,6 @@ class StorageManager:
         finally:
             self._close_conn(conn)
 
-    def update_account_enabled(self, account_id: str, enabled: bool) -> None:
-        """Update account enabled status"""
-        conn = self._get_conn()
-        try:
-            cursor = conn.cursor()
-            cursor.execute("""
-                UPDATE broker_accounts 
-                SET enabled = ?, updated_at = ?
-                WHERE account_id = ?
-            """, (enabled, datetime.now(), account_id))
-            conn.commit()
-        finally:
-            self._close_conn(conn)
-
     def log_coherence_event(self, signal_id: Optional[str], symbol: str, timeframe: Optional[str],
                            strategy: Optional[str], stage: str, status: str, incoherence_type: Optional[str],
                            reason: str, details: Optional[str], connector_type: Optional[str]) -> None:
@@ -1073,41 +1059,141 @@ class StorageManager:
             self._close_conn(conn)
 
     def update_account_enabled(self, account_id: str, enabled: bool) -> None:
-        """Update account enabled status"""
-        conn = self._get_conn()
-        try:
-            cursor = conn.cursor()
-            cursor.execute("""
-                UPDATE broker_accounts 
-                SET enabled = ?, updated_at = ?
-                WHERE account_id = ?
-            """, (enabled, datetime.now(), account_id))
-            conn.commit()
-        finally:
-            self._close_conn(conn)
+        """Update account enabled status with verification"""
+        self.update_account_credentials(account_id=account_id, enabled=enabled)
 
-    def update_account(self, account_id: str, updates: Dict) -> None:
-        """Update account with multiple fields"""
-        # Handle password separately - it should go to credentials table
-        password = updates.pop('password', None)
+    def update_account_credentials(self, account_id: str, account_number: str = None, 
+                                   password: str = None, server: str = None, 
+                                   account_name: str = None, account_type: str = None,
+                                   enabled: bool = None) -> None:
+        """
+        Update account credentials with explicit mapping and post-write verification.
         
+        Args:
+            account_id: Account ID to update
+            account_number: New account number/login
+            password: New password (will be encrypted)
+            server: New server
+            account_name: New account name
+            account_type: New account type
+            enabled: New enabled status
+            
+        Raises:
+            ValueError: If post-write verification fails
+            sqlite3.Error: If database operation fails
+        """
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            if updates:  # Only update if there are fields to update
-                set_clause = ", ".join(f"{k} = ?" for k in updates.keys())
-                values = list(updates.values()) + [datetime.now(), account_id]
+            
+            # Begin explicit transaction
+            cursor.execute("BEGIN TRANSACTION")
+            
+            # Build update query with explicit column mapping
+            update_fields = []
+            update_values = []
+            
+            if account_name is not None:
+                update_fields.append("account_name = ?")
+                update_values.append(account_name)
+                
+            if account_number is not None:
+                update_fields.append("account_number = ?")
+                update_values.append(account_number)
+                
+            if server is not None:
+                update_fields.append("server = ?")
+                update_values.append(server)
+                
+            if account_type is not None:
+                update_fields.append("account_type = ?")
+                update_values.append(account_type)
+                
+            if enabled is not None:
+                update_fields.append("enabled = ?")
+                update_values.append(enabled)
+            
+            # Always update timestamp
+            update_fields.append("updated_at = ?")
+            update_values.append(datetime.now())
+            update_values.append(account_id)  # WHERE clause
+            
+            if update_fields:
+                set_clause = ", ".join(update_fields)
                 cursor.execute(f"""
                     UPDATE broker_accounts
-                    SET {set_clause}, updated_at = ?
+                    SET {set_clause}
                     WHERE account_id = ?
-                """, values)
+                """, update_values)
             
-            # Update credentials if password was provided
+            # Handle password update with explicit cleanup
             if password is not None:
-                self.update_credential(account_id, {'password': password})
+                # First, delete existing credentials for this account
+                cursor.execute("""
+                    DELETE FROM credentials 
+                    WHERE broker_account_id = ?
+                """, (account_id,))
                 
+                # Then insert new encrypted credentials
+                encrypted_data = get_encryptor().encrypt(json.dumps({'password': password}))
+                cursor.execute("""
+                    INSERT INTO credentials (broker_account_id, encrypted_data)
+                    VALUES (?, ?)
+                """, (account_id, encrypted_data))
+            
+            # Commit the transaction
             conn.commit()
+            
+            # === POST-WRITE VERIFICATION ===
+            # Verify account data was saved correctly
+            cursor.execute("""
+                SELECT account_name, account_number, server, account_type, enabled
+                FROM broker_accounts
+                WHERE account_id = ?
+            """, (account_id,))
+            
+            row = cursor.fetchone()
+            if not row:
+                raise ValueError(f"Account {account_id} not found after update")
+                
+            saved_name, saved_number, saved_server, saved_type, saved_enabled = row
+            
+            # Verify each field that was supposed to be updated
+            if account_name is not None and saved_name != account_name:
+                raise ValueError(f"Account name verification failed: expected '{account_name}', got '{saved_name}'")
+            if account_number is not None and saved_number != account_number:
+                raise ValueError(f"Account number verification failed: expected '{account_number}', got '{saved_number}'")
+            if server is not None and saved_server != server:
+                raise ValueError(f"Server verification failed: expected '{server}', got '{saved_server}'")
+            if account_type is not None and saved_type != account_type:
+                raise ValueError(f"Account type verification failed: expected '{account_type}', got '{saved_type}'")
+            if enabled is not None and saved_enabled != enabled:
+                raise ValueError(f"Enabled status verification failed: expected {enabled}, got {saved_enabled}")
+            
+            # Verify password was saved (if provided)
+            if password is not None:
+                cursor.execute("""
+                    SELECT encrypted_data FROM credentials
+                    WHERE broker_account_id = ?
+                """, (account_id,))
+                
+                cred_row = cursor.fetchone()
+                if not cred_row:
+                    raise ValueError(f"Password credentials not found after update for account {account_id}")
+                    
+                # We can't decrypt to verify exact password, but we can verify structure
+                try:
+                    decrypted = get_encryptor().decrypt(cred_row[0])
+                    cred_data = json.loads(decrypted)
+                    if 'password' not in cred_data:
+                        raise ValueError(f"Password not found in decrypted credentials for account {account_id}")
+                except Exception as e:
+                    raise ValueError(f"Password verification failed: {e}")
+            
+        except Exception as e:
+            # Rollback on any error
+            conn.rollback()
+            raise e
         finally:
             self._close_conn(conn)
 

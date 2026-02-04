@@ -53,54 +53,46 @@ server_process = None
 
 
 def launch_dashboard() -> None:
-    """Lanza el dashboard de Streamlit en un proceso separado."""
-    global streamlit_process
+    """Lanza el dashboard de Streamlit en un proceso COMPLETAMENTE INDEPENDIENTE (detached)."""
     try:
-        logger.info("📊 Iniciando Dashboard Streamlit...")
+        logger.info("📊 Iniciando Dashboard Streamlit (proceso detached)...")
         
-        # Ejecutar streamlit en proceso separado
+        # Ejecutar streamlit en proceso completamente detached (no bloquea)
         streamlit_process = subprocess.Popen(
             [sys.executable, "-m", "streamlit", "run", "ui/dashboard.py", 
              "--server.port", "8503",
              "--server.headless", "true",
              "--browser.gatherUsageStats", "false"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            cwd=os.getcwd()
+            stdout=subprocess.DEVNULL,  # No capturar output
+            stderr=subprocess.DEVNULL,  # No capturar errores
+            cwd=os.getcwd(),
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0  # Detached en Windows
         )
         
-        # Esperar a que Streamlit esté listo
-        time.sleep(10)
+        logger.info("✅ Dashboard lanzado en proceso independiente (no bloquea)")
+        logger.info("🌐 Dashboard estará disponible en: http://localhost:8503")
         
-        if streamlit_process.poll() is None:
-            logger.info("✅ Dashboard disponible en: http://localhost:8503")
-            # Abrir navegador automáticamente
-            threading.Timer(1.0, lambda: webbrowser.open('http://localhost:8503')).start()
-        else:
-            # Si el proceso terminó, capturar error
-            stderr = None
-            if streamlit_process.stderr:
-                stderr = streamlit_process.stderr.read().decode()
-            logger.warning(f"⚠️  Dashboard no pudo iniciarse correctamente: {stderr if stderr else 'Sin información de error disponible.'}")
-            
+        # NO esperar - el cerebro continúa inmediatamente
+        
     except Exception as e:
         logger.error(f"❌ Error al iniciar dashboard: {e}")
 
 def launch_server() -> None:
-    """Lanza el servidor FastAPI (Uvicorn) en un proceso separado."""
-    global server_process
+    """Lanza el servidor FastAPI (Uvicorn) en un proceso COMPLETAMENTE INDEPENDIENTE (detached)."""
     try:
-        logger.info("🌐 Iniciando Servidor API (Cerebro)...")
-        # Ejecutar uvicorn como módulo en subproceso
+        logger.info("🌐 Iniciando Servidor API (Cerebro - detached)...")
+        # Ejecutar uvicorn como módulo en subproceso detached
         server_process = subprocess.Popen(
             [sys.executable, "-m", "uvicorn", "core_brain.server:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "warning"],
-            cwd=os.getcwd()
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            cwd=os.getcwd(),
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0
         )
-        time.sleep(2) # Dar tiempo para arrancar
-        if server_process.poll() is None:
-            logger.info("✅ Servidor API activo en: http://localhost:8000")
-        else:
-            logger.warning("⚠️  El servidor API no pudo iniciarse.")
+        logger.info("✅ Servidor API lanzado en proceso independiente")
+        logger.info("🔗 API estará disponible en: http://localhost:8000")
+        # NO esperar - continuar inmediatamente
+        
     except Exception as e:
         logger.error(f"❌ Error al iniciar servidor API: {e}")
 
@@ -118,49 +110,16 @@ async def main() -> None:
     Path("data_vault").mkdir(exist_ok=True)
     
     try:
-        # EDGE: Validar y provisionar cuentas demo maestras solo si es óptimo
-        # Inicializar componentes core
-        # 1. Storage Manager
-        logger.info("📦 Inicializando Storage Manager...")
-        storage = StorageManager()
-        # 2. Risk Manager
-        logger.info("⚖️  Inicializando Risk Manager...")
-        risk_manager = RiskManager(            storage=storage,            initial_capital=10000.0,
-            config_path='config/dynamic_params.json'
-        )
-        logger.info(f"   Capital: ${risk_manager.capital:,.2f}")
-        logger.info(f"   Riesgo por trade: {risk_manager.risk_per_trade:.1%}")
-        # 3. Data Provider Manager (DB Backend)
-        logger.info("📡 Inicializando Data Provider Manager (DB backend)...")
-        provider_manager = DataProviderManager()
-        data_provider = provider_manager
-        # Símbolos a monitorear
-        symbols = [
-            "EURUSD=X", "GBPUSD=X", "USDJPY=X", "AUDUSD=X", "USDCAD=X", "USDCHF=X",
-            "EURGBP=X", "EURJPY=X", "GBPJPY=X", "EURCHF=X", "EURAUD=X", "GBPAUD=X",
-            "NZDUSD=X", "AUDJPY=X", "CADJPY=X"
-        ]
-        orchestrator = None
-        try:
-            from core_brain.main_orchestrator import MainOrchestrator
-            scanner = ScannerEngine(assets=symbols, data_provider=data_provider)
-            signal_factory = SignalFactory(storage_manager=storage)
-            executor = OrderExecutor(risk_manager=risk_manager, storage=storage)
-            orchestrator = MainOrchestrator(
-                scanner=scanner,
-                signal_factory=signal_factory,
-                risk_manager=risk_manager,
-                executor=executor,
-                storage=storage
-            )
-            # Validar y provisionar cuentas demo EDGE solo si es óptimo
-            await orchestrator.ensure_optimal_demo_accounts()
-        except Exception as e:
-            logger.error(f"Error inicializando orquestador o provisión EDGE: {e}")
+        # === DASHBOARD PRIMERO (UI COMPLETAMENTE INDEPENDIENTE - NO BLOQUEA) ===
+        logger.info("🎨 Iniciando Dashboard (UI detached - no bloquea)...")
+        dashboard_thread = threading.Thread(target=launch_dashboard, daemon=True)
+        dashboard_thread.start()
+        # NO ESPERAR - Continuar inmediatamente con el cerebro
+        
+        # === SISTEMA CORE ===
         logger.info("📦 Inicializando Storage Manager...")
         storage = StorageManager()
         
-        # 2. Risk Manager
         logger.info("⚖️  Inicializando Risk Manager...")
         risk_manager = RiskManager(
             storage=storage,
@@ -170,10 +129,8 @@ async def main() -> None:
         logger.info(f"   Capital: ${risk_manager.capital:,.2f}")
         logger.info(f"   Riesgo por trade: {risk_manager.risk_per_trade:.1%}")
         
-        # 3. Data Provider Manager (DB Backend)
         logger.info("📡 Inicializando Data Provider Manager (DB backend)...")
         provider_manager = DataProviderManager()
-        # Inyectar el manager como provider (implementa el mismo protocolo fetch_ohlc)
         data_provider = provider_manager
         
         # Símbolos a monitorear - FOREX MAJORS + MINORS + EXOTICS
@@ -214,7 +171,6 @@ async def main() -> None:
         ]
         logger.info(f"   Símbolos: {len(symbols)} pares forex")
         logger.info(f"   - Majors: 6 | Minors: 6 | Commodities: 4 | Exotics: 6 | Scandinavian: 2")
-        
         
         # === FUNCIONES AUXILIARES EDGE ===
         async def run_edge_tuner_loop(edge_tuner: EdgeTuner) -> None:
@@ -265,34 +221,13 @@ async def main() -> None:
         # 6. Order Executor (carga cuentas habilitadas desde DB)
         logger.info("🎯 Inicializando Order Executor...")
         
-        # Cargar cuentas de brokers habilitadas desde la base de datos
-        enabled_accounts = storage.get_broker_accounts(enabled_only=True)
-        connectors = {}
-        
-        if enabled_accounts:
-            logger.info(f"   Cargando {len(enabled_accounts)} cuenta(s) habilitada(s)...")
-            for account in enabled_accounts:
-                broker_name = account['broker_id']
-                platform = account['platform_id']
-                acc_type = account['account_type']
-                
-                logger.info(f"      {broker_name} ({platform}) - {acc_type}")
-                
-                # TODO: Instanciar conectores según platform_id
-                # Por ahora, solo paper trading hasta implementar conectores completos
-            
-            logger.info("   ⚠️  Conectores en desarrollo - usando Paper Trading temporalmente")
-        else:
-            logger.info("   Sin cuentas configuradas - usando Paper Trading")
-            logger.info("   💡 Configura cuentas en: Dashboard → Configuración de Brokers")
-        
         # Inyectar PaperConnector
-        connectors[ConnectorType.PAPER] = PaperConnector()
+        connectors = {ConnectorType.PAPER: PaperConnector()}
         
         executor = OrderExecutor(
             risk_manager=risk_manager,
             storage=storage,
-            connectors=connectors  # Por ahora vacío, se implementará con conectores
+            connectors=connectors
         )
         
         # 7. Closing Monitor (Feedback Loop)
@@ -304,14 +239,14 @@ async def main() -> None:
         )
         logger.info("   Intervalo: 60 segundos | Estado: Activo")
         
-        # 7. EDGE Tuner (Auto-calibración)
+        # 8. EDGE Tuner (Auto-calibración)
         logger.info("🤖 Inicializando EDGE Tuner...")
         edge_tuner = EdgeTuner(
             storage=storage,
             config_path="config/dynamic_params.json"
         )
         
-        # 8. Main Orchestrator
+        # 9. Main Orchestrator
         logger.info("🧠 Inicializando Main Orchestrator...")
         orchestrator = MainOrchestrator(
             scanner=scanner,
@@ -321,39 +256,36 @@ async def main() -> None:
             storage=storage
         )
         
+        # === INICIAR MT5 EN BACKGROUND (después de que todo esté listo) ===
+        logger.info("🔌 Iniciando MT5 connection en background...")
+        if hasattr(executor, 'connectors') and ConnectorType.METATRADER5 in executor.connectors:
+            mt5_connector = executor.connectors[ConnectorType.METATRADER5]
+            mt5_connector.start()  # Inicia conexión en hilo separado
+            logger.info("✅ MT5 background connection started")
+        
         logger.info("")
         logger.info("=" * 70)
         logger.info("✅ SISTEMA COMPLETO INICIADO")
         logger.info("=" * 70)
         logger.info("")
         
-        # Iniciar Servidor API en hilo separado (lanza subproceso)
+        # Iniciar Servidor API en hilo separado
         server_thread = threading.Thread(target=launch_server, daemon=True)
         server_thread.start()
-        
-        # Iniciar Dashboard en hilo separado
-        dashboard_thread = threading.Thread(target=launch_dashboard, daemon=True)
-        dashboard_thread.start()
         
         # Iniciar Scanner en hilo separado
         logger.info("🔄 Iniciando Scanner...")
         scanner_thread = threading.Thread(target=scanner.run, daemon=True)
         scanner_thread.start()
         logger.info("✅ Scanner ejecutándose")
-        logger.info("")
         
         # Iniciar Closing Monitor en tarea asíncrona
         logger.info("🔄 Iniciando Closing Monitor...")
         monitor_task = asyncio.create_task(monitor.start())
         logger.info("✅ Closing Monitor activo (Feedback Loop)")
-        logger.info("")
-        
-        # Esperar a que dashboard esté listo
-        time.sleep(2)
         
         logger.info("🌐 Dashboard: http://localhost:8503")
         logger.info("🛑 Presiona Ctrl+C para detener")
-        logger.info("")
         
         # Crear tarea asíncrona del EDGE Tuner
         tuner_task = asyncio.create_task(run_edge_tuner_loop(edge_tuner))
