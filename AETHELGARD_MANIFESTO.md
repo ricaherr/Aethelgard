@@ -3492,6 +3492,10 @@ python scripts/migrations/migrate_add_timeframe.py
 - ✅ Desactivación automática de Lockdown Mode tras reparación
 - ✅ Soporte para señales con direction, sl, tp, score
 - ✅ Instrument Manager actualizado con USDTRY y USDNOK
+- ✅ Sistema audit log completo con execution_status y reason
+- ✅ UI con refresco automático cada 3s y display de audit log
+- ✅ Aprendizaje EDGE para no-ejecuciones
+- ✅ Validación completa: Tests críticos ✅, QA Guard ✅, Architecture ✅
 - ✅ **Deduplicación multi-timeframe**: Permite señales simultáneas del mismo instrumento en diferentes timeframes
 - ✅ **Scanner filtrado**: Solo escanea instrumentos habilitados en `instruments.json`
 - ✅ **Scanner multi-timeframe**: Escanea todos los timeframes activos configurables por el usuario

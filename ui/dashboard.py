@@ -2581,7 +2581,7 @@ if __name__ == "__main__":
     import threading
     import time
     
-    def auto_refresh():
+    def auto_refresh() -> None:
         """Función para refresco automático cada 3 segundos"""
         while True:
             time.sleep(3)

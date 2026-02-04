@@ -190,62 +190,89 @@ class MT5Connector:
         Returns True if successful, False otherwise.
         """
         try:
-            # Initialize MT5 with specific terminal path (IC Markets)
-            terminal_path = r"C:\Program Files\MetaTrader 5 IC Markets Global\terminal64.exe"
-            if not mt5.initialize(terminal_path):
-                error = mt5.last_error()
-                logger.error(f"MT5 initialization failed: {error}")
+            if not self._initialize_mt5():
                 return False
-            
-            # Get credentials
-            login = self.config.get('login')
-            password = self.config.get('password')
-            server = self.config.get('server')
-            
-            if not login or not password or not server:
-                logger.error("Incomplete MT5 credentials")
+                
+            if not self._validate_credentials():
                 return False
-            
-            # Login attempt
-            authorized = mt5.login(
-                login=int(login),
-                password=str(password).strip(),
-                server=str(server).strip()
-            )
-            
-            if not authorized:
-                error = mt5.last_error()
-                logger.error(f"MT5 login failed: {error}")
+                
+            if not self._perform_mt5_login():
                 return False
-            
-            # Verify account
-            account_info = mt5.account_info()
-            if account_info is None:
-                logger.error("Could not retrieve MT5 account information")
+                
+            if not self._verify_demo_account():
                 return False
-            
-            # Check demo account
-            self.is_demo = account_info.trade_mode == mt5.ACCOUNT_TRADE_MODE_DEMO
-            if not self.is_demo:
-                logger.critical("⚠️  CONNECTED TO REAL ACCOUNT! Trading disabled.")
-                mt5.shutdown()
-                return False
-            
-            self.is_connected = True
-            self.connection_state = ConnectionState.CONNECTED
-            
-            logger.info("=" * 60)
-            logger.info("✅ MT5 Connected Successfully!")
-            logger.info(f"   Account: {account_info.login}")
-            logger.info(f"   Server: {account_info.server}")
-            logger.info(f"   Balance: {account_info.balance:,.2f} {account_info.currency}")
-            logger.info("=" * 60)
-            
+                
+            self._log_connection_success()
             return True
             
         except Exception as e:
             logger.error(f"Error in MT5 connection attempt: {e}")
             return False
+
+    def _initialize_mt5(self) -> bool:
+        """Initialize MT5 terminal"""
+        terminal_path = r"C:\Program Files\MetaTrader 5 IC Markets Global\terminal64.exe"
+        if not mt5.initialize(terminal_path):
+            error = mt5.last_error()
+            logger.error(f"MT5 initialization failed: {error}")
+            return False
+        return True
+
+    def _validate_credentials(self) -> bool:
+        """Validate that all required credentials are present"""
+        login = self.config.get('login')
+        password = self.config.get('password')
+        server = self.config.get('server')
+        
+        if not login or not password or not server:
+            logger.error("Incomplete MT5 credentials")
+            return False
+        return True
+
+    def _perform_mt5_login(self) -> bool:
+        """Perform MT5 login with credentials"""
+        login = self.config.get('login')
+        password = self.config.get('password')
+        server = self.config.get('server')
+        
+        authorized = mt5.login(
+            login=int(login),
+            password=str(password).strip(),
+            server=str(server).strip()
+        )
+        
+        if not authorized:
+            error = mt5.last_error()
+            logger.error(f"MT5 login failed: {error}")
+            return False
+        return True
+
+    def _verify_demo_account(self) -> bool:
+        """Verify connected account is demo and set flags"""
+        account_info = mt5.account_info()
+        if account_info is None:
+            logger.error("Could not retrieve MT5 account information")
+            return False
+        
+        self.is_demo = account_info.trade_mode == mt5.ACCOUNT_TRADE_MODE_DEMO
+        if not self.is_demo:
+            logger.critical("⚠️  CONNECTED TO REAL ACCOUNT! Trading disabled.")
+            mt5.shutdown()
+            return False
+            
+        self.is_connected = True
+        self.connection_state = ConnectionState.CONNECTED
+        return True
+
+    def _log_connection_success(self) -> None:
+        """Log successful connection details"""
+        account_info = mt5.account_info()
+        logger.info("=" * 60)
+        logger.info("✅ MT5 Connected Successfully!")
+        logger.info(f"   Account: {account_info.login}")
+        logger.info(f"   Server: {account_info.server}")
+        logger.info(f"   Balance: {account_info.balance:,.2f} {account_info.currency}")
+        logger.info("=" * 60)
         """
         Load MT5 configuration from DATABASE (single source of truth)
         
@@ -462,7 +489,7 @@ class MT5Connector:
         if self.retry_timer is not None:
             self.retry_timer.cancel()
         
-        def retry():
+        def retry() -> None:
             logger.info("🔄 Retrying MT5 connection...")
             self.connect()
         
@@ -641,55 +668,69 @@ class MT5Connector:
             return
         
         try:
-            from_date = datetime.now() - timedelta(hours=hours_back)
-            to_date = datetime.now()
+            from_date, to_date = self._get_reconciliation_date_range(hours_back)
+            deals = self._get_historical_deals(from_date, to_date)
             
-            # Get all deals in the period
-            deals = mt5.history_deals_get(from_date, to_date)
-            
-            if deals is None or len(deals) == 0:
+            if not deals:
                 logger.info("No deals found in reconciliation period")
                 return
             
-            processed_count = 0
-            
-            # Process exit deals only
-            for deal in deals:
-                # Only our trades
-                if deal.magic != self.magic_number:
-                    continue
-                
-                # Only exits
-                if deal.entry != mt5.DEAL_ENTRY_OUT:
-                    continue
-                
-                # Find the corresponding position (entry) data
-                position = self._find_position_for_deal(deal, from_date, to_date)
-                if not position:
-                    logger.warning(f"Could not find position data for deal {deal.ticket}")
-                    continue
-                
-                # Create the event
-                event = self._create_trade_closed_event(position, deal)
-                
-                # Wrap in BrokerEvent
-                broker_event = BrokerEvent.from_trade_closed(event)
-                
-                # Emit to listener (it handles idempotency)
-                try:
-                    success = listener.handle_trade_closed_event(broker_event)
-                    if success:
-                        processed_count += 1
-                        logger.info(f"Reconciled trade: {event.ticket} {event.symbol} {event.result.value}")
-                    else:
-                        logger.debug(f"Trade already processed: {event.ticket}")
-                except Exception as e:
-                    logger.error(f"Error processing reconciled trade {event.ticket}: {e}")
-            
+            processed_count = self._process_reconciliation_deals(deals, listener, from_date, to_date, hours_back)
             logger.info(f"Reconciliation complete. Processed {processed_count} trades from last {hours_back}h")
             
         except Exception as e:
             logger.error(f"Error during reconciliation: {e}")
+
+    def _get_reconciliation_date_range(self, hours_back: int) -> tuple:
+        """Get date range for reconciliation"""
+        from_date = datetime.now() - timedelta(hours=hours_back)
+        to_date = datetime.now()
+        return from_date, to_date
+
+    def _get_historical_deals(self, from_date: datetime, to_date: datetime) -> Optional[List]:
+        """Get historical deals from MT5"""
+        deals = mt5.history_deals_get(from_date, to_date)
+        return deals if deals is not None else []
+
+    def _process_reconciliation_deals(self, deals: List, listener: Any, from_date: datetime, to_date: datetime, hours_back: int) -> int:
+        """Process deals for reconciliation and return count of processed trades"""
+        processed_count = 0
+        
+        # Process exit deals only
+        for deal in deals:
+            if not self._is_our_exit_deal(deal):
+                continue
+                
+            position = self._find_position_for_deal(deal, from_date, to_date)
+            if not position:
+                logger.warning(f"Could not find position data for deal {deal.ticket}")
+                continue
+            
+            if self._process_reconciled_trade(position, deal, listener):
+                processed_count += 1
+        
+        return processed_count
+
+    def _is_our_exit_deal(self, deal: Any) -> bool:
+        """Check if deal is our exit deal"""
+        return deal.magic == self.magic_number and deal.entry == mt5.DEAL_ENTRY_OUT
+
+    def _process_reconciled_trade(self, position: Any, deal: Any, listener: Any) -> bool:
+        """Process a single reconciled trade and return success"""
+        try:
+            event = self._create_trade_closed_event(position, deal)
+            broker_event = BrokerEvent.from_trade_closed(event)
+            
+            success = listener.handle_trade_closed_event(broker_event)
+            if success:
+                logger.info(f"Reconciled trade: {event.ticket} {event.symbol} {event.result.value}")
+            else:
+                logger.debug(f"Trade already processed: {event.ticket}")
+            
+            return success
+        except Exception as e:
+            logger.error(f"Error processing reconciled trade {deal.ticket}: {e}")
+            return False
     
     def _find_position_for_deal(self, deal: Any, from_date: datetime, to_date: datetime) -> Optional[Any]:
         """
