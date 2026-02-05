@@ -123,6 +123,21 @@ class StorageManager:
         if conn is not self._persistent_conn:
             conn.close()
 
+    def execute_query(self, query: str, params: tuple = ()) -> List[Dict]:
+        """Execute a SELECT query and return results as list of dicts"""
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+        finally:
+            self._close_conn(conn)
+
+    def get_edge_learning_history(self, limit=20):
+        query = "SELECT * FROM edge_learning ORDER BY timestamp DESC LIMIT ?"
+        return self.execute_query(query, (limit,))
+
     def _initialize_db(self) -> None:
         """Initialize database tables if they don't exist"""
         conn = self._get_conn()
@@ -1659,23 +1674,6 @@ class StorageManager:
             conn.commit()
         except Exception as e:
             logger.error(f"Error saving EDGE learning: {e}")
-        finally:
-            self._close_conn(conn)
-
-    def get_edge_learning_history(self, limit: int = 50) -> List[Dict]:
-        """
-        Get recent EDGE learning events.
-        """
-        conn = self._get_conn()
-        try:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT * FROM edge_learning 
-                ORDER BY timestamp DESC 
-                LIMIT ?
-            """, (limit,))
-            rows = cursor.fetchall()
-            return [dict(row) for row in rows]
         finally:
             self._close_conn(conn)
 

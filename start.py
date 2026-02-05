@@ -56,12 +56,36 @@ server_process = None
 def launch_dashboard() -> None:
     """Lanza el dashboard de Streamlit en un proceso COMPLETAMENTE INDEPENDIENTE (detached)."""
     try:
+        logger.info("🧹 Matando procesos colgados en puerto 8504...")
+        
+        # Matar procesos colgados en puerto 8504 (Cold Start)
+        try:
+            import subprocess
+            # Encontrar PID del proceso que usa el puerto 8504
+            result = subprocess.run(
+                ["netstat", "-ano", "|", "findstr", ":8504"],
+                capture_output=True, text=True, shell=True
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                lines = result.stdout.strip().split('\n')
+                for line in lines:
+                    if 'LISTENING' in line:
+                        parts = line.split()
+                        if len(parts) >= 5:
+                            pid = parts[-1]
+                            logger.info(f"🪓 Matando proceso PID {pid} en puerto 8504")
+                            subprocess.run(["taskkill", "/PID", pid, "/F"], 
+                                         capture_output=True)
+                            time.sleep(1)  # Esperar a que termine
+        except Exception as e:
+            logger.warning(f"No se pudo matar procesos colgados: {e}")
+        
         logger.info("📊 Iniciando Dashboard Streamlit (proceso detached)...")
         
         # Ejecutar streamlit en proceso completamente detached (no bloquea)
         streamlit_process = subprocess.Popen(
             [sys.executable, "-m", "streamlit", "run", "ui/dashboard.py", 
-             "--server.port", "8503",
+             "--server.port", "8504",  # Cambiado a 8504 como pidió el usuario
              "--server.headless", "true",
              "--browser.gatherUsageStats", "false"],
             stdout=subprocess.DEVNULL,  # No capturar output
@@ -71,7 +95,7 @@ def launch_dashboard() -> None:
         )
         
         logger.info("✅ Dashboard lanzado en proceso independiente (no bloquea)")
-        logger.info("🌐 Dashboard estará disponible en: http://localhost:8503")
+        logger.info("🌐 Dashboard estará disponible en: http://localhost:8504")
         
         # NO esperar - el cerebro continúa inmediatamente
         

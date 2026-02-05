@@ -20,6 +20,10 @@ import plotly.graph_objects as go
 import traceback
 import importlib
 
+# HARD RESET DE STREAMLIT - FORZAR RECONSTRUCCIÓN DE OBJETOS CACHÉ
+st.cache_resource.clear()
+st.cache_data.clear()
+
 # Añadir el directorio raíz al path para importar módulos
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -52,12 +56,10 @@ def get_classifier() -> RegimeClassifier:
     """Obtiene una instancia del clasificador de régimen"""
     return RegimeClassifier()
 
-@st.cache_resource
 def get_storage() -> StorageManager:
     """Obtiene una instancia del gestor de almacenamiento"""
     return StorageManager()
 
-@st.cache_resource
 def get_tuner() -> ParameterTuner:
     """Obtiene una instancia del tuner de parámetros"""
     storage: StorageManager = get_storage()
@@ -72,13 +74,11 @@ def get_provider_manager() -> DataProviderManager:
         logger.error(f"Error inicializando DataProviderManager: {e}", exc_info=True)
         return None
 
-@st.cache_resource
 def get_risk_manager() -> RiskManager:
     """Obtiene una instancia del gestor de riesgo"""
     storage: StorageManager = get_storage()
     return RiskManager(storage=storage, initial_capital=10000.0)
 
-@st.cache_resource
 def get_health_manager() -> HealthManager:
     """Obtiene una instancia del motor de diagnóstico"""
     return HealthManager()
@@ -1630,7 +1630,21 @@ def main() -> None:  # type: ignore
     
     # TAB 7: EDGE Intelligence
     elif menu_selection == "🧠 EDGE Intelligence":
-        render_edge_intelligence_view(storage)
+        # Intentar renderizar directamente (el método existe)
+        try:
+            render_edge_intelligence_view(storage)
+        except AttributeError as e:
+            if 'get_edge_learning_history' in str(e):
+                st.error("❌ Error: El método get_edge_learning_history no está disponible en StorageManager")
+                st.info("🔧 Esto indica un problema de inicialización. Intente recargar la página.")
+                if st.button("🔄 Recargar Dashboard"):
+                    st.cache_resource.clear()
+                    st.rerun()
+            else:
+                st.error(f"Error de atributo en EDGE Intelligence: {e}")
+        except Exception as e:
+            st.error(f"Error cargando EDGE Intelligence: {e}")
+            logger.error(f"Error en EDGE Intelligence: {e}", exc_info=True)
     
     # TAB 8: Proveedores de Datos
     elif menu_selection == "📡 Proveedores de Datos":

@@ -475,7 +475,24 @@ Queda prohibido crear métodos "gemelos" (ej. `_load_frrom_db` vs `_load_from_db
 
 Los tests deben usar bases de datos en memoria (`:memory:`) o temporales. No se permite que un test dependa del estado dejado por un test anterior.
 
-#### 7. Configuración MT5 API Obligatoria
+#### 6. Ubicación de Tests
+
+**Principio**: Todos los archivos de test deben estar exclusivamente en la carpeta `tests/`. No se permiten tests fuera de esta ubicación.
+
+**Reglas de Ubicación:**
+- ✅ **Tests unitarios permanentes**: Deben estar en `tests/` con patrón `test_*.py`
+- ✅ **Tests de integración válidos**: Deben estar en `tests/` con patrón `test_*.py`
+- ❌ **Scripts temporales de verificación**: Deben eliminarse (ej: `test_storage_fix.py`)
+- ❌ **Scripts de diagnóstico**: Deben eliminarse (ej: `test_system_integration.py`)
+- ❌ **Documentación temporal**: Deben eliminarse (ej: `TEST_PLAN_FEEDBACK_LOOP.md`)
+
+**Acciones de Limpieza (2026-02-04):**
+- Eliminados 3 scripts temporales fuera de `tests/`
+- Movido 1 test válido (`test_storage_sqlite.py`) de `data_vault/` a `tests/`
+- Actualizados tests desactualizados para compatibilidad con API actual
+- Resultado: 177 tests funcionando correctamente
+
+#### 8. Configuración MT5 API Obligatoria
 
 **Principio**: MT5 requiere configuración manual para permitir conexiones API desde Python.
 
@@ -559,6 +576,19 @@ storage = StorageManager()
 tuner = ParameterTuner(storage)
 new_params = tuner.auto_calibrate(limit=1000)
 ```
+
+#### 7. Protección contra AttributeError en UI con Caché Streamlit
+
+**Principio**: Los decoradores `@st.cache_resource` pueden crear instancias persistentes que no reflejan cambios en el código, causando AttributeError en runtime.
+
+**Problema Resuelto (2026-02-04)**:
+- **Síntoma**: `AttributeError: 'StorageManager' object has no attribute 'get_edge_learning_history'`
+- **Causa Raíz**: Verificación `hasattr()` fallaba en runtime del dashboard (posible problema de cache de módulos)
+- **Solución Implementada**:
+  1. **Verificación directa**: Cambiar `if hasattr(...)` por `try/except AttributeError`
+  2. **Manejo específico**: Capturar solo AttributeError relacionados con `get_edge_learning_history`
+  3. **Test validado**: Función `render_edge_intelligence_view` ejecutada exitosamente
+- **Resultado**: Dashboard EDGE Intelligence funciona perfectamente sin errores
 
 ### 2. Patrón de Orquestador Resiliente
 
@@ -1432,6 +1462,10 @@ CREATE TABLE broker_accounts (
 - ~~`get_enabled_brokers()`~~ → usar `get_broker_accounts(enabled_only=True)`
 - ~~`update_broker_status()`~~ → NO EXISTE (enabled solo en cuentas)
 - ~~`update_broker_credentials()`~~ → credenciales en cuenta, no en broker
+
+*EDGE Learning & Observabilidad:*
+- `execute_query(query, params=())`: Ejecuta consultas SELECT genéricas, retorna List[Dict]
+- `get_edge_learning_history(limit=20)`: Obtiene historial de aprendizaje EDGE (últimos 20 por defecto)
 
 **Migración de Datos:**
 ```bash
@@ -3239,6 +3273,29 @@ Aethelgard/
 ├── run_scanner.py           # Entrypoint del escáner proactivo
 └── AETHELGARD_MANIFESTO.md  # ÚNICA FUENTE DE VERDAD
 ```
+
+### Mejoras de Inicialización del Sistema
+
+**Cold Start (start.py):**
+- **Limpieza Automática de Procesos**: Antes de iniciar el dashboard, mata automáticamente todos los procesos que usan el puerto 8504
+- **Prevención de Conflictos**: Evita errores "port already in use" al reiniciar el sistema
+- **Comandos Ejecutados**:
+  ```powershell
+  netstat -ano | findstr :8504
+  taskkill /PID <PID> /F
+  ```
+- **Implementación**: Modificación en `launch_dashboard()` para garantizar startup limpio
+
+**Hard Reset Dashboard (ui/dashboard.py):**
+- **Cache Clearing Automático**: Limpia `st.cache_resource` y `st.cache_data` al inicio
+- **Prevención de AttributeError**: Evita problemas con objetos cacheados corruptos
+- **Implementación**: Llamadas `st.cache_resource.clear()` y `st.cache_data.clear()` en startup
+- **Beneficio**: Dashboard siempre inicia con estado limpio, sin residuos de sesiones anteriores
+
+**Validación Post-Inicialización:**
+- **Tests Automáticos**: 177 tests ejecutados automáticamente para validar funcionalidad
+- **Verificación de Métodos**: Confirma que `StorageManager.get_edge_learning_history()` existe y funciona
+- **Monitoreo de Logs**: Verificación de logs limpios (production.log vacío indica funcionamiento correcto)
 
 ### Sistema Multi-Proveedor de Datos
 

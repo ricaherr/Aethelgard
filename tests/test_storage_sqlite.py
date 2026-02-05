@@ -65,20 +65,16 @@ def test_signal_persistence(storage: StorageManager) -> None:
     assert saved_signal["metadata"]["score"] == 95
 
 def test_trade_result_persistence(storage: StorageManager) -> None:
-    """Test saving trade results for EDGE tuner"""
+    """Test saving and retrieving trade results"""
     trade = {
-        "signal_id": "test-sig-1",
+        "id": "test_trade_123",
+        "signal_id": "signal_456",
         "symbol": "GBPUSD",
         "entry_price": 1.2500,
         "exit_price": 1.2550,
-        "pips": 50.0,
-        "profit_loss": 500.0,
-        "duration_minutes": 60,
-        "is_win": True,
-        "exit_reason": "take_profit",
-        "market_regime": "TREND",
-        "volatility_atr": 0.0020,
-        "parameters_used": {"adx_threshold": 25}
+        "profit": 50.0,
+        "exit_reason": "Take Profit",
+        "close_time": datetime.now().isoformat()
     }
     
     storage.save_trade_result(trade)
@@ -86,8 +82,8 @@ def test_trade_result_persistence(storage: StorageManager) -> None:
     trades = storage.get_recent_trades(limit=10)
     assert len(trades) == 1
     assert trades[0]["symbol"] == "GBPUSD"
-    assert trades[0]["is_win"] is True
-    assert trades[0]["parameters_used"]["adx_threshold"] == 25
+    assert trades[0]["profit"] == 50.0
+    assert trades[0]["exit_reason"] == "Take Profit"
 
 def test_market_state_logging(storage: StorageManager) -> None:
     """Test logging market states for tuner"""
@@ -101,6 +97,6 @@ def test_market_state_logging(storage: StorageManager) -> None:
     
     storage.log_market_state(state)
     
-    states = storage.get_market_states(limit=10, symbol="EURUSD")
+    states = storage.get_market_state_history(symbol="EURUSD", limit=10)
     assert len(states) == 1
-    assert states[0]["adx"] == 30.5
+    assert states[0]["data"]["adx"] == 30.5
