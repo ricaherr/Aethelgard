@@ -188,14 +188,61 @@ class SignalFactory:
         
         # Verificar posición abierta
         if self.storage_manager.has_open_position(signal.symbol):
-            # Reconcile with MT5 reality before discarding
+            # Reconcilia directamente con MT5 reality
             if self.mt5_connector:
-                logger.debug(f"🔍 Reconciling positions for {signal.symbol} before duplicate check")
-                self.storage_manager.reconcile_open_positions(self.mt5_connector)
+                logger.debug(f"🔍 Reconciling position for {signal.symbol} with MT5")
+                # Get open signal ID
+                open_signal_id = self.storage_manager.get_open_signal_id(signal.symbol)
+                if open_signal_id:
+                    # Check MT5 positions
+                    real_positions = self.mt5_connector.get_open_positions()
+                    if real_positions is not None:
+                        real_symbols = {pos.get('symbol') for pos in real_positions}
+                        if signal.symbol not in real_symbols:
+                            # Ghost position detected - clear it
+                            self.storage_manager._clear_ghost_position_inline(signal.symbol)
+                            logger.info(f"🧹 Cleared ghost position for {signal.symbol} (ID: {open_signal_id})")
+                            # EDGE Learning
+                            self.storage_manager.save_edge_learning(
+                                detection=f"Discrepancia DB vs MT5: {signal.symbol} tiene posición en DB pero no en MT5",
+                                action_taken="Limpieza de registros fantasma",
+                                learning="El delay de cierre en MT5 es de 200ms, ajustar timeout",
+                                details=f"Signal ID: {open_signal_id}"
+                            )
+                        else:
+                            # Position exists in MT5, keep as is
+                            pass
+                    else:
+                        logger.warning("Failed to get MT5 positions for reconciliation")
                 # Check again after reconciliation
                 if self.storage_manager.has_open_position(signal.symbol):
+                    # Volcado por excepción técnica: posición abierta
+                    score = signal.metadata.get('score', 0)
+                    lot_size = signal.volume
+                    risk_usd = abs(signal.entry_price - signal.stop_loss) * lot_size * 100000
+                    ghost_id = self.storage_manager.get_open_signal_id(signal.symbol)
+                    dump = {
+                        "Razón": "Posición abierta existente",
+                        "Score": score,
+                        "LotSize": lot_size,
+                        "Riesgo_$": round(risk_usd, 2),
+                        "ID_Posicion_Existente": ghost_id or "UNKNOWN"
+                    }
+                    logger.info(f"🧠 VOLCADO EXCEPCIÓN: Señal descartada por posición abierta: {dump}")
                     return True
             else:
+                # Sin MT5, asumir existe
+                score = signal.metadata.get('score', 0)
+                lot_size = signal.volume
+                risk_usd = abs(signal.entry_price - signal.stop_loss) * lot_size * 100000
+                dump = {
+                    "Razón": "Posición abierta (sin MT5 para verificar)",
+                    "Score": score,
+                    "LotSize": lot_size,
+                    "Riesgo_$": round(risk_usd, 2),
+                    "ID_Posicion_Existente": "UNKNOWN"
+                }
+                logger.info(f"🧠 VOLCADO EXCEPCIÓN: Señal descartada por posición abierta: {dump}")
                 return True
         
         # Verificar señal reciente (ventana dinámica basada en timeframe)
@@ -204,6 +251,18 @@ class SignalFactory:
             signal_type=signal_type_str, 
             timeframe=signal.timeframe
         ):
+            # Volcado por excepción técnica: señal reciente
+            score = signal.metadata.get('score', 0)
+            lot_size = signal.volume
+            risk_usd = abs(signal.entry_price - signal.stop_loss) * lot_size * 100000
+            dump = {
+                "Razón": "Señal reciente duplicada",
+                "Score": score,
+                "LotSize": lot_size,
+                "Riesgo_$": round(risk_usd, 2),
+                "Timeframe": signal.timeframe
+            }
+            logger.info(f"🧠 VOLCADO EXCEPCIÓN: Señal descartada por duplicado reciente: {dump}")
             return True
         
         return False
@@ -219,20 +278,6 @@ class SignalFactory:
                 f"Strategy: {signal.metadata.get('strategy_id')} | "
                 f"Score: {signal.metadata.get('score', 0):.1f}"
             )
-            
-            # Volcado de memoria para señales de alto score
-            score = signal.metadata.get('score', 0)
-            if score > 90:
-                lot_size = signal.volume
-                risk_usd = abs(signal.entry_price - signal.stop_loss) * lot_size * 100000  # Approx for EURUSD
-                ghost_position_id = self.storage_manager.get_open_signal_id(signal.symbol)
-                dump = {
-                    "Score": score,
-                    "LotSize": lot_size,
-                    "Riesgo_$": round(risk_usd, 2),
-                    "ID_Posicion_Ghost": ghost_position_id or "NONE"
-                }
-                logger.info(f"🧠 VOLCADO MEMORIA SEÑAL ALTO SCORE: {dump}")
             
             # 2. Notificación
             # TODO: Hacer esto más genérico en el futuro

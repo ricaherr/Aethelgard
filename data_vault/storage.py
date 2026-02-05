@@ -273,6 +273,18 @@ class StorageManager:
             )
         """)
         
+        # EDGE learning table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS edge_learning (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                detection TEXT NOT NULL,
+                action_taken TEXT NOT NULL,
+                learning TEXT NOT NULL,
+                details TEXT
+            )
+        """)
+        
         # Add type column to data_providers if it doesn't exist
         cursor.execute("PRAGMA table_info(data_providers)")
         columns = [row[1] for row in cursor.fetchall()]
@@ -1592,76 +1604,6 @@ class StorageManager:
         finally:
             self._close_conn(conn)
 
-    def clear_ghost_position(self, symbol: str) -> None:
-        """
-        Mark ghost positions as closed for a symbol.
-        Used when MT5 has no positions but DB thinks there are.
-        """
-        conn = self._get_conn()
-        try:
-            cursor = conn.cursor()
-            # Mark executed signals without trade results as closed
-            cursor.execute("""
-                UPDATE signals 
-                SET status = 'CLOSED', 
-                    metadata = json_set(COALESCE(metadata, '{}'), '$.exit_reason', 'GHOST_CLEARED')
-                WHERE symbol = ? 
-                AND status = 'EXECUTED'
-                AND id NOT IN (SELECT signal_id FROM trade_results WHERE signal_id IS NOT NULL)
-            """, (symbol,))
-            cleared_count = cursor.rowcount
-            conn.commit()
-            if cleared_count > 0:
-                logger.info(f"🧹 Cleared {cleared_count} ghost positions for {symbol}")
-        except Exception as e:
-            logger.error(f"Error clearing ghost positions for {symbol}: {e}")
-        finally:
-            self._close_conn(conn)
-
-    def reconcile_open_positions(self, mt5_connector) -> None:
-        """
-        Reconcile DB open positions with real MT5 positions.
-        Clears ghost positions that don't exist in MT5.
-        """
-        if not mt5_connector or not mt5_connector.is_connected:
-            logger.warning("MT5 connector not available for reconciliation")
-            return
-
-        # Get symbols with open positions in DB
-        conn = self._get_conn()
-        try:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT DISTINCT symbol FROM signals 
-                WHERE status = 'EXECUTED'
-                AND id NOT IN (SELECT signal_id FROM trade_results WHERE signal_id IS NOT NULL)
-            """)
-            db_open_symbols = {row[0] for row in cursor.fetchall()}
-        finally:
-            self._close_conn(conn)
-
-        if not db_open_symbols:
-            logger.debug("No open positions in DB to reconcile")
-            return
-
-        # Get real MT5 positions
-        real_positions = mt5_connector.get_open_positions()
-        if real_positions is None:
-            logger.error("Failed to get MT5 positions for reconciliation")
-            return
-
-        real_symbols = {pos.get('symbol') for pos in real_positions}
-
-        # Find ghost symbols (in DB but not in MT5)
-        ghost_symbols = db_open_symbols - real_symbols
-
-        if ghost_symbols:
-            logger.info(f"🔍 Found {len(ghost_symbols)} ghost positions: {ghost_symbols}")
-            for symbol in ghost_symbols:
-                self.clear_ghost_position(symbol)
-        else:
-            logger.debug("No ghost positions found - DB and MT5 are synchronized")
-
     def get_open_signal_id(self, symbol: str) -> Optional[str]:
         """
         Get the signal ID of the open position for a symbol.
@@ -1679,6 +1621,61 @@ class StorageManager:
             """, (symbol,))
             row = cursor.fetchone()
             return row[0] if row else None
+        finally:
+            self._close_conn(conn)
+
+    def _clear_ghost_position_inline(self, symbol: str) -> None:
+        """
+        Clear ghost position inline (fused logic, no separate function).
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE signals 
+                SET status = 'CLOSED', 
+                    metadata = json_set(COALESCE(metadata, '{}'), '$.exit_reason', 'GHOST_CLEARED')
+                WHERE symbol = ? 
+                AND status = 'EXECUTED'
+                AND id NOT IN (SELECT signal_id FROM trade_results WHERE signal_id IS NOT NULL)
+            """, (symbol,))
+            conn.commit()
+        except Exception as e:
+            logger.error(f"Error clearing ghost position for {symbol}: {e}")
+        finally:
+            self._close_conn(conn)
+
+    def save_edge_learning(self, detection: str, action_taken: str, learning: str, details: Optional[str] = None) -> None:
+        """
+        Save an EDGE learning event for observability.
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO edge_learning (detection, action_taken, learning, details)
+                VALUES (?, ?, ?, ?)
+            """, (detection, action_taken, learning, details))
+            conn.commit()
+        except Exception as e:
+            logger.error(f"Error saving EDGE learning: {e}")
+        finally:
+            self._close_conn(conn)
+
+    def get_edge_learning_history(self, limit: int = 50) -> List[Dict]:
+        """
+        Get recent EDGE learning events.
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM edge_learning 
+                ORDER BY timestamp DESC 
+                LIMIT ?
+            """, (limit,))
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
         finally:
             self._close_conn(conn)
 

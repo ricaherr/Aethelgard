@@ -156,7 +156,7 @@ def setup_navigation() -> str:
         elif category == "Operación Hub":
             menu_selection = st.radio(
                 "Módulo",
-                ["📋 Operación Hub", "🛡️ Sistema & Diagnóstico", "️ Monitor de Resiliencia", "⚡ Señales de Trading"]
+                ["📋 Operación Hub", "🛡️ Sistema & Diagnóstico", "️ Monitor de Resiliencia", "⚡ Señales de Trading", "🧠 EDGE Intelligence"]
             )
         elif category == "Análisis & Mercado":
             menu_selection = st.radio(
@@ -253,6 +253,64 @@ def render_home_view(classifier: RegimeClassifier, storage: StorageManager,
         recent_trades = []
     
     return open_trades, recent_trades
+
+
+def render_edge_intelligence_view(storage: StorageManager) -> None:
+    """Renderiza la vista de EDGE Intelligence con tabla de aprendizaje"""
+    st.header("🧠 EDGE Intelligence - Observabilidad Autónoma")
+    
+    st.markdown("""
+    **Sistema de Aprendizaje EDGE**: El bot explica sus decisiones y aprende de inconsistencias.
+    
+    - **Detección**: Problemas identificados automáticamente
+    - **Acción Tomada**: Respuestas del sistema
+    - **Aprendizaje**: Insights para mejora continua
+    """)
+    
+    # Obtener historial de aprendizaje
+    learning_history = storage.get_edge_learning_history(limit=20)
+    
+    if learning_history:
+        # Convertir a DataFrame para tabla
+        import pandas as pd
+        df = pd.DataFrame(learning_history)
+        
+        # Formatear timestamps
+        df['timestamp'] = pd.to_datetime(df['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
+        
+        # Mostrar tabla
+        st.dataframe(
+            df[['timestamp', 'detection', 'action_taken', 'learning', 'details']],
+            use_container_width=True,
+            column_config={
+                "timestamp": st.column_config.TextColumn("⏰ Timestamp", width="medium"),
+                "detection": st.column_config.TextColumn("🔍 Detección", width="large"),
+                "action_taken": st.column_config.TextColumn("⚡ Acción Tomada", width="large"),
+                "learning": st.column_config.TextColumn("🧠 Aprendizaje", width="large"),
+                "details": st.column_config.TextColumn("📋 Detalles", width="medium")
+            }
+        )
+        
+        # Estadísticas
+        st.markdown("---")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric("Total Eventos", len(learning_history))
+        
+        with col2:
+            # Contar tipos de detección
+            detections = df['detection'].str.split(':').str[0].value_counts()
+            st.metric("Tipos Detectados", len(detections))
+        
+        with col3:
+            # Último evento
+            latest = df.iloc[0]['timestamp']
+            st.metric("Último Evento", latest)
+            
+    else:
+        st.info("📚 No hay eventos de aprendizaje EDGE registrados aún. El sistema comenzará a aprender de sus operaciones.")
+
 
 def main() -> None:  # type: ignore
     """Función principal del dashboard"""
@@ -1570,7 +1628,11 @@ def main() -> None:  # type: ignore
                 st.error(f"Error cargando señales: {e}")
                 logger.error(f"Error cargando señales: {e}", exc_info=True)
     
-    # TAB 7: Proveedores de Datos
+    # TAB 7: EDGE Intelligence
+    elif menu_selection == "🧠 EDGE Intelligence":
+        render_edge_intelligence_view(storage)
+    
+    # TAB 8: Proveedores de Datos
     elif menu_selection == "📡 Proveedores de Datos":
         st.header("📡 Gestión de Proveedores de Datos")
         

@@ -1,10 +1,58 @@
 # Aethelgard – Roadmap
 
-**Última actualización**: 2026-02-04 (**SINCRONIZACIÓN REALIDAD MT5**)
+**Última actualización**: 2026-02-04 (**ARQUITECTURA OBSERVABILIDAD EDGE**)
 
 ---
 
-## 🚧 MILESTONE: Sincronización Realidad MT5 (2026-02-04)
+## 🚧 MILESTONE: Arquitectura Observabilidad EDGE (2026-02-04)
+
+**Estado del Sistema:**
+```
+Señales Generadas: ✅
+Ejecución Señales: ✅ SINCRONIZADO CON MT5
+UI Congelada: ✅ WAL MODE ACTIVADO
+Audit Log: ✅ IMPLEMENTADO
+Aprendizaje EDGE: ✅ ACTIVO
+Sincronización: ✅ RECONCILIACIÓN ACTIVA
+```
+
+**Problemas Identificados:**
+- Funciones redundantes en StorageManager/SignalFactory
+- Falta explicabilidad de decisiones en UI
+- Volcados fijos no adaptativos
+- No hay monitoreo autónomo de inconsistencias
+
+**Plan de Trabajo:**
+1. ✅ Auditoría Anti-Basura: Fusionar reconciliación en flujo MT5
+2. ✅ UI EDGE Intelligence: Nueva pestaña con tabla de aprendizaje
+3. ✅ Triggers Adaptativos: Volcado por excepciones técnicas
+4. ✅ Monitor de Inconsistencias: Investigación autónoma cada 60s
+
+**Tareas Completadas:**
+- ✅ Auditoría Anti-Basura: Fusionar reconciliación en flujo MT5
+- ✅ UI EDGE Intelligence: Nueva pestaña con tabla de aprendizaje
+- ✅ Triggers Adaptativos: Volcado por excepciones técnicas
+- ✅ Monitor de Inconsistencias: Investigación autónoma cada 60s
+
+**Estado Final del Sistema:**
+```
+Señales Generadas: ✅
+Ejecución Señales: ✅ SINCRONIZADO CON MT5
+UI Congelada: ✅ WAL MODE ACTIVADO
+Audit Log: ✅ IMPLEMENTADO
+Aprendizaje EDGE: ✅ ACTIVO
+Sincronización: ✅ RECONCILIACIÓN ACTIVA
+Observabilidad: ✅ EDGE INTELLIGENCE ACTIVA
+Explicabilidad: ✅ DECISIONES EN UI
+Tests: ✅ 167/167 PASAN
+Calidad: ✅ AUDITORÍA LIMPIA
+```
+
+**Próximos Pasos:**
+- Probar monitor de inconsistencias
+- Validar tabla de aprendizaje en UI
+- Monitorear volcados adaptativos
+- Ajustar timeouts basados en aprendizaje
 
 **Estado del Sistema:**
 ```

@@ -27,6 +27,7 @@ from core_brain.risk_manager import RiskManager
 from core_brain.executor import OrderExecutor
 from core_brain.monitor import ClosingMonitor
 from core_brain.tuner import EdgeTuner
+from core_brain.edge_monitor import EdgeMonitor
 from data_vault.storage import StorageManager
 from connectors.paper_connector import PaperConnector
 from models.signal import ConnectorType
@@ -286,6 +287,12 @@ async def main() -> None:
         logger.info("🔄 Iniciando Closing Monitor...")
         monitor_task = asyncio.create_task(monitor.start())
         logger.info("✅ Closing Monitor activo (Feedback Loop)")
+        
+        # Iniciar EDGE Monitor
+        logger.info("🔄 Iniciando EDGE Monitor...")
+        edge_monitor = EdgeMonitor(storage=storage)
+        edge_monitor.start()
+        logger.info("✅ EDGE Monitor activo (Observabilidad Autónoma)")
         
         logger.info("🌐 Dashboard: http://localhost:8503")
         logger.info("🛑 Presiona Ctrl+C para detener")
