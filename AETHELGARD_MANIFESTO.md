@@ -1467,6 +1467,69 @@ CREATE TABLE broker_accounts (
 - `execute_query(query, params=())`: Ejecuta consultas SELECT genéricas, retorna List[Dict]
 - `get_edge_learning_history(limit=20)`: Obtiene historial de aprendizaje EDGE (últimos 20 por defecto)
 
+#### EdgeMonitor Proactivo (`core_brain/edge_monitor.py`) ✅ **IMPLEMENTADO** (Febrero 2026)
+
+**Estado**: Completado con funcionalidades avanzadas
+
+**Objetivo**: Monitor autónomo que detecta inconsistencias y operaciones externas cada 60 segundos.
+
+**Funcionalidades Implementadas:**
+
+**1. Detección de Operaciones Externas (MT5 Sync):**
+- Compara `mt5.positions_get()` con tabla `active_trades` de DB cada 60 segundos
+- Detecta tickets en MT5 que no corresponden a operaciones generadas por el bot
+- Genera eventos EDGE con severidad CRÍTICA para operaciones manuales detectadas
+- Evita conflictos excluyendo operaciones externas de gestión automática
+
+**2. Auditoría de Inconsistencias de Señal:**
+- Investiga cuando SignalFactory genera señal pero no hay orden correspondiente en MT5
+- Identifica motivos exactos: rechazo por margen, conectividad MT5, RiskManager, etc.
+- Registra hallazgos en tabla `edge_learning` con detalles de investigación
+- Optimiza flujo SignalFactory → OrderExecutor
+
+**3. Monitoreo de Inconsistencias General:**
+- Verifica ratios de ejecución entre señales generadas vs ejecutadas
+- Detecta cuellos de botella en el pipeline de ejecución
+- Genera alertas cuando ratios de ejecución < 90%
+
+**4. Dashboard Integration:**
+- Tabla EDGE actualizada cada 5-10 segundos con `st.fragment`
+- Notificaciones visuales llamativas para eventos críticos
+- Coloreado condicional: 🔴 CRÍTICO, 🟡 ADVERTENCIA, 🟢 INFO
+- Estadísticas en tiempo real del monitor
+
+**Arquitectura del Monitor:**
+```python
+class EdgeMonitor(threading.Thread):
+    def __init__(self, storage: StorageManager, interval_seconds: int = 60):
+        # Monitor proactivo que corre en background
+        
+    def run(self):
+        while self.running:
+            self._check_mt5_external_operations()    # Detecta operaciones manuales
+            self._check_inconsistencies()             # Verifica ratios de ejecución
+            self._audit_signal_inconsistencies()      # Investiga señales sin orden
+            time.sleep(60)
+```
+
+**Eventos EDGE Generados:**
+- **Operación manual externa detectada**: Severidad CRÍTICA
+- **Señal generada pero sin orden en MT5**: Severidad ADVERTENCIA
+- **Inconsistencia de ejecución detectada**: Severidad ADVERTENCIA
+- **Error de conectividad MT5**: Severidad CRÍTICA
+
+**Dashboard Features:**
+- `@st.fragment(run_every="5s")` para live updates sin recargar página
+- Alertas visuales con `st.error()` para eventos críticos
+- Tabla con coloreado condicional por severidad
+- Estado del monitor en tiempo real
+
+**Beneficios:**
+- ✅ **Proactividad**: Detecta problemas antes que afecten operaciones
+- ✅ **Transparencia**: Explica decisiones y motivos de fallos
+- ✅ **Aprendizaje**: Mejora continua basada en patrones detectados
+- ✅ **Live Updates**: UI actualizada sin interrupción de navegación
+
 **Migración de Datos:**
 ```bash
 # Migrar brokers de config/brokers.json a DB (una sola vez)

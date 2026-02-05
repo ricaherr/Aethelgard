@@ -1,4 +1,3 @@
-from _thread import lock
 import threading
 import time
 import json
@@ -8,7 +7,7 @@ import logging
 import uuid
 from datetime import date, datetime, timezone
 from enum import Enum
-from typing import Dict, List, Optional, Callable, Any, Generator
+from typing import Dict, List, Optional, Callable, Any, Union, overload
 from contextlib import contextmanager
 from utils.encryption import CredentialEncryption, get_encryptor
 
@@ -100,7 +99,7 @@ def calculate_deduplication_window(timeframe: Optional[str]) -> int:
     return 60
 
 class StorageManager:
-    _db_lock: lock = threading.Lock()
+    _db_lock = threading.Lock()
 
     def __init__(self, db_path: Optional[str] = None) -> None:
         self.db_path = db_path or os.path.join(os.path.dirname(__file__), "aethelgard.db")
@@ -134,7 +133,7 @@ class StorageManager:
         finally:
             self._close_conn(conn)
 
-    def get_edge_learning_history(self, limit=20):
+    def get_edge_learning_history(self, limit: int = 20) -> List[Dict]:
         query = "SELECT * FROM edge_learning ORDER BY timestamp DESC LIMIT ?"
         return self.execute_query(query, (limit,))
 
@@ -1093,10 +1092,10 @@ class StorageManager:
         """Update account enabled status with verification"""
         self.update_account_credentials(account_id=account_id, enabled=enabled)
 
-    def update_account_credentials(self, account_id: str, account_number: str = None, 
-                                   password: str = None, server: str = None, 
-                                   account_name: str = None, account_type: str = None,
-                                   enabled: bool = None) -> None:
+    def update_account_credentials(self, account_id: str, account_number: Optional[str] = None, 
+                                   password: Optional[str] = None, server: Optional[str] = None, 
+                                   account_name: Optional[str] = None, account_type: Optional[str] = None,
+                                   enabled: Optional[bool] = None) -> None:
         """
         Update account credentials with explicit mapping and post-write verification.
         
@@ -1253,6 +1252,14 @@ class StorageManager:
         # Save back
         self.update_credential(account_id, existing)
 
+    @overload
+    def get_credentials(self, account_id: str) -> Optional[Dict]:
+        ...
+
+    @overload
+    def get_credentials(self, account_id: str, credential_type: str) -> Optional[str]:
+        ...
+
     def get_credentials(self, account_id: str, credential_type: Optional[str] = None) -> Optional[Union[Dict, str]]:
         """Get decrypted credentials for account. If credential_type specified, return just that credential."""
         conn = self._get_conn()
@@ -1391,7 +1398,6 @@ class StorageManager:
         finally:
             self._close_conn(conn)
 
-    @contextmanager
     def close(self) -> None:
         """Close persistent connection if it exists"""
         if self._persistent_conn is not None:
@@ -1665,17 +1671,13 @@ class StorageManager:
         Save an EDGE learning event for observability.
         """
         conn = self._get_conn()
-        try:
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO edge_learning (detection, action_taken, learning, details)
-                VALUES (?, ?, ?, ?)
-            """, (detection, action_taken, learning, details))
-            conn.commit()
-        except Exception as e:
-            logger.error(f"Error saving EDGE learning: {e}")
-        finally:
-            self._close_conn(conn)
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO edge_learning (detection, action_taken, learning, details)
+            VALUES (?, ?, ?, ?)
+        """, (detection, action_taken, learning, details))
+        conn.commit()
+        self._close_conn(conn)
 
 
 # Test utilities

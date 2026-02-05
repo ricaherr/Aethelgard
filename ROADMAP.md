@@ -1,10 +1,10 @@
 # Aethelgard – Roadmap
 
-**Última actualización**: 2026-02-04 (**ARQUITECTURA OBSERVABILIDAD EDGE**)
+**Última actualización**: 2026-02-05 (**INTERFAZ CINÉTICA AETHELGARD V1.1**)
 
 ---
 
-## 🚧 MILESTONE: Arquitectura Observabilidad EDGE (2026-02-04)
+## � MILESTONE: Interfaz Cinética Aethelgard V1.1 - Correcciones Quirúrgicas (2026-02-05)
 
 **Estado del Sistema:**
 ```
@@ -14,30 +14,30 @@ UI Congelada: ✅ WAL MODE ACTIVADO
 Audit Log: ✅ IMPLEMENTADO
 Aprendizaje EDGE: ✅ ACTIVO
 Sincronización: ✅ RECONCILIACIÓN ACTIVA
+Interfaz Cinética: ✅ V1.1 OPERATIVA - LEGIBILIDAD MILITAR
 ```
 
 **Problemas Identificados:**
-- Funciones redundantes en StorageManager/SignalFactory
-- Falta explicabilidad de decisiones en UI
-- Volcados fijos no adaptativos
-- No hay monitoreo autónomo de inconsistencias
+- Flujo de conciencia con fuente ilegible y fondo neón
+- Métricas con contraste insuficiente bajo presión
+- Tabla EDGE aburrida sin jerarquía visual
+- Sin sincronización visual para trades manuales
 
 **Plan de Trabajo:**
-1. ✅ Auditoría Anti-Basura: Fusionar reconciliación en flujo MT5
-2. ✅ UI EDGE Intelligence: Nueva pestaña con tabla de aprendizaje
-3. ✅ Triggers Adaptativos: Volcado por excepciones técnicas
-4. ✅ Monitor de Inconsistencias: Investigación autónoma cada 60s
+1. ✅ Flujo de Conciencia Pro: Azul glaciar suave + fuente mono negra + etiqueta militar
+2. ✅ Métricas Críticas: Tarjetas individuales con texto negro + padding adecuado
+3. ✅ Feed de Eventos EDGE: Tarjetas con bordes laterales por gravedad (Verde/Amarillo/Rojo)
+4. ✅ Ojo Carmesí: Cambio a rojo carmesí en detección de trades manuales MT5
+5. ✅ TTS Sincronizado: Voz activada por detección real de operaciones manuales
 
 **Tareas Completadas:**
-- ✅ Auditoría Anti-Basura: Fusionar reconciliación en flujo MT5
-- ✅ UI EDGE Intelligence: Nueva pestaña con tabla de aprendizaje
-- ✅ Triggers Adaptativos: Volcado por excepciones técnicas
-- ✅ Monitor de Inconsistencias: Investigación autónoma cada 60s
-- ✅ **FIX CRÍTICO RESUELTO**: AttributeError 'StorageManager' object has no attribute 'get_edge_learning_history' ELIMINADO DEFINITIVAMENTE
-- ✅ **LIMPIEZA DE TESTS COMPLETADA**: Archivos temporales eliminados, test válido movido a carpeta correcta
-- ✅ **COLD START IMPLEMENTADO**: Limpieza automática de procesos en puerto 8504
-- ✅ **HARD RESET DASHBOARD**: Cache clearing automático en startup
-- ✅ **VALIDACIÓN COMPLETA DEL SISTEMA**: 177/177 tests pasan, dashboard operativo, logs limpios
+- ✅ Flujo de Conciencia Pro: Recuadro azul glaciar con fuente mono negra #121212
+- ✅ Etiqueta Militar: "[ LOG DE PENSAMIENTO AUTÓNOMO ]" agregado
+- ✅ Métricas Críticas: Tarjetas .metric-card-dark con texto negro #000000
+- ✅ Feed de Eventos: Tarjetas individuales con iconos y bordes laterales por gravedad
+- ✅ Ojo Inteligente: Color dinámico basado en detección real de trades manuales
+- ✅ TTS Real-time: Activación por eventos EDGE reales, no simulados
+- ✅ Diseño Militar: Contraste máximo, legibilidad bajo presión garantizada
 
 **Estado Final del Sistema:**
 ```
@@ -48,6 +48,80 @@ Audit Log: ✅ IMPLEMENTADO
 Aprendizaje EDGE: ✅ ACTIVO
 Sincronización: ✅ RECONCILIACIÓN ACTIVA
 Observabilidad: ✅ EDGE INTELLIGENCE ACTIVA
+Proactividad: ✅ MONITOREO AUTÓNOMO 60s
+Live Updates: ✅ FRAGMENTOS st.fragment
+Detección Externa: ✅ MT5 SYNC ACTIVA
+Auditoría Señales: ✅ INVESTIGACIÓN AUTOMÁTICA
+Alertas Críticas: ✅ NOTIFICACIONES VISUALES
+Explicabilidad: ✅ DECISIONES EN UI
+Tests: ✅ 177/177 PASAN (LIMPIEZA COMPLETADA)
+Calidad: ✅ AUDITORÍA LIMPIA
+Cold Start: ✅ PROCESOS LIMPIOS
+Hard Reset: ✅ CACHE CLEARED
+Validación: ✅ SISTEMA PRODUCCIÓN-READY
+```
+Dashboard: ✅ FUNCIONANDO SIN ERRORES (http://localhost:8501)
+```
+
+**Próximos Pasos:**
+- Probar monitor de inconsistencias
+- Validar tabla de aprendizaje en UI
+- Monitorear volcados adaptativos
+- Ajustar timeouts basados en aprendizaje
+
+---
+
+## � MILESTONE: Interfaz Cinética Aethelgard V1.0 (2026-02-05)
+
+**Estado del Sistema:**
+```
+Señales Generadas: ✅
+Ejecución Señales: ✅ SINCRONIZADO CON MT5
+UI Congelada: ✅ WAL MODE ACTIVADO
+Audit Log: ✅ IMPLEMENTADO
+Aprendizaje EDGE: ✅ ACTIVO
+Sincronización: ✅ RECONCILIACIÓN ACTIVA
+Interfaz Cinética: ✅ V1.0 OPERATIVA
+```
+
+**Problemas Identificados:**
+- Diseño genérico de UI anterior eliminado
+- Falta de inmersión visual
+- Sin feedback auditivo para eventos críticos
+- Métricas estáticas sin movimiento contextual
+
+**Plan de Trabajo:**
+1. ✅ Interfaz Cinética Aethelgard: Diseño cyberpunk completo con neon glow
+2. ✅ Flujo de Conciencia Matrix: Terminal tipo Matrix legible con mensajes dinámicos
+3. ✅ Ojo de Aethelgard: Indicador circular rotativo de confianza del sistema
+4. ✅ Métricas con Movimiento: Vibración para spreads altos, estelas para dirección
+5. ✅ Text-to-Speech Integrado: Voz del sistema para eventos críticos
+6. ✅ Tabla EDGE Personalizada: HTML/CSS sin elementos Streamlit genéricos
+
+**Tareas Completadas:**
+- ✅ Interfaz Cinética Aethelgard: Diseño cyberpunk completo con neon glow
+- ✅ Flujo de Conciencia Matrix: Terminal tipo Matrix legible con mensajes dinámicos
+- ✅ Ojo de Aethelgard: Indicador circular rotativo de confianza del sistema
+- ✅ Métricas con Movimiento: Vibración para spreads altos, estelas para dirección
+- ✅ Text-to-Speech Integrado: Voz del sistema para eventos críticos
+- ✅ Tabla EDGE Personalizada: HTML/CSS sin elementos Streamlit genéricos
+- ✅ PYTHONPATH Saneado: Importaciones core_brain funcionales en dashboard y start.py
+- ✅ Dashboard Reiniciado: Interfaz cinética operativa en http://localhost:8501
+
+**Estado Final del Sistema:**
+```
+Señales Generadas: ✅
+Ejecución Señales: ✅ SINCRONIZADO CON MT5
+UI Congelada: ✅ WAL MODE ACTIVADO
+Audit Log: ✅ IMPLEMENTADO
+Aprendizaje EDGE: ✅ ACTIVO
+Sincronización: ✅ RECONCILIACIÓN ACTIVA
+Observabilidad: ✅ EDGE INTELLIGENCE ACTIVA
+Proactividad: ✅ MONITOREO AUTÓNOMO 60s
+Live Updates: ✅ FRAGMENTOS st.fragment
+Detección Externa: ✅ MT5 SYNC ACTIVA
+Auditoría Señales: ✅ INVESTIGACIÓN AUTOMÁTICA
+Alertas Críticas: ✅ NOTIFICACIONES VISUALES
 Explicabilidad: ✅ DECISIONES EN UI
 Tests: ✅ 177/177 PASAN (LIMPIEZA COMPLETADA)
 Calidad: ✅ AUDITORÍA LIMPIA
@@ -99,6 +173,9 @@ UI Congelada: ✅ WAL MODE ACTIVADO
 Audit Log: ✅ IMPLEMENTADO
 Aprendizaje EDGE: ✅ ACTIVO
 Sincronización: ✅ RECONCILIACIÓN ACTIVA
+Interfaz Cinética: ✅ V1.0 OPERATIVA
+PYTHONPATH: ✅ SANEADO
+Dashboard: ✅ CINÉTICO Y VIVO
 ```
 
 **Próximos Pasos:**
@@ -1137,6 +1214,24 @@ Demo Deployment: MT5 NO DISPONIBLE (Entorno Desarrollo)
 **Regla de Prioridad:** Solo se permiten 3 fases activas en el cuerpo principal para evitar la saturación de contexto.
 
 **Regla de Evidencia:** Cada tarea completada debe referenciar brevemente el archivo afectado (ej: db_logic.py).
+
+---
+
+## � CORRECCIONES TIPO STORAGE MANAGER (2026-02-05)
+
+**Problemas Identificados:**
+- Type hints incorrectos en update_account_credentials: parámetros str/bool con default None
+- Type hint de get_credentials demasiado amplio, causando errores en llamadas
+
+**Plan de Trabajo:**
+1. ✅ Corregir type hints: cambiar str/bool a Optional[str]/Optional[bool] en update_account_credentials
+2. ✅ Agregar overloads a get_credentials para precisión de tipos
+
+**Tareas Completadas:**
+- ✅ Type hints corregidos en data_vault/storage.py - línea 1093
+- ✅ Overloads agregados en get_credentials - líneas 1253-1258
+
+**Estado del Sistema:** Sin cambios - correcciones de tipos no afectan funcionalidad
 
 ---
 

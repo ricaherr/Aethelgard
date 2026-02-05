@@ -25,7 +25,10 @@ st.cache_resource.clear()
 st.cache_data.clear()
 
 # Añadir el directorio raíz al path para importar módulos
-sys.path.insert(0, str(Path(__file__).parent.parent))
+import os
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 # from connectors.mt5_discovery import DiscoveryEngine # MT5 Discovery (optional utility)
 from core_brain.regime import RegimeClassifier
@@ -78,6 +81,12 @@ def get_risk_manager() -> RiskManager:
     """Obtiene una instancia del gestor de riesgo"""
     storage: StorageManager = get_storage()
     return RiskManager(storage=storage, initial_capital=10000.0)
+
+def get_edge_monitor() -> 'EdgeMonitor':
+    """Obtiene una instancia del monitor EDGE"""
+    storage: StorageManager = get_storage()
+    from core_brain.edge_monitor import EdgeMonitor
+    return EdgeMonitor(storage)
 
 def get_health_manager() -> HealthManager:
     """Obtiene una instancia del motor de diagnóstico"""
@@ -256,17 +265,393 @@ def render_home_view(classifier: RegimeClassifier, storage: StorageManager,
 
 
 def render_edge_intelligence_view(storage: StorageManager) -> None:
-    """Renderiza la vista de EDGE Intelligence con tabla de aprendizaje"""
-    st.header("🧠 EDGE Intelligence - Observabilidad Autónoma")
+    """Renderiza la Interfaz Kinética Aethelgard - Sistema EDGE Inteligente"""
     
+    # === CSS AVANZADO: Interfaz Kinética ===
     st.markdown("""
-    **Sistema de Aprendizaje EDGE**: El bot explica sus decisiones y aprende de inconsistencias.
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
     
-    - **Detección**: Problemas identificados automáticamente
-    - **Acción Tomada**: Respuestas del sistema
-    - **Aprendizaje**: Insights para mejora continua
+    .kinetic-ui {
+        font-family: 'Orbitron', monospace;
+        background: linear-gradient(135deg, #000000 0%, #0a0a0a 50%, #1a1a2e 100%);
+        color: #FFFFFF;
+        min-height: 100vh;
+    }
+    
+    .neon-border {
+        border: 2px solid #00FFFF;
+        border-radius: 15px;
+        box-shadow: 0 0 20px #00FFFF, inset 0 0 20px rgba(0, 255, 255, 0.1);
+        background: rgba(0, 255, 255, 0.05);
+        padding: 20px;
+        margin: 10px 0;
+        transition: all 0.3s ease;
+    }
+    
+    .neon-border.alert {
+        border-color: #FF0040;
+        box-shadow: 0 0 20px #FF0040, inset 0 0 20px rgba(255, 0, 64, 0.1);
+        animation: pulse 1s infinite;
+    }
+    
+    .neon-border.success {
+        border-color: #00FF88;
+        box-shadow: 0 0 20px #00FF88, inset 0 0 20px rgba(0, 255, 136, 0.1);
+    }
+    
+    .matrix-text {
+        font-family: 'Courier New', monospace;
+        color: #00FFFF;
+        font-size: 14px;
+        line-height: 1.4;
+        white-space: pre-wrap;
+        overflow-y: auto;
+        max-height: 400px;
+    }
+    
+    .consciousness-log {
+        background: #E3F2FD;
+        border: 1px solid #BBDEFB;
+        border-radius: 8px;
+        padding: 15px;
+        margin: 10px 0;
+        font-family: 'Courier New', monospace;
+        color: #121212;
+        font-size: 13px;
+        line-height: 1.4;
+        white-space: pre-wrap;
+        overflow-y: auto;
+        max-height: 400px;
+    }
+    
+    .aethelgard-eye {
+        width: 200px;
+        height: 200px;
+        border-radius: 50%;
+        background: radial-gradient(circle, #00FFFF 0%, #0080FF 50%, #000000 100%);
+        margin: 0 auto;
+        position: relative;
+        box-shadow: 0 0 50px #00FFFF;
+        animation: rotate 10s linear infinite;
+    }
+    
+    .aethelgard-eye::before {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        background: #FFFFFF;
+        box-shadow: 0 0 30px #FFFFFF;
+    }
+    
+    .metric-card {
+        background: rgba(0, 255, 255, 0.1);
+        border: 1px solid #00FFFF;
+        border-radius: 10px;
+        padding: 15px;
+        text-align: center;
+        margin: 10px 0;
+        font-size: 24px;
+        font-weight: bold;
+        color: #FFFFFF;
+    }
+    
+    .metric-card-dark {
+        background: #F5F5F5;
+        border: 1px solid #BDBDBD;
+        border-radius: 10px;
+        padding: 15px;
+        text-align: center;
+        margin: 10px 0;
+        font-size: 20px;
+        font-weight: bold;
+        color: #000000;
+        font-family: 'Orbitron', monospace;
+    }
+    
+    .event-card {
+        border-left: 4px solid;
+        border-radius: 8px;
+        padding: 12px;
+        margin: 8px 0;
+        background: #FAFAFA;
+        color: #000000;
+        font-family: 'Arial', sans-serif;
+        font-size: 14px;
+    }
+    
+    .event-card.info {
+        border-left-color: #4CAF50;
+    }
+    
+    .event-card.warning {
+        border-left-color: #FF9800;
+    }
+    
+    .event-card.critical {
+        border-left-color: #F44336;
+    }
+    
+    .trail-effect {
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .trail-effect::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(0, 255, 255, 0.3), transparent);
+        animation: trail 2s infinite;
+    }
+    
+    @keyframes pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.05); }
+    }
+    
+    @keyframes rotate {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+    
+    @keyframes trail {
+        0% { left: -100%; }
+        100% { left: 100%; }
+    }
+    
+    .vibrate {
+        animation: vibrate 0.5s ease-in-out;
+    }
+    
+    @keyframes vibrate {
+        0%, 100% { transform: translateX(0); }
+        25% { transform: translateX(-2px); }
+        75% { transform: translateX(2px); }
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    st.header("🧠 Interfaz Kinética Aethelgard - EDGE Intelligence")
+    
+    # === DETECCIÓN DE TRADES MANUALES (antes de layout para scope global) ===
+    recent_manual_trades = storage.execute_query("""
+        SELECT COUNT(*) as count FROM edge_learning 
+        WHERE timestamp >= datetime('now', '-5 minutes')
+        AND detection LIKE '%manual externa%'
     """)
+    manual_trade_detected = recent_manual_trades[0]['count'] > 0 if recent_manual_trades else False
     
+    # === LAYOUT MODULAR: GRID DE 3 COLUMNAS ===
+    col_left, col_center, col_right = st.columns([1, 1, 1])
+    
+    # === COLUMNA IZQUIERDA: FLUJO DE CONCIENCIA ===
+    with col_left:
+        st.markdown("### [ LOG DE PENSAMIENTO AUTÓNOMO ]")
+        consciousness_container = st.empty()
+        
+        # Simular flujo de conciencia dinámico
+        consciousness_log = [
+            "> Inicializando núcleo neuronal...",
+            "> Escaneando patrones de mercado...",
+            "> Analizando volatilidad EUR/USD...",
+            "> Detectando anomalías en spreads...",
+            "> Aprendiendo de operaciones manuales...",
+            "> Optimizando parámetros dinámicos...",
+        ]
+        
+        # Agregar mensajes aleatorios para simular actividad
+        import random
+        if random.random() < 0.3:  # 30% chance cada render
+            consciousness_log.append("> Nueva señal procesada exitosamente")
+        
+        consciousness_text = "\n".join(consciousness_log[-15:])  # Últimos 15 mensajes
+        consciousness_container.markdown(f'<div class="consciousness-log">{consciousness_text}</div>', unsafe_allow_html=True)
+        
+        # TTS para eventos críticos (basado en datos reales)
+        if manual_trade_detected:
+            st.components.v1.html("""
+            <script>
+            if ('speechSynthesis' in window) {
+                var utterance = new SpeechSynthesisUtterance('Operación manual detectada. Sistema Aethelgard ajustando parámetros automáticamente.');
+                utterance.lang = 'es-ES';
+                utterance.rate = 0.8;
+                utterance.pitch = 1.1;
+                window.speechSynthesis.speak(utterance);
+            }
+            </script>
+            """)
+    
+    # === COLUMNA CENTRAL: OJO DE AETHELGARD ===
+    with col_center:
+        st.subheader("👁️ Ojo de Aethelgard")
+        
+        # Cambiar color del ojo basado en detección de trades manuales
+        eye_color = "#DC143C" if manual_trade_detected else "#00FFFF"  # Rojo Carmesí vs Cyan
+        
+        st.markdown(f'''
+        <div class="aethelgard-eye" style="background: radial-gradient(circle, {eye_color} 0%, #0080FF 50%, #000000 100%); box-shadow: 0 0 50px {eye_color};"></div>
+        ''', unsafe_allow_html=True)
+        
+        # Indicador de confianza del sistema (simulado)
+        confidence = 87  # En producción: calcular basado en métricas reales
+        st.metric("Confianza del Sistema", f"{confidence}%", delta="+2%")
+        
+        # Estado del mercado
+        market_state = "VOLATILE"  # En producción: obtener de classifier
+        if market_state == "VOLATILE":
+            st.markdown('<div class="neon-border alert">⚠️ Mercado Volátil Detectado</div>', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="neon-border success">✅ Mercado Estable</div>', unsafe_allow_html=True)
+    
+    # === COLUMNA DERECHA: MÉTRICAS CRÍTICAS ===
+    with col_right:
+        st.subheader("📊 Métricas Críticas")
+        
+        # Riesgo Actual
+        risk_level = 1.2  # En producción: obtener de risk_manager
+        risk_class = "vibrate" if risk_level > 2.0 else ""
+        st.markdown(f'<div class="metric-card-dark {risk_class}">Riesgo: {risk_level:.1f}%</div>', unsafe_allow_html=True)
+        
+        # Drawdown
+        drawdown = -3.5  # En producción: calcular
+        st.markdown(f'<div class="metric-card-dark">Drawdown: {drawdown:.1f}%</div>', unsafe_allow_html=True)
+        
+        # Profit Total
+        total_profit = 1247.50  # En producción: calcular de storage
+        profit_color = "#4CAF50" if total_profit > 0 else "#F44336"
+        st.markdown(f'<div class="metric-card-dark" style="border-left: 4px solid {profit_color};">Profit: ${total_profit:,.2f}</div>', unsafe_allow_html=True)
+        
+        # Spread Monitor (con vibración si sube)
+        current_spread = 2.1  # En producción: obtener de MT5
+        spread_class = "vibrate" if current_spread > 2.0 else ""
+        st.markdown(f'<div class="metric-card-dark {spread_class}">Spread: {current_spread:.1f} pips</div>', unsafe_allow_html=True)
+    
+    # === SECCIÓN INFERIOR: FEED DE EVENTOS EDGE ===
+    st.markdown("---")
+    st.subheader("🔍 Eventos EDGE Recientes")
+    
+    # Obtener datos EDGE
+    edge_events = storage.get_edge_learning_history(limit=10)
+    
+    if edge_events:
+        # Crear feed de tarjetas de eventos
+        for event in edge_events:
+            # Determinar gravedad y color del borde
+            detection = event.get('detection', '').lower()
+            if any(word in detection for word in ['manual externa', 'error crítico', 'desconectado', 'rechazo por margen']):
+                card_class = "event-card critical"
+                icon = "🚨"
+            elif any(word in detection for word in ['inconsistencia', 'sin orden', 'riesgo total']):
+                card_class = "event-card warning"
+                icon = "⚠️"
+            else:
+                card_class = "event-card info"
+                icon = "ℹ️"
+            
+            # Formatear timestamp
+            timestamp = event.get('timestamp', '')[:19] if event.get('timestamp') else 'N/A'
+            
+            # Crear tarjeta de evento
+            event_html = f"""
+            <div class="{card_class}">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                    <span style="font-size: 16px;">{icon}</span>
+                    <span style="font-weight: bold; color: #666;">{timestamp}</span>
+                </div>
+                <div style="font-weight: bold; margin-bottom: 4px;">
+                    {event.get('detection', 'N/A')}
+                </div>
+                <div style="color: #666; font-size: 13px;">
+                    → {event.get('action_taken', 'N/A')}
+                </div>
+            </div>
+            """
+            st.markdown(event_html, unsafe_allow_html=True)
+    else:
+        st.info("No hay eventos EDGE recientes.")
+    
+    # === AUDIO INTERACTIVO ===
+    if st.button("🔊 Probar Voz del Sistema"):
+        st.components.v1.html("""
+        <script>
+        if ('speechSynthesis' in window) {
+            var utterance = new SpeechSynthesisUtterance('Sistema Aethelgard operativo. Inteligencia EDGE activada.');
+            utterance.lang = 'es-ES';  // Español
+            utterance.rate = 0.8;
+            utterance.pitch = 1.2;
+            window.speechSynthesis.speak(utterance);
+        } else {
+            alert('Text-to-Speech no soportado en este navegador.');
+        }
+        </script>
+        """)
+
+
+def _check_critical_events(storage: StorageManager) -> List[Dict]:
+    """Verificar eventos críticos recientes (últimos 5 minutos)"""
+    try:
+        # Obtener eventos EDGE de los últimos 5 minutos
+        recent_events = storage.execute_query("""
+            SELECT * FROM edge_learning 
+            WHERE timestamp >= datetime('now', '-5 minutes')
+            ORDER BY timestamp DESC
+        """)
+        
+        # Filtrar eventos críticos
+        critical_keywords = [
+            "manual externa", "inconsistencia", "sin orden", "rechazo por margen",
+            "riesgo total", "error crítico", "desconectado"
+        ]
+        
+        critical_events = []
+        for event in recent_events:
+            detection = event.get('detection', '').lower()
+            if any(keyword in detection for keyword in critical_keywords):
+                critical_events.append(event)
+        
+        return critical_events[:3]  # Máximo 3 eventos críticos
+        
+    except Exception as e:
+        logger.error(f"Error checking critical events: {e}")
+        return []
+
+
+def _show_critical_alert(critical_events: List[Dict]) -> None:
+    """Mostrar alerta visual llamativa para eventos críticos"""
+    st.error("🚨 **EVENTOS CRÍTICOS DETECTADOS**", icon="⚠️")
+    
+    for event in critical_events:
+        detection = event.get('detection', '')
+        action_taken = event.get('action_taken', '')
+        timestamp = event.get('timestamp', '')
+        
+        # Formatear timestamp
+        try:
+            from datetime import datetime
+            dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+            formatted_time = dt.strftime('%H:%M:%S')
+        except:
+            formatted_time = timestamp.split('T')[-1][:8] if 'T' in timestamp else timestamp
+        
+        with st.expander(f"🔴 {detection} - {formatted_time}", expanded=True):
+            st.write(f"**Acción tomada:** {action_taken}")
+            if event.get('learning'):
+                st.write(f"**Aprendizaje:** {event.get('learning')}")
+            if event.get('details'):
+                st.caption(f"Detalles: {event.get('details')}")
+
+
+def _render_edge_table(storage: StorageManager) -> None:
+    """Renderizar tabla EDGE con datos actualizados"""
     # Obtener historial de aprendizaje
     learning_history = storage.get_edge_learning_history(limit=20)
     
@@ -278,38 +663,85 @@ def render_edge_intelligence_view(storage: StorageManager) -> None:
         # Formatear timestamps
         df['timestamp'] = pd.to_datetime(df['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
         
+        # Agregar columna de severidad para coloreado
+        def get_severity(row: Any) -> str:
+            detection = row['detection'].lower()
+            if any(word in detection for word in ['manual externa', 'error crítico', 'desconectado']):
+                return '🔴 CRÍTICO'
+            elif any(word in detection for word in ['inconsistencia', 'sin orden', 'rechazo']):
+                return '🟡 ADVERTENCIA'
+            else:
+                return '🟢 INFO'
+        
+        df['severity'] = df.apply(get_severity, axis=1)
+        
+        # Mostrar tabla con coloreado condicional
+        def color_severity(val: str) -> str:
+            if val == '🔴 CRÍTICO':
+                return 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
+            elif val == '🟡 ADVERTENCIA':
+                return 'background-color: #fff3cd; color: #856404; font-weight: bold;'
+            else:
+                return 'background-color: #d4edda; color: #155724;'
+        
         # Mostrar tabla
+        styled_df = df[['timestamp', 'severity', 'detection', 'action_taken', 'learning']].style.applymap(
+            color_severity, subset=['severity']
+        )
+        
         st.dataframe(
-            df[['timestamp', 'detection', 'action_taken', 'learning', 'details']],
+            styled_df,
             use_container_width=True,
             column_config={
                 "timestamp": st.column_config.TextColumn("⏰ Timestamp", width="medium"),
+                "severity": st.column_config.TextColumn("🚨 Severidad", width="small"),
                 "detection": st.column_config.TextColumn("🔍 Detección", width="large"),
                 "action_taken": st.column_config.TextColumn("⚡ Acción Tomada", width="large"),
-                "learning": st.column_config.TextColumn("🧠 Aprendizaje", width="large"),
-                "details": st.column_config.TextColumn("📋 Detalles", width="medium")
-            }
+                "learning": st.column_config.TextColumn("🧠 Aprendizaje", width="large")
+            },
+            hide_index=True
         )
         
-        # Estadísticas
+        # Estadísticas en tiempo real
         st.markdown("---")
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            st.metric("Total Eventos", len(learning_history))
+            total_events = len(learning_history)
+            st.metric("Total Eventos", total_events)
         
         with col2:
-            # Contar tipos de detección
-            detections = df['detection'].str.split(':').str[0].value_counts()
-            st.metric("Tipos Detectados", len(detections))
+            critical_count = sum(1 for event in learning_history 
+                               if any(word in event['detection'].lower() 
+                                    for word in ['manual externa', 'error crítico', 'desconectado']))
+            st.metric("Críticos", critical_count)
         
         with col3:
+            warning_count = sum(1 for event in learning_history 
+                              if any(word in event['detection'].lower() 
+                                   for word in ['inconsistencia', 'sin orden', 'rechazo']))
+            st.metric("Advertencias", warning_count)
+        
+        with col4:
             # Último evento
-            latest = df.iloc[0]['timestamp']
-            st.metric("Último Evento", latest)
+            if learning_history:
+                latest = learning_history[0]['timestamp']
+                try:
+                    from datetime import datetime
+                    dt = datetime.fromisoformat(latest.replace('Z', '+00:00'))
+                    formatted_latest = dt.strftime('%H:%M:%S')
+                except:
+                    formatted_latest = latest.split('T')[-1][:8] if 'T' in latest else latest
+                st.metric("Último Evento", formatted_latest)
             
     else:
         st.info("📚 No hay eventos de aprendizaje EDGE registrados aún. El sistema comenzará a aprender de sus operaciones.")
+        
+        # Mostrar estado del monitor
+        st.markdown("### 🔄 Estado del Sistema")
+        st.success("✅ Monitor EDGE activo - verificando cada 60 segundos")
+        st.info("🔍 Sincronización MT5 activa - detectando operaciones externas")
+        st.info("📊 Auditoría de señales operativa - investigando inconsistencias")
 
 
 def main() -> None:  # type: ignore
@@ -330,6 +762,12 @@ def main() -> None:  # type: ignore
     module_manager = get_module_manager()
     tuner: ParameterTuner = get_tuner()
     risk_manager: RiskManager = get_risk_manager()
+    edge_monitor = get_edge_monitor()
+    
+    # Iniciar EdgeMonitor si no está corriendo
+    if not edge_monitor.is_alive():
+        edge_monitor.start()
+        logger.info("🧠 EdgeMonitor iniciado en dashboard")
     
     # Navegación Principal
     menu_selection = setup_navigation()

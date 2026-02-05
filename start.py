@@ -10,14 +10,20 @@ Comando único que inicia:
 
 USO: py start.py
 """
+import sys
+import os
+
+# Añadir el directorio raíz al path para importar módulos
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__)))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 import asyncio
 import logging
 import subprocess
 import threading
 import time
 from pathlib import Path
-import sys
-import os
 import webbrowser
 
 from core_brain.main_orchestrator import MainOrchestrator
