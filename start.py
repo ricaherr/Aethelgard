@@ -262,6 +262,9 @@ async def main() -> None:
             mt5_connector = executor.connectors[ConnectorType.METATRADER5]
             mt5_connector.start()  # Inicia conexión en hilo separado
             logger.info("✅ MT5 background connection started")
+            
+            # Set MT5 connector in SignalFactory for reconciliation
+            signal_factory.set_mt5_connector(mt5_connector)
         
         logger.info("")
         logger.info("=" * 70)

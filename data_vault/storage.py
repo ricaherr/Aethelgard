@@ -279,6 +279,10 @@ class StorageManager:
         if 'type' not in columns:
             cursor.execute("ALTER TABLE data_providers ADD COLUMN type TEXT DEFAULT 'api'")
         
+        # Enable WAL mode for concurrent reads/writes
+        cursor.execute("PRAGMA journal_mode=WAL;")
+        logger.info("SQLite WAL mode enabled for concurrent access")
+        
         conn.commit()
         self._close_conn(conn)
 
@@ -1585,6 +1589,96 @@ class StorageManager:
         except Exception as e:
             logger.error(f"Error verificando integridad de DB: {e}")
             return False
+        finally:
+            self._close_conn(conn)
+
+    def clear_ghost_position(self, symbol: str) -> None:
+        """
+        Mark ghost positions as closed for a symbol.
+        Used when MT5 has no positions but DB thinks there are.
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            # Mark executed signals without trade results as closed
+            cursor.execute("""
+                UPDATE signals 
+                SET status = 'CLOSED', 
+                    metadata = json_set(COALESCE(metadata, '{}'), '$.exit_reason', 'GHOST_CLEARED')
+                WHERE symbol = ? 
+                AND status = 'EXECUTED'
+                AND id NOT IN (SELECT signal_id FROM trade_results WHERE signal_id IS NOT NULL)
+            """, (symbol,))
+            cleared_count = cursor.rowcount
+            conn.commit()
+            if cleared_count > 0:
+                logger.info(f"🧹 Cleared {cleared_count} ghost positions for {symbol}")
+        except Exception as e:
+            logger.error(f"Error clearing ghost positions for {symbol}: {e}")
+        finally:
+            self._close_conn(conn)
+
+    def reconcile_open_positions(self, mt5_connector) -> None:
+        """
+        Reconcile DB open positions with real MT5 positions.
+        Clears ghost positions that don't exist in MT5.
+        """
+        if not mt5_connector or not mt5_connector.is_connected:
+            logger.warning("MT5 connector not available for reconciliation")
+            return
+
+        # Get symbols with open positions in DB
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT DISTINCT symbol FROM signals 
+                WHERE status = 'EXECUTED'
+                AND id NOT IN (SELECT signal_id FROM trade_results WHERE signal_id IS NOT NULL)
+            """)
+            db_open_symbols = {row[0] for row in cursor.fetchall()}
+        finally:
+            self._close_conn(conn)
+
+        if not db_open_symbols:
+            logger.debug("No open positions in DB to reconcile")
+            return
+
+        # Get real MT5 positions
+        real_positions = mt5_connector.get_open_positions()
+        if real_positions is None:
+            logger.error("Failed to get MT5 positions for reconciliation")
+            return
+
+        real_symbols = {pos.get('symbol') for pos in real_positions}
+
+        # Find ghost symbols (in DB but not in MT5)
+        ghost_symbols = db_open_symbols - real_symbols
+
+        if ghost_symbols:
+            logger.info(f"🔍 Found {len(ghost_symbols)} ghost positions: {ghost_symbols}")
+            for symbol in ghost_symbols:
+                self.clear_ghost_position(symbol)
+        else:
+            logger.debug("No ghost positions found - DB and MT5 are synchronized")
+
+    def get_open_signal_id(self, symbol: str) -> Optional[str]:
+        """
+        Get the signal ID of the open position for a symbol.
+        Returns None if no open position.
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id FROM signals 
+                WHERE symbol = ? 
+                AND status = 'EXECUTED'
+                AND id NOT IN (SELECT signal_id FROM trade_results WHERE signal_id IS NOT NULL)
+                LIMIT 1
+            """, (symbol,))
+            row = cursor.fetchone()
+            return row[0] if row else None
         finally:
             self._close_conn(conn)
 

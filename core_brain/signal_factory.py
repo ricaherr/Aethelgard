@@ -49,6 +49,7 @@ class SignalFactory:
         storage_manager: StorageManager,
         config_path: str = "config/dynamic_params.json",
         strategy_id: str = "deprecated", # Mantenido por compatibilidad
+        mt5_connector: Optional[Any] = None,
     ):
         """
         Inicializa la SignalFactory.
@@ -57,10 +58,12 @@ class SignalFactory:
             storage_manager: Instancia del gestor de persistencia.
             config_path: Ruta a dynamic_params.json.
             strategy_id: Deprecado. Las estrategias se cargan internamente.
+            mt5_connector: Opcional MT5 connector para reconciliación.
         """
         self.storage_manager = storage_manager
         self.notifier: Optional[TelegramNotifier] = get_notifier()
         self.config_path = config_path
+        self.mt5_connector = mt5_connector
         
         # Cargar parámetros generales
         self.config_data = self._load_parameters()
@@ -84,6 +87,14 @@ class SignalFactory:
             f"SignalFactory initialized with {len(self.strategies)} strategies. "
             f"Confluence enabled: {confluence_enabled}"
         )
+
+    def set_mt5_connector(self, mt5_connector: Any) -> None:
+        """Set MT5 connector for reconciliation (optional)."""
+        self.mt5_connector = mt5_connector
+        if mt5_connector:
+            logger.info("MT5 connector set for SignalFactory reconciliation")
+        else:
+            logger.debug("MT5 connector cleared from SignalFactory")
 
     def _load_parameters(self) -> Dict:
         """Carga parámetros desde dynamic_params.json"""
@@ -177,7 +188,15 @@ class SignalFactory:
         
         # Verificar posición abierta
         if self.storage_manager.has_open_position(signal.symbol):
-            return True
+            # Reconcile with MT5 reality before discarding
+            if self.mt5_connector:
+                logger.debug(f"🔍 Reconciling positions for {signal.symbol} before duplicate check")
+                self.storage_manager.reconcile_open_positions(self.mt5_connector)
+                # Check again after reconciliation
+                if self.storage_manager.has_open_position(signal.symbol):
+                    return True
+            else:
+                return True
         
         # Verificar señal reciente (ventana dinámica basada en timeframe)
         if self.storage_manager.has_recent_signal(
@@ -200,6 +219,20 @@ class SignalFactory:
                 f"Strategy: {signal.metadata.get('strategy_id')} | "
                 f"Score: {signal.metadata.get('score', 0):.1f}"
             )
+            
+            # Volcado de memoria para señales de alto score
+            score = signal.metadata.get('score', 0)
+            if score > 90:
+                lot_size = signal.volume
+                risk_usd = abs(signal.entry_price - signal.stop_loss) * lot_size * 100000  # Approx for EURUSD
+                ghost_position_id = self.storage_manager.get_open_signal_id(signal.symbol)
+                dump = {
+                    "Score": score,
+                    "LotSize": lot_size,
+                    "Riesgo_$": round(risk_usd, 2),
+                    "ID_Posicion_Ghost": ghost_position_id or "NONE"
+                }
+                logger.info(f"🧠 VOLCADO MEMORIA SEÑAL ALTO SCORE: {dump}")
             
             # 2. Notificación
             # TODO: Hacer esto más genérico en el futuro
