@@ -4222,6 +4222,69 @@ Validaciones: ✅ TODAS PASAN
 
 ---
 
+## 🔄 **2026-02-04: Sincronización Realidad MT5 - Fin de Datos Fantasma**
+
+**Contexto:** Sistema operando con datos fantasma - rechazaba señales por 'posiciones existentes' cuando MT5 estaba vacío.
+
+**Problemas Resueltos:**
+1. **Desincronización DB vs MT5**: Bot creía tener posiciones que no existían realmente
+2. **Bloqueo UI por DB**: Escaneo bloqueaba lecturas del dashboard  
+3. **Falta Debugging**: No había visibilidad de cálculos para señales de alto score
+4. **Registros Fantasma**: DB contenía señales 'executed' sin tickets reales
+
+**Soluciones Implementadas:**
+
+### 1. Reconciliación Inmediata en OrderExecutor
+- **Método `_reconcile_positions()`**: Consulta `mt5.positions_get()` antes de rechazar señales
+- **Limpieza Automática**: Si MT5 no tiene posiciones, marca señales como `GHOST_CLEARED` en DB
+- **Permiso de Trade**: Permite nuevos trades cuando reconciliación confirma realidad
+
+### 2. Volcado de Memoria para Señales >90%
+- **Trigger**: Activado cuando `signal.confidence > 0.9` 
+- **Datos Imprimidos**:
+  - Score: Porcentaje de confianza
+  - LotSize_Calculated: Tamaño de lote calculado
+  - Risk_Amount_$: Riesgo en dólares (1% del balance)
+  - Ghost_Position_ID: ID de posición fantasma que bot cree existir
+
+### 3. Purga de Base de Datos
+- **Script**: `scripts/utilities/purge_ghost_records.py`
+- **Funcionalidad**: Compara señales 'executed' en DB vs posiciones reales en MT5
+- **Limpieza**: Marca como `GHOST_CLEARED` registros sin tickets correspondientes
+- **Resultado**: DB sincronizada con realidad MT5
+
+### 4. WAL Mode en SQLite para UI Prioritaria
+- **Configuración**: `PRAGMA journal_mode=WAL;` en `_get_conn()`
+- **Beneficios**:
+  - Lecturas y escrituras simultáneas sin bloqueo
+  - UI dashboard nunca se congela durante escaneo
+  - Mejor responsiveness del sistema
+
+**Estado Post-Sincronización:**
+```
+Señales Generadas: ✅
+Ejecución Señales: ✅ SINCRONIZADO CON MT5
+UI Congelada: ✅ WAL MODE ACTIVO
+Audit Log: ✅ IMPLEMENTADO
+Aprendizaje EDGE: ✅ ACTIVO
+Sincronización: ✅ RECONCILIACIÓN ACTIVA
+Datos Fantasma: ✅ ELIMINADOS
+```
+
+**Validaciones Finales:**
+- ✅ Architecture Audit: PASS (0 duplicados)
+- ✅ QA Guard: PASS (Sintaxis correcta, Type hints completos)
+- ✅ Code Quality: PASS (CC <10, 0 copy-paste)
+- ✅ Critical Tests: 23/23 PASS
+
+**Archivos Modificados:**
+- `core_brain/executor.py`: Reconciliación + volcado memoria
+- `data_vault/storage.py`: WAL mode + métodos fantasma
+- `connectors/mt5_connector.py`: `get_open_positions()`
+- `scripts/utilities/purge_ghost_records.py`: Script de purga
+
+---
+
 Este documento debe actualizarse cuando:
 - Se complete una fase del roadmap
 - Se añada una nueva estrategia

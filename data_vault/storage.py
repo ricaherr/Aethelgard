@@ -111,15 +111,11 @@ class StorageManager:
         self._initialize_db()
 
     def _get_conn(self) -> sqlite3.Connection:
-        """Get database connection with row factory and WAL mode for concurrent access"""
+        """Get database connection with row factory"""
         if self._persistent_conn is not None:
             return self._persistent_conn
         conn = sqlite3.connect(self.db_path, check_same_thread=False)
         conn.row_factory = sqlite3.Row
-        # Enable WAL mode for concurrent reads/writes without blocking UI
-        conn.execute("PRAGMA journal_mode=WAL;")
-        conn.execute("PRAGMA synchronous=NORMAL;")
-        conn.execute("PRAGMA wal_autocheckpoint=1000;")
         return conn
 
     def _close_conn(self, conn: sqlite3.Connection) -> None:
@@ -154,11 +150,6 @@ class StorageManager:
                 timeframe TEXT,
                 price REAL,
                 direction TEXT,
-                sl REAL,
-                tp REAL,
-                score REAL,
-                execution_status TEXT,
-                reason TEXT,
                 status TEXT DEFAULT 'active',
                 order_id TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -408,34 +399,6 @@ class StorageManager:
         Includes connector, account, platform, and market information.
         """
         signal_id = str(uuid.uuid4())
-        
-        # Serialize signal data
-        serialized_data = self._serialize_signal_data(signal)
-        
-        def _save(conn: sqlite3.Connection, signal_id: str) -> None:
-            cursor = conn.cursor()
-            
-            # Get timestamp value
-            timestamp_value = self._get_signal_timestamp(signal)
-            
-            # Build insert data
-            columns, values = self._build_signal_insert_data(signal, signal_id, serialized_data, timestamp_value)
-            
-            # Execute insert
-            placeholders = ','.join('?' for _ in values)
-            columns_str = ','.join(columns)
-            
-            cursor.execute(f"""
-                INSERT INTO signals ({columns_str})
-                VALUES ({placeholders})
-            """, values)
-            conn.commit()
-        
-        self._execute_serialized(_save, signal_id)
-        return signal_id
-
-    def _serialize_signal_data(self, signal: Any) -> Dict[str, Any]:
-        """Serialize signal metadata and connector type"""
         # Serialize metadata properly (convert non-JSON types)
         metadata = getattr(signal, 'metadata', {})
         serialized_metadata = {}
@@ -452,58 +415,65 @@ class StorageManager:
             connector_type_value = getattr(signal, 'connector_type')
             connector_type = connector_type_value if isinstance(connector_type_value, str) else connector_type_value.value
         
-        return {
-            'metadata': serialized_metadata,
-            'connector_type': connector_type
-        }
-
-    def _get_signal_timestamp(self, signal: Any) -> Optional[str]:
-        """Extract and format timestamp from signal"""
-        timestamp = getattr(signal, 'timestamp', None)
-        if timestamp:
-            if isinstance(timestamp, datetime):
-                # Keep naive datetimes as-is (they're in local time)
-                # Only convert aware datetimes to UTC
-                if timestamp.tzinfo is not None:
-                    timestamp_utc = timestamp.astimezone(timezone.utc)
-                    return timestamp_utc.strftime('%Y-%m-%d %H:%M:%S')
+        def _save(conn: sqlite3.Connection, signal_id: str) -> None:
+            cursor = conn.cursor()
+            
+            # Use signal timestamp if provided, otherwise use current time
+            timestamp = getattr(signal, 'timestamp', None)
+            if timestamp:
+                if isinstance(timestamp, datetime):
+                    # Keep naive datetimes as-is (they're in local time)
+                    # Only convert aware datetimes to UTC
+                    if timestamp.tzinfo is not None:
+                        timestamp_utc = timestamp.astimezone(timezone.utc)
+                        timestamp_value = timestamp_utc.strftime('%Y-%m-%d %H:%M:%S')
+                    else:
+                        # Naive datetime - keep as-is
+                        timestamp_value = timestamp.strftime('%Y-%m-%d %H:%M:%S')
                 else:
-                    # Naive datetime - keep as-is
-                    return timestamp.strftime('%Y-%m-%d %H:%M:%S')
+                    timestamp_value = str(timestamp)
             else:
-                return str(timestamp)
-        return None
-
-    def _build_signal_insert_data(self, signal: Any, signal_id: str, serialized_data: Dict[str, Any], timestamp_value: Optional[str]) -> tuple:
-        """Build column names and values for signal insert"""
-        base_columns = ['id', 'symbol', 'signal_type', 'confidence', 'metadata', 'connector_type', 'timeframe', 'price', 'direction']
-        base_values = [
-            signal_id,
-            getattr(signal, 'symbol', 'unknown'),
-            self._get_signal_type_value(signal),
-            getattr(signal, 'confidence', None),
-            json.dumps(serialized_data['metadata']),
-            serialized_data['connector_type'],
-            getattr(signal, 'timeframe', None),
-            getattr(signal, 'price', None),
-            getattr(signal, 'direction', None)
-        ]
+                timestamp_value = None  # Will use DEFAULT CURRENT_TIMESTAMP
+            
+            # Build columns and values dynamically
+            base_columns = ['id', 'symbol', 'signal_type', 'confidence', 'metadata', 'connector_type', 'timeframe', 'price', 'direction']
+            base_values = [
+                signal_id,
+                getattr(signal, 'symbol', 'unknown'),
+                self._get_signal_type_value(signal),
+                getattr(signal, 'confidence', None),
+                json.dumps(serialized_metadata),
+                connector_type,
+                getattr(signal, 'timeframe', None),
+                getattr(signal, 'price', None),
+                getattr(signal, 'direction', None)
+            ]
+            
+            # Auto-detect if signal was executed: if it has entry_price, stop_loss, and take_profit
+            entry_price = getattr(signal, 'entry_price', None)
+            stop_loss = getattr(signal, 'stop_loss', None)
+            take_profit = getattr(signal, 'take_profit', None)
+            is_executed = entry_price and stop_loss and take_profit
+            status = 'executed' if is_executed else 'active'
+            
+            if timestamp_value is not None:
+                columns = ['timestamp', 'status'] + base_columns
+                values = [timestamp_value, status] + base_values
+            else:
+                columns = ['status'] + base_columns
+                values = [status] + base_values
+            
+            placeholders = ','.join('?' for _ in values)
+            columns_str = ','.join(columns)
+            
+            cursor.execute(f"""
+                INSERT INTO signals ({columns_str})
+                VALUES ({placeholders})
+            """, values)
+            conn.commit()
         
-        # Auto-detect if signal was executed: if it has entry_price, stop_loss, and take_profit
-        entry_price = getattr(signal, 'entry_price', None)
-        stop_loss = getattr(signal, 'stop_loss', None)
-        take_profit = getattr(signal, 'take_profit', None)
-        is_executed = entry_price and stop_loss and take_profit
-        status = 'executed' if is_executed else 'active'
-        
-        if timestamp_value is not None:
-            columns = ['timestamp', 'status'] + base_columns
-            values = [timestamp_value, status] + base_values
-        else:
-            columns = ['status'] + base_columns
-            values = [status] + base_values
-        
-        return columns, values
+        self._execute_serialized(_save, signal_id)
+        return signal_id
 
     def get_signals(self, limit: int = 100, status: Optional[str] = None) -> List[Dict]:
         """Get signals from database"""
@@ -583,27 +553,11 @@ class StorageManager:
                 else:
                     current_metadata = dict(metadata_update)
 
-                # Build dynamic UPDATE query for new columns
-                update_fields = ["status = ?", "metadata = ?", "updated_at = ?"]
-                update_values = [status, json.dumps(current_metadata), datetime.now()]
-                
-                if 'execution_status' in metadata_update:
-                    update_fields.append("execution_status = ?")
-                    update_values.append(metadata_update['execution_status'])
-                
-                if 'reason' in metadata_update:
-                    update_fields.append("reason = ?")
-                    update_values.append(metadata_update['reason'])
-
-                update_values.append(signal_id)
-                
-                query = f"""
+                cursor.execute("""
                     UPDATE signals 
-                    SET {', '.join(update_fields)}
+                    SET status = ?, metadata = ?, updated_at = ?
                     WHERE id = ?
-                """
-                
-                cursor.execute(query, update_values)
+                """, (status, json.dumps(current_metadata), datetime.now(), signal_id))
 
                 if 'ticket' in metadata_update:
                     cursor.execute("""
@@ -1135,20 +1089,106 @@ class StorageManager:
             # Begin explicit transaction
             cursor.execute("BEGIN TRANSACTION")
             
-            # Update account fields (non-password)
-            self._update_account_fields(cursor, account_id, account_name, account_number, 
-                                       server, account_type, enabled)
+            # Build update query with explicit column mapping
+            update_fields = []
+            update_values = []
             
-            # Update password if provided
+            if account_name is not None:
+                update_fields.append("account_name = ?")
+                update_values.append(account_name)
+                
+            if account_number is not None:
+                update_fields.append("account_number = ?")
+                update_values.append(account_number)
+                
+            if server is not None:
+                update_fields.append("server = ?")
+                update_values.append(server)
+                
+            if account_type is not None:
+                update_fields.append("account_type = ?")
+                update_values.append(account_type)
+                
+            if enabled is not None:
+                update_fields.append("enabled = ?")
+                update_values.append(enabled)
+            
+            # Always update timestamp
+            update_fields.append("updated_at = ?")
+            update_values.append(datetime.now())
+            update_values.append(account_id)  # WHERE clause
+            
+            if update_fields:
+                set_clause = ", ".join(update_fields)
+                cursor.execute(f"""
+                    UPDATE broker_accounts
+                    SET {set_clause}
+                    WHERE account_id = ?
+                """, update_values)
+            
+            # Handle password update with explicit cleanup
             if password is not None:
-                self._update_account_password(cursor, account_id, password)
+                # First, delete existing credentials for this account
+                cursor.execute("""
+                    DELETE FROM credentials 
+                    WHERE broker_account_id = ?
+                """, (account_id,))
+                
+                # Then insert new encrypted credentials
+                encrypted_data = get_encryptor().encrypt(json.dumps({'password': password}))
+                cursor.execute("""
+                    INSERT INTO credentials (broker_account_id, encrypted_data)
+                    VALUES (?, ?)
+                """, (account_id, encrypted_data))
             
             # Commit the transaction
             conn.commit()
             
-            # Verify the update was successful
-            self._verify_account_update(cursor, account_id, account_name, account_number,
-                                       server, account_type, enabled, password)
+            # === POST-WRITE VERIFICATION ===
+            # Verify account data was saved correctly
+            cursor.execute("""
+                SELECT account_name, account_number, server, account_type, enabled
+                FROM broker_accounts
+                WHERE account_id = ?
+            """, (account_id,))
+            
+            row = cursor.fetchone()
+            if not row:
+                raise ValueError(f"Account {account_id} not found after update")
+                
+            saved_name, saved_number, saved_server, saved_type, saved_enabled = row
+            
+            # Verify each field that was supposed to be updated
+            if account_name is not None and saved_name != account_name:
+                raise ValueError(f"Account name verification failed: expected '{account_name}', got '{saved_name}'")
+            if account_number is not None and saved_number != account_number:
+                raise ValueError(f"Account number verification failed: expected '{account_number}', got '{saved_number}'")
+            if server is not None and saved_server != server:
+                raise ValueError(f"Server verification failed: expected '{server}', got '{saved_server}'")
+            if account_type is not None and saved_type != account_type:
+                raise ValueError(f"Account type verification failed: expected '{account_type}', got '{saved_type}'")
+            if enabled is not None and saved_enabled != enabled:
+                raise ValueError(f"Enabled status verification failed: expected {enabled}, got {saved_enabled}")
+            
+            # Verify password was saved (if provided)
+            if password is not None:
+                cursor.execute("""
+                    SELECT encrypted_data FROM credentials
+                    WHERE broker_account_id = ?
+                """, (account_id,))
+                
+                cred_row = cursor.fetchone()
+                if not cred_row:
+                    raise ValueError(f"Password credentials not found after update for account {account_id}")
+                    
+                # We can't decrypt to verify exact password, but we can verify structure
+                try:
+                    decrypted = get_encryptor().decrypt(cred_row[0])
+                    cred_data = json.loads(decrypted)
+                    if 'password' not in cred_data:
+                        raise ValueError(f"Password not found in decrypted credentials for account {account_id}")
+                except Exception as e:
+                    raise ValueError(f"Password verification failed: {e}")
             
         except Exception as e:
             # Rollback on any error
@@ -1269,58 +1309,42 @@ class StorageManager:
             for row in rows:
                 provider = dict(zip(column_names, row))
                 
-                # Process provider configuration
-                self._process_provider_config(provider)
+                # Handle backward compatibility: if there's a 'config' column with JSON, extract fields
+                if 'config' in provider and provider['config']:
+                    try:
+                        config_data = json.loads(provider['config'])
+                        # Merge config fields into provider dict at top level
+                        provider.update(config_data)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                
+                # Also handle additional_config - it's stored as JSON string
+                if 'additional_config' in provider and provider['additional_config']:
+                    try:
+                        if isinstance(provider['additional_config'], str):
+                            provider['additional_config'] = json.loads(provider['additional_config'])
+                    except (json.JSONDecodeError, TypeError):
+                        provider['additional_config'] = {}
+                else:
+                    provider['additional_config'] = {}
                 
                 # Wrap in 'config' dict for backward compatibility
-                self._wrap_provider_config(provider)
+                provider['config'] = {
+                    'priority': provider.get('priority', 50),
+                    'requires_auth': provider.get('requires_auth', False),
+                    'api_key': provider.get('api_key'),
+                    'api_secret': provider.get('api_secret'),
+                    'additional_config': provider.get('additional_config', {}),
+                    'is_system': provider.get('is_system', False)
+                }
                 
-                # Set ID for backward compatibility
-                self._set_provider_id(provider)
-                
+                # For backward compatibility, set id = name if no id column
+                if 'id' not in provider or not provider['id']:
+                    provider['id'] = provider.get('name')
                 providers.append(provider)
-            
             return providers
         finally:
             self._close_conn(conn)
-
-    def _process_provider_config(self, provider: Dict) -> None:
-        """Process and normalize provider configuration fields"""
-        # Handle backward compatibility: if there's a 'config' column with JSON, extract fields
-        if 'config' in provider and provider['config']:
-            try:
-                config_data = json.loads(provider['config'])
-                # Merge config fields into provider dict at top level
-                provider.update(config_data)
-            except (json.JSONDecodeError, TypeError):
-                pass
-        
-        # Also handle additional_config - it's stored as JSON string
-        if 'additional_config' in provider and provider['additional_config']:
-            try:
-                if isinstance(provider['additional_config'], str):
-                    provider['additional_config'] = json.loads(provider['additional_config'])
-            except (json.JSONDecodeError, TypeError):
-                provider['additional_config'] = {}
-        else:
-            provider['additional_config'] = {}
-
-    def _wrap_provider_config(self, provider: Dict) -> None:
-        """Wrap provider config in 'config' dict for backward compatibility"""
-        provider['config'] = {
-            'priority': provider.get('priority', 50),
-            'requires_auth': provider.get('requires_auth', False),
-            'api_key': provider.get('api_key'),
-            'api_secret': provider.get('api_secret'),
-            'additional_config': provider.get('additional_config', {}),
-            'is_system': provider.get('is_system', False)
-        }
-
-    def _set_provider_id(self, provider: Dict) -> None:
-        """Set provider ID for backward compatibility"""
-        # For backward compatibility, set id = name if no id column
-        if 'id' not in provider or not provider['id']:
-            provider['id'] = provider.get('name')
 
     def update_provider_enabled(self, provider_id: str, enabled: bool) -> None:
         """Update data provider enabled status"""
@@ -1525,12 +1549,34 @@ class StorageManager:
             cursor = conn.cursor()
 
             # Verificar tablas críticas
-            if not self._check_required_tables(cursor):
-                return False
+            required_tables = ['signals', 'trade_results', 'system_state', 'broker_accounts']
+            for table in required_tables:
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
+                if not cursor.fetchone():
+                    logger.error(f"Tabla faltante: {table}")
+                    return False
 
             # Verificar columnas críticas en signals
-            if not self._check_and_repair_signals_columns(cursor):
-                return False
+            required_columns = ['symbol', 'timeframe', 'direction', 'price', 'sl', 'tp', 'score', 'timestamp']
+            cursor.execute("PRAGMA table_info(signals)")
+            columns = [row[1] for row in cursor.fetchall()]
+            for col in required_columns:
+                if col not in columns:
+                    logger.warning(f"Columna faltante en signals: {col}. Intentando agregar...")
+                    # Intentar agregar columna
+                    try:
+                        if col == 'direction':
+                            cursor.execute("ALTER TABLE signals ADD COLUMN direction TEXT")
+                        elif col == 'sl':
+                            cursor.execute("ALTER TABLE signals ADD COLUMN sl REAL")
+                        elif col == 'tp':
+                            cursor.execute("ALTER TABLE signals ADD COLUMN tp REAL")
+                        elif col == 'score':
+                            cursor.execute("ALTER TABLE signals ADD COLUMN score REAL")
+                        logger.info(f"Columna {col} agregada exitosamente.")
+                    except sqlite3.OperationalError as e:
+                        logger.error(f"No se pudo agregar columna {col}: {e}")
+                        return False
 
             conn.commit()
             logger.info("Integridad de base de datos verificada y reparada si fue necesario.")
@@ -1541,144 +1587,6 @@ class StorageManager:
             return False
         finally:
             self._close_conn(conn)
-
-    def _check_required_tables(self, cursor: sqlite3.Cursor) -> bool:
-        """Check if all required tables exist"""
-        required_tables = ['signals', 'trade_results', 'system_state', 'broker_accounts']
-        for table in required_tables:
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
-            if not cursor.fetchone():
-                logger.error(f"Tabla faltante: {table}")
-                return False
-        return True
-
-    def _check_and_repair_signals_columns(self, cursor: sqlite3.Cursor) -> bool:
-        """Check and repair signals table columns"""
-        required_columns = ['symbol', 'timeframe', 'direction', 'price', 'sl', 'tp', 'score', 'timestamp']
-        cursor.execute("PRAGMA table_info(signals)")
-        columns = [row[1] for row in cursor.fetchall()]
-        for col in required_columns:
-            if col not in columns:
-                logger.warning(f"Columna faltante en signals: {col}. Intentando agregar...")
-                if not self._add_missing_column(cursor, col):
-                    return False
-        return True
-
-    def _add_missing_column(self, cursor: sqlite3.Cursor, column_name: str) -> bool:
-        """Add a missing column to signals table"""
-        try:
-            if column_name == 'direction':
-                cursor.execute("ALTER TABLE signals ADD COLUMN direction TEXT")
-            elif column_name == 'sl':
-                cursor.execute("ALTER TABLE signals ADD COLUMN sl REAL")
-            elif column_name == 'tp':
-                cursor.execute("ALTER TABLE signals ADD COLUMN tp REAL")
-            elif column_name == 'score':
-                cursor.execute("ALTER TABLE signals ADD COLUMN score REAL")
-            logger.info(f"Columna {column_name} agregada exitosamente.")
-            return True
-        except sqlite3.OperationalError as e:
-            logger.error(f"No se pudo agregar columna {column_name}: {e}")
-            return False
-
-    def _update_account_fields(self, cursor: sqlite3.Cursor, account_id: str, account_name: str = None, 
-                              account_number: str = None, server: str = None, 
-                              account_type: str = None, enabled: bool = None) -> None:
-        """Update non-password account fields"""
-        update_fields = []
-        update_values = []
-        
-        field_mappings = [
-            (account_name, "account_name = ?"),
-            (account_number, "account_number = ?"),
-            (server, "server = ?"),
-            (account_type, "account_type = ?"),
-            (enabled, "enabled = ?"),
-        ]
-        
-        for value, field_sql in field_mappings:
-            if value is not None:
-                update_fields.append(field_sql)
-                update_values.append(value)
-        
-        if update_fields:
-            update_fields.append("updated_at = ?")
-            update_values.extend([datetime.now(), account_id])
-            
-            set_clause = ", ".join(update_fields)
-            cursor.execute(f"""
-                UPDATE broker_accounts
-                SET {set_clause}
-                WHERE account_id = ?
-            """, update_values)
-    
-    def _update_account_password(self, cursor: sqlite3.Cursor, account_id: str, password: str) -> None:
-        """Update account password with encryption"""
-        # Delete existing credentials
-        cursor.execute("""
-            DELETE FROM credentials 
-            WHERE broker_account_id = ?
-        """, (account_id,))
-        
-        # Insert new encrypted credentials
-        encrypted_data = get_encryptor().encrypt(json.dumps({'password': password}))
-        cursor.execute("""
-            INSERT INTO credentials (broker_account_id, encrypted_data)
-            VALUES (?, ?)
-        """, (account_id, encrypted_data))
-    
-    def _verify_account_update(self, cursor: sqlite3.Cursor, account_id: str, account_name: str = None,
-                              account_number: str = None, server: str = None,
-                              account_type: str = None, enabled: bool = None, 
-                              password: str = None) -> None:
-        """Verify that account update was successful"""
-        # Verify account data
-        cursor.execute("""
-            SELECT account_name, account_number, server, account_type, enabled
-            FROM broker_accounts
-            WHERE account_id = ?
-        """, (account_id,))
-        
-        row = cursor.fetchone()
-        if not row:
-            raise ValueError(f"Account {account_id} not found after update")
-            
-        saved_name, saved_number, saved_server, saved_type, saved_enabled = row
-        
-        # Verify each field
-        self._verify_field(account_name, saved_name, "Account name")
-        self._verify_field(account_number, saved_number, "Account number")
-        self._verify_field(server, saved_server, "Server")
-        self._verify_field(account_type, saved_type, "Account type")
-        self._verify_field(enabled, saved_enabled, "Enabled status")
-        
-        # Verify password if provided
-        if password is not None:
-            self._verify_password_credentials(cursor, account_id)
-    
-    def _verify_field(self, expected: Optional[Any], actual: Any, field_name: str) -> None:
-        """Verify a single field matches expected value"""
-        if expected is not None and actual != expected:
-            raise ValueError(f"{field_name} verification failed: expected '{expected}', got '{actual}'")
-    
-    def _verify_password_credentials(self, cursor: sqlite3.Cursor, account_id: str) -> None:
-        """Verify password credentials were saved correctly"""
-        cursor.execute("""
-            SELECT encrypted_data FROM credentials
-            WHERE broker_account_id = ?
-        """, (account_id,))
-        
-        cred_row = cursor.fetchone()
-        if not cred_row:
-            raise ValueError(f"Password credentials not found after update for account {account_id}")
-            
-        try:
-            decrypted = get_encryptor().decrypt(cred_row[0])
-            cred_data = json.loads(decrypted)
-            if 'password' not in cred_data:
-                raise ValueError(f"Password not found in decrypted credentials for account {account_id}")
-        except Exception as e:
-            raise ValueError(f"Password verification failed: {e}")
 
 
 # Test utilities
@@ -1725,39 +1633,6 @@ def test_trade_result_persistence(storage: StorageManager) -> None:
     results = storage.get_trade_results()
     assert len(results) == 1
     assert results[0]["profit"] == 50.0
-
-def clear_ghost_position(self, symbol: str) -> None:
-    """Clear ghost position from DB when MT5 shows no real position"""
-    conn = self._get_conn()
-    try:
-        cursor = conn.cursor()
-        cursor.execute("""
-            UPDATE signals 
-            SET status = 'GHOST_CLEARED', 
-                execution_status = 'GHOST_CLEARED',
-                reason = 'Cleared during reconciliation - no real MT5 position',
-                updated_at = ?
-            WHERE symbol = ? AND status = 'executed'
-        """, (datetime.now(), symbol))
-        conn.commit()
-        logger.info(f"Cleared ghost position for {symbol}")
-    finally:
-        self._close_conn(conn)
-
-def get_open_position_id(self, symbol: str) -> Optional[str]:
-    """Get the signal ID of any open position for debugging"""
-    conn = self._get_conn()
-    try:
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT id FROM signals 
-            WHERE symbol = ? AND status = 'executed'
-            ORDER BY timestamp DESC LIMIT 1
-        """, (symbol,))
-        row = cursor.fetchone()
-        return row[0] if row else None
-    finally:
-        self._close_conn(conn)
 
 def test_market_state_logging(storage: StorageManager) -> None:
     """Test market state logging"""
