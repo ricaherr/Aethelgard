@@ -1,6 +1,78 @@
 # Aethelgard – Roadmap
 
-**Última actualización**: 2026-02-05 (**INTERFAZ CINÉTICA AETHELGARD V1.1**)
+**Última actualización**: 2026-02-06 (**CADENA DE MANDO Y EDGE INTELLIGENCE**)
+
+---
+
+## � MILESTONE: Arquitectura Dinámica - Cadena de Mando y Edge Intelligence (2026-02-06)
+
+**Estado del Sistema:**
+```
+Señales Generadas: ✅
+Ejecución Señales: ✅ SINCRONIZADO CON MT5
+UI Congelada: ✅ WAL MODE ACTIVADO
+Audit Log: ✅ IMPLEMENTADO
+Aprendizaje EDGE: ✅ ACTIVO
+Sincronización: ✅ RECONCILIACIÓN ACTIVA
+Interfaz Cinética: ✅ V1.1 OPERATIVA - LEGIBILIDAD MILITAR
+Componentes Lógicos: ✅ DOCUMENTADOS EN MANIFESTO
+Cadena de Mando: ✅ DEFINIDA EN MANIFESTO
+```
+
+**Problemas Identificados:**
+- Falta definición clara de flujo de datos y cadena de mando
+- No hay matriz de interdependencias para fallos en cascada
+- HealthManager no rastrea estados del sistema (solo existencia de archivos)
+- Single Points of Failure no identificados para protección EDGE
+
+**Plan de Trabajo:**
+1. 🔄 Definir Diagrama de Flujo Lógico: Camino completo dato→Edge Monitor
+2. 🔄 Crear Matriz de Interdependencia: Fallos en cascada entre componentes
+3. 🔄 Implementar State Machine: Estados SCANNING/ANALYZING/EXECUTING/MONITORING
+4. 🔄 Identificar Single Points of Failure: 3 componentes críticos
+5. 🔄 Actualizar HealthManager para rastreo de estados
+
+**Tareas Pendientes:**
+- Mapear flujo exacto desde Scanner hasta Edge Monitor
+- Documentar punto exacto de interrupción del Risk Manager
+- Crear tabla de interdependencias
+- Definir estados del sistema y actualizar HealthManager
+- Identificar y documentar los 3 SPOF críticos
+
+---
+
+## � MILESTONE: Evaluación Arquitectónica - Componentes Lógicos del Sistema (2026-02-06)
+
+**Estado del Sistema:**
+```
+Señales Generadas: ✅
+Ejecución Señales: ✅ SINCRONIZADO CON MT5
+UI Congelada: ✅ WAL MODE ACTIVADO
+Audit Log: ✅ IMPLEMENTADO
+Aprendizaje EDGE: ✅ ACTIVO
+Sincronización: ✅ RECONCILIACIÓN ACTIVA
+Interfaz Cinética: ✅ V1.1 OPERATIVA - LEGIBILIDAD MILITAR
+Componentes Lógicos: ✅ DOCUMENTADOS EN MANIFESTO
+```
+
+**Problemas Identificados:**
+- Documentación incompleta de componentes lógicos en AETHELGARD_MANIFESTO.md
+- Falta lista exhaustiva de módulos del Core Brain
+- Componentes no documentados: SignalFactory, RiskManager, Executor, Monitor, Health, etc.
+- Arquitectura no clara para nuevos desarrolladores
+
+**Plan de Trabajo:**
+1. 🔄 Evaluar componentes actuales en estructura del proyecto
+2. 🔄 Identificar componentes lógicos faltantes en documentación
+3. 🔄 Actualizar sección "Componentes Principales" en AETHELGARD_MANIFESTO.md
+4. 🔄 Agregar diagramas y descripciones detalladas
+5. 🔄 Validar coherencia con reglas de autonomía y arquitectura
+
+**Tareas Pendientes:**
+- Evaluar estructura core_brain/ para componentes no documentados
+- Documentar Signal Factory, Risk Manager, Executor, Monitor, Health
+- Actualizar diagrama de arquitectura con todos los componentes
+- Verificar consistencia con Single Source of Truth y inyección de dependencias
 
 ---
 
@@ -38,6 +110,8 @@ Interfaz Cinética: ✅ V1.1 OPERATIVA - LEGIBILIDAD MILITAR
 - ✅ Ojo Inteligente: Color dinámico basado en detección real de trades manuales
 - ✅ TTS Real-time: Activación por eventos EDGE reales, no simulados
 - ✅ Diseño Militar: Contraste máximo, legibilidad bajo presión garantizada
+- ✅ Componentes Lógicos: Documentación completa en AETHELGARD_MANIFESTO.md
+- ✅ Cadena de Mando: Diagrama de flujo, matriz de interdependencias, state machine y SPOF definidos
 
 **Estado Final del Sistema:**
 ```
@@ -1232,6 +1306,42 @@ Demo Deployment: MT5 NO DISPONIBLE (Entorno Desarrollo)
 - ✅ Overloads agregados en get_credentials - líneas 1253-1258
 
 **Estado del Sistema:** Sin cambios - correcciones de tipos no afectan funcionalidad
+
+---
+
+## � MILESTONE: Aethelgard Pipeline Tracker - Rastreo y Visualización de Flujo (2026-02-06)
+
+**Estado del Sistema:**
+```
+Trace ID: ❌ NO IMPLEMENTADO
+Live Pipeline UI: ❌ NO IMPLEMENTADO
+Funnel Counter: ❌ NO IMPLEMENTADO
+Latido de Módulos: ❌ NO IMPLEMENTADO
+Comportamientos Emergentes: ❌ NO IMPLEMENTADO
+```
+
+**Problemas Identificados:**
+- No hay rastreo de señales a través del pipeline
+- UI no muestra flujo en tiempo real
+- No hay métricas de conversión para detectar fallas lógicas
+- No hay monitoreo de actividad de módulos
+- Falta detección automática de patrones emergentes
+
+**Plan de Trabajo:**
+1. 🔄 Implementar Trace ID en Scanner y Signal model
+2. 🔄 Modificar módulos para pasar Trace ID y etiquetas de descarte
+3. 🔄 Crear visualización Live Pipeline en UI con colores dinámicos
+4. 🔄 Implementar Funnel Counter en tiempo real
+5. 🔄 Agregar Monitor de Latido de Módulos
+6. 🔄 Implementar Detección de Comportamientos Emergentes en Edge Monitor
+
+**Tareas Pendientes:**
+- Generar Trace ID único por ciclo de Scanner
+- Actualizar Signal model para incluir trace_id y status
+- Modificar Risk Manager para etiquetar 'VETADO' y detener Trace ID
+- Crear componentes UI para pipeline visual, funnel, latidos, insights
+- Agregar lógica de latido en cada módulo
+- Implementar análisis de bloqueo por activo en Edge Monitor
 
 ---
 

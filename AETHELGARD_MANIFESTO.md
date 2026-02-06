@@ -2,7 +2,7 @@
 ## Única Fuente de Verdad del Proyecto
 
 > **Versión:** 1.0  
-> **Última Actualización:** Febrero 2026  
+> **Última Actualización:** Febrero 2026 - Cadena de Mando y Edge Intelligence  
 > **Estado del Proyecto:** Fase 2 - Implementación de Estrategias Modulares
 
 ---
@@ -100,7 +100,7 @@ Aethelgard utiliza una arquitectura **Hub-and-Spoke** donde el **Core Brain** (P
 
 #### 1. **Core Brain** (`core_brain/`)
 
-##### `server.py` - Servidor FastAPI con WebSockets
+El Core Brain es el núcleo autónomo del sistema, compuesto por módulos especializados que operan de forma independiente pero coordinada. Cada módulo sigue el principio de inyección de dependencias y lee configuraciones desde la base de datos (Single Source of Truth).
 - **Función**: Punto de entrada principal del sistema
 - **Responsabilidades**:
   - Gestionar múltiples conexiones WebSocket simultáneas
@@ -235,6 +235,65 @@ await orchestrator.run()  # Inicia el loop resiliente
   4. Optimiza multiplicador de volatilidad para shocks
   5. Guarda configuración optimizada en `config/dynamic_params.json`
 
+##### `monitor.py` - Monitor del Sistema
+- **Función**: Monitorea el estado y rendimiento del sistema en tiempo real
+- **Características**:
+  - Métricas de rendimiento (latencia, throughput)
+  - Detección de anomalías
+  - Alertas proactivas
+- **Dependencias**: StorageManager, Health
+
+##### `health.py` - Monitor de Salud
+- **Función**: Verifica la salud de todos los componentes del sistema
+- **Checks**: Conectividad, recursos del sistema, estado de conectores
+- **Dependencias**: Todos los módulos principales
+
+##### `server.py` - Servidor API y WebSockets
+- **Función**: Proporciona interfaces REST y WebSocket para comunicación
+- **Endpoints**: Health, señales, régimen, WebSocket para conectores
+- **Dependencias**: FastAPI, Uvicorn
+
+##### `data_provider_manager.py` - Gestor de Proveedores de Datos
+- **Función**: Gestiona múltiples proveedores de datos con fallback automático
+- **Proveedores**: Yahoo Finance, CCXT, Alpha Vantage, Twelve Data, Polygon, MT5
+- **Características**: Priorización, configuración desde DB, detección automática de tipo
+- **Dependencias**: StorageManager
+
+##### `instrument_manager.py` - Gestor de Instrumentos
+- **Función**: Gestiona la lista de instrumentos disponibles y sus configuraciones
+- **Características**: Filtrado por broker, validación de símbolos
+- **Dependencias**: StorageManager
+
+##### `module_manager.py` - Gestor de Módulos
+- **Función**: Controla la activación de módulos según niveles de membresía
+- **Características**: Filtrado Basic/Premium de señales y funciones
+- **Dependencias**: StorageManager
+
+##### `notificator.py` - Sistema de Notificaciones
+- **Función**: Gestiona notificaciones vía Telegram y otros canales
+- **Características**: Configuración desde DB, templates de mensajes
+- **Dependencias**: StorageManager
+
+##### `trade_closure_listener.py` - Listener de Cierres de Trades
+- **Función**: Monitorea cierres de posiciones para feedback y aprendizaje
+- **Características**: Actualización automática de resultados, reconciliación
+- **Dependencias**: StorageManager, Conectores
+
+##### `edge_monitor.py` - Monitor de Inteligencia Edge
+- **Función**: Aprende de los resultados para optimizar estrategias
+- **Características**: Análisis de patrones, ajuste automático de pesos
+- **Dependencias**: StorageManager
+
+##### `coherence_monitor.py` - Monitor de Coherencia
+- **Función**: Verifica consistencia entre señales y ejecución
+- **Características**: Detección de discrepancias, alertas
+- **Dependencias**: StorageManager
+
+##### `confluence.py` - Analizador de Confluencia Multi-Timeframe
+- **Función**: Evalúa alineación de señales across timeframes
+- **Características**: Pesos dinámicos, refuerzo/penalización de señales
+- **Dependencias**: Configuración dinámica
+
 #### 2. **Conectores** (`connectors/`)
 
 ##### `bridge_nt8.cs` - Bridge para NinjaTrader 8
@@ -354,7 +413,46 @@ manager.configure_provider("alphavantage", api_key="YOUR_KEY_HERE")
 - **Comunicación**: HTTP POST hacia `http://localhost:8000/api/signal`
 - **Puerto**: 8001 (servidor independiente)
 
-#### 3. **Data Vault** (`data_vault/`)
+#### 3. **UI** (`ui/`)
+
+##### Dashboard Streamlit
+- **Función**: Interfaz multi-pestaña para monitoreo y configuración
+- **Características**:
+  - Dashboard principal con métricas en tiempo real
+  - Gestión de brokers y proveedores
+  - Visualización de señales y trades
+  - Configuración de parámetros
+- **Dependencias**: StorageManager, Core Brain modules
+
+#### 4. **Models** (`models/`)
+
+##### Definiciones de Datos
+- `signal.py`: Modelos Pydantic para señales, resultados, regímenes
+- `broker_event.py`: Eventos de brokers
+
+#### 5. **Utilities y Scripts**
+
+##### Scripts de Validación (`scripts/`)
+- `architecture_audit.py`: Auditoría de arquitectura
+- `code_quality_analyzer.py`: Análisis de calidad de código
+- `qa_guard.py`: Guardia de calidad
+- `validate_all.py`: Validación completa
+
+##### Tests (`tests/`)
+- Cobertura completa con pytest
+- Tests unitarios, integración y end-to-end
+- Mocks para entornos sin brokers
+
+#### 6. **Configuración** (`config/`)
+
+##### Archivos de Configuración
+- `config.json`: Configuración general del sistema
+- `dynamic_params.json`: Parámetros auto-calibrados
+- `risk_settings.json`: Configuración de riesgos
+- `instruments.json`: Lista de instrumentos
+- `modules.json`: Configuración de módulos por membresía
+
+#### 7. **Data Vault** (`data_vault/`)
 
 
 ##### `storage.py` - Sistema de Persistencia SQLite
@@ -390,6 +488,89 @@ manager.configure_provider("alphavantage", api_key="YOUR_KEY_HERE")
 
 ---
 
+
+## 🔗 Cadena de Mando y Arquitectura Dinámica
+
+### Diagrama de Flujo Lógico
+
+El flujo de datos en Aethelgard sigue una cadena de mando estricta desde la recepción de datos hasta el archivado en Edge Intelligence. Cada componente valida y enriquece los datos antes de pasarlos al siguiente.
+
+```
+[Scanner] → [Regime Classifier] → [Signal Factory] → [Risk Manager] → [Executor] → [Edge Monitor]
+     ↓              ↓                        ↓              ↓ (VETO)         ↓
+  Data Raw      Market State              Signals       Lockdown Mode    Execution
+```
+
+**Camino Detallado de un Dato:**
+
+1. **Recepción (Scanner)**: `scanner.py` recibe datos OHLC del `DataProviderManager` para cada símbolo/timeframe activo.
+
+2. **Clasificación (Regime Classifier)**: `regime.py` analiza datos con ADX, volatilidad, ATR. Genera `MarketRegime` (TREND/RANGE/CRASH/NEUTRAL).
+
+3. **Generación de Señales (Signal Factory)**: `signal_factory.py` delega a estrategias (ej: OliverVelezStrategy). Aplica confluencia multi-timeframe. Persiste señales en DB.
+
+4. **Validación de Riesgos (Risk Manager)**: `risk_manager.py` verifica:
+   - Estado de lockdown (3 pérdidas consecutivas)
+   - Tamaño de posición (1% capital normal, 0.5% VOLATILE/RANGE)
+   - **PUNTO DE INTERRUPCIÓN**: Si veta, retorna `False` y la señal se descarta. No llega al Executor.
+
+5. **Ejecución (Executor)**: `executor.py` valida nuevamente con RiskManager, luego routing al conector apropiado (MT5/NT8/etc.). Persiste resultado en DB.
+
+6. **Archivado (Edge Monitor)**: `edge_monitor.py` analiza resultados, actualiza pesos de estrategias, aprende patrones. Archiva en `data_vault` para auto-calibración.
+
+**Interrupción por Risk Manager:**
+- Ocurre en `executor.py::execute_signal()` línea ~150: `if not self.risk_manager.validate_signal(signal): return False`
+- La señal se marca como "VETADA" en DB pero no se ejecuta.
+- Notificación vía Telegram si configurado.
+
+### Matriz de Interdependencia
+
+| Componente Fallido | Impacto en Cascada | Modo Seguro | Recuperación |
+|-------------------|-------------------|-------------|-------------|
+| **DataProviderManager** | Scanner → Falla total | Usa Yahoo Finance (fallback hardcodeado) | Auto-reconexión |
+| **Regime Classifier** | Signal Factory → Señales sin contexto de mercado | Modo NEUTRAL forzado | Reinicio automático |
+| **Risk Manager** | Executor → Órdenes sin validación | Lockdown inmediato | Persistencia de estado |
+| **StorageManager** | Todos → Pérdida de datos | Modo read-only, alertas | Retry con backoff |
+| **Executor** | Sistema → Órdenes pendientes | Cierre forzado de posiciones | Reconciliación manual |
+| **Main Orchestrator** | Sistema → Detenido | HealthManager toma control | Reinicio graceful |
+| **Signal Factory** | Sin señales nuevas | Estrategias previas continúan | Recarga configuración |
+| **Scanner** | Sin nuevos datos | Usa datos históricos | Reintento con CPU check |
+| **HealthManager** | Sin monitoreo | Alertas perdidas | Notificaciones externas |
+
+### Seguimiento de Estado (State Machine)
+
+El sistema opera en estados discretos rastreados por `health.py`. Cada transición se registra en DB.
+
+**Estados del Sistema:**
+- **SCANNING**: Recolectando datos de mercado
+- **ANALYZING**: Clasificando régimen y generando señales
+- **EXECUTING**: Validando y ejecutando órdenes
+- **MONITORING**: Analizando resultados y aprendiendo
+
+**Transiciones:**
+```
+SCANNING → ANALYZING (datos suficientes)
+ANALYZING → EXECUTING (señales generadas)
+EXECUTING → MONITORING (órdenes ejecutadas)
+MONITORING → SCANNING (ciclo completo)
+CUALQUIER → LOCKDOWN (3 pérdidas consecutivas)
+```
+
+**Actualización de HealthManager:**
+- `health.py` ahora incluye `system_state` tracking
+- Método `get_current_state()` consulta DB para estado actual
+- Alertas si estado "stuck" > 5 minutos
+- Dashboard muestra estado en tiempo real
+
+### Single Points of Failure (SPOF)
+
+Los 3 componentes críticos que, si fallan, dejan órdenes abiertas sin protección:
+
+1. **Risk Manager**: Si falla, Executor ejecuta sin validación. Órdenes abiertas sin stop-loss automático.
+2. **StorageManager**: Si falla escritura, estado de posiciones se pierde. Sistema "olvida" trades activos.
+3. **Trade Closure Listener**: Si falla, cierres manuales no se detectan. Pérdidas no se registran correctamente.
+
+**Protección EDGE:** Monitor EDGE vigila estos 3 primero. Si detecta fallo, activa modo seguro inmediato.
 
 ## 🤖 Reglas de Autonomía
 
