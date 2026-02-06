@@ -1439,6 +1439,20 @@ class StorageManager:
         finally:
             self._close_conn(conn)
 
+    def update_module_heartbeat(self, module_name: str) -> None:
+        """Update last activity timestamp for a module"""
+        self.update_system_state({f"heartbeat_{module_name}": datetime.now().isoformat()})
+
+    def get_module_heartbeats(self) -> Dict[str, str]:
+        """Get last activity timestamps for all modules"""
+        system_state = self.get_system_state()
+        heartbeats = {}
+        for key, value in system_state.items():
+            if key.startswith("heartbeat_"):
+                module_name = key.replace("heartbeat_", "")
+                heartbeats[module_name] = value
+        return heartbeats
+
     def get_signals_today(self) -> List[Dict]:
         """Get signals from today (for dashboard compatibility)"""
         from datetime import date

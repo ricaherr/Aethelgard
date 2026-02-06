@@ -121,7 +121,7 @@ class SignalFactory:
             logger.error(f"Failed to register OliverVelezStrategy: {e}", exc_info=True)
 
     async def generate_signal(
-        self, symbol: str, df: pd.DataFrame, regime: MarketRegime, timeframe: Optional[str] = None
+        self, symbol: str, df: pd.DataFrame, regime: MarketRegime, timeframe: Optional[str] = None, trace_id: Optional[str] = None
     ) -> List[Signal]:
         """
         Analiza un símbolo con TODAS las estrategias registradas.
@@ -146,6 +146,10 @@ class SignalFactory:
                     # Set timeframe in signal if provided
                     if timeframe:
                         signal.timeframe = timeframe
+                    
+                    # Set trace_id for pipeline tracking
+                    if trace_id:
+                        signal.trace_id = trace_id
                     
                     # Validar que no sea duplicado antes de procesar
                     if self._is_duplicate_signal(signal):
@@ -313,7 +317,7 @@ class SignalFactory:
             logger.error(f"Error processing valid signal for {signal.symbol}: {e}")
 
     async def generate_signals_batch(
-        self, scan_results: Dict[str, Dict]
+        self, scan_results: Dict[str, Dict], trace_id: Optional[str] = None
     ) -> List[Signal]:
         """
         Procesa un lote de resultados del ScannerEngine y genera señales.
@@ -336,7 +340,7 @@ class SignalFactory:
             if regime and df is not None and symbol:
                 # Pass both symbol and timeframe to strategies
                 # Strategies will use timeframe for signal metadata
-                tasks.append(self.generate_signal(symbol, df, regime, timeframe))
+                tasks.append(self.generate_signal(symbol, df, regime, timeframe, trace_id))
 
         if not tasks:
             return []

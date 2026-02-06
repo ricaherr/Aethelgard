@@ -535,6 +535,118 @@ def render_edge_intelligence_view(storage: StorageManager) -> None:
         spread_class = "vibrate" if current_spread > 2.0 else ""
         st.markdown(f'<div class="metric-card-dark {spread_class}">Spread: {current_spread:.1f} pips</div>', unsafe_allow_html=True)
     
+    # === AETHELGARD PIPELINE TRACKER ===
+    st.markdown("---")
+    st.header("🔄 Aethelgard Pipeline Tracker")
+    
+    # Get pipeline stats from session stats
+    try:
+        session_stats = storage.get_system_state().get('session_stats', {})
+        scans_total = session_stats.get('scans_total', 0)
+        signals_generated = session_stats.get('signals_generated', 0)
+        signals_risk_passed = session_stats.get('signals_risk_passed', 0)
+        signals_executed = session_stats.get('signals_executed', 0)
+        signals_vetoed = session_stats.get('signals_vetoed', 0)
+    except:
+        scans_total = signals_generated = signals_risk_passed = signals_executed = signals_vetoed = 0
+    
+    # Live Pipeline Visualization
+    st.subheader("📊 Live Pipeline Flow")
+    col1, col2, col3, col4, col5 = st.columns(5)
+    
+    pipeline_steps = [
+        ("SCAN", scans_total, "🔍"),
+        ("CLASS", signals_generated, "🎯"),
+        ("SIGNAL", signals_generated, "📡"),
+        ("RISK", signals_risk_passed, "🛡️"),
+        ("EXEC", signals_executed, "⚡")
+    ]
+    
+    for i, (step, count, icon) in enumerate(pipeline_steps):
+        with [col1, col2, col3, col4, col5][i]:
+            # Dynamic color based on activity
+            if count > 0:
+                color = "#00FF88"  # Green for active
+                status = "success"
+            else:
+                color = "#666666"  # Gray for inactive
+                status = "secondary"
+            
+            st.markdown(f"""
+            <div style="text-align: center; padding: 10px; border: 2px solid {color}; border-radius: 10px; background: rgba(0,255,136,0.1);">
+                <div style="font-size: 24px;">{icon}</div>
+                <div style="font-size: 12px; color: {color};">{step}</div>
+                <div style="font-size: 18px; font-weight: bold; color: {color};">{count}</div>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    # Funnel Counter
+    st.subheader("📈 Conversion Funnel")
+    funnel_data = {
+        "Stage": ["Scans", "Signals Generated", "Risk Passed", "Executed"],
+        "Count": [scans_total, signals_generated, signals_risk_passed, signals_executed],
+        "Conversion %": [
+            100.0,
+            (signals_generated / scans_total * 100) if scans_total > 0 else 0,
+            (signals_risk_passed / signals_generated * 100) if signals_generated > 0 else 0,
+            (signals_executed / signals_risk_passed * 100) if signals_risk_passed > 0 else 0
+        ]
+    }
+    
+    st.dataframe(funnel_data, use_container_width=True)
+    
+    # Module Heartbeats
+    st.subheader("💓 Module Heartbeats")
+    try:
+        heartbeats = storage.get_module_heartbeats()
+        current_time = datetime.now()
+        
+        for module, timestamp_str in heartbeats.items():
+            try:
+                last_seen = datetime.fromisoformat(timestamp_str)
+                delta = current_time - last_seen
+                minutes_ago = delta.total_seconds() / 60
+                
+                if minutes_ago > 10:
+                    status = "🔴 CRÍTICO/CONGELADO"
+                    color = "#FF0040"
+                elif minutes_ago > 5:
+                    status = "🟡 ADVERTENCIA"
+                    color = "#FF9800"
+                else:
+                    status = "🟢 ACTIVO"
+                    color = "#00FF88"
+                
+                st.markdown(f"**{module.upper()}**: {status} ({minutes_ago:.1f} min ago)", help=f"Last seen: {last_seen.strftime('%H:%M:%S')}")
+            except:
+                st.markdown(f"**{module.upper()}**: ⚠️ ERROR PARSING TIMESTAMP")
+    except Exception as e:
+        st.error(f"Error loading heartbeats: {e}")
+    
+    # Emerging Behaviors Insights
+    st.subheader("🧠 Emerging Behaviors")
+    try:
+        # Get recent edge learning events about risk patterns
+        recent_insights = storage.execute_query("""
+            SELECT * FROM edge_learning 
+            WHERE detection LIKE '%Patrón emergente%' 
+            ORDER BY timestamp DESC LIMIT 5
+        """)
+        
+        if recent_insights:
+            for insight in recent_insights:
+                detection = insight.get('detection', '')
+                learning = insight.get('learning', '')
+                timestamp = insight.get('timestamp', '')
+                
+                with st.expander(f"💡 {detection}", expanded=False):
+                    st.write(f"**Aprendizaje:** {learning}")
+                    st.caption(f"Detectado: {timestamp}")
+        else:
+            st.info("No emerging patterns detected yet.")
+    except Exception as e:
+        st.error(f"Error loading insights: {e}")
+    
     # === SECCIÓN INFERIOR: FEED DE EVENTOS EDGE ===
     st.markdown("---")
     st.subheader("🔍 Eventos EDGE Recientes")

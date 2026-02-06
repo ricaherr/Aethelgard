@@ -60,6 +60,10 @@ class Signal(BaseModel):
     strategy_id: Optional[str] = None
     timeframe: Optional[str] = "M5"  # Default to 5-minute timeframe
     
+    # Pipeline tracking
+    trace_id: Optional[str] = None  # Unique ID for pipeline tracking
+    status: Optional[str] = None    # Status in pipeline: None, 'VETADO', 'APROBADO', etc.
+    
     # Traceability fields (WHERE was this executed?)
     account_id: Optional[str] = None        # UUID de cuenta en DB (foreign key)
     account_type: Optional[str] = "DEMO"    # DEMO o REAL

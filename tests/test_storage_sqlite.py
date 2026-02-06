@@ -40,7 +40,7 @@ def test_system_state_persistence(storage: StorageManager) -> None:
     assert loaded_state["session_stats"]["processed"] == 100
 
 def test_signal_persistence(storage: StorageManager) -> None:
-    """Test saving and retrieving signals"""
+    """Test saving and retrieving signals with trace_id and status"""
     signal = Signal(
         symbol="EURUSD",
         signal_type=SignalType.BUY,
@@ -49,8 +49,13 @@ def test_signal_persistence(storage: StorageManager) -> None:
         entry_price=1.1000,
         stop_loss=1.0950,
         take_profit=1.1100,
+        trace_id="test-trace-123",
+        status=None,
         metadata={"regime": "TREND", "score": 95}
     )
+    
+    assert signal.trace_id == "test-trace-123"
+    assert signal.status is None
     
     signal_id = storage.save_signal(signal)
     assert signal_id is not None

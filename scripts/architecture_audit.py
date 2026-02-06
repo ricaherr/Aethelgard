@@ -59,8 +59,14 @@ class CodeAudit:
                             and dec.attr in {"setter", "deleter"}
                             for dec in item.decorator_list
                         )
+                        
+                        # Check if it's a typing overload (valid duplicate for type hints)
+                        is_overload = any(
+                            isinstance(dec, ast.Name) and dec.id == 'overload'
+                            for dec in item.decorator_list
+                        )
 
-                        if not is_property_setter:
+                        if not is_property_setter and not is_overload:
                             key = f"{class_name}.{method_name}"
                             self.duplicates[key].append((str(filepath.relative_to(self.workspace_root)), line_no))
 
@@ -82,7 +88,7 @@ class CodeAudit:
                                                     )
     
     def report_duplicates(self):
-        """Report all duplicate method definitions"""
+        """Report all duplicate method definitions (excluding valid overloads)"""
         duplicates_found = {k: v for k, v in self.duplicates.items() if len(v) > 1}
         
         if not duplicates_found:

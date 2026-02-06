@@ -64,7 +64,7 @@ class MockSignalFactory:
     def __init__(self, should_generate: bool = True):
         self.should_generate = should_generate
     
-    async def generate_signals_batch(self, scan_results_with_data):
+    async def generate_signals_batch(self, scan_results_with_data, trace_id=None):
         """Nuevo método para generar señales desde scan_results con DataFrames"""
         if not self.should_generate:
             return []
@@ -112,6 +112,13 @@ class MockRiskManager:
     
     def is_lockdown_active(self):
         return self.lockdown
+    
+    def validate_signal(self, signal):
+        """Validate signal - returns True if passes, False if vetoed"""
+        if self.lockdown:
+            signal.status = 'VETADO'
+            return False
+        return True
 
 
 class MockExecutor:

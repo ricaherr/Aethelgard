@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 from typing import Dict, Optional, Any, List
+import uuid
 
 # Add project root to path
 BASE_DIR = Path(__file__).parent.parent
@@ -59,6 +60,11 @@ class SessionStats:
     signals_executed: int = 0
     cycles_completed: int = 0
     errors_count: int = 0
+    # Pipeline tracking
+    scans_total: int = 0
+    signals_generated: int = 0
+    signals_risk_passed: int = 0
+    signals_vetoed: int = 0
     
     @classmethod
     def from_storage(cls, storage: StorageManager) -> 'SessionStats':
@@ -410,15 +416,24 @@ class MainOrchestrator:
                 logger.warning("No scan results available yet")
                 return
             
+            # Update pipeline stats: scans
+            self.stats.scans_total += len(scan_results_with_data)
+            
             # Extraer solo regímenes para actualizar estado
             scan_results = {sym: data["regime"] for sym, data in scan_results_with_data.items()}
             
             # Update current regime based on scan
             self._update_regime_from_scan(scan_results)
+            self.storage.update_module_heartbeat("scanner")
+            
+            # Generate unique trace ID for this cycle
+            trace_id = str(uuid.uuid4())
+            logger.debug(f"Starting cycle with trace_id: {trace_id}")
             
             # Step 2: Generate signals WITH DataFrames
             logger.debug("Generating signals from scan results with data...")
-            signals = await self.signal_factory.generate_signals_batch(scan_results_with_data)
+            signals = await self.signal_factory.generate_signals_batch(scan_results_with_data, trace_id)
+            self.storage.update_module_heartbeat("signal_factory")
             
             if not signals:
                 logger.debug("No signals generated")
@@ -429,18 +444,40 @@ class MainOrchestrator:
             
             logger.info(f"Generated {len(signals)} signals")
             self.stats.signals_processed += len(signals)
+            self.stats.signals_generated += len(signals)
+            
+            # Step 3: Validate signals with risk manager
+            validated_signals = []
+            for signal in signals:
+                if self.risk_manager.validate_signal(signal):
+                    validated_signals.append(signal)
+                else:
+                    logger.info(f"Signal {signal.symbol} rejected by risk manager (Trace ID: {signal.trace_id})")
+            
+            if not validated_signals:
+                logger.info("No signals passed risk validation")
+                self._active_signals.clear()
+                self.stats.cycles_completed += 1
+                return
+            
+            logger.info(f"{len(validated_signals)} signals passed risk validation")
+            
+            # Update pipeline stats
+            self.stats.signals_risk_passed += len(validated_signals)
+            self.stats.signals_vetoed += (len(signals) - len(validated_signals))
+            self.storage.update_module_heartbeat("risk_manager")
             
             # Update active signals for adaptive heartbeat
-            self._active_signals = signals
+            self._active_signals = validated_signals
             
-            # Step 3: Check risk manager lockdown
+            # Step 4: Check risk manager lockdown (additional check)
             if self.risk_manager.is_lockdown_active():
                 logger.warning("Lockdown mode active. Skipping signal execution.")
                 self.stats.cycles_completed += 1
                 return
             
-            # Step 4: Execute signals with DB persistence
-            for signal in signals:
+            # Step 5: Execute validated signals with DB persistence
+            for signal in validated_signals:
                 try:
                     logger.info(f"Executing signal: {signal.symbol} {signal.signal_type}")
                     success = await self.executor.execute_signal(signal)
@@ -458,6 +495,8 @@ class MainOrchestrator:
                 except Exception as e:
                     logger.error(f"Error executing signal {signal.symbol}: {e}")
                     self.stats.errors_count += 1
+            
+            self.storage.update_module_heartbeat("executor")
             
             # Step 5: Clear active signals after execution and update cycle count
             self._active_signals.clear()
@@ -489,6 +528,10 @@ class MainOrchestrator:
             "signals_executed": self.stats.signals_executed,
             "cycles_completed": self.stats.cycles_completed,
             "errors_count": self.stats.errors_count,
+            "scans_total": self.stats.scans_total,
+            "signals_generated": self.stats.signals_generated,
+            "signals_risk_passed": self.stats.signals_risk_passed,
+            "signals_vetoed": self.stats.signals_vetoed,
             "last_update": datetime.now().isoformat()
         }
         

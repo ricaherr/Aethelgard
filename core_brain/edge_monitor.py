@@ -47,6 +47,7 @@ class EdgeMonitor(threading.Thread):
                 self._check_mt5_external_operations()
                 self._check_inconsistencies()
                 self._audit_signal_inconsistencies()
+                self._check_risk_behavior_patterns()
             except Exception as e:
                 logger.error(f"Error in EDGE Monitor: {e}")
             
@@ -316,5 +317,39 @@ class EdgeMonitor(threading.Thread):
             learning=learning,
             details=f"Investigación: {investigation}"
         )
+
+    def _check_risk_behavior_patterns(self) -> None:
+        """Check for emerging risk behavior patterns"""
+        # Get recent signals with vetoed status
+        recent_signals = self.storage.get_recent_signals(minutes=60)
+        
+        # Group by symbol and count vetoed vs total
+        symbol_stats = {}
+        for signal in recent_signals:
+            symbol = signal.get('symbol', 'UNKNOWN')
+            status = signal.get('status', None)
+            
+            if symbol not in symbol_stats:
+                symbol_stats[symbol] = {'total': 0, 'vetoed': 0}
+            
+            symbol_stats[symbol]['total'] += 1
+            if status == 'VETADO':
+                symbol_stats[symbol]['vetoed'] += 1
+        
+        # Check for 100% veto rate on any symbol
+        for symbol, stats in symbol_stats.items():
+            if stats['total'] >= 5 and stats['vetoed'] == stats['total']:
+                # 100% veto rate detected
+                detection = f"Patrón emergente: Risk Manager bloqueando 100% de señales para {symbol}"
+                action_taken = "Análisis de volatilidad activado"
+                learning = f"El activo {symbol} presenta alta volatilidad. Risk Manager actuando preventivamente."
+                
+                self.storage.save_edge_learning(
+                    detection=detection,
+                    action_taken=action_taken,
+                    learning=learning,
+                    details=f"Estadísticas: {stats['vetoed']}/{stats['total']} señales vetadas en última hora"
+                )
+                logger.warning(f"Emerging pattern detected: 100% veto rate for {symbol}")
         
         logger.warning(f"🚨 EDGE Inconsistency detected: {detection}")

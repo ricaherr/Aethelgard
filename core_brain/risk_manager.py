@@ -9,7 +9,7 @@ from typing import Optional, Dict
 
 # Dependencies aligned with the project structure
 from data_vault.storage import StorageManager
-from models.signal import MarketRegime
+from models.signal import MarketRegime, Signal
 
 logger = logging.getLogger(__name__)
 
@@ -199,3 +199,32 @@ class RiskManager:
             'dynamic_risk_per_trade': self.risk_per_trade,
             'max_consecutive_losses': self.max_consecutive_losses
         }
+
+    def validate_signal(self, signal: Signal) -> bool:
+        """
+        Validate a signal against risk rules.
+        
+        Args:
+            signal: Signal to validate
+            
+        Returns:
+            True if signal passes validation, False otherwise.
+            Sets signal.status to 'VETADO' if rejected.
+        """
+        # Check lockdown mode
+        if self.lockdown_mode:
+            signal.status = 'VETADO'
+            logger.warning(f"Signal {signal.symbol} rejected: Lockdown mode active")
+            return False
+        
+        # Check consecutive losses
+        if self.consecutive_losses >= self.max_consecutive_losses:
+            signal.status = 'VETADO'
+            logger.warning(f"Signal {signal.symbol} rejected: Max consecutive losses reached ({self.consecutive_losses})")
+            return False
+        
+        # Additional risk checks can be added here
+        # For now, basic validation
+        
+        logger.debug(f"Signal {signal.symbol} passed risk validation")
+        return True
