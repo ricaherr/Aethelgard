@@ -144,9 +144,8 @@ def main() -> None:
     # Step 2: Matar procesos por puerto (Dashboard, API)
     print("\n🔴 Matando procesos por puerto...")
     ports_to_kill = [
-        8000,  # API Server (Uvicorn)
-        8503,  # Dashboard Streamlit (old)
-        8504,  # Dashboard Streamlit (new)
+        8000,  # API Server (Uvicorn + Next-Gen UI)
+        8504,  # Legacy Dashboard Port (Cleanup)
     ]
     
     total_killed += kill_processes_by_port(ports_to_kill)

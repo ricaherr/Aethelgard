@@ -159,5 +159,5 @@ node_modules/
 dist/
 .eslintcache
 package-lock.json
-ui_v2/dist/
-ui_v2/node_modules/
+ui/dist/
+ui/node_modules/

@@ -54,70 +54,23 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-# Variable global para el proceso de Streamlit
-streamlit_process = None
+# server_process global
 server_process = None
 
 
-def launch_dashboard() -> None:
-    """Lanza el dashboard de Streamlit en un proceso COMPLETAMENTE INDEPENDIENTE (detached)."""
-    try:
-        logger.info("🧹 Matando procesos colgados en puerto 8504...")
-        
-        # Matar procesos colgados en puerto 8504 (Cold Start)
-        try:
-            import subprocess
-            # Encontrar PID del proceso que usa el puerto 8504
-            result = subprocess.run(
-                ["netstat", "-ano", "|", "findstr", ":8504"],
-                capture_output=True, text=True, shell=True
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                lines = result.stdout.strip().split('\n')
-                for line in lines:
-                    if 'LISTENING' in line:
-                        parts = line.split()
-                        if len(parts) >= 5:
-                            pid = parts[-1]
-                            logger.info(f"🪓 Matando proceso PID {pid} en puerto 8504")
-                            subprocess.run(["taskkill", "/PID", pid, "/F"], 
-                                         capture_output=True)
-                            time.sleep(1)  # Esperar a que termine
-        except Exception as e:
-            logger.warning(f"No se pudo matar procesos colgados: {e}")
-        
-        logger.info("📊 Iniciando Dashboard Streamlit (proceso detached)...")
-        
-        # Ejecutar streamlit en proceso completamente detached (no bloquea)
-        streamlit_process = subprocess.Popen(
-            [sys.executable, "-m", "streamlit", "run", "ui/dashboard.py", 
-             "--server.port", "8504",  # Cambiado a 8504 como pidió el usuario
-             "--server.headless", "true",
-             "--browser.gatherUsageStats", "false"],
-            stdout=subprocess.DEVNULL,  # No capturar output
-            stderr=subprocess.DEVNULL,  # No capturar errores
-            cwd=os.getcwd(),
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0  # Detached en Windows
-        )
-        
-        logger.info("✅ Dashboard lanzado en proceso independiente (no bloquea)")
-        logger.info("🌐 Dashboard estará disponible en: http://localhost:8504")
-        
-        # NO esperar - el cerebro continúa inmediatamente
-        
-    except Exception as e:
-        logger.error(f"❌ Error al iniciar dashboard: {e}")
+# launch_dashboard eliminada - UI unificada en puerto 8000
 
 def launch_server() -> None:
     """Lanza el servidor FastAPI (Uvicorn) en un proceso COMPLETAMENTE INDEPENDIENTE (detached)."""
+    global server_process
     try:
         logger.info("🌐 Iniciando Cerebro Aethelgard & UI Next-Gen (detached)...")
         # Verificar si la UI está compilada
-        ui_dist = os.path.join(os.getcwd(), "ui_v2", "dist")
+        ui_dist = os.path.join(os.getcwd(), "ui", "dist")
         if not os.path.exists(ui_dist):
             logger.warning("⚠️  UI Next-Gen no compilada. Ejecutando build rápido...")
             try:
-                subprocess.run(["npm", "run", "build"], cwd=os.path.join(os.getcwd(), "ui_v2"), shell=True, check=True)
+                subprocess.run(["npm", "run", "build"], cwd=os.path.join(os.getcwd(), "ui"), shell=True, check=True)
                 logger.info("✅ UI compilada correctamente.")
             except Exception as e:
                 logger.error(f"❌ Falló la compilación de la UI: {e}. Se servirá solo la API.")
@@ -152,12 +105,6 @@ async def main() -> None:
     Path("data_vault").mkdir(exist_ok=True)
     
     try:
-        # === DASHBOARD PRIMERO (UI COMPLETAMENTE INDEPENDIENTE - NO BLOQUEA) ===
-        logger.info("🎨 Iniciando Dashboard (UI detached - no bloquea)...")
-        dashboard_thread = threading.Thread(target=launch_dashboard, daemon=True)
-        dashboard_thread.start()
-        # NO ESPERAR - Continuar inmediatamente con el cerebro
-        
         # === SISTEMA CORE ===
         logger.info("📦 Inicializando Storage Manager...")
         storage = StorageManager()
@@ -336,9 +283,7 @@ async def main() -> None:
         logger.info("✅ EDGE Monitor activo (Observabilidad Autónoma)")
         
         logger.info("")
-        logger.info("🌟 INTERFACES ACTIVAS:")
         logger.info("   -> [PRINCIPAL] Command Center Next-Gen: http://localhost:8000")
-        logger.info("   -> [MONITOR]   System Monitoring Tool: http://localhost:8504")
         logger.info("")
         logger.info("🛑 Presiona Ctrl+C para detener todo el ecosistema")
         
@@ -354,18 +299,11 @@ async def main() -> None:
         scanner.stop()
         if 'monitor' in locals():
             await monitor.stop()
-        if streamlit_process and streamlit_process.poll() is None:
-            streamlit_process.terminate()
-            logger.info("✅ Dashboard detenido")
-        if server_process and server_process.poll() is None:
-            server_process.terminate()
-            logger.info("✅ Servidor API detenido")
+        # Cleanup
     except Exception as e:
         logger.error(f"❌ Error crítico: {e}", exc_info=True)
         raise
     finally:
-        if streamlit_process and streamlit_process.poll() is None:
-            streamlit_process.terminate()
         if server_process and server_process.poll() is None:
             server_process.terminate()
         logger.info("💾 Sistema detenido completamente.")

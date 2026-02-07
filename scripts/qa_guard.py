@@ -17,7 +17,7 @@ from typing import List, Tuple, Optional
 def find_python_files(root_dir: Path) -> List[Path]:
     """Encuentra archivos .py excluyendo entornos virtuales y basura."""
     python_files = []
-    exclude_dirs = {'venv', '.venv', '__pycache__', '.git', 'node_modules', 'build', 'dist'}
+    exclude_dirs = {'venv', '.venv', '__pycache__', '.git', 'node_modules', 'build', 'dist', 'ui/node_modules', 'ui/dist'}
     for root, dirs, files in os.walk(root_dir):
         dirs[:] = [d for d in dirs if d not in exclude_dirs]
         for file in files:

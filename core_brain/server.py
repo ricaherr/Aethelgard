@@ -238,7 +238,7 @@ def create_app() -> FastAPI:
         return {"signals": signals, "count": len(signals)}
 
     # Montar archivos estáticos de la nueva UI si existen
-    ui_dist_path = os.path.join(os.getcwd(), "ui_v2", "dist")
+    ui_dist_path = os.path.join(os.getcwd(), "ui", "dist")
     if os.path.exists(ui_dist_path):
         app.mount("/", StaticFiles(directory=ui_dist_path, html=True), name="ui")
         logger.info(f"UI Next-Gen montada desde: {ui_dist_path}")

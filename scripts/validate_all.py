@@ -49,7 +49,13 @@ def main():
         "Code Quality (Copy-Paste + Complejidad)"
     )
     
-    # 4. Critical Tests
+    # 4. UI QA Guard (TS/React)
+    results['UI Quality'] = run_command(
+        f"cd {workspace} && python scripts/ui_qa_guard.py",
+        "UI QA Guard (TypeScript + Build Validation)"
+    )
+    
+    # 5. Critical Tests
     results['Tests'] = run_command(
         f"cd {workspace} && python -m pytest tests/test_signal_deduplication.py tests/test_dynamic_deduplication.py tests/test_risk_manager.py -q",
         "Critical Tests (23 tests de Deduplicación + Risk Manager)"
