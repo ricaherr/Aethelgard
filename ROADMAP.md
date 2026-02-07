@@ -1,10 +1,45 @@
 # Aethelgard – Roadmap
 
-**Última actualización**: 2026-02-06 (**CADENA DE MANDO Y EDGE INTELLIGENCE**)
+**Última actualización**: 2026-02-06 (**EMERGENCIA: REESTRUCTURACIÓN PROFUNDA - RESTAURACIÓN DE INTEGRIDAD**)
 
 ---
 
-## � MILESTONE: Arquitectura Dinámica - Cadena de Mando y Edge Intelligence (2026-02-06)
+## 🚨 MILESTONE CRÍTICO: Reestructuración Profunda - Restauración de Integridad de Datos (2026-02-06)
+
+**Estado del Sistema: CRÍTICO**
+``
+Dashboard: ❌ MUESTRA DATOS FALSOS (40 ejecuciones inexistentes)
+Módulos Críticos: ❌ CONGELADOS (RiskManager/Executor sin heartbeat)
+Integridad de Datos: ❌ DESINCRONIZACIÓN TOTAL [MT5 ≠ DB ≠ BOT MEMORY]
+Base de Datos: ❌ CONTAMINADA con datos de prueba y falsos positivos
+Trazabilidad: ❌ NO EXISTE cadena de mando verificable
+``
+
+**Problema Raíz:**
+- Dashboard visualiza datos fantasma (ejecuciones que no existen en MT5)
+- Hilos críticos (RiskManager/Executor) congelados sin respuesta
+- Triple desincronización: MT5 tiene 0 posiciones pero DB y Memoria muestran trades
+- UI con "pensamientos" estéticos en lugar de logs reales de operación
+- No hay validación de que Trace_ID solo avance con éxito confirmado en DB
+
+**Plan de Rescate (7 Fases):**
+1. ✅ Actualizar ROADMAP con plan de emergencia
+2. ✅ Purge completo de base de datos (signals, trades, edge_learning, session_stats)
+3. ✅ Crear script de diagnóstico de integridad (check_integrity.py)
+4. ✅ Diagnosticar y reanimar hilos congelados
+5. ✅ Reemplazar UI por Modo Diagnóstico (Tabla Trazabilidad Real)
+6. ✅ Implementar validación de Cadena de Mando (Trace_ID con confirmación)
+7. ✅ Verificación final: Dashboard debe mostrar 0/0/0 tras limpieza
+
+**Criterio de Éxito:**
+- DB limpia (0 registros históricos de prueba)
+- check_integrity.py confirma: MT5 = DB = BOT MEMORY = 0
+- Hilos críticos respondan heartbeat
+- Dashboard muestre tabla de logs reales (TIMESTAMP | TRACE_ID | MÓDULO | ACCIÓN | SQL)
+- Primer trade que aparezca sea uno REAL detectado desde MT5 o generado por Scanner
+
+---
+## [SUSPENDIDO] ## � MILESTONE: Arquitectura Dinámica - Cadena de Mando y Edge Intelligence (2026-02-06)
 
 **Estado del Sistema:**
 ```
@@ -1350,3 +1385,5 @@ Tests: ✅ 165 PASANDO
 ---
 
 *Fuente de verdad: [AETHELGARD_MANIFESTO.md](AETHELGARD_MANIFESTO.md).*
+
+
