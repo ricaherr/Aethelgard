@@ -53,20 +53,38 @@ class MT5Connector:
     def shutdown_broker() -> bool:
         """
         Cierra conexiones MT5 de forma limpia.
-        Utilizado principalmente por scripts de parada de emergencia.
+        Solo actúa si el proceso de MetaTrader ya está en ejecución para evitar abrirlo.
         """
         if not MT5_AVAILABLE:
             return False
             
         try:
-            # Importar localmente para evitar problemas de inicialización si no es necesario
+            # 1. Verificar si el proceso está activo para evitar abrir MT5 si está cerrado
+            import psutil
+            mt5_procs = ["terminal64.exe", "terminal.exe", "metatrader.exe"]
+            is_running = False
+            
+            for proc in psutil.process_iter(['name']):
+                try:
+                    if proc.info['name'].lower() in mt5_procs:
+                        is_running = True
+                        break
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+            
+            if not is_running:
+                # Si no está corriendo, no hay nada que cerrar
+                return False
+
+            # 2. Solo si está corriendo, intentar inicializar para enviar el comando shutdown
             import MetaTrader5 as mt5_internal
+            # initialize() sin argumentos intenta conectarse a la terminal activa
             if mt5_internal.initialize():
                 mt5_internal.shutdown()
                 return True
             return False
         except Exception as e:
-            logging.warning(f"Error en shutdown_broker: {e}")
+            # Fallback defensivo: si psutil falla, mejor no arriesgarse a abrir MT5
             return False
 
     def __init__(self, account_id: Optional[str] = None):
