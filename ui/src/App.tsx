@@ -20,6 +20,7 @@ import { AlphaSignals } from './components/trader/AlphaSignals';
 import { CerebroConsole } from './components/trader/CerebroConsole';
 import { DiagnosticDrawer } from './components/diagnostic/DiagnosticDrawer';
 import { EdgeHub } from './components/edge/EdgeHub';
+import { ConfigHub } from './components/config/ConfigHub';
 import { GlassPanel } from './components/common/GlassPanel';
 
 function App() {
@@ -59,7 +60,12 @@ function App() {
                 </div>
 
                 <div className="mt-auto">
-                    <NavIcon icon={<Settings size={22} />} label="Settings" />
+                    <NavIcon
+                        icon={<Settings size={22} />}
+                        active={activeTab === 'settings'}
+                        onClick={() => setActiveTab('settings')}
+                        label="Settings"
+                    />
                 </div>
             </nav>
 
@@ -149,6 +155,18 @@ function App() {
                                 className="h-full"
                             >
                                 <EdgeHub metrics={metrics} regime={regime} />
+                            </motion.div>
+                        )}
+
+                        {activeTab === 'settings' && (
+                            <motion.div
+                                key="settings-view"
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -20 }}
+                                className="h-full"
+                            >
+                                <ConfigHub />
                             </motion.div>
                         )}
                     </AnimatePresence>

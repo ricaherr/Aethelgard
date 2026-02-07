@@ -103,9 +103,40 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Startup: Iniciar bucle de heartbeat y pensamientos iniciales
     asyncio.create_task(heartbeat_loop())
     await broadcast_thought("Cerebro Aethelgard inicializado. Sistema listo para operaciones.")
+    
+    # Migración/Semilla de configuración inicial
+    try:
+        await seed_config_to_db()
+    except Exception as e:
+        logger.error(f"Error en semilla de configuración: {e}")
+        
     yield
     # Shutdown (opcional)
     logger.info("Servidor Aethelgard deteniéndose.")
+
+async def seed_config_to_db() -> None:
+    """Migra configuraciones de archivos JSON a la base de datos si no existen."""
+    config_dir = os.path.join(os.getcwd(), "config")
+    mapping = {
+        "trading": "dynamic_params.json",
+        "risk": "risk_settings.json",
+        "system": "config.json"
+    }
+    
+    current_state = storage.get_system_state()
+    
+    for category, filename in mapping.items():
+        db_key = f"config_{category}"
+        if db_key not in current_state:
+            file_path = os.path.join(config_dir, filename)
+            if os.path.exists(file_path):
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    storage.update_system_state({db_key: data})
+                    logger.info(f"✅ Configuración '{category}' migrada del archivo {filename} a la DB.")
+                except Exception as e:
+                    logger.error(f"❌ No se pudo migrar {filename}: {e}")
 
 
 def create_app() -> FastAPI:
@@ -236,6 +267,46 @@ def create_app() -> FastAPI:
         """Obtiene las últimas señales registradas"""
         signals = storage.get_recent_signals(limit=limit)
         return {"signals": signals, "count": len(signals)}
+
+    @app.get("/api/config/{category}")
+    async def get_config(category: str) -> Dict[str, Any]:
+        """Obtiene una categoría de configuración de la DB"""
+        db_key = f"config_{category}"
+        state = storage.get_system_state()
+        config_data = state.get(db_key)
+        
+        if config_data is None:
+            # Intentar fallback a archivo si no está en DB
+            seed_mapping = {
+                "trading": "dynamic_params.json",
+                "risk": "risk_settings.json",
+                "system": "config.json"
+            }
+            filename = seed_mapping.get(category)
+            if filename:
+                file_path = os.path.join(os.getcwd(), "config", filename)
+                if os.path.exists(file_path):
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        config_data = json.load(f)
+                        # Auto-persistir para la próxima vez
+                        storage.update_system_state({db_key: config_data})
+            
+        if config_data is None:
+            raise HTTPException(status_code=404, detail=f"Categoría de configuración '{category}' no encontrada.")
+            
+        return {"category": category, "data": config_data}
+
+    @app.post("/api/config/{category}")
+    async def update_config(category: str, new_data: dict) -> Dict[str, Any]:
+        """Actualiza una categoría de configuración en la DB"""
+        db_key = f"config_{category}"
+        try:
+            storage.update_system_state({db_key: new_data})
+            await broadcast_thought(f"Configuración '{category}' actualizada por el usuario.", module="CORE")
+            return {"status": "success", "message": f"Configuración '{category}' guardada correctamente."}
+        except Exception as e:
+            logger.error(f"Error guardando configuración {category}: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
 
     # Montar archivos estáticos de la nueva UI si existen
     ui_dist_path = os.path.join(os.getcwd(), "ui", "dist")

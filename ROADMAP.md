@@ -1,6 +1,39 @@
 # Aethelgard – Roadmap
 
+## 🚀 PRÓXIMO MILESTONE: Aethelgard SaaS - Arquitectura Multi-usuario y Privilegios
+**Estado: PLANIFICACIÓN**
+``
+Estructura: 🔄 Multi-tenancy (Aislamiento de datos)
+Seguridad: 🔄 RBAC (Super Administradores vs Traders)
+Servicio: 🔄 Infraestructura escalable para oferta comercial
+Configuración: 🔄 Hub Centralizado con Overrides por Usuario
+``
+
+**Objetivos:**
+- **Esquema de Usuarios**: Implementar niveles de privilegio (USER, TRADER, SUPER_ADMIN) en la base de datos.
+- **Aislamiento de Cuentas**: Preparar los `connectors` para manejar múltiples sub-cuentas aisladas.
+- **Configuración Jerárquica**: Los parámetros globales pueden ser sobrescritos por configuraciones específicas de usuario.
+- **SaaS Readiness**: Auditoría de concurrencia para soportar cientos de escaneos simultáneos.
+
+---
+
 **Última actualización**: 2026-02-07 (**MILESTONE: OPTIMIZACIÓN V2 Y AUTONOMÍA DE EJECUCIÓN**)
+
+---
+
+## ✅ MILESTONE: Unificación y Estandarización de Interfaz Next-Gen (2026-02-07)
+**Estado del Sistema: UI UNIFICADA Y VALIDADA**
+``
+Frontend: ✅ React + Vite + Tailwind CSS
+Validación: ✅ UI QA Guard (TSC + Build)
+Backend: ✅ FastAPI serving Static Files
+Limpieza: ✅ Streamlit eliminado del ecosistema
+``
+
+**Mejoras Clave:**
+- **Unificación de UI**: Consolidación total en la carpeta `ui/`. Eliminación de carpetas `ui_v2/` y redundancias.
+- **Pipeline de Calidad**: Integración de validación de tipado TypeScript y build de producción en `validate_all.py`.
+- **Despliegue Simplificado**: `start.py` ahora compila y sirve la UI automáticamente desde el puerto 8000.
 
 ---
 

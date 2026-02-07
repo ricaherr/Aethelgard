@@ -136,7 +136,7 @@ El Core Brain es el núcleo autónomo del sistema, compuesto por módulos especi
 - **Histéresis ADX**: Entrar TREND > 25, salir TREND → RANGE < 18
 - **Filtro de Persistencia**: Cambio confirmado solo tras 2 velas consecutivas
 - **Filtro de Volatilidad Mínima**: Evita falsos CRASH en mercados muertos
-- **Parámetros Dinámicos**: Carga desde `config/dynamic_params.json`
+- **Parámetros Dinámicos**: Carga desde base de datos (`system_state`) con fallback a `config/dynamic_params.json` durante transición.
 - **`load_ohlc(df)`**: Carga masiva OHLC para escáner proactivo (p. ej. desde MT5)
 
 ##### `scanner.py` - Escáner Proactivo Multi-Timeframe
@@ -415,14 +415,15 @@ manager.configure_provider("alphavantage", api_key="YOUR_KEY_HERE")
 
 #### 3. **UI** (`ui/`)
 
-##### Dashboard Streamlit
-- **Función**: Interfaz multi-pestaña para monitoreo y configuración
+##### Interfaz Next-Gen (React + Vite + Tailwind CSS)
+- **Función**: Interfaz moderna, de alto rendimiento y responsiva para el Cerebro de Aethelgard.
 - **Características**:
-  - Dashboard principal con métricas en tiempo real
-  - Gestión de brokers y proveedores
-  - Visualización de señales y trades
-  - Configuración de parámetros
-- **Dependencias**: StorageManager, Core Brain modules
+    - **Trader View**: Dashboard principal con métricas en tiempo real (WebSockets).
+    - **Config Hub**: Gestión centralizada de parámetros de riesgo, trading y sistema.
+    - **Edge Intelligence**: Visualización del aprendizaje autónomo y auditoría.
+    - **Modularidad**: Basada en componentes funcionales y hooks personalizados (`useAethelgard`).
+- **Tecnologías**: React, Vite, Tailwind CSS, Framer Motion, Lucide Icons.
+- **Servicio**: Servida directamente por el Core Brain vía FastAPI (`StaticFiles`).
 
 #### 4. **Models** (`models/`)
 
