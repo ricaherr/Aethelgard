@@ -22,7 +22,7 @@ import time
 from pathlib import Path
 
 # Add project root to sys.path
-project_root = Path(__file__).parent.parent
+project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 
@@ -114,33 +114,21 @@ def kill_processes_by_port(ports: list) -> int:
 
 def close_mt5_connections() -> bool:
     """
-    Intenta cerrar conexiones MT5 de forma limpia.
+    Intenta cerrar conexiones MT5 de forma limpia usando el conector.
     
     Returns:
         True si se cerraron exitosamente
     """
     try:
-        from connectors.mt5_connector import MT5_AVAILABLE
-        
-        if not MT5_AVAILABLE:
-            return False
-        
-        import MetaTrader5 as mt5
-        
-        # Intentar cerrar conexión
-        if mt5.initialize():
-            mt5.shutdown()
-            print("✅ Conexión MT5 cerrada")
-            return True
-        
-        return False
+        from connectors.mt5_connector import MT5Connector
+        return MT5Connector.shutdown_broker()
         
     except Exception as e:
         print(f"⚠️  No se pudo cerrar MT5: {e}")
         return False
 
 
-def main():
+def main() -> None:
     """Ejecuta parada de emergencia."""
     print("\n" + "=" * 70)
     print("  🚨 EMERGENCY STOP - AETHELGARD SYSTEM")

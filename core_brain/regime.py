@@ -189,6 +189,9 @@ class RegimeClassifier:
         self.df['adx'] = TechnicalAnalyzer.calculate_adx(self.df, self.adx_period)
         self.df['atr'] = TechnicalAnalyzer.calculate_atr(self.df, self.min_volatility_atr_period)
         
+        # Volatilidad estadística unificada
+        self.df['volatility'] = TechnicalAnalyzer.calculate_volatility(self.df, 20)
+        
         # Calcular SMA 200 para sesgo
         self.df['sma_200'] = TechnicalAnalyzer.calculate_sma(self.df, self.sma_period)
 
@@ -205,35 +208,30 @@ class RegimeClassifier:
     def _calculate_volatility(self, window: int = 20) -> float:
         """
         Calcula volatilidad reciente (desviación estándar de retornos).
+        Usa el valor pre-calculado en el DataFrame si está disponible.
         """
-        if self.df is None or len(self.df) < window + 1:
-            return 0.0
-        
-        # Retornos logarítmicos para mayor precisión estadística
-        returns = np.log(self.df['close'] / self.df['close'].shift(1))
-        vol = returns.tail(window).std()
-        return float(vol) if not pd.isna(vol) else 0.0
+        if self.df is None or 'volatility' not in self.df.columns:
+            self._calculate_indicators()
+            
+        if self.df is not None and not self.df.empty:
+            vol = self.df['volatility'].iloc[-1]
+            return float(vol) if not pd.isna(vol) else 0.0
+        return 0.0
     
     def _get_atr_pct(self, period: Optional[int] = None) -> float:
         """
-        ATR como porcentaje del precio usando el analizador centralizado.
+        ATR como porcentaje del precio usando el valor pre-calculado.
         """
-        period = period or self.min_volatility_atr_period
-        if self.df is None or len(self.df) < period + 1:
-            return 0.0
+        if self.df is None or 'atr' not in self.df.columns:
+            self._calculate_indicators()
             
-        from core_brain.tech_utils import TechnicalAnalyzer
-        atr_series = TechnicalAnalyzer.calculate_atr(self.df, period)
-        
-        if atr_series.empty:
-            return 0.0
-            
-        atr = atr_series.iloc[-1]
-        close = self.df['close'].iloc[-1]
-        
-        if pd.isna(atr) or close <= 0:
-            return 0.0
-        return float(atr / close)
+        if self.df is not None and not self.df.empty:
+            atr = self.df['atr'].iloc[-1]
+            current_price = self.df['close'].iloc[-1]
+            if current_price > 0:
+                atr_pct = (atr / current_price) * 100
+                return float(atr_pct)
+        return 0.0
     
     def _detect_volatility_shock(self) -> bool:
         """
@@ -267,28 +265,23 @@ class RegimeClassifier:
     
     def _calculate_sma_distance(self) -> Optional[float]:
         """
-        Calcula la distancia porcentual del precio actual a la SMA 200
-        
-        Returns:
-            Distancia porcentual (positiva = por encima, negativa = por debajo)
-            None si no hay suficientes datos
+        Calcula la distancia porcentual del precio actual a la SMA 200.
+        Usa el valor pre-calculado en el DataFrame.
         """
-        if self.df is None or len(self.df) < self.sma_period:
-            return None
-        
-        df = self.df.copy()
-        df['sma'] = df['close'].rolling(window=self.sma_period).mean()
-        
-        current_price = df['close'].iloc[-1]
-        sma_value = df['sma'].iloc[-1]
-        
-        if pd.isna(sma_value):
-            return None
-        
-        # Calcular distancia porcentual
-        distance = ((current_price - sma_value) / sma_value) * 100
-        
-        return float(distance)
+        if self.df is None or 'sma_200' not in self.df.columns:
+            self._calculate_indicators()
+            
+        if self.df is not None and not self.df.empty:
+            current_price = self.df['close'].iloc[-1]
+            sma_value = self.df['sma_200'].iloc[-1]
+            
+            if pd.isna(sma_value) or sma_value <= 0:
+                return None
+            
+            # Calcular distancia porcentual
+            distance = ((current_price - sma_value) / sma_value) * 100
+            return float(distance)
+        return None
     
     def get_bias(self) -> Optional[str]:
         """
@@ -321,7 +314,7 @@ class RegimeClassifier:
         if self._detect_volatility_shock():
             return MarketRegime.CRASH
         
-        adx = self._calculate_adx()
+        adx = self._get_latest_adx()
         in_trend = last_confirmed == MarketRegime.TREND
         
         if in_trend:
@@ -417,7 +410,7 @@ class RegimeClassifier:
             }
         
         return {
-            'adx': self._calculate_adx(),
+            'adx': self._get_latest_adx(),
             'volatility': self._calculate_volatility(),
             'sma_distance': self._calculate_sma_distance(),
             'bias': self.get_bias(),

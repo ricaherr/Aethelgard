@@ -49,6 +49,26 @@ class MT5Connector:
     - Non-blocking connection with timeout and retry
     """
 
+    @staticmethod
+    def shutdown_broker() -> bool:
+        """
+        Cierra conexiones MT5 de forma limpia.
+        Utilizado principalmente por scripts de parada de emergencia.
+        """
+        if not MT5_AVAILABLE:
+            return False
+            
+        try:
+            # Importar localmente para evitar problemas de inicialización si no es necesario
+            import MetaTrader5 as mt5_internal
+            if mt5_internal.initialize():
+                mt5_internal.shutdown()
+                return True
+            return False
+        except Exception as e:
+            logging.warning(f"Error en shutdown_broker: {e}")
+            return False
+
     def __init__(self, account_id: Optional[str] = None):
         """
         Initialize MT5 Connector

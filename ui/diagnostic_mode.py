@@ -191,7 +191,7 @@ def get_current_counts(storage: StorageManager) -> Dict:
         return {'error': str(e)}
 
 
-def main():
+def main() -> None:
     """Main UI."""
     
     # Header
