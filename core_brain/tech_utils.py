@@ -91,6 +91,17 @@ class TechnicalAnalyzer:
         return adx
 
     @staticmethod
+    def calculate_volatility(df: pd.DataFrame, window: int = 20) -> pd.Series:
+        """
+        Calcula la volatilidad basada en la desviación estándar de retornos logarítmicos.
+        """
+        if len(df) < window + 1:
+            return pd.Series(0.0, index=df.index)
+            
+        returns = np.log(df['close'] / df['close'].shift(1))
+        return returns.rolling(window=window).std()
+
+    @staticmethod
     def enrich_dataframe(df: pd.DataFrame, config: dict) -> pd.DataFrame:
         """
         Enriquece el DataFrame con indicadores comunes usados en Aethelgard.
@@ -100,6 +111,9 @@ class TechnicalAnalyzer:
             
         # ATR para volatilidad
         df['atr'] = TechnicalAnalyzer.calculate_atr(df, config.get('atr_period', 14))
+        
+        # Volatilidad estadística
+        df['volatility'] = TechnicalAnalyzer.calculate_volatility(df, config.get('volatility_window', 20))
         
         # SMAs
         for p in config.get('sma_periods', [20, 50, 200]):
