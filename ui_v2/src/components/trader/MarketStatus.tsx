@@ -14,7 +14,7 @@ export function MarketStatus({ regime, metrics }: MarketStatusProps) {
             case 'TREND': return 'text-aethelgard-green';
             case 'RANGE': return 'text-aethelgard-blue';
             case 'CRASH': return 'text-red-500';
-            default: return 'text-white/40';
+            default: return 'text-white/60';
         }
     };
 
@@ -24,7 +24,7 @@ export function MarketStatus({ regime, metrics }: MarketStatusProps) {
                 <Zap size={160} />
             </div>
 
-            <h3 className="text-white/40 text-xs font-bold uppercase tracking-[0.2em] mb-4">Market Identity</h3>
+            <h3 className="text-white/60 text-xs font-bold uppercase tracking-[0.2em] mb-4">Market Identity</h3>
 
             <div className="flex items-end gap-3 mb-8">
                 <motion.span
@@ -35,7 +35,7 @@ export function MarketStatus({ regime, metrics }: MarketStatusProps) {
                 >
                     {regime}
                 </motion.span>
-                <span className="text-white/20 text-sm mb-2 font-mono">CONF: {metrics.confidence}%</span>
+                <span className="text-white/50 text-sm mb-2 font-mono">CONF: {metrics.confidence}%</span>
             </div>
 
             <div className="space-y-4">
@@ -52,7 +52,7 @@ export function MarketStatus({ regime, metrics }: MarketStatusProps) {
                         </div>
                     ))}
                 </div>
-                <span className="text-[10px] font-mono text-white/30 uppercase tracking-widest">Autonomous Consensus active</span>
+                <span className="text-[10px] font-mono text-white/50 uppercase tracking-widest">Autonomous Consensus active</span>
             </div>
         </GlassPanel>
     );
@@ -61,7 +61,7 @@ export function MarketStatus({ regime, metrics }: MarketStatusProps) {
 function MetricItem({ label, value }: { label: string, value: string }) {
     return (
         <div className="flex justify-between items-center group/item">
-            <span className="text-white/30 text-xs group-hover/item:text-white/60 transition-colors uppercase tracking-wider">{label}</span>
+            <span className="text-white/50 text-xs group-hover/item:text-white/80 transition-colors uppercase tracking-wider">{label}</span>
             <span className="text-white/90 font-mono font-bold text-sm tracking-widest">{value}</span>
         </div>
     );

@@ -13,11 +13,11 @@ export function AlphaSignals({ signals }: AlphaSignalsProps) {
             <div className="flex items-center justify-between mb-6">
                 <div>
                     <h3 className="text-white/90 font-outfit font-bold tracking-tight text-lg">Opportunity Stream</h3>
-                    <p className="text-white/30 text-[10px] uppercase tracking-[0.2em] mt-1">Real-time Alpha Generation</p>
+                    <p className="text-white/50 text-[10px] uppercase tracking-[0.2em] mt-1">Real-time Alpha Generation</p>
                 </div>
                 <div className="flex gap-3">
                     <div className="flex items-center gap-1.5 px-3 py-1 rounded bg-white/5 border border-white/10">
-                        <span className="text-[10px] font-bold text-white/40 uppercase">Filter:</span>
+                        <span className="text-[10px] font-bold text-white/60 uppercase">Filter:</span>
                         <span className="text-[10px] font-bold text-aethelgard-green uppercase">All Symbols</span>
                     </div>
                     <button className="px-3 py-1 rounded bg-aethelgard-gold/10 text-aethelgard-gold border border-aethelgard-gold/20 text-[10px] font-bold uppercase tracking-widest hover:bg-aethelgard-gold/20 transition-colors">
@@ -57,12 +57,12 @@ function SignalItem({ signal }: { signal: Signal }) {
         >
             <div className="flex items-center gap-10">
                 <div className="w-24">
-                    <div className="text-[9px] text-white/20 uppercase font-bold tracking-widest mb-1">Symbol</div>
+                    <div className="text-[9px] text-white/50 uppercase font-bold tracking-widest mb-1">Symbol</div>
                     <div className="text-base font-outfit font-bold text-white/90 tracking-tight">{signal.symbol}</div>
                 </div>
 
                 <div className="w-16">
-                    <div className="text-[9px] text-white/20 uppercase font-bold tracking-widest mb-1">Side</div>
+                    <div className="text-[9px] text-white/50 uppercase font-bold tracking-widest mb-1">Side</div>
                     <div className={`flex items-center gap-1 text-sm font-bold ${isBuy ? 'text-aethelgard-green' : 'text-red-400'}`}>
                         {isBuy ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
                         {signal.side}
@@ -70,12 +70,12 @@ function SignalItem({ signal }: { signal: Signal }) {
                 </div>
 
                 <div className="w-24">
-                    <div className="text-[9px] text-white/20 uppercase font-bold tracking-widest mb-1">Entry Price</div>
+                    <div className="text-[9px] text-white/50 uppercase font-bold tracking-widest mb-1">Entry Price</div>
                     <div className="text-sm font-mono font-bold text-white/70">{signal.price.toLocaleString()}</div>
                 </div>
 
                 <div className="w-20 hidden md:block">
-                    <div className="text-[9px] text-white/20 uppercase font-bold tracking-widest mb-1">Confidence</div>
+                    <div className="text-[9px] text-white/50 uppercase font-bold tracking-widest mb-1">Confidence</div>
                     <div className="flex items-center gap-2">
                         <span className="text-sm font-bold text-aethelgard-blue">{signal.score.toFixed(1)}</span>
                         <div className="flex-1 h-1 bg-white/5 rounded-full overflow-hidden">
@@ -87,7 +87,7 @@ function SignalItem({ signal }: { signal: Signal }) {
 
             <div className="flex items-center gap-6">
                 <div className="text-right">
-                    <div className="text-[9px] text-white/20 uppercase font-bold tracking-widest mb-1">Status</div>
+                    <div className="text-[9px] text-white/50 uppercase font-bold tracking-widest mb-1">Status</div>
                     <div className={`text-[10px] font-bold px-2 py-0.5 rounded ${signal.status === 'EXECUTED' ? 'bg-aethelgard-green/20 text-aethelgard-green' : 'bg-white/5 text-white/40'
                         }`}>
                         {signal.status}

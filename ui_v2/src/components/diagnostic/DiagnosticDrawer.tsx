@@ -37,7 +37,7 @@ export function DiagnosticDrawer({ isOpen, onClose, status }: DiagnosticDrawerPr
                             </div>
                             <button
                                 onClick={onClose}
-                                className="p-2 hover:bg-white/5 rounded-full transition-colors text-white/40 hover:text-white"
+                                className="p-2 hover:bg-white/5 rounded-full transition-colors text-white/60 hover:text-white"
                             >
                                 <X size={20} />
                             </button>
@@ -46,10 +46,10 @@ export function DiagnosticDrawer({ isOpen, onClose, status }: DiagnosticDrawerPr
                         <div className="flex-1 overflow-y-auto p-6 space-y-8">
                             {/* Network Status */}
                             <section>
-                                <h3 className="text-[10px] font-bold text-white/20 uppercase tracking-[0.2em] mb-4">Core Connectivity</h3>
+                                <h3 className="text-[10px] font-bold text-white/60 uppercase tracking-[0.2em] mb-4">Core Connectivity</h3>
                                 <div className="glass p-4 rounded-xl border-white/5 space-y-4">
                                     <div className="flex justify-between items-center">
-                                        <span className="text-sm text-white/60">WebSocket Link</span>
+                                        <span className="text-sm text-white/80">WebSocket Link</span>
                                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${status.connected ? 'bg-aethelgard-green/20 text-aethelgard-green' : 'bg-red-500/20 text-red-500'
                                             }`}>
                                             {status.connected ? 'ACTIVE' : 'DISCONNECTED'}
@@ -57,14 +57,14 @@ export function DiagnosticDrawer({ isOpen, onClose, status }: DiagnosticDrawerPr
                                     </div>
                                     <div className="flex justify-between items-center">
                                         <span className="text-sm text-white/60">Last Pulse</span>
-                                        <span className="text-xs font-mono text-white/40">{new Date(status.lastUpdate).toLocaleTimeString()}</span>
+                                        <span className="text-xs font-mono text-white/60">{new Date(status.lastUpdate).toLocaleTimeString()}</span>
                                     </div>
                                 </div>
                             </section>
 
                             {/* Module Heartbeats */}
                             <section>
-                                <h3 className="text-[10px] font-bold text-white/20 uppercase tracking-[0.2em] mb-4">Sub-System Health</h3>
+                                <h3 className="text-[10px] font-bold text-white/60 uppercase tracking-[0.2em] mb-4">Sub-System Health</h3>
                                 <div className="space-y-3">
                                     {Object.entries(status.heartbeats).map(([module, beat]) => (
                                         <div key={module} className="flex items-center justify-between p-3 rounded-lg bg-white/[0.02] border border-white/5 hover:border-white/10 transition-colors">
@@ -72,31 +72,31 @@ export function DiagnosticDrawer({ isOpen, onClose, status }: DiagnosticDrawerPr
                                                 <div className="w-1.5 h-1.5 rounded-full bg-aethelgard-blue shadow-[0_0_8px_rgba(0,210,255,0.4)]" />
                                                 <span className="text-xs font-medium text-white/80">{module}</span>
                                             </div>
-                                            <span className="text-[10px] font-mono text-white/30">{beat} ago</span>
+                                            <span className="text-[10px] font-mono text-white/50">{beat} ago</span>
                                         </div>
                                     ))}
                                     {Object.keys(status.heartbeats).length === 0 && (
-                                        <p className="text-center text-white/20 text-xs py-4 italic">No module metadata available</p>
+                                        <p className="text-center text-white/50 text-xs py-4 italic">No module metadata available</p>
                                     )}
                                 </div>
                             </section>
 
                             {/* Security & Vault */}
                             <section>
-                                <h3 className="text-[10px] font-bold text-white/20 uppercase tracking-[0.2em] mb-4">Data Vault & Encryption</h3>
+                                <h3 className="text-[10px] font-bold text-white/60 uppercase tracking-[0.2em] mb-4">Data Vault & Encryption</h3>
                                 <div className="glass p-4 rounded-xl border-white/5 space-y-4">
                                     <div className="flex items-center gap-3">
                                         <Shield size={16} className="text-aethelgard-gold/60" />
                                         <div>
                                             <p className="text-xs font-bold text-white/80">AES-256 Vault</p>
-                                            <p className="text-[10px] text-white/30">Persistence Layer Secure</p>
+                                            <p className="text-[10px] text-white/50">Persistence Layer Secure</p>
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-3">
                                         <Database size={16} className="text-white/40" />
                                         <div>
                                             <p className="text-xs font-bold text-white/80">Aethelgard.db</p>
-                                            <p className="text-[10px] text-white/30">Consistency: 100% Verified</p>
+                                            <p className="text-[10px] text-white/50">Consistency: 100% Verified</p>
                                         </div>
                                     </div>
                                 </div>

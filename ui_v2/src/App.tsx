@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { MarketRegime } from './types/aethelgard';
 import {
     LayoutDashboard,
     Cpu,
@@ -18,6 +19,7 @@ import { MarketStatus } from './components/trader/MarketStatus';
 import { AlphaSignals } from './components/trader/AlphaSignals';
 import { CerebroConsole } from './components/trader/CerebroConsole';
 import { DiagnosticDrawer } from './components/diagnostic/DiagnosticDrawer';
+import { EdgeHub } from './components/edge/EdgeHub';
 import { GlassPanel } from './components/common/GlassPanel';
 
 function App() {
@@ -137,6 +139,18 @@ function App() {
                                 </div>
                             </motion.div>
                         )}
+
+                        {activeTab === 'edge' && (
+                            <motion.div
+                                key="edge-view"
+                                initial={{ opacity: 0, x: 20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                exit={{ opacity: 0, x: -20 }}
+                                className="h-full"
+                            >
+                                <EdgeHub metrics={metrics} regime={regime} />
+                            </motion.div>
+                        )}
                     </AnimatePresence>
                 </div>
 
@@ -157,8 +171,8 @@ function NavIcon({ icon, active = false, onClick, label }: any) {
             <button
                 onClick={onClick}
                 className={`p-3 rounded-xl transition-all duration-300 ${active
-                        ? 'bg-aethelgard-green/10 text-aethelgard-green border border-aethelgard-green/20 shadow-[0_0_15px_rgba(0,255,65,0.1)]'
-                        : 'text-white/20 hover:text-white/80 hover:bg-white/5'
+                    ? 'bg-aethelgard-green/10 text-aethelgard-green border border-aethelgard-green/20 shadow-[0_0_15px_rgba(0,255,65,0.1)]'
+                    : 'text-white/20 hover:text-white/80 hover:bg-white/5'
                     }`}
             >
                 {icon}

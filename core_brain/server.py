@@ -117,14 +117,15 @@ def create_app() -> FastAPI:
         lifespan=lifespan
     )
     
-    @app.get("/")
-    async def root() -> Dict[str, Any]:
-        """Endpoint raíz"""
+    @app.get("/api/system/status")
+    async def system_status() -> Dict[str, Any]:
+        """Endpoint de estado del sistema"""
         return {
             "name": "Aethelgard",
             "version": "1.0.0",
             "status": "running",
-            "active_connections": len(manager.active_connections)
+            "active_connections": len(manager.active_connections),
+            "timestamp": datetime.now().isoformat()
         }
     
     @app.get("/health")
