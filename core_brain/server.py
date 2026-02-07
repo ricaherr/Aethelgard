@@ -4,8 +4,10 @@ Gestiona múltiples conexiones simultáneas y diferencia entre conectores
 """
 import json
 import logging
-from typing import Dict, Set, Any
+import asyncio
+from typing import Dict, Set, Any, AsyncGenerator
 from datetime import datetime
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
@@ -15,6 +17,8 @@ from core_brain.regime import RegimeClassifier
 from data_vault.storage import StorageManager
 from core_brain.notificator import get_notifier
 from core_brain.module_manager import get_module_manager, MembershipLevel
+from fastapi.staticfiles import StaticFiles
+import os
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -69,6 +73,14 @@ class ConnectionManager:
         for client_id in disconnected:
             self.disconnect(client_id)
 
+    async def emit_event(self, event_type: str, payload: dict) -> None:
+        """Envía un evento formateado a todos los clientes (especialmente UIs)"""
+        await self.broadcast({
+            "type": event_type,
+            "payload": payload,
+            "timestamp": datetime.now().isoformat()
+        })
+
 
 # Instancias globales
 manager = ConnectionManager()
@@ -78,13 +90,31 @@ storage = StorageManager()
 # Estado para detectar cambios de régimen
 _last_regime_by_symbol: Dict[str, MarketRegime] = {}
 
+async def broadcast_thought(message: str, module: str = "CORE", level: str = "info") -> None:
+    """Difunde un 'pensamiento' del cerebro a todas las interfaces conectadas"""
+    await manager.emit_event("BREIN_THOUGHT", {
+        "message": message,
+        "module": module,
+        "level": level
+    })
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    # Startup: Iniciar bucle de heartbeat y pensamientos iniciales
+    asyncio.create_task(heartbeat_loop())
+    await broadcast_thought("Cerebro Aethelgard inicializado. Sistema listo para operaciones.")
+    yield
+    # Shutdown (opcional)
+    logger.info("Servidor Aethelgard deteniéndose.")
+
 
 def create_app() -> FastAPI:
     """Crea y configura la aplicación FastAPI"""
     app = FastAPI(
         title="Aethelgard Trading System",
         description="Sistema de trading algorítmico agnóstico",
-        version="1.0.0"
+        version="1.0.0",
+        lifespan=lifespan
     )
     
     @app.get("/")
@@ -205,8 +235,51 @@ def create_app() -> FastAPI:
         """Obtiene las últimas señales registradas"""
         signals = storage.get_recent_signals(limit=limit)
         return {"signals": signals, "count": len(signals)}
-    
+
+    # Montar archivos estáticos de la nueva UI si existen
+    ui_dist_path = os.path.join(os.getcwd(), "ui_v2", "dist")
+    if os.path.exists(ui_dist_path):
+        app.mount("/", StaticFiles(directory=ui_dist_path, html=True), name="ui")
+        logger.info(f"UI Next-Gen montada desde: {ui_dist_path}")
+    else:
+        logger.warning(f"No se encontró la carpeta dist de la UI en: {ui_dist_path}. Corre 'npm run build' en ui_v2.")
+
     return app
+
+async def heartbeat_loop() -> None:
+    """Bucle infinito para enviar el pulso del sistema a la UI"""
+    while True:
+        try:
+            # Recopilar métricas de salud (simplificado por ahora)
+            metrics = {
+                "core": "ACTIVE",
+                "storage": "STABLE",
+                "notificator": "CONFIGURED",
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            # Obtener métricas de régimen para el radar
+            # TODO: Idealmente esto vendría de un GlobalMonitor
+            regime = regime_classifier.classify()
+            metrics_edge = regime_classifier.get_metrics()
+            
+            await manager.emit_event("SYSTEM_HEARTBEAT", metrics)
+            await manager.emit_event("REGIME_UPDATE", {
+                "regime": regime.value,
+                "metrics": {
+                    "adx_strength": metrics_edge.get('adx', 0),
+                    "volatility": "High" if metrics_edge.get('volatility_shock_detected') else "Normal",
+                    "global_bias": metrics_edge.get('bias', 'Neutral'),
+                    "confidence": 85, # Mock por ahora
+                    "active_agents": 4, # Mock
+                    "optimization_rate": 99.1 # Mock
+                }
+            })
+            
+        except Exception as e:
+            logger.error(f"Error en bucle de heartbeat: {e}")
+            
+        await asyncio.sleep(5)
 
 
 async def process_signal(message: dict, client_id: str, connector_type: ConnectorType) -> None:
@@ -219,6 +292,9 @@ async def process_signal(message: dict, client_id: str, connector_type: Connecto
     5. Envía respuesta al cliente
     """
     try:
+        # Pensamiento inicial
+        await broadcast_thought(f"Analizando nueva señal para {message.get('symbol', 'Unknown')}...", module="SCANNER")
+        
         # Asegurar que el conector esté en el mensaje
         message["connector_type"] = connector_type
         
@@ -231,6 +307,7 @@ async def process_signal(message: dict, client_id: str, connector_type: Connecto
         # Clasificar régimen de mercado
         regime = regime_classifier.classify(signal.price)
         signal.regime = regime
+        await broadcast_thought(f"Régimen detectado: {regime.value} para {signal.symbol}", module="REGIME")
         
         # Detectar cambio de régimen y registrar estado completo
         if previous_regime is None or regime != previous_regime:
@@ -322,6 +399,9 @@ async def process_signal(message: dict, client_id: str, connector_type: Connecto
             module_manager.is_module_enabled("oliver_velez") and
             regime in [MarketRegime.TREND, MarketRegime.RANGE]
         )
+        
+        if is_oliver_velez:
+            await broadcast_thought(f"Validando parámetros de Oliver Vélez para {signal.symbol}...", module="STRATEGY")
         
         if is_oliver_velez and notifier:
             # Por defecto usar membresía básica, en producción esto debería venir del usuario

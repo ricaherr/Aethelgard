@@ -156,6 +156,7 @@ def main() -> None:
     processes_to_kill = [
         "streamlit.exe",
         "uvicorn.exe",
+        "node.exe", # Matar procesos de Node si el build quedó colgado
     ]
     
     total_killed += kill_processes_by_name(processes_to_kill)

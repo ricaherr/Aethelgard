@@ -111,7 +111,17 @@ def launch_dashboard() -> None:
 def launch_server() -> None:
     """Lanza el servidor FastAPI (Uvicorn) en un proceso COMPLETAMENTE INDEPENDIENTE (detached)."""
     try:
-        logger.info("🌐 Iniciando Servidor API (Cerebro - detached)...")
+        logger.info("🌐 Iniciando Cerebro Aethelgard & UI Next-Gen (detached)...")
+        # Verificar si la UI está compilada
+        ui_dist = os.path.join(os.getcwd(), "ui_v2", "dist")
+        if not os.path.exists(ui_dist):
+            logger.warning("⚠️  UI Next-Gen no compilada. Ejecutando build rápido...")
+            try:
+                subprocess.run(["npm", "run", "build"], cwd=os.path.join(os.getcwd(), "ui_v2"), shell=True, check=True)
+                logger.info("✅ UI compilada correctamente.")
+            except Exception as e:
+                logger.error(f"❌ Falló la compilación de la UI: {e}. Se servirá solo la API.")
+
         # Ejecutar uvicorn como módulo en subproceso detached
         server_process = subprocess.Popen(
             [sys.executable, "-m", "uvicorn", "core_brain.server:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "warning"],
@@ -120,8 +130,9 @@ def launch_server() -> None:
             cwd=os.getcwd(),
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0
         )
-        logger.info("✅ Servidor API lanzado en proceso independiente")
-        logger.info("🔗 API estará disponible en: http://localhost:8000")
+        logger.info("✅ Cerebro lanzado en proceso independiente")
+        logger.info("🔗 Interfaz Principal: http://localhost:8000")
+        logger.info("🔗 Documentación API: http://localhost:8000/docs")
         # NO esperar - continuar inmediatamente
         
     except Exception as e:
@@ -324,8 +335,12 @@ async def main() -> None:
         edge_monitor.start()
         logger.info("✅ EDGE Monitor activo (Observabilidad Autónoma)")
         
-        logger.info("🌐 Dashboard: http://localhost:8503")
-        logger.info("🛑 Presiona Ctrl+C para detener")
+        logger.info("")
+        logger.info("🌟 INTERFACES ACTIVAS:")
+        logger.info("   -> [PRINCIPAL] Command Center Next-Gen: http://localhost:8000")
+        logger.info("   -> [MONITOR]   System Monitoring Tool: http://localhost:8504")
+        logger.info("")
+        logger.info("🛑 Presiona Ctrl+C para detener todo el ecosistema")
         
         # Crear tarea asíncrona del EDGE Tuner
         tuner_task = asyncio.create_task(run_edge_tuner_loop(edge_tuner))

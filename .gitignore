@@ -153,3 +153,11 @@ dmypy.json
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+
+# Aethelgard Next-Gen UI (React)
+node_modules/
+dist/
+.eslintcache
+package-lock.json
+ui_v2/dist/
+ui_v2/node_modules/
