@@ -1,6 +1,23 @@
 # Aethelgard – Roadmap
 
-**Última actualización**: 2026-02-06 (**EMERGENCIA: REESTRUCTURACIÓN PROFUNDA - RESTAURACIÓN DE INTEGRIDAD**)
+**Última actualización**: 2026-02-07 (**MILESTONE: OPTIMIZACIÓN V2 Y AUTONOMÍA DE EJECUCIÓN**)
+
+---
+
+## ✅ MILESTONE: Optimización V2 y Autonomía de Ejecución (2026-02-07)
+
+**Estado del Sistema: ESTABLE Y OPTIMIZADO**
+``
+Arquitectura: ✅ Centralizada (TechnicalAnalyzer)
+Conectores: ✅ Autónomos (MT5 Auto-launch / NT8 Remote Execution)
+Configuración: ✅ Dinámica (terminal_path en config.json)
+Calidad: ✅ 100% Validación (DRY principle applied)
+``
+
+**Mejoras Clave:**
+- **Centralización Técnica**: Creado `tech_utils.py` para unificar lógica de indicadores, eliminando redundancia en `regime.py` y estrategias.
+- **Autonomía MT5**: El conector ahora localiza e inicia el terminal MetaTrader 5 automáticamente.
+- **Ejecución NT8**: El bridge C# ahora puede recibir y ejecutar órdenes `BUY/SELL/EXIT` desde Aethelgard.
 
 ---
 

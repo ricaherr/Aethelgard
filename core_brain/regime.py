@@ -176,121 +176,61 @@ class RegimeClassifier:
         """
         self.add_candle(close=price, timestamp=timestamp)
     
-    def _calculate_adx(self) -> float:
+    def _calculate_indicators(self) -> None:
         """
-        Calcula el ADX (Average Directional Index) correctamente usando pandas
-        Implementa el método de suavizado de Wilder para ATR, +DI, -DI y ADX
-        
-        Returns:
-            Valor de ADX entre 0-100, o 0.0 si no hay suficientes datos
+        Calcula indicadores necesarios usando el analizador técnico centralizado.
         """
-        if self.df is None or len(self.df) < self.adx_period * 2:
-            return 0.0
+        if self.df is None or len(self.df) < self.adx_period:
+            return
+
+        from core_brain.tech_utils import TechnicalAnalyzer
         
-        df = self.df.copy()
-        period = self.adx_period
+        # El TechnicalAnalyzer ya maneja el suavizado de Wilder para ADX
+        self.df['adx'] = TechnicalAnalyzer.calculate_adx(self.df, self.adx_period)
+        self.df['atr'] = TechnicalAnalyzer.calculate_atr(self.df, self.min_volatility_atr_period)
         
-        # Calcular True Range (TR)
-        df['prev_close'] = df['close'].shift(1)
-        df['tr1'] = df['high'] - df['low']
-        df['tr2'] = abs(df['high'] - df['prev_close'])
-        df['tr3'] = abs(df['low'] - df['prev_close'])
-        df['tr'] = df[['tr1', 'tr2', 'tr3']].max(axis=1)
+        # Calcular SMA 200 para sesgo
+        self.df['sma_200'] = TechnicalAnalyzer.calculate_sma(self.df, self.sma_period)
+
+    def _get_latest_adx(self) -> float:
+        """Obtiene el último ADX calculado."""
+        if self.df is None or 'adx' not in self.df.columns:
+            self._calculate_indicators()
         
-        # Calcular Directional Movement
-        df['plus_dm'] = df['high'].diff()
-        df['minus_dm'] = -df['low'].diff()
-        
-        # Filtrar movimientos direccionales según reglas de ADX
-        # +DM solo cuenta si es mayor que -DM y positivo
-        # -DM solo cuenta si es mayor que +DM y positivo
-        df.loc[(df['plus_dm'] <= df['minus_dm']) | (df['plus_dm'] < 0), 'plus_dm'] = 0
-        df.loc[(df['minus_dm'] <= df['plus_dm']) | (df['minus_dm'] < 0), 'minus_dm'] = 0
-        
-        # Calcular ATR usando Wilder's Smoothing
-        # Primera vez: suma simple de los primeros 'period' valores
-        # Después: ATR = (ATR_previo * (period - 1) + TR_actual) / period
-        atr = pd.Series(index=df.index, dtype=float)
-        atr.iloc[period-1] = df['tr'].iloc[:period].sum() / period
-        
-        for i in range(period, len(df)):
-            atr.iloc[i] = (atr.iloc[i-1] * (period - 1) + df['tr'].iloc[i]) / period
-        
-        # Calcular +DI y -DI usando Wilder's Smoothing
-        plus_dm_smooth = pd.Series(index=df.index, dtype=float)
-        minus_dm_smooth = pd.Series(index=df.index, dtype=float)
-        
-        plus_dm_smooth.iloc[period-1] = df['plus_dm'].iloc[:period].sum() / period
-        minus_dm_smooth.iloc[period-1] = df['minus_dm'].iloc[:period].sum() / period
-        
-        for i in range(period, len(df)):
-            plus_dm_smooth.iloc[i] = (plus_dm_smooth.iloc[i-1] * (period - 1) + df['plus_dm'].iloc[i]) / period
-            minus_dm_smooth.iloc[i] = (minus_dm_smooth.iloc[i-1] * (period - 1) + df['minus_dm'].iloc[i]) / period
-        
-        # Calcular +DI y -DI como porcentaje del ATR
-        plus_di = 100 * (plus_dm_smooth / atr)
-        minus_di = 100 * (minus_dm_smooth / atr)
-        
-        # Calcular DX (Directional Index)
-        di_sum = plus_di + minus_di
-        di_diff = abs(plus_di - minus_di)
-        dx = 100 * (di_diff / di_sum.replace(0, np.nan))
-        
-        # Calcular ADX usando Wilder's Smoothing de DX
-        adx = pd.Series(index=df.index, dtype=float)
-        adx.iloc[period*2-2] = dx.iloc[period-1:period*2-1].mean()
-        
-        for i in range(period*2-1, len(df)):
-            adx.iloc[i] = (adx.iloc[i-1] * (period - 1) + dx.iloc[i]) / period
-        
-        # Retornar el último valor de ADX
-        return float(adx.iloc[-1]) if not pd.isna(adx.iloc[-1]) else 0.0
-    
+        if self.df is not None and not self.df.empty:
+            val = self.df['adx'].iloc[-1]
+            return float(val) if not pd.isna(val) else 0.0
+        return 0.0
+
     def _calculate_volatility(self, window: int = 20) -> float:
         """
-        Calcula la volatilidad basada en desviación estándar de retornos usando pandas
-        
-        Args:
-            window: Ventana de tiempo para el cálculo (default: 20)
-        
-        Returns:
-            Volatilidad (desviación estándar de retornos)
+        Calcula volatilidad reciente (desviación estándar de retornos).
         """
         if self.df is None or len(self.df) < window + 1:
             return 0.0
         
-        df = self.df.copy()
-        df['returns'] = df['close'].pct_change()
-        
-        # Calcular desviación estándar de retornos en la ventana
-        volatility = df['returns'].tail(window).std()
-        
-        return float(volatility) if not pd.isna(volatility) else 0.0
+        # Retornos logarítmicos para mayor precisión estadística
+        returns = np.log(self.df['close'] / self.df['close'].shift(1))
+        vol = returns.tail(window).std()
+        return float(vol) if not pd.isna(vol) else 0.0
     
     def _get_atr_pct(self, period: Optional[int] = None) -> float:
         """
-        ATR como porcentaje del precio (volatilidad base de largo plazo).
-        Se usa como umbral mínimo para activar detección de shock.
-        
-        Args:
-            period: Período ATR (default: min_volatility_atr_period)
-        
-        Returns:
-            ATR / close actual, en decimal (ej. 0.005 = 0.5%)
+        ATR como porcentaje del precio usando el analizador centralizado.
         """
         period = period or self.min_volatility_atr_period
         if self.df is None or len(self.df) < period + 1:
             return 0.0
+            
+        from core_brain.tech_utils import TechnicalAnalyzer
+        atr_series = TechnicalAnalyzer.calculate_atr(self.df, period)
         
-        df = self.df.copy()
-        df['prev_close'] = df['close'].shift(1)
-        df['tr1'] = df['high'] - df['low']
-        df['tr2'] = (df['high'] - df['prev_close']).abs()
-        df['tr3'] = (df['low'] - df['prev_close']).abs()
-        df['tr'] = df[['tr1', 'tr2', 'tr3']].max(axis=1)
+        if atr_series.empty:
+            return 0.0
+            
+        atr = atr_series.iloc[-1]
+        close = self.df['close'].iloc[-1]
         
-        atr = df['tr'].rolling(window=period).mean().iloc[-1]
-        close = df['close'].iloc[-1]
         if pd.isna(atr) or close <= 0:
             return 0.0
         return float(atr / close)

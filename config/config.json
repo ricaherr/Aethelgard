@@ -35,6 +35,12 @@
       "core_brain.scanner": "INFO"
     },
     "performance_mode": false
+  },
+  "connectors": {
+    "mt5": {
+      "terminal_path": "C:\\Program Files\\MetaTrader 5 IC Markets Global\\terminal64.exe",
+      "auto_start": true
+    }
   }
 }
 

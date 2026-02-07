@@ -210,11 +210,40 @@ class MT5Connector:
             return False
 
     def _initialize_mt5(self) -> bool:
-        """Initialize MT5 terminal"""
-        terminal_path = r"C:\Program Files\MetaTrader 5 IC Markets Global\terminal64.exe"
-        if not mt5.initialize(terminal_path):
+        """Initialize MT5 terminal using dynamic path from config"""
+        import json
+        from pathlib import Path
+        
+        terminal_path = None
+        auto_start = True
+        
+        # Intentar cargar desde config.json
+        try:
+            config_file = Path("config/config.json")
+            if config_file.exists():
+                with open(config_file, "r") as f:
+                    global_config = json.load(f)
+                    mt5_settings = global_config.get("connectors", {}).get("mt5", {})
+                    terminal_path = mt5_settings.get("terminal_path")
+                    auto_start = mt5_settings.get("auto_start", True)
+        except Exception as e:
+            logger.error(f"Error reading terminal_path from config.json: {e}")
+
+        # Fallback hardcoded (mantenemos el anterior como último recurso)
+        if not terminal_path:
+            terminal_path = r"C:\Program Files\MetaTrader 5 IC Markets Global\terminal64.exe"
+            logger.warning(f"No terminal_path found in config. Using fallback: {terminal_path}")
+
+        init_params = {
+            "path": terminal_path
+        }
+        
+        # Si NO queremos auto_start, solo intentamos conectar si ya está abierto
+        # (Aunque mt5.initialize usualmente intenta lanzar el terminal si no está abierto)
+        
+        if not mt5.initialize(path=terminal_path):
             error = mt5.last_error()
-            logger.error(f"MT5 initialization failed: {error}")
+            logger.error(f"MT5 initialization failed at {terminal_path}: {error}")
             return False
         return True
 

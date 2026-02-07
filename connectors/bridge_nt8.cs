@@ -210,6 +210,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     Print($"Señal procesada por Aethelgard. ID: {data.signal_id}, Régimen: {data.regime}");
                 }
+                else if (messageType == "execute_signal")
+                {
+                    ExecuteRemoteSignal(data);
+                }
                 else if (messageType == "pong")
                 {
                     // Heartbeat response
@@ -222,6 +226,41 @@ namespace NinjaTrader.NinjaScript.Strategies
             catch (Exception ex)
             {
                 Print($"Error procesando mensaje: {ex.Message}");
+            }
+        }
+
+        private void ExecuteRemoteSignal(dynamic data)
+        {
+            try
+            {
+                string signalType = data.signal_type;
+                double price = data.price;
+                int quantity = data.volume ?? Quantity;
+                double? sl = data.stop_loss;
+                double? tp = data.take_profit;
+
+                Print($"EJECUCIÓN REMOTA RECIBIDA: {signalType} @ {price}");
+
+                if (signalType == "BUY")
+                {
+                    EnterLong(quantity, "Aethelgard_Long");
+                    if (sl.HasValue) SetStopLoss("Aethelgard_Long", CalculationMode.Price, sl.Value, false);
+                    if (tp.HasValue) SetProfitTarget("Aethelgard_Long", CalculationMode.Price, tp.Value, false);
+                }
+                else if (signalType == "SELL")
+                {
+                    EnterShort(quantity, "Aethelgard_Short");
+                    if (sl.HasValue) SetStopLoss("Aethelgard_Short", CalculationMode.Price, sl.Value, false);
+                    if (tp.HasValue) SetProfitTarget("Aethelgard_Short", CalculationMode.Price, tp.Value, false);
+                }
+                else if (signalType == "EXIT")
+                {
+                    ExitPosition("Aethelgard_Exit", "");
+                }
+            }
+            catch (Exception ex)
+            {
+                Print($"Error ejecutando señal remota: {ex.Message}");
             }
         }
 

@@ -97,23 +97,18 @@ class OliverVelezStrategy(BaseStrategy):
         if df is None or len(df) < self.sma_long_p + 10:
             return None
 
-        # Validación básica de indicadores (se asume que el scanner o factory puede haberlos calculado, 
-        # pero por seguridad los recalculamos o verificamos aquí si es necesario).
-        # Para mantener el agnosticismo, calculamos si faltan.
+        from core_brain.tech_utils import TechnicalAnalyzer
         
+        # Asegurar que el DataFrame tiene los indicadores necesarios
+        # (Idealmente el scanner ya lo hizo, pero garantizamos consistencia)
         if f'sma_{self.sma_long_p}' not in df.columns:
-            df[f'sma_{self.sma_long_p}'] = df['close'].rolling(window=self.sma_long_p).mean()
+            df[f'sma_{self.sma_long_p}'] = TechnicalAnalyzer.calculate_sma(df, self.sma_long_p)
         
         if f'sma_{self.sma_short_p}' not in df.columns:
-            df[f'sma_{self.sma_short_p}'] = df['close'].rolling(window=self.sma_short_p).mean()
+            df[f'sma_{self.sma_short_p}'] = TechnicalAnalyzer.calculate_sma(df, self.sma_short_p)
         
         if 'atr' not in df.columns:
-            df['tr'] = pd.concat([
-                df['high'] - df['low'],
-                abs(df['high'] - df['close'].shift()),
-                abs(df['low'] - df['close'].shift())
-            ], axis=1).max(axis=1)
-            df['atr'] = df['tr'].rolling(window=14).mean()
+            df['atr'] = TechnicalAnalyzer.calculate_atr(df, 14)
 
         latest_candle = df.iloc[-1]
 

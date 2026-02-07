@@ -106,8 +106,8 @@ El Core Brain es el núcleo autónomo del sistema, compuesto por módulos especi
   - Gestionar múltiples conexiones WebSocket simultáneas
   - Diferenciar entre conectores (NT, MT5, TV)
   - Procesar señales recibidas
-  - Coordinar clasificación de régimen
-  - Enviar respuestas a los conectores
+  - Coordinar clasificación de régimen y **análisis técnico centralizado** (`tech_utils.py`)
+  - Enviar respuestas y órdenes de ejecución a los conectores
 
 **Endpoints:**
 - `GET /`: Información del sistema
@@ -118,7 +118,7 @@ El Core Brain es el núcleo autónomo del sistema, compuesto por módulos especi
 - `GET /api/signals`: Obtener señales recientes
 
 ##### `regime.py` - Clasificador de Régimen de Mercado
-- **Función**: Analizar condiciones de mercado y clasificar el régimen
+- **Función**: Analizar condiciones de mercado y clasificar el régimen usando `TechnicalAnalyzer`
 - **Métricas Calculadas**:
   - **ADX (Average Directional Index)**: Fuerza de tendencia
   - **Volatilidad**: Desviación estándar de retornos
