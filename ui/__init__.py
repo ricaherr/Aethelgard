@@ -1,3 +1,0 @@
-"""
-Módulo de interfaz de usuario para Aethelgard
-"""
