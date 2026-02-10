@@ -66,7 +66,7 @@ def test_signal_persistence(storage: StorageManager) -> None:
     saved_signal = signals[0]
     
     assert saved_signal["symbol"] == "EURUSD"
-    assert saved_signal["status"] == "executed"
+    assert saved_signal["status"] == "PENDING"  # Newly saved signal starts as PENDING
     assert saved_signal["metadata"]["score"] == 95
 
 def test_trade_result_persistence(storage: StorageManager) -> None:

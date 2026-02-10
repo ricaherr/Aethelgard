@@ -594,14 +594,27 @@ class MT5Connector:
             if symbol != signal.symbol:
                 logger.info(f"Normalized symbol for MT5: {signal.symbol} -> {symbol}")
             
+            # Ensure symbol is visible in Market Watch (CRITICAL for tick retrieval)
+            symbol_info = mt5.symbol_info(symbol)
+            if symbol_info is None:
+                logger.error(f"Symbol {symbol} does not exist in MT5")
+                return {'success': False, 'error': f'Symbol {symbol} not found in MT5'}
+            
+            if not symbol_info.visible:
+                logger.info(f"Making {symbol} visible in Market Watch...")
+                if not mt5.symbol_select(symbol, True):
+                    logger.error(f"Failed to make {symbol} visible in Market Watch")
+                    return {'success': False, 'error': f'Cannot enable {symbol} in Market Watch'}
+                logger.debug(f"{symbol} now visible in Market Watch")
+            
             # Prepare order request
             order_type = mt5.ORDER_TYPE_BUY if signal.signal_type == SignalType.BUY else mt5.ORDER_TYPE_SELL
             
-            # Get current price
+            # Get current price (now guaranteed to work because symbol is visible)
             tick = mt5.symbol_info_tick(symbol)
             if tick is None:
-                logger.error(f"Could not get tick for {symbol}")
-                return {'success': False, 'error': f'Symbol {symbol} not available'}
+                logger.error(f"Could not get tick for {symbol} (symbol visible but market may be closed)")
+                return {'success': False, 'error': f'Cannot get price for {symbol}'}
             
             price = tick.ask if order_type == mt5.ORDER_TYPE_BUY else tick.bid
             

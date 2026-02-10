@@ -69,7 +69,7 @@ class MarketMixin(BaseRepository):
             cursor.execute("""
                 UPDATE signals 
                 SET status = 'CLOSED', 
-                    metadata = json_set(COALESCE(metadata, '{}'), '$.exit_reason', 'GHOST_CLEARED')
+                    metadata = json_set(COALESCE(metadata, '{}'), '$.exit_reason', 'REJECTED')
                 WHERE symbol = ? 
                 AND status = 'EXECUTED'
                 AND id NOT IN (SELECT signal_id FROM trade_results WHERE signal_id IS NOT NULL)

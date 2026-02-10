@@ -4,7 +4,8 @@ Tests the execution of trading signals with RiskManager validation and agnostic 
 Follows TDD methodology as per Aethelgard's golden rules.
 """
 import pytest
-from unittest.mock import Mock, call
+import unittest.mock
+from unittest.mock import Mock, call, ANY, AsyncMock
 from datetime import datetime
 
 from core_brain.executor import OrderExecutor
@@ -35,7 +36,7 @@ class TestOrderExecutor:
     def mock_notificator(self):
         """Create a mock Notificator."""
         notificator = Mock()
-        notificator.send_alert = Mock()
+        notificator.send_alert = AsyncMock()  # Must be AsyncMock for await
         return notificator
     
     @pytest.fixture
@@ -93,6 +94,9 @@ class TestOrderExecutor:
         mock_risk_manager.is_locked.return_value = True
         mock_storage.has_open_position.return_value = False
         
+        # Simulate signal_id assigned by SignalFactory (required by Opción B)
+        sample_signal.metadata['signal_id'] = 'test-signal-id-123'
+        
         # Act: Intentar ejecutar señal
         result = await executor.execute_signal(sample_signal)
         
@@ -100,10 +104,10 @@ class TestOrderExecutor:
         assert result is False
         mock_risk_manager.is_locked.assert_called_once()
         
-        # Verificar que se registró el intento fallido en data_vault
-        mock_storage.update_system_state.assert_called()
-        call_args = mock_storage.update_system_state.call_args[0][0]
-        assert "rejected_signals" in call_args or "failed_signals" in call_args
+        # Verificar que señal fue marcada como REJECTED en DB
+        mock_storage.update_signal_status.assert_called_once_with(
+            'test-signal-id-123', 'REJECTED', {'reason': 'REJECTED_LOCKDOWN'}
+        )
     
     @pytest.mark.asyncio
     async def test_executor_sends_signal_when_risk_manager_allows(self, executor, mock_risk_manager, sample_signal, mock_mt5_connector, mock_storage):
@@ -183,7 +187,7 @@ class TestOrderExecutor:
     ):
         """
         TEST 4: Executor debe manejar fallas de conexión con resiliencia.
-        When connector fails, mark signal as REJECTED_CONNECTION and notify Telegram.
+        When connector fails, mark signal as REJECTED and notify Telegram.
         """
         # Arrange: Simular falla de conexión
         mock_mt5_connector.execute_signal.side_effect = ConnectionError("Broker disconnected")
@@ -198,19 +202,22 @@ class TestOrderExecutor:
             volume=0.01
         )
         
+        # Simulate SignalFactory assigning ID (required by Opción B)
+        signal.metadata['signal_id'] = 'test-signal-connection-failure'
+        
         # Act: Intentar ejecutar señal
         result = await executor.execute_signal(signal)
         
         # Assert: Señal debe ser rechazada
         assert result is False
         
-        # Verificar registro en data_vault con estado REJECTED_CONNECTION
-        mock_storage.update_system_state.assert_called()
-        call_args = mock_storage.update_system_state.call_args[0][0]
-        
-        # Debe haber registrado la falla
-        stored_data = str(call_args)
-        assert "REJECTED_CONNECTION" in stored_data or "connection" in stored_data.lower()
+        # Verificar registro en data_vault con estado REJECTED
+        # update_signal_status is called with (signal_id, status, metadata_dict)
+        mock_storage.update_signal_status.assert_called_once_with(
+            'test-signal-connection-failure',
+            'REJECTED',
+            {'reason': ANY}
+        )
         
         # Verificar notificación a Telegram
         mock_notificator.send_alert.assert_called_once()
@@ -252,6 +259,9 @@ class TestOrderExecutor:
             entry_price=50000,
             volume=0.1
         )
+        
+        # Simulate SignalFactory assigning ID (required by Opción B)
+        signal.metadata['signal_id'] = 'test-signal-missing-connector'
         
         result = await executor.execute_signal(signal)
         

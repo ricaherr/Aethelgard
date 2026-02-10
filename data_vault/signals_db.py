@@ -108,8 +108,9 @@ class SignalsMixin(BaseRepository):
             entry_price = getattr(signal, 'entry_price', None)
             stop_loss = getattr(signal, 'stop_loss', None)
             take_profit = getattr(signal, 'take_profit', None)
-            # FIXED: Never auto-mark as 'executed' - only Executor confirms execution
-            status = 'PENDING'
+            # Respect status from Signal object, default to PENDING if not set or None
+            # Executor will update to 'EXECUTED' after confirmation
+            status = getattr(signal, 'status', None) or 'PENDING'
             
             if timestamp_value is not None:
                 columns = ['timestamp', 'status'] + base_columns
@@ -236,7 +237,7 @@ class SignalsMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             # Only consider PENDING or EXECUTED signals as duplicates
-            # Exclude EXPIRED, GHOST_CLEARED, FAILED, etc.
+            # Exclude REJECTED, CLOSED, etc. (only get PENDING and EXECUTED)
             cursor.execute("""
                 SELECT COUNT(*) FROM signals 
                 WHERE symbol = ? 

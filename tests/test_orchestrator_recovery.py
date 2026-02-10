@@ -59,29 +59,35 @@ class MockScanner:
 
 
 class MockSignalFactory:
-    """Mock signal factory that generates test signals"""
+    """Mock signal factory that generates test signals and saves them to DB"""
     
-    def __init__(self, should_generate: bool = True):
+    def __init__(self, should_generate: bool = True, storage: StorageManager = None):
         self.should_generate = should_generate
+        self.storage = storage
     
     async def generate_signals_batch(self, scan_results_with_data, trace_id=None):
         """Nuevo método para generar señales desde scan_results con DataFrames"""
         if not self.should_generate:
             return []
         
-        return [
-            Signal(
-                symbol="EURUSD",
-                signal_type="BUY",
-                confidence=0.85,
-                connector_type=ConnectorType.GENERIC,
-                entry_price=1.1000,
-                stop_loss=1.0950,
-                take_profit=1.1100,
-                timestamp=datetime.now(),
-                metadata={"regime": MarketRegime.TREND.value}
-            )
-        ]
+        signal = Signal(
+            symbol="EURUSD",
+            signal_type="BUY",
+            confidence=0.85,
+            connector_type=ConnectorType.GENERIC,
+            entry_price=1.1000,
+            stop_loss=1.0950,
+            take_profit=1.1100,
+            timestamp=datetime.now(),
+            metadata={"regime": MarketRegime.TREND.value}
+        )
+        
+        # Save signal and assign ID (like real SignalFactory does)
+        if self.storage:
+            signal_id = self.storage.save_signal(signal)
+            signal.metadata['signal_id'] = signal_id
+        
+        return [signal]
     
     async def process_scan_results(self, scan_results):
         """Legacy method - mantener compatibilidad"""
@@ -122,15 +128,29 @@ class MockRiskManager:
 
 
 class MockExecutor:
-    """Mock executor that simulates successful execution"""
+    """Mock executor that simulates successful execution and updates DB"""
     
-    def __init__(self, success: bool = True):
+    def __init__(self, success: bool = True, storage: StorageManager = None):
         self.success = success
+        self.storage = storage
         self.executed_signals = []
+        self.persists_signals = True  # Tell Orchestrator we handle persistence (avoid duplicates)
     
     async def execute_signal(self, signal):
+        """Execute signal and update DB status (mimics real Executor behavior)"""
         self.executed_signals.append(signal)
         await asyncio.sleep(0.01)  # Simulate async work
+        
+        # If successful, update signal status to EXECUTED (like real Executor does)
+        if self.success and self.storage:
+            signal_id = signal.metadata.get('signal_id')
+            if signal_id:
+                self.storage.update_signal_status(signal_id, 'EXECUTED', {
+                    'ticket': 'MOCK_TICKET_12345',
+                    'execution_price': signal.entry_price,
+                    'execution_time': datetime.now().isoformat()
+                })
+        
         return self.success
 
 
@@ -176,7 +196,7 @@ def test_session_stats_reconstruction_from_db(storage):
     # Simulate signals executed earlier today
     today = date.today()
     
-    # Create mock signals
+    # Create mock signals with status='executed' (simulating already executed signals)
     signal1 = Signal(
         symbol="EURUSD",
         signal_type="BUY",
@@ -186,6 +206,7 @@ def test_session_stats_reconstruction_from_db(storage):
         stop_loss=1.0950,
         take_profit=1.1100,
         timestamp=datetime.now(),
+        status="executed",
         metadata={"regime": MarketRegime.TREND.value}
     )
     
@@ -198,6 +219,7 @@ def test_session_stats_reconstruction_from_db(storage):
         stop_loss=1.3050,
         take_profit=1.2900,
         timestamp=datetime.now(),
+        status="executed",
         metadata={"regime": MarketRegime.TREND.value}
     )
     
@@ -260,9 +282,9 @@ async def test_orchestrator_persistence_after_execution(storage):
     """
     # Setup mocks
     scanner = MockScanner()
-    signal_factory = MockSignalFactory(should_generate=True)
+    signal_factory = MockSignalFactory(should_generate=True, storage=storage)
     risk_manager = MockRiskManager(lockdown=False)
-    executor = MockExecutor(success=True)
+    executor = MockExecutor(success=True, storage=storage)
     
     # Create orchestrator
     orchestrator = MainOrchestrator(
@@ -284,7 +306,7 @@ async def test_orchestrator_persistence_after_execution(storage):
     signals_today = storage.get_signals_by_date(date.today())
     assert len(signals_today) == 1
     assert signals_today[0]["symbol"] == "EURUSD"
-    assert signals_today[0]["status"] == "executed"
+    assert signals_today[0]["status"] == "EXECUTED"  # Uppercase (simplified STATUS)
 
 
 @pytest.mark.asyncio
@@ -299,9 +321,9 @@ async def test_orchestrator_recovery_after_crash(storage):
     """
     # === PHASE 1: Initial execution ===
     scanner = MockScanner()
-    signal_factory = MockSignalFactory(should_generate=True)
+    signal_factory = MockSignalFactory(should_generate=True, storage=storage)
     risk_manager = MockRiskManager(lockdown=False)
-    executor = MockExecutor(success=True)
+    executor = MockExecutor(success=True, storage=storage)
     
     orchestrator1 = MainOrchestrator(
         scanner=scanner,
@@ -321,9 +343,9 @@ async def test_orchestrator_recovery_after_crash(storage):
     # === PHASE 2: Simulate crash and restart ===
     # Create new orchestrator instance (simulates restart)
     scanner2 = MockScanner()
-    signal_factory2 = MockSignalFactory(should_generate=False)  # No new signals
+    signal_factory2 = MockSignalFactory(should_generate=False, storage=storage)  # No new signals
     risk_manager2 = MockRiskManager(lockdown=False)
-    executor2 = MockExecutor(success=True)
+    executor2 = MockExecutor(success=True, storage=storage)
     
     orchestrator2 = MainOrchestrator(
         scanner=scanner2,
@@ -452,7 +474,7 @@ def test_count_executed_signals_filters_by_date(storage):
     today = date.today()
     yesterday = today - timedelta(days=1)
     
-    # Create signal for today
+    # Create signal for today with status='executed'
     signal_today = Signal(
         symbol="EURUSD",
         signal_type="BUY",
@@ -462,6 +484,7 @@ def test_count_executed_signals_filters_by_date(storage):
         stop_loss=1.0950,
         take_profit=1.1100,
         timestamp=datetime.now(),
+        status="executed",
         metadata={"regime": MarketRegime.TREND.value}
     )
     

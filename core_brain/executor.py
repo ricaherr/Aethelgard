@@ -158,8 +158,13 @@ class OrderExecutor:
             connector = self._get_connector(signal.connector_type)
             
             if connector is None:
-                logger.error(f"No connector found for type: {signal.connector_type}")
-                await self._handle_connector_failure(signal, "Connector not configured")
+                error_msg = f"Connector not configured: {signal.connector_type}"
+                logger.error(error_msg)
+                self._register_failed_signal(signal, error_msg)
+                if self.notificator:
+                    await self.notificator.send_alert(
+                        f"⚠️ Missing Connector\nSymbol: {signal.symbol}\nConnector: {signal.connector_type}"
+                    )
                 return False
             
             # Execute signal through connector
@@ -179,7 +184,11 @@ class OrderExecutor:
                     # Registrar motivo de fallo en la señal
                     if hasattr(signal, 'metadata') and isinstance(signal.metadata, dict):
                         signal.metadata['execution_observation'] = error_msg
-                    await self._handle_connector_failure(signal, error_msg)
+                    self._register_failed_signal(signal, error_msg)
+                    if self.notificator:
+                        await self.notificator.send_alert(
+                            f"⚠️ Execution Failed\nSymbol: {signal.symbol}\nError: {error_msg}"
+                        )
                     return False
 
                 logger.info(
@@ -197,7 +206,8 @@ class OrderExecutor:
                 # Registrar motivo de fallo en la señal
                 if hasattr(signal, 'metadata') and isinstance(signal.metadata, dict):
                     signal.metadata['execution_observation'] = f"Execution failed: {error_msg}"
-                await self._handle_connector_failure(signal, f"Execution failed: {error_msg}")
+                # Marcar como REJECTED (consolidamos FAILED en REJECTED)
+                self._register_failed_signal(signal, f"Execution failed: {error_msg}")
                 return False
                 
         except ConnectionError as e:
@@ -205,7 +215,13 @@ class OrderExecutor:
             logger.error(f"Connection error executing signal: {e}")
             if hasattr(signal, 'metadata') and isinstance(signal.metadata, dict):
                 signal.metadata['execution_observation'] = f"Connection error: {str(e)}"
-            await self._handle_connector_failure(signal, f"Connection error: {str(e)}")
+            # Marcar como REJECTED (consolidamos errores de conexión en REJECTED)
+            self._register_failed_signal(signal, f"Connection error: {str(e)}")
+            # Notify about connection failure
+            if self.notificator:
+                await self.notificator.send_alert(
+                    f"⚠️ Connection Error\nSymbol: {signal.symbol}\nError: {str(e)}"
+                )
             return False
         
         except Exception as e:
@@ -213,7 +229,8 @@ class OrderExecutor:
             logger.error(f"Unexpected error executing signal: {e}", exc_info=True)
             if hasattr(signal, 'metadata') and isinstance(signal.metadata, dict):
                 signal.metadata['execution_observation'] = f"Unexpected error: {str(e)}"
-            await self._handle_connector_failure(signal, f"Unexpected error: {str(e)}")
+            # Marcar como REJECTED (consolidamos errores inesperados en REJECTED)
+            self._register_failed_signal(signal, f"Unexpected error: {str(e)}")
             return False
     
     def _validate_signal(self, signal: Signal) -> bool:
@@ -320,34 +337,38 @@ class OrderExecutor:
         logger.debug(f"Signal registered as PENDING: {signal.symbol}")
     
     def _register_successful_signal(self, signal: Signal, result: Dict) -> None:
-        """Register successfully executed signal."""
+        """Update signal to EXECUTED status (signal already saved by SignalFactory)."""
+        # Extract signal ID assigned by SignalFactory
+        signal_id = signal.metadata.get('signal_id')
+        if not signal_id:
+            logger.error(f"Signal missing ID from SignalFactory: {signal.symbol}. Cannot update status.")
+            return
+        
         # Extract ticket from result (supports both formats)
         ticket = result.get('ticket') or result.get('order_id')
         
-        # Save signal to database
-        signal_id = self.storage.save_signal(signal)
-        
-        # Update to EXECUTED status with execution details
+        # Update existing signal to EXECUTED status with execution details
         connector_str = signal.connector_type.value if hasattr(signal.connector_type, 'value') else str(signal.connector_type)
         self.storage.update_signal_status(signal_id, 'EXECUTED', {
             'ticket': ticket,
             'execution_price': result.get('price'),
             'execution_time': datetime.now().isoformat(),
             'connector': connector_str,
-            'execution_status': 'ORDER_PLACED_SUCCESS',
             'reason': f"Executed successfully. Ticket={ticket}"
         })
         
-        logger.debug(f"Signal registered as EXECUTED: {signal.symbol}, Ticket: {ticket}")
+        logger.debug(f"Signal updated to EXECUTED: {signal.symbol}, Ticket: {ticket}")
     
     def _register_failed_signal(self, signal: Signal, reason: str) -> None:
-        """Register failed signal attempt in data_vault."""
-        # Save signal to database first
-        signal_id = self.storage.save_signal(signal)
+        """Update signal to REJECTED status (signal already saved by SignalFactory)."""
+        # Extract signal ID assigned by SignalFactory
+        signal_id = signal.metadata.get('signal_id')
+        if not signal_id:
+            logger.warning(f"Signal missing ID from SignalFactory: {signal.symbol}. Skipping rejection update.")
+            return
         
-        # Update with execution status and reason
+        # Update existing signal to REJECTED status with reason
         self.storage.update_signal_status(signal_id, 'REJECTED', {
-            'execution_status': 'REJECTED',
             'reason': reason
         })
         
@@ -364,58 +385,6 @@ class OrderExecutor:
         self.storage.update_system_state({
             "rejected_signals": [signal_record]
         })
-    
-    async def _handle_connector_failure(self, signal: Signal, error_message: str) -> None:
-        """
-        Handle connector failures with resilience:
-        1. Mark signal as REJECTED_CONNECTION in database
-        2. Notify via Telegram immediately
-        
-        Args:
-            signal: Failed signal
-            error_message: Description of the failure
-        """
-        # Step 1: Save signal to DB and mark as FAILED
-        signal_id = self.storage.save_signal(signal)
-        self.storage.update_signal_status(signal_id, 'FAILED', {
-            'error': error_message,
-            'timestamp': datetime.now().isoformat(),
-            'reason': 'CONNECTOR_FAILURE'
-        })
-        
-        # Step 2: Update system state for monitoring
-        signal_record = {
-            "timestamp": datetime.now().isoformat(),
-            "symbol": signal.symbol,
-            "signal_type": signal.signal_type.value if hasattr(signal.signal_type, 'value') else signal.signal_type,
-            "confidence": signal.confidence,
-            "status": "REJECTED_CONNECTION",
-            "error": error_message,
-            "connector_type": signal.connector_type.value
-        }
-        
-        self.storage.update_system_state({
-            "failed_signals": [signal_record]
-        })
-        
-        # Step 2: Notify via Telegram
-        if self.notificator:
-            alert_message = (
-                f"🚨 EXECUTOR FAILURE\n"
-                f"Symbol: {signal.symbol}\n"
-                f"Action: {signal.signal_type}\n"
-                f"Connector: {signal.connector_type.value}\n"
-                f"Error: {error_message}\n"
-                f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-            )
-            
-            try:
-                await self.notificator.send_alert(alert_message)
-                logger.info("Failure notification sent to Telegram")
-            except Exception as e:
-                logger.error(f"Failed to send Telegram notification: {e}")
-        else:
-            logger.warning("Notificator not configured, skipping Telegram alert")
     
     def _reconcile_positions(self, symbol: str) -> bool:
         """

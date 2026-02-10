@@ -104,6 +104,10 @@ class TestSignalDeduplication:
             take_profit=1.1100
         )
         
+        # Simulate SignalFactory assigning ID (required by Opción B)
+        signal1_id = storage.save_signal(signal1)
+        signal1.metadata['signal_id'] = signal1_id
+        
         result1 = await executor.execute_signal(signal1)
         assert result1 is True
         
@@ -117,6 +121,10 @@ class TestSignalDeduplication:
             stop_loss=1.1000,
             take_profit=1.1150
         )
+        
+        # Simulate SignalFactory assigning ID (required by Opción B)
+        signal2_id = storage.save_signal(signal2)
+        signal2.metadata['signal_id'] = signal2_id
         
         result2 = await executor.execute_signal(signal2)
         assert result2 is False  # Should be rejected
@@ -143,6 +151,7 @@ class TestSignalDeduplication:
         
         # Save and mark as EXECUTED (position open)
         signal_id = storage.save_signal(signal1)
+        signal1.metadata['signal_id'] = signal_id  # Assign ID like SignalFactory does
         storage.update_signal_status(signal_id, 'EXECUTED', {
             'ticket': 12345,
             'execution_price': 1.2500,
@@ -159,6 +168,8 @@ class TestSignalDeduplication:
             stop_loss=1.2450,
             take_profit=1.2600
         )
+        signal2_id = storage.save_signal(signal2)
+        signal2.metadata['signal_id'] = signal2_id  # Assign ID like SignalFactory does
         
         result = await executor.execute_signal(signal2)
         assert result is False  # Should be rejected - position already open
@@ -207,6 +218,8 @@ class TestSignalDeduplication:
             stop_loss=1.0950,
             take_profit=1.1100
         )
+        signal1_id = storage.save_signal(signal1)
+        signal1.metadata['signal_id'] = signal1_id  # Assign ID like SignalFactory does
         
         result1 = await executor.execute_signal(signal1)
         assert result1 is True
@@ -223,6 +236,8 @@ class TestSignalDeduplication:
             stop_loss=1.1100,
             take_profit=1.1000
         )
+        signal2_id = storage.save_signal(signal2)
+        signal2.metadata['signal_id'] = signal2_id  # Assign ID like SignalFactory does
         
         result2 = await executor.execute_signal(signal2)
         # Should be rejected because there's an open position (even if opposite direction)

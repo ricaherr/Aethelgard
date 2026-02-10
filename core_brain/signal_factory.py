@@ -271,8 +271,12 @@ class SignalFactory:
                 except Exception as e:
                     logger.warning(f"Symbol normalization failed in SignalFactory: {e}")
             
-            # 1. Persistencia
+            # 1. Persistencia (guarda con status='PENDING' por defecto)
             signal_id = self.storage_manager.save_signal(signal)
+            
+            # CLAVE: Asignar ID al objeto Signal para que Executor lo use (evita duplicados)
+            signal.metadata['signal_id'] = signal_id
+            
             logger.info(
                 f"SEÑAL GENERADA [ID: {signal_id}] -> {signal.symbol} "
                 f"{signal.signal_type} @ {signal.entry_price:.5f} | "

@@ -1,5 +1,104 @@
 # Aethelgard – Roadmap
 
+## 🔄 MILESTONE: MT5 Market Watch - Símbolos No Visibles (2026-02-09)
+**Estado: COMPLETADO - FIX APLICADO**
+```
+Diagnóstico:   ✅ 1,086 señales PENDING sin ejecutar  
+Root Cause:    ✅ Símbolos no visibles en Market Watch
+Fix:           ✅ Auto-enable símbolos en MT5Connector
+Validación:    ⏳ PENDIENTE (requiere prueba con sistema corriendo)
+```
+
+**Problema Identificado (Investigación Sistemática):**
+- **Síntoma**: 1,086 señales PENDING correctamente normalizadas (EURUSD, EURGBP, GBPJPY) pero 0 operaciones ejecutadas
+- **Error en Logs**: `"Could not get tick for EURUSD"` / `"Symbol USDNOK not available"`  
+- **Root Cause**: Símbolos NO visibles en **Market Watch** por defecto → `mt5.symbol_info_tick()` retorna `None`
+- **Evidence**: 
+  - Símbolos existen en MT5 (13/13 disponibles: EURUSD, GBPUSD, USDJPY, EURGBP, USDNOK, etc.)
+  - EURUSD/GBPUSD/USDJPY: ✅ Visibles → Ticks OK
+  - USDNOK: ❌ No visible → Tick falla (aunque símbolo existe)
+  - EURGBP: ❌ No visible → Tick falla
+
+**Investigación Realizada (Sin Supuestos):**
+1. ✅ Sistema NO corriendo → Sin logs recientes
+2. ✅ DB: 1,086 señales PENDING, 0 ejecutadas, 4,759 errores
+3. ✅ Error específico: `"REJECTED_CONNECTION: Symbol USDNOK not available"`
+4. ✅ Verificado símbolos disponibles en MT5: 13/13 existen en broker IC Markets Demo
+5. ✅ Verificado Market Watch: Solo 3/13 símbolos visibles por defecto
+6. ✅ Probado `mt5.symbol_select(symbol, True)`: ✅ Hace símbolos visibles exitosamente
+
+**Root Cause Técnico:**
+```python
+# MT5Connector.execute_signal() línea 601 - CÓDIGO ORIGINAL:
+tick = mt5.symbol_info_tick(symbol)  # ❌ Falla si símbolo NO visible
+if tick is None:
+    logger.error(f"Could not get tick for {symbol}")
+    return {'success': False, 'error': f'Symbol {symbol} not available'}
+```
+
+**El problema:** 
+- `symbol_info_tick()` retorna `None` si el símbolo NO está en Market Watch
+- Código NUNCA llama `mt5.symbol_select()` para hacer símbolo visible
+- Resultado: Todas las señales fallan excepto 3 símbolos que están visibles por defecto
+
+**Solución Implementada:**
+```python
+# MT5Connector.execute_signal() - CÓDIGO CORREGIDO (líneas 593-618):
+# 1. Verificar que símbolo existe
+symbol_info = mt5.symbol_info(symbol)
+if symbol_info is None:
+    return {'success': False, 'error': f'Symbol {symbol} not found in MT5'}
+
+# 2. Si NO visible, hacerlo visible en Market Watch
+if not symbol_info.visible:
+    logger.info(f"Making {symbol} visible in Market Watch...")
+    if not mt5.symbol_select(symbol, True):
+        return {'success': False, 'error': f'Cannot enable {symbol} in Market Watch'}
+    logger.debug(f"{symbol} now visible in Market Watch")
+
+# 3. AHORA obtener tick (garantizado porque símbolo es visible)
+tick = mt5.symbol_info_tick(symbol)
+if tick is None:
+    logger.error(f"Could not get tick for {symbol} (market may be closed)")
+    return {'success': False, 'error': f'Cannot get price for {symbol}'}
+```
+
+**Cambios Realizados:**
+1. ✅ Agregada verificación `mt5.symbol_info()` antes de obtener tick
+2. ✅ Agregado auto-enable con `mt5.symbol_select(symbol, True)` si no visible
+3. ✅ Mejorados mensajes de error (diferenciar símbolo inexistente vs mercado cerrado)
+4. ✅ Logs informativos para debugging
+
+**Flujo Corregido:**
+```
+Executor recibe señal normalizada (EURUSD) →
+MT5Connector.execute_signal() →
+  1. ✅ Verificar símbolo existe (symbol_info)
+  2. ✅ Si NO visible → mt5.symbol_select(symbol, True)
+  3. ✅ Obtener tick (ahora garantizado)
+  4. ✅ Ejecutar orden
+→ MT5 Order Execution
+```
+
+**Validación Pendiente:**
+- [ ] Iniciar sistema: `python start.py`
+- [ ] Verificar logs: Mensajes "Making {symbol} visible in Market Watch"
+- [ ] Confirmar ejecución: session_stats.signals_executed > 0
+- [ ] Verificar MT5: Posiciones abiertas visibles en terminal
+
+**Files Modified:**
+- `connectors/mt5_connector.py` (líneas 593-618): Agregada lógica auto-enable símbolos
+
+**Archivos Temporales Eliminados:**
+- ✅ 12 scripts de debugging (check_db.py, quick_check.py, expire_pending.py, etc.)
+- ✅ verify_mt5_symbols.py (diagnóstico)
+- ✅ verify_market_watch.py (diagnóstico)
+
+**Conclusión:**
+Sistema ahora asegura que símbolos estén visibles en Market Watch antes de intentar obtener precios. Esto debe resolver las **1,086 señales PENDING** y permitir ejecución exitosa en MT5.
+
+---
+
 ## ✅ MILESTONE: Normalización de Símbolos en SignalFactory (2026-02-09)
 **Estado: COMPLETADO - SISTEMA VALIDADO 100%**
 ```

@@ -14,7 +14,7 @@
         "USDCAD",
         "NZDUSD"
       ],
-      "min_score": 50,
+      "min_score": 70,
       "max_spread_pips": 2.0,
       "risk_multiplier": 1.0,
       "priority": 1
@@ -32,7 +32,7 @@
         "AUDNZD",
         "AUDJPY"
       ],
-      "min_score": 50,
+      "min_score": 75,
       "max_spread_pips": 4.0,
       "risk_multiplier": 0.9,
       "priority": 2
@@ -50,7 +50,7 @@
         "USDBRL",
         "USDCLP"
       ],
-      "min_score": 60,
+      "min_score": 90,
       "max_spread_pips": 30.0,
       "risk_multiplier": 0.5,
       "priority": 3,
@@ -66,14 +66,14 @@
         "ETHUSDT",
         "BNBUSDT"
       ],
-      "min_score": 50,
+      "min_score": 75,
       "max_spread_bps": 10,
       "risk_multiplier": 0.8,
       "priority": 1,
       "note": "Volatilidad 24/7, considerar horarios de mayor liquidez"
     },
     "altcoins": {
-      "enabled": true,
+      "enabled": false,
       "description": "Altcoins: alta volatilidad, manipulación frecuente",
       "instruments": [
         "ADAUSDT",
@@ -84,7 +84,7 @@
         "DOTUSDT",
         "MATICUSDT"
       ],
-      "min_score": 60,
+      "min_score": 85,
       "max_spread_bps": 50,
       "risk_multiplier": 0.5,
       "priority": 2,
@@ -142,7 +142,7 @@
     }
   },
   "_global_settings": {
-    "default_min_score": 70,
+    "default_min_score": 80,
     "default_risk_multiplier": 1.0,
     "fallback_behavior": "conservative",
     "unknown_instrument_action": "allow",

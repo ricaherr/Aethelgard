@@ -217,13 +217,13 @@ class TradesMixin(BaseRepository):
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            # logger.warning(f"🧹 Clearing ghost positions for {symbol} (Marking as GHOST_CLEARED)")
+            # logger.warning(f"🧹 Clearing ghost positions for {symbol} (Marking as REJECTED)")
             
             # Using basic UPDATE first, json_patch might be sqlite extension dependent
             # If json_patch is not available, just update status
             cursor.execute("""
                 UPDATE signals 
-                SET status = 'GHOST_CLEARED'
+                SET status = 'REJECTED'
                 WHERE symbol = ? 
                 AND status = 'EXECUTED'
                 AND id NOT IN (SELECT signal_id FROM trade_results WHERE signal_id IS NOT NULL)
