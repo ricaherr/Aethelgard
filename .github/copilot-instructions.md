@@ -5,7 +5,16 @@ Sistema autónomo, proactivo y agnóstico de trading multihilo. Capacidad de aut
 
 ## 🧠 Reglas de Oro para la IA
 1. **Autonomía Proactiva**: El sistema no espera datos, los busca (ScannerEngine).
-2. **Independencia de Código**: La lógica en `core_brain` debe ser agnóstica. No importar librerías de brokers (MT5/Rithmic) directamente fuera de `connectors/`.
+2. **Independencia de Código (Arquitectura Agnóstica)**:
+   - ✅ **Permitido** importar librerías de brokers (MT5/Rithmic) en:
+     - `connectors/` (integración con brokers)
+   - ❌ **PROHIBIDO** importar en:
+     - `core_brain/` (lógica de negocio agnóstica)
+     - `data_vault/` (persistencia agnóstica)
+     - `models/` (modelos de datos agnósticos)
+     - `scripts/` (utilitarios deben usar connectors)
+     - `tests/` (tests deben usar connectors)
+   - 💡 **Validación**: `qa_guard.py` detecta violaciones automáticamente
 3. **Gestión de Recursos**: Todo proceso pesado debe respetar el `cpu_limit_pct` para no bloquear la máquina del usuario.
 4. **Escalabilidad Comercial**: Las señales y funciones deben filtrarse por niveles de membresía (Basic/Premium) definidos en `config/modules.json`.
 5. **Auto-Calibración**: El sistema debe priorizar el aprendizaje de los datos en `data_vault` para ajustar `dynamic_params.json`.
@@ -74,5 +83,11 @@ Sistema autónomo, proactivo y agnóstico de trading multihilo. Capacidad de aut
 4. Ejecutar test (debe fallar).
 5. Implementar código mínimo en `core_brain/`.
 6. Ejecutar test (debe pasar).
+**6.5. ✅ EJECUTAR `validate_all.py`** (OBLIGATORIO antes de documentar)
+   - Valida arquitectura (duplicados, imports prohibidos)
+   - Valida calidad de código (sintaxis, tipos, complejidad)
+   - Ejecuta tests críticos (deduplicación + risk manager)
+   - **Si falla** → CORREGIR antes de continuar (NO cambiar tests para que pasen)
+   - **Comando**: `python scripts/validate_all.py`
 7. **Actualizar ROADMAP.md** marcando tarea como completada (✅).
 8. Actualizar `AETHELGARD_MANIFESTO.md`.

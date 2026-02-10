@@ -294,60 +294,39 @@ class OrderExecutor:
         return self.connectors.get(connector_type)
     
     def _calculate_position_size(self, signal: Signal) -> float:
-        """Calculate position size for the signal"""
+        """
+        Calculate position size for the signal.
+        
+        DELEGATED to RiskManager.calculate_position_size_master() - Single Source of Truth.
+        """
         try:
             connector = self._get_connector(signal.connector_type)
-            if connector and hasattr(connector, 'get_account_balance'):
-                account_balance = connector.get_account_balance()
-            else:
-                # Default balance for paper trading
-                account_balance = 10000.0
+            if not connector:
+                logger.error(f"No connector found for {signal.connector_type}")
+                return 0.01  # Fallback
             
-            # Get stop loss distance in PRICE units and convert to PIPS
-            if signal.stop_loss and signal.entry_price:
-                price_distance = abs(signal.stop_loss - signal.entry_price)
-                # For forex pairs (5 decimal places), 1 pip = 0.0001
-                # For JPY pairs (3 decimal places), 1 pip = 0.01
-                # Use 0.0001 as default (most forex pairs)
-                pip_size = 0.01 if 'JPY' in signal.symbol else 0.0001
-                stop_loss_distance = price_distance / pip_size
-            else:
-                stop_loss_distance = 50.0  # Default 50 pips
-            
-            # Get point value: For 1 standard lot (100,000 units) in forex:
-            # - 1 pip movement = $10 for most pairs
-            # - 1 pip movement = $1000 for JPY pairs (because smaller pip size)
-            # We'll use $10 as standard for 1 lot
-            point_value = 10.0
-            
-            # Get current regime (assume RANGE if not available)
-            from models.signal import MarketRegime
-            current_regime = MarketRegime.RANGE
-            
-            position_size = self.risk_manager.calculate_position_size(
-                account_balance, stop_loss_distance, point_value, current_regime
+            # Usar función maestra consolidada
+            position_size = self.risk_manager.calculate_position_size_master(
+                signal=signal,
+                connector=connector,
+                regime_classifier=None  # TODO: inyectar RegimeClassifier cuando esté disponible
             )
             
-            # Clamp position size to reasonable limits
-            # Min: 0.01 lots (micro lot)
-            # Max: 10 lots (conservative limit for demo)
-            position_size = max(0.01, min(position_size, 10.0))
-            
             # Memory dump for high-confidence signals (>90)
-            if signal.confidence > 0.9:
-                risk_amount = account_balance * 0.01  # 1% risk
+            if signal.confidence > 0.9 and position_size > 0:
+                account_balance = self.risk_manager._get_account_balance(connector)
                 memory_dump = {
                     "Score": f"{signal.confidence * 100:.1f}%",
                     "LotSize_Calculated": f"{position_size:.4f}",
-                    "Risk_Amount_$": f"{risk_amount:.2f}",
+                    "Risk_Pct": f"{self.risk_manager.risk_per_trade * 100:.2f}%",
                     "Has_Open_Position": self.storage.has_open_position(signal.symbol)
                 }
                 logger.info(f"🔍 HIGH-CONFIDENCE SIGNAL MEMORY DUMP: {memory_dump}")
             
-            logger.debug(f"Position size calculated: {position_size:.2f} lots (SL distance: {stop_loss_distance:.1f} pips)")
             return position_size
+            
         except Exception as e:
-            logger.error(f"Error calculating position size: {e}")
+            logger.error(f"Error calculating position size: {e}", exc_info=True)
             return 0.01  # Fallback
     
     def _register_pending_signal(self, signal: Signal) -> None:

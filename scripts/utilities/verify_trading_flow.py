@@ -65,14 +65,20 @@ async def verify_flow():
     # 2. Create Dummy Signal with realistic prices
     logger.info("\nStep 2: Creating Dummy Signal...")
     
-    # Get current price from MT5
-    import MetaTrader5 as mt5
-    tick = mt5.symbol_info_tick("EURUSD")
-    if not tick:
-        logger.error("Could not get current price for EURUSD")
-        return
-    
-    current_price = tick.ask
+    # Get current price from connector (agnostic approach)
+    if ConnectorType.METATRADER5 in executor.connectors:
+        connector = executor.connectors[ConnectorType.METATRADER5]
+        if hasattr(connector, 'get_symbol_info'):
+            symbol_info = connector.get_symbol_info("EURUSD")
+            if symbol_info and hasattr(symbol_info, 'ask'):
+                current_price = symbol_info.ask
+            else:
+                logger.warning("Could not get tick, using fallback price")
+                current_price = 1.0850  # Fallback
+        else:
+            current_price = 1.0850  # Mock connector fallback
+    else:
+        current_price = 1.0850  # No MT5 connector, use fallback
     sl_distance_pips = 50  # 50 pips stop loss
     tp_distance_pips = 150  # 150 pips take profit (3:1 R:R)
     pip_size = 0.0001  # EURUSD pip size

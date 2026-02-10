@@ -22,7 +22,7 @@ class TestOrderExecutor:
         """Create a mock RiskManager."""
         risk_manager = Mock(spec=RiskManager)
         risk_manager.is_locked.return_value = False  # Default: not locked
-        risk_manager.calculate_position_size.return_value = 0.01  # Default position size
+        risk_manager.calculate_position_size_master.return_value = 0.01  # Default position size (UPDATED to master method)
         return risk_manager
     
     @pytest.fixture

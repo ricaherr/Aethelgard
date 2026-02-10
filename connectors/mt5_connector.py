@@ -527,40 +527,6 @@ class MT5Connector:
     
     def _connect_sync(self) -> None:
         """
-        Start asynchronous connection to MT5 terminal with timeout
-        
-        Args:
-            timeout_seconds: Maximum time to wait for connection
-            
-        Returns:
-            True if connection successful within timeout
-        """
-        if not self.config.get('enabled', False):
-            logger.warning("MT5 connector is disabled in configuration. skipping connection.")
-            self.connection_state = ConnectionState.FAILED
-            return False
-            
-        if self.connection_state == ConnectionState.CONNECTED:
-            return True
-            
-        if self.connection_state == ConnectionState.CONNECTING:
-            # Already attempting connection, wait for result
-            return self._wait_for_connection(timeout_seconds)
-        
-        # Start connection in background thread
-        self.connection_state = ConnectionState.CONNECTING
-        self.connection_thread = threading.Thread(
-            target=self._connect_sync,
-            name="MT5-Connector",
-            daemon=True
-        )
-        self.connection_thread.start()
-        
-        # Wait for connection with timeout
-        return self._wait_for_connection(timeout_seconds)
-    
-    def _connect_sync(self) -> None:
-        """
         Synchronous connection attempt (runs in background thread)
         """
         try:
@@ -941,6 +907,88 @@ class MT5Connector:
         except Exception as e:
             logger.error(f"Error getting closed positions: {e}")
             return []
+    
+    def get_account_balance(self) -> float:
+        """
+        Get current account balance from MT5.
+        
+        Returns:
+            Account balance in account currency, or 10000.0 as default if error
+        """
+        if not self.is_connected:
+            logger.warning("MT5 not connected, using default balance 10000")
+            return 10000.0
+        
+        try:
+            account_info = mt5.account_info()
+            if account_info:
+                return account_info.balance
+            
+            logger.warning("Could not get account info, using default balance 10000")
+            return 10000.0
+        except Exception as e:
+            logger.error(f"Error getting account balance: {e}")
+            return 10000.0
+    
+    def get_symbol_info(self, symbol: str) -> Optional[Any]:
+        """
+        Get symbol information from MT5.
+        Ensures symbol is visible in Market Watch.
+        
+        Args:
+            symbol: Symbol to query (e.g., 'EURUSD')
+        
+        Returns:
+            MT5 SymbolInfo object or None if error
+        """
+        if not self.is_connected:
+            logger.warning(f"MT5 not connected, cannot get symbol info for {symbol}")
+            return None
+        
+        try:
+            # Ensure symbol is visible in Market Watch
+            if not mt5.symbol_select(symbol, True):
+                logger.warning(f"Could not enable {symbol} in Market Watch")
+            
+            symbol_info = mt5.symbol_info(symbol)
+            if symbol_info is None:
+                logger.error(f"Could not get symbol info for {symbol}")
+            return symbol_info
+        except Exception as e:
+            logger.error(f"Error getting symbol info for {symbol}: {e}")
+            return None
+    
+    def calculate_margin(self, signal: Signal, position_size: float) -> Optional[float]:
+        """
+        Calculate required margin for a position using MT5 built-in function.
+        
+        Args:
+            signal: Trading signal with symbol, type, entry price
+            position_size: Position size in lots
+        
+        Returns:
+            Required margin in account currency, or None if calculation fails
+        """
+        if not self.is_connected:
+            logger.warning(f"MT5 not connected, cannot calculate margin for {signal.symbol}")
+            return None
+        
+        try:
+            order_type = mt5.ORDER_TYPE_BUY if signal.signal_type.value == 'BUY' else mt5.ORDER_TYPE_SELL
+            margin_required = mt5.order_calc_margin(
+                order_type,
+                signal.symbol,
+                position_size,
+                signal.entry_price
+            )
+            
+            if margin_required is None:
+                logger.warning(f"Could not calculate margin for {signal.symbol}")
+            
+            return margin_required
+        except Exception as e:
+            logger.error(f"Error calculating margin: {e}")
+            return None
     
     def reconcile_closed_trades(self, listener: Any, hours_back: int = 24) -> None:
         """
