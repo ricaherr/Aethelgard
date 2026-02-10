@@ -670,7 +670,15 @@ class MT5Connector:
         try:
             positions = mt5.positions_get()
             if positions is None:
-                logger.error("Failed to get positions from MT5")
+                error = mt5.last_error()
+                logger.error(f"Failed to get positions from MT5. Error: {error}")
+                
+                # If terminal is not connected, force state change
+                if error[0] == mt5.RES_E_NOT_INITIALIZED:
+                    logger.warning("MT5 session lost during positions_get. Resetting state.")
+                    self.is_connected = False
+                    self.connection_state = ConnectionState.DISCONNECTED
+                
                 return None
             
             # Convert to dict format

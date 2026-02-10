@@ -442,6 +442,7 @@ class MainOrchestrator:
                 self.stats.cycles_completed += 1
                 return
             
+            # Signal processing continues (unreachable code bug fixed)
             logger.info(f"Generated {len(signals)} signals")
             self.stats.signals_processed += len(signals)
             self.stats.signals_generated += len(signals)
@@ -469,6 +470,17 @@ class MainOrchestrator:
             
             # Update active signals for adaptive heartbeat
             self._active_signals = validated_signals
+            
+            # EDGE Auto-Correction: Verify lockdown BEFORE checking it (every 10 cycles)
+            if self.stats.cycles_completed % 10 == 0:
+                from core_brain.health import HealthManager
+                health = HealthManager()
+                lockdown_check = health.auto_correct_lockdown(self.storage, self.risk_manager)
+                
+                if lockdown_check.get("action_taken") == "LOCKDOWN_DEACTIVATED":
+                    logger.warning(
+                        f"⚡ EDGE AUTO-CORRECTION: {lockdown_check['reason']}"
+                    )
             
             # Step 4: Check risk manager lockdown (additional check)
             if self.risk_manager.is_lockdown_active():
@@ -502,6 +514,7 @@ class MainOrchestrator:
             self._active_signals.clear()
             self.stats.cycles_completed += 1
             self._persist_session_stats()
+            
             # Coherence monitoring
             coherence_events = self.coherence_monitor.run_once()
             if coherence_events:
@@ -509,6 +522,7 @@ class MainOrchestrator:
                         logger.warning(
                             f"Coherence inconsistency: symbol={event.symbol}, stage={event.stage}, status={event.status}, reason={event.reason}, connector={event.connector_type}"
                         )
+            
             logger.info(f"Cycle completed. Stats: {self.stats}")
             
         except Exception as e:

@@ -94,23 +94,14 @@ class OrderExecutor:
         7. Notify Telegram on errors
         
         Args:
-            signal: Signal object to execute
+            signal: Signal object to execute (symbol already normalized by SignalFactory)
         
         Returns:
             True if signal was executed successfully, False otherwise
         """
-        # Normalize symbol for MT5 execution (provider -> MT5 format)
-        if signal.connector_type == ConnectorType.METATRADER5:
-            try:
-                from connectors.mt5_connector import MT5Connector
-                normalized = MT5Connector.normalize_symbol(signal.symbol)
-                if normalized != signal.symbol:
-                    if hasattr(signal, 'metadata') and isinstance(signal.metadata, dict):
-                        signal.metadata.setdefault("symbol_normalized_from", signal.symbol)
-                    signal.symbol = normalized
-            except Exception as e:
-                logger.warning(f"Symbol normalization failed: {e}")
-
+        # NOTE: Symbol normalization now happens in SignalFactory BEFORE saving to DB
+        # This ensures DB, CoherenceMonitor, and Executor all see normalized symbols
+        
         # Step 1: Validate signal data
         if not self._validate_signal(signal):
             logger.warning(f"Invalid signal rejected: {signal.symbol}")
@@ -120,36 +111,27 @@ class OrderExecutor:
         # Step 2: Check for duplicate signals
         signal_type_str = signal.signal_type.value if hasattr(signal.signal_type, 'value') else str(signal.signal_type)
         
-        # 2a. Check if there's an open position for this symbol
-        if self.storage.has_open_position(signal.symbol):
+        # 2a. Check if there's an open position for this symbol + timeframe
+        if self.storage.has_open_position(signal.symbol, signal.timeframe):
+            logger.info(
+                f"[DEDUP CHECK] Open position detected for {signal.symbol} [{signal.timeframe}]. "
+                f"Attempting reconciliation with MT5..."
+            )
+            
             # Perform immediate reconciliation before rejecting
             if self._reconcile_positions(signal.symbol):
-                logger.info(f"Reconciliation cleared ghost position for {signal.symbol}, proceeding with signal")
+                logger.info(f"✅ Reconciliation cleared ghost position for {signal.symbol}, proceeding with signal")
             else:
                 logger.warning(
-                    f"Signal rejected: Open position confirmed for {signal.symbol}. "
+                    f"❌ Signal rejected: Real open position confirmed for {signal.symbol} [{signal.timeframe}]. "
                     f"Preventing duplicate operation."
                 )
                 self._register_failed_signal(signal, "DUPLICATE_OPEN_POSITION")
                 return False
         
-        # 2b. Check if there's a recent signal (dynamic window based on timeframe)
-        if self.storage.has_recent_signal(
-            symbol=signal.symbol, 
-            signal_type=signal_type_str, 
-            timeframe=signal.timeframe if signal.timeframe else None
-        ):
-            # Calculate window for logging
-            from data_vault.storage import calculate_deduplication_window
-            window = calculate_deduplication_window(signal.timeframe) if signal.timeframe else 60
-            
-            logger.warning(
-                f"Signal rejected: Recent {signal_type_str} signal for {signal.symbol} "
-                f"already processed within last {window} minutes (timeframe: {signal.timeframe}). "
-                f"Preventing duplicate."
-            )
-            self._register_failed_signal(signal, "DUPLICATE_RECENT_SIGNAL")
-            return False
+        # Duplicate validation removed: has_recent_signal() checks PENDING signals
+        # which creates false positives. Only check for EXECUTED positions above.
+        # PENDING signals are normal - they're waiting for execution, not duplicates.
         
         # Step 3: Check RiskManager lockdown
         if self.risk_manager.is_locked():
@@ -307,7 +289,7 @@ class OrderExecutor:
                     "Score": f"{signal.confidence * 100:.1f}%",
                     "LotSize_Calculated": f"{position_size:.4f}",
                     "Risk_Amount_$": f"{risk_amount:.2f}",
-                    "Ghost_Position_ID": self.storage.get_open_position_id(signal.symbol) or "None"
+                    "Has_Open_Position": self.storage.has_open_position(signal.symbol)
                 }
                 logger.info(f"🔍 HIGH-CONFIDENCE SIGNAL MEMORY DUMP: {memory_dump}")
             
@@ -393,7 +375,15 @@ class OrderExecutor:
             signal: Failed signal
             error_message: Description of the failure
         """
-        # Step 1: Register as REJECTED_CONNECTION
+        # Step 1: Save signal to DB and mark as FAILED
+        signal_id = self.storage.save_signal(signal)
+        self.storage.update_signal_status(signal_id, 'FAILED', {
+            'error': error_message,
+            'timestamp': datetime.now().isoformat(),
+            'reason': 'CONNECTOR_FAILURE'
+        })
+        
+        # Step 2: Update system state for monitoring
         signal_record = {
             "timestamp": datetime.now().isoformat(),
             "symbol": signal.symbol,

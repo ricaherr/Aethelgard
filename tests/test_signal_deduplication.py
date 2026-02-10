@@ -123,20 +123,33 @@ class TestSignalDeduplication:
     
     @pytest.mark.asyncio
     async def test_executor_rejects_recent_signal(self, executor, storage):
-        """Test executor rejects signal if recent one exists"""
-        # Create first signal (PENDING, not executed)
+        """
+        Test executor rejects signal if position already EXECUTED (NEW ARCHITECTURE)
+        
+        ARCHITECTURE CHANGE:
+        - SignalFactory: generates freely (no dedup)
+        - Executor: validates against EXECUTED positions only
+        """
+        # Execute first signal and mark as EXECUTED (simulating MT5 execution)
         signal1 = Signal(
             symbol="GBPUSD",
             signal_type=SignalType.BUY,
             confidence=0.8,
             connector_type=ConnectorType.PAPER,
-            entry_price=1.2500
+            entry_price=1.2500,
+            stop_loss=1.2450,
+            take_profit=1.2600
         )
         
-        # Save but don't execute (stays PENDING)
-        storage.save_signal(signal1)
+        # Save and mark as EXECUTED (position open)
+        signal_id = storage.save_signal(signal1)
+        storage.update_signal_status(signal_id, 'EXECUTED', {
+            'ticket': 12345,
+            'execution_price': 1.2500,
+            'connector': 'PAPER'
+        })
         
-        # Try to execute similar signal immediately
+        # Try to execute another signal for same symbol (should be rejected)
         signal2 = Signal(
             symbol="GBPUSD",
             signal_type=SignalType.BUY,
@@ -148,7 +161,7 @@ class TestSignalDeduplication:
         )
         
         result = await executor.execute_signal(signal2)
-        assert result is False  # Should be rejected due to recent signal
+        assert result is False  # Should be rejected - position already open
     
     @pytest.mark.asyncio
     async def test_executor_allows_different_symbols(self, executor, storage):

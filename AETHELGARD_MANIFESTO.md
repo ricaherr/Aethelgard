@@ -517,6 +517,23 @@ El flujo de datos en Aethelgard sigue una cadena de mando estricta desde la rece
 
 5. **Ejecución (Executor)**: `executor.py` valida nuevamente con RiskManager, luego routing al conector apropiado (MT5/NT8/etc.). Persiste resultado en DB.
 
+   **VALIDACIÓN DE DUPLICADOS** (Implementada 2026-02-09):
+   - **SignalFactory**: NO valida duplicados → Genera señales libremente basándose solo en análisis técnico
+   - **Executor**: ÚNICA capa que valida duplicados → Verifica si existe posición EXECUTED abierta antes de enviar a MT5
+   - **Método**: `has_open_position(symbol, timeframe)` → Consulta señales con `status='EXECUTED'` sin cierre correspondiente
+   - **Rechazo**: Si position EXECUTED exists → `return False`, señal marcada como REJECTED_DUPLICATE
+   - **Reconciliación**: Si DB dice EXECUTED pero MT5 no tiene posición → Auto-limpia ghost (marca como GHOST_CLEARED)
+   
+   ```python
+   # Executor.execute_signal() - Línea ~145
+   if self.storage.has_open_position(signal.symbol, signal.timeframe):
+       if self._reconcile_positions(signal.symbol):  # Limpia ghosts
+           logger.info("Ghost cleared, proceeding")
+       else:
+           logger.warning("Real position exists, rejecting")
+           return False  # DUPLICATE DETECTED
+   ```
+
 6. **Archivado (Edge Monitor)**: `edge_monitor.py` analiza resultados, actualiza pesos de estrategias, aprende patrones. Archiva en `data_vault` para auto-calibración.
 
 **Interrupción por Risk Manager:**

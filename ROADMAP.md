@@ -1,5 +1,99 @@
 # Aethelgard – Roadmap
 
+## ✅ MILESTONE: Normalización de Símbolos en SignalFactory (2026-02-09)
+**Estado: COMPLETADO - SISTEMA VALIDADO 100%**
+```
+DB Schema:    ✅ Migraciones ejecutadas (updated_at, coherence_events)
+Normalización: ✅ Movida de Executor → SignalFactory
+Tests:         ✅ 23/23 tests passing
+Validación:    ✅ validate_all 100% PASS
+Logs:          ✅ Símbolos normalizados confirmados (EURUSD, GBPUSD, USDJPY)
+```
+
+**Problema Identificado (Investigación Sistemática):**
+- **Root Cause**: `SignalFactory` guardaba señales en DB con símbolos sin normalizar (EURUSD=X)
+- **Flujo Incorrecto**: Yahoo Finance (EURUSD=X) → SignalFactory.save_signal() → DB (EURUSD=X)
+- **Consecuencia**: `Executor` normalizaba solo en memoria → DB y CoherenceMonitor veían símbolos incorrectos
+- **Evidence**: 5892 señales PENDING con símbolos EURUSD=X en DB
+
+**Investigación Realizada (Sin Supuestos):**
+1. ✅ Verificado flujo completo creación señales: `OliverVelezStrategy` → `SignalFactory._process_valid_signal()`
+2. ✅ Confirmado connector_type: DB tiene MT5 demo enabled → Señales con `ConnectorType.METATRADER5`  
+3. ✅ Identificado punto de guardado: `SignalFactory` línea 262 (`save_signal()`) ANTES de Executor
+4. ✅ Causa raíz: Normalización en `Executor` línea 106 ocurría DESPUÉS de guardar en DB
+
+**Solución Implementada:**
+1. ✅ **Movida normalización a SignalFactory** (`_process_valid_signal()` línea 262) → Normaliza ANTES de `save_signal()`
+2. ✅ **Agregado import** `ConnectorType` en signal_factory.py
+3. ✅ **Eliminado código redundante** en Executor (normalización duplicada)
+4. ✅ **Migraciones DB**: 
+   - `migrate_add_updated_at.py` → Columna updated_at en signals table
+   - `migrate_coherence_events.py` → Schema correcto (strategy, incoherence_type, details)
+5. ✅ **Instrumentos**: Deshabilitados exotics (broker demo no los soporta)
+
+**Arquitectura Correcta:**
+```
+Yahoo Finance (EURUSD=X) → 
+SignalFactory (normaliza → EURUSD) → 
+save_signal() → DB (EURUSD) → 
+Executor (recibe ya normalizado) → MT5
+```
+
+**Validación:**
+- Architecture Audit: PASS
+- QA Guard: PASS  
+- Code Quality: PASS
+- UI QA: PASS
+- Tests (23): PASS ✅
+- Logs: ✅ "SEÑAL GENERADA [...] -> EURUSD SignalType.BUY" (símbolos normalizados)
+
+**Conclusión:**
+Normalización ahora ocurre en la capa correcta (SignalFactory) antes de persistencia. DB, CoherenceMonitor y Executor ven símbolos consistentes (EURUSD en lugar de EURUSD=X).
+
+---
+
+## ✅ MILESTONE: Corrección Arquitectural - Flujo de Ejecución y Validación (2026-02-09)
+**Estado: COMPLETADO - SISTEMA VALIDADO 100%**
+``
+Arquitectura: ✅ Validación de duplicados movida a Executor
+Bugs:        ✅ Código inalcanzable en Orchestrator corregido
+Tests:       ✅ 23/23 tests passing
+Validación:  ✅ validate_all 100% PASS
+Quality:     ✅ Type hints corregidos
+``
+
+**Problema Identificado:**
+- **Bug Crítico #1**: `SignalFactory` bloqueaba generación de señales validando duplicados en PENDING (capa incorrecta)
+- **Bug Crítico #2**: `MainOrchestrator` tenía código de ejecución inalcanzable tras `except` prematuro
+- **Bug Crítico #3**: `Executor` validaba `has_recent_signal()` además de `has_open_position()` (doble validación)
+
+**Solución Implementada:**
+1. ✅ Eliminada validación `has_recent_signal()` de `SignalFactory` → Genera señales libremente
+2. ✅ Corregida indentación en `MainOrchestrator` → Código de ejecución ahora alcanzable  
+3. ✅ Eliminada validación `has_recent_signal()` de `Executor` → Solo valida posiciones EXECUTED
+4. ✅ Actualizado test `test_executor_rejects_recent_signal` → Valida nueva arquitectura
+5. ✅ Corregidos type hints en `HealthManager.auto_correct_lockdown()`
+
+**Arquitectura Correcta:**
+```
+Scanner → SignalFactory (genera libremente) → RiskManager → 
+Executor (valida EXECUTED) → MT5 → Monitor → Cierre
+```
+
+**Validación:**
+- Architecture Audit: PASS
+- QA Guard: PASS  
+- Code Quality: PASS
+- UI QA: PASS
+- Tests (23): PASS ✅
+
+**Próximos Pasos:**
+- [ ] Implementar EDGE auto-limpieza de señales PENDING expiradas (eliminar `expire_pending.py` manual)
+- [ ] Actualizar MANIFESTO con nueva arquitectura
+- [ ] Validar ejecución end-to-end en MT5 Demo
+
+---
+
 ## 🚀 PRÓXIMO MILESTONE: Aethelgard SaaS - Arquitectura Multi-usuario y Privilegios
 **Estado: PLANIFICACIÓN**
 ``

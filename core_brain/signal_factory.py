@@ -19,7 +19,7 @@ from collections import defaultdict
 import pandas as pd
 
 from models.signal import (
-    Signal, MarketRegime, MembershipTier
+    Signal, MarketRegime, MembershipTier, ConnectorType
 )
 from data_vault.storage import StorageManager
 from core_brain.notificator import get_notifier, TelegramNotifier
@@ -190,8 +190,8 @@ class SignalFactory:
         """
         signal_type_str = signal.signal_type.value if hasattr(signal.signal_type, 'value') else str(signal.signal_type)
         
-        # Verificar posición abierta
-        if self.storage_manager.has_open_position(signal.symbol):
+        # Verificar posición abierta (filtrar por symbol + timeframe)
+        if self.storage_manager.has_open_position(signal.symbol, signal.timeframe):
             # Reconcilia directamente con MT5 reality
             if self.mt5_connector:
                 logger.debug(f"🔍 Reconciling position for {signal.symbol} with MT5")
@@ -249,31 +249,28 @@ class SignalFactory:
                 logger.info(f"🧠 VOLCADO EXCEPCIÓN: Señal descartada por posición abierta: {dump}")
                 return True
         
-        # Verificar señal reciente (ventana dinámica basada en timeframe)
-        if self.storage_manager.has_recent_signal(
-            symbol=signal.symbol, 
-            signal_type=signal_type_str, 
-            timeframe=signal.timeframe
-        ):
-            # Volcado por excepción técnica: señal reciente
-            score = signal.metadata.get('score', 0)
-            lot_size = signal.volume
-            risk_usd = abs(signal.entry_price - signal.stop_loss) * lot_size * 100000
-            dump = {
-                "Razón": "Señal reciente duplicada",
-                "Score": score,
-                "LotSize": lot_size,
-                "Riesgo_$": round(risk_usd, 2),
-                "Timeframe": signal.timeframe
-            }
-            logger.info(f"🧠 VOLCADO EXCEPCIÓN: Señal descartada por duplicado reciente: {dump}")
-            return True
+        # DUPLICATE VALIDATION REMOVED: Now handled by Executor at execution time
+        # Executor validates against EXECUTED positions before submitting to MT5
+        # This allows SignalFactory to generate signals freely (architectural fix)
         
         return False
 
     async def _process_valid_signal(self, signal: Signal) -> None:
         """Maneja persistencia y notificación de una señal válida."""
         try:
+            # 0. Normalize symbol for MT5 (provider → MT5 format) BEFORE saving to DB
+            if signal.connector_type == ConnectorType.METATRADER5:
+                try:
+                    from connectors.mt5_connector import MT5Connector
+                    normalized = MT5Connector.normalize_symbol(signal.symbol)
+                    if normalized != signal.symbol:
+                        logger.debug(f"[FACTORY NORM] {signal.symbol} → {normalized}")
+                        if hasattr(signal, 'metadata') and isinstance(signal.metadata, dict):
+                            signal.metadata.setdefault("symbol_normalized_from", signal.symbol)
+                        signal.symbol = normalized
+                except Exception as e:
+                    logger.warning(f"Symbol normalization failed in SignalFactory: {e}")
+            
             # 1. Persistencia
             signal_id = self.storage_manager.save_signal(signal)
             logger.info(
@@ -330,40 +327,55 @@ class SignalFactory:
         Returns:
             Lista plana de todas las señales generadas (con confluencia aplicada).
         """
-        tasks = []
-        for key, data in scan_results.items():
-            regime = data.get("regime")
-            df = data.get("df")
-            symbol = data.get("symbol")  # Extraer symbol del dict
-            timeframe = data.get("timeframe")  # Extraer timeframe del dict
+        try:
+            logger.info(f"DEBUG: generate_signals_batch called with {len(scan_results)} items")
+            tasks = []
             
-            if regime and df is not None and symbol:
-                # Pass both symbol and timeframe to strategies
-                # Strategies will use timeframe for signal metadata
-                tasks.append(self.generate_signal(symbol, df, regime, timeframe, trace_id))
+            if not self.strategies:
+                logger.error("DEBUG: No strategies registered in SignalFactory!")
+                return []
+            logger.info(f"DEBUG: Strategies available: {[s.strategy_id for s in self.strategies]}")
 
-        if not tasks:
+            for key, data in scan_results.items():
+                regime = data.get("regime")
+                df = data.get("df")
+                symbol = data.get("symbol")  # Extraer symbol del dict
+                timeframe = data.get("timeframe")  # Extraer timeframe del dict
+                
+                if regime and df is not None and symbol:
+                    # Pass both symbol and timeframe to strategies
+                    # Strategies will use timeframe for signal metadata
+                    tasks.append(self.generate_signal(symbol, df, regime, timeframe, trace_id))
+
+            if not tasks:
+                logger.warning("DEBUG: No tasks created (missing data in scan_results?)")
+                return []
+
+            # results es una lista de listas de señales: [[s1, s2], [], [s3]]
+            results = await asyncio.gather(*tasks)
+            
+            # Aplanar lista
+            all_signals = []
+            for batch in results:
+                all_signals.extend(batch)
+
+            logger.info(f"DEBUG: Raw signals generated: {len(all_signals)}")
+
+            # FASE 2.5: Apply Multi-Timeframe Confluence
+            # if all_signals and self.confluence_analyzer.enabled:
+            #     all_signals = self._apply_confluence(all_signals, scan_results)
+
+            if all_signals:
+                logger.info(
+                    f"Batch completado. {len(all_signals)} señales generadas de "
+                    f"{len(scan_results)} instrumentos analizados (multi-timeframe)."
+                )
+
+            return all_signals
+            
+        except Exception as e:
+            logger.error(f"CRITICAL ERROR in generate_signals_batch: {e}", exc_info=True)
             return []
-
-        # results es una lista de listas de señales: [[s1, s2], [], [s3]]
-        results = await asyncio.gather(*tasks)
-        
-        # Aplanar lista
-        all_signals = []
-        for batch in results:
-            all_signals.extend(batch)
-
-        # FASE 2.5: Apply Multi-Timeframe Confluence
-        if all_signals and self.confluence_analyzer.enabled:
-            all_signals = self._apply_confluence(all_signals, scan_results)
-
-        if all_signals:
-            logger.info(
-                f"Batch completado. {len(all_signals)} señales generadas de "
-                f"{len(scan_results)} instrumentos analizados (multi-timeframe)."
-            )
-
-        return all_signals
     
     def _apply_confluence(
         self, 

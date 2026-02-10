@@ -77,7 +77,7 @@ class EdgeMonitor(threading.Thread):
             
         try:
             # Intentar conectar si no está conectado
-            if not mt5.connected:
+            if not mt5.is_connected:
                 if not mt5.connect():
                     return
             
@@ -117,7 +117,7 @@ class EdgeMonitor(threading.Thread):
         except Exception as e:
             logger.error(f"Error checking MT5 external operations: {e}")
         finally:
-            if mt5 and mt5.connected:
+            if mt5 and mt5.is_connected:
                 mt5.disconnect()
     
     def _was_external_operation_reported_recently(self, ticket: int) -> bool:
@@ -176,7 +176,7 @@ class EdgeMonitor(threading.Thread):
             mt5 = self._get_mt5_connector()
             if mt5:
                 try:
-                    if not mt5.connected:
+                    if not mt5.is_connected:
                         mt5.connect()
                     
                     # Buscar orden por símbolo y tiempo aproximado
@@ -197,7 +197,7 @@ class EdgeMonitor(threading.Thread):
                 except Exception as e:
                     logger.error(f"Error auditing signal {signal_id}: {e}")
                 finally:
-                    if mt5 and mt5.connected:
+                    if mt5 and mt5.is_connected:
                         mt5.disconnect()
     
     def _get_recent_pending_signals(self) -> List[Dict]:
@@ -236,7 +236,7 @@ class EdgeMonitor(threading.Thread):
         mt5 = self._get_mt5_connector()
         if mt5:
             try:
-                if not mt5.connected:
+                if not mt5.is_connected:
                     if not mt5.connect():
                         possible_reasons.append("MT5 desconectado")
                     else:
@@ -337,6 +337,7 @@ class EdgeMonitor(threading.Thread):
                 symbol_stats[symbol]['vetoed'] += 1
         
         # Check for 100% veto rate on any symbol
+        detection = None
         for symbol, stats in symbol_stats.items():
             if stats['total'] >= 5 and stats['vetoed'] == stats['total']:
                 # 100% veto rate detected
@@ -352,4 +353,5 @@ class EdgeMonitor(threading.Thread):
                 )
                 logger.warning(f"Emerging pattern detected: 100% veto rate for {symbol}")
         
-        logger.warning(f"🚨 EDGE Inconsistency detected: {detection}")
+        if detection:
+            logger.warning(f"🚨 EDGE Inconsistency detected: {detection}")

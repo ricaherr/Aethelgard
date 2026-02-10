@@ -235,8 +235,15 @@ class MultiTimeframeConfluenceAnalyzer:
             Zero: neutral
         """
         if regime == MarketRegime.TREND:
-            # TREND aligns with BUY signals
+            # TREND indicates momentum/volatility, generally good for both directions
+            # unless we have specific BULL/BEAR classification
+            return +weight
+        
+        elif regime == MarketRegime.BULL:
             return +weight if is_buy else -weight
+
+        elif regime == MarketRegime.BEAR:
+            return -weight if is_buy else +weight
         
         elif regime == MarketRegime.CRASH:
             # CRASH conflicts with BUY signals

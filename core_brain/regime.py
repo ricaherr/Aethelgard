@@ -108,8 +108,8 @@ class RegimeClassifier:
         # Usar valores de configuración si no se proporcionan explícitamente
         self.adx_period = adx_period if adx_period is not None else config.get("adx_period", 14)
         self.sma_period = sma_period if sma_period is not None else config.get("sma_period", 200)
-        self.adx_trend_threshold = adx_trend_threshold if adx_trend_threshold is not None else config.get("adx_trend_threshold", 25.0)
-        self.adx_range_threshold = adx_range_threshold if adx_range_threshold is not None else config.get("adx_range_threshold", 20.0)
+        self.adx_trend_threshold = adx_trend_threshold if adx_trend_threshold is not None else config.get("adx_trend_threshold", config.get("adx_threshold", 25.0))
+        self.adx_range_threshold = adx_range_threshold if adx_range_threshold is not None else config.get("adx_range_threshold", config.get("adx_threshold", 20.0) - 5)
         self.adx_range_exit_threshold = adx_range_exit_threshold if adx_range_exit_threshold is not None else config.get("adx_range_exit_threshold", 18.0)
         self.volatility_shock_multiplier = volatility_shock_multiplier if volatility_shock_multiplier is not None else config.get("volatility_shock_multiplier", 5.0)
         self.shock_lookback = shock_lookback if shock_lookback is not None else config.get("shock_lookback", 5)

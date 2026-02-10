@@ -80,17 +80,88 @@ class HealthManager:
             results["details"].append(f"CRITICAL: DB Connection Error: {e}")
             
         return results
-
-    def try_auto_repair(self) -> bool:
-        """Attempts to fix detected issues automatically."""
-        from data_vault.storage import StorageManager
+    
+    def auto_correct_lockdown(
+        self, 
+        storage_manager: 'StorageManager', 
+        risk_manager: 'RiskManager'
+    ) -> Dict[str, Any]:
+        """
+        EDGE Auto-Correction: Verifica si lockdown está activo sin justificación
+        y lo corrige automáticamente.
+        
+        Criterio: Lockdown solo debe estar activo si hay 3+ pérdidas consecutivas
+        en el historial de trades cerrados.
+        
+        Args:
+            storage_manager: Para acceder a historial de trades
+            risk_manager: Para leer/modificar estado de lockdown directamente
+        
+        Returns:
+            Dict con resultado de la corrección
+        """
+        results = {"action_taken": None, "reason": None, "lockdown_before": None, "lockdown_after": None}
+        
         try:
-            # Re-initializing the DB will create missing tables (CREATE TABLE IF NOT EXISTS)
-            StorageManager(db_path=str(self.db_path))
-            return True
+            # 1. Verificar estado  actual DIRECTAMENTE del RiskManager (no de DB)
+            lockdown_active = risk_manager.is_lockdown_active()
+            results["lockdown_before"] = lockdown_active
+            
+            if not lockdown_active:
+                results["action_taken"] = "NO_ACTION"
+                results["reason"] = "Lockdown already inactive"
+                results["lockdown_after"] = False
+                return results
+            
+            # 2. Verificar historial de trades (últimos 10)
+            conn = storage_manager._get_conn()
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                SELECT profit FROM trade_results
+                ORDER BY close_time DESC
+                LIMIT 10
+            """)
+            trade_history = cursor.fetchall()
+            storage_manager._close_conn(conn)
+            
+            # 3. Contar pérdidas consecutivas
+            consecutive_losses = 0
+            for trade in trade_history:
+                if trade[0] <= 0:  # profit <= 0 = pérdida
+                    consecutive_losses += 1
+                else:
+                    break  # Primera ganancia rompe la racha
+            
+            # 4. Determinar si lockdown está justificado
+            max_consecutive_losses = system_state.get('config_risk', {}).get('max_consecutive_losses', 3)
+            
+            if consecutive_losses < max_consecutive_losses:
+                # LOCKDOWN NO JUSTIFICADO - Auto-corregir
+                logger.warning(
+                    f"EDGE AUTO-CORRECTION: Lockdown activo sin justificación. "
+                    f"Pérdidas consecutivas: {consecutive_losses} < {max_consecutive_losses} (umbral)"
+                )
+                
+                # Desactivar usando el RiskManager recibido para afectar instancia en uso
+                risk_manager._deactivate_lockdown()
+                
+                results["action_taken"] = "LOCKDOWN_DEACTIVATED"
+                results["reason"] = f"Consecutive losses ({consecutive_losses}) < threshold ({max_consecutive_losses}). No justification for lockdown."
+                results["lockdown_after"] = False
+                
+                logger.info(f"✅ EDGE: Lockdown auto-corregido a INACTIVE")
+            else:
+                results["action_taken"] = "NO_ACTION"
+                results["reason"] = f"Lockdown justified: {consecutive_losses} consecutive losses >= {max_consecutive_losses} threshold"
+                results["lockdown_after"] = True
+            
         except Exception as e:
-            logger.error(f"Auto-repair failed: {e}")
-            return False
+            logger.error(f"Error in auto_correct_lockdown: {e}", exc_info=True)
+            results["action_taken"] = "ERROR"
+            results["reason"] = str(e)
+        
+        return results
 
     def get_resource_usage(self) -> Dict[str, Any]:
         """Gets CPU and Memory usage of the current process group."""

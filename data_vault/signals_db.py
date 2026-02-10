@@ -108,8 +108,8 @@ class SignalsMixin(BaseRepository):
             entry_price = getattr(signal, 'entry_price', None)
             stop_loss = getattr(signal, 'stop_loss', None)
             take_profit = getattr(signal, 'take_profit', None)
-            is_executed = entry_price and stop_loss and take_profit
-            status = 'executed' if is_executed else 'active'
+            # FIXED: Never auto-mark as 'executed' - only Executor confirms execution
+            status = 'PENDING'
             
             if timestamp_value is not None:
                 columns = ['timestamp', 'status'] + base_columns
@@ -235,14 +235,20 @@ class SignalsMixin(BaseRepository):
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
+            # Only consider PENDING or EXECUTED signals as duplicates
+            # Exclude EXPIRED, GHOST_CLEARED, FAILED, etc.
             cursor.execute("""
                 SELECT COUNT(*) FROM signals 
                 WHERE symbol = ? 
                 AND signal_type = ? 
                 AND timestamp >= datetime('now', 'localtime', '-' || ? || ' minutes')
                 AND (timeframe = ? OR ? IS NULL)
+                AND status IN ('PENDING', 'EXECUTED')
             """, (symbol, signal_type, minutes, timeframe, timeframe))
             count = cursor.fetchone()[0]
+            # print(f"DEBUG DB: has_recent_signal({symbol}, {signal_type}) -> {count}")
+            if count > 0:
+                logger.info(f"DEBUG DB: has_recent_signal({symbol}, {signal_type}, {timeframe}) -> TRUE (Count: {count})")
             return count > 0
         finally:
             self._close_conn(conn)

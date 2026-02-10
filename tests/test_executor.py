@@ -92,7 +92,6 @@ class TestOrderExecutor:
         # Arrange: RiskManager en lockdown
         mock_risk_manager.is_locked.return_value = True
         mock_storage.has_open_position.return_value = False
-        mock_storage.has_recent_signal.return_value = False
         
         # Act: Intentar ejecutar señal
         result = await executor.execute_signal(sample_signal)
@@ -115,7 +114,6 @@ class TestOrderExecutor:
         # Arrange: RiskManager permite trading
         mock_risk_manager.is_locked.return_value = False
         mock_storage.has_open_position.return_value = False
-        mock_storage.has_recent_signal.return_value = False
         
         # Act: Ejecutar señal
         result = await executor.execute_signal(sample_signal)
@@ -134,7 +132,6 @@ class TestOrderExecutor:
         Si no hay ticket, debe rechazarse.
         """
         mock_storage.has_open_position.return_value = False
-        mock_storage.has_recent_signal.return_value = False
         mock_mt5_connector.execute_signal.return_value = {"success": True}
 
         result = await executor.execute_signal(sample_signal)
@@ -151,7 +148,6 @@ class TestOrderExecutor:
         Tests agnostic connector routing based on ConnectorType.
         """
         mock_storage.has_open_position.return_value = False
-        mock_storage.has_recent_signal.return_value = False
         
         # Test MT5 routing
         signal_mt5 = Signal(
@@ -192,7 +188,6 @@ class TestOrderExecutor:
         # Arrange: Simular falla de conexión
         mock_mt5_connector.execute_signal.side_effect = ConnectionError("Broker disconnected")
         mock_storage.has_open_position.return_value = False
-        mock_storage.has_recent_signal.return_value = False
         
         signal = Signal(
             symbol="EURUSD",
@@ -229,7 +224,6 @@ class TestOrderExecutor:
         Ensures audit trail and order tracking.
         """
         mock_storage.has_open_position.return_value = False
-        mock_storage.has_recent_signal.return_value = False
         
         # Act
         await executor.execute_signal(sample_signal)
@@ -249,7 +243,6 @@ class TestOrderExecutor:
         Resilience test for missing connector types.
         """
         mock_storage.has_open_position.return_value = False
-        mock_storage.has_recent_signal.return_value = False
         
         signal = Signal(
             symbol="BTCUSD",

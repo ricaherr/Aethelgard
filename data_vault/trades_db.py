@@ -67,18 +67,42 @@ class TradesMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def has_open_position(self, symbol: str) -> bool:
-        """Check if there's an open position for the given symbol"""
+    def has_open_position(self, symbol: str, timeframe: Optional[str] = None) -> bool:
+        """
+        Check if there's an open position for the given symbol.
+        
+        Args:
+            symbol: Trading symbol to check
+            timeframe: Optional timeframe filter. If provided, only checks positions on that specific timeframe.
+                      This allows independent positions on different timeframes for the same symbol.
+        
+        Returns:
+            True if open position exists, False otherwise
+        """
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT COUNT(*) FROM signals 
-                WHERE symbol = ? 
-                AND UPPER(status) = 'EXECUTED'
-                AND id NOT IN (SELECT signal_id FROM trade_results WHERE signal_id IS NOT NULL)
-            """, (symbol,))
+            if timeframe:
+                # Filter by both symbol AND timeframe (allows multi-timeframe positions)
+                cursor.execute("""
+                    SELECT COUNT(*) FROM signals 
+                    WHERE symbol = ? 
+                    AND timeframe = ?
+                    AND UPPER(status) = 'EXECUTED'
+                    AND id NOT IN (SELECT signal_id FROM trade_results WHERE signal_id IS NOT NULL)
+                """, (symbol, timeframe))
+            else:
+                # Legacy behavior: check any timeframe (for backward compatibility)
+                cursor.execute("""
+                    SELECT COUNT(*) FROM signals 
+                    WHERE symbol = ? 
+                    AND UPPER(status) = 'EXECUTED'
+                    AND id NOT IN (SELECT signal_id FROM trade_results WHERE signal_id IS NOT NULL)
+                """, (symbol,))
             count = cursor.fetchone()[0]
+            # print(f"DEBUG DB: has_open_position({symbol}, {timeframe}) -> {count}")
+            if count > 0:
+                logger.info(f"DEBUG DB: has_open_position({symbol}, {timeframe}) -> TRUE (Count: {count})")
             return count > 0
         finally:
             self._close_conn(conn)
@@ -182,5 +206,33 @@ class TradesMixin(BaseRepository):
             """, (limit,))
             rows = cursor.fetchall()
             return [dict(row) for row in rows]
+        finally:
+            self._close_conn(conn)
+
+    def clear_ghost_position(self, symbol: str) -> None:
+        """
+        Remove 'EXECUTED' status from signals for a symbol that has no real open position.
+        This fixes the 'ghost position' issue where DB thinks a trade is open but MT5 doesn't.
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            # logger.warning(f"🧹 Clearing ghost positions for {symbol} (Marking as GHOST_CLEARED)")
+            
+            # Using basic UPDATE first, json_patch might be sqlite extension dependent
+            # If json_patch is not available, just update status
+            cursor.execute("""
+                UPDATE signals 
+                SET status = 'GHOST_CLEARED'
+                WHERE symbol = ? 
+                AND status = 'EXECUTED'
+                AND id NOT IN (SELECT signal_id FROM trade_results WHERE signal_id IS NOT NULL)
+            """, (symbol,))
+            
+            if cursor.rowcount > 0:
+                logger.info(f"🧹 Cleared {cursor.rowcount} ghost positions for {symbol}")
+                conn.commit()
+        except Exception as e:
+            logger.error(f"Error clearing ghost positions: {e}")
         finally:
             self._close_conn(conn)
