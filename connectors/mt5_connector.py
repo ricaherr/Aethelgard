@@ -111,8 +111,11 @@ class MT5Connector:
         self.connection_thread = None
         self.retry_timer = None
         self.last_attempt = 0
+        
+        # Available symbols cache (auto-discovery)
+        self.available_symbols = set()
 
-        logger.info(f"MT5Connector initialized from database")
+        logger.info(f"[INSTANCE {id(self)}] MT5Connector initialized from database. Config enabled: {self.config.get('enabled', False)}, Account: {self.config.get('login', 'N/A')}")
     
     def _load_config_from_db(self) -> Dict:
         """
@@ -172,15 +175,18 @@ class MT5Connector:
         Start MT5 connection in background thread.
         Call this after system initialization is complete.
         """
+        logger.info(f"[INSTANCE {id(self)}] [START] MT5Connector.start() called. Config enabled: {self.config.get('enabled', False)}, Connection state: {self.connection_state}")
+        
         if not self.config.get('enabled', False):
-            logger.warning("MT5 connector is disabled - not starting connection")
+            logger.warning("❌ MT5 connector is DISABLED in config - not starting connection")
+            logger.warning(f"   Config keys: {list(self.config.keys())}")
             return
             
         if self.connection_state != ConnectionState.DISCONNECTED:
-            logger.info("MT5 connection already started or in progress")
+            logger.info(f"⚠️  MT5 connection already started or in progress (state: {self.connection_state})")
             return
             
-        logger.info("🚀 Starting MT5 connection in background thread...")
+        logger.info("🚀 Creating background thread for MT5 connection...")
         
         # Start connection in background thread
         self.connection_thread = threading.Thread(
@@ -189,12 +195,15 @@ class MT5Connector:
             daemon=True
         )
         self.connection_thread.start()
+        logger.info("✅ Background thread launched successfully")
     
     def _connect_background(self) -> None:
         """
         Background connection loop with retries.
         Runs indefinitely until connected or system shutdown.
         """
+        logger.info("🧵 Background connection thread started (daemon mode)")
+        
         while True:
             try:
                 if self.connection_state == ConnectionState.CONNECTED:
@@ -205,20 +214,23 @@ class MT5Connector:
                 self.connection_state = ConnectionState.CONNECTING
                 self.last_attempt = time.time()
                 
-                logger.info("🔌 Attempting MT5 connection...")
+                logger.info("🔌 [BACKGROUND] Attempting MT5 connection...")
+                logger.info(f"   Current state: {self.connection_state}, Available symbols: {len(self.available_symbols)}")
                 
                 # Try to connect with timeout
-                if self._connect_sync_once():
-                    logger.info("✅ MT5 connected successfully in background")
+                success = self._connect_sync_once()
+                
+                if success:
+                    logger.info(f"✅ [BACKGROUND] MT5 CONNECTED! Symbols loaded: {len(self.available_symbols)}")
                     return  # Exit loop when connected
-                    
-                # Connection failed, schedule retry
-                logger.warning("⚠️  MT5 connection failed, retrying in 30 seconds...")
-                self.connection_state = ConnectionState.FAILED
-                time.sleep(30)
+                else:
+                    logger.error("❌ [BACKGROUND] MT5 connection FAILED (_connect_sync_once returned False)")
+                    logger.warning("⚠️  [BACKGROUND] Retrying in 30 seconds...")
+                    self.connection_state = ConnectionState.FAILED
+                    time.sleep(30)
                 
             except Exception as e:
-                logger.error(f"❌ Error in MT5 background connection loop: {e}")
+                logger.error(f"⛔ [BACKGROUND] EXCEPTION in connection thread: {e}", exc_info=True)
                 self.connection_state = ConnectionState.FAILED
                 time.sleep(30)
     
@@ -240,6 +252,9 @@ class MT5Connector:
             if not self._verify_demo_account():
                 return False
                 
+            # Auto-discovery: Load available symbols from broker (CRITICAL for auto-filter)
+            self._load_available_symbols()
+                
             self._log_connection_success()
             return True
             
@@ -251,6 +266,8 @@ class MT5Connector:
         """Initialize MT5 terminal using dynamic path from config"""
         import json
         from pathlib import Path
+        
+        logger.info("[VERBOSE] _initialize_mt5() started")
         
         terminal_path = None
         auto_start = True
@@ -264,6 +281,7 @@ class MT5Connector:
                     mt5_settings = global_config.get("connectors", {}).get("mt5", {})
                     terminal_path = mt5_settings.get("terminal_path")
                     auto_start = mt5_settings.get("auto_start", True)
+                    logger.info(f"[VERBOSE] Terminal path from config: {terminal_path}")
         except Exception as e:
             logger.error(f"Error reading terminal_path from config.json: {e}")
 
@@ -272,35 +290,52 @@ class MT5Connector:
             terminal_path = r"C:\Program Files\MetaTrader 5 IC Markets Global\terminal64.exe"
             logger.warning(f"No terminal_path found in config. Using fallback: {terminal_path}")
 
-        init_params = {
-            "path": terminal_path
-        }
+        logger.info(f"[VERBOSE] Calling mt5.initialize(path='{terminal_path}')...")
         
-        # Si NO queremos auto_start, solo intentamos conectar si ya está abierto
-        # (Aunque mt5.initialize usualmente intenta lanzar el terminal si no está abierto)
+        # Check if MT5 already initialized
+        try:
+            existing_version = mt5.version()
+            if existing_version:
+                logger.info(f"[VERBOSE] MT5 already initialized: version {existing_version}")
+        except:
+            logger.info("[VERBOSE] MT5 not yet initialized")
         
         if not mt5.initialize(path=terminal_path):
             error = mt5.last_error()
-            logger.error(f"MT5 initialization failed at {terminal_path}: {error}")
+            logger.error(f"[VERBOSE] ❌ mt5.initialize() FAILED: {error}")
+            logger.error(f"[VERBOSE] Terminal path attempted: {terminal_path}")
             return False
+        
+        logger.info(f"[VERBOSE] ✅ mt5.initialize() SUCCESS")
         return True
 
     def _validate_credentials(self) -> bool:
         """Validate that all required credentials are present"""
+        logger.info("[VERBOSE] _validate_credentials() started")
+        
         login = self.config.get('login')
         password = self.config.get('password')
         server = self.config.get('server')
         
+        logger.info(f"[VERBOSE] Credentials check: login={bool(login)}, password={bool(password)} (len={len(str(password)) if password else 0}), server={bool(server)}")
+        
         if not login or not password or not server:
-            logger.error("Incomplete MT5 credentials")
+            logger.error(f"[VERBOSE] ❌ Incomplete credentials: login={login}, server={server}")
             return False
+        
+        logger.info("[VERBOSE] ✅ Credentials validated")
         return True
 
     def _perform_mt5_login(self) -> bool:
         """Perform MT5 login with credentials"""
+        logger.info("[VERBOSE] _perform_mt5_login() started")
+        
         login = self.config.get('login')
         password = self.config.get('password')
         server = self.config.get('server')
+        
+        logger.info(f"[VERBOSE] Login parameters: login={login} (type={type(login).__name__}), server='{server}'")
+        logger.info(f"[VERBOSE] Calling mt5.login(login={int(login)}, password=[HIDDEN], server='{str(server).strip()}')...")
         
         authorized = mt5.login(
             login=int(login),
@@ -308,37 +343,64 @@ class MT5Connector:
             server=str(server).strip()
         )
         
+        logger.info(f"[VERBOSE] mt5.login() returned: {authorized}")
+        
         if not authorized:
             error = mt5.last_error()
-            logger.error(f"MT5 login failed: {error}")
+            logger.error(f"[VERBOSE] ❌ mt5.login() FAILED: {error}")
+            logger.error(f"[VERBOSE] Attempted login={int(login)}, server='{str(server).strip()}'")
+            
+            # Additional diagnostic info
+            try:
+                terminal_info = mt5.terminal_info()
+                if terminal_info:
+                    logger.error(f"[VERBOSE] Terminal state: connected={terminal_info.connected}, trade_allowed={terminal_info.trade_allowed}")
+            except Exception as e:
+                logger.error(f"[VERBOSE] Could not get terminal info: {e}")
+            
             return False
+        
+        logger.info("[VERBOSE] ✅ mt5.login() SUCCESS")
         return True
 
     def _verify_demo_account(self) -> bool:
         """Verify connected account is demo and set flags"""
+        logger.info("[VERBOSE] _verify_demo_account() started")
+        
         account_info = mt5.account_info()
         if account_info is None:
-            logger.error("Could not retrieve MT5 account information")
+            logger.error("[VERBOSE] ❌ mt5.account_info() returned None")
             return False
         
+        logger.info(f"[VERBOSE] Account info retrieved: login={account_info.login}, server={account_info.server}, trade_mode={account_info.trade_mode}")
+        
         self.is_demo = account_info.trade_mode == mt5.ACCOUNT_TRADE_MODE_DEMO
+        
+        logger.info(f"[VERBOSE] Account type check: is_demo={self.is_demo} (trade_mode={account_info.trade_mode}, DEMO_MODE={mt5.ACCOUNT_TRADE_MODE_DEMO})")
+        
         if not self.is_demo:
-            logger.critical("⚠️  CONNECTED TO REAL ACCOUNT! Trading disabled.")
+            logger.critical("[VERBOSE] ⚠️  REAL ACCOUNT DETECTED! Shutting down for safety.")
             mt5.shutdown()
             return False
             
         self.is_connected = True
         self.connection_state = ConnectionState.CONNECTED
+        
+        logger.info(f"[INSTANCE {id(self)}] [VERBOSE] ✅ Demo account verified, is_connected={self.is_connected}, connection_state={self.connection_state}")
         return True
 
     def _log_connection_success(self) -> None:
-        """Log successful connection details"""
+        """Log successful connection details with symbol count"""
         account_info = mt5.account_info()
+        forex_count = len([s for s in self.available_symbols if len(s) == 6 and not s.startswith('X')])
+        
         logger.info("=" * 60)
         logger.info("✅ MT5 Connected Successfully!")
         logger.info(f"   Account: {account_info.login}")
         logger.info(f"   Server: {account_info.server}")
         logger.info(f"   Balance: {account_info.balance:,.2f} {account_info.currency}")
+        logger.info(f"   Type: {'DEMO' if self.is_demo else 'REAL'}")
+        logger.info(f"   Symbols Available: {len(self.available_symbols)} (FOREX: {forex_count} pares)")
         logger.info("=" * 60)
         """
         Load MT5 configuration from DATABASE (single source of truth)
@@ -403,6 +465,67 @@ class MT5Connector:
         return symbol.replace("=X", "") if symbol else symbol
     
     def connect(self, timeout_seconds: int = 10) -> bool:
+        """
+        Start asynchronous connection to MT5 terminal with timeout
+        
+        Args:
+            timeout_seconds: Maximum time to wait for connection
+            
+        Returns:
+            True if connection successful within timeout
+        """
+        if not self.config.get('enabled', False):
+            logger.warning("MT5 connector is disabled in configuration. skipping connection.")
+            self.connection_state = ConnectionState.FAILED
+            return False
+            
+        if self.connection_state == ConnectionState.CONNECTED:
+            return True
+            
+        if self.connection_state == ConnectionState.CONNECTING:
+            # Already attempting connection, wait for result
+            return self._wait_for_connection(timeout_seconds)
+        
+        # Start connection in background thread
+        self.connection_state = ConnectionState.CONNECTING
+        self.connection_thread = threading.Thread(
+            target=self._connect_sync,
+            name="MT5-Connector",
+            daemon=True
+        )
+        self.connection_thread.start()
+        
+        # Wait for connection with timeout
+        return self._wait_for_connection(timeout_seconds)
+    
+    def connect_blocking(self) -> bool:
+        """
+        SYNCHRONOUS connection in caller's thread (MT5 library is thread-specific).
+        Use this when you need MT5 initialized in the SAME thread that will execute trades.
+        
+        Returns:
+            True if connection successful
+        """
+        if not self.config.get('enabled', False):
+            logger.warning("MT5 connector is disabled in configuration.")
+            self.connection_state = ConnectionState.FAILED
+            return False
+            
+        if self.connection_state == ConnectionState.CONNECTED:
+            logger.info("MT5 already connected.")
+            return True
+        
+        logger.info("🔌 Conectando a MT5 sincrónicamente en thread actual...")
+        success = self._connect_sync_once()
+        
+        if success:
+            logger.info(f"✅ MT5 connected! Thread: {threading.current_thread().name}, Symbols: {len(self.available_symbols)}")
+        else:
+            logger.error("❌ MT5 connection failed")
+            
+        return success
+    
+    def _connect_sync(self) -> None:
         """
         Start asynchronous connection to MT5 terminal with timeout
         
@@ -514,13 +637,11 @@ class MT5Connector:
             self.is_connected = True
             self.connection_state = ConnectionState.CONNECTED
             
-            logger.info("=" * 60)
-            logger.info(f"✅ MT5 Connected Successfully!")
-            logger.info(f"   Account: {account_info.login}")
-            logger.info(f"   Server: {account_info.server}")
-            logger.info(f"   Balance: {account_info.balance:,.2f} {account_info.currency}")
-            logger.info(f"   Type: DEMO")
-            logger.info("=" * 60)
+            # Auto-discovery: Load available symbols from broker
+            self._load_available_symbols()
+            
+            # Log connection success (unified logging)
+            self._log_connection_success()
             
         except Exception as e:
             logger.error(f"Error connecting to MT5: {e}")
@@ -564,6 +685,34 @@ class MT5Connector:
         self.retry_timer.start()
         logger.info("⏰ Next MT5 retry in 30 seconds")
     
+    def _load_available_symbols(self) -> None:
+        """
+        Auto-discovery: Load all available symbols from broker.
+        This eliminates manual configuration and prevents errors with unavailable pairs.
+        """
+        try:
+            symbols = mt5.symbols_get()
+            if symbols is None:
+                logger.warning("Could not retrieve symbols from MT5")
+                return
+            
+            # Filter visible symbols (available for trading)
+            self.available_symbols = {s.name for s in symbols if s.visible}
+            
+            # Log summary by category
+            forex_pairs = [s for s in self.available_symbols if len(s) == 6 and not s.startswith('X')]
+            metals = [s for s in self.available_symbols if s.startswith('X')]
+            
+            logger.info(f"📋 Auto-discovered {len(self.available_symbols)} symbols:")
+            if forex_pairs:
+                logger.info(f"   FOREX: {len(forex_pairs)} pares ({', '.join(sorted(forex_pairs)[:10])}{'...' if len(forex_pairs) > 10 else ''})")
+            if metals:
+                logger.info(f"   METALS: {len(metals)} ({', '.join(sorted(metals)[:5])}{'...' if len(metals) > 5 else ''})")
+                
+        except Exception as e:
+            logger.error(f"Error loading available symbols: {e}", exc_info=True)
+            self.available_symbols = set()
+    
     def disconnect(self) -> None:
         """Disconnect from MT5"""
         if self.is_connected:
@@ -581,8 +730,10 @@ class MT5Connector:
         Returns:
             Dict with execution result
         """
+        logger.info(f"[INSTANCE {id(self)}] execute_signal() called for {signal.symbol}. is_connected={self.is_connected}, connection_state={self.connection_state}, available_symbols_count={len(self.available_symbols)}")
+        
         if not self.is_connected:
-            logger.error("MT5 not connected. Call connect() first.")
+            logger.error(f"[INSTANCE {id(self)}] MT5 not connected (is_connected={self.is_connected}). Call connect() first.")
             return {'success': False, 'error': 'Not connected'}
         
         if not self.is_demo:
@@ -593,6 +744,12 @@ class MT5Connector:
             symbol = self.normalize_symbol(signal.symbol)
             if symbol != signal.symbol:
                 logger.info(f"Normalized symbol for MT5: {signal.symbol} -> {symbol}")
+            
+            # AUTO-FILTER: Check if symbol is available in broker BEFORE attempting execution
+            # Only filter if available_symbols has been loaded (connection completed)
+            if len(self.available_symbols) > 0 and symbol not in self.available_symbols:
+                logger.debug(f"Symbol {symbol} not available in this broker (skipped silently)")
+                return {'success': False, 'error': f'Symbol {symbol} not available in broker'}
             
             # Ensure symbol is visible in Market Watch (CRITICAL for tick retrieval)
             symbol_info = mt5.symbol_info(symbol)
@@ -638,6 +795,15 @@ class MT5Connector:
                 "type_time": mt5.ORDER_TIME_GTC,
                 "type_filling": mt5.ORDER_FILLING_IOC,
             }
+            
+            # Log request details for debugging
+            logger.info(f"📤 Sending order to MT5:")
+            logger.info(f"   Symbol: {request['symbol']}")
+            logger.info(f"   Volume: {request['volume']} (type: {type(request['volume'])})")
+            logger.info(f"   Type: {request['type']} ({'BUY' if request['type'] == mt5.ORDER_TYPE_BUY else 'SELL'})")
+            logger.info(f"   Price: {request['price']}")
+            logger.info(f"   SL: {request['sl']} | TP: {request['tp']}")
+            logger.info(f"   Filling: {request['type_filling']}")
             
             # Send order
             result = mt5.order_send(request)

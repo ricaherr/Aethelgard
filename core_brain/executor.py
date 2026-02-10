@@ -3,6 +3,7 @@ Order Executor Module
 Executes trading signals with RiskManager validation and agnostic connector routing.
 Aligned with Aethelgard's principles: Autonomy, Resilience, Agnosticism, and Security.
 """
+import asyncio
 import logging
 from typing import Dict, Optional, Any
 from datetime import datetime
@@ -167,6 +168,23 @@ class OrderExecutor:
                     )
                 return False
             
+            # RACE CONDITION FIX: Wait for MT5 connection if background thread is still connecting
+            if signal.connector_type == ConnectorType.METATRADER5 and hasattr(connector, 'is_connected'):
+                max_wait = 15  # seconds
+                waited = 0
+                while not connector.is_connected and waited < max_wait:
+                    if waited == 0:
+                        logger.info(f"[RACE FIX] MT5 not yet connected, waiting up to {max_wait}s for background thread...")
+                    await asyncio.sleep(1)
+                    waited += 1
+                
+                if not connector.is_connected:
+                    logger.error(f"[RACE FIX] MT5 still not connected after {max_wait}s wait. Signal rejected.")
+                    self._register_failed_signal(signal, "MT5_CONNECTION_TIMEOUT")
+                    return False
+                else:
+                    logger.info(f"[RACE FIX] ✅ MT5 connected successfully after {waited}s wait")
+            
             # Execute signal through connector
             result = connector.execute_signal(signal)
             
@@ -285,11 +303,22 @@ class OrderExecutor:
                 # Default balance for paper trading
                 account_balance = 10000.0
             
-            # Get stop loss distance
-            stop_loss_distance = abs(signal.stop_loss - signal.entry_price) if signal.stop_loss and signal.entry_price else 100  # Default 100 pips
+            # Get stop loss distance in PRICE units and convert to PIPS
+            if signal.stop_loss and signal.entry_price:
+                price_distance = abs(signal.stop_loss - signal.entry_price)
+                # For forex pairs (5 decimal places), 1 pip = 0.0001
+                # For JPY pairs (3 decimal places), 1 pip = 0.01
+                # Use 0.0001 as default (most forex pairs)
+                pip_size = 0.01 if 'JPY' in signal.symbol else 0.0001
+                stop_loss_distance = price_distance / pip_size
+            else:
+                stop_loss_distance = 50.0  # Default 50 pips
             
-            # Get point value (assume 1 for forex)
-            point_value = 1.0
+            # Get point value: For 1 standard lot (100,000 units) in forex:
+            # - 1 pip movement = $10 for most pairs
+            # - 1 pip movement = $1000 for JPY pairs (because smaller pip size)
+            # We'll use $10 as standard for 1 lot
+            point_value = 10.0
             
             # Get current regime (assume RANGE if not available)
             from models.signal import MarketRegime
@@ -298,6 +327,11 @@ class OrderExecutor:
             position_size = self.risk_manager.calculate_position_size(
                 account_balance, stop_loss_distance, point_value, current_regime
             )
+            
+            # Clamp position size to reasonable limits
+            # Min: 0.01 lots (micro lot)
+            # Max: 10 lots (conservative limit for demo)
+            position_size = max(0.01, min(position_size, 10.0))
             
             # Memory dump for high-confidence signals (>90)
             if signal.confidence > 0.9:
@@ -310,6 +344,7 @@ class OrderExecutor:
                 }
                 logger.info(f"🔍 HIGH-CONFIDENCE SIGNAL MEMORY DUMP: {memory_dump}")
             
+            logger.debug(f"Position size calculated: {position_size:.2f} lots (SL distance: {stop_loss_distance:.1f} pips)")
             return position_size
         except Exception as e:
             logger.error(f"Error calculating position size: {e}")

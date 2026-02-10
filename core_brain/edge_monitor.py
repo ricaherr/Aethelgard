@@ -18,13 +18,13 @@ class EdgeMonitor(threading.Thread):
     Incluye detección de operaciones externas de MT5 y auditoría de señales.
     """
     
-    def __init__(self, storage: StorageManager, interval_seconds: int = 60):
+    def __init__(self, storage: StorageManager, mt5_connector: Optional[Any] = None, interval_seconds: int = 60):
         super().__init__(daemon=True)
         self.storage = storage
         self.interval_seconds = interval_seconds
         self.running = True
         self.name = "EdgeMonitor"
-        self.mt5_connector = None  # Se inicializará cuando sea necesario
+        self.mt5_connector = mt5_connector  # Injected dependency (reuse existing instance)
         
     def run(self) -> None:
         """Loop principal del monitor"""
@@ -59,10 +59,12 @@ class EdgeMonitor(threading.Thread):
         logger.info("🧠 EDGE Monitor stopped")
     
     def _get_mt5_connector(self) -> Optional[Any]:
-        """Obtener instancia del conector MT5 de forma lazy"""
+        """Get MT5 connector instance (reuse injected or lazy-load)"""
         if self.mt5_connector is None:
+            # Lazy loading as fallback (NOT RECOMMENDED - use DI instead)
             try:
                 from connectors.mt5_connector import MT5Connector
+                logger.warning("⚠️  EdgeMonitor creating NEW MT5Connector (should use injected instance)")
                 self.mt5_connector = MT5Connector()
             except ImportError:
                 logger.warning("MT5 connector not available")

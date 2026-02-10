@@ -9,7 +9,7 @@ from pathlib import Path
 from datetime import datetime
 
 # Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from models.signal import Signal, SignalType, ConnectorType, MarketRegime
 from core_brain.risk_manager import RiskManager
@@ -42,8 +42,6 @@ async def verify_flow():
     # 1. Initialize Components
     logger.info("\nStep 1: Initializing Components...")
     storage = StorageManager()
-    from data_vault.storage import StorageManager
-    storage = StorageManager()
     risk_manager = RiskManager(storage=storage, initial_capital=10000.0)
     
     # Try to connect MT5, fallback to Mock
@@ -64,19 +62,36 @@ async def verify_flow():
     success_count += 1
     logger.info(f"Progress: {success_count}/{total_steps}")
 
-    # 2. Create Dummy Signal
+    # 2. Create Dummy Signal with realistic prices
     logger.info("\nStep 2: Creating Dummy Signal...")
+    
+    # Get current price from MT5
+    import MetaTrader5 as mt5
+    tick = mt5.symbol_info_tick("EURUSD")
+    if not tick:
+        logger.error("Could not get current price for EURUSD")
+        return
+    
+    current_price = tick.ask
+    sl_distance_pips = 50  # 50 pips stop loss
+    tp_distance_pips = 150  # 150 pips take profit (3:1 R:R)
+    pip_size = 0.0001  # EURUSD pip size
+    
     signal = Signal(
         symbol="EURUSD",
         signal_type="BUY",
         confidence=0.85,
-        entry_price=1.0850,
-        stop_loss=1.0800,
-        take_profit=1.1000,
+        entry_price=current_price,
+        stop_loss=current_price - (sl_distance_pips * pip_size),
+        take_profit=current_price + (tp_distance_pips * pip_size),
+        volume=0.10,  # IC Markets minimum lot size
         connector_type=ConnectorType.METATRADER5,
         metadata={"strategy_id": "VerificationTest", "regime": "TREND"}
     )
-    logger.info(f"✅ Created Signal: {signal}")
+    
+    logger.info(f"✅ Created Signal: {signal.signal_type.value} {signal.symbol} @ {current_price:.5f}")
+    logger.info(f"   SL: {signal.stop_loss:.5f} (-{sl_distance_pips} pips)")
+    logger.info(f"   TP: {signal.take_profit:.5f} (+{tp_distance_pips} pips)")
     success_count += 1
     logger.info(f"Progress: {success_count}/{total_steps}")
 
@@ -93,7 +108,7 @@ async def verify_flow():
 
     # 4. Execution
     logger.info("\nStep 4: Executing Signal...")
-    execution_success = executor.execute_signal(signal)
+    execution_success = await executor.execute_signal(signal)
     
     if execution_success:
         logger.info("✅ Execution step completed")

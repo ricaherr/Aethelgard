@@ -245,12 +245,18 @@ async def main() -> None:
             storage=storage
         )
         
-        # === INICIAR MT5 EN BACKGROUND (después de que todo esté listo) ===
-        logger.info("🔌 Iniciando MT5 connection en background...")
+        # === INICIAR MT5 SINCRÓNICAMENTE (MT5 library doesn't share state across threads) ===
+        logger.info("🔌 Conectando a MT5 (sincrónico en thread principal)...")
+        mt5_connector = None
         if hasattr(executor, 'connectors') and ConnectorType.METATRADER5 in executor.connectors:
             mt5_connector = executor.connectors[ConnectorType.METATRADER5]
-            mt5_connector.start()  # Inicia conexión en hilo separado
-            logger.info("✅ MT5 background connection started")
+            # Connect synchronously in main thread (MT5 library is thread-specific)
+            # This ensures mt5.initialize() happens in the SAME thread that will call execute_signal()
+            connected = mt5_connector.connect_blocking()
+            if connected:
+                logger.info(f"✅ MT5 conectado exitosamente. Símbolos disponibles: {len(mt5_connector.available_symbols)}")
+            else:
+                logger.error("❌ MT5 connection failed!")
             
             # Set MT5 connector in SignalFactory for reconciliation
             signal_factory.set_mt5_connector(mt5_connector)
@@ -262,7 +268,7 @@ async def main() -> None:
         logger.info("")
         
         # Iniciar Servidor API en hilo separado
-        server_thread = threading.Thread(target=launch_server, daemon=True)
+        server_thread = threading.Thread(target=launch_server,daemon=True)
         server_thread.start()
         
         # Iniciar Scanner en hilo separado
@@ -276,9 +282,9 @@ async def main() -> None:
         monitor_task = asyncio.create_task(monitor.start())
         logger.info("✅ Closing Monitor activo (Feedback Loop)")
         
-        # Iniciar EDGE Monitor
+        # Iniciar EDGE Monitor (inject MT5 connector recomendation to avoid creating new instance)
         logger.info("🔄 Iniciando EDGE Monitor...")
-        edge_monitor = EdgeMonitor(storage=storage)
+        edge_monitor = EdgeMonitor(storage=storage, mt5_connector=mt5_connector)
         edge_monitor.start()
         logger.info("✅ EDGE Monitor activo (Observabilidad Autónoma)")
         
