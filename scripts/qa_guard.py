@@ -70,8 +70,18 @@ def check_type_hints(file_path: Path) -> List[str]:
     return issues
 
 def check_agnosticism(file_path: Path) -> List[str]:
-    """Asegura que MetaTrader5 solo se use en /connectors."""
-    if 'connectors' in file_path.parts or file_path.name == 'qa_guard.py':
+    """
+    Asegura que MetaTrader5 solo se use en /connectors.
+    
+    Excepciones:
+    - connectors/ (integración brokers)
+    - scripts/utilities/ (auditoría/diagnóstico directo)
+    - qa_guard.py (self-exclusion)
+    """
+    # Allow MT5 imports in connectors and diagnostic utilities
+    if ('connectors' in file_path.parts or 
+        ('scripts' in file_path.parts and 'utilities' in file_path.parts) or
+        file_path.name == 'qa_guard.py'):
         return []
 
     issues = []

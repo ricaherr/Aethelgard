@@ -199,6 +199,14 @@ class PositionSizeMonitor:
         
         logger.info("✅ Circuit breaker RESET - Trading re-enabled")
     
+    def force_reset_circuit_breaker(self) -> None:
+        """Force reset circuit breaker (manual recovery from extended outages)"""
+        if self.circuit_breaker_active:
+            logger.warning(f"⚠️ MANUAL RESET after {self.consecutive_failures} failures")
+            self._reset_circuit_breaker()
+        else:
+            logger.info("Circuit breaker already inactive - no reset needed")
+    
     def _send_alert(self, title: str, message: str) -> None:
         """Send alert (placeholder for Notificator integration)"""
         # TODO: Integrate with Notificator for Telegram alerts
@@ -287,15 +295,20 @@ class PositionSizeMonitor:
         return failures[-limit:]
     
     def reset_statistics(self) -> None:
-        """Reset all statistics (use with caution)"""
+        """Reset all statistics including circuit breaker (use with caution)"""
         self.total_calculations = 0
         self.successful_calculations = 0
         self.failed_calculations = 0
         self.warnings_count = 0
-        self.consecutive_failures = 0
         self.event_history.clear()
         
-        logger.info("PositionSizeMonitor statistics RESET")
+        # Also reset circuit breaker
+        if self.circuit_breaker_active:
+            self._reset_circuit_breaker()
+        else:
+            self.consecutive_failures = 0
+        
+        logger.info("PositionSizeMonitor statistics RESET (including circuit breaker)")
     
     def __str__(self) -> str:
         """String representation of monitor status"""

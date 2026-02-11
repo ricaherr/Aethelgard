@@ -42,6 +42,7 @@ sys.path.append(str(BASE_DIR))
 from models.signal import MarketRegime, Signal
 from data_vault.storage import StorageManager
 from core_brain.coherence_monitor import CoherenceMonitor
+from core_brain.signal_expiration_manager import SignalExpirationManager
 
 logger = logging.getLogger(__name__)
 
@@ -222,6 +223,8 @@ class MainOrchestrator:
         self._active_signals: List[Signal] = []
         # Coherence monitor
         self.coherence_monitor = CoherenceMonitor(storage=self.storage)
+        # Signal expiration manager (EDGE: auto-expire old signals)
+        self.expiration_manager = SignalExpirationManager(storage=self.storage)
         # Loop intervals by regime (seconds)
         orchestrator_config = self.config.get("orchestrator", {})
         self.intervals = {
@@ -404,6 +407,14 @@ class MainOrchestrator:
         try:
             # Check if we need to reset stats for new day
             self.stats.reset_if_new_day()
+            
+            # EDGE: Expire old PENDING signals based on timeframe window
+            # This prevents stale signals from accumulating in database
+            expiration_stats = self.expiration_manager.expire_old_signals()
+            logger.info(f"[EXPIRATION] Processed {expiration_stats.get('total_checked', 0)} signals, "
+                       f"expired {expiration_stats['total_expired']}")
+            if expiration_stats['total_expired'] > 0:
+                logger.info(f"[EXPIRATION] ✅ Breakdown: {expiration_stats['by_timeframe']}")
             
             # Step 1: Get current market regimes from scanner WITH DataFrames
             logger.debug("Getting market regimes with data from scanner...")

@@ -5,11 +5,14 @@ Aligned with Aethelgard's principles: Autonomy, Resilience, Agnosticism, and Sec
 """
 import asyncio
 import logging
+import json
 from typing import Dict, Optional, Any
 from datetime import datetime
+from pathlib import Path
 
 from models.signal import Signal, ConnectorType
 from core_brain.risk_manager import RiskManager
+from core_brain.multi_timeframe_limiter import MultiTimeframeLimiter
 from data_vault.storage import StorageManager
 
 logger = logging.getLogger(__name__)
@@ -31,7 +34,8 @@ class OrderExecutor:
         risk_manager: RiskManager,
         storage: Optional[StorageManager] = None,
         notificator: Optional[Any] = None,
-        connectors: Optional[Dict[ConnectorType, Any]] = None
+        connectors: Optional[Dict[ConnectorType, Any]] = None,
+        config_path: str = "config/dynamic_params.json"
     ):
         """
         Initialize OrderExecutor.
@@ -41,12 +45,17 @@ class OrderExecutor:
             storage: StorageManager for persistence (creates if None)
             notificator: Notificator for alerts (optional)
             connectors: Dictionary mapping ConnectorType to connector instances
+            config_path: Path to config file (for MultiTimeframeLimiter)
         """
         self.risk_manager = risk_manager
         self.storage = storage or StorageManager()
         self.notificator = notificator
         self.connectors = connectors or {}
         self.persists_signals = True
+        
+        # EDGE: Load config for multi-timeframe limiter
+        self.config = self._load_config(config_path)
+        self.multi_tf_limiter = MultiTimeframeLimiter(self.storage, self.config)
         
         # Auto-detect and load MT5Connector if configured
         # This maintains agnosticism: core doesn't depend on MT5, but uses it if available
@@ -58,9 +67,31 @@ class OrderExecutor:
             f"{[ct.value for ct in self.connectors.keys()]}"
         )
     
-    def _try_load_mt5_connector(self) -> None:
+    def _load_config(self, config_path: str) -> Dict:
         """
-        Attempt to load MT5Connector (lazy loading - no connection yet).
+        Load configuration from JSON file.
+        
+        Args:
+            config_path: Path to config JSON file
+        
+        Returns:
+            Dict with configuration (empty dict if file not found)
+        """
+        try:
+            config_file = Path(config_path)
+            if config_file.exists():
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            else:
+                logger.warning(f"Config file not found: {config_path}, using empty config")
+                return {}
+        except Exception as e:
+            logger.error(f"Error loading config from {config_path}: {e}")
+            return {}
+    
+    def _try_load_mt5_connector(self) ->None:
+        """
+        Attempt to load MT5Connector (lazy loading - connection managed by start.py).
         Follows Aethelgard's agnosticism principle: core doesn't require MT5,
         but will use it opportunistically if configured.
         """
@@ -72,9 +103,9 @@ class OrderExecutor:
             
             mt5_connector = MT5Connector()
             
-            # Store connector - connection will be started later via .start()
+            # Store connector - connection will be initialized by start.py
             self.connectors[ConnectorType.METATRADER5] = mt5_connector
-            logger.info("✅ MT5Connector loaded (connection deferred)")
+            logger.info("✅ MT5Connector loaded (connection managed by start.py)")
                 
         except ImportError:
             logger.warning("MT5Connector not available (MetaTrader5 library not installed)")
@@ -141,6 +172,16 @@ class OrderExecutor:
                 f"Symbol={signal.symbol}, Type={signal.signal_type}"
             )
             self._register_failed_signal(signal, "REJECTED_LOCKDOWN")
+            return False
+        
+        # Step 3.25: EDGE - Check multi-timeframe limits
+        is_valid, reason = self.multi_tf_limiter.validate_new_signal(signal)
+        if not is_valid:
+            logger.warning(
+                f"Signal rejected: {reason}. "
+                f"Symbol={signal.symbol}, Type={signal.signal_type}, TF={signal.timeframe}"
+            )
+            self._register_failed_signal(signal, reason)
             return False
         
         # Step 3.5: Calculate position size
@@ -361,17 +402,23 @@ class OrderExecutor:
         # Extract ticket from result (supports both formats)
         ticket = result.get('ticket') or result.get('order_id')
         
-        # Update existing signal to EXECUTED status with execution details
-        connector_str = signal.connector_type.value if hasattr(signal.connector_type, 'value') else str(signal.connector_type)
-        self.storage.update_signal_status(signal_id, 'EXECUTED', {
+        # Build metadata update with execution details AND critical trade params
+        metadata_update = {
             'ticket': ticket,
             'execution_price': result.get('price'),
             'execution_time': datetime.now().isoformat(),
-            'connector': connector_str,
-            'reason': f"Executed successfully. Ticket={ticket}"
-        })
+            'connector': signal.connector_type.value if hasattr(signal.connector_type, 'value') else str(signal.connector_type),
+            'reason': f"Executed successfully. Ticket={ticket}",
+            # Critical trade parameters (for audit & recovery)
+            'stop_loss': signal.stop_loss,
+            'take_profit': signal.take_profit,
+            'lot_size': signal.volume if hasattr(signal, 'volume') else None
+        }
         
-        logger.debug(f"Signal updated to EXECUTED: {signal.symbol}, Ticket: {ticket}")
+        # Update existing signal to EXECUTED status with complete execution details
+        self.storage.update_signal_status(signal_id, 'EXECUTED', metadata_update)
+        
+        logger.debug(f"Signal updated to EXECUTED: {signal.symbol}, Ticket: {ticket}, SL: {signal.stop_loss}, TP: {signal.take_profit}")
     
     def _register_failed_signal(self, signal: Signal, reason: str) -> None:
         """Update signal to REJECTED status (signal already saved by SignalFactory)."""

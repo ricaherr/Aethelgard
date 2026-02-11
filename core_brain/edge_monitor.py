@@ -118,9 +118,7 @@ class EdgeMonitor(threading.Thread):
                     
         except Exception as e:
             logger.error(f"Error checking MT5 external operations: {e}")
-        finally:
-            if mt5 and mt5.is_connected:
-                mt5.disconnect()
+        # NOTE: NO disconnect MT5 here - connection is managed by start.py and shared across componentsents
     
     def _was_external_operation_reported_recently(self, ticket: int) -> bool:
         """Verificar si una operación externa ya fue reportada recientemente"""
@@ -198,9 +196,7 @@ class EdgeMonitor(threading.Thread):
                             
                 except Exception as e:
                     logger.error(f"Error auditing signal {signal_id}: {e}")
-                finally:
-                    if mt5 and mt5.is_connected:
-                        mt5.disconnect()
+                # NOTE: NO disconnect MT5 here - connection is managed by start.py and shared across components
     
     def _get_recent_pending_signals(self) -> List[Dict]:
         """Obtener señales recientes que deberían haber sido ejecutadas"""

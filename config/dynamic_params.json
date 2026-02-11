@@ -9,6 +9,15 @@
   "_comment_sma_periods": "Períodos de medias móviles para estrategia Oliver Vélez",
   "sma_long_period": 200,
   "sma_short_period": 20,
+  "_comment_multi_timeframe_limits": "EDGE: Límites exposición multi-timeframe por símbolo",
+  "multi_timeframe_limits": {
+    "enabled": true,
+    "max_positions_per_symbol": 3,
+    "max_total_volume_per_symbol": 5.0,
+    "alert_hedge_threshold": 0.2,
+    "allow_opposite_signals": true,
+    "_comment": "alert_hedge_threshold: Alerta si exposición neta < 20% (posible hedge accidental)"
+  },
   "_comment_tuning": "Configuración del auto-ajuste EDGE",
   "tuning_enabled": true,
   "tuning_interval_hours": 1,
