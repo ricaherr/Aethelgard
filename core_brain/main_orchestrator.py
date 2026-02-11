@@ -43,6 +43,8 @@ from models.signal import MarketRegime, Signal
 from data_vault.storage import StorageManager
 from core_brain.coherence_monitor import CoherenceMonitor
 from core_brain.signal_expiration_manager import SignalExpirationManager
+from core_brain.position_manager import PositionManager
+from core_brain.regime import RegimeClassifier
 
 logger = logging.getLogger(__name__)
 
@@ -225,6 +227,32 @@ class MainOrchestrator:
         self.coherence_monitor = CoherenceMonitor(storage=self.storage)
         # Signal expiration manager (EDGE: auto-expire old signals)
         self.expiration_manager = SignalExpirationManager(storage=self.storage)
+        
+        # FASE 2: Position Manager (active position management)
+        # Load dynamic_params.json for position_management config
+        dynamic_config = self._load_config("config/dynamic_params.json")
+        position_config = dynamic_config.get("position_management", {})
+        
+        # Instantiate PositionManager with dependencies
+        # Note: We'll get connector from executor.connectors
+        from models.signal import ConnectorType
+        connector = None
+        if hasattr(self.executor, 'connectors'):
+            # Try to get MT5 connector first (most common)
+            connector = self.executor.connectors.get(ConnectorType.METATRADER5)
+        
+        # Instantiate RegimeClassifier (needed by PositionManager)
+        self.regime_classifier = RegimeClassifier()
+        
+        # Create PositionManager
+        self.position_manager = PositionManager(
+            storage=self.storage,
+            connector=connector,
+            regime_classifier=self.regime_classifier,
+            config=position_config
+        )
+        logger.info(f"Position Manager initialized with config: enabled={position_config.get('enabled', False)}")
+        
         # Loop intervals by regime (seconds)
         orchestrator_config = self.config.get("orchestrator", {})
         self.intervals = {
@@ -415,6 +443,17 @@ class MainOrchestrator:
                        f"expired {expiration_stats['total_expired']}")
             if expiration_stats['total_expired'] > 0:
                 logger.info(f"[EXPIRATION] ✅ Breakdown: {expiration_stats['by_timeframe']}")
+            
+            # FASE 2: Monitor open positions (emergency close, regime adjustments, time-based exits)
+            if self.position_manager:
+                position_stats = self.position_manager.monitor_positions()
+                if position_stats['actions']:
+                    logger.info(
+                        f"[POSITION_MANAGER] Monitored {position_stats['monitored']} positions, "
+                        f"executed {len(position_stats['actions'])} actions"
+                    )
+                    for action in position_stats['actions']:
+                        logger.info(f"[POSITION_MANAGER] ✅ {action['action']}: ticket={action.get('ticket')}")
             
             # Step 1: Get current market regimes from scanner WITH DataFrames
             logger.debug("Getting market regimes with data from scanner...")

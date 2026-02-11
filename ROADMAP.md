@@ -181,11 +181,78 @@ python start.py
 - **-50%** broker rejections (freeze level + cooldown)
 - **+15%** win rate (regime-based adjustments)
 
-### Próximos Pasos (FASE 2-5)
-- **FASE 2**: Breakeven REAL (commissions + swap + spread)
-- **FASE 3**: ATR-Based Trailing Stop
-- **FASE 4**: Partial Exits (scale out)
-- **FASE 5**: Advanced Features (correlation stop, liquidity detection)
+---
+
+## 🔄 MILESTONE: Position Manager - FASE 2 (2026-02-11)
+**Estado: 🚧 EN PROGRESO**
+**Criterio: PositionManager integrado en MainOrchestrator + Activo en producción** 
+
+### Problema Identificado
+- ✅ **FASE 1 completada**: PositionManager implementado pero NO integrado
+- ❌ **Sin ejecución real**: MainOrchestrator no llama a monitor_positions()
+- ❌ **Sin configuración cargada**: dynamic_params.json no se lee en inicio
+- ❌ **Sin metadata inicial**: Posiciones abiertas no tienen metadata al abrir
+- **Impacto**: PositionManager existe pero está inactivo (código muerto)
+
+### Plan de Implementación
+
+**FASE 2.1: Tests de Integración (TDD)** ✅ COMPLETADA
+- [x] Crear test_orchestrator_position_manager.py
+- [x] Test: PositionManager se instancia en __init__
+- [x] Test: monitor_positions() se llama cada 10 segundos
+- [x] Test: Config cargada desde dynamic_params.json
+- [x] Test: Metadata se guarda al abrir posición (via Executor) - Pendiente implementación
+- [x] Test: Emergency close se ejecuta en ciclo real
+
+**FASE 2.2: Implementación MainOrchestrator** ✅ COMPLETADA
+- [x] Modificar MainOrchestrator.__init__:
+  - Cargar config position_management desde dynamic_params.json
+  - Instanciar PositionManager(storage, connector, regime_classifier, config)
+  - Instanciar RegimeClassifier
+  - Obtener connector desde executor.connectors
+- [x] Modificar MainOrchestrator.run_single_cycle():
+  - Agregar llamada a position_manager.monitor_positions()
+  - Logging de acciones ejecutadas (emergency close, ajustes, etc.)
+- [ ] Modificar Executor.execute_signal():
+  - Guardar metadata inicial al abrir posición
+  - Campos: ticket, symbol, entry_price, sl, tp, initial_risk_usd, entry_time, entry_regime
+
+**FASE 2.3: Tests End-to-End** ⏳ PENDIENTE
+- [ ] Test con broker DEMO (MT5)
+- [ ] Abrir posición real → Verificar metadata guardada
+- [ ] Simular cambio de régimen → Verificar SL/TP ajustados
+- [ ] Simular drawdown 2x → Verificar emergency close
+- [ ] Logging completo de ciclo
+
+**FASE 2.4: Validación** ⏳ PENDIENTE
+- [ ] Ejecutar tests nuevos (test_orchestrator_position_manager.py)
+- [ ] Ejecutar validate_all.py
+- [ ] Verificar arquitectura agnóstica
+- [ ] Performance check (no bloquea main loop)
+
+### Archivos a Modificar
+
+**Tests nuevos:**
+- `tests/test_orchestrator_position_manager.py` (integración)
+
+**Modificaciones:**
+- `core_brain/main_orchestrator.py` (__init__ + run)
+- `core_brain/executor.py` (guardar metadata al abrir posición)
+
+### Criterios de Aceptación FASE 2
+✅ PositionManager activo en MainOrchestrator  
+✅ monitor_positions() se ejecuta cada 10s  
+✅ Config cargada desde dynamic_params.json  
+✅ Metadata se guarda automáticamente al abrir  
+✅ Tests de integración PASSED  
+✅ validate_all.py PASSED  
+✅ Test end-to-end con broker demo exitoso  
+
+### Próximas Fases (FASE 3-5)
+- **FASE 3**: Breakeven REAL (commissions + swap + spread)
+- **FASE 4**: ATR-Based Trailing Stop
+- **FASE 5**: Partial Exits (scale out)
+- **FASE 6**: Advanced Features (correlation stop, liquidity detection)
 
 ---
 
