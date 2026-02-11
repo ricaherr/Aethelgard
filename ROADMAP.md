@@ -290,6 +290,235 @@ D1  → 1440 minutos (1 vela)
 
 ---
 
+## 🔄 MILESTONE ACTIVO: Gestión Dinámica de Posiciones Abiertas (2026-02-11)
+**Estado: 📋 PLANIFICACIÓN**  
+**Prioridad: ⚡ IMPORTANTE**  
+**Criterio de Aceptación: Sistema modifica SL/TP de posiciones abiertas en tiempo real**
+
+---
+
+### 🎯 Problema Identificado
+
+**SL/TP Estáticos**: Actualmente el sistema:
+- ✅ Calcula SL/TP al crear señal (en `signal_factory.py` / `oliver_velez.py`)
+- ❌ **NUNCA** modifica SL/TP después de abrir posición
+- ❌ NO protege ganancias (trailing stop)
+- ❌ NO mueve SL a breakeven
+- ❌ NO ajusta por cambio de régimen
+
+**Componentes Existentes**:
+- `ClosingMonitor`: Solo **escucha** cierres, NO modifica posiciones
+- `TradeClosureListener`: Solo procesa eventos ya cerrados
+- **Gap**: NO existe componente que monitore posiciones **ABIERTAS**
+
+**Evidencia MANIFESTO** ([Fase 2.2](AETHELGARD_MANIFESTO.md#L1287-L1291)):
+```
+Gestión de Riesgo Dinámica - PENDIENTE:
+- ✅ Cálculo tamaño posición (ATR) → IMPLEMENTADO
+- ❌ Stop Loss dinámico según régimen → PENDIENTE
+- ❌ Take Profit adaptativo → PENDIENTE
+- 🟡 Gestión drawdown máximo → PARCIAL (lockdown existe)
+```
+
+---
+
+### 📋 Plan de Implementación
+
+#### **FASE 1: Trailing Stop (Protección Ganancias)** ⚡ CRÍTICO
+
+**Objetivo**: Seguir precio con SL para reducir pérdidas y proteger ganancias.
+
+**Tareas**:
+- [ ] **1A: Tests TDD** - Crear `tests/test_position_manager.py` (6 tests)
+  - `test_trailing_stop_move_up_on_profit` (BUY)
+  - `test_trailing_stop_move_down_on_profit` (SELL)
+  - `test_trailing_stop_never_moves_backward`
+  - `test_trailing_stop_respects_minimum_distance`
+  - `test_trailing_stop_disabled_flag`
+  - `test_trailing_stop_multiple_positions`
+
+- [ ] **1B: PositionManager** - Crear `core_brain/position_manager.py` (~250 líneas)
+  - Monitorea posiciones abiertas cada N segundos
+  - Calcula nuevo SL según trailing distance
+  - Llama `connector.modify_position(ticket, new_sl, new_tp)`
+  - Logs detallados de modificaciones
+
+- [ ] **1C: Configuración** - Actualizar `config/dynamic_params.json`
+  ```json
+  "position_management": {
+    "enabled": true,
+    "check_interval_seconds": 10,
+    "trailing_stop": {
+      "enabled": true,
+      "distance_pips": 20,
+      "activation_profit_pips": 30,
+      "min_move_pips": 5
+    }
+  }
+  ```
+
+- [ ] **1D: Integración MainOrchestrator** - Ejecutar PositionManager cada ciclo
+- [ ] **1E: Validación** - Logs muestran SL modificado en posiciones activas
+
+---
+
+#### **FASE 2: Breakeven Move (Protección Capital)** ⚡ IMPORTANTE
+
+**Objetivo**: Mover SL a entry price cuando posición tiene X pips de ganancia.
+
+**Tareas**:
+- [ ] **2A: Tests TDD** - Agregar 4 tests a `test_position_manager.py`
+  - `test_breakeven_move_after_threshold`
+  - `test_breakeven_adds_buffer_pips`
+  - `test_breakeven_only_once_per_position`
+  - `test_breakeven_disabled_flag`
+
+- [ ] **2B: Lógica Breakeven** - Agregar a `PositionManager` (~50 líneas)
+  - Verificar si profit >= threshold (ej: 30 pips)
+  - Mover SL a entry_price + buffer (ej: +5 pips para BUY)
+  - Marcar posición como "breakeven_set" (no volver a mover)
+
+- [ ] **2C: Configuración** - Actualizar `dynamic_params.json`
+  ```json
+  "breakeven": {
+    "enabled": true,
+    "activation_profit_pips": 30,
+    "buffer_pips": 5
+  }
+  ```
+
+- [ ] **2D: Validación** - Log "Breakeven set" cuando se ejecuta
+
+---
+
+#### **FASE 3: Take Profit Parcial (Gestión Avanzada)** 🟡 OPCIONAL
+
+**Objetivo**: Cerrar parte de posición en TP1, dejar resto para TP2.
+
+**Tareas**:
+- [ ] **3A: Tests TDD** - Agregar 3 tests
+  - `test_partial_close_at_tp1`
+  - `test_remaining_position_continues_to_tp2`
+  - `test_partial_close_disabled_flag`
+
+- [ ] **3B: Lógica TP Parcial** - Agregar a `PositionManager` (~80 líneas)
+  - Detectar cuando precio alcanza TP1 (50% de TP total)
+  - Cerrar 50% de volumen (`connector.partial_close(ticket, 0.5)`)
+  - Actualizar metadata: `{"partial_closed": true, "remaining_volume": 0.05}`
+
+- [ ] **3C: Configuración**
+  ```json
+  "partial_tp": {
+    "enabled": false,
+    "tp1_percent": 0.5,
+    "close_percent": 0.5
+  }
+  ```
+
+---
+
+#### **FASE 4: Ajuste por Régimen (Adaptabilidad)** 🟢 FUTURO
+
+**Objetivo**: Modificar SL/TP si régimen de mercado cambia.
+
+**Tareas**:
+- [ ] **4A: Detectar Cambio Régimen** - Integrar `RegimeClassifier`
+- [ ] **4B: Ajustar SL** - Si TREND→RANGE: apretar SL (reducir riesgo)
+- [ ] **4C: Ajustar TP** - Si RANGE→TREND: expandir TP (capturar movimiento)
+
+---
+
+### 🛠️ Archivos a Crear/Modificar
+
+**Nuevos** (2 archivos):
+- `core_brain/position_manager.py` (~380 líneas)
+  - Clase `PositionManager(storage, connectors, config_path)`
+  - Método `check_and_modify_positions()` (principal loop)
+  - Método `_apply_trailing_stop(position, current_price)`
+  - Método `_apply_breakeven(position, current_price)`
+  - Método `_apply_partial_tp(position, current_price)`
+  - Logs detallados de cada modificación
+
+- `tests/test_position_manager.py` (~400 líneas)
+  - 13 tests comprehensive (trailing, breakeven, partial TP)
+  - Fixtures: posiciones simuladas, mock connectors
+  - Validaciones: nunca retroceder SL, respeto min_distance
+
+**Modificados** (3 archivos):
+- `core_brain/main_orchestrator.py` (+15 líneas)
+  - Import `PositionManager`
+  - Instanciar en `__init__`
+  - Ejecutar `position_manager.check_and_modify_positions()` cada ciclo
+
+- `config/dynamic_params.json` (+30 líneas)
+  - Sección `position_management` completa
+
+- `connectors/mt5_connector.py` (+50 líneas)
+  - Método `modify_position(ticket, new_sl, new_tp)` (si no existe)
+  - Método `partial_close(ticket, close_percent)`
+
+**Total Código Nuevo**: ~780 líneas (tests incluidos)
+
+---
+
+### ⏱️ Timeline Estimado
+
+**FASE 1 (Trailing Stop)**: 2-3 horas
+- Tests TDD: 45 min
+- PositionManager base: 60 min
+- Integración + validación: 45 min
+
+**FASE 2 (Breakeven)**: 1-1.5 horas
+- Tests: 30 min
+- Lógica: 30 min
+- Validación: 30 min
+
+**FASE 3 (TP Parcial)**: 1.5-2 horas (OPCIONAL)
+**FASE 4 (Régimen)**: 2 horas (FUTURO)
+
+**TOTAL FASE 1+2**: ~3.5-4.5 horas
+
+---
+
+### ✅ Criterios de Aceptación
+
+**Trailing Stop (FASE 1)**:
+- [ ] Posición BUY con +50 pips → SL sube automáticamente
+- [ ] SL nunca retrocede (solo avanza)
+- [ ] Respeta `min_move_pips` (no modifica por 1 pip)
+- [ ] Logs muestran: "Trailing Stop: EURUSD SL 1.0850 → 1.0870"
+- [ ] 6 tests passing
+
+**Breakeven (FASE 2)**:
+- [ ] Posición con +30 pips → SL mueve a entry + buffer
+- [ ] Solo ejecuta UNA VEZ por posición
+- [ ] Log: "Breakeven set: GBPUSD SL → 1.2600 (entry+5 pips)"
+- [ ] 4 tests passing
+
+**Validación Completa**:
+- [ ] `validate_all.py` PASSED (5/5)
+- [ ] Sistema ejecuta sin excepciones
+- [ ] Al menos 1 posición real modificada en demo MT5
+- [ ] MANIFESTO actualizado (Fase 2.2 marcada como completada)
+
+---
+
+### 🚀 Beneficios
+
+**Reducción de Pérdidas**:
+- Trailing stop protege ganancias en tendencias largas
+- Breakeven elimina riesgo una vez posición en profit
+
+**Aumento de Ganancias**:
+- TP parcial captura profit temprano + deja posición para extensión
+- Ajuste por régimen optimiza salidas
+
+**Gestión Profesional**:
+- Sistema autónomo (no requiere intervención manual)
+- Logs completos para auditoría
+
+---
+
 ## ✅ MILESTONE: Corrección Arquitectónica - validate_all.py Integration (2024-12-XX)
 **Estado: ✅ COMPLETADO Y VALIDADO (5/5 validaciones PASSED)**  
 **Criterio de Aceptación: Arquitectura 100% agnóstica - MT5 solo en /connectors** ✅
