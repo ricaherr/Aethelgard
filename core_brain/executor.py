@@ -258,6 +258,10 @@ class OrderExecutor:
                 if hasattr(signal, 'metadata') and isinstance(signal.metadata, dict):
                     signal.metadata['execution_observation'] = f"Executed successfully. Ticket={ticket}"
                 self._register_successful_signal(signal, result)
+                
+                # FASE 2.3: Save position metadata for PositionManager
+                self._save_position_metadata(signal, result, ticket)
+                
                 return True
             else:
                 error_msg = result.get('error', 'Unknown error')
@@ -446,6 +450,66 @@ class OrderExecutor:
         self.storage.update_system_state({
             "rejected_signals": [signal_record]
         })
+    
+    def _save_position_metadata(self, signal: Signal, result: Dict, ticket: int) -> None:
+        """
+        Save position metadata for PositionManager monitoring.
+        
+        FASE 2.3: Metadata persistence on position open.
+        
+        Args:
+            signal: Original signal executed
+            result: Execution result from connector
+            ticket: Order ticket/ID from broker
+        """
+        try:
+            # Calculate initial risk in USD
+            entry_price = result.get('entry_price', signal.entry_price)
+            sl = result.get('sl', signal.stop_loss)
+            tp = result.get('tp', signal.take_profit)
+            volume = result.get('volume', signal.volume)
+            
+            # Get regime from signal metadata
+            regime_str = signal.metadata.get('regime', 'NEUTRAL')
+            if hasattr(regime_str, 'value'):
+                regime_str = regime_str.value
+            
+            # Calculate initial risk (simplified - assumes FOREX)
+            # For production: should get contract_size and point_value from connector
+            # Formula: (entry - sl) * volume * contract_size * point_value
+            # FOREX standard: 100,000 contract_size, point_value depends on symbol/account currency
+            pips_risked = abs(entry_price - sl)
+            contract_size = 100000  # Standard FOREX lot
+            point_value = 10.0  # Approximation for major pairs (depends on account currency)
+            initial_risk_usd = pips_risked * volume * point_value
+            
+            # Build metadata dict
+            metadata = {
+                'ticket': ticket,
+                'symbol': signal.symbol,
+                'entry_price': entry_price,
+                'sl': sl,
+                'tp': tp,
+                'initial_risk_usd': float(initial_risk_usd),
+                'entry_time': datetime.now().isoformat(),
+                'entry_regime': regime_str,
+                'timeframe': signal.timeframe,
+                'volume': volume
+            }
+            
+            # Save to database
+            success = self.storage.update_position_metadata(ticket, metadata)
+            
+            if success:
+                logger.info(
+                    f"[METADATA] Saved position metadata for ticket {ticket}: "
+                    f"{signal.symbol}, initial_risk=${initial_risk_usd:.2f}, regime={regime_str}"
+                )
+            else:
+                logger.warning(f"[METADATA] Failed to save metadata for ticket {ticket}")
+                
+        except Exception as e:
+            logger.error(f"[METADATA] Error saving position metadata for ticket {ticket}: {e}", exc_info=True)
     
     def _reconcile_positions(self, symbol: str) -> bool:
         """

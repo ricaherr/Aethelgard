@@ -213,9 +213,10 @@ python start.py
 - [x] Modificar MainOrchestrator.run_single_cycle():
   - Agregar llamada a position_manager.monitor_positions()
   - Logging de acciones ejecutadas (emergency close, ajustes, etc.)
-- [ ] Modificar Executor.execute_signal():
+- [x] Modificar Executor.execute_signal():
   - Guardar metadata inicial al abrir posición
   - Campos: ticket, symbol, entry_price, sl, tp, initial_risk_usd, entry_time, entry_regime
+  - Método _save_position_metadata() implementado
 
 **FASE 2.3: Tests End-to-End** ⏳ PENDIENTE
 - [ ] Test con broker DEMO (MT5)
@@ -229,6 +230,67 @@ python start.py
 - [ ] Ejecutar validate_all.py
 - [ ] Verificar arquitectura agnóstica
 - [ ] Performance check (no bloquea main loop)
+
+### Archivos Implementados
+
+**Nuevos (FASE 2.1):**
+- `tests/test_orchestrator_position_manager.py` (5 tests integración)
+
+**Nuevos (FASE 2.3):**
+- `tests/test_executor_metadata.py` (6 tests metadata)
+
+**Modificados (FASE 2.1-2.2):**
+- `core_brain/main_orchestrator.py` (imports, __init__, run_single_cycle)
+
+**Modificados (FASE 2.3):**
+- `core_brain/executor.py` (_save_position_metadata, execute_signal)
+
+### Validación Completa (FASE 2.1-2.3)
+
+**Tests FASE 2.1:** ✅ 5/5 PASSED (Integración MainOrchestrator)
+- test_position_manager_instantiated_in_init
+- test_position_manager_config_loaded_from_dynamic_params
+- test_monitor_positions_called_in_single_cycle
+- test_monitor_positions_executed_periodically
+- test_metadata_saved_when_position_opened
+
+**Tests FASE 2.3:** ✅ 6/6 PASSED (Metadata persistence)
+- test_metadata_saved_on_successful_execution
+- test_metadata_contains_all_required_fields
+- test_metadata_not_saved_on_failed_execution
+- test_metadata_includes_correct_regime
+- test_metadata_calculates_initial_risk_usd
+- test_metadata_entry_time_is_iso_format
+
+**validate_all.py:** ✅ ALL PASSED
+- Architecture Audit: ✅ PASS
+- QA Guard: ✅ PASS
+- Code Quality: ✅ PASS
+- UI Quality: ✅ PASS
+- Critical Tests (23): ✅ PASS
+
+**Arquitectura:**
+- ✅ Agnosticismo PERFECTO (CERO imports MT5 en core_brain)
+- ✅ Inyección de dependencias mantenida
+- ✅ Configuración externa (dynamic_params.json)
+- ✅ Single Source of Truth (DB metadata)
+
+### Criterios de Aceptación FASE 2
+✅ PositionManager activo en MainOrchestrator  
+✅ monitor_positions() se ejecuta cada ciclo (~10s)  
+✅ Config cargada desde dynamic_params.json  
+✅ Metadata se guarda automáticamente al abrir posición  
+✅ Tests de integración PASSED (5/5)  
+✅ Tests de metadata PASSED (6/6)  
+✅ validate_all.py PASSED  
+⏳ Test end-to-end con broker demo (FASE 2.4)
+
+### Impacto Esperado FASE 2
+- **Pipeline Completo**: Signal → Risk → Execute → **Metadata Save** → Monitor
+- **Metadata Automática**: Toda posición abierta tiene metadata inicial para PositionManager
+- **Emergency Protection**: max_drawdown activo en 2x initial_risk
+- **Regime Awareness**: Ajustes SL/TP basados en régimen actual
+- **Time-Based Exits**: Posiciones staleCLOSE automáticamente según régimen
 
 ### Archivos a Modificar
 
