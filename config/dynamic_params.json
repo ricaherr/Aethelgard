@@ -33,47 +33,5 @@
       "D1": 15.0
     },
     "last_updated": "2026-02-10 11:48:58.272995"
-  },
-  "_comment_position_management": "FASE 1: Gestión Dinámica de Posiciones Abiertas",
-  "position_management": {
-    "max_drawdown_multiplier": 2.0,
-    "cooldown_seconds": 300,
-    "max_modifications_per_day": 10,
-    "regime_adjustments": {
-      "TREND": {
-        "sl_atr_multiplier": 2.5,
-        "tp_atr_multiplier": 4.0,
-        "description": "Wide stops for trending markets"
-      },
-      "RANGE": {
-        "sl_atr_multiplier": 1.0,
-        "tp_atr_multiplier": 1.5,
-        "description": "Tight stops for ranging markets"
-      },
-      "VOLATILE": {
-        "sl_atr_multiplier": 1.5,
-        "tp_atr_multiplier": 2.0,
-        "description": "Reduced risk in volatile conditions"
-      },
-      "CRASH": {
-        "sl_atr_multiplier": 0.5,
-        "tp_atr_multiplier": 1.0,
-        "description": "Emergency mode - tight stops"
-      },
-      "NEUTRAL": {
-        "sl_atr_multiplier": 1.5,
-        "tp_atr_multiplier": 2.0,
-        "description": "Default for undefined regimes"
-      }
-    },
-    "stale_thresholds_hours": {
-      "TREND": 72,
-      "RANGE": 4,
-      "VOLATILE": 2,
-      "CRASH": 1,
-      "NEUTRAL": 24
-    },
-    "freeze_level_safety_margin": 1.1,
-    "enabled": true
   }
 }

@@ -189,7 +189,7 @@ class PositionManager:
         # Check if loss exceeds threshold
         max_allowed_loss = -abs(initial_risk_usd * self.max_drawdown_multiplier)
         
-        if current_profit < max_allowed_loss:
+        if current_profit <= max_allowed_loss:
             logger.warning(
                 f"Position {ticket} drawdown exceeded - "
                 f"Current: ${current_profit:.2f}, "

@@ -157,7 +157,8 @@ def test_emergency_close_max_drawdown(position_manager, mock_position, mock_conn
     mock_storage.get_position_metadata = Mock(return_value={
         'ticket': 12345678,
         'initial_risk_usd': 100.0,
-        'entry_regime': 'TREND'
+        'entry_regime': 'TREND',
+        'entry_time': datetime.now().isoformat()
     })
     
     # Execute
@@ -280,9 +281,9 @@ def test_freeze_level_validation_eurusd(position_manager, mock_connector):
     current_price = 1.08500
     proposed_sl = 1.08480  # Only 2 pips away
     
-    # Symbol info: 5 pips minimum
+    # Symbol info: 5 pips minimum (50 points for EURUSD where 1 pip = 10 points)
     symbol_info = {
-        'trade_stops_level': 5,
+        'trade_stops_level': 50,
         'point': 0.00001
     }
     mock_connector.get_symbol_info = Mock(return_value=symbol_info)
