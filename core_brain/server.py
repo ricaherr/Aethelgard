@@ -307,6 +307,89 @@ def create_app() -> FastAPI:
         except Exception as e:
             logger.error(f"Error guardando configuración {category}: {e}")
             raise HTTPException(status_code=500, detail=str(e))
+    
+    # === TELEGRAM ENDPOINTS ===
+    from connectors.telegram_provisioner import TelegramProvisioner
+    telegram_provisioner = TelegramProvisioner()
+    
+    @app.post("/api/telegram/validate")
+    async def validate_telegram_token(data: dict) -> Dict[str, Any]:
+        """Validates Telegram bot token"""
+        bot_token = data.get("bot_token", "")
+        is_valid, result = await telegram_provisioner.validate_bot_token(bot_token)
+        
+        if is_valid:
+            return {"status": "success", "bot_info": result}
+        else:
+            return {"status": "error", "error": result.get("error")}
+    
+    @app.post("/api/telegram/get-chat-id")
+    async def get_telegram_chat_id(data: dict) -> Dict[str, Any]:
+        """Auto-detects user's chat_id from bot updates"""
+        bot_token = data.get("bot_token", "")
+        success, result = await telegram_provisioner.get_chat_id_from_updates(bot_token)
+        
+        if success:
+            return {"status": "success", "chat_info": result}
+        else:
+            if result.get("error") == "no_messages":
+                return {
+                    "status": "waiting",
+                    "message": result.get("hint")
+                }
+            return {"status": "error", "error": result.get("error")}
+    
+    @app.post("/api/telegram/test")
+    async def test_telegram_message(data: dict) -> Dict[str, Any]:
+        """Sends test message to verify configuration"""
+        bot_token = data.get("bot_token", "")
+        chat_id = data.get("chat_id", "")
+        
+        success, result = await telegram_provisioner.send_test_message(bot_token, chat_id)
+        
+        if success:
+            return {"status": "success", "message_id": result.get("message_id")}
+        else:
+            return {"status": "error", "error": result.get("error")}
+    
+    @app.post("/api/telegram/save")
+    async def save_telegram_config(data: dict) -> Dict[str, Any]:
+        """Saves Telegram configuration to database and initializes notifier"""
+        bot_token = data.get("bot_token", "")
+        chat_id = data.get("chat_id", "")
+        enabled = data.get("enabled", True)
+        
+        # Save to database
+        telegram_config = {
+            "bot_token": bot_token,
+            "basic_chat_id": chat_id,
+            "premium_chat_id": chat_id,  # Same chat for now, can be different later
+            "enabled": enabled
+        }
+        
+        storage.update_system_state({"config_notifications": telegram_config})
+        
+        # Re-initialize notifier with new config
+        from core_brain.notificator import initialize_notifier
+        initialize_notifier(
+            bot_token=bot_token,
+            basic_chat_id=chat_id,
+            premium_chat_id=chat_id,
+            enabled=enabled
+        )
+        
+        await broadcast_thought("Notificaciones de Telegram configuradas correctamente.", module="CORE")
+        logger.info(f"✅ Telegram configurado: Chat ID {chat_id}")
+        
+        return {
+            "status": "success",
+            "message": "Configuración guardada correctamente"
+        }
+    
+    @app.get("/api/telegram/instructions")
+    async def get_telegram_instructions() -> Dict[str, Any]:
+        """Returns setup instructions in Spanish"""
+        return telegram_provisioner.get_setup_instructions()
 
     # Montar archivos estáticos de la nueva UI si existen
     ui_dist_path = os.path.join(os.getcwd(), "ui", "dist")

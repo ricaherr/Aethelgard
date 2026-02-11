@@ -269,10 +269,16 @@ await orchestrator.run()  # Inicia el loop resiliente
 - **Características**: Filtrado Basic/Premium de señales y funciones
 - **Dependencias**: StorageManager
 
-##### `notificator.py` - Sistema de Notificaciones
-- **Función**: Gestiona notificaciones vía Telegram y otros canales
-- **Características**: Configuración desde DB, templates de mensajes
-- **Dependencias**: StorageManager
+##### `notificator.py` - Sistema de Notificaciones ✅ IMPLEMENTADO
+- **Función**: Gestiona notificaciones vía Telegram con auto-provisioning
+- **Características**: 
+  - Configuración desde BD (Single Source of Truth)
+  - Templates HTML con emojis contextuales
+  - Soporte multi-canal (Basic/Premium chat_ids)
+  - Retry logic con timeout de 10s
+  - Notificaciones de cambios de régimen, señales y alertas del sistema
+- **Dependencias**: StorageManager, httpx (async HTTP client)
+- **Auto-Provisioning**: `connectors/telegram_provisioner.py` + UI React wizard
 
 ##### `trade_closure_listener.py` - Listener de Cierres de Trades
 - **Función**: Monitorea cierres de posiciones para feedback y aprendizaje
@@ -691,88 +697,7 @@ Los tests deben usar bases de datos en memoria (`:memory:`) o temporales. No se 
 - Actualizados tests desactualizados para compatibilidad con API actual
 - Resultado: 177 tests funcionando correctamente
 
-#### 7. Arquitectura Agnóstica y Validación (Consolidado 2026-02-10)
-
-**Principio**: El código de lógica de negocio (`core_brain/`) debe ser completamente independiente de brokers específicos (MT5, Rithmic, etc.).
-
-**Regla de Imports Broker-Específicos:**
-
-✅ **PERMITIDO** importar librerías de brokers ÚNICAMENTE en:
-- `connectors/` - Integración con brokers (MT5Connector, RithmicConnector, etc.)
-
-❌ **PROHIBIDO** importar librerías de brokers en:
-- `core_brain/` - Lógica de negocio agnóstica
-- `data_vault/` - Persistencia agnóstica
-- `models/` - Modelos de datos agnósticos
-- `scripts/` - Utilitarios (deben usar connectors)
-- `tests/` - Tests (deben usar connectors)
-
-**Validación Automática:**
-- `qa_guard.py` detecta violaciones automáticamente (modo ESTRICTO)
-- Ejecutar: `python scripts/qa_guard.py`
-- Prohibido modificar `qa_guard.py` para "hacer pasar" validaciones
-
-**MT5Connector Interface Agnóstica (2026-02-10):**
-
-El `MT5Connector` expone métodos broker-agnósticos para que `core_brain/` NO necesite importar `MetaTrader5`:
-
-```python
-class MT5Connector:
-    def get_account_balance(self) -> float:
-        """Returns current account balance in account currency."""
-        
-    def get_symbol_info(self, symbol: str) -> SymbolInfo:
-        """Returns symbol specifications (auto-enables in Market Watch)."""
-        
-    def calculate_margin(self, signal: Signal, position_size: float) -> float:
-        """Calculates required margin using MT5 built-in calculation."""
-```
-
-**Uso Correcto en RiskManager (arquitectura agnóstica):**
-
-```python
-# ❌ PROHIBIDO (acoplamiento a MT5):
-import MetaTrader5 as mt5
-balance = mt5.account_info().balance
-
-# ✅ CORRECTO (delegación a connector):
-balance = self.connector.get_account_balance()
-symbol_info = self.connector.get_symbol_info(signal.symbol)
-margin = self.connector.calculate_margin(signal, position_size)
-```
-
-**Workflow Paso 6.5 - validate_all.py (OBLIGATORIO):**
-
-Antes de documentar cambios, SIEMPRE ejecutar:
-
-```bash
-python scripts/validate_all.py
-```
-
-**Validaciones Ejecutadas:**
-1. **Architecture Audit** - Detecta métodos duplicados, context manager abuse
-2. **QA Guard** - Detecta imports prohibidos, errores sintaxis, tipos
-3. **Code Quality** - Copy-paste detection, complejidad ciclomática
-4. **UI Quality** - TypeScript + Build validation
-5. **Tests Críticos** - 23 tests (deduplicación + risk manager)
-
-**Si falla validate_all.py:**
-- ✅ **CORRECTO**: Corregir código de producción (eliminar imports, refactorizar)
-- ❌ **ERROR CRÍTICO**: Modificar `qa_guard.py` para "relajar" reglas
-
-**Lección Crítica (2026-02-10):**
-NUNCA modificar scripts de validación (`qa_guard.py`, `architecture_audit.py`) para "hacer pasar" tests. Si una validación falla, el problema está en el código de producción, no en la validación.
-
-**Resultados Consolidación Arquitectónica (2026-02-10):**
-- ✅ core_brain/risk_manager.py: 0 imports MT5 (3 métodos refactorizados)
-- ✅ connectors/mt5_connector.py: +3 métodos agnósticos
-- ✅ connectors/paper_connector.py: +2 métodos (compatibilidad tests)
-- ✅ tests/test_all_instruments.py: Refactorizado (usa MT5Connector)
-- ✅ scripts/utilities/verify_trading_flow.py: Refactorizado (usa connector)
-- ✅ validate_all.py: 5/5 PASSED
-- ✅ Test E2E: 14/14 instrumentos PASSED (100%)
-
-#### 9. Configuración MT5 API Obligatoria
+#### 8. Configuración MT5 API Obligatoria
 
 **Principio**: MT5 requiere configuración manual para permitir conexiones API desde Python.
 
@@ -1878,30 +1803,130 @@ NO crear guías separadas, READMEs adicionales, o documentos redundantes.
 - Facturación basada en estrategias activas (si aplica)
 - Logs de uso por API Key para auditoría
 
-#### 5.3 Sistema de Notificaciones
+#### 5.3 Sistema de Notificaciones Telegram
 
-**Estado**: Pendiente de implementación
+**Estado**: ✅ IMPLEMENTADO (Febrero 2026)
 
-**Objetivo**: Integración con Telegram/Discord para alertas de señales en tiempo real.
+**Objetivo**: Notificaciones en tiempo real vía Telegram con auto-provisioning y UI React.
 
 **Componentes:**
-- Integración con Telegram Bot API
-- Integración con Discord Webhooks
-- Sistema de plantillas de mensajes personalizables
-- Configuración de notificaciones por usuario
-- Filtros de notificación (por régimen, por estrategia, por símbolo)
+
+**Backend (Python):**
+- ✅ `connectors/telegram_provisioner.py` - Auto-provisioner de bots
+  - Validación de bot_token vía API Telegram
+  - Auto-detección de chat_id (usuario envía /start)
+  - Envío de mensajes de prueba
+  - Instrucciones en español sencillo
+
+- ✅ `core_brain/notificator.py` - Sistema de notificaciones
+  - Soporte multi-canal (Basic/Premium chat_ids)
+  - Templates de mensajes con emojis
+  - Formato HTML enriquecido
+  - Inicialización desde BD (Single Source of Truth)
+
+- ✅ Endpoints API en `server.py`:
+  ```python
+  POST /api/telegram/validate       # Valida bot_token
+  POST /api/telegram/get-chat-id    # Auto-detecta chat_id
+  POST /api/telegram/test           # Envía mensaje de prueba
+  POST /api/telegram/save           # Guarda config en BD
+  GET  /api/telegram/instructions   # Instrucciones en español
+  ```
+
+**Frontend (React/TypeScript):**
+- ✅ `ui/src/components/config/TelegramSetup.tsx` - Wizard de 4 pasos
+  - Paso 1: Crear bot en @BotFather + validar token
+  - Paso 2: Auto-detectar chat_id (envía /start)
+  - Paso 3: Enviar mensaje de prueba
+  - Paso 4: Guardar configuración final
+  
+- ✅ Integrado en `ConfigHub.tsx` - Nueva categoría "Telegram Alerts"
+  - Progress indicator con checkmarks visuales
+  - Validación en tiempo real
+  - Manejo de errores amigable
+  - Mensajes de éxito contextuales
 
 **Tipos de Notificaciones:**
-- **Señales de Trading**: Alertas cuando se genera una señal
-- **Cambios de Régimen**: Notificación de transiciones de régimen
-- **Resultados de Trades**: Resumen de PNL y resultados
-- **Alertas del Sistema**: Modo seguridad, errores críticos, drift detectado
-- **Métricas Diarias**: Resumen de rendimiento del día
+- ✅ **Cambios de Régimen**: Transiciones de mercado con métricas (ADX, volatilidad)
+- ✅ **Señales Oliver Vélez**: Alertas de oportunidades con SL/TP
+- ✅ **Alertas del Sistema**: Modo seguridad, errores críticos
+- 📋 **Resultados de Trades**: PNL y estadísticas (pendiente integración con ClosingMonitor)
+- 📋 **Métricas Diarias**: Resumen de rendimiento (pendiente)
 
 **Configuración:**
-- Preferencias de notificación por usuario
-- Horarios de notificación (evitar spam fuera de horario)
-- Umbrales personalizables (solo notificar si PNL > X, etc.)
+- ✅ Persistencia en BD (`config_notifications` en `system_state`)
+- ✅ Token encriptado vía StorageManager
+- ✅ Sin archivos .env manuales (DB-First)
+- ✅ Membresía Basic/Premium (mismo chat_id por defecto, configurable)
+
+**Flujo del Usuario (2 minutos):**
+1. Settings → Telegram Alerts
+2. Crear bot en @BotFather (30 segundos)
+3. Pegar token → Validación automática
+4. Enviar /start → Auto-detecta chat_id
+5. Enviar prueba → Mensaje en Telegram
+6. Click "Guardar" → **LISTO** ✅
+
+**Características de Seguridad:**
+- ✅ Timeout de 10 segundos en peticiones HTTP (httpx.AsyncClient)
+- ✅ Validación de token (mínimo 40 caracteres)
+- ✅ Manejo de errores de red con mensajes amigables
+- ✅ No almacena credenciales en código fuente
+- ✅ Single Source of Truth en base de datos
+
+**Ejemplo de Uso en Código:**
+```python
+# Inicialización desde main.py (carga desde DB)
+from core_brain.notificator import initialize_notifier
+state = storage.get_system_state()
+config = state.get('config_notifications', {})
+
+initialize_notifier(
+    bot_token=config.get('bot_token'),
+    basic_chat_id=config.get('basic_chat_id'),
+    premium_chat_id=config.get('premium_chat_id'),
+    enabled=config.get('enabled', True)
+)
+
+# Envío de notificación de cambio de régimen
+notifier = get_notifier()
+if notifier:
+    await notifier.notify_regime_change(
+        symbol="EURUSD",
+        previous_regime=MarketRegime.RANGE,
+        new_regime=MarketRegime.TREND,
+        price=1.0850,
+        membership=MembershipLevel.BASIC,
+        metrics={'adx': 32.5, 'volatility': 0.0045}
+    )
+
+# Envío de señal Oliver Vélez
+await notifier.notify_oliver_velez_signal(
+    signal=signal_instance,
+    membership=MembershipLevel.PREMIUM,
+    strategy_details={'Régimen': 'TREND', 'Score': 85}
+)
+
+# Alerta del sistema
+await notifier.notify_system_alert(
+    title="Modo Seguridad Activado",
+    message="3 pérdidas consecutivas detectadas. Trading pausado.",
+    alert_type="warning"
+)
+```
+
+**Archivos Creados/Modificados:**
+- `connectors/telegram_provisioner.py` (nuevo)
+- `ui/src/components/config/TelegramSetup.tsx` (nuevo)
+- `core_brain/server.py` (6 endpoints Telegram)
+- `ui/src/components/config/ConfigHub.tsx` (categoría 'notifications')
+
+**Roadmap Futuro:**
+- 📋 Integración con Discord Webhooks
+- 📋 Sistema de plantillas personalizables
+- 📋 Filtros de notificación (por régimen, estrategia, símbolo)
+- 📋 Horarios de notificación (quiet hours)
+- 📋 Umbrales personalizables (solo notificar si score > X)
 
 #### 4.4 Web Dashboard
 

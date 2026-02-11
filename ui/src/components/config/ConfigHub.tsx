@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Save, RefreshCw, AlertTriangle, Shield, Sliders, Settings } from 'lucide-react';
+import { Save, RefreshCw, AlertTriangle, Shield, Sliders, Settings, Bell } from 'lucide-react';
 import { GlassPanel } from '../common/GlassPanel';
+import { TelegramSetup } from './TelegramSetup';
 
-type ConfigCategory = 'trading' | 'risk' | 'system';
+type ConfigCategory = 'trading' | 'risk' | 'system' | 'notifications';
 
 export function ConfigHub() {
     const [activeCategory, setActiveCategory] = useState<ConfigCategory>('trading');
@@ -123,6 +124,13 @@ export function ConfigHub() {
                         title="System Core"
                         description="Paths & CPU Scalability"
                     />
+                    <TabButton
+                        active={activeCategory === 'notifications'}
+                        onClick={() => setActiveCategory('notifications')}
+                        icon={<Bell size={20} />}
+                        title="Telegram Alerts"
+                        description="Auto-Setup & Testing"
+                    />
 
                     {error && (
                         <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex gap-3 animate-pulse">
@@ -160,7 +168,12 @@ export function ConfigHub() {
                                     </div>
                                 )}
 
-                                {!loading && config && (
+                                {/* Special case: Telegram/Notifications */}
+                                {!loading && activeCategory === 'notifications' && (
+                                    <TelegramSetup />
+                                )}
+
+                                {!loading && config && activeCategory !== 'notifications' && (
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
                                         {Object.entries(config).map(([key, value]) => {
                                             if (key.startsWith('_')) return null; // Skip comments
