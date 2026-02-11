@@ -930,7 +930,7 @@ class MT5Connector:
             logger.error(f"Error getting account balance: {e}")
             return 10000.0
     
-    def get_symbol_info(self, symbol: str) -> Optional[Any]:
+    def get_symbol_info(self, symbol: str) -> Optional[Dict]:
         """
         Get symbol information from MT5.
         Ensures symbol is visible in Market Watch.
@@ -939,7 +939,7 @@ class MT5Connector:
             symbol: Symbol to query (e.g., 'EURUSD')
         
         Returns:
-            MT5 SymbolInfo object or None if error
+            dict: Symbol info with keys: trade_stops_level, point, tick_size, etc.
         """
         if not self.is_connected:
             logger.warning(f"MT5 not connected, cannot get symbol info for {symbol}")
@@ -953,7 +953,21 @@ class MT5Connector:
             symbol_info = mt5.symbol_info(symbol)
             if symbol_info is None:
                 logger.error(f"Could not get symbol info for {symbol}")
-            return symbol_info
+                return None
+            
+            # Convert to dict for easier access
+            return {
+                'trade_stops_level': symbol_info.trade_stops_level,
+                'point': symbol_info.point,
+                'tick_size': symbol_info.trade_tick_size,
+                'digits': symbol_info.digits,
+                'contract_size': symbol_info.trade_contract_size,
+                'volume_min': symbol_info.volume_min,
+                'volume_max': symbol_info.volume_max,
+                'volume_step': symbol_info.volume_step,
+                'spread': symbol_info.spread,
+                'symbol': symbol_info.name
+            }
         except Exception as e:
             logger.error(f"Error getting symbol info for {symbol}: {e}")
             return None
@@ -1187,17 +1201,26 @@ class MT5Connector:
             signal_id=self._extract_signal_id(position.comment)
         )
     
-    def close_position(self, ticket: int) -> bool:
-        """Close a specific position"""
+    def close_position(self, ticket: int, reason: str = "Manual_Close") -> Dict:
+        """
+        Close a specific position
+        
+        Args:
+            ticket: Position ticket
+            reason: Reason for closing (for logging/metadata)
+        
+        Returns:
+            dict: {'success': bool, 'error': str (if failed)}
+        """
         if not self.is_connected:
-            return False
+            return {'success': False, 'error': 'MT5 not connected'}
         
         try:
             positions = mt5.positions_get(ticket=ticket)
             
             if not positions or len(positions) == 0:
                 logger.warning(f"Position {ticket} not found")
-                return False
+                return {'success': False, 'error': f'Position {ticket} not found'}
             
             position = positions[0]
             
@@ -1211,7 +1234,7 @@ class MT5Connector:
                 "price": mt5.symbol_info_tick(position.symbol).bid if position.type == mt5.ORDER_TYPE_BUY else mt5.symbol_info_tick(position.symbol).ask,
                 "deviation": 20,
                 "magic": self.magic_number,
-                "comment": "Aethelgard_Close",
+                "comment": f"Aethelgard_{reason}",
                 "type_time": mt5.ORDER_TIME_GTC,
                 "type_filling": mt5.ORDER_FILLING_IOC,
             }
@@ -1219,15 +1242,87 @@ class MT5Connector:
             result = mt5.order_send(close_request)
             
             if result and result.retcode == mt5.TRADE_RETCODE_DONE:
-                logger.info(f"✅ Position {ticket} closed successfully")
-                return True
+                logger.info(f"✅ Position {ticket} closed successfully - Reason: {reason}")
+                return {'success': True}
             else:
-                logger.error(f"Failed to close position {ticket}: {result.comment if result else 'Unknown error'}")
-                return False
+                error_msg = result.comment if result else 'Unknown error'
+                logger.error(f"Failed to close position {ticket}: {error_msg}")
+                return {'success': False, 'error': error_msg}
         
         except Exception as e:
             logger.error(f"Error closing position: {e}")
-            return False
+            return {'success': False, 'error': str(e)}
+    
+    def modify_position(self, ticket: int, new_sl: float, new_tp: Optional[float] = None) -> Dict:
+        """
+        Modify SL/TP for an existing position
+        
+        Args:
+            ticket: Position ticket
+            new_sl: New stop loss price
+            new_tp: New take profit price (optional)
+        
+        Returns:
+            dict: {'success': bool, 'error': str (if failed)}
+        """
+        if not self.is_connected:
+            return {'success': False, 'error': 'MT5 not connected'}
+        
+        try:
+            # Get position
+            positions = mt5.positions_get(ticket=ticket)
+            if not positions or len(positions) == 0:
+                return {'success': False, 'error': f'Position {ticket} not found'}
+            
+            position = positions[0]
+            
+            # Prepare modification request
+            request = {
+                "action": mt5.TRADE_ACTION_SLTP,
+                "symbol": position.symbol,
+                "position": ticket,
+                "sl": new_sl,
+                "tp": new_tp if new_tp else position.tp,
+                "magic": self.magic_number,
+                "comment": "Aethelgard_Modify"
+            }
+            
+            result = mt5.order_send(request)
+            
+            if result and result.retcode == mt5.TRADE_RETCODE_DONE:
+                logger.info(f"✅ Position {ticket} modified - SL: {new_sl}, TP: {new_tp}")
+                return {'success': True}
+            else:
+                error_msg = result.comment if result else 'Unknown error'
+                logger.error(f"Failed to modify position {ticket}: {error_msg}")
+                return {'success': False, 'error': error_msg}
+        
+        except Exception as e:
+            logger.error(f"Exception modifying position {ticket}: {e}", exc_info=True)
+            return {'success': False, 'error': str(e)}
+    
+    def get_current_price(self, symbol: str) -> Optional[float]:
+        """
+        Get current bid price for symbol
+        
+        Args:
+            symbol: Symbol name
+        
+        Returns:
+            float: Current bid price or None
+        """
+        if not self.is_connected:
+            return None
+        
+        try:
+            tick = mt5.symbol_info_tick(symbol)
+            if tick:
+                return tick.bid
+            logger.warning(f"Could not get tick for {symbol}")
+            return None
+        except Exception as e:
+            logger.error(f"Error getting current price for {symbol}: {e}")
+            return None
 
 
 # Singleton instance for easy import
