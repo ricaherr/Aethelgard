@@ -31,11 +31,27 @@ from pathlib import Path
 from datetime import datetime
 
 # Add project root to path
-project_root = Path(__file__).parent.parent
+project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 import MetaTrader5 as mt5
 from data_vault.storage import StorageManager
+from core_brain.risk_calculator import RiskCalculator
+
+
+class MT5ConnectorWrapper:
+    """
+    Lightweight wrapper for MT5 API to work with RiskCalculator.
+    Only used in this script - not a full connector.
+    """
+    def get_symbol_info(self, symbol: str):
+        """Get symbol info from MT5"""
+        return mt5.symbol_info(symbol)
+    
+    def get_current_price(self, symbol: str):
+        """Get current bid price from MT5"""
+        tick = mt5.symbol_info_tick(symbol)
+        return tick.bid if tick else None
 
 
 def connect_mt5() -> bool:
@@ -62,17 +78,17 @@ def get_open_positions():
     return positions
 
 
-def calculate_initial_risk(position) -> float:
+def calculate_initial_risk(position, risk_calculator: RiskCalculator) -> float:
     """
-    Calculate initial risk in USD.
+    Calculate initial risk in USD using RiskCalculator (universal, multi-asset).
     
-    Simplified formula: price_diff * volume * contract_size
-    Then converted to USD based on quote currency.
-    
-    For FOREX standard lot = 100,000 units of base currency.
+    Args:
+        position: MT5 position object
+        risk_calculator: RiskCalculator instance
+        
+    Returns:
+        Risk in USD (0.0 if SL not set)
     """
-    import MetaTrader5 as mt5
-    
     entry = position.price_open
     sl = position.sl
     volume = position.volume
@@ -82,94 +98,25 @@ def calculate_initial_risk(position) -> float:
         # No SL set - cannot calculate risk reliably
         return 0.0
     
-    # Calculate price difference (entry to SL)
-    price_diff = abs(entry - sl)
+    # Use RiskCalculator for universal calculation
+    risk_usd = risk_calculator.calculate_initial_risk_usd(
+        symbol=symbol,
+        entry_price=entry,
+        stop_loss=sl,
+        volume=volume
+    )
     
-    # Get symbol info for contract size
-    symbol_info = mt5.symbol_info(symbol)
-    if symbol_info is None:
-        # Fallback: standard FOREX lot
-        contract_size = 100000.0
-    else:
-        contract_size = symbol_info.trade_contract_size
-    
-    # Calculate risk in quote currency
-    risk_quote_currency = price_diff * volume * contract_size
-    
-    # Convert to USD based on quote currency
-    if symbol.endswith('USD'):
-        # Quote currency IS USD (EURUSD, GBPUSD) - no conversion needed
-        risk_usd = risk_quote_currency
-    elif symbol.endswith('JPY'):
-        # Quote currency is JPY - convert to USD using USD/JPY rate
-        # Get current USD/JPY rate
-        usdjpy_info = mt5.symbol_info_tick('USDJPY')
-        if usdjpy_info:
-            usdjpy_rate = usdjpy_info.bid
-            risk_usd = risk_quote_currency / usdjpy_rate
-        else:
-            # Fallback: approximate USD/JPY = 150
-            risk_usd = risk_quote_currency / 150.0
-    elif symbol.startswith('USD'):
-        # Base currency is USD (USDCAD, USDCHF, USDJPY)
-        # Risk is already in quote currency, need to convert
-        # For USDCAD: risk in CAD, convert using USD/CAD rate
-        current_rate = position.price_open
-        risk_usd = risk_quote_currency / current_rate
-    else:
-        # Cross pair (EURGBP, EURJPY, GBPJPY, etc.)
-        # Need to convert quote currency to USD
-        quote_currency = symbol[3:]  # Last 3 chars
-        
-        if quote_currency == 'JPY':
-            # Convert JPY to USD
-            usdjpy_info = mt5.symbol_info_tick('USDJPY')
-            if usdjpy_info:
-                risk_usd = risk_quote_currency / usdjpy_info.bid
-            else:
-                risk_usd = risk_quote_currency / 150.0
-        elif quote_currency == 'GBP':
-            # Convert GBP to USD using GBPUSD
-            gbpusd_info = mt5.symbol_info_tick('GBPUSD')
-            if gbpusd_info:
-                risk_usd = risk_quote_currency * gbpusd_info.bid
-            else:
-                risk_usd = risk_quote_currency * 1.30  # Approximate
-        elif quote_currency == 'EUR':
-            # Convert EUR to USD using EURUSD
-            eurusd_info = mt5.symbol_info_tick('EURUSD')
-            if eurusd_info:
-                risk_usd = risk_quote_currency * eurusd_info.bid
-            else:
-                risk_usd = risk_quote_currency * 1.10  # Approximate
-        elif quote_currency == 'CHF':
-            # Convert CHF to USD using USDCHF (inverted)
-            usdchf_info = mt5.symbol_info_tick('USDCHF')
-            if usdchf_info:
-                risk_usd = risk_quote_currency / usdchf_info.bid
-            else:
-                risk_usd = risk_quote_currency / 0.90  # Approximate
-        elif quote_currency == 'CAD':
-            # Convert CAD to USD using USDCAD (inverted)
-            usdcad_info = mt5.symbol_info_tick('USDCAD')
-            if usdcad_info:
-                risk_usd = risk_quote_currency / usdcad_info.bid
-            else:
-                risk_usd = risk_quote_currency / 1.35  # Approximate
-        else:
-            # Unknown quote currency - return quote currency value as-is
-            risk_usd = risk_quote_currency
-    
-    return round(risk_usd, 2)
+    return risk_usd
 
 
-def backfill_metadata(storage: StorageManager, positions, force: bool = False) -> int:
+def backfill_metadata(storage: StorageManager, positions, risk_calculator: RiskCalculator, force: bool = False) -> int:
     """
     Backfill position_metadata table with data from MT5.
     
     Args:
         storage: StorageManager instance
         positions: List of MT5 positions
+        risk_calculator: RiskCalculator instance for universal risk calculation
         force: If True, update existing metadata with corrected values
     
     Returns: Number of positions backfilled/updated
@@ -185,8 +132,8 @@ def backfill_metadata(storage: StorageManager, positions, force: bool = False) -
             print(f"[SKIP] Ticket {ticket} already has metadata (use --force to update)")
             continue
         
-        # Calculate metadata with corrected formula
-        initial_risk = calculate_initial_risk(pos)
+        # Calculate metadata using RiskCalculator (universal, multi-asset)
+        initial_risk = calculate_initial_risk(pos, risk_calculator)
         
         # Build metadata dict
         metadata = {
@@ -247,8 +194,13 @@ def main():
         # Initialize storage
         storage = StorageManager()
         
+        # Initialize RiskCalculator with MT5 wrapper
+        mt5_wrapper = MT5ConnectorWrapper()
+        risk_calculator = RiskCalculator(mt5_wrapper)
+        print("[INFO] RiskCalculator initialized (universal, multi-asset)")
+        
         # Backfill metadata (with force flag if specified)
-        backfilled = backfill_metadata(storage, positions, force=force_update)
+        backfilled = backfill_metadata(storage, positions, risk_calculator, force=force_update)
         
         print("\n" + "=" * 80)
         print(f"[SUMMARY] Backfilled {backfilled}/{len(positions)} positions")

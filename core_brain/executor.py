@@ -12,6 +12,7 @@ from pathlib import Path
 
 from models.signal import Signal, ConnectorType
 from core_brain.risk_manager import RiskManager
+from core_brain.risk_calculator import RiskCalculator
 from core_brain.multi_timeframe_limiter import MultiTimeframeLimiter
 from data_vault.storage import StorageManager
 
@@ -56,6 +57,14 @@ class OrderExecutor:
         # EDGE: Load config for multi-timeframe limiter
         self.config = self._load_config(config_path)
         self.multi_tf_limiter = MultiTimeframeLimiter(self.storage, self.config)
+        
+        # Initialize RiskCalculator for universal risk computation
+        # Will use first available connector (typically MT5)
+        self.risk_calculator = None
+        if self.connectors:
+            first_connector = list(self.connectors.values())[0]
+            self.risk_calculator = RiskCalculator(first_connector)
+            logger.info("RiskCalculator initialized with connector")
         
         # Auto-detect and load MT5Connector if configured
         # This maintains agnosticism: core doesn't depend on MT5, but uses it if available
@@ -474,14 +483,19 @@ class OrderExecutor:
             if hasattr(regime_str, 'value'):
                 regime_str = regime_str.value
             
-            # Calculate initial risk (simplified - assumes FOREX)
-            # For production: should get contract_size and point_value from connector
-            # Formula: (entry - sl) * volume * contract_size * point_value
-            # FOREX standard: 100,000 contract_size, point_value depends on symbol/account currency
-            pips_risked = abs(entry_price - sl)
-            contract_size = 100000  # Standard FOREX lot
-            point_value = 10.0  # Approximation for major pairs (depends on account currency)
-            initial_risk_usd = pips_risked * volume * point_value
+            # Calculate initial risk using RiskCalculator (universal, multi-asset)
+            if self.risk_calculator:
+                initial_risk_usd = self.risk_calculator.calculate_initial_risk_usd(
+                    symbol=signal.symbol,
+                    entry_price=entry_price,
+                    stop_loss=sl,
+                    volume=volume
+                )
+            else:
+                # Fallback if RiskCalculator not available (shouldn't happen in production)
+                logger.warning("[METADATA] RiskCalculator not available, using fallback")
+                pips_risked = abs(entry_price - sl)
+                initial_risk_usd = pips_risked * volume * 10.0  # Simplified fallback
             
             # Build metadata dict
             metadata = {

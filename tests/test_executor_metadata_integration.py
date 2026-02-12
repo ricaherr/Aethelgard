@@ -52,6 +52,15 @@ def mock_connector():
         'tp': 1.09000
     })
     connector.get_account_balance = Mock(return_value=10000.0)
+    
+    # Mock symbol info for RiskCalculator
+    mock_symbol_info = Mock()
+    mock_symbol_info.trade_contract_size = 100000  # Standard Forex lot
+    connector.get_symbol_info = Mock(return_value=mock_symbol_info)
+    
+    # Mock current price for RiskCalculator
+    connector.get_current_price = Mock(return_value=1.08500)
+    
     return connector
 
 
