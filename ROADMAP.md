@@ -1,7 +1,65 @@
 # Aethelgard – Roadmap
 
-## 📱 MILESTONE: Auto-Provisioning Telegram + UI Configuración (2026-02-11)
+## 🎛️ MILESTONE: Sistema de Feature Flags (Module Toggles) (2026-02-11)
 **Estado: 🚧 EN PROGRESO**
+**Criterio: Control granular de módulos del sistema vía configuración JSON**
+
+### Problema Identificado
+- **Imposible deshabilitar módulos selectivos** - Sistema "todo o nada"
+- **Testing riesgoso** - No se puede probar PositionManager sin nuevas operaciones
+- **Modo mantenimiento inexistente** - No se puede gestionar posiciones sin entrar nuevas
+- **Caso de Uso Real**: Usuario quiere probar PositionManager (breakeven, trailing stop, metadata) en operaciones activas sin que el sistema genere nuevas señales
+
+### Arquitectura Propuesta
+```json
+{
+  "modules_enabled": {
+    "scanner": false,          // ❌ No buscar nuevas señales
+    "executor": false,         // ❌ No ejecutar nuevas operaciones  
+    "position_manager": true,  // ✅ Gestionar posiciones existentes
+    "risk_manager": true,      // ✅ Monitorear riesgos
+    "monitor": true,           // ✅ Seguimiento de métricas
+    "notificator": true        // ✅ Alertas activas
+  }
+}
+```
+
+### Plan de Implementación
+
+**FASE 1: Actualizar ROADMAP** 🚧 EN PROGRESO
+- [ ] Documentar milestone con caso de uso y arquitectura
+
+**FASE 2: Configuración (config.json)**
+- [ ] Agregar sección `modules_enabled` con defaults seguros
+- [ ] Default: todos habilitados excepto ninguno (sistema completo activo)
+
+**FASE 3: TDD - Test primero (test_module_toggles.py)**
+- [ ] Test: scanner deshabilitado -> no ejecuta scan
+- [ ] Test: executor deshabilitado -> no ejecuta trades
+- [ ] Test: position_manager deshabilitado -> no gestiona posiciones
+- [ ] Test: todos habilitados -> ciclo completo funciona
+- [ ] Test: solo position_manager activo -> solo gestión, sin nuevas entradas
+
+**FASE 4: Implementación (main_orchestrator.py)**
+- [ ] Cargar `modules_enabled` desde config.json en __init__
+- [ ] Wrapar llamadas a scanner con `if self.modules_enabled['scanner']`
+- [ ] Wrapar llamadas a executor con `if self.modules_enabled['executor']`
+- [ ] Wrapar llamadas a position_manager con `if self.modules_enabled['position_manager']`
+- [ ] Logging claro: "{MODULE} deshabilitado - saltado"
+
+**FASE 5: Validación**
+- [ ] Ejecutar validate_all.py (arquitectura + calidad + tests)
+- [ ] Prueba manual: deshabilitar scanner + executor, verificar PositionManager sigue activo
+- [ ] Verificar sistema respeta configuración sin crashes
+
+**FASE 6: Documentación**
+- [ ] Actualizar ROADMAP.md (marcar completado)
+- [ ] Actualizar MANIFESTO.md (Sección 5.4: Module Toggles / Feature Flags)
+
+---
+
+## 📱 MILESTONE: Auto-Provisioning Telegram + UI Configuración (2026-02-11)
+**Estado: ✅ COMPLETADO**
 **Criterio: Usuario configura Telegram en <2 minutos con UI React + Auto-detección de Chat ID**
 
 ### Problema Identificado
