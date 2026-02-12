@@ -119,7 +119,42 @@ class PositionManager:
                     })
                     continue
                 
-                # 3. Check for regime change requiring adjustment
+                # 3. Check for breakeven opportunity (FASE 3)
+                metadata = self.storage.get_position_metadata(ticket)
+                if metadata:
+                    should_move, reason = self._should_move_to_breakeven(position, metadata)
+                    logger.debug(
+                        f"Breakeven check for {ticket}: should_move={should_move}, reason={reason}"
+                    )
+                    if should_move:
+                        breakeven_price = self._calculate_breakeven_real(position, metadata)
+                        if breakeven_price:
+                            # Keep current TP, only modify SL to breakeven
+                            current_tp = position.get('tp', 0)
+                            
+                            logger.info(
+                                f"Position {ticket} ({symbol}) moving SL to breakeven - "
+                                f"New SL: {breakeven_price}"
+                            )
+                            
+                            # Modify position directly via connector
+                            result = self.connector.modify_position(ticket, breakeven_price, current_tp)
+                            if result and result.get('success', False):
+                                actions.append({
+                                    'ticket': ticket,
+                                    'action': 'BREAKEVEN_REAL',
+                                    'new_sl': breakeven_price,
+                                    'reason': 'BREAKEVEN_PROTECTION'
+                                })
+                            else:
+                                logger.warning(
+                                    f"Failed to move position {ticket} to breakeven: "
+                                    f"{result.get('error') if result else 'No result'}"
+                                )
+                else:
+                    logger.debug(f"No metadata found for position {ticket} - Skipping breakeven check")
+                
+                # 4. Check for regime change requiring adjustment
                 if self._regime_changed(position):
                     logger.info(
                         f"Position {ticket} ({symbol}) regime changed - "
@@ -692,3 +727,218 @@ class PositionManager:
             f"ATR not available for {symbol} - Cannot proceed with adjustment"
         )
         return None
+    
+    def _calculate_breakeven_real(
+        self,
+        position: Dict,
+        metadata: Dict
+    ) -> Optional[float]:
+        """
+        Calculate TRUE breakeven price including all broker costs.
+        
+        FASE 3: Breakeven Real Formula
+        ================================
+        breakeven_real = entry_price + (total_costs / position_value)
+        
+        Where total_costs includes:
+        - Commission: Round-trip commission (open + close)
+        - Swap: Accumulated overnight financing costs
+        - Spread: Bid-Ask spread cost at entry
+        
+        Args:
+            position: Position dict from connector
+            metadata: Position metadata from database
+            
+        Returns:
+            float: Breakeven price or None if calculation fails
+        """
+        try:
+            entry_price = float(metadata.get('entry_price', 0))
+            volume = float(position.get('volume', 0))
+            symbol = position.get('symbol')
+            
+            if entry_price <= 0 or volume <= 0:
+                logger.warning(
+                    f"Invalid position data - Entry: {entry_price}, Volume: {volume}"
+                )
+                return None
+            
+            # Get breakeven config
+            breakeven_config = self.config.get('breakeven', {})
+            if not breakeven_config.get('enabled', False):
+                return None
+            
+            # 1. Commission cost (round-trip)
+            commission_total = 0.0
+            if breakeven_config.get('include_commission', True):
+                commission_total = abs(float(metadata.get('commission_total', 0)))
+            
+            # 2. Swap cost (accumulated)
+            swap_cost = 0.0
+            if breakeven_config.get('include_swap', True):
+                # Swap can be positive (credit) or negative (debit)
+                # If negative, it's a cost we must recover
+                swap = float(position.get('swap', 0))
+                if swap < 0:
+                    swap_cost = abs(swap)
+            
+            # 3. Spread cost at entry
+            spread_cost = 0.0
+            if breakeven_config.get('include_spread', True):
+                symbol_info = self.connector.get_symbol_info(symbol)
+                if symbol_info:
+                    ask = float(symbol_info.get('ask', 0))
+                    bid = float(symbol_info.get('bid', 0))
+                    point = float(symbol_info.get('point', 0.00001))
+                    
+                    if ask > 0 and bid > 0:
+                        spread_points = (ask - bid) / point
+                        # Convert spread to USD cost
+                        # For Forex: pip_value = (volume * contract_size * pip_size)
+                        # Simplified: volume * 10 * point (for standard lots)
+                        spread_cost = spread_points * volume * point * 100000
+            
+            # Total cost to recover
+            total_cost = commission_total + swap_cost + spread_cost
+            
+            if total_cost <= 0:
+                # No costs to recover = entry price is breakeven
+                return entry_price
+            
+            # Calculate breakeven in pips
+            # For Forex pairs: 1 pip = $10 per lot (standard)
+            # For volume 0.10 lots: 1 pip = $1
+            # Cost in pips = total_cost / (volume * pip_value)
+            pip_value = volume * 10  # $10 per pip per lot
+            if pip_value <= 0:
+                logger.warning(f"Invalid pip value calculation: {pip_value}")
+                return None
+            
+            cost_in_pips = total_cost / pip_value
+            
+            # Get pip size (0.0001 for EURUSD, 0.01 for USDJPY)
+            pip_size = 0.0001  # Default for most pairs
+            symbol_info = self.connector.get_symbol_info(symbol)
+            if symbol_info:
+                digits = symbol_info.get('digits', 5)
+                pip_size = 0.0001 if digits == 5 else 0.01
+            
+            # Breakeven price = entry + cost in pips
+            position_type = position.get('type')
+            if position_type == 'BUY':
+                breakeven_price = entry_price + (cost_in_pips * pip_size)
+            elif position_type == 'SELL':
+                breakeven_price = entry_price - (cost_in_pips * pip_size)
+            else:
+                logger.warning(f"Unknown position type: {position_type}")
+                return None
+            
+            logger.debug(
+                f"Breakeven calculation - "
+                f"Entry: {entry_price}, Commission: ${commission_total}, "
+                f"Swap: ${swap_cost}, Spread: ${spread_cost}, "
+                f"Total: ${total_cost}, Breakeven: {breakeven_price}"
+            )
+            
+            return breakeven_price
+            
+        except Exception as e:
+            logger.error(
+                f"Error calculating breakeven: {e}",
+                exc_info=True
+            )
+            return None
+    
+    def _should_move_to_breakeven(
+        self,
+        position: Dict,
+        metadata: Dict
+    ) -> tuple[bool, str]:
+        """
+        Determine if SL should be moved to breakeven.
+        
+        Validation checks:
+        1. Minimum time elapsed (15 minutes default)
+        2. Minimum profit distance (5 pips default)
+        3. Current price > breakeven_real + min_distance
+        4. Current SL < breakeven_real (not already at breakeven)
+        5. Freeze level validation (safety margin)
+        
+        Args:
+            position: Position dict from connector
+            metadata: Position metadata from database
+            
+        Returns:
+            tuple: (should_move: bool, reason: str)
+        """
+        try:
+            ticket = position.get('ticket')
+            symbol = position.get('symbol')
+            
+            # Get breakeven config
+            breakeven_config = self.config.get('breakeven', {})
+            if not breakeven_config.get('enabled', False):
+                return False, "Breakeven disabled in config"
+            
+            # 1. Check minimum time elapsed
+            min_time_minutes = breakeven_config.get('min_time_minutes', 15)
+            entry_time_str = metadata.get('entry_time')
+            if entry_time_str:
+                entry_time = datetime.fromisoformat(entry_time_str)
+                elapsed_minutes = (datetime.now() - entry_time).total_seconds() / 60
+                if elapsed_minutes < min_time_minutes:
+                    return False, f"Insufficient time elapsed: {elapsed_minutes:.1f} min"
+            
+            # 2. Calculate breakeven real
+            breakeven_real = self._calculate_breakeven_real(position, metadata)
+            if breakeven_real is None:
+                return False, "Could not calculate breakeven price"
+            
+            # 3. Check current price vs breakeven
+            current_price = float(position.get('current_price', 0))
+            position_type = position.get('type')
+            
+            # Get minimum distance in pips
+            min_distance_pips = breakeven_config.get('min_profit_distance_pips', 5)
+            symbol_info = self.connector.get_symbol_info(symbol)
+            pip_size = 0.0001  # Default
+            if symbol_info:
+                digits = symbol_info.get('digits', 5)
+                pip_size = 0.0001 if digits == 5 else 0.01
+            
+            min_distance_price = min_distance_pips * pip_size
+            
+            # Check distance based on position type
+            if position_type == 'BUY':
+                required_price = breakeven_real + min_distance_price
+                if current_price < required_price:
+                    distance = (current_price - breakeven_real) / pip_size
+                    return False, f"Insufficient distance: {distance:.1f} pips (min {min_distance_pips})"
+            elif position_type == 'SELL':
+                required_price = breakeven_real - min_distance_price
+                if current_price > required_price:
+                    distance = (breakeven_real - current_price) / pip_size
+                    return False, f"Insufficient distance: {distance:.1f} pips (min {min_distance_pips})"
+            
+            # 4. Check if SL is already at or above breakeven
+            current_sl = float(position.get('sl', 0))
+            if position_type == 'BUY':
+                if current_sl >= breakeven_real:
+                    return False, "SL already at or above breakeven"
+            elif position_type == 'SELL':
+                if 0 < current_sl <= breakeven_real:
+                    return False, "SL already at or below breakeven"
+            
+            # 5. Validate freeze level (safety margin)
+            if not self._validate_freeze_level(symbol, current_price, breakeven_real):
+                return False, "Freeze level validation failed"
+            
+            # All checks passed
+            return True, "Ready to move to breakeven"
+            
+        except Exception as e:
+            logger.error(
+                f"Error validating breakeven conditions: {e}",
+                exc_info=True
+            )
+            return False, f"Error: {e}"

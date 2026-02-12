@@ -310,11 +310,99 @@ python start.py
 ✅ validate_all.py PASSED  
 ✅ Test end-to-end con broker demo exitoso  
 
-### Próximas Fases (FASE 3-5)
+### Próximas Fases (FASE 3-6)
 - **FASE 3**: Breakeven REAL (commissions + swap + spread)
 - **FASE 4**: ATR-Based Trailing Stop
 - **FASE 5**: Partial Exits (scale out)
 - **FASE 6**: Advanced Features (correlation stop, liquidity detection)
+
+---
+
+## 📈 MILESTONE: Position Manager - FASE 3 (2026-02-11)
+**Estado: 🚧 EN PROGRESO**
+**Criterio: Breakeven REAL considerando costos del broker (commissions, swap, spread)** 
+
+### Problema Identificado
+- **Breakeven simplista**: SL se mueve a entry_price sin considerar costos
+- **Costos ignorados**: commissions, swap y spread reducen profit real
+- **Pérdidas en "breakeven"**: Posición cerrada en breakeven pierde dinero por costos
+- **Sin validación pip mínima**: Movimientos < 5 pips no justifican modificación
+- **Impacto**: "Breakeven" no es realmente breakeven - usuario pierde dinero
+
+### Plan de Implementación
+
+**FASE 3.1: Tests TDD Breakeven Real** 🚧 EN PROGRESO
+- [ ] Crear test_position_manager_breakeven.py
+- [ ] Test: Calcular breakeven real con commissions
+- [ ] Test: Incluir swap acumulado en cálculo
+- [ ] Test: Incluir spread en cálculo
+- [ ] Test: Validar distancia mínima (5 pips)
+- [ ] Test: NO modificar si profit < breakeven_real
+- [ ] Test: Modificar SL a breakeven_real cuando profit > threshold
+
+**FASE 3.2: Implementación PositionManager** ⏳ PENDIENTE
+- [ ] Agregar método _calculate_breakeven_real()
+  - Obtener commission from metadata (guardada al abrir)
+  - Obtener swap actual from connector.get_open_positions()
+  - Calcular spread = ask - bid (símbolo)
+  - breakeven_real = entry + (commission + swap + spread) / volume
+- [ ] Agregar método _should_move_to_breakeven()
+  - Validar profit > breakeven_real + min_distance (5 pips)
+  - Validar tiempo mínimo (15 min desde apertura)
+  - Validar SL actual < breakeven_real
+- [ ] Modificar monitor_positions()
+  - Llamar _should_move_to_breakeven() para cada posición
+  - Ejecutar modify_position(ticket, new_sl=breakeven_real)
+  - Logging "BREAKEVEN_REAL" action
+
+**FASE 3.3: Integración Connector** ⏳ PENDIENTE
+- [ ] Modificar MT5Connector.execute_signal()
+  - Guardar commission en metadata al abrir
+  - commission = result['commission'] from MT5
+- [ ] Modificar MT5Connector.get_open_positions()
+  - Incluir swap actual en response
+  - position['swap'] = MT5PositionGetDouble(SWAP)
+
+**FASE 3.4: Configuración Dynamic Params** ⏳ PENDIENTE
+- [ ] Agregar sección breakeven en dynamic_params.json
+  - enabled: true/false
+  - min_profit_distance_pips: 5
+  - min_time_minutes: 15
+  - include_commission: true
+  - include_swap: true
+  - include_spread: true
+
+**FASE 3.5: Validación** ⏳ PENDIENTE
+- [ ] Ejecutar tests breakeven (6 tests)
+- [ ] Ejecutar validate_all.py
+- [ ] Test manual con broker demo
+- [ ] Verificar logging "BREAKEVEN_REAL" en ciclo
+
+### Archivos a Modificar
+
+**Tests nuevos:**
+- `tests/test_position_manager_breakeven.py` (6 tests)
+
+**Modificaciones:**
+- `core_brain/position_manager.py` (3 métodos nuevos)
+- `connectors/mt5_connector.py` (guardar commission, incluir swap)
+- `config/dynamic_params.json` (sección breakeven)
+
+### Criterios de Aceptación FASE 3
+✅ Breakeven considera commissions  
+✅ Breakeven incluye swap acumulado  
+✅ Breakeven incluye spread actual  
+✅ Validación distancia mínima (5 pips)  
+✅ Validación tiempo mínimo (15 min)  
+✅ Tests TDD 6/6 PASSED  
+✅ validate_all.py PASSED  
+✅ Test manual con broker demo exitoso  
+
+### Impacto Esperado FASE 3
+- **+15%** win rate (protección real de capital)
+- **-30%** pérdidas por "breakeven falso"
+- **+10%** profit factor (conservación de ganancias)
+- **Breakeven real** = nunca perder dinero en "breakeven"
 
 ---
 
