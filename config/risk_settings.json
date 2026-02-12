@@ -1,6 +1,7 @@
 {
   "max_consecutive_losses": 3,
   "lockdown_mode_enabled": true,
+  "max_account_risk_pct": 5.0,
   "min_trades_for_tuning": 5,
   "tuning_enabled": true,
   "target_win_rate": 0.55,

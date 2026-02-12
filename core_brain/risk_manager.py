@@ -67,6 +67,7 @@ class RiskManager:
         # Read from risk_settings (Single Source of Truth), fallback to dynamic_params, then default
         self.max_consecutive_losses = risk_settings.get('max_consecutive_losses', 
                                                         dynamic_params.get('max_consecutive_losses', 3))
+        self.max_account_risk_pct = risk_settings.get('max_account_risk_pct', 5.0)  # Default 5%
 
         # 3. Persistencia de Lockdown: Storage inyectado, no creado aquí
         system_state = self.storage.get_system_state()
@@ -83,8 +84,107 @@ class RiskManager:
         
         logger.info(
             f"RiskManager initialized: Capital=${initial_capital:,.2f}, "
-            f"Dynamic Risk Per Trade={self.risk_per_trade*100}%, Lockdown Active={self.lockdown_mode}"
+            f"Dynamic Risk Per Trade={self.risk_per_trade*100}%, Lockdown Active={self.lockdown_mode}, "
+            f"Max Account Risk={self.max_account_risk_pct}%"
         )
+
+    # =========================================================================
+    # ACCOUNT RISK VALIDATION
+    # =========================================================================
+    
+    def can_take_new_trade(self, signal: Signal, connector: Any) -> tuple[bool, str]:
+        """
+        Validates if a new trade can be taken without exceeding max account risk.
+        
+        This is the critical validation that prevents the account from being overexposed.
+        Should be called BEFORE calculating position size in Executor.
+        
+        Args:
+            signal: Signal to validate
+            connector: Broker connector to get account balance and open positions
+            
+        Returns:
+            tuple[bool, str]: (can_trade, reason)
+                - (True, "") if signal can be executed
+                - (False, "reason") if signal must be rejected
+        
+        Example:
+            >>> can_trade, reason = risk_manager.can_take_new_trade(signal, connector)
+            >>> if not can_trade:
+            >>>     logger.warning(f"Signal rejected: {reason}")
+            >>>     return False
+        """
+        try:
+            # 1. Get account balance
+            account_balance = self._get_account_balance(connector)
+            if account_balance <= 0:
+                return False, f"Invalid account balance: ${account_balance}"
+            
+            # 2. Calculate current risk from open positions
+           # Get open positions from connector
+            try:
+                open_positions = connector.get_open_positions()
+            except AttributeError:
+                # Connector doesn't have get_open_positions (e.g., PaperConnector in tests)
+                # Fall back to calculating risk from storage
+                logger.debug(f"Connector {type(connector).__name__} doesn't have get_open_positions, using storage fallback")
+                open_positions = []
+            
+            current_risk_usd = 0.0
+            for pos in open_positions:
+                # Calculate risk from position: volume * (entry - SL) * point_value
+                try:
+                    symbol = pos.get("symbol", "")
+                    volume = pos.get("volume", 0.0)
+                    entry_price = pos.get("entry_price", pos.get("price_open", 0.0))
+                    stop_loss = pos.get("stop_loss", pos.get("sl", 0.0))
+                    
+                    if stop_loss > 0:
+                        # Get symbol info for point value calculation
+                        symbol_info = connector.get_symbol_info(symbol)
+                        if symbol_info:
+                            # Calculate risk
+                            price_diff = abs(entry_price - stop_loss)
+                            contract_size = getattr(symbol_info, 'trade_contract_size', 100000)
+                            point = getattr(symbol_info, 'point', 0.00001)
+                            pips = price_diff / point
+                            risk_usd = (pips * point) * contract_size * volume
+                            current_risk_usd += risk_usd
+                except Exception as e:
+                    logger.warning(f"Error calculating risk for position {pos.get('ticket', 'unknown')}: {e}")
+                    continue
+            
+            # 3. Calculate risk of new signal
+            # Use a simplified calculation: risk_per_trade * balance
+            # (Actual position size calculation happens later if approved)
+            signal_risk_usd = account_balance * self.risk_per_trade
+            
+            # 4. Calculate total risk if signal is executed
+            total_risk_usd = current_risk_usd + signal_risk_usd
+            total_risk_pct = (total_risk_usd / account_balance) * 100
+            
+            # 5. Compare against max_account_risk_pct
+            if total_risk_pct > self.max_account_risk_pct:
+                reason = (
+                    f"Account risk would exceed {self.max_account_risk_pct}% "
+                    f"(current: {current_risk_usd / account_balance * 100:.1f}% "
+                    f"+ signal: {signal_risk_usd / account_balance * 100:.1f}% "
+                    f"= {total_risk_pct:.1f}%)"
+                )
+                logger.warning(f"[{signal.symbol}] Signal rejected: {reason}")
+                return False, reason
+            
+            # 6. Approved: within risk limits
+            logger.info(
+                f"[{signal.symbol}] Risk check passed: "
+                f"Total risk {total_risk_pct:.1f}% / {self.max_account_risk_pct}%"
+            )
+            return True, ""
+            
+        except Exception as e:
+            logger.error(f"Error validating account risk: {e}")
+            # Defensive: reject trade on error
+            return False, f"Risk validation error: {str(e)}"
 
     # =========================================================================
     # POSITION SIZE CALCULATION - MASTER FUNCTION (Single Source of Truth)

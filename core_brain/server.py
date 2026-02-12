@@ -177,6 +177,21 @@ def _get_balance_metadata() -> Dict[str, Any]:
             "is_live": False
         }
 
+def _get_max_account_risk_pct() -> float:
+    """
+    Load max_account_risk_pct from risk_settings.json (Single Source of Truth).
+    
+    Returns:
+        float: Max account risk percentage (default 5.0%)
+    """
+    try:
+        with open('config/risk_settings.json', 'r') as f:
+            risk_settings = json.load(f)
+        return risk_settings.get('max_account_risk_pct', 5.0)
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        logger.warning(f"Could not load max_account_risk_pct from config: {e}. Using default 5.0%")
+        return 5.0
+
 # Estado para detectar cambios de régimen
 _last_regime_by_symbol: Dict[str, MarketRegime] = {}
 
@@ -603,7 +618,7 @@ def create_app() -> FastAPI:
             
             # Calculate risk percentage
             risk_percentage = (total_risk / account_balance * 100) if account_balance > 0 else 0.0
-            max_allowed_risk = 5.0  # From risk_settings.json
+            max_allowed_risk = _get_max_account_risk_pct()  # Load from risk_settings.json
             
             # Distribution by asset type
             by_asset = {}

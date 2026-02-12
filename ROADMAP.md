@@ -1,5 +1,115 @@
 # Aethelgard – Roadmap
 
+## 🛡️ MILESTONE: Account Risk Validation - Prevent Exceeding Max Account Risk (2026-02-12)
+**Estado: ✅ COMPLETADO**
+**Criterio: Sistema debe rechazar señales si riesgo total de cuenta excede límite configurado (default 5%)** ✅
+
+### Problema Identificado
+- **Actual**: Sistema permite riesgo total 8.5% cuando límite es 5%
+- **Causa**: Solo existe validación por trade (1.5%), NO por cuenta total
+- **Impacto**: 6 señales × 1.5% = 9% (excede protección de riesgo)
+- **Gap**: TODO comentado en `risk_manager.py` línea 233 nunca se implementó
+
+### Solución: Validación Pre-Ejecución
+
+**Arquitectura**:
+```
+Executor.execute_signal()
+├─ Step 1: Validate signal data ✅
+├─ Step 2: Check duplicate positions ✅
+├─ Step 3: Check lockdown mode ✅
+├─ Step 3.25: Multi-timeframe limits ✅
+├─ Step 3.5: ❌ FALTA → Check total account risk (NUEVO)
+├─ Step 4: Calculate position size ✅
+└─ Step 5: Execute via connector ✅
+```
+
+**Cambios Requeridos**:
+1. Agregar `"max_account_risk_pct": 5.0` a `config/risk_settings.json`
+2. Implementar `RiskManager.can_take_new_trade(signal, connector)`:
+   - Calcula riesgo de señal nueva
+   - Suma riesgo de posiciones abiertas
+   - Compara con `max_account_risk_pct`
+   - Retorna `(bool, str)` para rechazar o aprobar
+3. Integrar en `Executor.execute_signal()` (antes de calcular position size)
+4. Remover hardcoded `max_allowed_risk = 5.0` de `server.py` (línea 594)
+5. Test unitario: `test_risk_manager_rejects_signal_exceeding_account_limit`
+
+**Filosofía EDGE**:
+- ✅ `risk_per_trade = 1.5%` (dinámico pero actualmente fijo)
+- ✅ `max_account_risk_pct = 5.0%` (estático, no auto-ajustado)
+- ✅ EdgeTuner ajusta: ADX, ATR, SMA20, min_score (filtros de señales)
+- ❌ EdgeTuner NO ajusta: risk_per_trade, max_account_risk (valores de riesgo)
+
+**Resultado Esperado**:
+- Escenario: 3 posiciones activas (4.5% riesgo), nueva señal (1.5% riesgo)
+- Actual: Se ejecuta → Total 6% (excede límite)
+- Futuro: Se rechaza → "Account risk would exceed 5.0% (4.5% + 1.5% = 6.0%)"
+
+### Plan de Trabajo (TDD)
+- [x] Agregar `max_account_risk_pct` a `risk_settings.json`
+- [x] Crear test `test_risk_manager_account_limit` (debe fallar)
+- [x] Implementar `can_take_new_trade()` en RiskManager
+- [x] Integrar validación en Executor
+- [x] Remover hardcoded de server.py (usar config)
+- [x] Ejecutar `validate_all.py` (6/6 validaciones OK)
+- [x] Verificar sistema funcional (`start.py` sin errores)
+- [x] Actualizar MANIFESTO con cambio crítico
+
+### Resultados
+
+**Tests Agregados**:
+- `test_can_take_new_trade_rejects_if_exceeds_max_account_risk()` ✅
+- `test_can_take_new_trade_approves_if_within_limit()` ✅
+
+**Validaciones Finales**:
+```
+Architecture............................ [OK] PASS
+QA Guard................................ [OK] PASS
+Code Quality............................ [OK] PASS
+UI Quality.............................. [OK] PASS
+Tests (25 tests)........................ [OK] PASS
+Integration (5 tests)................... [OK] PASS
+
+🎉 ALL VALIDATIONS PASSED - READY FOR DEPLOYMENT
+```
+
+**Sistema Funcional**:
+```
+INFO:core_brain.risk_manager:RiskManager initialized: Capital=$10,000.00, 
+Dynamic Risk Per Trade=1.5%, Lockdown Active=False, Max Account Risk=5.0%
+```
+
+**Archivos Modificados**:
+1. [config/risk_settings.json](config/risk_settings.json#L3) - Agregado `max_account_risk_pct: 5.0`
+2. [core_brain/risk_manager.py](core_brain/risk_manager.py#L90-L185) - Método `can_take_new_trade()`
+3. [core_brain/executor.py](core_brain/executor.py#L195-L213) - Step 3.75 validación account risk
+4. [core_brain/server.py](core_brain/server.py#L178-L191) - Helper `_get_max_account_risk_pct()`
+5. [connectors/paper_connector.py](connectors/paper_connector.py#L45-L47) - Método `get_open_positions()`
+6. [tests/test_risk_manager.py](tests/test_risk_manager.py#L212-L398) - 2 tests nuevos
+7. [tests/test_executor_metadata_integration.py](tests/test_executor_metadata_integration.py#L34) - Mock actualizado
+
+**Flujo de Validación Actualizado**:
+```
+Executor.execute_signal()
+├─ Step 1: Validate signal data ✅
+├─ Step 2: Check duplicate positions ✅
+├─ Step 3: Check lockdown mode ✅
+├─ Step 3.25: Multi-timeframe limits ✅
+├─ Step 3.5: Get connector ✅
+├─ Step 3.75: ✅ Check total account risk (NUEVO)
+│   └─ RiskManager.can_take_new_trade()
+│       ├─ Obtiene balance de cuenta
+│       ├─ Calcula riesgo de posiciones abiertas
+│       ├─ Calcula riesgo de señal nueva
+│       ├─ Compara total vs max_account_risk_pct
+│       └─ Retorna (bool, reason)
+├─ Step 4: Calculate position size ✅
+└─ Step 5: Execute via connector ✅
+```
+
+---
+
 ## 🎨 MILESTONE: UI/UX Improvements - Entry Point, Collapsible Panel & Fullscreen Chart (2026-02-12)
 **Estado: ✅ COMPLETADO**
 **Criterio: Mejorar experiencia visual del Portfolio con badge de entry point, panel Risk colapsable y modo fullscreen para gráficas** ✅

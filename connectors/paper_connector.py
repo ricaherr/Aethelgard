@@ -46,6 +46,10 @@ class PaperConnector:
         """Return empty list for paper mode (no real closed positions)."""
         return []
     
+    def get_open_positions(self) -> list[dict]:
+        """Return empty list for paper mode (no real open positions tracked)."""
+        return []
+    
     def get_account_balance(self) -> float:
         """Return simulated account balance for paper trading."""
         return 10000.0

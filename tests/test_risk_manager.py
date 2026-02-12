@@ -1,11 +1,11 @@
 import pytest
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import MagicMock, patch, mock_open, Mock
 import json
 
 # Asumimos que RiskManager está en core_brain.risk_manager
 # Esta importación funcionará cuando se ejecute con pytest desde la raíz del proyecto
 from core_brain.risk_manager import RiskManager
-from models.signal import MarketRegime
+from models.signal import MarketRegime, Signal, SignalType, ConnectorType
 
 @pytest.fixture
 def mock_storage():
@@ -206,4 +206,232 @@ def test_risk_auto_adjustment_from_params(mock_dynamic_params):
     # El valor en mock_dynamic_params es 0.02
 
     assert rm.risk_per_trade == 0.02
+
+
+def test_can_take_new_trade_rejects_if_exceeds_max_account_risk():
+    """
+    Verifica que RiskManager.can_take_new_trade() rechaza una señal
+    cuando el riesgo total de cuenta excedería el límite configurado.
+    
+    Escenario:
+    - Cuenta: $10,000
+    - max_account_risk_pct: 5.0% ($500 máximo)
+    - 3 posiciones activas: $150 cada una = $450 total (4.5%)
+    - Nueva señal: $100 de riesgo (1%)
+    - Total si se ejecuta: $550 (5.5%) > $500 (5.0%) → RECHAZAR
+    
+    Expected: can_take_new_trade() retorna (False, reason)
+    """
+    # Setup: Mock storage con posiciones activas
+    mock_storage = MagicMock()
+    
+    # 3 posiciones activas con $150 de riesgo cada una
+    mock_storage.get_active_positions.return_value = [
+        {
+            "ticket": 111,
+            "symbol": "EURUSD",
+            "volume": 0.5,
+            "entry_price": 1.1000,
+            "stop_loss": 1.0970,
+            "metadata": {"risk_usd": 150.0}
+        },
+        {
+            "ticket": 222,
+            "symbol": "GBPUSD",
+            "volume": 0.3,
+            "entry_price": 1.2600,
+            "stop_loss": 1.2550,
+            "metadata": {"risk_usd": 150.0}
+        },
+        {
+            "ticket": 333,
+            "symbol": "USDJPY",
+            "volume": 0.4,
+            "entry_price": 150.00,
+            "stop_loss": 149.50,
+            "metadata": {"risk_usd": 150.0}
+        }
+    ]
+    
+    # Mock dynamic_params.json con risk_per_trade
+    mock_params = json.dumps({
+        "risk_per_trade": 0.01,  # 1% per trade
+        "max_consecutive_losses": 3
+    })
+    
+    # Mock risk_settings.json con max_account_risk_pct
+    mock_risk_settings = json.dumps({
+        "max_account_risk_pct": 5.0,  # 5% max account risk
+        "lockdown_mode_enabled": True,
+        "max_consecutive_losses": 3
+    })
+    
+    # Setup: Mock connector
+    mock_connector = Mock()
+    mock_connector.get_account_balance = Mock(return_value=10000.0)
+    mock_connector.get_open_positions = Mock(return_value=[
+        {
+            "symbol": "EURUSD",
+            "volume": 0.5,
+            "entry_price": 1.1000,
+            "stop_loss": 1.0970,
+            "ticket": 111
+        },
+        {
+            "symbol": "GBPUSD",
+            "volume": 0.3,
+            "entry_price": 1.2600,
+            "stop_loss": 1.2550,
+            "ticket": 222
+        },
+        {
+            "symbol": "USDJPY",
+            "volume": 0.4,
+            "entry_price": 150.00,
+            "stop_loss": 149.50,
+            "ticket": 333
+        }
+    ])
+    mock_connector.get_symbol_info = Mock(return_value=MagicMock(
+        trade_contract_size=100000,
+        point=0.00001,
+        digits=5
+    ))
+    mock_connector.get_current_price = Mock(return_value=1.1000)
+    
+    # Setup: Señal nueva ($100 riesgo esperado)
+    test_signal = Signal(
+        symbol="XAUUSD",
+        signal_type=SignalType.BUY,
+        connector_type=ConnectorType.METATRADER5,
+        timeframe="H1",
+        entry_price=2050.0,
+        stop_loss=2040.0,
+        take_profit=2070.0,
+        confidence=0.80,
+        metadata={"regime": MarketRegime.TREND.value}
+    )
+    
+    # Create RiskManager con ambos mocks
+    with patch('builtins.open', mock_open(read_data=mock_params)) as mock_file:
+        # Configure mock_file para retornar diferentes contenidos según path
+        def side_effect(path, *args, **kwargs):
+            if 'risk_settings.json' in str(path):
+                return mock_open(read_data=mock_risk_settings).return_value
+            else:
+                return mock_open(read_data=mock_params).return_value
+        
+        mock_file.side_effect = side_effect
+        
+        rm = RiskManager(storage=mock_storage, initial_capital=10000)
+        
+        # Execute: Verificar si puede tomar nueva operación
+        can_trade, reason = rm.can_take_new_trade(test_signal, mock_connector)
+    
+    # Assert: Debe rechazar por exceder límite
+    assert can_trade is False, "RiskManager debe rechazar señal que excede max_account_risk_pct"
+    assert "account risk" in reason.lower(), f"Razón debe mencionar 'account risk', recibido: {reason}"
+    assert "5.0%" in reason or "5%" in reason, f"Razón debe mencionar límite 5%, recibido: {reason}"
+
+
+def test_can_take_new_trade_approves_if_within_limit():
+    """
+    Verifica que RiskManager.can_take_new_trade() APRUEBA una señal
+    cuando el riesgo total de cuenta se mantiene dentro del límite.
+    
+    Escenario:
+    - Cuenta: $10,000
+    - max_account_risk_pct: 5.0% ($500 máximo)
+    - 2 posiciones activas: $150 cada una = $300 total (3%)
+    - Nueva señal: $100 de riesgo (1%)
+    - Total si se ejecuta: $400 (4%) < $500 (5.0%) → APROBAR
+    
+    Expected: can_take_new_trade() retorna (True, "")
+    """
+    # Setup: Mock storage con solo 2 posiciones activas
+    mock_storage = MagicMock()
+    
+    mock_storage.get_active_positions.return_value = [
+        {
+            "ticket": 111,
+            "symbol": "EURUSD",
+            "volume": 0.5,
+            "entry_price": 1.1000,
+            "stop_loss": 1.0970,
+            "metadata": {"risk_usd": 150.0}
+        },
+        {
+            "ticket": 222,
+            "symbol": "GBPUSD",
+            "volume": 0.3,
+            "entry_price": 1.2600,
+            "stop_loss": 1.2550,
+            "metadata": {"risk_usd": 150.0}
+        }
+    ]
+    
+    mock_params = json.dumps({
+        "risk_per_trade": 0.01,
+        "max_consecutive_losses": 3
+    })
+    
+    mock_risk_settings = json.dumps({
+        "max_account_risk_pct": 5.0,
+        "lockdown_mode_enabled": True,
+        "max_consecutive_losses": 3
+    })
+    
+    mock_connector = Mock()
+    mock_connector.get_account_balance = Mock(return_value=10000.0)
+    mock_connector.get_open_positions = Mock(return_value=[
+        {
+            "symbol": "EURUSD",
+            "volume": 0.5,
+            "entry_price": 1.1000,
+            "stop_loss": 1.0970,
+            "ticket": 111
+        },
+        {
+            "symbol": "GBPUSD",
+            "volume": 0.3,
+            "entry_price": 1.2600,
+            "stop_loss": 1.2550,
+            "ticket": 222
+        }
+    ])
+    mock_connector.get_symbol_info = Mock(return_value=MagicMock(
+        trade_contract_size=100000,
+        point=0.00001,
+        digits=5
+    ))
+    mock_connector.get_current_price = Mock(return_value=1.1000)
+    
+    test_signal = Signal(
+        symbol="XAUUSD",
+        signal_type=SignalType.BUY,
+        connector_type=ConnectorType.METATRADER5,
+        timeframe="H1",
+        entry_price=2050.0,
+        stop_loss=2040.0,
+        take_profit=2070.0,
+        confidence=0.80,
+        metadata={"regime": MarketRegime.TREND.value}
+    )
+    
+    with patch('builtins.open', mock_open(read_data=mock_params)) as mock_file:
+        def side_effect(path, *args, **kwargs):
+            if 'risk_settings.json' in str(path):
+                return mock_open(read_data=mock_risk_settings).return_value
+            else:
+                return mock_open(read_data=mock_params).return_value
+        
+        mock_file.side_effect = side_effect
+        
+        rm = RiskManager(storage=mock_storage, initial_capital=10000)
+        can_trade, reason = rm.can_take_new_trade(test_signal, mock_connector)
+    
+    # Assert: Debe aprobar porque está dentro del límite
+    assert can_trade is True, "RiskManager debe aprobar señal dentro del límite de riesgo"
+    assert reason == "", f"Razón debe estar vacía cuando se aprueba, recibido: {reason}"
+
 

@@ -193,7 +193,25 @@ class OrderExecutor:
             self._register_failed_signal(signal, reason)
             return False
         
-        # Step 3.5: Calculate position size
+        # Step 3.5: Get connector (needed for risk validation and execution)
+        try:
+            connector = self._get_connector(signal.connector_type)
+        except Exception as e:
+            logger.error(f"Failed to get connector for {signal.connector_type}: {e}")
+            self._register_failed_signal(signal, "CONNECTOR_UNAVAILABLE")
+            return False
+        
+        # Step 3.75: Check total account risk
+        can_trade, risk_reason = self.risk_manager.can_take_new_trade(signal, connector)
+        if not can_trade:
+            logger.warning(
+                f"Signal rejected: {risk_reason}. "
+                f"Symbol={signal.symbol}, Type={signal.signal_type}"
+            )
+            self._register_failed_signal(signal, "EXCEEDED_ACCOUNT_RISK")
+            return False
+        
+        # Step 4: Calculate position size
         position_size = self._calculate_position_size(signal)
         if position_size <= 0:
             logger.warning(f"Position size calculation failed or too small: {position_size}")
@@ -204,20 +222,9 @@ class OrderExecutor:
         # Step 4: Register signal as PENDING
         self._register_pending_signal(signal)
         
-        # Step 5: Route to connector using Factory pattern
+        # Step 5: Execute via connector
+        # (connector already obtained in Step 3.5)
         try:
-            connector = self._get_connector(signal.connector_type)
-            
-            if connector is None:
-                error_msg = f"Connector not configured: {signal.connector_type}"
-                logger.error(error_msg)
-                self._register_failed_signal(signal, error_msg)
-                if self.notificator:
-                    await self.notificator.send_alert(
-                        f"⚠️ Missing Connector\nSymbol: {signal.symbol}\nConnector: {signal.connector_type}"
-                    )
-                return False
-            
             # RACE CONDITION FIX: Wait for MT5 connection if background thread is still connecting
             if signal.connector_type == ConnectorType.METATRADER5 and hasattr(connector, 'is_connected'):
                 max_wait = 15  # seconds

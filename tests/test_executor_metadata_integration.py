@@ -35,6 +35,7 @@ def mock_risk_manager():
     rm = Mock(spec=RiskManager)
     rm.is_locked = Mock(return_value=False)
     rm.calculate_position_size_master = Mock(return_value=0.10)
+    rm.can_take_new_trade = Mock(return_value=(True, ""))  # New validation (always approve in tests)
     return rm
 
 
