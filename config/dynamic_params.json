@@ -76,6 +76,12 @@
       "include_commission": true,
       "include_swap": true,
       "include_spread": true
+    },
+    "trailing_stop": {
+      "enabled": true,
+      "atr_multiplier": 2.0,
+      "min_profit_pips": 10,
+      "apply_after_breakeven": false
     }
   }
 }

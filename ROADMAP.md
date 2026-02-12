@@ -418,6 +418,90 @@ python start.py
 
 ---
 
+## 📈 MILESTONE: Position Manager - FASE 4 (2026-02-11)
+**Estado: 🚧 EN PROGRESO**
+**Criterio: ATR-Based Trailing Stop - SL dinámico que se adapta a volatilidad**
+
+### Problema Identificado
+- **SL estático**: Una vez movido a breakeven, SL no sigue el precio
+- **No captura tendencias**: Posiciones en profit fuerte no protegen ganancias
+- **Ignorar volatilidad**: SL fijo no se adapta a ATR (Average True Range)
+- **Pérdida de profit**: Reversals eliminan ganancias acumuladas
+- **Impacto**: Profit máximo no se preserva, win rate deteriorado
+
+### Plan de Implementación
+
+**FASE 4.1: Tests TDD Trailing Stop ATR** 🚧 EN PROGRESO
+- [ ] Crear test_position_manager_trailing.py
+- [ ] Test: Calcular trailing stop basado en ATR
+- [ ] Test: Mover SL solo si nuevo_sl mejora al actual
+- [ ] Test: BUY: trailing_sl = price - (ATR * multiplier)
+- [ ] Test: SELL: trailing_sl = price + (ATR * multiplier)
+- [ ] Test: NO mover si profit < umbral mínimo (10 pips)
+- [ ] Test: Respetar cooldown entre modificaciones
+- [ ] Test: Integración en monitor_positions()
+
+**FASE 4.2: Implementación PositionManager** ⏳ PENDIENTE
+- [ ] Agregar método _calculate_trailing_stop_atr()
+  - Obtener ATR desde regime_classifier
+  - trailing_sl = current_price ± (ATR * multiplier)
+  - Validar que nuevo_sl mejora al actual
+- [ ] Agregar método _should_apply_trailing_stop()
+  - Validar profit > min_profit_threshold (10 pips)
+  - Validar tiempo desde última modificación > cooldown
+  - Validar daily modifications < max_limit
+  - Validar freeze level
+- [ ] Modificar monitor_positions()
+  - Después de breakeven check, ejecutar trailing check
+  - Llamar _should_apply_trailing_stop()
+  - Ejecutar connector.modify_position() si procede
+  - Logging "TRAILING_STOP_ATR" action
+
+**FASE 4.3: Integración RegimeClassifier** ⏳ PENDIENTE
+- [ ] Verificar que regime_classifier.get_regime_data() devuelve ATR
+- [ ] Fallback si ATR no disponible: usar SL estático
+- [ ] Validar ATR > 0 antes de calcular
+
+**FASE 4.4: Configuración Dynamic Params** ⏳ PENDIENTE
+- [ ] Agregar sección trailing_stop en position_management
+  - enabled: true/false
+  - atr_multiplier: 2.0 (distancia en ATRs)
+  - min_profit_pips: 10 (profit mínimo para activar)
+  - apply_after_breakeven: true (solo después de breakeven)
+
+**FASE 4.5: Validación** ⏳ PENDIENTE
+- [ ] Ejecutar tests trailing (7 tests)
+- [ ] Ejecutar validate_all.py
+- [ ] Test manual con broker demo
+- [ ] Verificar logging "TRAILING_STOP_ATR" en ciclo
+
+### Archivos a Modificar
+
+**Tests nuevos:**
+- `tests/test_position_manager_trailing.py` (7 tests)
+
+**Modificaciones:**
+- `core_brain/position_manager.py` (2 métodos nuevos + integración)
+- `config/dynamic_params.json` (sección trailing_stop)
+
+### Criterios de Aceptación FASE 4
+✅ Trailing stop calculado con ATR  
+✅ SL se mueve solo si mejora posición  
+✅ BUY: SL sube, nunca baja  
+✅ SELL: SL baja, nunca sube  
+✅ Validación profit mínimo (10 pips)  
+✅ Validación cooldown y daily limits  
+✅ Tests TDD 7/7 PASSED  
+✅ validate_all.py PASSED  
+
+### Impacto Esperado FASE 4
+- **+20%** profit capturado en tendencias fuertes
+- **+12%** win rate (protección dinámica de ganancias)
+- **-25%** pérdidas por reversals después de profit
+- **+15%** profit factor (lock-in de ganancias)
+
+---
+
 ## � MILESTONE: Consolidación de Position Size Calculator (2026-02-10)
 **Estado: ✅ COMPLETADO Y VALIDADO (147 tests - 96.6% pass rate)**
 **Criterio de Aceptación: Cálculo PERFECTO - 3 validaciones obligatorias** ✅

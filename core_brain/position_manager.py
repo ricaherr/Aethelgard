@@ -154,7 +154,39 @@ class PositionManager:
                 else:
                     logger.debug(f"No metadata found for position {ticket} - Skipping breakeven check")
                 
-                # 4. Check for regime change requiring adjustment
+                # 4. Check for trailing stop opportunity (FASE 4)
+                if metadata:
+                    should_apply, reason = self._should_apply_trailing_stop(position, metadata)
+                    logger.debug(
+                        f"Trailing stop check for {ticket}: should_apply={should_apply}, reason={reason}"
+                    )
+                    if should_apply:
+                        trailing_sl = self._calculate_trailing_stop_atr(position, metadata)
+                        if trailing_sl:
+                            # Keep current TP, only modify SL to trailing
+                            current_tp = position.get('tp', 0)
+                            
+                            logger.info(
+                                f"Position {ticket} ({symbol}) applying trailing stop - "
+                                f"New SL: {trailing_sl}"
+                            )
+                            
+                            # Modify position directly via connector
+                            result = self.connector.modify_position(ticket, trailing_sl, current_tp)
+                            if result and result.get('success', False):
+                                actions.append({
+                                    'ticket': ticket,
+                                    'action': 'TRAILING_STOP_ATR',
+                                    'new_sl': trailing_sl,
+                                    'reason': 'TRAILING_PROTECTION'
+                                })
+                            else:
+                                logger.warning(
+                                    f"Failed to apply trailing stop to position {ticket}: "
+                                    f"{result.get('error') if result else 'No result'}"
+                                )
+                
+                # 5. Check for regime change requiring adjustment
                 if self._regime_changed(position):
                     logger.info(
                         f"Position {ticket} ({symbol}) regime changed - "
@@ -939,6 +971,177 @@ class PositionManager:
         except Exception as e:
             logger.error(
                 f"Error validating breakeven conditions: {e}",
+                exc_info=True
+            )
+            return False, f"Error: {e}"
+    
+    def _calculate_trailing_stop_atr(
+        self,
+        position: Dict,
+        metadata: Dict
+    ) -> Optional[float]:
+        """
+        Calculate trailing stop price based on ATR (Average True Range).
+        
+        FASE 4: ATR-Based Trailing Stop
+        =================================
+        Formula:
+        - BUY: trailing_sl = current_price - (ATR * multiplier)
+        - SELL: trailing_sl = current_price + (ATR * multiplier)
+        
+        Args:
+            position: Position dict from connector
+            metadata: Position metadata from database
+            
+        Returns:
+            float: Trailing stop price or None if calculation fails
+        """
+        try:
+            symbol = position.get('symbol')
+            position_type = position.get('type')
+            current_price = float(position.get('current_price', 0))
+            
+            if current_price <= 0:
+                logger.warning(f"Invalid current price: {current_price}")
+                return None
+            
+            # Get trailing stop config
+            trailing_config = self.config.get('trailing_stop', {})
+            if not trailing_config.get('enabled', False):
+                return None
+            
+            # Get ATR from regime classifier
+            atr = self.get_current_atr(symbol)
+            if not atr or atr <= 0:
+                logger.debug(f"ATR not available for {symbol} - Cannot calculate trailing stop")
+                return None
+            
+            # Get multiplier (default 2.0)
+            atr_multiplier = trailing_config.get('atr_multiplier', 2.0)
+            
+            # Calculate trailing stop distance
+            trailing_distance = atr * atr_multiplier
+            
+            # Calculate new SL based on position type
+            if position_type == 'BUY':
+                # BUY: SL debajo del precio actual
+                trailing_sl = current_price - trailing_distance
+            elif position_type == 'SELL':
+                # SELL: SL arriba del precio actual
+                trailing_sl = current_price + trailing_distance
+            else:
+                logger.warning(f"Unknown position type: {position_type}")
+                return None
+            
+            logger.debug(
+                f"Trailing stop calculation - "
+                f"Price: {current_price}, ATR: {atr}, Multiplier: {atr_multiplier}, "
+                f"Distance: {trailing_distance}, Trailing SL: {trailing_sl}"
+            )
+            
+            return trailing_sl
+            
+        except Exception as e:
+            logger.error(
+                f"Error calculating trailing stop: {e}",
+                exc_info=True
+            )
+            return None
+    
+    def _should_apply_trailing_stop(
+        self,
+        position: Dict,
+        metadata: Dict
+    ) -> tuple[bool, str]:
+        """
+        Determine if trailing stop should be applied.
+        
+        Validation checks:
+        1. Minimum profit requirement (10 pips default)
+        2. New SL improves current SL (BUY: higher, SELL: lower)
+        3. Cooldown elapsed since last modification
+        4. Daily limit not exceeded
+        5. Freeze level validation
+        
+        Args:
+            position: Position dict from connector
+            metadata: Position metadata from database
+            
+        Returns:
+            tuple: (should_apply: bool, reason: str)
+        """
+        try:
+            ticket = position.get('ticket')
+            symbol = position.get('symbol')
+            position_type = position.get('type')
+            current_sl = float(position.get('sl', 0))
+            entry_price = float(metadata.get('entry_price', 0))
+            current_price = float(position.get('current_price', 0))
+            
+            # Get trailing stop config
+            trailing_config = self.config.get('trailing_stop', {})
+            if not trailing_config.get('enabled', False):
+                return False, "Trailing stop disabled in config"
+            
+            # 1. Check minimum profit requirement
+            min_profit_pips = trailing_config.get('min_profit_pips', 10)
+            
+            # Get pip size
+            symbol_info = self.connector.get_symbol_info(symbol)
+            pip_size = 0.0001  # Default
+            if symbol_info:
+                digits = symbol_info.get('digits', 5)
+                pip_size = 0.0001 if digits == 5 else 0.01
+            
+            # Calculate current profit in pips
+            if position_type == 'BUY':
+                profit_pips = (current_price - entry_price) / pip_size
+            elif position_type == 'SELL':
+                profit_pips = (entry_price - current_price) / pip_size
+            else:
+                return False, f"Unknown position type: {position_type}"
+            
+            if profit_pips < min_profit_pips:
+                return False, f"Insufficient profit: {profit_pips:.1f} pips (min {min_profit_pips})"
+            
+            # 2. Calculate new trailing SL
+            new_trailing_sl = self._calculate_trailing_stop_atr(position, metadata)
+            if new_trailing_sl is None:
+                return False, "Could not calculate trailing stop"
+            
+            # 3. Validate that new SL improves current SL
+            if position_type == 'BUY':
+                # BUY: new SL must be HIGHER than current (mejora = más cerca del precio)
+                if new_trailing_sl <= current_sl:
+                    return False, f"New SL ({new_trailing_sl:.5f}) does not improve current SL ({current_sl:.5f})"
+            elif position_type == 'SELL':
+                # SELL: new SL must be LOWER than current (mejora = más cerca del precio)
+                if current_sl > 0 and new_trailing_sl >= current_sl:
+                    return False, f"New SL ({new_trailing_sl:.5f}) does not improve current SL ({current_sl:.5f})"
+            
+            # 4. Check cooldown
+            last_mod_timestamp = metadata.get('last_modification_timestamp')
+            if last_mod_timestamp:
+                last_mod_time = datetime.fromisoformat(last_mod_timestamp)
+                elapsed_seconds = (datetime.now() - last_mod_time).total_seconds()
+                if elapsed_seconds < self.cooldown_seconds:
+                    return False, f"Cooldown active: {elapsed_seconds:.0f}s elapsed (need {self.cooldown_seconds}s)"
+            
+            # 5. Check daily modification limit
+            modifications_today = metadata.get('sl_modifications_count', 0)
+            if modifications_today >= self.max_modifications_per_day:
+                return False, f"Daily limit reached: {modifications_today}/{self.max_modifications_per_day}"
+            
+            # 6. Validate freeze level
+            if not self._validate_freeze_level(symbol, current_price, new_trailing_sl):
+                return False, "Freeze level validation failed"
+            
+            # All checks passed
+            return True, f"Ready to apply trailing stop: {new_trailing_sl:.5f}"
+            
+        except Exception as e:
+            logger.error(
+                f"Error validating trailing stop conditions: {e}",
                 exc_info=True
             )
             return False, f"Error: {e}"
