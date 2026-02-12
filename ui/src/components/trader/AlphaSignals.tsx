@@ -1,13 +1,31 @@
-import { ChevronRight, ArrowUpRight, ArrowDownRight, Info } from 'lucide-react';
+import { ChevronRight, ArrowUpRight, ArrowDownRight, Info, Power, Settings } from 'lucide-react';
 import { Signal } from '../../types/aethelgard';
 import { GlassPanel } from '../common/GlassPanel';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useEffect, useState } from 'react';
 
 interface AlphaSignalsProps {
     signals: Signal[];
 }
 
 export function AlphaSignals({ signals }: AlphaSignalsProps) {
+    const [scannerEnabled, setScannerEnabled] = useState(true);
+
+    useEffect(() => {
+        const checkModules = async () => {
+            try {
+                const res = await fetch('/api/modules/status');
+                const data = await res.json();
+                setScannerEnabled(data.modules?.scanner ?? true);
+            } catch (err) {
+                console.error('Error fetching modules:', err);
+            }
+        };
+        checkModules();
+        const interval = setInterval(checkModules, 30000);
+        return () => clearInterval(interval);
+    }, []);
+
     return (
         <GlassPanel className="flex-1 flex flex-col border-white/5">
             <div className="flex items-center justify-between mb-6">
@@ -29,10 +47,7 @@ export function AlphaSignals({ signals }: AlphaSignalsProps) {
             <div className="flex-1 space-y-3 overflow-y-auto scrollbar-hide pr-1">
                 <AnimatePresence initial={false}>
                     {signals.length === 0 ? (
-                        <div className="h-full flex flex-col items-center justify-center opacity-20 py-20">
-                            <Info size={48} className="mb-4" />
-                            <p className="text-sm font-outfit uppercase tracking-widest">Scanning Markets for Alpha...</p>
-                        </div>
+                        <EmptyState scannerEnabled={scannerEnabled} />
                     ) : (
                         signals.map((signal) => (
                             <SignalItem key={signal.id} signal={signal} />
@@ -41,6 +56,33 @@ export function AlphaSignals({ signals }: AlphaSignalsProps) {
                 </AnimatePresence>
             </div>
         </GlassPanel>
+    );
+}
+
+function EmptyState({ scannerEnabled }: { scannerEnabled: boolean }) {
+    if (!scannerEnabled) {
+        return (
+            <div className="h-full flex flex-col items-center justify-center py-20">
+                <Power size={48} className="mb-4 text-orange-400/50" />
+                <p className="text-sm font-outfit font-bold text-orange-400/80 uppercase tracking-widest mb-2">
+                    Scanner Disabled
+                </p>
+                <p className="text-xs text-white/40 text-center max-w-md mb-4">
+                    Signal discovery module is currently disabled. No new opportunities will be generated until enabled.
+                </p>
+                <div className="flex items-center gap-2 text-[10px] text-white/30">
+                    <Settings size={14} />
+                    <span>Go to Settings {'>'} System Modules to enable</span>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="h-full flex flex-col items-center justify-center opacity-20 py-20">
+            <Info size={48} className="mb-4" />
+            <p className="text-sm font-outfit uppercase tracking-widest">Scanning Markets for Alpha...</p>
+        </div>
     );
 }
 

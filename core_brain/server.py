@@ -390,6 +390,231 @@ def create_app() -> FastAPI:
     async def get_telegram_instructions() -> Dict[str, Any]:
         """Returns setup instructions in Spanish"""
         return telegram_provisioner.get_setup_instructions()
+    
+    # === PORTFOLIO & RISK ENDPOINTS ===
+    
+    @app.get("/api/positions/open")
+    async def get_open_positions() -> Dict[str, Any]:
+        """
+        Get open positions with risk metadata.
+        Returns positions with initial_risk_usd, r_multiple, asset_type.
+        """
+        try:
+            # Get MT5 connector to get real-time positions
+            from connectors.mt5_connector import MT5Connector
+            
+            positions_list = []
+            total_risk = 0.0
+            
+            mt5 = MT5Connector()
+            if mt5.connect():
+                # Get open positions from MT5
+                mt5_positions = mt5.get_open_positions()
+                
+                if mt5_positions:
+                    conn = storage._get_conn()
+                    
+                    for mt5_pos in mt5_positions:
+                        ticket = mt5_pos['ticket']
+                        
+                        # Get metadata from DB
+                        cursor = conn.execute("""
+                            SELECT initial_risk_usd, entry_regime, entry_time
+                            FROM position_metadata
+                            WHERE ticket = ?
+                        """, (ticket,))
+                        
+                        row = cursor.fetchone()
+                        if row:
+                            risk, regime, entry_time = row
+                        else:
+                            # No metadata - calculate on the fly
+                            risk = 0.0
+                            regime = "NEUTRAL"
+                            entry_time = mt5_pos.get('time', '')
+                        
+                        symbol = mt5_pos['symbol']
+                        
+                        # Classify asset type based on symbol
+                        asset_type = "forex"
+                        if symbol.startswith("XAU") or symbol.startswith("XAG"):
+                            asset_type = "metal"
+                        elif symbol.startswith("BTC") or symbol.startswith("ETH"):
+                            asset_type = "crypto"
+                        elif any(idx in symbol for idx in ["US30", "NAS100", "SPX500", "DJ30"]):
+                            asset_type = "index"
+                        
+                        current_profit = mt5_pos.get('profit', 0.0)
+                        
+                        # Calculate R-multiple
+                        r_multiple = (current_profit / risk) if risk > 0 else 0.0
+                        
+                        position_data = {
+                            "ticket": ticket,
+                            "symbol": symbol,
+                            "entry_price": mt5_pos.get('price_open', 0.0),
+                            "sl": mt5_pos.get('sl', 0.0),
+                            "tp": mt5_pos.get('tp', 0.0),
+                            "volume": mt5_pos.get('volume', 0.0),
+                            "profit_usd": current_profit,
+                            "initial_risk_usd": risk,
+                            "r_multiple": round(r_multiple, 2),
+                            "entry_regime": regime or "NEUTRAL",
+                            "entry_time": str(entry_time),
+                            "asset_type": asset_type
+                        }
+                        
+                        positions_list.append(position_data)
+                        total_risk += risk
+                    
+                    storage._close_conn(conn)
+            
+            return {
+                "positions": positions_list,
+                "total_risk_usd": round(total_risk, 2),
+                "count": len(positions_list)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting open positions: {e}")
+            return {"positions": [], "total_risk_usd": 0.0, "count": 0}
+    
+    @app.get("/api/risk/summary")
+    async def get_risk_summary() -> Dict[str, Any]:
+        """
+        Get account risk summary with distribution by asset type.
+        """
+        try:
+            # Get open positions
+            positions_response = await get_open_positions()
+            positions = positions_response.get("positions", [])
+            total_risk = positions_response.get("total_risk_usd", 0.0)
+            
+            # Get account balance (simplified - would come from connector)
+            account_balance = 10000.0  # TODO: Get from connector
+            
+            # Calculate risk percentage
+            risk_percentage = (total_risk / account_balance * 100) if account_balance > 0 else 0.0
+            max_allowed_risk = 5.0  # From risk_settings.json
+            
+            # Distribution by asset type
+            by_asset = {}
+            for pos in positions:
+                asset = pos["asset_type"]
+                if asset not in by_asset:
+                    by_asset[asset] = {"count": 0, "risk": 0.0}
+                by_asset[asset]["count"] += 1
+                by_asset[asset]["risk"] += pos["initial_risk_usd"]
+            
+            # Round risk values
+            for asset in by_asset:
+                by_asset[asset]["risk"] = round(by_asset[asset]["risk"], 2)
+            
+            # Generate warnings
+            warnings = []
+            if risk_percentage > max_allowed_risk * 0.9:
+                warnings.append(f"Total risk ({risk_percentage:.1f}%) approaching limit ({max_allowed_risk}%)")
+            if risk_percentage > max_allowed_risk:
+                warnings.append(f"⚠ CRITICAL: Risk ({risk_percentage:.1f}%) exceeds maximum ({max_allowed_risk}%)")
+            
+            return {
+                "total_risk_usd": round(total_risk, 2),
+                "account_balance": account_balance,
+                "risk_percentage": round(risk_percentage, 2),
+                "max_allowed_risk_pct": max_allowed_risk,
+                "positions_by_asset": by_asset,
+                "warnings": warnings
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting risk summary: {e}")
+            return {
+                "total_risk_usd": 0.0,
+                "account_balance": 0.0,
+                "risk_percentage": 0.0,
+                "max_allowed_risk_pct": 5.0,
+                "positions_by_asset": {},
+                "warnings": [f"Error: {str(e)}"]
+            }
+    
+    @app.get("/api/modules/status")
+    async def get_modules_status() -> Dict[str, Any]:
+        """
+        Get current status of system modules (feature flags).
+        """
+        try:
+            modules_enabled = storage.get_global_modules_enabled()
+            
+            return {
+                "modules": modules_enabled,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting modules status: {e}")
+            # Return defaults
+            return {
+                "modules": {
+                    "scanner": True,
+                    "executor": True,
+                    "position_manager": True,
+                    "risk_manager": True,
+                    "monitor": True,
+                    "notificator": True
+                },
+                "timestamp": datetime.now().isoformat()
+            }
+    
+    @app.post("/api/modules/toggle")
+    async def toggle_module(data: dict) -> Dict[str, Any]:
+        """
+        Toggle a system module on/off.
+        
+        Body: {
+            "module": "scanner",
+            "enabled": true
+        }
+        """
+        try:
+            module_name = data.get("module", "")
+            enabled = data.get("enabled", True)
+            
+            # Validate module name
+            valid_modules = ["scanner", "executor", "position_manager", "risk_manager", "monitor", "notificator"]
+            if module_name not in valid_modules:
+                raise HTTPException(status_code=400, detail=f"Invalid module: {module_name}")
+            
+            # Risk manager cannot be disabled (safety critical)
+            if module_name == "risk_manager" and not enabled:
+                raise HTTPException(
+                    status_code=403, 
+                    detail="Risk Manager cannot be disabled (safety critical)"
+                )
+            
+            # Update in database
+            storage.set_global_module_enabled(module_name, enabled)
+            
+            # Broadcast update
+            status = "enabled" if enabled else "disabled"
+            await broadcast_thought(
+                f"Module '{module_name}' {status} by user.", 
+                module="CORE"
+            )
+            
+            logger.info(f"Module {module_name} {status}")
+            
+            return {
+                "status": "success",
+                "module": module_name,
+                "enabled": enabled,
+                "message": f"Module '{module_name}' {status} successfully"
+            }
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error toggling module: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
 
     # Montar archivos estáticos de la nueva UI si existen
     ui_dist_path = os.path.join(os.getcwd(), "ui", "dist")

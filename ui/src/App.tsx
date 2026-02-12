@@ -7,7 +7,8 @@ import {
     Settings,
     Bell,
     Search,
-    Zap
+    Zap,
+    Briefcase
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -21,6 +22,7 @@ import { CerebroConsole } from './components/trader/CerebroConsole';
 import { DiagnosticDrawer } from './components/diagnostic/DiagnosticDrawer';
 import { EdgeHub } from './components/edge/EdgeHub';
 import { ConfigHub } from './components/config/ConfigHub';
+import { PortfolioView } from './components/portfolio/PortfolioView';
 import { GlassPanel } from './components/common/GlassPanel';
 
 function App() {
@@ -44,6 +46,12 @@ function App() {
                         active={activeTab === 'trader'}
                         onClick={() => setActiveTab('trader')}
                         label="Trader"
+                    />
+                    <NavIcon
+                        icon={<Briefcase size={22} />}
+                        active={activeTab === 'portfolio'}
+                        onClick={() => setActiveTab('portfolio')}
+                        label="Portfolio"
                     />
                     <NavIcon
                         icon={<Cpu size={22} />}
@@ -143,6 +151,18 @@ function App() {
                                     {/* Main Opportunity Stream */}
                                     <AlphaSignals signals={signals} />
                                 </div>
+                            </motion.div>
+                        )}
+
+                        {activeTab === 'portfolio' && (
+                            <motion.div
+                                key="portfolio-view"
+                                initial={{ opacity: 0, x: 20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                exit={{ opacity: 0, x: -20 }}
+                                className="h-full"
+                            >
+                                <PortfolioView />
                             </motion.div>
                         )}
 

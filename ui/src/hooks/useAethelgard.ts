@@ -25,7 +25,7 @@ export function useAethelgard() {
         // Determine WS URL (handling dev/prod)
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const host = window.location.hostname === 'localhost' ? 'localhost:8000' : window.location.host;
-        const wsUrl = `${protocol}//${host}/ws/UI/dashboard_nextgen`;
+        const wsUrl = `${protocol}//${host}/ws/GENERIC/dashboard_nextgen`;
 
         console.log(`📡 Connecting to Aethelgard: ${wsUrl}`);
 

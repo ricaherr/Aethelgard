@@ -17,8 +17,7 @@ ccxt>=4.2.0  # CCXT - For crypto exchanges
 # HTTP client for webhooks and Telegram
 httpx==0.27.2
 
-# Dashboard UI
-streamlit>=1.40.0  # Versión con mejor soporte para Python 3.14
+# Dashboard UI (React + TypeScript servido por FastAPI)
 plotly>=5.18.0  # Para gráficos interactivos en el dashboard
 
 # Monitor de recursos (escáner proactivo)

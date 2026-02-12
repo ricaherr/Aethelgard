@@ -1,4 +1,5 @@
 export type MarketRegime = 'TREND' | 'RANGE' | 'CRASH' | 'NEUTRAL';
+export type AssetType = 'forex' | 'metal' | 'crypto' | 'index';
 
 export interface Signal {
     id: string;
@@ -9,6 +10,47 @@ export interface Signal {
     status: 'PENDING' | 'EXECUTED' | 'CANCELLED' | 'CLOSED';
     timestamp: string;
     magic_number: number;
+    initial_risk_usd?: number;     // Risk preview (NEW)
+    asset_type?: AssetType;         // Asset classification (NEW)
+}
+
+// Position metadata with risk calculation (NEW)
+export interface PositionMetadata {
+    ticket: number;
+    symbol: string;
+    entry_price: number;
+    sl: number;
+    tp: number;
+    volume: number;
+    profit_usd: number;
+    initial_risk_usd: number;       // From RiskCalculator
+    r_multiple: number;              // profit / initial_risk
+    entry_regime: MarketRegime;
+    entry_time: string;
+    asset_type: AssetType;
+}
+
+// Risk summary for account (NEW)
+export interface RiskSummary {
+    total_risk_usd: number;
+    account_balance: number;
+    risk_percentage: number;
+    max_allowed_risk_pct: number;
+    positions_by_asset: Record<AssetType, { count: number; risk: number }>;
+    warnings: string[];
+}
+
+// System modules status (NEW)
+export interface ModulesStatus {
+    modules: {
+        scanner: boolean;
+        executor: boolean;
+        position_manager: boolean;
+        risk_manager: boolean;
+        monitor: boolean;
+        notificator: boolean;
+    };
+    timestamp: string;
 }
 
 export interface SystemStatus {
@@ -33,3 +75,4 @@ export interface CerebroThought {
     message: string;
     module: string;
 }
+

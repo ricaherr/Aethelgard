@@ -4,14 +4,18 @@ EMERGENCY STOP - Aethelgard System
 Detiene TODOS los procesos y hilos del sistema de forma INMEDIATA.
 
 Mata:
-1. Procesos de Python ejecutando start.py/main.py
-2. Procesos de Streamlit (Dashboard)
-3. Procesos de Uvicorn (API Server)
-4. Conexiones MT5 activas
-5. Todos los hilos daemon (Scanner, Monitor, Tuner, etc.)
+1. Procesos de Python ejecutando start.py (incluye FastAPI/Uvicorn integrado)
+2. Procesos en puerto 8000 (FastAPI + React UI)
+3. Conexiones MT5 activas
+4. Todos los hilos daemon (Scanner, Monitor, Tuner, etc.)
+
+Architecture (2026):
+- FastAPI (uvicorn) ejecutado como módulo Python por start.py
+- React UI servido por FastAPI desde ui/dist
+- NO usa Streamlit (eliminado en favor de React)
 
 Usage:
-    python scripts/emergency_stop.py
+    python stop.py
     
 WARNING: Este comando es destructivo. Mata procesos sin esperar graceful shutdown.
 """
@@ -141,27 +145,24 @@ def main() -> None:
     print("🔌 Cerrando conexiones MT5...")
     close_mt5_connections()
     
-    # Step 2: Matar procesos por puerto (Dashboard, API)
+    # Step 2: Matar procesos por puerto (FastAPI + React UI)
     print("\n🔴 Matando procesos por puerto...")
     ports_to_kill = [
-        8000,  # API Server (Uvicorn + Next-Gen UI)
-        8504,  # Legacy Dashboard Port (Cleanup)
+        8000,  # FastAPI Server (Uvicorn + React UI)
     ]
     
     total_killed += kill_processes_by_port(ports_to_kill)
     
-    # Step 3: Matar procesos por nombre
-    print("\n🔴 Matando procesos por nombre...")
+    # Step 3: Matar procesos de Node (solo si quedó colgado durante desarrollo)
+    print("\n🔴 Verificando procesos de Node...")
     processes_to_kill = [
-        "streamlit.exe",
-        "uvicorn.exe",
-        "node.exe", # Matar procesos de Node si el build quedó colgado
+        "node.exe",  # Matar procesos de Node si el build en watch quedó colgado
     ]
     
     total_killed += kill_processes_by_name(processes_to_kill)
     
-    # Step 4: Matar procesos de Python ejecutando start.py o main.py
-    print("\n🔴 Buscando procesos de Aethelgard (start.py/main.py)...")
+    # Step 4: Matar procesos Python ejecutando start.py (incluye FastAPI/Uvicorn)
+    print("\n🔴 Buscando procesos de Aethelgard (start.py)...")
     try:
         # Listar todos los procesos de Python
         result = subprocess.run(
@@ -177,8 +178,8 @@ def main() -> None:
                 if not line.strip():
                     continue
                 
-                # Buscar start.py o main.py en el comando
-                if "start.py" in line or "main.py" in line or "Aethelgard" in line:
+                # Buscar start.py en el comando (incluye uvicorn como módulo)
+                if "start.py" in line or "core_brain.server" in line:
                     # Extraer PID (último número en la línea)
                     parts = line.split()
                     if parts:

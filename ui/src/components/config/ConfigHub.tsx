@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Save, RefreshCw, AlertTriangle, Shield, Sliders, Settings, Bell } from 'lucide-react';
+import { Save, RefreshCw, AlertTriangle, Shield, Sliders, Settings, Bell, Power } from 'lucide-react';
 import { GlassPanel } from '../common/GlassPanel';
 import { TelegramSetup } from './TelegramSetup';
+import { ModulesControl } from './ModulesControl';
 
-type ConfigCategory = 'trading' | 'risk' | 'system' | 'notifications';
+type ConfigCategory = 'trading' | 'risk' | 'system' | 'notifications' | 'modules';
 
 export function ConfigHub() {
     const [activeCategory, setActiveCategory] = useState<ConfigCategory>('trading');
@@ -15,6 +16,13 @@ export function ConfigHub() {
     const [message, setMessage] = useState<string | null>(null);
 
     const fetchConfig = async (category: ConfigCategory) => {
+        // Special categories don't need backend config
+        if (category === 'modules' || category === 'notifications') {
+            setLoading(false);
+            setConfig(null);
+            return;
+        }
+
         setLoading(true);
         setError(null);
         try {
@@ -131,6 +139,13 @@ export function ConfigHub() {
                         title="Telegram Alerts"
                         description="Auto-Setup & Testing"
                     />
+                    <TabButton
+                        active={activeCategory === 'modules'}
+                        onClick={() => setActiveCategory('modules')}
+                        icon={<Power size={20} />}
+                        title="System Modules"
+                        description="Feature Toggles"
+                    />
 
                     {error && (
                         <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex gap-3 animate-pulse">
@@ -173,7 +188,12 @@ export function ConfigHub() {
                                     <TelegramSetup />
                                 )}
 
-                                {!loading && config && activeCategory !== 'notifications' && (
+                                {/* Special case: System Modules */}
+                                {!loading && activeCategory === 'modules' && (
+                                    <ModulesControl />
+                                )}
+
+                                {!loading && config && activeCategory !== 'notifications' && activeCategory !== 'modules' && (
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
                                         {Object.entries(config).map(([key, value]) => {
                                             if (key.startsWith('_')) return null; // Skip comments

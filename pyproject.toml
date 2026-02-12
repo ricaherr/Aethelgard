@@ -15,7 +15,6 @@ authors = [
 
 dependencies = [
     "fastapi",
-    "streamlit",
     "websockets",
     "pandas",
     "numpy",

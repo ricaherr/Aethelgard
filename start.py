@@ -3,12 +3,11 @@ Aethelgard Trading System - Unified Launcher
 =============================================
 
 Comando único que inicia:
-1. Servidor API (FastAPI/Uvicorn) - Cerebro y WebSockets
+1. Servidor API (FastAPI/Uvicorn) - Backend + React UI
 2. Motor de trading (Scanner + Orchestrator) - Lógica de negocio
-3. Dashboard Streamlit (UI) - Visualización
-4. EDGE Tuner - Auto-calibración
+3. EDGE Tuner - Auto-calibración
 
-USO: py start.py
+USO: python start.py
 """
 import sys
 import os

@@ -1,9 +1,11 @@
 # AETHELGARD: SYSTEM RULES & ARCHITECTURE
 
 ## 🎯 Misión
+
 Sistema autónomo, proactivo y agnóstico de trading multihilo. Capacidad de auto-calibración y enfoque comercial (SaaS).
 
 ## 🧠 Reglas de Oro para la IA
+
 1. **Revisar Antes de Actuar**: SIEMPRE revisar si algo ya existe antes de agregar o modificar. Si existe, evaluar si es mejor modificar lo existente o crear algo nuevo. Aplica a: reglas, funciones, documentación, configuración, tests.
 2. **Autonomía Proactiva**: El sistema no espera datos, los busca (ScannerEngine).
 3. **Independencia de Código (Arquitectura Agnóstica)**:
@@ -28,7 +30,7 @@ Sistema autónomo, proactivo y agnóstico de trading multihilo. Capacidad de aut
 14. **Single Source of Truth (DB)**: Configuración, credenciales y datos del sistema deben residir en la BASE DE DATOS. NO crear archivos JSON/ENV redundantes. La DB es la única fuente de verdad.
 15. **Scripts Mínimos y Útiles**: NO crear scripts de validación/debugging redundantes. Mantener solo los scripts que agregan valor real al usuario final (setup, diagnóstico end-to-end, tests de flujo completo).
 16. **Validaciones Completas Obligatorias**: Después de TODA implementación, tests y validación, comprobar que el sistema funciona sin errores (ejecutar validate_all.py + start.py) antes de dar por terminada la tarea
-14. **Scripts Mínimos y Útiles**: NO crear scripts de validación/debugging redundantes. Mantener solo los scripts que agregan valor real al usuario final (setup, diagnóstico end-to-end, tests de flujo completo).
+17. **Scripts Mínimos y Útiles**: NO crear scripts de validación/debugging redundantes. Mantener solo los scripts que agregan valor real al usuario final (setup, diagnóstico end-to-end, tests de flujo completo).
 
 ## � Reglas de Desarrollo de Código (Resumen - Ver MANIFESTO Completo)
 
@@ -59,33 +61,38 @@ Sistema autónomo, proactivo y agnóstico de trading multihilo. Capacidad de aut
    - No se permite que un test dependa del estado dejado por un test anterior.
 
 ## �🛠️ Stack Tecnológico
+
 - **Backend**: Python 3.12+ (Asyncio, FastAPI).
-- **UI**: Streamlit (Dashboard multi-pestaña).
+- **UI**: React + TypeScript + Vite (Next-Gen Dashboard).
 - **Data**: SQLite (Persistencia segmentada por mercado).
 - **Conexiones**: WebSockets para tiempo real.
 
 ## Idioma
+
 - Comunicación siempre en **Español**
 - Código y comentarios en **Inglés**
 
 ## Metodología
+
 - **TDD obligatorio**: Test primero, luego código
 - **Cero Sorpresas**: Explicar antes de implementar
 - Seguir estilo del proyecto existente
 
 ## Trading Rules
+
 - Risk per trade: 1% del capital
 - Régimen VOLATILE/RANGE: reducir a 0.5%
 - 3 pérdidas consecutivas = Lockdown mode
 
 ## Flujo de Trabajo (Workflow)
+
 1. **Actualizar ROADMAP.md** con el plan de tareas.
 2. Definir requerimientos técnicos.
 3. Crear archivo de test en `tests/`.
 4. Ejecutar test (debe fallar).
 5. Implementar código mínimo en `core_brain/`.
 6. Ejecutar test (debe pasar).
-**6.5. ✅ EJECUTAR `validate_all.py`** (OBLIGATORIO antes de documentar)
+   **6.5. ✅ EJECUTAR `validate_all.py`** (OBLIGATORIO antes de documentar)
    - Valida arquitectura (duplicados, imports prohibidos)
    - Valida calidad de código (sintaxis, tipos, complejidad)
    - Ejecuta tests críticos (deduplicación + risk manager)
@@ -93,8 +100,8 @@ Sistema autónomo, proactivo y agnóstico de trading multihilo. Capacidad de aut
    - **Comando**: `python scripts/validate_all.py`
 7. **Actualizar ROADMAP.md** marcando tarea como completada (✅).
 8. Actualizar `AETHELGARD_MANIFESTO.md`.
-**9. 🧹 LIMPIEZA WORKSPACE** (OBLIGATORIO después de completar implementación)
-   - Eliminar archivos temporales de debugging (test_*.py, check_*.py en raíz)
+   **9. 🧹 LIMPIEZA WORKSPACE** (OBLIGATORIO después de completar implementación)
+   - Eliminar archivos temporales de debugging (test*\*.py, check*\*.py en raíz)
    - Mover scripts de diagnóstico a `scripts/utilities/` (QA Guard permite MT5 imports ahí)
    - Verificar que `validate_all.py` pasa 100% (6/6 validaciones OK)
    - Confirmar sistema funcional: `python start.py` sin errores
