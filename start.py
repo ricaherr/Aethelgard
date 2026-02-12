@@ -23,6 +23,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
+from datetime import datetime
 import webbrowser
 
 from core_brain.main_orchestrator import MainOrchestrator
@@ -190,13 +191,14 @@ async def main() -> None:
                     # Continuar ejecutándose a pesar del error
                     await asyncio.sleep(60)  # Esperar 1 minuto antes de reintentar
         
-        # 4. Scanner Engine
+        # 4. Scanner Engine (con storage para hot-reload)
         logger.info("🔍 Inicializando Scanner Engine...")
         scanner = ScannerEngine(
             assets=symbols,
             data_provider=data_provider,
             config_path='config/config.json',
-            scan_mode="STANDARD"
+            scan_mode="STANDARD",
+            storage=storage  # Para verificar toggles en tiempo real
         )
         
         # 5. Signal Factory
@@ -234,6 +236,18 @@ async def main() -> None:
             config_path="config/dynamic_params.json"
         )
         
+        # 8b. Trade Closure Listener (Event-driven feedback loop)
+        logger.info("📡 Inicializando Trade Closure Listener...")
+        from core_brain.trade_closure_listener import TradeClosureListener
+        trade_listener = TradeClosureListener(
+            storage=storage,
+            risk_manager=risk_manager,
+            edge_tuner=edge_tuner,
+            max_retries=3,
+            retry_backoff=0.5
+        )
+        logger.info("   ✅ Trade Closure Listener: Event-driven reconciliation activo")
+        
         # 9. Main Orchestrator
         logger.info("🧠 Inicializando Main Orchestrator...")
         orchestrator = MainOrchestrator(
@@ -254,6 +268,18 @@ async def main() -> None:
             connected = mt5_connector.connect_blocking()
             if connected:
                 logger.info(f"✅ MT5 conectado exitosamente. Símbolos disponibles: {len(mt5_connector.available_symbols)}")
+                
+                # Cache account balance in system_state for API queries
+                try:
+                    account_balance = mt5_connector.get_account_balance()
+                    storage.update_system_state({
+                        "account_balance": account_balance,
+                        "balance_source": "MT5_LIVE",
+                        "balance_last_update": datetime.now().isoformat()
+                    })
+                    logger.info(f"   Balance cacheado: ${account_balance:,.2f} (MT5_LIVE)")
+                except Exception as e:
+                    logger.warning(f"⚠️  No se pudo cachear balance de MT5: {e}")
             else:
                 logger.error("❌ MT5 connection failed!")
             
@@ -270,28 +296,31 @@ async def main() -> None:
         server_thread = threading.Thread(target=launch_server,daemon=True)
         server_thread.start()
         
-        # MODULE TOGGLE: Verificar si scanner está habilitado antes de iniciar
-        modules_enabled = storage.get_global_modules_enabled()
+        # Scanner thread: SIEMPRE arranca (verifica toggle internamente con hot-reload)
+        logger.info("🔄 Iniciando Scanner (con hot-reload toggle)...")
+        scanner_thread = threading.Thread(target=scanner.run, daemon=True)
+        scanner_thread.start()
         
+        modules_enabled = storage.get_global_modules_enabled()
         if modules_enabled.get("scanner", True):
-            # Iniciar Scanner en hilo separado
-            logger.info("🔄 Iniciando Scanner...")
-            scanner_thread = threading.Thread(target=scanner.run, daemon=True)
-            scanner_thread.start()
-            logger.info("✅ Scanner ejecutándose")
+            logger.info("✅ Scanner ejecutándose (habilitado)")
         else:
-            logger.warning("⚠️  Scanner DESHABILITADO globalmente - thread NO iniciado")
+            logger.warning("⚠️  Scanner en espera (deshabilitado - activar desde UI para iniciar)")
         
         # Iniciar Closing Monitor en tarea asíncrona
         logger.info("🔄 Iniciando Closing Monitor...")
         monitor_task = asyncio.create_task(monitor.start())
         logger.info("✅ Closing Monitor activo (Feedback Loop)")
         
-        # Iniciar EDGE Monitor (inject MT5 connector recomendation to avoid creating new instance)
+        # Iniciar EDGE Monitor (inject MT5 connector & trade listener for reconciliation)
         logger.info("🔄 Iniciando EDGE Monitor...")
-        edge_monitor = EdgeMonitor(storage=storage, mt5_connector=mt5_connector)
+        edge_monitor = EdgeMonitor(
+            storage=storage,
+            mt5_connector=mt5_connector,
+            trade_listener=trade_listener
+        )
         edge_monitor.start()
-        logger.info("✅ EDGE Monitor activo (Observabilidad Autónoma)")
+        logger.info("✅ EDGE Monitor activo (Observabilidad + Reconciliación Automática)")
         
         logger.info("")
         logger.info("   -> [PRINCIPAL] Command Center Next-Gen: http://localhost:8000")

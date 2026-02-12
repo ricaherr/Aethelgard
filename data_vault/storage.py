@@ -295,11 +295,12 @@ class StorageManager(
         Save or update position metadata for monitoring.
         
         Creates position_metadata table if it doesn't exist.
-        Uses REPLACE to insert new or update existing metadata.
+        Merges new metadata with existing data to preserve required fields.
         
         Args:
             ticket: The ticket number of the position
             metadata: Dict with position metadata (symbol, entry_price, sl, tp, etc.)
+                     Can be partial - will merge with existing data if available
             
         Returns:
             True if successful, False otherwise
@@ -308,6 +309,18 @@ class StorageManager(
         try:
             cursor = conn.cursor()
             
+            # Get existing metadata and merge with new values
+            existing = self.get_position_metadata(ticket)
+            if existing:
+                # Merge: existing data + new updates (new values overwrite old)
+                merged_metadata = {**existing, **metadata}
+                # Ensure ticket is correct (in case it was changed in metadata dict)
+                merged_metadata['ticket'] = ticket
+            else:
+                # No existing metadata - use new data as-is
+                merged_metadata = metadata
+                merged_metadata['ticket'] = ticket
+            
             # Create table if not exists
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS position_metadata (
@@ -315,6 +328,7 @@ class StorageManager(
                     symbol TEXT NOT NULL,
                     entry_price REAL NOT NULL,
                     entry_time TEXT NOT NULL,
+                    direction TEXT,
                     sl REAL,
                     tp REAL,
                     volume REAL NOT NULL,
@@ -325,34 +339,44 @@ class StorageManager(
                 )
             """)
             
-            # Extract known fields
-            symbol = metadata.get('symbol')
-            entry_price = metadata.get('entry_price')
-            entry_time = metadata.get('entry_time')
-            sl = metadata.get('sl')
-            tp = metadata.get('tp')
-            volume = metadata.get('volume')
-            initial_risk_usd = metadata.get('initial_risk_usd')
-            entry_regime = metadata.get('entry_regime')
-            timeframe = metadata.get('timeframe')
+            # AUTO-MIGRATION: Add direction column if it doesn't exist
+            # (for existing databases created before direction tracking)
+            try:
+                cursor.execute("SELECT direction FROM position_metadata LIMIT 1")
+            except Exception:
+                logger.info("[MIGRATION] Adding 'direction' column to position_metadata table")
+                cursor.execute("ALTER TABLE position_metadata ADD COLUMN direction TEXT")
+                conn.commit()
+            
+            # Extract known fields from merged metadata
+            symbol = merged_metadata.get('symbol')
+            entry_price = merged_metadata.get('entry_price')
+            entry_time = merged_metadata.get('entry_time')
+            direction = merged_metadata.get('direction')
+            sl = merged_metadata.get('sl')
+            tp = merged_metadata.get('tp')
+            volume = merged_metadata.get('volume')
+            initial_risk_usd = merged_metadata.get('initial_risk_usd')
+            entry_regime = merged_metadata.get('entry_regime')
+            timeframe = merged_metadata.get('timeframe')
             
             # Store remaining fields as JSON in 'data' column
             known_fields = {
-                'ticket', 'symbol', 'entry_price', 'entry_time', 
+                'ticket', 'symbol', 'entry_price', 'entry_time', 'direction',
                 'sl', 'tp', 'volume', 'initial_risk_usd', 
                 'entry_regime', 'timeframe'
             }
-            extra_data = {k: v for k, v in metadata.items() if k not in known_fields}
+            extra_data = {k: v for k, v in merged_metadata.items() if k not in known_fields}
             data_json = json.dumps(extra_data) if extra_data else None
             
             # REPLACE: insert new or update existing
             cursor.execute("""
                 REPLACE INTO position_metadata 
-                (ticket, symbol, entry_price, entry_time, sl, tp, volume, 
+                (ticket, symbol, entry_price, entry_time, direction, sl, tp, volume, 
                  initial_risk_usd, entry_regime, timeframe, data)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                ticket, symbol, entry_price, entry_time, sl, tp, volume,
+                ticket, symbol, entry_price, entry_time, direction, sl, tp, volume,
                 initial_risk_usd, entry_regime, timeframe, data_json
             ))
             
@@ -365,6 +389,23 @@ class StorageManager(
             
         finally:
             self._close_conn(conn)
+    
+    def rollback_position_modification(self, ticket: int) -> bool:
+        """
+        Rollback position metadata modification (no-op).
+        
+        NOTE: Metadata is already persisted BEFORE MT5 modification attempt.
+        If MT5 modification fails, we keep the metadata as-is.
+        Future monitoring cycles will retry adjustment if regime still changed.
+        
+        Args:
+            ticket: Position ticket number
+            
+        Returns:
+            True (no-op always succeeds)
+        """
+        logger.debug(f"[ROLLBACK] Position {ticket} - Metadata preserved (no-op)")
+        return True
     
     # ========== MODULE TOGGLES (RESOLUTION LOGIC) ==========
     

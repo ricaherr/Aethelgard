@@ -30,10 +30,18 @@ export interface PositionMetadata {
     asset_type: AssetType;
 }
 
+// Balance metadata (source indicator)
+export interface BalanceMetadata {
+    source: 'MT5_LIVE' | 'CACHED' | 'DEFAULT' | 'UNKNOWN' | 'ERROR';
+    last_update: string;
+    is_live: boolean;
+}
+
 // Risk summary for account (NEW)
 export interface RiskSummary {
     total_risk_usd: number;
     account_balance: number;
+    balance_metadata: BalanceMetadata;
     risk_percentage: number;
     max_allowed_risk_pct: number;
     positions_by_asset: Record<AssetType, { count: number; risk: number }>;

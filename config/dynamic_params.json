@@ -61,6 +61,11 @@
         "sl_atr_multiplier": 5.0,
         "tp_atr_multiplier": 2.0,
         "max_holding_hours": 1
+      },
+      "NORMAL": {
+        "sl_atr_multiplier": 2.0,
+        "tp_atr_multiplier": 3.0,
+        "max_holding_hours": 24
       }
     },
     "stale_thresholds_hours": {
@@ -68,6 +73,7 @@
       "RANGE": 4,
       "VOLATILE": 2,
       "CRASH": 1,
+      "NORMAL": 48,
       "NEUTRAL": 168
     },
     "breakeven": {

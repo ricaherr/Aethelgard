@@ -1,4 +1,4 @@
-import { Shield, AlertCircle, TrendingUp } from 'lucide-react';
+import { Shield, AlertCircle, TrendingUp, WifiOff, Wifi, Database } from 'lucide-react';
 import { RiskSummary as RiskSummaryType } from '../../types/aethelgard';
 import { GlassPanel } from '../common/GlassPanel';
 
@@ -23,6 +23,37 @@ export function RiskSummary({ summary }: RiskSummaryProps) {
         if (riskLevel === 'warning') return 'text-yellow-400';
         return 'text-green-400';
     };
+
+    // Balance source indicator
+    const getBalanceIndicator = () => {
+        const source = summary.balance_metadata?.source || 'UNKNOWN';
+        const isLive = summary.balance_metadata?.is_live || false;
+
+        if (source === 'MT5_LIVE' || isLive) {
+            return {
+                icon: <Wifi size={12} />,
+                color: 'text-green-400',
+                label: 'Live from MT5',
+                dotColor: 'bg-green-400'
+            };
+        } else if (source === 'CACHED') {
+            return {
+                icon: <Database size={12} />,
+                color: 'text-yellow-400',
+                label: 'Cached data',
+                dotColor: 'bg-yellow-400'
+            };
+        } else {
+            return {
+                icon: <WifiOff size={12} />,
+                color: 'text-gray-400',
+                label: 'Default value',
+                dotColor: 'bg-gray-400'
+            };
+        }
+    };
+
+    const balanceIndicator = getBalanceIndicator();
 
     return (
         <GlassPanel className="h-full border-white/5">
@@ -54,8 +85,20 @@ export function RiskSummary({ summary }: RiskSummaryProps) {
                 <div className="text-2xl font-outfit font-bold text-orange-400">
                     ${summary.total_risk_usd.toFixed(2)}
                 </div>
-                <div className="text-xs text-white/40 mt-1">
-                    of ${summary.account_balance.toFixed(2)} balance
+                <div className="flex items-center justify-between mt-2">
+                    <div className="text-xs text-white/40">
+                        of ${summary.account_balance.toFixed(2)} balance
+                    </div>
+                    {/* Balance source indicator */}
+                    <div 
+                        className="flex items-center gap-1.5 group cursor-help" 
+                        title={`${balanceIndicator.label} - Last update: ${new Date(summary.balance_metadata?.last_update || '').toLocaleTimeString()}`}
+                    >
+                        <div className={`w-1.5 h-1.5 rounded-full ${balanceIndicator.dotColor} animate-pulse`} />
+                        <span className={`text-[10px] ${balanceIndicator.color} opacity-70 group-hover:opacity-100 transition-opacity`}>
+                            {balanceIndicator.icon}
+                        </span>
+                    </div>
                 </div>
             </div>
 

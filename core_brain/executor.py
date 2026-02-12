@@ -502,6 +502,7 @@ class OrderExecutor:
                 'ticket': ticket,
                 'symbol': signal.symbol,
                 'entry_price': entry_price,
+                'direction': signal.signal_type.value,  # BUY or SELL from signal_type enum
                 'sl': sl,
                 'tp': tp,
                 'initial_risk_usd': float(initial_risk_usd),

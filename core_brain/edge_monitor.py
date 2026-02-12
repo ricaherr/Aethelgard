@@ -18,13 +18,14 @@ class EdgeMonitor(threading.Thread):
     Incluye detección de operaciones externas de MT5 y auditoría de señales.
     """
     
-    def __init__(self, storage: StorageManager, mt5_connector: Optional[Any] = None, interval_seconds: int = 60):
+    def __init__(self, storage: StorageManager, mt5_connector: Optional[Any] = None, trade_listener: Optional[Any] = None, interval_seconds: int = 60):
         super().__init__(daemon=True)
         self.storage = storage
         self.interval_seconds = interval_seconds
         self.running = True
         self.name = "EdgeMonitor"
         self.mt5_connector = mt5_connector  # Injected dependency (reuse existing instance)
+        self.trade_listener = trade_listener  # TradeClosureListener for reconciliation
         
     def run(self) -> None:
         """Loop principal del monitor"""
@@ -72,7 +73,11 @@ class EdgeMonitor(threading.Thread):
         return self.mt5_connector
     
     def _check_mt5_external_operations(self) -> None:
-        """Comparar posiciones MT5 con operaciones activas del bot"""
+        """Comparar posiciones MT5 con operaciones activas del bot
+        
+        IMPORTANTE: Primero reconcilia cierres pendientes (MT5 → DB)
+        para garantizar que la comparación sea contra datos actualizados.
+        """
         mt5 = self._get_mt5_connector()
         if not mt5:
             return
@@ -83,16 +88,22 @@ class EdgeMonitor(threading.Thread):
                 if not mt5.connect():
                     return
             
-            # Obtener posiciones actuales de MT5
+            # PASO 1: Reconciliar cierres pendientes (sincronizar DB con MT5)
+            if self.trade_listener:
+                mt5.reconcile_closed_trades(self.trade_listener, hours_back=24)
+            else:
+                logger.warning("⚠️  TradeClosureListener no disponible - Reconciliación omitida")
+            
+            # PASO 2: Obtener posiciones ABIERTAS de MT5 (ya sincronizadas)
             mt5_positions = mt5.get_open_positions()
             if mt5_positions is None:
                 return
                 
-            # Obtener operaciones activas del bot
+            # PASO 3: Obtener operaciones activas del bot (ya actualizadas)
             bot_operations = self.storage.get_open_operations()
             
-            # LOG DE PRUEBA DE FUEGO
-            logger.info(f"🔍 Comparando {len(mt5_positions)} posiciones de MT5 contra {len(bot_operations)} operaciones de DB")
+            # LOG DE DIAGNÓSTICO
+            logger.debug(f"🔍 MT5 Open: {len(mt5_positions)} | DB Open: {len(bot_operations)} (post-reconciliation)")
             
             bot_tickets = set()
             
@@ -103,12 +114,9 @@ class EdgeMonitor(threading.Thread):
                 if ticket:
                     bot_tickets.add(int(ticket))
             
-            # Comparar posiciones MT5 con operaciones del bot
+            # PASO 4: Comparar posiciones MT5 con operaciones del bot
             mt5_tickets = set(pos['ticket'] for pos in mt5_positions)
             external_tickets = mt5_tickets - bot_tickets
-            
-            # DEBUG DE COMPARACIÓN
-            print(f"[EDGE DEBUG] MT5 Tickets: {sorted(mt5_tickets)} | DB Tickets: {sorted(bot_tickets)}")
             
             # Reportar operaciones externas detectadas
             for ticket in external_tickets:

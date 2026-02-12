@@ -1059,7 +1059,21 @@ class MT5Connector:
             event = self._create_trade_closed_event(position, deal)
             broker_event = BrokerEvent.from_trade_closed(event)
             
-            success = listener.handle_trade_closed_event(broker_event)
+            # Call async method in sync context using event loop
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # If loop is running, schedule as task (don't wait)
+                    asyncio.create_task(listener.handle_trade_closed_event(broker_event))
+                    success = True  # Assume success, will be processed async
+                else:
+                    # If no loop running, run synchronously
+                    success = loop.run_until_complete(listener.handle_trade_closed_event(broker_event))
+            except RuntimeError:
+                # No event loop, create one for this call
+                success = asyncio.run(listener.handle_trade_closed_event(broker_event))
+            
             if success:
                 logger.info(f"Reconciled trade: {event.ticket} {event.symbol} {event.result.value}")
             else:
@@ -1291,7 +1305,12 @@ class MT5Connector:
                 return {'success': True}
             else:
                 error_msg = result.comment if result else 'Unknown error'
-                logger.error(f"Failed to modify position {ticket}: {error_msg}")
+                # Retcodes 10025 (NO_CHANGES) and 10016 (INVALID_STOPS) are expected broker responses
+                # Don't pollute logs with ERROR, use DEBUG instead
+                if result and result.retcode in [10025, 10016]:
+                    logger.debug(f"MT5 rejected modification for {ticket}: {error_msg} (retcode {result.retcode})")
+                else:
+                    logger.error(f"Failed to modify position {ticket}: {error_msg}")
                 return {'success': False, 'error': error_msg}
         
         except Exception as e:

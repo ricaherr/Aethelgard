@@ -456,6 +456,15 @@ class PositionManager:
         entry_price = metadata.get('entry_price', 0)
         direction = metadata.get('direction', '')
         
+        # FALLBACK: Get direction from MT5 position if not in metadata
+        # (for manual positions or positions opened before direction tracking)
+        if not direction:
+            direction = position.get('type', '')
+            if direction:
+                logger.info(
+                    f"Direction missing from metadata for {ticket}, using MT5 type: {direction}"
+                )
+        
         sl_atr_multiplier = regime_config.get('sl_atr_multiplier', 1.5)
         tp_atr_multiplier = regime_config.get('tp_atr_multiplier', 2.0)
         
@@ -470,17 +479,20 @@ class PositionManager:
             new_tp = entry_price - tp_distance
         else:
             logger.error(
-                f"Invalid direction for position {ticket}: {direction}"
+                f"Invalid direction for position {ticket}: '{direction}' "
+                f"(metadata: {metadata.get('direction')}, MT5 type: {position.get('type')})"
             )
             return False
         
         # Validate and modify position
+        # MT5 comment limit: 31 chars total
+        regime_short = current_regime.value[:3].upper()  # NORMAL → NOR, TREND → TRE
         return self._modify_with_validation(
             ticket=ticket,
             symbol=symbol,
             new_sl=new_sl,
             new_tp=new_tp,
-            reason=f"REGIME_CHANGE_TO_{current_regime.value}"
+            reason=f"RGM_{regime_short}"
         )
     
     def _emergency_close(self, position: Dict, reason: str) -> bool:
@@ -627,10 +639,18 @@ class PositionManager:
                 return True
             else:
                 # Modification failed - rollback metadata
-                logger.error(
-                    f"Failed to modify position {ticket}: {result.get('error')} - "
-                    f"Rolling back metadata"
-                )
+                error_msg = result.get('error', 'Unknown')
+                # Expected broker responses (No changes / Invalid stops) - log as DEBUG
+                if error_msg in ['No changes', 'Invalid stops']:
+                    logger.debug(
+                        f"MT5 rejected modification for {ticket}: {error_msg} - "
+                        f"Rolling back metadata"
+                    )
+                else:
+                    logger.error(
+                        f"Failed to modify position {ticket}: {error_msg} - "
+                        f"Rolling back metadata"
+                    )
                 self.storage.rollback_position_modification(ticket)
                 return False
                 

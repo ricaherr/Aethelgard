@@ -19,7 +19,7 @@ export function PortfolioView() {
             console.log('[Portfolio] Positions data:', positionsData);
             setPositions(positionsData.positions || []);
 
-            // Fetch risk summary
+            // Fetch risk summary (includes real-time balance from MT5 if connected)
             console.log('[Portfolio] Fetching risk summary...');
             const riskRes = await fetch('/api/risk/summary');
             console.log('[Portfolio] Risk response status:', riskRes.status);
@@ -37,7 +37,10 @@ export function PortfolioView() {
 
     useEffect(() => {
         fetchPortfolioData();
-        const interval = setInterval(fetchPortfolioData, 10000); // Refresh every 10s
+        
+        // Auto-refresh balance every 30s (balance updates from MT5 in real-time)
+        const interval = setInterval(fetchPortfolioData, 30000);
+        
         return () => clearInterval(interval);
     }, []);
 

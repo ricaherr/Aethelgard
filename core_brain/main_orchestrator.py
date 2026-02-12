@@ -444,6 +444,9 @@ class MainOrchestrator:
         5. Update statistics
         """
         try:
+            # HOT-RELOAD: Recargar estado de módulos para detectar cambios desde UI
+            self.modules_enabled_global = self.storage.get_global_modules_enabled()
+            
             # Check if we need to reset stats for new day
             self.stats.reset_if_new_day()
             

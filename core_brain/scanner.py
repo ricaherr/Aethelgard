@@ -80,10 +80,12 @@ class ScannerEngine:
         config_path: str = "config/config.json",
         regime_config_path: Optional[str] = None,
         scan_mode: str = "STANDARD",  # Nuevo parámetro para el modo de escaneo
+        storage: Optional[Any] = None,  # Para hot-reload de módulos
     ):
         self.assets = list(assets) if assets else []
         self.provider = data_provider
         self.config_path = config_path
+        self.storage = storage  # Referencia para verificar toggles
         cfg = _load_config(config_path)
         sc = cfg.get("scanner", {})
 
@@ -261,6 +263,18 @@ class ScannerEngine:
             self.cpu_limit_pct,
         )
         while self._running:
+            # HOT-RELOAD: Verificar si scanner está habilitado en DB
+            if self.storage:
+                try:
+                    modules_enabled = self.storage.get_global_modules_enabled()
+                    if not modules_enabled.get("scanner", True):
+                        logger.debug("[SCANNER] Módulo deshabilitado - esperando reactivación...")
+                        time.sleep(10)  # Esperar 10s y verificar de nuevo
+                        continue
+                except Exception as e:
+                    logger.warning(f"[SCANNER] Error verificando toggle: {e}")
+            
+            # Módulo habilitado - ejecutar ciclo normal
             try:
                 self._run_cycle()
             except Exception as e:

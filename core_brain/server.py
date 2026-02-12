@@ -5,7 +5,7 @@ Gestiona múltiples conexiones simultáneas y diferencia entre conectores
 import json
 import logging
 import asyncio
-from typing import Dict, Set, Any, AsyncGenerator
+from typing import Dict, Set, Any, AsyncGenerator, Optional
 from datetime import datetime
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
@@ -86,6 +86,96 @@ class ConnectionManager:
 manager = ConnectionManager()
 regime_classifier = RegimeClassifier()
 storage = StorageManager()
+
+# MT5 Connector reference (lazy-loaded when needed)
+_mt5_connector_instance = None
+
+def _get_mt5_connector() -> Optional[Any]:
+    """Lazy-load MT5 connector for balance queries"""
+    global _mt5_connector_instance
+    if _mt5_connector_instance is None:
+        try:
+            from connectors.mt5_connector import MT5Connector
+            _mt5_connector_instance = MT5Connector()
+            # Connect immediately after creation
+            if not _mt5_connector_instance.connect():
+                logger.warning("MT5Connector created but connection failed")
+                _mt5_connector_instance = None
+                return None
+        except Exception as e:
+            logger.warning(f"Could not load MT5Connector: {e}")
+            return None
+    
+    # Verify connection is still active
+    if _mt5_connector_instance and not _mt5_connector_instance.is_connected:
+        try:
+            _mt5_connector_instance.connect()
+        except Exception as e:
+            logger.debug(f"Reconnection attempt failed: {e}")
+    
+    return _mt5_connector_instance
+
+def _get_account_balance() -> float:
+    """
+    Get real account balance from MT5 or cached value.
+    
+    Returns:
+        Account balance (USD) from MT5 if connected, otherwise cached or default
+    """
+    # Try to get from MT5 directly
+    mt5 = _get_mt5_connector()
+    if mt5:
+        try:
+            balance = mt5.get_account_balance()
+            # Cache balance in system_state for future queries
+            storage.update_system_state({
+                "account_balance": balance,
+                "balance_source": "MT5_LIVE",
+                "balance_last_update": datetime.now().isoformat()
+            })
+            return balance
+        except Exception as e:
+            logger.debug(f"Could not get MT5 balance: {e}")
+    
+    # Fallback to cached balance in DB
+    try:
+        state = storage.get_system_state()
+        cached_balance = state.get("account_balance")
+        if cached_balance:
+            return float(cached_balance)
+    except Exception as e:
+        logger.debug(f"Could not get cached balance: {e}")
+    
+    # Final fallback (initial capital)
+    logger.warning("Using default balance 10000.0 - MT5 not connected")
+    storage.update_system_state({
+        "account_balance": 10000.0,
+        "balance_source": "DEFAULT",
+        "balance_last_update": datetime.now().isoformat()
+    })
+    return 10000.0
+
+def _get_balance_metadata() -> Dict[str, Any]:
+    """
+    Get balance metadata (source, last update timestamp).
+    
+    Returns:
+        Dict with source ('MT5_LIVE' | 'CACHED' | 'DEFAULT') and last_update timestamp
+    """
+    try:
+        state = storage.get_system_state()
+        return {
+            "source": state.get("balance_source", "UNKNOWN"),
+            "last_update": state.get("balance_last_update", datetime.now().isoformat()),
+            "is_live": state.get("balance_source") == "MT5_LIVE"
+        }
+    except Exception as e:
+        logger.debug(f"Could not get balance metadata: {e}")
+        return {
+            "source": "UNKNOWN",
+            "last_update": datetime.now().isoformat(),
+            "is_live": False
+        }
 
 # Estado para detectar cambios de régimen
 _last_regime_by_symbol: Dict[str, MarketRegime] = {}
@@ -408,6 +498,17 @@ def create_app() -> FastAPI:
             
             mt5 = MT5Connector()
             if mt5.connect():
+                # Update cached balance when we connect to MT5
+                try:
+                    current_balance = mt5.get_account_balance()
+                    storage.update_system_state({
+                        "account_balance": current_balance,
+                        "balance_source": "MT5_LIVE",
+                        "balance_last_update": datetime.now().isoformat()
+                    })
+                except Exception as e:
+                    logger.debug(f"Could not update cached balance: {e}")
+                
                 # Get open positions from MT5
                 mt5_positions = mt5.get_open_positions()
                 
@@ -483,6 +584,8 @@ def create_app() -> FastAPI:
     async def get_risk_summary() -> Dict[str, Any]:
         """
         Get account risk summary with distribution by asset type.
+        Uses real MT5 balance if connected, otherwise cached or default value.
+        Includes metadata about balance source (MT5_LIVE, CACHED, DEFAULT).
         """
         try:
             # Get open positions
@@ -490,8 +593,9 @@ def create_app() -> FastAPI:
             positions = positions_response.get("positions", [])
             total_risk = positions_response.get("total_risk_usd", 0.0)
             
-            # Get account balance (simplified - would come from connector)
-            account_balance = 10000.0  # TODO: Get from connector
+            # Get REAL account balance from MT5 (or cached/default)
+            account_balance = _get_account_balance()
+            balance_metadata = _get_balance_metadata()
             
             # Calculate risk percentage
             risk_percentage = (total_risk / account_balance * 100) if account_balance > 0 else 0.0
@@ -520,6 +624,7 @@ def create_app() -> FastAPI:
             return {
                 "total_risk_usd": round(total_risk, 2),
                 "account_balance": account_balance,
+                "balance_metadata": balance_metadata,
                 "risk_percentage": round(risk_percentage, 2),
                 "max_allowed_risk_pct": max_allowed_risk,
                 "positions_by_asset": by_asset,
@@ -531,6 +636,7 @@ def create_app() -> FastAPI:
             return {
                 "total_risk_usd": 0.0,
                 "account_balance": 0.0,
+                "balance_metadata": {"source": "ERROR", "last_update": datetime.now().isoformat(), "is_live": False},
                 "risk_percentage": 0.0,
                 "max_allowed_risk_pct": 5.0,
                 "positions_by_asset": {},
@@ -597,17 +703,19 @@ def create_app() -> FastAPI:
             # Broadcast update
             status = "enabled" if enabled else "disabled"
             await broadcast_thought(
-                f"Module '{module_name}' {status} by user.", 
+                f"Module '{module_name}' {status} by user. Changes apply in next cycle (~1-10s)", 
                 module="CORE"
             )
             
-            logger.info(f"Module {module_name} {status}")
+            logger.info(f"Module {module_name} {status} - Hot-reload in next cycle")
             
             return {
                 "status": "success",
                 "module": module_name,
                 "enabled": enabled,
-                "message": f"Module '{module_name}' {status} successfully"
+                "message": f"Module '{module_name}' {status} successfully. Changes apply in next cycle (~1-10s)",
+                "hot_reload": True,
+                "latency_seconds": "1-10"
             }
             
         except HTTPException:
