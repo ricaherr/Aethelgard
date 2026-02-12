@@ -67,10 +67,12 @@
       "TREND": 72,
       "RANGE": 4,
       "VOLATILE": 2,
-      "CRASH": 1
+      "CRASH": 1,
+      "NEUTRAL": 168
     },
     "breakeven": {
       "enabled": true,
+      "_comment": "min_profit_distance_pips is fallback when ATR unavailable. System uses 0.5x ATR dynamically",
       "min_profit_distance_pips": 5,
       "min_time_minutes": 15,
       "include_commission": true,

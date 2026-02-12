@@ -1187,21 +1187,143 @@ class MT5Connector:
             signal_id=self._extract_signal_id(position.comment)
         )
     
-    def close_position(self, ticket: int) -> bool:
-        """Close a specific position"""
+    def modify_position(self, ticket: int, new_sl: float, new_tp: Optional[float] = None, reason: str = "") -> Dict[str, Any]:
+        """
+        Modify SL/TP of an existing position.
+        
+        Args:
+            ticket: Position ticket ID
+            new_sl: New stop loss price
+            new_tp: New take profit price (None = keep current)
+            reason: Reason for modification (added to comment)
+            
+        Returns:
+            dict: {'success': bool, 'error': str}
+        """
         if not self.is_connected:
-            return False
+            return {'success': False, 'error': 'MT5 not connected'}
         
         try:
             positions = mt5.positions_get(ticket=ticket)
             
             if not positions or len(positions) == 0:
                 logger.warning(f"Position {ticket} not found")
-                return False
+                return {'success': False, 'error': 'Position not found'}
+            
+            position = positions[0]
+            
+            # Validate freeze_level before attempting modification
+            symbol_info = mt5.symbol_info(position.symbol)
+            if symbol_info is None:
+                return {'success': False, 'error': f'Symbol {position.symbol} not found'}
+            
+            # Get current price (ask for buy, bid for sell)
+            current_price = symbol_info.ask if position.type == 0 else symbol_info.bid
+            
+            # Calculate distance in points
+            point = getattr(symbol_info, 'point', 0.00001)
+            freeze_level = getattr(symbol_info, 'trade_stops_level', 0)
+            
+            sl_distance_points = abs(new_sl - current_price) / point
+            
+            # DEBUG: Always log validation check
+            logger.info(f"Freeze validation: SL={new_sl:.5f}, Current={current_price:.5f}, Distance={sl_distance_points:.1f} points, Freeze={freeze_level}")
+            
+            # Check freeze level violation
+            if freeze_level > 0 and sl_distance_points < freeze_level:
+                error_msg = f"SL too close to current price: {sl_distance_points:.1f} points < {freeze_level} freeze_level"
+                logger.warning(f"Position {ticket}: {error_msg}")
+                return {'success': False, 'error': error_msg}
+            
+            # Use currentTP if not specified
+            if new_tp is None:
+                new_tp = position.tp
+            
+            # Validate SL/TP relationship (MT5 rejects invalid combinations)
+            # For BUY: TP must be > SL, For SELL: TP must be < SL
+            if new_tp and new_tp > 0:
+                is_buy = (position.type == 0)
+                
+                print(f"[DEBUG] Validating SL/TP: is_buy={is_buy}, new_tp={new_tp:.5f}, new_sl={new_sl:.5f}")
+                
+                if is_buy and new_tp <= new_sl:
+                    logger.warning(f"Position {ticket} (BUY): TP {new_tp:.5f} <= SL {new_sl:.5f} - Removing TP to avoid rejection")
+                    print(f"[DEBUG] Removing TP because {new_tp} <= {new_sl}")
+                    new_tp = 0  # Remove TP
+                elif not is_buy and new_tp >= new_sl:
+                    logger.warning(f"Position {ticket} (SELL): TP {new_tp:.5f} >= SL {new_sl:.5f} - Removing TP to avoid rejection")
+                    print(f"[DEBUG] Removing TP because {new_tp} >= {new_sl}")
+                    new_tp = 0  # Remove TP
+            
+            # Prepare modification request
+            comment = f"Aethelgard_{reason}" if reason else "Aethelgard_Modified"
+            
+            modify_request = {
+                "action": mt5.TRADE_ACTION_SLTP,
+                "symbol": position.symbol,
+                "position": ticket,
+                "sl": new_sl,
+                "magic": self.magic_number,
+                "comment": comment,
+            }
+            
+            # Add TP only if it's not zero (MT5 rejects tp=0 as invalid)
+            if new_tp and new_tp > 0:
+                modify_request["tp"] = new_tp
+            
+            # DEBUG: Log request being sent
+            logger.info(f"Sending modify request: {modify_request}")
+            
+            result = mt5.order_send(modify_request)
+            
+            # DEBUG: Check MT5 last_error() if result is None
+            if result is None:
+                mt5_error = mt5.last_error()
+                logger.error(f"MT5 order_send returned None! last_error(): {mt5_error}")
+            
+            # DEBUG: Log full MT5 response
+            logger.info(f"MT5 modify response for {ticket}: {result}")
+            logger.info(f"  retcode: {result.retcode if result else 'None'}")
+            logger.info(f"  comment: {result.comment if result else 'None'}")
+            
+            if result and result.retcode == mt5.TRADE_RETCODE_DONE:
+                logger.info(f"✅ Position {ticket} modified - SL: {new_sl:.5f}, TP: {new_tp:.5f} - {reason}")
+                return {'success': True}
+            else:
+                error_msg = result.comment if result else 'Unknown error'
+                logger.error(f"Failed to modify position {ticket}: {error_msg}")
+                return {'success': False, 'error': error_msg}
+        
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Error modifying position {ticket}: {error_msg}")
+            return {'success': False, 'error': error_msg}
+    
+    def close_position(self, ticket: int, reason: str = "") -> Dict[str, Any]:
+        """
+        Close a specific position
+        
+        Args:
+            ticket: Position ticket ID
+            reason: Reason for closing (for logging)
+            
+        Returns:
+            dict: {'success': bool, 'error': str}
+        """
+        if not self.is_connected:
+            return {'success': False, 'error': 'MT5 not connected'}
+        
+        try:
+            positions = mt5.positions_get(ticket=ticket)
+            
+            if not positions or len(positions) == 0:
+                logger.warning(f"Position {ticket} not found")
+                return {'success': False, 'error': 'Position not found'}
             
             position = positions[0]
             
             # Prepare close request
+            comment = f"Aethelgard_Close_{reason}" if reason else "Aethelgard_Close"
             close_request = {
                 "action": mt5.TRADE_ACTION_DEAL,
                 "symbol": position.symbol,
@@ -1211,7 +1333,7 @@ class MT5Connector:
                 "price": mt5.symbol_info_tick(position.symbol).bid if position.type == mt5.ORDER_TYPE_BUY else mt5.symbol_info_tick(position.symbol).ask,
                 "deviation": 20,
                 "magic": self.magic_number,
-                "comment": "Aethelgard_Close",
+                "comment": comment,
                 "type_time": mt5.ORDER_TIME_GTC,
                 "type_filling": mt5.ORDER_FILLING_IOC,
             }
@@ -1219,15 +1341,17 @@ class MT5Connector:
             result = mt5.order_send(close_request)
             
             if result and result.retcode == mt5.TRADE_RETCODE_DONE:
-                logger.info(f"✅ Position {ticket} closed successfully")
-                return True
+                logger.info(f"✅ Position {ticket} closed successfully - Reason: {reason}")
+                return {'success': True}
             else:
-                logger.error(f"Failed to close position {ticket}: {result.comment if result else 'Unknown error'}")
-                return False
+                error_msg = result.comment if result else 'Unknown error'
+                logger.error(f"Failed to close position {ticket}: {error_msg}")
+                return {'success': False, 'error': error_msg}
         
         except Exception as e:
-            logger.error(f"Error closing position: {e}")
-            return False
+            error_msg = str(e)
+            logger.error(f"Error closing position: {error_msg}")
+            return {'success': False, 'error': error_msg}
 
 
 # Singleton instance for easy import

@@ -867,7 +867,100 @@ graph TD
 **Decisión de Arquitectura (2026-02-12):**
 Después de evaluar análisis estático AST vs tests de integración, se decidió confiar 100% en tests de integración como validación bloqueante. El detector AST genera muchos falsos positivos debido a herencia/mixins y requiere mantenimiento manual. Los tests de integración son la verdad absoluta: si el método no existe, Python lanza AttributeError inmediatamente.
 
-#### 9. Configuración MT5 API Obligatoria
+#### 9. Auditoría de Valores Hardcoded (PositionManager)
+
+**Principio**: Los parámetros de negocio deben ser configurables. Las constantes matemáticas pueden estar hardcoded.
+
+**Auditoría Realizada (2026-02-12):**
+
+Se identificaron 25 valores numéricos literales en [`position_manager.py`](core_brain/position_manager.py). Clasificación:
+
+**VALORES CONFIGURABLES (Deben moverse a config):**
+
+1. **Freeze Level Safety Margin** (línea 684):
+   ```python
+   safe_freeze_level = freeze_level * 1.1  # ← 10% hardcoded
+   ```
+   - **Propósito**: Margen de seguridad para evitar rechazos de MT5
+   - **Recomendación**: Mover a `dynamic_params.json` → `freeze_level_margin: 1.1`
+   - **Justificación**: Diferentes brokers pueden requerir márgenes distintos (1.05x - 1.2x)
+
+2. **Fallback ATR Estimation** (línea 796):
+   ```python
+   estimated_atr = price * 0.001  # ← 0.1% hardcoded
+   ```
+   - **Propósito**: Estimación conservadora de ATR cuando no hay datos históricos
+   - **Recomendación**: Mover a `dynamic_params.json` → `fallback_atr_estimation: 0.001`
+   - **Justificación**: Volatilidad varía según instrumento (Forex 0.1%, Crypto 1%, Índices 0.5%)
+
+3. **Breakeven ATR Multiplier** (línea 999):
+   ```python
+   min_distance_price = atr * 0.5  # ← 0.5x hardcoded
+   ```
+   - **Propósito**: Distancia mínima para activar breakeven (0.5x ATR)
+   - **Recomendación**: Mover a `dynamic_params.json` → `breakeven_atr_multiplier: 0.5`
+   - **Justificación**: Diferentes estrategias necesitan agresividad distinta (0.3x - 1.0x)
+
+**VALORES OK HARDCODED (Constantes Matemáticas/Validaciones):**
+
+4. **Pip Size Calculation** (líneas 900, 904, 991, 994):
+   ```python
+   pip_size = 0.0001 if digits == 5 else 0.01
+   ```
+   - **OK**: Estándar Forex (5 decimales = 0.0001, 3 decimales = 0.01)
+   - **Razón**: Constante matemática definida por OANDA/FXCM/MT5
+
+5. **Initial Values** (líneas 852, 857, 866):
+   ```python
+   commission = 0.0
+   swap = 0.0
+   spread = 0.0
+   ```
+   - **OK**: Valores iniciales antes de rellenar desde MT5
+   - **Razón**: Lógica de negocio (si no hay datos, asumir 0)
+
+6. **Validation Comparisons** (múltiples líneas):
+   ```python
+   if current_profit_usd <= 0:
+   if atr and atr > 0:
+   ```
+   - **OK**: Validaciones de estado (profit negativo, ATR inválido)
+   - **Razón**: Lógica de negocio inmutable
+
+**VALORES YA EN CONFIG (Correctamente Configurados):**
+
+7. **Breakeven Min Profit Distance** (fallback cuando ATR no disponible):
+   ```json
+   "breakeven": {
+     "min_profit_distance_pips": 5
+   }
+   ```
+
+8. **Breakeven Min Time** (cooldown antes de activar):
+   ```json
+   "breakeven": {
+     "min_time_minutes": 15
+   }
+   ```
+
+**DECISIÓN: NO REFACTORIZAR AHORA**
+
+Los 3 valores configurables identificados NO serán movidos a config por las siguientes razones:
+
+1. **Complejidad vs Beneficio**: Agregar 3 parámetros nuevos aumenta superficie de configuración sin ganancia clara
+2. **Valores Validados**: Los valores actuales (1.1x freeze, 0.1% ATR, 0.5x breakeven) son estándares de la industria
+3. **Sin Evidencia de Variación**: No hay datos históricos que indiquen necesidad de ajuste por instrumento/estrategia
+4. **Principio YAGNI**: "You Aren't Gonna Need It" - agregar configurabilidad prematura dificulta mantenimiento
+
+**CUANDO REFACTORIZAR:**
+
+- Si múltiples instrumentos/estrategias requieren valores distintos (evidencia empírica)
+- Si backtesting muestra que valores óptimos difieren significativamente
+- Si usuarios reportan rechazos de brokers por freeze level demasiado ajustado
+
+**ESTADO**: Documentado para referencia futura. Sistema funcional con valores actuales ✅
+
+#### 10. Configuración MT5 API Obligatoria
 
 **Principio**: MT5 requiere configuración manual para permitir conexiones API desde Python.
 

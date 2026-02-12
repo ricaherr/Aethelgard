@@ -83,7 +83,7 @@ class PositionManager:
         
         if not open_positions:
             logger.debug("No open positions to monitor")
-            return {"total_positions": 0, "actions": []}
+            return {"monitored": 0, "actions": []}
         
         actions = []
         
@@ -137,8 +137,8 @@ class PositionManager:
                                 f"New SL: {breakeven_price}"
                             )
                             
-                            # Modify position directly via connector
-                            result = self.connector.modify_position(ticket, breakeven_price, current_tp)
+                            # Modify position directly via connector with informative comment
+                            result = self.connector.modify_position(ticket, breakeven_price, current_tp, reason="BREAKEVEN")
                             if result and result.get('success', False):
                                 actions.append({
                                     'ticket': ticket,
@@ -171,8 +171,8 @@ class PositionManager:
                                 f"New SL: {trailing_sl}"
                             )
                             
-                            # Modify position directly via connector
-                            result = self.connector.modify_position(ticket, trailing_sl, current_tp)
+                            # Modify position directly via connector with informative comment
+                            result = self.connector.modify_position(ticket, trailing_sl, current_tp, reason="TRAILING_STOP")
                             if result and result.get('success', False):
                                 actions.append({
                                     'ticket': ticket,
@@ -207,7 +207,7 @@ class PositionManager:
                 continue
         
         summary = {
-            'total_positions': len(open_positions),
+            'monitored': len(open_positions),
             'actions': actions,
             'timestamp': datetime.now().isoformat()
         }
@@ -219,6 +219,38 @@ class PositionManager:
         )
         
         return summary
+    
+    def _get_current_regime_with_fallback(self, symbol: str) -> 'MarketRegime':
+        """
+        Get current market regime for symbol with fallback to NEUTRAL.
+        
+        RegimeClassifier may not have enough data or may fail to classify
+        when scanner is disabled. This method provides safe fallback.
+        
+        Args:
+            symbol: Symbol to classify
+            
+        Returns:
+            MarketRegime: Classified regime or NEUTRAL if classification fails
+        """
+        from models.signal import MarketRegime
+        
+        try:
+            # RegimeClassifier.classify() returns MarketRegime directly
+            # without needing OHLC data if it has historical data loaded
+            regime = self.regime_classifier.classify()
+            
+            # Map "NORMAL" value (no mapping needed, return as-is)
+            if hasattr(regime, 'value') and regime.value == 'NORMAL':
+                return MarketRegime.NORMAL
+            
+            return regime
+        except (AttributeError, Exception) as e:
+            logger.debug(
+                f"Could not classify regime for {symbol}: {e}. "
+                f"Defaulting to NORMAL"
+            )
+            return MarketRegime.NORMAL
     
     def _exceeds_max_drawdown(self, position: Dict) -> bool:
         """
@@ -310,8 +342,8 @@ class PositionManager:
             )
             return False
         
-        # Get current regime for symbol
-        current_regime = self.regime_classifier.classify_regime(symbol)
+        # Get current regime for symbol (with fallback to NEUTRAL)
+        current_regime = self._get_current_regime_with_fallback(symbol)
         
         # Get threshold for this regime
         threshold_hours = self.stale_thresholds.get(
@@ -360,8 +392,8 @@ class PositionManager:
             )
             return False
         
-        # Get current regime
-        current_regime = self.regime_classifier.classify_regime(symbol)
+        # Get current regime (with fallback to NEUTRAL)
+        current_regime = self._get_current_regime_with_fallback(symbol)
         
         # Check if changed
         if current_regime.value != entry_regime:
@@ -386,8 +418,8 @@ class PositionManager:
         ticket = position.get('ticket')
         symbol = position.get('symbol')
         
-        # Get current regime
-        current_regime = self.regime_classifier.classify_regime(symbol)
+        # Get current regime (with fallback to NEUTRAL)
+        current_regime = self._get_current_regime_with_fallback(symbol)
         
         # Get regime adjustment configuration
         regime_config = self.regime_adjustments.get(current_regime.value, {})
@@ -583,9 +615,9 @@ class PositionManager:
             )
             return False
         
-        # 3. Execute modification via connector
+        # 3. Execute modification via connector with reason in comment
         try:
-            result = self.connector.modify_position(ticket, new_sl, new_tp)
+            result = self.connector.modify_position(ticket, new_sl, new_tp, reason=reason)
             
             if result.get('success'):
                 logger.info(
@@ -639,8 +671,8 @@ class PositionManager:
             return False
         
         # Get freeze level (minimum distance in points)
-        freeze_level = symbol_info.get('trade_stops_level', 0)
-        point = symbol_info.get('point', 0.00001)
+        freeze_level = getattr(symbol_info, 'trade_stops_level', 0)
+        point = getattr(symbol_info, 'point', 0.00001)
         
         if freeze_level <= 0:
             logger.debug(
@@ -740,23 +772,39 @@ class PositionManager:
         Returns:
             float: ATR value or None if not available
         """
-        # Try to get ATR from regime classifier
+        # Try to get ATR from regime classifier (if scanner is running)
         try:
-            regime_data = self.regime_classifier.get_regime_data(symbol)
-            if regime_data:
-                atr = regime_data.get('atr')
+            # RegimeClassifier doesn't have get_regime_data() - use get_metrics() instead
+            if hasattr(self.regime_classifier, 'get_metrics'):
+                metrics = self.regime_classifier.get_metrics()
+                atr = metrics.get('atr')
                 if atr and atr > 0:
                     return float(atr)
         except Exception as e:
-            logger.warning(
+            logger.debug(
                 f"Could not get ATR from regime classifier for {symbol}: {e}"
             )
         
-        # Fallback: Calculate ATR from connector
-        # This would require implementing ATR calculation from OHLC data
-        # For now, return None and log warning
+        # Fallback: Estimate ATR from MT5 symbol info (use typical ATR = 0.1% of price)
+        try:
+            symbol_info = self.connector.get_symbol_info(symbol)
+            if symbol_info:
+                # Use current price to estimate conservative ATR
+                price = getattr(symbol_info, 'ask', 0)
+                if price > 0:
+                    # Estimate ATR as 0.1% of current price (conservative for major pairs)
+                    estimated_atr = price * 0.001
+                    logger.debug(
+                        f"Using estimated ATR for {symbol}: {estimated_atr:.5f} "
+                        f"(0.1% of price {price:.5f})"
+                    )
+                    return estimated_atr
+        except Exception as e:
+            logger.warning(f"Could not estimate ATR for {symbol}: {e}")
+        
+        # Last resort: return None
         logger.warning(
-            f"ATR not available for {symbol} - Cannot proceed with adjustment"
+            f"ATR not available for {symbol} - Trailing stops disabled"
         )
         return None
     
@@ -819,9 +867,9 @@ class PositionManager:
             if breakeven_config.get('include_spread', True):
                 symbol_info = self.connector.get_symbol_info(symbol)
                 if symbol_info:
-                    ask = float(symbol_info.get('ask', 0))
-                    bid = float(symbol_info.get('bid', 0))
-                    point = float(symbol_info.get('point', 0.00001))
+                    ask = float(getattr(symbol_info, 'ask', 0))
+                    bid = float(getattr(symbol_info, 'bid', 0))
+                    point = float(getattr(symbol_info, 'point', 0.00001))
                     
                     if ask > 0 and bid > 0:
                         spread_points = (ask - bid) / point
@@ -852,15 +900,17 @@ class PositionManager:
             pip_size = 0.0001  # Default for most pairs
             symbol_info = self.connector.get_symbol_info(symbol)
             if symbol_info:
-                digits = symbol_info.get('digits', 5)
+                digits = getattr(symbol_info, 'digits', 5)
                 pip_size = 0.0001 if digits == 5 else 0.01
             
             # Breakeven price = entry + cost in pips
+            # BUY: SL sube desde abajo hacia entry (entry - cost → entry)
+            # SELL: SL baja desde arriba hacia entry (entry + cost → entry)
             position_type = position.get('type')
             if position_type == 'BUY':
                 breakeven_price = entry_price + (cost_in_pips * pip_size)
             elif position_type == 'SELL':
-                breakeven_price = entry_price - (cost_in_pips * pip_size)
+                breakeven_price = entry_price + (cost_in_pips * pip_size)  # SL baja desde arriba hacia entry
             else:
                 logger.warning(f"Unknown position type: {position_type}")
                 return None
@@ -926,19 +976,35 @@ class PositionManager:
             if breakeven_real is None:
                 return False, "Could not calculate breakeven price"
             
-            # 3. Check current price vs breakeven
+            # 3. Check current price vs breakeven (must be in profit)
             current_price = float(position.get('current_price', 0))
             position_type = position.get('type')
+            entry_price = float(metadata.get('entry_price', 0))
             
-            # Get minimum distance in pips
-            min_distance_pips = breakeven_config.get('min_profit_distance_pips', 5)
+            # Calculate current profit in USD (explicit validation)
+            current_profit_usd = float(position.get('profit', 0))
+            if current_profit_usd <= 0:
+                return False, f"Position in loss (${current_profit_usd:.2f}) - breakeven only applies to winning trades"
+            
+            # Get minimum distance - DYNAMIC based on ATR
             symbol_info = self.connector.get_symbol_info(symbol)
             pip_size = 0.0001  # Default
             if symbol_info:
-                digits = symbol_info.get('digits', 5)
+                digits = getattr(symbol_info, 'digits', 5)
                 pip_size = 0.0001 if digits == 5 else 0.01
             
-            min_distance_price = min_distance_pips * pip_size
+            # Try to get dynamic distance from ATR (like trailing stops)
+            atr = self.get_current_atr(symbol)
+            if atr and atr > 0:
+                # Use 0.5x ATR as minimum distance (more conservative than trailing's 2-3x)
+                min_distance_price = atr * 0.5
+                min_distance_pips = min_distance_price / pip_size
+                logger.debug(f"Using dynamic distance: {min_distance_pips:.1f} pips (0.5x ATR)")
+            else:
+                # Fallback to config value if ATR not available
+                min_distance_pips = breakeven_config.get('min_profit_distance_pips', 5)
+                min_distance_price = min_distance_pips * pip_size
+                logger.debug(f"Using static distance: {min_distance_pips} pips (ATR unavailable)")
             
             # Check distance based on position type
             if position_type == 'BUY':
@@ -1017,7 +1083,7 @@ class PositionManager:
                 return None
             
             # Get regime-specific multiplier (FASE 4B: Dynamic by regime)
-            current_regime = self.regime_classifier.classify_regime(symbol)
+            current_regime = self._get_current_regime_with_fallback(symbol)
             regime_name = current_regime.value if hasattr(current_regime, 'value') else str(current_regime)
             
             atr_multipliers_by_regime = trailing_config.get('atr_multipliers_by_regime', {})
@@ -1098,7 +1164,8 @@ class PositionManager:
             symbol_info = self.connector.get_symbol_info(symbol)
             pip_size = 0.0001  # Default
             if symbol_info:
-                digits = symbol_info.get('digits', 5)
+                # SymbolInfo is a namedtuple, not a dict - use attribute access
+                digits = getattr(symbol_info, 'digits', 5)
                 pip_size = 0.0001 if digits == 5 else 0.01
             
             # Calculate current profit in pips

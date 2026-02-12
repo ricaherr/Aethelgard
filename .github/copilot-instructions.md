@@ -4,8 +4,9 @@
 Sistema autónomo, proactivo y agnóstico de trading multihilo. Capacidad de auto-calibración y enfoque comercial (SaaS).
 
 ## 🧠 Reglas de Oro para la IA
-1. **Autonomía Proactiva**: El sistema no espera datos, los busca (ScannerEngine).
-2. **Independencia de Código (Arquitectura Agnóstica)**:
+1. **Revisar Antes de Actuar**: SIEMPRE revisar si algo ya existe antes de agregar o modificar. Si existe, evaluar si es mejor modificar lo existente o crear algo nuevo. Aplica a: reglas, funciones, documentación, configuración, tests.
+2. **Autonomía Proactiva**: El sistema no espera datos, los busca (ScannerEngine).
+3. **Independencia de Código (Arquitectura Agnóstica)**:
    - ✅ **Permitido** importar librerías de brokers (MT5/Rithmic) en:
      - `connectors/` (integración con brokers)
    - ❌ **PROHIBIDO** importar en:
@@ -14,18 +15,19 @@ Sistema autónomo, proactivo y agnóstico de trading multihilo. Capacidad de aut
      - `models/` (modelos de datos agnósticos)
      - `scripts/` (utilitarios deben usar connectors)
      - `tests/` (tests deben usar connectors)
-   - 💡 **Validación**: `qa_guard.py` detecta violaciones automáticamente
-3. **Gestión de Recursos**: Todo proceso pesado debe respetar el `cpu_limit_pct` para no bloquear la máquina del usuario.
-4. **Escalabilidad Comercial**: Las señales y funciones deben filtrarse por niveles de membresía (Basic/Premium) definidos en `config/modules.json`.
-5. **Auto-Calibración**: El sistema debe priorizar el aprendizaje de los datos en `data_vault` para ajustar `dynamic_params.json`.
-6. **Seguridad Primero**: Validar todas las entradas externas (datos de mercado, configuraciones de usuario) antes de procesarlas.
-7. **Documentación Única**: TODO debe documentarse EXCLUSIVAMENTE en AETHELGARD_MANIFESTO.md. NUNCA crear documentos adicionales (README separados, guías, tutoriales). Un solo archivo de verdad.
-8. **Auto-Provisioning**: El sistema debe crear cuentas demo automáticamente en brokers que lo permitan (sin intervención humana). Clasificar brokers: automático vs manual.
-9. **Modo DEMO Autónomo**: Si el usuario elige modo DEMO y no existe cuenta, el sistema debe crearla automáticamente. Solo pedir credenciales en brokers que requieren registro manual.
-10. **Codigo en el chat**: no agregar codigo completo directamente en la conversación, solo fragmentos relevantes y explicaciones.
-11. **Informes Ejecutivos en Chat**: NUNCA crear archivos markdown para reportes, resúmenes o informes de tareas completadas. Entregar SOLO resumen ejecutivo directo en el chat. Los archivos .md son EXCLUSIVAMENTE para documentación técnica permanente (MANIFESTO, ROADMAP).
-12. **ROADMAP Obligatorio**: SIEMPRE actualizar ROADMAP.md al inicio de cada tarea mayor con el plan de trabajo. Marcar tareas completadas (✅) conforme se finalizan. El ROADMAP debe reflejar en tiempo real qué se hizo y qué falta.
-13. **Single Source of Truth (DB)**: Configuración, credenciales y datos del sistema deben residir en la BASE DE DATOS. NO crear archivos JSON/ENV redundantes. La DB es la única fuente de verdad.
+4. **Gestión de Recursos**: Todo proceso pesado debe respetar el `cpu_limit_pct` para no bloquear la máquina del usuario.
+5. **Escalabilidad Comercial**: Las señales y funciones deben filtrarse por niveles de membresía (Basic/Premium) definidos en `config/modules.json`.
+6. **Auto-Calibración**: El sistema debe priorizar el aprendizaje de los datos en `data_vault` para ajustar `dynamic_params.json`.
+7. **Seguridad Primero**: Validar todas las entradas externas (datos de mercado, configuraciones de usuario) antes de procesarlas.
+8. **Documentación Única**: TODO debe documentarse EXCLUSIVAMENTE en AETHELGARD_MANIFESTO.md. NUNCA crear documentos adicionales (README separados, guías, tutoriales). Un solo archivo de verdad.
+9. **Auto-Provisioning**: El sistema debe crear cuentas demo automáticamente en brokers que lo permitan (sin intervención humana). Clasificar brokers: automático vs manual.
+10. **Modo DEMO Autónomo**: Si el usuario elige modo DEMO y no existe cuenta, el sistema debe crearla automáticamente. Solo pedir credenciales en brokers que requieren registro manual.
+11. **Codigo en el chat**: no agregar codigo completo directamente en la conversación, solo fragmentos relevantes y explicaciones.
+12. **Informes Ejecutivos en Chat**: NUNCA crear archivos markdown para reportes, resúmenes o informes de tareas completadas. Entregar SOLO resumen ejecutivo directo en el chat. Los archivos .md son EXCLUSIVAMENTE para documentación técnica permanente (MANIFESTO, ROADMAP).
+13. **ROADMAP Obligatorio**: SIEMPRE actualizar ROADMAP.md al inicio de cada tarea mayor con el plan de trabajo. Marcar tareas completadas (✅) conforme se finalizan. El ROADMAP debe reflejar en tiempo real qué se hizo y qué falta.
+14. **Single Source of Truth (DB)**: Configuración, credenciales y datos del sistema deben residir en la BASE DE DATOS. NO crear archivos JSON/ENV redundantes. La DB es la única fuente de verdad.
+15. **Scripts Mínimos y Útiles**: NO crear scripts de validación/debugging redundantes. Mantener solo los scripts que agregan valor real al usuario final (setup, diagnóstico end-to-end, tests de flujo completo).
+16. **Validaciones Completas Obligatorias**: Después de TODA implementación, tests y validación, comprobar que el sistema funciona sin errores (ejecutar validate_all.py + start.py) antes de dar por terminada la tarea
 14. **Scripts Mínimos y Útiles**: NO crear scripts de validación/debugging redundantes. Mantener solo los scripts que agregan valor real al usuario final (setup, diagnóstico end-to-end, tests de flujo completo).
 
 ## � Reglas de Desarrollo de Código (Resumen - Ver MANIFESTO Completo)
@@ -91,3 +93,9 @@ Sistema autónomo, proactivo y agnóstico de trading multihilo. Capacidad de aut
    - **Comando**: `python scripts/validate_all.py`
 7. **Actualizar ROADMAP.md** marcando tarea como completada (✅).
 8. Actualizar `AETHELGARD_MANIFESTO.md`.
+**9. 🧹 LIMPIEZA WORKSPACE** (OBLIGATORIO después de completar implementación)
+   - Eliminar archivos temporales de debugging (test_*.py, check_*.py en raíz)
+   - Mover scripts de diagnóstico a `scripts/utilities/` (QA Guard permite MT5 imports ahí)
+   - Verificar que `validate_all.py` pasa 100% (6/6 validaciones OK)
+   - Confirmar sistema funcional: `python start.py` sin errores
+   - **Comando verificación**: `python scripts/validate_all.py && python -c "print('✅ Sistema limpio y funcional')"`

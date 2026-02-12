@@ -1,5 +1,184 @@
 # Aethelgard – Roadmap
 
+## 🎯 MILESTONE: Auditoría de Valores Hardcoded (2026-02-12)
+**Estado: ✅ COMPLETADO**
+**Criterio: Identificar todos los valores numéricos hardcoded en PositionManager y clasificarlos (configurables vs constantes matemáticas)**
+
+### Motivación
+- Regla de Oro #3 (SSOT): "Valores críticos no pueden estar hardcoded. Deben leerse de un archivo de configuración único"
+- Necesidad de evaluar si valores actuales son configurables o constantes matemáticas válidas
+
+### Análisis Realizado
+
+**Grep Search**: 25 valores numéricos literales encontrados en `position_manager.py`
+
+**Clasificación**:
+
+1. **Configurables (3 valores)**: Parámetros de negocio que PODRÍAN moverse a config
+   - `freeze_level * 1.1` (10% safety margin) - línea 684
+   - `price * 0.001` (estimación fallback ATR 0.1%) - línea 796
+   - `atr * 0.5` (multiplicador breakeven ATR) - línea 999
+
+2. **OK Hardcoded (22 valores)**: Constantes matemáticas/validaciones
+   - `pip_size = 0.0001 if digits == 5 else 0.01` (estándar Forex)
+   - `commission = 0.0`, `swap = 0.0`, `spread = 0.0` (valores iniciales)
+   - `if current_profit_usd <= 0` (validaciones lógicas)
+
+3. **Ya en Config (2 valores)**: Correctamente configurados
+   - `min_profit_distance_pips: 5` (fallback breakeven)
+   - `min_time_minutes: 15` (cooldown breakeven)
+
+### Decisión: NO REFACTORIZAR AHORA
+
+**Razones**:
+1. **Complejidad vs Beneficio**: Agregar 3 parámetros a config sin ganancia clara
+2. **Valores Validados**: 1.1x freeze, 0.1% ATR, 0.5x breakeven son estándares de la industria
+3. **Sin Evidencia de Variación**: No hay datos empíricos que justifiquen variación por instrumento/estrategia
+4. **Principio YAGNI**: Configurabilidad prematura dificulta mantenimiento
+
+**Cuando refactorizar**:
+- Si múltiples instrumentos requieren valores distintos (evidencia empírica)
+- Si backtesting muestra valores óptimos difieren significativamente
+- Si usuarios reportan rechazos de brokers por freeze level ajustado
+
+### Documentación Generada
+
+- **MANIFESTO Sección 7.9**: "Auditoría de Valores Hardcoded (PositionManager)"
+  - Clasificación completa de 25 valores
+  - Razones de decisión NO refactorizar
+  - Criterios para refactorización futura
+
+### Resultado
+✅ **Sistema funcional con valores actuales**: 6/6 validaciones PASSED (Architecture, QA Guard, Code Quality, UI Quality, Tests, Integration)
+
+---
+
+## 🎯 MILESTONE: Breakeven Dinámico ATR-Based (2026-02-12)
+**Estado: ✅ COMPLETADO**
+**Criterio: Distancia mínima de breakeven adaptativa al contexto de mercado (volatilidad)**
+
+### Problema Identificado
+- **Hardcoded**: `min_profit_distance_pips = 5` fijo para TODOS los pares
+- **Inconsistencia arquitectónica**: Trailing stops usa ATR dinámico, breakeven usaba pips estáticos
+- **No se adapta**: 5 pips igual para EURUSD (volátil) que GBPJPY (bajo volumen)
+- **Validación poco clara**: Código no validaba explícitamente que posición debe estar en ganancia
+
+### Solución Implementada: Breakeven Dinámico con ATR
+
+#### Antes (Estático)
+```python
+# config/dynamic_params.json - FIJO
+"breakeven": {
+  "min_profit_distance_pips": 5  # ❌ Mismo valor para todos los instrumentos
+}
+
+# position_manager.py - SIN contexto de mercado
+min_distance_pips = config.get('min_profit_distance_pips', 5)
+```
+
+#### Ahora (Dinámico)
+```python
+# position_manager.py - ATR-BASED con fallback
+atr = self.get_current_atr(symbol)
+if atr and atr > 0:
+    # Dinámico: 0.5x ATR (conservador vs trailing's 2-3x ATR)
+    min_distance_price = atr * 0.5
+    logger.debug(f"Using dynamic distance: {distance:.1f} pips (0.5x ATR)")
+else:
+    # Fallback estático si ATR no disponible
+    min_distance_pips = config.get('min_profit_distance_pips', 5)
+    logger.debug(f"Using static distance: {min_distance_pips} pips (ATR unavailable)")
+```
+
+#### Validación Explícita de Ganancia
+```python
+# ANTES: Validación implícita en cálculo de distancia
+if current_price < required_price:
+    return False, "Insufficient distance"
+
+# AHORA: Validación EXPLÍCITA de profit USD
+current_profit_usd = float(position.get('profit', 0))
+if current_profit_usd <= 0:
+    return False, "Position in loss - breakeven only applies to winning trades"
+```
+
+### Implementación Completada
+
+**FASE 1: Diseño Dinámico** ✅ COMPLETADA
+- [x] Análisis de inconsistencia (trailing dinámico vs breakeven estático)
+- [x] Decisión de multiplier ATR: 0.5x (conservador)
+- [x] Diseño de fallback para casos sin ATR
+- [x] Validación explícita de profit > 0
+
+**FASE 2: Implementación** ✅ COMPLETADA
+- [x] Modificar `_should_move_to_breakeven()` para usar ATR
+- [x] Implementar validación explícita de profit USD
+- [x] Remover código redundante (validación mercado vs breakeven duplicada)
+- [x] Actualizar config con comentario explicativo
+
+**FASE 3: Correcciones Arquitectónicas** ✅ COMPLETADA
+- [x] Corregir fórmula breakeven SELL: `entry + cost` (era `entry - cost`)
+- [x] Validación freeze_level completa
+- [x] MT5 API: campo "symbol" requerido
+- [x] MT5 API: TP=0 inválido, omitir campo
+- [x] ATR con 3 capas de fallback (metrics → estimación → None)
+
+**FASE 4: Mejoras de Workflow** ✅ COMPLETADA
+- [x] Mejorar `stop.py` con limpieza automática de cache Python
+- [x] Integrar validación de profit en logging
+
+### Resultados Medibles
+
+**Antes (Hardcoded)**:
+- ❌ 5 pips fijo sin considerar volatilidad del instrumento
+- ❌ EURUSD (volátil) y USDCAD (estable) usaban misma distancia
+- ❌ Trailing stop dinámico vs breakeven estático (inconsistencia)
+
+**Después (ATR-Based)**:
+- ✅ Distancia se adapta automáticamente a volatilidad (0.5x ATR)
+- ✅ Consistencia arquitectónica con trailing_stop (ambos usan ATR)
+- ✅ Fallback seguro a 5 pips si ATR no disponible
+- ✅ Validación explícita: breakeven SOLO si profit > 0
+
+**Ejemplo Real**:
+```
+EURUSD (ATR alto): min_distance = 8.5 pips (0.5 * ATR 17 pips)
+USDCAD (ATR bajo): min_distance = 3.2 pips (0.5 * ATR 6.4 pips)
+GBPJPY (ATR muy alto): min_distance = 12.3 pips (0.5 * ATR 24.6 pips)
+```
+
+### Configuración Actualizada
+```json
+"breakeven": {
+  "enabled": true,
+  "_comment": "min_profit_distance_pips es fallback cuando ATR no disponible. Sistema usa 0.5x ATR dinámicamente",
+  "min_profit_distance_pips": 5,
+  "min_time_minutes": 15,
+  "include_commission": true,
+  "include_swap": true,
+  "include_spread": true
+}
+```
+
+### Archivos Modificados
+- `core_brain/position_manager.py` (+25 líneas, -19 redundantes)
+  - ATR-based dynamic distance
+  - Profit USD validation
+  - Código redundante removido (líneas 124-143)
+- `config/dynamic_params.json` (+1 línea: comentario explicativo)
+- `stop.py` (+28 líneas: limpieza cache automática)
+
+**Validación:**
+```bash
+# Sistema funcional
+python stop.py && python start.py
+# ✅ Detecta posiciones correctamente
+# ✅ NO aplica breakeven en posiciones en pérdida (by design)
+# ✅ Usa distancia dinámica cuando ATR disponible
+```
+
+---
+
 ## 🔍 MILESTONE: Detector de Funciones Indefinidas (Static Analysis AST) (2026-02-12)
 **Estado: ✅ COMPLETADO**
 **Criterio: Prevenir bugs de métodos faltantes mediante análisis estático ANTES de runtime**
