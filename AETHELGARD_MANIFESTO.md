@@ -697,7 +697,177 @@ Los tests deben usar bases de datos en memoria (`:memory:`) o temporales. No se 
 - Actualizados tests desactualizados para compatibilidad con API actual
 - Resultado: 177 tests funcionando correctamente
 
-#### 8. Configuración MT5 API Obligatoria
+#### 7. Tests de Integración sin Mocks Excesivos (CRÍTICO)
+
+**Principio**: Los tests deben validar el comportamiento REAL del sistema, no simulaciones que permitan pasar tests con código defectuoso.
+
+**Regla de Mocks Limitados**:
+- ❌ **PROHIBIDO** mockear componentes internos del sistema (StorageManager, RiskManager, Executor)
+- ✅ **PERMITIDO** mockear SOLO dependencias externas (MT5Connector, APIs de datos, brokers)
+- ✅ **OBLIGATORIO** usar bases de datos temporales (`tmp_path`) en vez de mocks para StorageManager
+- ✅ **OBLIGATORIO** crear tests de integración que validen el flujo completo de componentes internos
+
+**Problema Detectado (2026-02-12)**:
+- **Síntoma**: Sistema probado en producción falló - método `update_position_metadata()` NO existía en StorageManager
+- **Causa Raíz**: Tests usaban `Mock(spec=StorageManager)` que simulaba método inexistente:
+  ```python
+  # ❌ MAL: Test pasa aunque método no exista
+  storage = Mock(spec=StorageManager)
+  storage.update_position_metadata = Mock(return_value=True)
+  ```
+- **Impacto**: 27 operaciones reales abiertas SIN metadata guardada
+- **Solución**: Test de integración REAL detectó el problema inmediatamente:
+  ```python
+  # ✅ BIEN: Test falla si método no existe
+  storage = StorageManager(db_path=str(tmp_path / "test.db"))
+  result = storage.update_position_metadata(ticket, metadata)
+  ```
+
+**Reglas de Testing:**
+
+1. **Tests Unitarios** (lógica aislada):
+   - Mockear SOLO dependencias externas (brokers, APIs)
+   - Usar StorageManager REAL con `tmp_path`
+   - Ejemplo: `test_risk_manager.py` debe usar StorageManager real, mockear solo MT5Connector
+
+2. **Tests de Integración** (flujo end-to-end):
+   - NO mockear componentes internos
+   - Validar persistencia REAL en base de datos temporal
+   - Verificar que datos guardados son recuperables
+   - Ejemplo: `test_executor_metadata_integration.py`
+
+3. **Tests de Regresión** (bugs conocidos):
+   - Crear test que HABRÍA DETECTADO el bug original
+   - Validar que el método/función existe usando `hasattr()` + llamada real
+   - Documentar en docstring el issue original (ej: "REGRESSION TEST for Issue #123")
+
+**Verificación Post-Test:**
+```python
+# Ejemplo de test de integración correcto
+def test_executor_saves_metadata_to_real_db(tmp_path):
+    """Validates Executor ACTUALLY saves to database"""
+    # REAL components
+    storage = StorageManager(db_path=str(tmp_path / "test.db"))
+    executor = OrderExecutor(storage=storage, ...)
+    
+    # MOCK only external broker
+    mock_connector = Mock()
+    mock_connector.execute_signal = Mock(return_value={'ticket': 123, ...})
+    
+    # Execute
+    await executor.execute_signal(signal)
+    
+    # Validate REAL database persistence
+    metadata = storage.get_position_metadata(123)
+    assert metadata is not None  # ← Would FAIL if method doesn't exist
+    assert metadata['symbol'] == 'EURUSD'
+```
+
+**Cobertura Validada (2026-02-12)**:
+- ✅ `test_executor_metadata_integration.py` creado (5 tests)
+- ✅ Validación de método `update_position_metadata()` implementada
+- ✅ Tests pasan solo con StorageManager REAL
+- ✅ Regresión documentada para prevenir bugs futuros
+
+**validate_all.py debe ejecutar**:
+- Tests críticos de deduplicación (mocks limitados)
+- Tests de integración (sin mocks internos)
+- Tests de regresión (validación de métodos existentes)
+
+#### 8. TDD con Stub-First (Prevención de Métodos Faltantes)
+
+**Principio**: NUNCA llamar a un método que no existe. Si necesitas un método nuevo, créalo primero (aunque esté vacío).
+
+**Problema Detectado (2026-02-12)**:
+- Múltiples casos de código llamando métodos no implementados
+- Detectado por análisis AST estático (undefined_functions_detector.py)
+- Ejemplo: `storage.update_position_metadata()` llamado pero no existía
+
+**Regla: STUB → TEST → IMPLEMENT**
+
+1. **STUB PRIMERO** (Crear método vacío):
+   ```python
+   # En data_vault/storage.py
+   def update_position_metadata(self, ticket: int, metadata: Dict) -> bool:
+       """Save position metadata for monitoring (TODO: Implement)"""
+       raise NotImplementedError("update_position_metadata not yet implemented")
+   ```
+
+2. **TEST SEGUNDO** (Definir comportamiento esperado):
+   ```python
+   # En tests/test_executor_metadata_integration.py
+   def test_executor_saves_metadata_to_real_db(tmp_path):
+       storage = StorageManager(db_path=str(tmp_path / "test.db"))
+       result = storage.update_position_metadata(12345, {...})
+       assert result is True  # ← FALLA con NotImplementedError
+   ```
+
+3. **IMPLEMENTAR TERCERO** (Hacer pasar el test):
+   ```python
+   # En data_vault/storage.py
+   def update_position_metadata(self, ticket: int, metadata: Dict) -> bool:
+       conn = self._get_conn()
+       try:
+           cursor = conn.cursor()
+           cursor.execute("CREATE TABLE IF NOT EXISTS position_metadata ...")
+           cursor.execute("REPLACE INTO position_metadata ...")
+           conn.commit()
+           return True
+       finally:
+           self._close_conn(conn)
+   ```
+
+**Validación Automática:**
+
+Script `undefined_functions_detector.py` ejecuta análisis AST y detecta:
+- Llamadas a métodos que no existen en clases conocidas
+- Reporta archivo, línea y método faltante
+- Ejecutado en `validate_all.py` (warning informativo, no bloqueante)
+
+**Ejemplo de Detección:**
+```
+[ERROR] ❌ 1 LLAMADAS A MÉTODOS INDEFINIDOS
+📄 core_brain/executor.py
+   Línea  263: StorageManager.update_position_metadata()
+          Clase: StorageManager
+          Método NO EXISTE: update_position_metadata()
+```
+
+**Workflow Correcto:**
+
+```mermaid
+graph TD
+    A[Necesito funcionalidad nueva] --> B[Crear STUB en clase]
+    B --> C[Crear TEST que use el método]
+    C --> D[Test FALLA - NotImplementedError]
+    D --> E[Implementar método REAL]
+    E --> F[Test PASA]
+    F --> G[validate_all.py verifica]
+    G --> H[Deploy seguro]
+```
+
+**Beneficios:**
+- ✅ Detecta llamadas a métodos faltantes ANTES de runtime
+- ✅ Previene bugs como Issue #123
+- ✅ Tests fallan con mensaje claro si método no existe
+- ✅ Código siempre tiene "esqueleto" de lo que debe implementarse
+
+**Herramientas:**
+- Tests de integración con StorageManager REAL (100% confiable - BLOQUEANTE)
+- `scripts/undefined_functions_detector.py` - Análisis estático AST (OPCIONAL - muchos falsos positivos por mixins)
+- `validate_all.py` ejecuta tests de integración en CI/CD
+
+**Por qué Tests de Integración son 100% Confiables:**
+- Ejecutan código REAL (no simulan)
+- AttributeError garantizado si método falta
+- Cero falsos positivos/negativos
+- Detectan herencia, mixins, decoradores automáticamente
+- No requieren whitelist manual de clases
+
+**Decisión de Arquitectura (2026-02-12):**
+Después de evaluar análisis estático AST vs tests de integración, se decidió confiar 100% en tests de integración como validación bloqueante. El detector AST genera muchos falsos positivos debido a herencia/mixins y requiere mantenimiento manual. Los tests de integración son la verdad absoluta: si el método no existe, Python lanza AttributeError inmediatamente.
+
+#### 9. Configuración MT5 API Obligatoria
 
 **Principio**: MT5 requiere configuración manual para permitir conexiones API desde Python.
 
@@ -1927,6 +2097,181 @@ await notifier.notify_system_alert(
 - 📋 Filtros de notificación (por régimen, estrategia, símbolo)
 - 📋 Horarios de notificación (quiet hours)
 - 📋 Umbrales personalizables (solo notificar si score > X)
+
+#### 5.4 Sistema de Feature Flags (Module Toggles)
+
+**Estado**: ✅ IMPLEMENTADO (Febrero 2026)
+
+**Objetivo**: Control granular de módulos del sistema con dos niveles de configuración: Global (afecta a todos) e Individual (por cuenta/usuario).
+
+**Problema Resuelto:**
+- ✅ Testing seguro (probar PositionManager sin nuevas operaciones)
+- ✅ Modo mantenimiento (gestionar posiciones sin entrar nuevas)
+- ✅ Debugging selectivo (aislar problemas por módulo)
+- ✅ Escalabilidad SaaS (diferentes planes con diferentes módulos)
+- ✅ Runtime toggles (sin reiniciar el sistema)
+
+**Arquitectura:**
+
+```python
+# GLOBAL (system_state.modules_enabled)
+# Prioridad MÁXIMA - Afecta a TODOS los usuarios/cuentas
+{
+  "scanner": false,           # ❌ NADIE escanea
+  "executor": false,          # ❌ NADIE ejecuta trades
+  "position_manager": true,   # ✅ Todos pueden gestionar posiciones
+  "risk_manager": true,       # ✅ Validación activa para todos
+  "monitor": true,            # ✅ Métricas habilitadas
+  "notificator": true         # ✅ Alertas activas
+}
+
+# INDIVIDUAL (broker_accounts[account_id].modules_enabled)
+# Solo para cuentas específicas - Sobreescribe si global=true
+{
+  "MT5_DEMO_12345": {
+    "executor": false   # ❌ Solo esta cuenta no ejecuta
+  }
+}
+
+# LÓGICA DE RESOLUCIÓN:
+# 1. Si GLOBAL=false -> módulo deshabilitado para TODOS
+# 2. Si GLOBAL=true + INDIVIDUAL=false -> solo esa cuenta afectada  
+# 3. Si ambos true -> módulo activo
+```
+
+**Implementación:**
+
+**Base de Datos (Single Source of Truth):**
+- ✅ `system_state` table - Configuración global en `modules_enabled` column
+- ✅ `broker_accounts` table - Columna `modules_enabled` (JSON) para overrides individuales
+- ✅ Auto-migration: Si la columna no existe, se crea automáticamente
+
+**StorageManager (data_vault/storage.py):**
+```python
+# Métodos Globales
+storage.get_global_modules_enabled() -> Dict[str, bool]
+storage.set_global_module_enabled(module: str, enabled: bool)
+storage.set_global_modules_enabled(modules_dict: Dict[str, bool])
+
+# Métodos Individuales (por cuenta)
+storage.get_individual_modules_enabled(account_id: str) -> Dict[str, bool]
+storage.set_individual_module_enabled(account_id: str, module: str, enabled: bool)
+storage.set_individual_modules_enabled(account_id: str, modules_dict: Dict[str, bool])
+
+# Resolución de Prioridad (Global > Individual)
+storage.resolve_module_enabled(account_id: str, module: str) -> bool
+```
+
+**MainOrchestrator (core_brain/main_orchestrator.py):**
+```python
+# Inicialización - Carga estado desde DB
+self.modules_enabled_global = self.storage.get_global_modules_enabled()
+
+# Log de estado inicial
+disabled_modules = [k for k, v in self.modules_enabled_global.items() if not v]
+if disabled_modules:
+    logger.warning(f"⚠️  Módulos DESHABILITADOS globalmente: {', '.join(disabled_modules)}")
+else:
+    logger.info("✅ Todos los módulos están HABILITADOS globalmente")
+
+# En run_single_cycle() - Verificación antes de ejecutar
+if not self.modules_enabled_global.get("scanner", True):
+    logger.debug("[TOGGLE] scanner deshabilitado globalmente - ciclo terminado")
+    return
+
+if not self.modules_enabled_global.get("executor", True):
+    logger.info(f"[TOGGLE] executor deshabilitado - {len(signals)} señales NO ejecutadas")
+    return
+
+if not self.modules_enabled_global.get("position_manager", True):
+    logger.debug("[TOGGLE] position_manager deshabilitado - saltado")
+else:
+    position_stats = self.position_manager.monitor_positions()
+```
+
+**Módulos Controlables:**
+- ✅ `scanner` - Búsqueda de nuevas señales (ScannerEngine)
+- ✅ `executor` - Ejecución de nuevas operaciones (OrderExecutor)
+- ✅ `position_manager` - Gestión de posiciones activas (PositionManager)
+- ✅ `risk_manager` - Validación de riesgos (RiskManager)
+- ✅ `monitor` - Métricas y estadísticas (Monitor)
+- ✅ `notificator` - Alertas Telegram/Logs (Notificator)
+
+**Uso Práctico:**
+
+**Caso 1: Testing PositionManager sin nuevas operaciones**
+```python
+# Via Python
+storage = StorageManager()
+storage.set_global_module_enabled("scanner", False)
+storage.set_global_module_enabled("executor", False)
+# PositionManager sigue activo (default=True)
+
+# Sistema ahora:
+# ✅ Monitorea posiciones actuales
+# ✅ Aplica trailing stops
+# ✅ Activa breakeven
+# ❌ NO busca nuevas señales
+# ❌ NO ejecuta nuevas operaciones
+```
+
+**Caso 2: Deshabilitar executor solo para cuenta de prueba**
+```python
+# Global: todos pueden ejecutar
+storage.set_global_module_enabled("executor", True)
+
+# Individual: cuenta demo no ejecuta
+test_account_id = "MT5_DEMO_TEST"
+storage.set_individual_module_enabled(test_account_id, "executor", False)
+
+# Resultado:
+# ✅ Todas las cuentas ejecutan (global=True)
+# ❌ MT5_DEMO_TEST NO ejecuta (individual override)
+```
+
+**Caso 3: Modo Mantenimiento Global**
+```python
+# Deshabilitar todo excepto gestión de posiciones
+storage.set_global_modules_enabled({
+    "scanner": False,
+    "executor": False,
+    "position_manager": True,   # Seguir gestionando
+    "risk_manager": True,       # Mantener validaciones
+    "monitor": True,            # Ver métricas
+    "notificator": True         # Recibir alertas
+})
+```
+
+**Tests (tests/test_module_toggles.py):**
+- ✅ 14/14 tests pasados (TDD completo)
+- ✅ Validación de prioridad Global > Individual
+- ✅ Persistencia entre instancias de StorageManager
+- ✅ Integración con MainOrchestrator
+- ✅ Defaults seguros (todos habilitados si no existe config)
+
+**Validación (validate_all.py):**
+- ✅ Arquitectura: Sin duplicados
+- ✅ QA Guard: Sintaxis + tipos correctos
+- ✅ Calidad: Sin copy-paste significativo
+- ✅ Tests críticos: 23/23 pasados
+
+**Logging:**
+```
+[INFO] ✅ Todos los módulos están HABILITADOS globalmente
+[INFO] [TOGGLE] scanner deshabilitado globalmente - ciclo terminado
+[INFO] [TOGGLE] executor deshabilitado - 3 señales NO ejecutadas
+[DEBUG] [TOGGLE] position_manager deshabilitado - saltado
+[DEBUG] [RESOLVE] Module 'scanner' using GLOBAL setting (enabled=False)
+[INFO] [GLOBAL] Module 'executor' set to DISABLED
+[INFO] [INDIVIDUAL] Account MT5_DEMO_123: module 'scanner' set to ENABLED
+```
+
+**Futuro (UI Integration):**
+- 📋 React component `ModuleToggles.tsx` en Settings
+- 📋 Switches ON/OFF por módulo con tooltips
+- 📋 Indicador visual: "Afecta a TODOS" vs "Solo esta cuenta"
+- 📋 Confirmación modal para cambios globales críticos
+- 📋 Historial de cambios (auditoría)
 
 #### 4.4 Web Dashboard
 

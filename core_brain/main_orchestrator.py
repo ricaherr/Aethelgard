@@ -213,6 +213,17 @@ class MainOrchestrator:
         
         # Load configuration
         self.config = self._load_config(config_path)
+        
+        # MODULE TOGGLES: Load global module enable/disable settings from DB
+        # This allows runtime control without restarting the system
+        self.modules_enabled_global = self.storage.get_global_modules_enabled()
+        
+        # Log module states on startup
+        disabled_modules = [k for k, v in self.modules_enabled_global.items() if not v]
+        if disabled_modules:
+            logger.warning(f"⚠️  Módulos DESHABILITADOS globalmente: {', '.join(disabled_modules)}")
+        else:
+            logger.info("✅ Todos los módulos están HABILITADOS globalmente")
 
 
         # Session tracking - RECONSTRUCT FROM DB
@@ -444,8 +455,10 @@ class MainOrchestrator:
             if expiration_stats['total_expired'] > 0:
                 logger.info(f"[EXPIRATION] ✅ Breakdown: {expiration_stats['by_timeframe']}")
             
-            # FASE 2: Monitor open positions (emergency close, regime adjustments, time-based exits)
-            if self.position_manager:
+            # MODULE TOGGLE: Position Manager
+            if not self.modules_enabled_global.get("position_manager", True):
+                logger.debug("[TOGGLE] position_manager deshabilitado globalmente - saltado")
+            elif self.position_manager:
                 position_stats = self.position_manager.monitor_positions()
                 if position_stats['actions']:
                     logger.info(
@@ -454,6 +467,12 @@ class MainOrchestrator:
                     )
                     for action in position_stats['actions']:
                         logger.info(f"[POSITION_MANAGER] ✅ {action['action']}: ticket={action.get('ticket')}")
+            
+            # MODULE TOGGLE: Scanner
+            if not self.modules_enabled_global.get("scanner", True):
+                logger.debug("[TOGGLE] scanner deshabilitado globalmente - ciclo terminado")
+                self.stats.cycles_completed += 1
+                return
             
             # Step 1: Get current market regimes from scanner WITH DataFrames
             logger.debug("Getting market regimes with data from scanner...")
@@ -520,6 +539,16 @@ class MainOrchestrator:
             
             # Update active signals for adaptive heartbeat
             self._active_signals = validated_signals
+            
+            # MODULE TOGGLE: Executor
+            if not self.modules_enabled_global.get("executor", True):
+                logger.info(
+                    f"[TOGGLE] executor deshabilitado globalmente - "
+                    f"{len(validated_signals)} señales aprobadas NO ejecutadas"
+                )
+                self.stats.cycles_completed += 1
+                self._active_signals.clear()
+                return
             
             # EDGE Auto-Correction: Verify lockdown BEFORE checking it (every 10 cycles)
             if self.stats.cycles_completed % 10 == 0:

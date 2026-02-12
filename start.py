@@ -271,11 +271,17 @@ async def main() -> None:
         server_thread = threading.Thread(target=launch_server,daemon=True)
         server_thread.start()
         
-        # Iniciar Scanner en hilo separado
-        logger.info("🔄 Iniciando Scanner...")
-        scanner_thread = threading.Thread(target=scanner.run, daemon=True)
-        scanner_thread.start()
-        logger.info("✅ Scanner ejecutándose")
+        # MODULE TOGGLE: Verificar si scanner está habilitado antes de iniciar
+        modules_enabled = storage.get_global_modules_enabled()
+        
+        if modules_enabled.get("scanner", True):
+            # Iniciar Scanner en hilo separado
+            logger.info("🔄 Iniciando Scanner...")
+            scanner_thread = threading.Thread(target=scanner.run, daemon=True)
+            scanner_thread.start()
+            logger.info("✅ Scanner ejecutándose")
+        else:
+            logger.warning("⚠️  Scanner DESHABILITADO globalmente - thread NO iniciado")
         
         # Iniciar Closing Monitor en tarea asíncrona
         logger.info("🔄 Iniciando Closing Monitor...")

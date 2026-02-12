@@ -55,10 +55,16 @@ def main():
         "UI QA Guard (TypeScript + Build Validation)"
     )
     
-    # 5. Critical Tests
+    # 5. Critical Tests (Deduplication + Risk)
     results['Tests'] = run_command(
         f"cd {workspace} && python -m pytest tests/test_signal_deduplication.py tests/test_dynamic_deduplication.py tests/test_risk_manager.py -q",
         "Critical Tests (23 tests de Deduplicación + Risk Manager)"
+    )
+    
+    # 6. Integration Tests (No Mocks - Real DB) - 100% CONFIABLE
+    results['Integration'] = run_command(
+        f"cd {workspace} && python -m pytest tests/test_executor_metadata_integration.py -q",
+        "Integration Tests (Executor + StorageManager REAL)"
     )
     
     # Summary

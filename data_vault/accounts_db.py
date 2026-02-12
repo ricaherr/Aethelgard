@@ -225,6 +225,123 @@ class AccountsMixin(BaseRepository):
     def update_account_enabled(self, account_id: str, enabled: bool) -> None:
         """Update account enabled status with verification"""
         self.update_account_credentials(account_id=account_id, enabled=enabled)
+    
+    # ========== MODULE TOGGLES (INDIVIDUAL - Per Account) ==========
+    
+    def get_individual_modules_enabled(self, account_id: str) -> Dict[str, bool]:
+        """
+        Get individual module overrides for a specific account.
+        Returns empty dict if no overrides are set (inherits global).
+        
+        Args:
+            account_id: The account ID to query
+            
+        Returns:
+            Dict of module overrides {module_name: enabled_status}
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            
+            # Check if column exists (backwards compatibility)
+            cursor.execute("PRAGMA table_info(broker_accounts)")
+            columns = [row[1] for row in cursor.fetchall()]
+            
+            if 'modules_enabled' not in columns:
+                # Add column if missing (auto-migration)
+                cursor.execute("""
+                    ALTER TABLE broker_accounts 
+                    ADD COLUMN modules_enabled TEXT DEFAULT '{}'
+                """)
+                conn.commit()
+                return {}
+            
+            cursor.execute(
+                "SELECT modules_enabled FROM broker_accounts WHERE account_id = ?",
+                (account_id,)
+            )
+            row =cursor.fetchone()
+            
+            if not row or not row[0]:
+                return {}
+            
+            try:
+                return json.loads(row[0])
+            except (json.JSONDecodeError, TypeError):
+                logger.warning(f"Invalid JSON in modules_enabled for account {account_id}")
+                return {}
+        finally:
+            self._close_conn(conn)
+    
+    def set_individual_module_enabled(self, account_id: str, module_name: str, enabled: bool) -> None:
+        """
+        Enable or disable a module for a specific account.
+        This creates an override for the global setting.
+        
+        Args:
+            account_id: The account ID
+            module_name: Name of the module (scanner, executor, etc.)
+            enabled: True to enable, False to disable
+        """
+        modules = self.get_individual_modules_enabled(account_id)
+        modules[module_name] = enabled
+        
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            
+            # Ensure column exists
+            cursor.execute("PRAGMA table_info(broker_accounts)")
+            columns = [row[1] for row in cursor.fetchall()]
+            
+            if 'modules_enabled' not in columns:
+                cursor.execute("""
+                    ALTER TABLE broker_accounts 
+                    ADD COLUMN modules_enabled TEXT DEFAULT '{}'
+                """)
+            
+            cursor.execute(
+                "UPDATE broker_accounts SET modules_enabled = ? WHERE account_id = ?",
+                (json.dumps(modules), account_id)
+            )
+            conn.commit()
+            logger.info(f"[INDIVIDUAL] Account {account_id}: module '{module_name}' set to {'ENABLED' if enabled else 'DISABLED'}")
+        finally:
+            self._close_conn(conn)
+    
+    def set_individual_modules_enabled(self, account_id: str, modules_dict: Dict[str, bool]) -> None:
+        """
+        Set multiple individual module states for an account.
+        
+        Args:
+            account_id: The account ID
+            modules_dict: Dictionary of {module_name: enabled_status}
+        """
+        current_modules = self.get_individual_modules_enabled(account_id)
+        current_modules.update(modules_dict)
+        
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            
+            # Ensure column exists
+            cursor.execute("PRAGMA table_info(broker_accounts)")
+            columns = [row[1] for row in cursor.fetchall()]
+            
+            if 'modules_enabled' not in columns:
+                cursor.execute("""
+                    ALTER TABLE broker_accounts 
+                    ADD COLUMN modules_enabled TEXT DEFAULT '{}'
+                """)
+            
+            cursor.execute(
+                "UPDATE broker_accounts SET modules_enabled = ? WHERE account_id = ?",
+                (json.dumps(current_modules), account_id)
+            )
+            conn.commit()
+            logger.info(f"[INDIVIDUAL] Account {account_id}: updated module states: {modules_dict}")
+        finally:
+            self._close_conn(conn)
 
     def update_account_credentials(self, account_id: str, account_number: Optional[str] = None, 
                                    password: Optional[str] = None, server: Optional[str] = None, 

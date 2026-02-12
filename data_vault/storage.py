@@ -238,6 +238,179 @@ class StorageManager(
             return False
         finally:
             self._close_conn(conn)
+    
+    # ========== POSITION METADATA (INTEGRATION SUPPORT) ==========
+    
+    def get_position_metadata(self, ticket: int) -> Optional[Dict[str, Any]]:
+        """
+        Get metadata for a specific position/trade by ticket number.
+        Returns None if metadata doesn't exist.
+        
+        Args:
+            ticket: The ticket number of the position/trade
+            
+        Returns:
+            Dict with metadata fields or None if not found
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            
+            # Check if metadata table exists
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='position_metadata'"
+            )
+            if not cursor.fetchone():
+                # Table doesn't exist yet, return None
+                return None
+            
+            cursor.execute(
+                "SELECT * FROM position_metadata WHERE ticket = ?",
+                (ticket,)
+            )
+            row = cursor.fetchone()
+            
+            if not row:
+                return None
+            
+            # Convert row to dict
+            metadata = dict(row)
+            
+            # Parse JSON fields if they exist
+            if 'data' in metadata and metadata['data']:
+                try:
+                    import json
+                    metadata['data'] = json.loads(metadata['data'])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            
+            return metadata
+            
+        finally:
+            self._close_conn(conn)
+    
+    def update_position_metadata(self, ticket: int, metadata: Dict[str, Any]) -> bool:
+        """
+        Save or update position metadata for monitoring.
+        
+        Creates position_metadata table if it doesn't exist.
+        Uses REPLACE to insert new or update existing metadata.
+        
+        Args:
+            ticket: The ticket number of the position
+            metadata: Dict with position metadata (symbol, entry_price, sl, tp, etc.)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            
+            # Create table if not exists
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS position_metadata (
+                    ticket INTEGER PRIMARY KEY,
+                    symbol TEXT NOT NULL,
+                    entry_price REAL NOT NULL,
+                    entry_time TEXT NOT NULL,
+                    sl REAL,
+                    tp REAL,
+                    volume REAL NOT NULL,
+                    initial_risk_usd REAL,
+                    entry_regime TEXT,
+                    timeframe TEXT,
+                    data TEXT
+                )
+            """)
+            
+            # Extract known fields
+            symbol = metadata.get('symbol')
+            entry_price = metadata.get('entry_price')
+            entry_time = metadata.get('entry_time')
+            sl = metadata.get('sl')
+            tp = metadata.get('tp')
+            volume = metadata.get('volume')
+            initial_risk_usd = metadata.get('initial_risk_usd')
+            entry_regime = metadata.get('entry_regime')
+            timeframe = metadata.get('timeframe')
+            
+            # Store remaining fields as JSON in 'data' column
+            known_fields = {
+                'ticket', 'symbol', 'entry_price', 'entry_time', 
+                'sl', 'tp', 'volume', 'initial_risk_usd', 
+                'entry_regime', 'timeframe'
+            }
+            extra_data = {k: v for k, v in metadata.items() if k not in known_fields}
+            data_json = json.dumps(extra_data) if extra_data else None
+            
+            # REPLACE: insert new or update existing
+            cursor.execute("""
+                REPLACE INTO position_metadata 
+                (ticket, symbol, entry_price, entry_time, sl, tp, volume, 
+                 initial_risk_usd, entry_regime, timeframe, data)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                ticket, symbol, entry_price, entry_time, sl, tp, volume,
+                initial_risk_usd, entry_regime, timeframe, data_json
+            ))
+            
+            conn.commit()
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to save position metadata for ticket {ticket}: {e}", exc_info=True)
+            return False
+            
+        finally:
+            self._close_conn(conn)
+    
+    # ========== MODULE TOGGLES (RESOLUTION LOGIC) ==========
+    
+    def resolve_module_enabled(self, account_id: Optional[str], module_name: str) -> bool:
+        """
+        Resolve final module enabled status with priority logic:
+        
+        Priority:
+        1. GLOBAL disabled -> ALWAYS disabled (no matter individual)
+        2. GLOBAL enabled + INDIVIDUAL disabled -> disabled only for that account
+        3. GLOBAL enabled + no individual override -> enabled
+        
+        Args:
+            account_id: The account ID (None for global-only check)
+            module_name: Name of the module to check
+            
+        Returns:
+            True if module is enabled, False otherwise
+        """
+        # Get global setting
+        global_modules = self.get_global_modules_enabled()
+        global_enabled = global_modules.get(module_name, True)
+        
+        # PRIORITY 1: If global disabled, module is disabled for everyone
+        if not global_enabled:
+            logger.debug(f"[RESOLVE] Module '{module_name}' DISABLED globally")
+            return False
+        
+        # If no account specified, return global
+        if not account_id:
+            return global_enabled
+        
+        # Get individual overrides
+        individual_modules = self.get_individual_modules_enabled(account_id)
+        
+        # If no individual override, use global
+        if module_name not in individual_modules:
+            logger.debug(f"[RESOLVE] Module '{module_name}' using GLOBAL setting (enabled={global_enabled})")
+            return global_enabled
+        
+        # Individual override exists
+        individual_enabled = individual_modules[module_name]
+        logger.debug(
+            f"[RESOLVE] Module '{module_name}' for account {account_id}: "
+            f"global={global_enabled}, individual={individual_enabled}, final={individual_enabled}"
+        )
+        return individual_enabled
 
     def close(self) -> None:
         """Close persistent connection if it exists"""

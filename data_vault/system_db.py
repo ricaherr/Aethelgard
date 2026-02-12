@@ -223,3 +223,50 @@ class SystemMixin(BaseRepository):
             }
         finally:
             self._close_conn(conn)
+    
+    # ========== MODULE TOGGLES (GLOBAL) ==========
+    
+    def get_global_modules_enabled(self) -> Dict[str, bool]:
+        """
+        Get global module enable/disable settings.
+        These settings affect ALL accounts system-wide.
+        
+        Returns:
+            Dict with module names as keys, enabled status as values.
+            Defaults to all enabled if not set.
+        """
+        system_state = self.get_system_state()
+        default_modules = {
+            "scanner": True,
+            "executor": True,
+            "position_manager": True,
+            "risk_manager": True,
+            "monitor": True,
+            "notificator": True
+        }
+        return system_state.get("modules_enabled", default_modules)
+    
+    def set_global_module_enabled(self, module_name: str, enabled: bool) -> None:
+        """
+        Enable or disable a module globally (affects all accounts).
+        
+        Args:
+            module_name: Name of the module (scanner, executor, etc.)
+            enabled: True to enable, False to disable
+        """
+        modules = self.get_global_modules_enabled()
+        modules[module_name] = enabled
+        self.update_system_state({"modules_enabled": modules})
+        logger.info(f"[GLOBAL] Module '{module_name}' set to {'ENABLED' if enabled else 'DISABLED'}")
+    
+    def set_global_modules_enabled(self, modules_dict: Dict[str, bool]) -> None:
+        """
+        Set multiple global module states at once.
+        
+        Args:
+            modules_dict: Dictionary of {module_name: enabled_status}
+        """
+        current_modules = self.get_global_modules_enabled()
+        current_modules.update(modules_dict)
+        self.update_system_state({"modules_enabled": current_modules})
+        logger.info(f"[GLOBAL] Updated module states: {modules_dict}")
