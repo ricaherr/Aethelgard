@@ -204,7 +204,37 @@ def main() -> None:
     except Exception as e:
         print(f"⚠️  Error buscando procesos de Aethelgard: {e}")
     
-    # Step 5: Resumen
+    # Step 5: Limpiar cache de Python
+    print("\n🧹 Limpiando cache de Python (.pyc y __pycache__)...")
+    try:
+        import shutil
+        cache_count = 0
+        
+        # Eliminar archivos .pyc
+        for pyc_file in project_root.rglob("*.pyc"):
+            try:
+                pyc_file.unlink()
+                cache_count += 1
+            except Exception as e:
+                print(f"⚠️  No se pudo eliminar {pyc_file}: {e}")
+        
+        # Eliminar directorios __pycache__
+        for pycache_dir in project_root.rglob("__pycache__"):
+            try:
+                shutil.rmtree(pycache_dir)
+                cache_count += 1
+            except Exception as e:
+                print(f"⚠️  No se pudo eliminar {pycache_dir}: {e}")
+        
+        if cache_count > 0:
+            print(f"✅ Cache limpiado: {cache_count} archivo(s)/directorio(s) eliminados")
+        else:
+            print("ℹ️  No se encontró cache para limpiar")
+            
+    except Exception as e:
+        print(f"❌ Error limpiando cache: {e}")
+    
+    # Step 6: Resumen
     print("\n" + "=" * 70)
     if total_killed > 0:
         print(f"✅ SISTEMA DETENIDO: {total_killed} proceso(s) matados")
