@@ -7,6 +7,8 @@ export function PortfolioView() {
     const [positions, setPositions] = useState<PositionMetadata[]>([]);
     const [riskSummary, setRiskSummary] = useState<RiskSummaryType | null>(null);
     const [loading, setLoading] = useState(true);
+    const [riskPanelCollapsed, setRiskPanelCollapsed] = useState(false);
+    const [fullscreenTicket, setFullscreenTicket] = useState<number | null>(null);
 
     const fetchPortfolioData = async () => {
         try {
@@ -57,14 +59,24 @@ export function PortfolioView() {
 
     return (
         <div className="h-full flex gap-6 p-6">
-            {/* Left Panel - Risk Summary */}
-            <div className="w-80 flex-shrink-0">
-                {riskSummary && <RiskSummary summary={riskSummary} />}
+            {/* Left Panel - Risk Summary (Collapsible) */}
+            <div className={`${riskPanelCollapsed || fullscreenTicket !== null ? 'w-16' : 'w-80'} flex-shrink-0 transition-all duration-300`}>
+                {riskSummary && (
+                    <RiskSummary 
+                        summary={riskSummary} 
+                        collapsed={riskPanelCollapsed || fullscreenTicket !== null}
+                        onToggleCollapse={fullscreenTicket === null ? () => setRiskPanelCollapsed(!riskPanelCollapsed) : undefined}
+                    />
+                )}
             </div>
 
             {/* Right Panel - Active Positions */}
             <div className="flex-1">
-                <ActivePositions positions={positions} />
+                <ActivePositions 
+                    positions={positions} 
+                    fullscreenTicket={fullscreenTicket}
+                    onFullscreenToggle={(ticket) => setFullscreenTicket(ticket)}
+                />
             </div>
         </div>
     );

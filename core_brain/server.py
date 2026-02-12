@@ -520,19 +520,21 @@ def create_app() -> FastAPI:
                         
                         # Get metadata from DB
                         cursor = conn.execute("""
-                            SELECT initial_risk_usd, entry_regime, entry_time
+                            SELECT initial_risk_usd, entry_regime, entry_time, timeframe, strategy
                             FROM position_metadata
                             WHERE ticket = ?
                         """, (ticket,))
                         
                         row = cursor.fetchone()
                         if row:
-                            risk, regime, entry_time = row
+                            risk, regime, entry_time, timeframe, strategy = row
                         else:
                             # No metadata - calculate on the fly
                             risk = 0.0
                             regime = "NEUTRAL"
                             entry_time = mt5_pos.get('time', '')
+                            timeframe = None
+                            strategy = None
                         
                         symbol = mt5_pos['symbol']
                         
@@ -562,7 +564,9 @@ def create_app() -> FastAPI:
                             "r_multiple": round(r_multiple, 2),
                             "entry_regime": regime or "NEUTRAL",
                             "entry_time": str(entry_time),
-                            "asset_type": asset_type
+                            "asset_type": asset_type,
+                            "timeframe": timeframe,
+                            "strategy": strategy
                         }
                         
                         positions_list.append(position_data)

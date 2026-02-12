@@ -686,6 +686,27 @@ class MT5Connector:
             self.is_connected = False
             logger.info("MT5 disconnected")
     
+    def _build_trade_comment(self, signal: Signal) -> str:
+        """
+        Build MT5 comment with timeframe and strategy info.
+        
+        Format: AE_<TF>_<TYPE>_<STRAT>
+        Example: AE_M5_BUY_RSI (13 chars)
+        
+        MT5 comment limit: 31 chars
+        """
+        tf = (signal.timeframe or 'M5').upper()
+        signal_type = signal.signal_type.value[:4]  # BUY or SELL (4 chars max)
+        strategy = (signal.strategy_id or 'RSI')[:8]  # Max 8 chars for strategy
+        
+        comment = f"AE_{tf}_{signal_type}_{strategy}"
+        
+        # Truncate if exceeds MT5 limit
+        if len(comment) > 31:
+            comment = comment[:31]
+        
+        return comment
+    
     def execute_signal(self, signal: Signal) -> Dict:
         """
         Execute a trading signal
@@ -757,7 +778,7 @@ class MT5Connector:
                 "tp": signal.take_profit if signal.take_profit else 0.0,
                 "deviation": 20,
                 "magic": self.magic_number,
-                "comment": f"Aethelgard_{signal.symbol}",
+                "comment": self._build_trade_comment(signal),
                 "type_time": mt5.ORDER_TIME_GTC,
                 "type_filling": mt5.ORDER_FILLING_IOC,
             }

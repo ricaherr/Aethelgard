@@ -1,12 +1,14 @@
-import { Shield, AlertCircle, TrendingUp, WifiOff, Wifi, Database } from 'lucide-react';
+import { Shield, AlertCircle, TrendingUp, WifiOff, Wifi, DollarSign, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { RiskSummary as RiskSummaryType } from '../../types/aethelgard';
 import { GlassPanel } from '../common/GlassPanel';
 
 interface RiskSummaryProps {
     summary: RiskSummaryType;
+    collapsed?: boolean;
+    onToggleCollapse?: () => void;
 }
 
-export function RiskSummary({ summary }: RiskSummaryProps) {
+export function RiskSummary({ summary, collapsed = false, onToggleCollapse }: RiskSummaryProps) {
     const riskLevel =
         summary.risk_percentage > summary.max_allowed_risk_pct * 0.9 ? 'critical' :
         summary.risk_percentage > summary.max_allowed_risk_pct * 0.7 ? 'warning' :
@@ -38,7 +40,7 @@ export function RiskSummary({ summary }: RiskSummaryProps) {
             };
         } else if (source === 'CACHED') {
             return {
-                icon: <Database size={12} />,
+                icon: <DollarSign size={12} />,
                 color: 'text-yellow-400',
                 label: 'Cached data',
                 dotColor: 'bg-yellow-400'
@@ -55,12 +57,63 @@ export function RiskSummary({ summary }: RiskSummaryProps) {
 
     const balanceIndicator = getBalanceIndicator();
 
+    // Collapsed view: only icons
+    if (collapsed) {
+        return (
+            <GlassPanel className="h-full border-white/5 flex flex-col items-center py-6 gap-6 relative">
+                {/* Expand Button */}
+                {onToggleCollapse && (
+                    <button
+                        onClick={onToggleCollapse}
+                        className="absolute top-2 right-2 p-1 hover:bg-white/5 rounded-md transition-all"
+                        title="Expand panel"
+                    >
+                        <ChevronRight size={12} className="text-white/50 hover:text-white/70" />
+                    </button>
+                )}
+
+                <div className="flex flex-col items-center gap-1" title="Risk Management">
+                    <Shield size={20} className="text-aethelgard-blue" />
+                    <div className={`w-1.5 h-1.5 rounded-full ${getRiskColor()}`} />
+                </div>
+                
+                <div className="flex flex-col items-center gap-1" title={`Balance: $${summary.account_balance.toFixed(2)}`}>
+                    <DollarSign size={18} className="text-green-400" />
+                    <div className={`w-1.5 h-1.5 rounded-full ${balanceIndicator.dotColor}`} />
+                </div>
+
+                <div className="flex flex-col items-center gap-1" title={`Total Risk: $${summary.total_risk_usd.toFixed(2)}`}>
+                    <TrendingUp size={18} className={getRiskTextColor()} />
+                    <span className="text-[8px] text-white/40">{summary.risk_percentage.toFixed(0)}%</span>
+                </div>
+
+                {summary.warnings.length > 0 && (
+                    <div className="flex flex-col items-center gap-1" title={`${summary.warnings.length} warnings`}>
+                        <AlertTriangle size={18} className="text-yellow-400" />
+                        <span className="text-[8px] text-yellow-400">{summary.warnings.length}</span>
+                    </div>
+                )}
+            </GlassPanel>
+        );
+    }
+
     return (
-        <GlassPanel className="h-full border-white/5">
-            {/* Header */}
-            <div className="flex items-center gap-2 mb-6">
-                <Shield size={20} className="text-aethelgard-blue" />
-                <h3 className="text-white/90 font-outfit font-bold tracking-tight">Risk Management</h3>
+        <GlassPanel className="h-full border-white/5 relative">
+            {/* Header with Collapse Button */}
+            <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-2">
+                    <Shield size={20} className="text-aethelgard-blue" />
+                    <h3 className="text-white/90 font-outfit font-bold tracking-tight">Risk Management</h3>
+                </div>
+                {onToggleCollapse && (
+                    <button
+                        onClick={onToggleCollapse}
+                        className="p-1.5 hover:bg-white/5 rounded-md transition-all"
+                        title="Collapse panel"
+                    >
+                        <ChevronLeft size={16} className="text-white/50 hover:text-white/70" />
+                    </button>
+                )}
             </div>
 
             {/* Risk Gauge */}

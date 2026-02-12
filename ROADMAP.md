@@ -1,5 +1,183 @@
 # Aethelgard – Roadmap
 
+## 🎨 MILESTONE: UI/UX Improvements - Entry Point, Collapsible Panel & Fullscreen Chart (2026-02-12)
+**Estado: ✅ COMPLETADO**
+**Criterio: Mejorar experiencia visual del Portfolio con badge de entry point, panel Risk colapsable y modo fullscreen para gráficas** ✅
+
+### Features Implementadas
+
+#### 1. Entry Point Badge en Chart Header ✅
+**Problema**: El chart TradingView no mostraba visualmente el precio de entrada del trade.
+**Solución**: Badge verde con icono TrendingUp en el header del chart.
+
+**Archivos Modificados**:
+- `ui/src/components/portfolio/TradingViewChart.tsx`:
+  - Agregado prop `entryPrice?: number`
+  - Header con badge: `Entry: 1.10000` (5 decimales)
+  - Icono TrendingUp de Lucide React
+  - Diseño: `bg-green-500/10 border-green-500/20 text-green-400`
+
+- `ui/src/components/portfolio/ActivePositions.tsx`:
+  - Pasado `entryPrice={position.entry_price}` a TradingViewChart
+  - Entry price viene de `position.entry_price` (ya existente en metadata)
+
+**Resultado**: Chart header muestra `EURUSD | M5 | Entry: 1.10000` con badge verde destacado.
+
+---
+
+#### 2. Panel Risk Management Colapsable ✅
+**Problema**: Panel Risk Management siempre ocupa 320px (w-80), desperdicia espacio cuando usuario quiere ver más charts.
+**Solución**: Panel colapsa a iconos verticales (64px w-16) con estado animado.
+
+**Archivos Modificados**:
+- `ui/src/components/portfolio/PortfolioView.tsx`:
+  - Estado: `const [riskPanelCollapsed, setRiskPanelCollapsed] = useState(false)`
+  - Botón toggle: ChevronLeft/ChevronRight (Lucide React)
+  - Transición suave: `transition-all duration-300`
+  - Botón posicionado: `absolute -right-3 top-6` (flotante en borde)
+  - Width dinámico: `${riskPanelCollapsed ? 'w-16' : 'w-80'}`
+
+- `ui/src/components/portfolio/RiskSummary.tsx`:
+  - Prop: `collapsed?: boolean`
+  - Vista colapsada: Solo iconos verticales + indicadores de estado
+  - Iconos:
+    - Shield + dot (risk level color)
+    - Database + dot (balance source)
+    - AlertCircle + percentage (total risk %)
+    - Yellow dot pulsante si hay warnings
+  - Tooltips: Info completa en hover
+
+**Resultado**: Usuario puede colapsar panel a 64px con iconos informativos, ganando espacio para charts.
+
+---
+
+#### 3. Modo Fullscreen para Chart ✅
+**Problema**: Charts limitados a 350px height, dificultan análisis técnico detallado.
+**Solución**: Modo fullscreen expande chart a 600px height y colapsa automáticamente panel Risk.
+
+**Archivos Modificados**:
+- `ui/src/components/portfolio/PortfolioView.tsx`:
+  - Estado: `const [fullscreenTicket, setFullscreenTicket] = useState<number | null>(null)`
+  - Pasado a ActivePositions: `fullscreenTicket` y `onFullscreenToggle`
+  - Panel Risk auto-colapsa: `${riskPanelCollapsed || fullscreenTicket !== null ? 'w-16' : 'w-80'}`
+  - Botón toggle escondido en fullscreen: `{fullscreenTicket === null && ...}`
+
+- `ui/src/components/portfolio/ActivePositions.tsx`:
+  - Props nuevas: `fullscreenTicket?: number | null, onFullscreenToggle?: (ticket: number | null) => void`
+  - Botón Maximize2/Minimize2 (Lucide React)
+  - Estado: `const isFullscreen = fullscreenTicket === position.ticket`
+  - Chart auto-visible en fullscreen: `{(showChart || isFullscreen) && ...}`
+  - Height dinámico: `height={isFullscreen ? 600 : 350}`
+  - Indicador: "FULLSCREEN MODE" en header del chart (color purple)
+
+**Resultado**:
+- Click en Maximize → Chart expande a 600px, panel Risk colapsa automáticamente
+- Click en Minimize → Chart vuelve a 350px, panel Risk restaurado
+- Solo 1 chart en fullscreen a la vez (control por ticket)
+
+---
+
+### Build Validation ✅
+```bash
+cd ui ; npm run build
+# vite v5.4.21 building for production...
+# ✓ 1843 modules transformed.
+# dist/assets/index-DfjZMZyL.js   360.21 kB │ gzip: 109.00 kB
+# ✓ built in 5.70s
+```
+
+**Verificación**:
+- ✅ TypeScript: 0 errores
+- ✅ Bundle size: 360.21 kB (incremento +0.63 kB por mejoras adicionales)
+- ✅ Gzip: 109.00 kB (óptimo)
+- ✅ Build time: 5.70s
+
+---
+
+### Mejoras Adicionales UX (2026-02-12) ✅
+
+#### 1. Botón Colapsar Movido al Panel
+**Antes**: Botón flotante fuera del panel (posición `absolute -right-3`)
+**Después**: Botón integrado en esquina superior derecha del header del panel
+
+**Cambios**:
+- Removido botón flotante de PortfolioView
+- Agregado botón ChevronLeft en header de RiskSummary (vista expandida)
+- Agregado botón ChevronRight en esquina superior derecha (vista colapsada)
+- Prop `onToggleCollapse?: () => void` para pasar función desde PortfolioView
+- Botón oculto cuando fullscreen activo (`onToggleCollapse={fullscreenTicket === null ? ... : undefined}`)
+- Posición colapsada: `absolute top-2 right-2` con icono `size={12}` (esquina superior compacta)
+
+#### 2. Fullscreen Mode Oculta Otros Trades
+**Antes**: Fullscreen solo expandía el chart, pero mostraba todos los trades
+**Después**: Fullscreen muestra SOLO el trade seleccionado
+
+**Implementación**:
+```typescript
+const displayPositions = fullscreenTicket !== null 
+    ? positions.filter(p => p.ticket === fullscreenTicket)
+    : positions;
+```
+
+**UX**:
+- Header indica: "1 Selected · FULLSCREEN"
+- Panel Risk auto-colapsa
+- Click en Minimize restaura vista completa
+
+#### 3. Iconos Chart/Fullscreen Tamaño Reducido
+**Antes**: `size={14}` en botones (más grandes que badge FOREX)
+**Después**: `size={9}` + padding `px-2 py-0.5` (mismo tamaño que badge)
+
+**Consistencia Visual**:
+- Badge FOREX: `text-[9px] px-2 py-0.5`
+- Botón Chart: `text-[9px] px-2 py-0.5` + `LineChart size={9}`
+- Botón Fullscreen: `text-[9px] px-2 py-0.5` + `Maximize2/Minimize2 size={9}`
+
+#### 4. Iconos Vista Colapsada Mejorados
+**Antes**:
+- Balance: `Database` (genérico)
+- Total Risk: `AlertCircle`
+- Warnings: Dot pulsante (sin icono)
+
+**Después**:
+- Balance: `DollarSign` (financiero, color verde)
+- Total Risk: `TrendingUp` (más apropiado)
+- Warnings: `AlertTriangle` (triángulo amarillo estándar) + contador
+
+**Iconos Lucide React**:
+```typescript
+import { DollarSign, AlertTriangle, TrendingUp } from 'lucide-react';
+```
+
+---
+
+### Impacto UX Final
+
+**Entry Point Badge**:
+- ✅ Precio de entrada visible sin abrir detalles
+- ✅ Diseño consistente con otros badges (strategy, asset_type)
+- ✅ 5 decimales para precisión Forex
+
+**Panel Colapsable**:
+- ✅ Espacio ganado: 256px (w-80 → w-16)
+- ✅ Iconos informativos mantienen visibilidad de estado
+- ✅ Transición animada suave (300ms)
+- ✅ Tooltips en hover con info completa
+
+**Fullscreen Mode**:
+- ✅ Chart height: +250px (350 → 600)
+- ✅ Auto-colapso de panel Risk (UX inteligente)
+- ✅ Indicador visual "FULLSCREEN MODE"
+- ✅ Botón Minimize para salir fácilmente
+
+**Total Archivos Modificados**: 4
+- `ui/src/components/portfolio/TradingViewChart.tsx` (+23 líneas)
+- `ui/src/components/portfolio/RiskSummary.tsx` (+35 líneas)
+- `ui/src/components/portfolio/PortfolioView.tsx` (+12 líneas)
+- `ui/src/components/portfolio/ActivePositions.tsx` (+40 líneas)
+
+---
+
 ## 🧹 MILESTONE: Codebase Cleanup - Eliminación de Archivos Obsoletos (2026-02-12)
 **Estado: ✅ COMPLETADO**
 **Criterio: Eliminar archivos obsoletos y dependencias no utilizadas (Streamlit)** ✅

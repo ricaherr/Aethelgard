@@ -1,17 +1,26 @@
-import { TrendingUp, TrendingDown, Info } from 'lucide-react';
+import { TrendingUp, TrendingDown, Info, LineChart, Maximize2, Minimize2 } from 'lucide-react';
 import { PositionMetadata } from '../../types/aethelgard';
 import { GlassPanel } from '../common/GlassPanel';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useState } from 'react';
+import { TradingViewChart } from './TradingViewChart';
 
 interface ActivePositionsProps {
     positions: PositionMetadata[];
+    fullscreenTicket?: number | null;
+    onFullscreenToggle?: (ticket: number | null) => void;
 }
 
-export function ActivePositions({ positions }: ActivePositionsProps) {
-    const totalProfit = positions.reduce((sum, p) => sum + p.profit_usd, 0);
-    const totalRisk = positions.reduce((sum, p) => sum + p.initial_risk_usd, 0);
-    const avgRMultiple = positions.length > 0
-        ? positions.reduce((sum, p) => sum + p.r_multiple, 0) / positions.length
+export function ActivePositions({ positions, fullscreenTicket, onFullscreenToggle }: ActivePositionsProps) {
+    // Filter positions: if fullscreen active, show only that trade
+    const displayPositions = fullscreenTicket !== null 
+        ? positions.filter(p => p.ticket === fullscreenTicket)
+        : positions;
+    
+    const totalProfit = displayPositions.reduce((sum, p) => sum + p.profit_usd, 0);
+    const totalRisk = displayPositions.reduce((sum, p) => sum + p.initial_risk_usd, 0);
+    const avgRMultiple = displayPositions.length > 0
+        ? displayPositions.reduce((sum, p) => sum + p.r_multiple, 0) / displayPositions.length
         : 0;
 
     return (
@@ -19,9 +28,14 @@ export function ActivePositions({ positions }: ActivePositionsProps) {
             {/* Header with Stats */}
             <div className="flex items-center justify-between mb-6">
                 <div>
-                    <h3 className="text-white/90 font-outfit font-bold tracking-tight text-lg">Active Positions</h3>
+                    <h3 className="text-white/90 font-outfit font-bold tracking-tight text-lg">
+                        Active Positions
+                        {fullscreenTicket !== null && (
+                            <span className="ml-2 text-sm text-purple-400">· FULLSCREEN</span>
+                        )}
+                    </h3>
                     <p className="text-white/50 text-[10px] uppercase tracking-[0.2em] mt-1">
-                        {positions.length} Open · Avg {avgRMultiple.toFixed(2)}R
+                        {displayPositions.length} {fullscreenTicket !== null ? 'Selected' : 'Open'} · Avg {avgRMultiple.toFixed(2)}R
                     </p>
                 </div>
                 <div className="flex gap-4">
@@ -43,14 +57,19 @@ export function ActivePositions({ positions }: ActivePositionsProps) {
             {/* Positions List */}
             <div className="flex-1 space-y-3 overflow-y-auto scrollbar-hide pr-1">
                 <AnimatePresence initial={false}>
-                    {positions.length === 0 ? (
+                    {displayPositions.length === 0 ? (
                         <div className="h-full flex flex-col items-center justify-center opacity-20 py-20">
                             <Info size={48} className="mb-4" />
                             <p className="text-sm font-outfit uppercase tracking-widest">No Active Positions</p>
                         </div>
                     ) : (
-                        positions.map((position) => (
-                            <PositionCard key={position.ticket} position={position} />
+                        displayPositions.map((position) => (
+                            <PositionCard 
+                                key={position.ticket} 
+                                position={position}
+                                fullscreenTicket={fullscreenTicket}
+                                onFullscreenToggle={onFullscreenToggle}
+                            />
                         ))
                     )}
                 </AnimatePresence>
@@ -59,7 +78,15 @@ export function ActivePositions({ positions }: ActivePositionsProps) {
     );
 }
 
-function PositionCard({ position }: { position: PositionMetadata }) {
+interface PositionCardProps {
+    position: PositionMetadata;
+    fullscreenTicket?: number | null;
+    onFullscreenToggle?: (ticket: number | null) => void;
+}
+
+function PositionCard({ position, fullscreenTicket, onFullscreenToggle }: PositionCardProps) {
+    const [showChart, setShowChart] = useState(false);
+    const isFullscreen = fullscreenTicket === position.ticket;
     const isProfit = position.profit_usd >= 0;
     const rColor =
         position.r_multiple >= 1 ? 'text-green-400' :
@@ -81,13 +108,49 @@ function PositionCard({ position }: { position: PositionMetadata }) {
             whileHover={{ scale: 1.005, backgroundColor: 'rgba(255,255,255,0.03)' }}
             className="p-4 rounded-xl border border-white/5 bg-white/[0.01] transition-all group"
         >
-            {/* Header: Symbol + Asset Badge + R-Multiple */}
+            {/* Header: Symbol + Asset Badge + R-Multiple + Chart Button */}
             <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-3">
                     <span className="text-base font-outfit font-bold text-white/90">{position.symbol}</span>
                     <span className={`text-[9px] px-2 py-0.5 rounded uppercase font-bold border ${assetBadge[position.asset_type]}`}>
                         {position.asset_type}
                     </span>
+                    
+                    {/* Chart Toggle Button */}
+                    {position.timeframe && (
+                        <>
+                            <button
+                                onClick={() => setShowChart(!showChart)}
+                                className={`
+                                    px-2 py-0.5 rounded text-[9px] transition-all border
+                                    ${showChart 
+                                        ? 'bg-aethelgard-blue/20 text-aethelgard-blue border-aethelgard-blue/30' 
+                                        : 'bg-white/5 text-white/40 hover:text-white/70 hover:bg-white/10 border-white/10'
+                                    }
+                                `}
+                                title={`${showChart ? 'Hide' : 'Show'} chart`}
+                            >
+                                <LineChart size={9} />
+                            </button>
+
+                            {/* Fullscreen Toggle Button */}
+                            {onFullscreenToggle && (
+                                <button
+                                    onClick={() => onFullscreenToggle(isFullscreen ? null : position.ticket)}
+                                    className={`
+                                        px-2 py-0.5 rounded text-[9px] transition-all border
+                                        ${isFullscreen 
+                                            ? 'bg-purple-500/20 text-purple-400 border-purple-500/30' 
+                                            : 'bg-white/5 text-white/40 hover:text-white/70 hover:bg-white/10 border-white/10'
+                                        }
+                                    `}
+                                    title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen chart'}
+                                >
+                                    {isFullscreen ? <Minimize2 size={9} /> : <Maximize2 size={9} />}
+                                </button>
+                            )}
+                        </>
+                    )}
                 </div>
 
                 <div className="flex items-center gap-3">
@@ -130,7 +193,7 @@ function PositionCard({ position }: { position: PositionMetadata }) {
                 </div>
             </div>
 
-            {/* Footer: SL/TP + Regime */}
+            {/* Footer: SL/TP + TF + Strategy + Regime */}
             <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-[10px]">
                 <div className="flex gap-4">
                     <span className="text-white/40">
@@ -140,10 +203,55 @@ function PositionCard({ position }: { position: PositionMetadata }) {
                         TP: <span className="text-green-400 font-mono">{position.tp.toLocaleString()}</span>
                     </span>
                 </div>
-                <div className="text-white/40">
-                    Regime: <span className="text-aethelgard-blue font-bold">{position.entry_regime}</span>
+                <div className="flex gap-3 text-white/40">
+                    {position.timeframe && (
+                        <span>
+                            TF: <span className="text-cyan-400 font-bold">{position.timeframe}</span>
+                        </span>
+                    )}
+                    {position.strategy && (
+                        <span>
+                            Strategy: <span className="text-purple-400 font-bold">{position.strategy}</span>
+                        </span>
+                    )}
+                    <span>
+                        Regime: <span className="text-aethelgard-blue font-bold">{position.entry_regime}</span>
+                    </span>
                 </div>
             </div>
+            
+            {/* Expandable Chart */}
+            <AnimatePresence>
+                {(showChart || isFullscreen) && position.timeframe && (
+                    <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.3 }}
+                        className="mt-4 pt-4 border-t border-white/5 overflow-hidden"
+                    >
+                        <div className="mb-2 flex items-center justify-between">
+                            <div className="text-[10px] uppercase tracking-widest text-white/50 font-bold">
+                                Chart · {position.symbol} · {position.timeframe}
+                                {isFullscreen && (
+                                    <span className="ml-2 text-purple-400">· FULLSCREEN MODE</span>
+                                )}
+                            </div>
+                            {position.strategy && (
+                                <div className="text-[9px] px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                                    {position.strategy}
+                                </div>
+                            )}
+                        </div>
+                        <TradingViewChart 
+                            symbol={position.symbol} 
+                            timeframe={position.timeframe} 
+                            height={isFullscreen ? 600 : 350}
+                            entryPrice={position.entry_price}
+                        />
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </motion.div>
     );
 }

@@ -28,6 +28,8 @@ export interface PositionMetadata {
     entry_regime: MarketRegime;
     entry_time: string;
     asset_type: AssetType;
+    timeframe?: string;              // Trading timeframe (M5, H1, etc.)
+    strategy?: string;               // Strategy name (RSI_MACD, etc.)
 }
 
 // Balance metadata (source indicator)

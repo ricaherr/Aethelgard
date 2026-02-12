@@ -629,6 +629,10 @@ class PositionManager:
         
         # 3. Execute modification via connector with reason in comment
         try:
+            # Get old SL/TP for logging
+            old_sl = old_metadata.get('sl') if old_metadata else None
+            old_tp = old_metadata.get('tp') if old_metadata else None
+            
             result = self.connector.modify_position(ticket, new_sl, new_tp, reason=reason)
             
             if result.get('success'):
@@ -636,10 +640,39 @@ class PositionManager:
                     f"Position {ticket} ({symbol}) modified - SL: {new_sl}, TP: {new_tp}, "
                     f"Reason: {reason}"
                 )
+                
+                # Log successful modification to history
+                self.storage.log_position_event(
+                    ticket=ticket,
+                    symbol=symbol,
+                    event_type=self._get_event_type_from_reason(reason),
+                    old_sl=old_sl,
+                    new_sl=new_sl,
+                    old_tp=old_tp,
+                    new_tp=new_tp,
+                    reason=reason,
+                    success=True
+                )
+                
                 return True
             else:
                 # Modification failed - rollback metadata
                 error_msg = result.get('error', 'Unknown')
+                
+                # Log failed modification to history
+                self.storage.log_position_event(
+                    ticket=ticket,
+                    symbol=symbol,
+                    event_type='MODIFICATION_FAILED',
+                    old_sl=old_sl,
+                    new_sl=new_sl,
+                    old_tp=old_tp,
+                    new_tp=new_tp,
+                    reason=reason,
+                    success=False,
+                    error_message=error_msg
+                )
+                
                 # Expected broker responses (No changes / Invalid stops) - log as DEBUG
                 if error_msg in ['No changes', 'Invalid stops']:
                     logger.debug(
@@ -660,6 +693,21 @@ class PositionManager:
                 f"Exception modifying position {ticket}: {e} - Rolling back metadata",
                 exc_info=True
             )
+            
+            # Log exception to history
+            self.storage.log_position_event(
+                ticket=ticket,
+                symbol=symbol,
+                event_type='MODIFICATION_FAILED',
+                old_sl=old_metadata.get('sl') if old_metadata else None,
+                new_sl=new_sl,
+                old_tp=old_metadata.get('tp') if old_metadata else None,
+                new_tp=new_tp,
+                reason=reason,
+                success=False,
+                error_message=str(e)
+            )
+            
             self.storage.rollback_position_modification(ticket)
             return False
     
@@ -742,6 +790,37 @@ class PositionManager:
         )
         
         return True
+    
+    def _get_event_type_from_reason(self, reason: str) -> str:
+        """
+        Map modification reason to position_history event_type.
+        
+        Args:
+            reason: Modification reason string
+            
+        Returns:
+            Event type string for position_history table
+        """
+        reason_upper = reason.upper()
+        
+        # Map common reasons to event types
+        if 'BREAKEVEN' in reason_upper:
+            return 'BREAKEVEN'
+        elif 'TRAIL' in reason_upper:
+            return 'TRAILING_STOP'
+        elif any(regime in reason_upper for regime in ['RGM_', 'REGIME']):
+            return 'REGIME_CHANGE'
+        elif 'SYNC' in reason_upper or 'RECONCIL' in reason_upper:
+            return 'SYNC'
+        elif 'DRAWDOWN' in reason_upper:
+            return 'MAX_DRAWDOWN'
+        elif 'TP' in reason_upper and 'SL' not in reason_upper:
+            return 'TP_MODIFIED'
+        elif 'SL' in reason_upper and 'TP' not in reason_upper:
+            return 'SL_MODIFIED'
+        else:
+            # Default: generic modification
+            return 'SL_TP_MODIFIED'
     
     def _can_modify(self, metadata: Dict) -> bool:
         """

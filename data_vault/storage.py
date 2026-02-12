@@ -93,6 +93,25 @@ class StorageManager(
                     FOREIGN KEY (signal_id) REFERENCES signals (id)
                 )
             """)
+            
+            # Position History - Trazabilidad de gestión de operaciones
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS position_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ticket INTEGER NOT NULL,
+                    symbol TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    old_sl REAL,
+                    new_sl REAL,
+                    old_tp REAL,
+                    new_tp REAL,
+                    reason TEXT,
+                    success BOOLEAN,
+                    error_message TEXT,
+                    metadata TEXT
+                )
+            """)
 
             # 3. Market State & Coherence
             cursor.execute("""
@@ -335,6 +354,7 @@ class StorageManager(
                     initial_risk_usd REAL,
                     entry_regime TEXT,
                     timeframe TEXT,
+                    strategy TEXT,
                     data TEXT
                 )
             """)
@@ -348,6 +368,15 @@ class StorageManager(
                 cursor.execute("ALTER TABLE position_metadata ADD COLUMN direction TEXT")
                 conn.commit()
             
+            # AUTO-MIGRATION: Add strategy column if it doesn't exist
+            # (for existing databases created before strategy tracking)
+            try:
+                cursor.execute("SELECT strategy FROM position_metadata LIMIT 1")
+            except Exception:
+                logger.info("[MIGRATION] Adding 'strategy' column to position_metadata table")
+                cursor.execute("ALTER TABLE position_metadata ADD COLUMN strategy TEXT")
+                conn.commit()
+            
             # Extract known fields from merged metadata
             symbol = merged_metadata.get('symbol')
             entry_price = merged_metadata.get('entry_price')
@@ -359,12 +388,13 @@ class StorageManager(
             initial_risk_usd = merged_metadata.get('initial_risk_usd')
             entry_regime = merged_metadata.get('entry_regime')
             timeframe = merged_metadata.get('timeframe')
+            strategy = merged_metadata.get('strategy')
             
             # Store remaining fields as JSON in 'data' column
             known_fields = {
                 'ticket', 'symbol', 'entry_price', 'entry_time', 'direction',
                 'sl', 'tp', 'volume', 'initial_risk_usd', 
-                'entry_regime', 'timeframe'
+                'entry_regime', 'timeframe', 'strategy'
             }
             extra_data = {k: v for k, v in merged_metadata.items() if k not in known_fields}
             data_json = json.dumps(extra_data) if extra_data else None
@@ -373,11 +403,11 @@ class StorageManager(
             cursor.execute("""
                 REPLACE INTO position_metadata 
                 (ticket, symbol, entry_price, entry_time, direction, sl, tp, volume, 
-                 initial_risk_usd, entry_regime, timeframe, data)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 initial_risk_usd, entry_regime, timeframe, strategy, data)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 ticket, symbol, entry_price, entry_time, direction, sl, tp, volume,
-                initial_risk_usd, entry_regime, timeframe, data_json
+                initial_risk_usd, entry_regime, timeframe, strategy, data_json
             ))
             
             conn.commit()
@@ -406,6 +436,136 @@ class StorageManager(
         """
         logger.debug(f"[ROLLBACK] Position {ticket} - Metadata preserved (no-op)")
         return True
+    
+    def log_position_event(
+        self,
+        ticket: int,
+        symbol: str,
+        event_type: str,
+        old_sl: Optional[float] = None,
+        new_sl: Optional[float] = None,
+        old_tp: Optional[float] = None,
+        new_tp: Optional[float] = None,
+        reason: Optional[str] = None,
+        success: bool = True,
+        error_message: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> bool:
+        """
+        Log position management event to position_history table.
+        
+        Event types:
+        - 'SL_MODIFIED': Stop Loss adjusted
+        - 'TP_MODIFIED': Take Profit adjusted
+        - 'BREAKEVEN': Breakeven applied
+        - 'TRAILING_STOP': Trailing stop activated
+        - 'REGIME_CHANGE': SL/TP adjusted by regime change
+        - 'SYNC': Reconciliation/sync event
+        - 'CLOSE_ATTEMPT': Attempt to close position
+        - 'MODIFICATION_FAILED': Failed modification attempt
+        
+        Args:
+            ticket: Position ticket number
+            symbol: Trading symbol
+            event_type: Type of event (see above)
+            old_sl: Previous SL level
+            new_sl: New SL level
+            old_tp: Previous TP level
+            new_tp: New TP level
+            reason: Human-readable reason for change
+            success: Whether operation succeeded
+            error_message: Error message if failed
+            metadata: Additional metadata as dict
+            
+        Returns:
+            True if logged successfully, False otherwise
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            
+            # Serialize metadata to JSON
+            import json
+            metadata_json = json.dumps(metadata) if metadata else None
+            
+            cursor.execute("""
+                INSERT INTO position_history 
+                (ticket, symbol, event_type, old_sl, new_sl, old_tp, new_tp, 
+                 reason, success, error_message, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                ticket, symbol, event_type, old_sl, new_sl, old_tp, new_tp,
+                reason, success, error_message, metadata_json
+            ))
+            
+            conn.commit()
+            logger.debug(
+                f"[HISTORY] Logged {event_type} for {ticket} ({symbol}) - "
+                f"SL: {old_sl}→{new_sl}, TP: {old_tp}→{new_tp}"
+            )
+            return True
+            
+        except Exception as e:
+            logger.error(f"[HISTORY] Failed to log event for {ticket}: {e}")
+            return False
+        finally:
+            self._close_conn(conn)
+    
+    def get_position_history(
+        self,
+        ticket: Optional[int] = None,
+        symbol: Optional[str] = None,
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """
+        Get position history events.
+        
+        Args:
+            ticket: Filter by ticket (None = all positions)
+            symbol: Filter by symbol (None = all symbols)
+            limit: Max number of events to return
+            
+        Returns:
+            List of history events (newest first)
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            
+            query = "SELECT * FROM position_history WHERE 1=1"
+            params = []
+            
+            if ticket:
+                query += " AND ticket = ?"
+                params.append(ticket)
+            
+            if symbol:
+                query += " AND symbol = ?"
+                params.append(symbol)
+            
+            query += " ORDER BY timestamp DESC LIMIT ?"
+            params.append(limit)
+            
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            
+            # Convert to dict list
+            import json
+            events = []
+            for row in rows:
+                event = dict(row)
+                # Deserialize metadata if present
+                if event.get('metadata'):
+                    try:
+                        event['metadata'] = json.loads(event['metadata'])
+                    except:
+                        pass
+                events.append(event)
+            
+            return events
+            
+        finally:
+            self._close_conn(conn)
     
     # ========== MODULE TOGGLES (RESOLUTION LOGIC) ==========
     

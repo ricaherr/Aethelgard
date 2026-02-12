@@ -508,7 +508,8 @@ class OrderExecutor:
                 'initial_risk_usd': float(initial_risk_usd),
                 'entry_time': datetime.now().isoformat(),
                 'entry_regime': regime_str,
-                'timeframe': signal.timeframe,
+                'timeframe': signal.timeframe or 'M5',
+                'strategy': signal.strategy_id or 'RSI_MACD',
                 'volume': volume
             }
             
