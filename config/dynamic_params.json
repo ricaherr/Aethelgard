@@ -79,9 +79,18 @@
     },
     "trailing_stop": {
       "enabled": true,
+      "_comment_fase4b": "FASE 4B: Multiplicador dinámico por régimen + activación con ATR",
+      "atr_multipliers_by_regime": {
+        "TREND": 3.0,
+        "RANGE": 2.0,
+        "VOLATILE": 1.5,
+        "CRASH": 1.5
+      },
+      "min_profit_atr_multiplier": 1.0,
+      "apply_after_breakeven": false,
+      "_comment_legacy": "atr_multiplier y min_profit_pips mantienen retrocompatibilidad FASE 4",
       "atr_multiplier": 2.0,
-      "min_profit_pips": 10,
-      "apply_after_breakeven": false
+      "min_profit_pips": 10
     }
   }
 }

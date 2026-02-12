@@ -1016,8 +1016,18 @@ class PositionManager:
                 logger.debug(f"ATR not available for {symbol} - Cannot calculate trailing stop")
                 return None
             
-            # Get multiplier (default 2.0)
-            atr_multiplier = trailing_config.get('atr_multiplier', 2.0)
+            # Get regime-specific multiplier (FASE 4B: Dynamic by regime)
+            current_regime = self.regime_classifier.classify_regime(symbol)
+            regime_name = current_regime.value if hasattr(current_regime, 'value') else str(current_regime)
+            
+            atr_multipliers_by_regime = trailing_config.get('atr_multipliers_by_regime', {})
+            
+            # Priority: regime-specific > fallback 2.0
+            if atr_multipliers_by_regime and regime_name in atr_multipliers_by_regime:
+                atr_multiplier = atr_multipliers_by_regime[regime_name]
+            else:
+                # Fallback: Try legacy 'atr_multiplier' or default 2.0
+                atr_multiplier = trailing_config.get('atr_multiplier', 2.0)
             
             # Calculate trailing stop distance
             trailing_distance = atr * atr_multiplier
@@ -1083,9 +1093,7 @@ class PositionManager:
             if not trailing_config.get('enabled', False):
                 return False, "Trailing stop disabled in config"
             
-            # 1. Check minimum profit requirement
-            min_profit_pips = trailing_config.get('min_profit_pips', 10)
-            
+            # 1. Check minimum profit requirement (FASE 4B: Dynamic with ATR)
             # Get pip size
             symbol_info = self.connector.get_symbol_info(symbol)
             pip_size = 0.0001  # Default
@@ -1101,8 +1109,23 @@ class PositionManager:
             else:
                 return False, f"Unknown position type: {position_type}"
             
-            if profit_pips < min_profit_pips:
-                return False, f"Insufficient profit: {profit_pips:.1f} pips (min {min_profit_pips})"
+            # Calculate dynamic profit threshold with ATR
+            min_profit_atr_multiplier = trailing_config.get('min_profit_atr_multiplier')
+            
+            if min_profit_atr_multiplier is not None:
+                # FASE 4B: Dynamic threshold (1x ATR)
+                atr = self.get_current_atr(symbol)
+                if not atr or atr <= 0:
+                    return False, "ATR not available for dynamic profit threshold"
+                
+                profit_threshold_price = atr * min_profit_atr_multiplier
+                profit_threshold_pips = profit_threshold_price / pip_size
+            else:
+                # Fallback: Legacy fixed pips (FASE 4 compatibility)
+                profit_threshold_pips = trailing_config.get('min_profit_pips', 10)
+            
+            if profit_pips < profit_threshold_pips:
+                return False, f"Insufficient profit: {profit_pips:.1f} pips (min {profit_threshold_pips:.1f})"
             
             # 2. Calculate new trailing SL
             new_trailing_sl = self._calculate_trailing_stop_atr(position, metadata)

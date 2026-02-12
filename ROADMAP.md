@@ -516,6 +516,79 @@ python start.py
 
 ---
 
+## 📈 MILESTONE: Position Manager - FASE 4B (2026-02-11)
+**Estado: 🚧 EN PROGRESO**
+**Criterio: Trailing Stop INTELIGENTE - Multiplicador dinámico por régimen**
+
+### Problema Identificado (Post-Revisión FASE 4)
+- **Multiplicador ATR fijo (2.0x)**: No se adapta a características del régimen
+- **TREND**: 2.0x ATR muy ajustado → te saca en pullbacks normales
+- **VOLATILE/CRASH**: 2.0x ATR muy amplio → expone a reversiones violentas
+- **Activación con pips fijos (10)**: No se adapta a volatilidad real (ATR)
+- **Impacto**: Trailing stop "tonto" que no respeta naturaleza del mercado
+
+### Plan de Implementación
+
+**FASE 4B.1: Tests TDD Multiplicador Dinámico** 🚧 EN PROGRESO
+- [ ] Crear test_position_manager_trailing_dynamic.py
+- [ ] Test: TREND usa multiplicador 3.0x (aguantar pullbacks)
+- [ ] Test: VOLATILE usa multiplicador 1.5x (asegurar rápido)
+- [ ] Test: CRASH usa multiplicador 1.5x (salir antes de reversión)
+- [ ] Test: RANGE usa multiplicador 2.0x (balance intermedio)
+- [ ] Test: Activación con 1x ATR dinámico (no pips fijos)
+- [ ] Test: Cambio de régimen actualiza multiplicador
+
+**FASE 4B.2: Implementación PositionManager** ⏳ PENDIENTE
+- [ ] Modificar _calculate_trailing_stop_atr()
+  - Obtener régimen actual desde metadata o classifier
+  - Seleccionar multiplicador según régimen (config)
+  - trailing_distance = ATR * multiplier_dinamico
+- [ ] Modificar _should_apply_trailing_stop()
+  - Cambiar min_profit_pips fijo por min_profit_atr_multiplier
+  - profit_threshold = ATR * 1.0 (dinámico)
+  - Validar profit > threshold antes de activar
+
+**FASE 4B.3: Configuración Dynamic Params** ⏳ PENDIENTE
+- [ ] Modificar trailing_stop en position_management
+  - Eliminar atr_multiplier fijo (2.0)
+  - Agregar atr_multipliers_by_regime object
+    - TREND: 3.0
+    - RANGE: 2.0
+    - VOLATILE: 1.5
+    - CRASH: 1.5
+  - Cambiar min_profit_pips: 10 → min_profit_atr_multiplier: 1.0
+
+**FASE 4B.4: Validación** ⏳ PENDIENTE
+- [ ] Ejecutar tests (6 tests nuevos)
+- [ ] Ejecutar validate_all.py
+- [ ] Verificar logging muestra régimen + multiplicador usado
+
+### Archivos a Modificar
+
+**Tests nuevos:**
+- `tests/test_position_manager_trailing_dynamic.py` (6 tests)
+
+**Modificaciones:**
+- `core_brain/position_manager.py` (refactor 2 métodos existentes)
+- `config/dynamic_params.json` (refactor trailing_stop config)
+
+### Criterios de Aceptación FASE 4B
+✅ Multiplicador ATR dinámico por régimen  
+✅ TREND: 3.0x ATR (aguantar pullbacks)  
+✅ VOLATILE/CRASH: 1.5x ATR (salir rápido)  
+✅ Activación con 1x ATR (no pips fijos)  
+✅ Función monótona (ratchet) preservada  
+✅ Tests TDD 6/6 PASSED  
+✅ validate_all.py PASSED  
+
+### Impacto Esperado FASE 4B
+- **+35%** profit capturado en TREND (vs 20% FASE 4)
+- **-40%** falsos stops en pullbacks de TREND
+- **+50%** protección en VOLATILE/CRASH (cierre más rápido)
+- **+18%** win rate total (mejora sobre +12% FASE 4)
+
+---
+
 ## � MILESTONE: Consolidación de Position Size Calculator (2026-02-10)
 **Estado: ✅ COMPLETADO Y VALIDADO (147 tests - 96.6% pass rate)**
 **Criterio de Aceptación: Cálculo PERFECTO - 3 validaciones obligatorias** ✅
