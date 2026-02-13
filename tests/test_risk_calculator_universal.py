@@ -12,13 +12,7 @@ Tests cover:
 import pytest
 from unittest.mock import Mock, MagicMock
 from core_brain.risk_calculator import RiskCalculator
-
-
-class MockSymbolInfo:
-    """Mock MT5 SymbolInfo for testing"""
-    def __init__(self, contract_size, trade_mode=None):
-        self.trade_contract_size = contract_size
-        self.trade_mode = trade_mode or 4  # TRADE_MODE_FULL
+from conftest import MockSymbolInfo
 
 
 class MockTick:

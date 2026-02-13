@@ -1128,13 +1128,18 @@ class PositionManager:
                     ask = float(getattr(symbol_info, 'ask', 0))
                     bid = float(getattr(symbol_info, 'bid', 0))
                     point = float(getattr(symbol_info, 'point', 0.00001))
+                    contract_size = float(getattr(symbol_info, 'trade_contract_size', 100000))
                     
                     if ask > 0 and bid > 0:
                         spread_points = (ask - bid) / point
-                        # Convert spread to USD cost
-                        # For Forex: pip_value = (volume * contract_size * pip_size)
-                        # Simplified: volume * 10 * point (for standard lots)
-                        spread_cost = spread_points * volume * point * 100000
+                        # Convert spread to USD cost using DYNAMIC contract_size
+                        # Universal formula: spread_cost = spread_points * volume * point * contract_size
+                        # Works for:
+                        #   - Forex (EURUSD): contract_size = 100,000
+                        #   - Metals (XAUUSD): contract_size = 100
+                        #   - Crypto (BTCUSD): contract_size = 1
+                        #   - Indices (US30): contract_size = 10
+                        spread_cost = spread_points * volume * point * contract_size
             
             # Total cost to recover
             total_cost = commission_total + swap_cost + spread_cost
@@ -1143,23 +1148,29 @@ class PositionManager:
                 # No costs to recover = entry price is breakeven
                 return entry_price
             
-            # Calculate breakeven in pips
-            # For Forex pairs: 1 pip = $10 per lot (standard)
-            # For volume 0.10 lots: 1 pip = $1
-            # Cost in pips = total_cost / (volume * pip_value)
-            pip_value = volume * 10  # $10 per pip per lot
+            # Calculate pip value dynamically for multi-asset support
+            # Universal formula: pip_value = volume * contract_size * pip_size
+            # Where pip_size depends on digits (0.0001 for 5 digits, 0.01 for 2-3 digits, etc.)
+            symbol_info = self.connector.get_symbol_info(symbol)
+            if not symbol_info:
+                logger.warning(f"Cannot calculate breakeven: no symbol_info for {symbol}")
+                return None
+            
+            digits = getattr(symbol_info, 'digits', 5)
+            contract_size = float(getattr(symbol_info, 'trade_contract_size', 100000))
+            pip_size = 0.0001 if digits == 5 else 0.01 if digits in [2, 3] else 0.00001
+            
+            # Pip value calculation:
+            #   - Forex (EURUSD): volume=0.10 * contract=100,000 * pip=0.0001 = $1.00 per pip
+            #   - Metals (XAUUSD): volume=0.10 * contract=100 * pip=0.01 = $0.10 per point
+            #   - Crypto (BTCUSD): volume=0.10 * contract=1 * pip=1.0 = $0.10 per point
+            #   - Indices (US30): volume=0.10 * contract=10 * pip=1.0 = $1.00 per point
+            pip_value = volume * contract_size * pip_size
             if pip_value <= 0:
                 logger.warning(f"Invalid pip value calculation: {pip_value}")
                 return None
             
             cost_in_pips = total_cost / pip_value
-            
-            # Get pip size (0.0001 for EURUSD, 0.01 for USDJPY)
-            pip_size = 0.0001  # Default for most pairs
-            symbol_info = self.connector.get_symbol_info(symbol)
-            if symbol_info:
-                digits = getattr(symbol_info, 'digits', 5)
-                pip_size = 0.0001 if digits == 5 else 0.01
             
             # Breakeven price = entry + cost in pips
             # BUY: SL sube desde abajo hacia entry (entry - cost → entry)

@@ -274,6 +274,12 @@ class ScannerEngine:
                 except Exception as e:
                     logger.warning(f"[SCANNER] Error verificando toggle: {e}")
             
+            # HOT-RELOAD: Verificar cambios en timeframes configurados
+            try:
+                self._reload_timeframes_if_changed()
+            except Exception as e:
+                logger.warning(f"[SCANNER] Error reloading timeframes: {e}")
+            
             # Módulo habilitado - ejecutar ciclo normal
             try:
                 self._run_cycle()
@@ -287,6 +293,58 @@ class ScannerEngine:
     def stop(self) -> None:
         """Detiene el bucle del escáner."""
         self._running = False
+    
+    def _reload_timeframes_if_changed(self) -> None:
+        """
+        Hot-reload de timeframes desde config.json.
+        Detecta cambios y actualiza self.active_timeframes sin reiniciar el hilo.
+        
+        Coherente con sistema de module toggles (scanner enabled/disabled).
+        Permite que TrifectaAnalyzer auto-habilite timeframes y Scanner los detecte.
+        """
+        try:
+            import json
+            from pathlib import Path
+            
+            config_file = Path(self.config_path)
+            if not config_file.exists():
+                return
+            
+            with open(config_file, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            
+            scanner_config = config.get("scanner", {})
+            timeframes_config = scanner_config.get("timeframes", [])
+            
+            if not timeframes_config:
+                return
+            
+            # Extract currently enabled timeframes from config
+            enabled_tfs = [tf["timeframe"] for tf in timeframes_config if tf.get("enabled", True)]
+            
+            # Compare with current active timeframes
+            if set(enabled_tfs) != set(self.active_timeframes):
+                with self._lock:
+                    old_tfs = self.active_timeframes.copy()
+                    self.active_timeframes = enabled_tfs
+                    
+                    # Create classifiers for new timeframes
+                    for symbol in self.assets:
+                        for tf in self.active_timeframes:
+                            key = f"{symbol}|{tf}"
+                            if key not in self.classifiers:
+                                logger.info(f"🔄 [SCANNER] Creating classifier for new timeframe: {key}")
+                                self.classifiers[key] = RegimeClassifier(config_path=self.regime_config_path)
+                                self.last_regime[key] = MarketRegime.NORMAL
+                                self.last_scan_time[key] = 0.0
+                
+                logger.warning(
+                    f"🔄 [SCANNER] Timeframes hot-reloaded: {old_tfs} → {enabled_tfs}. "
+                    f"Scanning will now include all enabled timeframes."
+                )
+        
+        except Exception as e:
+            logger.error(f"[SCANNER] Failed to reload timeframes: {e}", exc_info=True)
 
     def get_all_regimes(self) -> Dict[str, MarketRegime]:
         """
