@@ -470,10 +470,13 @@ class SignalFactory:
         optimized_signals = []
         
         # Group market data by symbol for multi-timeframe analysis
+        # IMPORTANT: Normalize symbols to match signal.symbol format (remove Yahoo Finance suffix)
         symbol_data = defaultdict(dict)
         for key, data in scan_results.items():
             if data.get("df") is not None:
-                symbol_data[data["symbol"]][data["timeframe"]] = data["df"]
+                # Normalize: "EURUSD=X" -> "EURUSD" to match signal.symbol
+                normalized_symbol = data["symbol"].replace("=X", "")
+                symbol_data[normalized_symbol][data["timeframe"]] = data["df"]
 
         for signal in signals:
             # Only apply to Oliver Velez strategy signals

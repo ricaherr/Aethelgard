@@ -31,15 +31,15 @@
       },
       {
         "timeframe": "H1",
-        "enabled": true
+        "enabled": false
       },
       {
         "timeframe": "H4",
-        "enabled": true
+        "enabled": false
       },
       {
         "timeframe": "D1",
-        "enabled": true
+        "enabled": false
       }
     ]
   },
