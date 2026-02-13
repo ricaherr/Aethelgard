@@ -853,11 +853,16 @@ class MT5Connector:
                 position_list.append({
                     'ticket': pos.ticket,
                     'symbol': pos.symbol,
+                    'price': pos.price_open,  # Entry price (alias for compatibility)
                     'price_open': pos.price_open,
                     'price_current': pos.price_current,
+                    'current_price': pos.price_current,  # Alias for PositionManager compatibility
                     'volume': pos.volume,
                     'profit': pos.profit,
-                    'type': 'BUY' if pos.type == mt5.POSITION_TYPE_BUY else 'SELL'
+                    'sl': pos.sl,  # Stop loss
+                    'tp': pos.tp,  # Take profit
+                    'time': pos.time,  # Open time (Unix timestamp)
+                    'type': pos.type,  # Position type (0=BUY, 1=SELL)
                 })
             
             return position_list

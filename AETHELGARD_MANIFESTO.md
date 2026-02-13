@@ -4656,6 +4656,58 @@ python scripts/migrations/migrate_add_timeframe.py
 
 ### Cambios Críticos Recientes
 
+#### Account Risk Validation - Prevent Exceeding Max Account Risk (12/02/2026)
+
+**Problema Resuelto**: Sistema permitía riesgo total de cuenta del 8.5% cuando el límite configurado era 5%. La validación de riesgo operaba **solo a nivel de trade individual** (1.5% cada uno), pero **no validaba el riesgo agregado** de la cuenta.
+
+**Solución Implementada**: Método `RiskManager.can_take_new_trade(signal, connector)` que **rechaza señales pre-ejecución** si el riesgo total excedería el límite.
+
+**Flujo de Validación (Step 3.75 en Executor)**:
+```python
+# 1. Obtener balance de cuenta
+account_balance = connector.get_account_balance()
+
+# 2. Calcular riesgo de posiciones abiertas
+open_positions = connector.get_open_positions()
+current_risk_usd = sum([calculate_position_risk(p) for p in open_positions])
+
+# 3. Calcular riesgo de señal nueva
+signal_risk_usd = account_balance * risk_per_trade  # 1.5%
+
+# 4. Validar total vs límite
+total_risk_pct = (current_risk_usd + signal_risk_usd) / account_balance * 100
+if total_risk_pct > max_account_risk_pct:  # 5% default
+    return False, "Account risk would exceed 5.0% (4.5% + 1.5% = 6.0%)"
+```
+
+**Configuración** ([config/risk_settings.json](config/risk_settings.json)):
+```json
+{
+  "max_account_risk_pct": 5.0,  // ← NUEVO: Single Source of Truth
+  "max_consecutive_losses": 3,
+  "lockdown_mode_enabled": true
+}
+```
+
+**Beneficios**:
+- ✅ **Protección real de cuenta**: No más riesgo > 5% por múltiples señales simultáneas
+- ✅ **Single Source of Truth**: Valor configurable (no hardcoded)
+- ✅ **Filosofía EDGE respetada**: EdgeTuner ajusta filtros de señales (ADX, ATR), NO valores de riesgo
+- ✅ **Tests TDD**: 2 tests unitarios + validación en 25 integration tests
+
+**Archivos Modificados**:
+- [core_brain/risk_manager.py](core_brain/risk_manager.py#L90-L185): Método `can_take_new_trade()`
+- [core_brain/executor.py](core_brain/executor.py#L195-L213): Step 3.75 validación
+- [core_brain/server.py](core_brain/server.py#L178-L191): Helper `_get_max_account_risk_pct()`
+- [config/risk_settings.json](config/risk_settings.json#L3): Agregado `max_account_risk_pct`
+
+**Resultado**: Sistema ahora valida riesgo en **3 capas**:
+1. **Por trade**: 1.5% risk_per_trade (ajustable manualmente o por tuner futuro)
+2. **Por cuenta**: 5.0% max_account_risk_pct ✅ **NUEVO**
+3. **Por símbolo**: Multi-timeframe limits (max 3 posiciones, 5 lots por símbolo)
+
+---
+
 #### Multi-Timeframe Confluence System with EDGE (30/01/2026)
 
 **Mejora Implementada**: Sistema de confluencia inteligente que refuerza/penaliza señales basándose en alineación con timeframes superiores. **Aprende automáticamente** los pesos óptimos mediante EdgeTuner.

@@ -88,6 +88,11 @@ function PositionCard({ position, fullscreenTicket, onFullscreenToggle }: Positi
     const [showChart, setShowChart] = useState(false);
     const isFullscreen = fullscreenTicket === position.ticket;
     const isProfit = position.profit_usd >= 0;
+    
+    // Infer position type if not provided
+    const isBuy = position.type === 'BUY' || 
+                  (!position.type && position.sl < position.entry_price && position.tp > position.entry_price);
+    
     const rColor =
         position.r_multiple >= 1 ? 'text-green-400' :
         position.r_multiple >= 0 ? 'text-yellow-400' :
@@ -225,12 +230,12 @@ function PositionCard({ position, fullscreenTicket, onFullscreenToggle }: Positi
                 {(showChart || isFullscreen) && position.timeframe && (
                     <motion.div
                         initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
+                        animate={{ height: isFullscreen ? 650 : 420, opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
                         transition={{ duration: 0.3 }}
-                        className="mt-4 pt-4 border-t border-white/5 overflow-hidden"
+                        className="mt-4 pt-4 border-t border-white/5 overflow-hidden flex flex-col"
                     >
-                        <div className="mb-2 flex items-center justify-between">
+                        <div className="mb-2 flex items-center justify-between flex-shrink-0">
                             <div className="text-[10px] uppercase tracking-widest text-white/50 font-bold">
                                 Chart · {position.symbol} · {position.timeframe}
                                 {isFullscreen && (
@@ -243,12 +248,17 @@ function PositionCard({ position, fullscreenTicket, onFullscreenToggle }: Positi
                                 </div>
                             )}
                         </div>
-                        <TradingViewChart 
-                            symbol={position.symbol} 
-                            timeframe={position.timeframe} 
-                            height={isFullscreen ? 600 : 350}
-                            entryPrice={position.entry_price}
-                        />
+                        <div className="flex-1 min-h-0">
+                            <TradingViewChart 
+                                symbol={position.symbol} 
+                                timeframe={position.timeframe} 
+                                height={isFullscreen ? 600 : 350}
+                                entryPrice={position.entry_price}
+                                stopLoss={position.sl}
+                                takeProfit={position.tp}
+                                isBuy={isBuy}
+                            />
+                        </div>
                     </motion.div>
                 )}
             </AnimatePresence>

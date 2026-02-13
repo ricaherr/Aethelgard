@@ -18,6 +18,7 @@ export interface Signal {
 export interface PositionMetadata {
     ticket: number;
     symbol: string;
+    type?: 'BUY' | 'SELL';           // Position type (inferred if not provided)
     entry_price: number;
     sl: number;
     tp: number;

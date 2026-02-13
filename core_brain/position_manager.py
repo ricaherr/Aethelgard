@@ -62,6 +62,9 @@ class PositionManager:
         self.regime_adjustments = config.get('regime_adjustments', {})
         self.stale_thresholds = config.get('stale_thresholds_hours', {})
         
+        # Track orphan positions (without metadata) to avoid log spam
+        self._synced_orphans = set()  # Set of ticket numbers already synced
+        
         logger.info(
             f"PositionManager initialized - "
             f"Max Drawdown: {self.max_drawdown_multiplier}x, "
@@ -92,6 +95,9 @@ class PositionManager:
             symbol = position.get('symbol')
             
             try:
+                # 0. Sync metadata for orphan positions (opened outside Aethelgard)
+                self._sync_orphan_position(position)
+                
                 # 1. Check for emergency close (max drawdown exceeded)
                 if self._exceeds_max_drawdown(position):
                     logger.warning(
@@ -220,6 +226,127 @@ class PositionManager:
         
         return summary
     
+    def _sync_orphan_position(self, position: Dict[str, Any]) -> None:
+        """
+        Auto-sync metadata for positions without it (orphan positions).
+        
+        Orphan positions are those opened:
+        - Before metadata system was implemented
+        - Directly from MT5/broker (manual trades)
+        - From other systems/EAs
+        
+        Creates minimal metadata to enable monitoring. Initial risk is estimated
+        based on current SL-Entry distance.
+        
+        Args:
+            position: Position dict from connector
+        """
+        ticket = position.get('ticket')
+        
+        # Skip if already has metadata
+        if self.storage.get_position_metadata(ticket):
+            return
+        
+        # Skip if already synced this session (avoid repeated work)
+        if ticket in self._synced_orphans:
+            return
+        
+        # Log once per position
+        logger.info(
+            f"Syncing orphan position {ticket} ({position.get('symbol')}) - "
+            f"Creating metadata from broker data"
+        )
+        
+        # Extract position data
+        symbol = position.get('symbol')
+        entry_price = position.get('price', position.get('price_open', 0))  # Entry price
+        current_sl = position.get('sl', 0)
+        current_tp = position.get('tp', 0)
+        volume = position.get('volume', 0)
+        open_time = position.get('time')
+        position_type = position.get('type')
+        
+        # Estimate initial risk (distance from entry to SL)
+        initial_risk_usd = 0.0
+        if current_sl and current_sl > 0 and entry_price > 0 and volume > 0:
+            # Determine point size based on instrument
+            if 'JPY' in symbol:
+                point = 0.001  # Japanese Yen pairs (3 decimal places)
+            elif any(metal in symbol for metal in ['XAU', 'XAG', 'GOLD', 'SILVER']):
+                point = 0.01  # Metals (2 decimal places)
+            else:
+                point = 0.00001  # Standard forex (5 decimal places)
+            
+            # Calculate risk in points
+            sl_distance = abs(entry_price - current_sl)
+            sl_distance_points = sl_distance / point
+            
+            # Estimate USD risk per lot (simplified)
+            # Standard forex: ~$10 per pip per standard lot
+            # This is a rough estimate for monitoring purposes
+            # For accurate calculation, we'd need account currency, conversion rates, etc.
+            usd_per_pip = 10.0  # Approximate for major pairs
+            initial_risk_usd = sl_distance * volume * usd_per_pip
+            
+            logger.debug(
+                f"Orphan position {ticket} risk calculation: "
+                f"SL distance={sl_distance:.5f}, volume={volume}, "
+                f"estimated_risk=${initial_risk_usd:.2f}"
+            )
+        else:
+            logger.debug(
+                f"Orphan position {ticket} has no SL or invalid data - "
+                f"initial_risk_usd will be 0 (sl={current_sl}, entry={entry_price}, vol={volume})"
+            )
+        
+        # Determine direction from MT5 position type
+        # MT5 constants: POSITION_TYPE_BUY=0, POSITION_TYPE_SELL=1
+        direction = 'BUY' if position_type == 0 else 'SELL' if position_type == 1 else 'UNKNOWN'
+        
+        # Format entry time
+        if open_time:
+            if isinstance(open_time, (int, float)):
+                entry_time_str = datetime.fromtimestamp(open_time).isoformat()
+            else:
+                entry_time_str = open_time
+        else:
+            entry_time_str = datetime.now().isoformat()
+        
+        # Get current regime (fallback to NEUTRAL if unavailable)
+        current_regime = self._get_current_regime_with_fallback(symbol)
+        regime_str = current_regime.value if hasattr(current_regime, 'value') else 'NEUTRAL'
+        
+        # Create basic metadata
+        metadata = {
+            'ticket': ticket,
+            'symbol': symbol,
+            'entry_price': entry_price,
+            'entry_time': entry_time_str,
+            'direction': direction,
+            'sl': current_sl,
+            'tp': current_tp,
+            'volume': volume,
+            'initial_risk_usd': initial_risk_usd,
+            'entry_regime': regime_str,
+            'timeframe': position.get('timeframe', 'UNKNOWN'),
+            'strategy': 'ORPHAN_SYNC',  # Mark as auto-synced
+        }
+        
+        # Save to database
+        success = self.storage.update_position_metadata(ticket, metadata)
+        
+        if success:
+            # Mark as synced to avoid repeating this process
+            self._synced_orphans.add(ticket)
+            logger.info(
+                f"Orphan position {ticket} synced successfully - "
+                f"Estimated risk: ${initial_risk_usd:.2f}"
+            )
+        else:
+            logger.error(
+                f"Failed to sync orphan position {ticket}"
+            )
+    
     def _get_current_regime_with_fallback(self, symbol: str) -> 'MarketRegime':
         """
         Get current market regime for symbol with fallback to NEUTRAL.
@@ -269,16 +396,21 @@ class PositionManager:
         # Get position metadata from database
         metadata = self.storage.get_position_metadata(ticket)
         if not metadata:
-            logger.warning(
-                f"No metadata found for position {ticket} - "
-                f"Cannot validate max drawdown"
-            )
+            # Log only once per position to avoid spam
+            if ticket not in self._synced_orphans:
+                logger.debug(
+                    f"No metadata found for position {ticket} - "
+                    f"Cannot validate max drawdown (will auto-sync)"
+                )
             return False
         
         initial_risk_usd = metadata.get('initial_risk_usd', 0)
         if initial_risk_usd <= 0:
-            logger.warning(
-                f"Invalid initial_risk_usd for position {ticket}: {initial_risk_usd}"
+            # DEBUG: Position without SL or orphan without risk calculation
+            # This is expected for manual positions or positions without SL
+            logger.debug(
+                f"Position {ticket} has no initial_risk_usd (value: {initial_risk_usd}) - "
+                f"Cannot validate max drawdown. This is normal for positions without SL."
             )
             return False
         
@@ -321,9 +453,11 @@ class PositionManager:
         # Get position metadata
         metadata = self.storage.get_position_metadata(ticket)
         if not metadata:
-            logger.warning(
-                f"No metadata for position {ticket} - Cannot check staleness"
-            )
+            # Log only once per position to avoid spam
+            if ticket not in self._synced_orphans:
+                logger.debug(
+                    f"No metadata for position {ticket} - Cannot check staleness (will auto-sync)"
+                )
             return False
         
         entry_time_str = metadata.get('entry_time')
@@ -459,11 +593,16 @@ class PositionManager:
         # FALLBACK: Get direction from MT5 position if not in metadata
         # (for manual positions or positions opened before direction tracking)
         if not direction:
-            direction = position.get('type', '')
-            if direction:
-                logger.info(
-                    f"Direction missing from metadata for {ticket}, using MT5 type: {direction}"
-                )
+            type_value = position.get('type')
+            if type_value is not None:
+                # Convert MT5 position type to string direction
+                # MT5 constants: POSITION_TYPE_BUY=0, POSITION_TYPE_SELL=1
+                direction = 'BUY' if type_value == 0 else 'SELL' if type_value == 1 else ''
+                if direction:
+                    logger.info(
+                        f"Direction missing from metadata for {ticket}, "
+                        f"using MT5 type {type_value} → {direction}"
+                    )
         
         sl_atr_multiplier = regime_config.get('sl_atr_multiplier', 1.5)
         tp_atr_multiplier = regime_config.get('tp_atr_multiplier', 2.0)
@@ -937,9 +1076,29 @@ class PositionManager:
             symbol = position.get('symbol')
             
             if entry_price <= 0 or volume <= 0:
+                # This indicates corrupted metadata - force re-sync
+                ticket = position.get('ticket')
                 logger.warning(
-                    f"Invalid position data - Entry: {entry_price}, Volume: {volume}"
+                    f"Position {ticket} has corrupted metadata - "
+                    f"entry_price: {entry_price}, volume: {volume}. "
+                    f"Deleting and forcing re-sync..."
                 )
+                # Delete corrupted metadata from database
+                try:
+                    conn = self.storage._get_conn()
+                    cursor = conn.cursor()
+                    cursor.execute("DELETE FROM position_metadata WHERE ticket = ?", (ticket,))
+                    conn.commit()
+                    self.storage._close_conn(conn)
+                    logger.info(f"Deleted corrupted metadata for position {ticket}")
+                except Exception as e:
+                    logger.error(f"Failed to delete corrupted metadata for {ticket}: {e}")
+                
+                # Remove from synced orphans to force re-sync
+                if ticket in self._synced_orphans:
+                    self._synced_orphans.remove(ticket)
+                
+                # Trigger re-sync in next cycle
                 return None
             
             # Get breakeven config
@@ -1006,9 +1165,14 @@ class PositionManager:
             # BUY: SL sube desde abajo hacia entry (entry - cost → entry)
             # SELL: SL baja desde arriba hacia entry (entry + cost → entry)
             position_type = position.get('type')
-            if position_type == 'BUY':
+            # Normalize type: MT5 returns int (0=BUY, 1=SELL per POSITION_TYPE_BUY/SELL)
+            # Metadata stores string ('BUY', 'SELL'). Support both formats.
+            is_buy = position_type in [0, 'BUY']
+            is_sell = position_type in [1, 'SELL']
+            
+            if is_buy:
                 breakeven_price = entry_price + (cost_in_pips * pip_size)
-            elif position_type == 'SELL':
+            elif is_sell:
                 breakeven_price = entry_price + (cost_in_pips * pip_size)  # SL baja desde arriba hacia entry
             else:
                 logger.warning(f"Unknown position type: {position_type}")
@@ -1167,7 +1331,11 @@ class PositionManager:
             current_price = float(position.get('current_price', 0))
             
             if current_price <= 0:
-                logger.warning(f"Invalid current price: {current_price}")
+                # DEBUG: Transitorio, MT5 aún no ha devuelto precio actual
+                logger.debug(
+                    f"Position {position.get('ticket')} current_price not available yet "
+                    f"(value: {current_price}) - Skipping trailing stop calculation"
+                )
                 return None
             
             # Get trailing stop config
@@ -1198,10 +1366,15 @@ class PositionManager:
             trailing_distance = atr * atr_multiplier
             
             # Calculate new SL based on position type
-            if position_type == 'BUY':
+            # Normalize type: MT5 returns int (0=BUY, 1=SELL per POSITION_TYPE_BUY/SELL)
+            # Metadata stores string ('BUY', 'SELL'). Support both formats.
+            is_buy = position_type in [0, 'BUY']
+            is_sell = position_type in [1, 'SELL']
+            
+            if is_buy:
                 # BUY: SL debajo del precio actual
                 trailing_sl = current_price - trailing_distance
-            elif position_type == 'SELL':
+            elif is_sell:
                 # SELL: SL arriba del precio actual
                 trailing_sl = current_price + trailing_distance
             else:
@@ -1268,9 +1441,14 @@ class PositionManager:
                 pip_size = 0.0001 if digits == 5 else 0.01
             
             # Calculate current profit in pips
-            if position_type == 'BUY':
+            # Normalize type: MT5 returns int (0=BUY, 1=SELL per POSITION_TYPE_BUY/SELL)
+            # Metadata stores string ('BUY', 'SELL'). Support both formats.
+            is_buy = position_type in [0, 'BUY']
+            is_sell = position_type in [1, 'SELL']
+            
+            if is_buy:
                 profit_pips = (current_price - entry_price) / pip_size
-            elif position_type == 'SELL':
+            elif is_sell:
                 profit_pips = (entry_price - current_price) / pip_size
             else:
                 return False, f"Unknown position type: {position_type}"
