@@ -14,6 +14,11 @@ import sys
 from pathlib import Path
 from typing import List, Tuple, Optional
 
+# Configure UTF-8 encoding for Windows terminal (fix emoji display)
+import io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
 def find_python_files(root_dir: Path) -> List[Path]:
     """Encuentra archivos .py excluyendo entornos virtuales y basura."""
     python_files = []

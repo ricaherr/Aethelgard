@@ -139,6 +139,73 @@ El Core Brain es el núcleo autónomo del sistema, compuesto por módulos especi
 - **Parámetros Dinámicos**: Carga desde base de datos (`system_state`) con fallback a `config/dynamic_params.json` durante transición.
 - **`load_ohlc(df)`**: Carga masiva OHLC para escáner proactivo (p. ej. desde MT5)
 
+##### `tech_utils.py` - Analizador Técnico Centralizado
+- **Función**: Centralizar el cálculo de indicadores técnicos para evitar redundancia y asegurar consistencia
+- **Arquitectura**: Clase estática `TechnicalAnalyzer` con métodos puros (sin estado)
+- **Responsabilidades**:
+  - Cálculos de indicadores técnicos optimizados (vectorizados con pandas)
+  - Análisis de tendencia avanzado (fuerza, dirección, clasificación)
+  - Single Source of Truth para fórmulas de indicadores
+
+**Indicadores Disponibles:**
+
+1. **`calculate_sma(df, period, column='close')`**
+   - Media Móvil Simple
+   - Uso: Identificar tendencia de largo plazo (SMA200) y tácticas (SMA20/50)
+
+2. **`calculate_atr(df, period=14)`**
+   - Average True Range (volatilidad)
+   - Uso: Dimensionar stops, detectar volatilidad extrema
+
+3. **`calculate_adx(df, period=14)`**
+   - Average Directional Index (fuerza de tendencia)
+   - Implementación: Suavizado de Wilder estándar de industria
+   - Uso: Clasificación de régimen (TREND vs RANGE)
+
+4. **`calculate_volatility(df, window=20)`**
+   - Volatilidad estadística (desviación estándar de retornos logarítmicos)
+   - Uso: Detección de shock, sizing de posición
+
+**Análisis de Tendencia Avanzado (Nuevo - Feb 2026):**
+
+5. **`calculate_sma_slope(df, period, lookback=5)`**
+   - Calcula pendiente de una SMA como % de cambio
+   - Ejemplo: slope=0.15 → SMA subiendo 0.15% en últimas 5 velas
+   - Uso: Distinguir tendencias fuertes vs débiles
+
+6. **`calculate_trend_strength(df, fast_period=20, slow_period=200)`**
+   - Calcula fuerza de tendencia combinando múltiples factores
+   - Retorna dict con:
+     - `slope_fast`: Pendiente SMA20 (%)
+     - `slope_slow`: Pendiente SMA200 (%)
+     - `separation_pct`: Separación entre SMA20 y SMA200 (%)
+     - `price_position`: Posición del precio ("above_both", "below_both", "between")
+     - `strength_score`: Score 0-100 (100 = tendencia muy fuerte)
+   - Componentes del score:
+     - 40 puntos: Pendiente SMA200 (|slope| > 0.15% = 40pts)
+     - 40 puntos: Separación SMAs (>3% = 40pts)
+     - 20 puntos: Alineación precio (above_both/below_both = 20pts)
+
+7. **`classify_trend(df, fast_period=20, slow_period=200)`**
+   - Clasifica tendencia en 5 niveles de fuerza
+   - Clasificación:
+     - **DOWNTREND_STRONG**: precio < SMA20 < SMA200, slope200 < -0.1%, sep > 2%
+     - **DOWNTREND_WEAK**: precio < SMA20 < SMA200, slope200 < -0.05%, sep > 1%
+     - **SIDEWAYS**: slope200 entre -0.05% y 0.05%, sep < 1%
+     - **UPTREND_WEAK**: precio > SMA20 > SMA200, slope200 > 0.05%, sep > 1%
+     - **UPTREND_STRONG**: precio > SMA20 > SMA200, slope200 > 0.1%, sep > 2%
+   - Uso: Bonificar/penalizar señales según fuerza de tendencia
+
+**Integración en Estrategias:**
+- **oliver_velez.py**: +15pts bonus UPTREND_STRONG/DOWNTREND_STRONG, +5pts débiles
+- **trifecta_logic.py**: +15pts tendencias fuertes, -10pts SIDEWAYS, +0-10pts por strength_score
+
+**Principios de Diseño:**
+- ✅ **Precisión**: Implementa Wilder's Smoothing según estándares de industria
+- ✅ **Eficiencia**: Cálculos vectorizados con pandas/numpy
+- ✅ **Reutilización**: Una sola fuente de verdad para indicadores
+- ✅ **Consistencia**: Todos los módulos usan TechnicalAnalyzer (no deben calcular indicadores por su cuenta)
+
 ##### `scanner.py` - Escáner Proactivo Multi-Timeframe
 - **Función**: Orquestador que escanea una lista de activos de forma proactiva en **múltiples timeframes simultáneamente**, sin depender de NinjaTrader ni de gráficas abiertas.
 - **Componentes**:
@@ -4004,8 +4071,9 @@ return min(100.0, max(0.0, score))
 ### 🎯 FASE 2.6: TrifectaAnalyzer - Oliver Velez Multi-Timeframe Optimization
 
 **Estado:** ✅ IMPLEMENTADO (Febrero 2026)  
+**Última Actualización:** 2026-02-13 (Trap Zone Fix)  
 **Módulo:** `core_brain/strategies/trifecta_logic.py`  
-**Tests:** `tests/test_trifecta_logic.py` (10/10 tests pasando)
+**Tests:** `tests/test_trifecta_logic.py` (17/17 tests pasando)
 
 #### Objetivo
 
@@ -4017,6 +4085,36 @@ Implementar la metodología "Trifecta" de Oliver Velez: alineación fractal de p
 - **BUY Setup**: Precio debe estar ARRIBA de SMA20 en M1, M5 y M15 simultáneamente
 - **SELL Setup**: Precio debe estar ABAJO de SMA20 en M1, M5 y M15 simultáneamente
 - **Rationale**: Confirmación de tendencia en múltiples escalas temporales
+
+**1.0 Jerarquía SMA - Trap Zone Prevention (⚡ Mejora Aethelgard - 2026-02-13)**
+- **Problema**: Señales BUY válidas por alineación (precio > SMA20), pero SMA20 < SMA200 (rebote contra tendencia mayor)
+- **Regla BUY**: `Precio > SMA20 > SMA200` (jerarquía alcista completa)
+- **Regla SELL**: `Precio < SMA20 < SMA200` (jerarquía bajista completa)
+- **Implementación**:
+  ```python
+  # BUY: Precio > SMA20 en 3 TFs AND SMA20 > SMA200
+  is_bullish = (
+      micro['bullish'] and mid['bullish'] and macro['bullish']
+      and mid['sma20_value'] > mid['sma200_value']  # Jerarquía
+  )
+  
+  # SELL: Precio < SMA20 en 3 TFs AND SMA20 < SMA200
+  is_bearish = (
+      micro['bearish'] and mid['bearish'] and macro['bearish']
+      and mid['sma20_value'] < mid['sma200_value']  # Jerarquía
+  )
+  
+  # Trap Zone Detection (rechazar explícitamente)
+  if precio_alineado BUT jerarquía_incorrecta:
+      return {"valid": False, "reason": "Trap Zone"}
+  ```
+- **Ejemplo Trap Zone**:
+  - Precio: 1.0970 (rebote alcista reciente)
+  - SMA20: 1.0935 (precio > SMA20 ✓)
+  - SMA200: 1.1009 (tendencia bajista mayor ❌)
+  - **Decisión**: RECHAZAR (rebote contra resistencia = probabilidad baja)
+- **Rationale**: Oliver Velez enfatiza operar A FAVOR de la tendencia mayor. Si SMA20 está por debajo de SMA200, la tendencia de fondo es bajista. Un precio por encima de SMA20 es solo un rebote técnico (pullback) hacia resistencia, no un setup válido.
+- **Tests**: `test_trap_zone_bullish_rejected` y `test_trap_zone_bearish_rejected` en `test_trifecta_logic.py`
 
 **1.1 EMA Slope Validation (⚡ Mejora Aethelgard)**
 - **Regla**: Rechazar si SMA20 está plana (sin pendiente clara)

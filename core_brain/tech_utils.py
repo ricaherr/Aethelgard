@@ -102,6 +102,162 @@ class TechnicalAnalyzer:
         return returns.rolling(window=window).std()
 
     @staticmethod
+    def calculate_sma_slope(df: pd.DataFrame, period: int, lookback: int = 5, column: str = 'close') -> pd.Series:
+        """
+        Calcula la pendiente (slope) de una SMA como porcentaje de cambio.
+        
+        Args:
+            df: DataFrame con datos OHLC
+            period: Período de la SMA (ej. 20, 200)
+            lookback: Velas hacia atrás para calcular pendiente (default: 5)
+            column: Columna a usar para el cálculo (default: 'close')
+        
+        Returns:
+            Serie con pendiente en porcentaje (valores positivos = alcista, negativos = bajista)
+            
+        Ejemplo:
+            slope = 0.15  → SMA subiendo 0.15% en últimas 5 velas (tendencia alcista moderada)
+            slope = -0.08 → SMA bajando 0.08% en últimas 5 velas (tendencia bajista débil)
+        """
+        if len(df) < period + lookback:
+            return pd.Series(0.0, index=df.index)
+        
+        sma = df[column].rolling(window=period).mean()
+        sma_prev = sma.shift(lookback)
+        
+        # Calcular cambio porcentual
+        slope = ((sma - sma_prev) / sma_prev.replace(0, np.nan)) * 100
+        return slope.fillna(0.0)
+
+    @staticmethod
+    def calculate_trend_strength(df: pd.DataFrame, 
+                                  fast_period: int = 20, 
+                                  slow_period: int = 200,
+                                  lookback: int = 5) -> dict:
+        """
+        Calcula la fuerza de la tendencia combinando múltiples factores.
+        
+        Args:
+            df: DataFrame con datos OHLC
+            fast_period: Período SMA rápida (default: 20)
+            slow_period: Período SMA lenta (default: 200)
+            lookback: Velas para calcular pendiente (default: 5)
+        
+        Returns:
+            Dict con:
+                - slope_fast: Pendiente SMA rápida (%)
+                - slope_slow: Pendiente SMA lenta (%)
+                - separation_pct: Separación entre SMAs (%)
+                - price_position: Posición del precio respecto a SMAs ('above_both', 'below_both', 'between')
+                - strength_score: Score 0-100 (100 = tendencia muy fuerte)
+        """
+        if len(df) < slow_period + lookback:
+            return {
+                "slope_fast": 0.0,
+                "slope_slow": 0.0,
+                "separation_pct": 0.0,
+                "price_position": "unknown",
+                "strength_score": 0.0
+            }
+        
+        # Calcular SMAs
+        sma_fast = df['close'].rolling(window=fast_period).mean().iloc[-1]
+        sma_slow = df['close'].rolling(window=slow_period).mean().iloc[-1]
+        current_price = df['close'].iloc[-1]
+        
+        # Calcular pendientes
+        slope_fast = TechnicalAnalyzer.calculate_sma_slope(df, fast_period, lookback).iloc[-1]
+        slope_slow = TechnicalAnalyzer.calculate_sma_slope(df, slow_period, lookback).iloc[-1]
+        
+        # Separación entre SMAs
+        separation_pct = abs(sma_fast - sma_slow) / sma_slow * 100 if sma_slow > 0 else 0.0
+        
+        # Posición del precio
+        if current_price > sma_fast and sma_fast > sma_slow:
+            price_position = "above_both"
+        elif current_price < sma_fast and sma_fast < sma_slow:
+            price_position = "below_both"
+        else:
+            price_position = "between"
+        
+        # Calcular strength score (0-100)
+        # Componentes:
+        # - Pendiente slow (40 puntos): |slope_slow| > 0.15% = 40, lineal hasta 0
+        # - Separación (40 puntos): separation > 3% = 40, lineal hasta 0
+        # - Alineación (20 puntos): above_both o below_both = 20, between = 0
+        
+        slope_score = min(40, abs(slope_slow) / 0.15 * 40) if abs(slope_slow) < 0.15 else 40
+        separation_score = min(40, separation_pct / 3.0 * 40) if separation_pct < 3.0 else 40
+        alignment_score = 20 if price_position in ["above_both", "below_both"] else 0
+        
+        strength_score = slope_score + separation_score + alignment_score
+        
+        return {
+            "slope_fast": float(slope_fast),
+            "slope_slow": float(slope_slow),
+            "separation_pct": float(separation_pct),
+            "price_position": price_position,
+            "strength_score": float(strength_score)
+        }
+
+    @staticmethod
+    def classify_trend(df: pd.DataFrame, 
+                      fast_period: int = 20, 
+                      slow_period: int = 200,
+                      lookback: int = 5) -> str:
+        """
+        Clasifica la tendencia en 5 niveles basándose en jerarquía de precios, 
+        pendiente de SMA200 y separación entre SMAs.
+        
+        Args:
+            df: DataFrame con datos OHLC
+            fast_period: Período SMA rápida (default: 20)
+            slow_period: Período SMA lenta (default: 200)
+            lookback: Velas para calcular pendiente (default: 5)
+        
+        Returns:
+            String con clasificación:
+                - "DOWNTREND_STRONG": Bajista fuerte (slope200 < -0.1%, sep > 2%)
+                - "DOWNTREND_WEAK": Bajista débil (slope200 < -0.05%, sep > 1%)
+                - "SIDEWAYS": Lateral/sin tendencia (slope200 entre -0.05% y 0.05%)
+                - "UPTREND_WEAK": Alcista débil (slope200 > 0.05%, sep > 1%)
+                - "UPTREND_STRONG": Alcista fuerte (slope200 > 0.1%, sep > 2%)
+        """
+        if len(df) < slow_period + lookback:
+            return "SIDEWAYS"
+        
+        # Obtener datos de fuerza de tendencia
+        strength = TechnicalAnalyzer.calculate_trend_strength(df, fast_period, slow_period, lookback)
+        
+        slope_slow = strength["slope_slow"]
+        separation_pct = strength["separation_pct"]
+        price_position = strength["price_position"]
+        
+        # Clasificación jerárquica
+        # 1. Validar jerarquía de precios (requisito básico)
+        if price_position == "above_both":
+            # Tendencia alcista (precio > SMA20 > SMA200)
+            if slope_slow > 0.1 and separation_pct > 2.0:
+                return "UPTREND_STRONG"
+            elif slope_slow > 0.05 and separation_pct > 1.0:
+                return "UPTREND_WEAK"
+            else:
+                return "SIDEWAYS"  # Jerarquía alcista pero sin momentum
+                
+        elif price_position == "below_both":
+            # Tendencia bajista (precio < SMA20 < SMA200)
+            if slope_slow < -0.1 and separation_pct > 2.0:
+                return "DOWNTREND_STRONG"
+            elif slope_slow < -0.05 and separation_pct > 1.0:
+                return "DOWNTREND_WEAK"
+            else:
+                return "SIDEWAYS"  # Jerarquía bajista pero sin momentum
+        
+        else:
+            # Precio entre SMAs = sin tendencia definida
+            return "SIDEWAYS"
+
+    @staticmethod
     def enrich_dataframe(df: pd.DataFrame, config: dict) -> pd.DataFrame:
         """
         Enriquece el DataFrame con indicadores comunes usados en Aethelgard.

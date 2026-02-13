@@ -109,19 +109,17 @@ class TrifectaAnalyzer:
         mid = self._analyze_tf(market_data[self.mid_tf])
         macro = self._analyze_tf(market_data[self.macro_tf])
 
-        # 2. Verificar Alineación (Trifecta Core)
-        # Bullish: Precio > SMA20 en los 3 timeframes
-        is_bullish = micro['bullish'] and mid['bullish'] and macro['bullish']
-        # Bearish: Precio < SMA20 en los 3 timeframes
-        is_bearish = micro['bearish'] and mid['bearish'] and macro['bearish']
+        # 2. Verificar Alineación Básica (Trifecta Core - Precio vs SMA20)
+        # Primero validemos la alineación básica sin considerar jerarquía SMA200
+        price_bullish = micro['bullish'] and mid['bullish'] and macro['bullish']
+        price_bearish = micro['bearish'] and mid['bearish'] and macro['bearish']
 
-        if not (is_bullish or is_bearish):
+        if not (price_bullish or price_bearish):
             return {"valid": False, "reason": "No Alignment"}
         
         # 2.1 Validar pendiente de SMA20 (no debe estar plana)
+        # Ejecutamos ANTES de validar jerarquía para dar feedback más específico
         # Umbral: slope mínimo de 0.005% en M5 (permite tendencias tempranas)
-        # Combinado con separación adaptativa ATR para doble filtro
-        # Slope 0.005% rechaza consolidación (0.0015%) pero permite tendencias débiles (0.009%)
         min_slope = 0.005
         if mid['sma20_slope'] < min_slope:
             return {
@@ -130,9 +128,9 @@ class TrifectaAnalyzer:
             }
         
         # 2.2 ADAPTATIVO: Validar separación EMA20/EMA200 basada en ATR
+        # Ejecutamos ANTES de validar jerarquía para dar feedback específico
         # Volatilidad alta (ATR alto) → requiere menos separación relativa
         # Volatilidad baja (ATR bajo) → requiere más separación (evita consolidación)
-        # Umbral dinámico: separación >= 30% del ATR
         if not mid['emas_separated_atr']:
             atr_threshold = mid['atr_pct'] * 0.3
             return {
@@ -140,7 +138,23 @@ class TrifectaAnalyzer:
                 "reason": f"No Trend - EMAs Too Close (sep: {mid['sma_diff_pct']:.3f}% < {atr_threshold:.3f}% [ATR-based])"
             }
 
-        direction = "BUY" if is_bullish else "SELL"
+        # 2.3 Validar Jerarquía SMA (Trap Zone Prevention)
+        # CRÍTICO: Precio puede estar alineado (> SMA20) pero en tendencia contraria (SMA20 < SMA200)
+        # Bullish requiere: Precio > SMA20 > SMA200 (jerarquía alcista completa)
+        # Bearish requiere: Precio < SMA20 < SMA200 (jerarquía bajista completa)
+        if price_bullish and mid['sma20_value'] < mid['sma200_value']:
+            return {"valid": False, "reason": "Trap Zone (Bullish price in Bearish trend)"}
+        
+        if price_bearish and mid['sma20_value'] > mid['sma200_value']:
+            return {"valid": False, "reason": "Trap Zone (Bearish price in Bullish trend)"}
+        
+        # Si llegamos aquí, tenemos alineación completa con jerarquía válida
+        direction = "BUY" if price_bullish else "SELL"
+
+        # NUEVO: Análisis de Fuerza de Tendencia
+        from core_brain.tech_utils import TechnicalAnalyzer
+        trend_class = TechnicalAnalyzer.classify_trend(market_data[self.mid_tf], 20, 200)
+        trend_strength = TechnicalAnalyzer.calculate_trend_strength(market_data[self.mid_tf], 20, 200)
 
         # 3. Optimización: Location (Extension from SMA 20)
         # Usamos el timeframe medio (M5) como referencia principal
@@ -172,6 +186,17 @@ class TrifectaAnalyzer:
         # Penalización por horario muerto
         if in_doldrums:
             score -= 20.0
+        
+        # NUEVO: Bonus/penalización por fuerza de tendencia
+        if trend_class in ["UPTREND_STRONG", "DOWNTREND_STRONG"]:
+            score += 15.0  # Tendencia fuerte = mayor probabilidad
+        elif trend_class in ["UPTREND_WEAK", "DOWNTREND_WEAK"]:
+            score += 5.0   # Tendencia débil = menor bonus
+        elif trend_class == "SIDEWAYS":
+            score -= 10.0  # Tendencia lateral = penalización (menor probabilidad)
+        
+        # Bonus adicional por strength_score (0-100 convertido a 0-10)
+        score += (trend_strength["strength_score"] / 100.0) * 10.0
 
         return {
             "valid": True,
@@ -181,7 +206,11 @@ class TrifectaAnalyzer:
                 "is_narrow": is_narrow,
                 "in_doldrums": in_doldrums,
                 "extension_pct": mid['extension_pct'],
-                "stop_loss_ref": mid['low'] if direction == "BUY" else mid['high']
+                "stop_loss_ref": mid['low'] if direction == "BUY" else mid['high'],
+                "trend_classification": trend_class,
+                "trend_strength_score": round(trend_strength["strength_score"], 1),
+                "sma200_slope": round(trend_strength["slope_slow"], 3),
+                "sma_separation_pct": round(trend_strength["separation_pct"], 2)
             }
         }
 
@@ -204,6 +233,8 @@ class TrifectaAnalyzer:
             return {
                 "bullish": False,
                 "bearish": False,
+                "sma20_value": 0.0,
+                "sma200_value": 0.0,
                 "extension_pct": 100.0,
                 "sma_diff_pct": 100.0,
                 "elephant_candle": False,
@@ -263,6 +294,8 @@ class TrifectaAnalyzer:
         return {
             "bullish": close > sma20,
             "bearish": close < sma20,
+            "sma20_value": sma20,      # Exponer para validación de jerarquía
+            "sma200_value": sma200,    # Exponer para validación de jerarquía
             "extension_pct": extension_pct,
             "sma_diff_pct": sma_diff_pct,
             "elephant_candle": is_elephant,

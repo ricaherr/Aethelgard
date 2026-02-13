@@ -15,6 +15,11 @@ import sys
 from pathlib import Path
 from typing import List, Tuple
 
+# Configure UTF-8 encoding for Windows terminal (fix emoji display)
+import io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
 def check_jsx_syntax_errors(ui_dir: Path) -> List[Tuple[Path, int, str]]:
     """
     Detect common JSX syntax errors:

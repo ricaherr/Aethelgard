@@ -10,6 +10,11 @@ from difflib import SequenceMatcher
 from typing import List, Dict, Tuple
 from collections import defaultdict
 
+# Configure UTF-8 encoding for Windows terminal (fix emoji display)
+import io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
 class CodeAnalyzer:
     def __init__(self, workspace_root: Path):
         self.workspace_root = workspace_root

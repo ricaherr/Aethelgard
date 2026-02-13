@@ -365,6 +365,197 @@ class TestTrifectaTimeOfDay:
             assert result["score"] < 70  # Menos que el score ideal sin doldrums
 
 
+class TestTrifectaTrapZone:
+    """Tests para validar rechazo de señales en "Trap Zone" (jerarquía SMA incorrecta)"""
+
+    @pytest.fixture
+    def analyzer(self):
+        from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
+        return TrifectaAnalyzer(auto_enable_tfs=False)
+
+    def test_trap_zone_bullish_rejected(self, analyzer):
+        """
+        GIVEN: Precio > SMA20 PERO SMA20 < SMA200 (rebote en tendencia bajista mayor)
+        WHEN: TrifectaAnalyzer.analyze() se ejecuta
+        THEN: Debe rechazar con valid=False, reason contiene "Trap Zone"
+        
+        Escenario Real:
+        - Tendencia bajista larga (SMA200 = 1.1009 arriba)
+        - Rebote técnico sobre SMA20 (precio = 1.0970)
+        - SMA20 = 1.0935 (por debajo de SMA200)
+        
+        Esto es una TRAMPA: comprar aquí es ir contra la tendencia mayor
+        """
+        dates = pd.date_range(start='2024-01-01', periods=250, freq='1min')
+        
+        # Crear tendencia bajista + rebote
+        # Velas 0-229: Bajada gradual de 1.1200 a 1.0900
+        base_trend = np.linspace(1.1200, 1.0900, 230)
+        # Velas 230-249: Rebote alcista sobre SMA20
+        rebound = np.linspace(1.0900, 1.0970, 20)
+        close_prices = np.concatenate([base_trend, rebound])
+        
+        df = pd.DataFrame({
+            'open': close_prices - 0.0002,
+            'high': close_prices + 0.0003,
+            'low': close_prices - 0.0003,
+            'close': close_prices,
+        }, index=dates)
+        
+        # Verificar que efectivamente es Trap Zone
+        sma20 = df['close'].rolling(20).mean().iloc[-1]
+        sma200 = df['close'].rolling(200).mean().iloc[-1]
+        price = df['close'].iloc[-1]
+        
+        # Assertions de setup (debug)
+        assert price > sma20, f"Test setup error: Precio {price} debe ser > SMA20 {sma20}"
+        assert sma20 < sma200, f"Test setup error: SMA20 {sma20} debe ser < SMA200 {sma200}"
+        
+        # Datos multi-timeframe (mismo patrón en los 3)
+        trap_data = {
+            "M1": df.copy(),
+            "M5": df.copy(),
+            "M15": df.copy()
+        }
+        
+        result = analyzer.analyze("EURUSD", trap_data)
+        
+        # EXPECTATIVA: La señal debe ser RECHAZADA
+        assert result["valid"] is False, "Trap Zone debe ser rechazada (precio bullish en tendencia bearish)"
+        assert "Trap Zone" in result["reason"] or "Misaligned" in result["reason"], \
+            f"Reason debe mencionar 'Trap Zone', obtuvo: {result['reason']}"
+
+    def test_trap_zone_bearish_rejected(self, analyzer):
+        """
+        GIVEN: Precio < SMA20 PERO SMA20 > SMA200 (caída en tendencia alcista mayor)
+        WHEN: TrifectaAnalyzer.analyze() se ejecuta
+        THEN: Debe rechazar con valid=False, reason contiene "Trap Zone"
+        
+        Escenario Real (inverso al bullish):
+        - Tendencia alcista larga (SMA200 = 1.0800 abajo)
+        - Caída técnica bajo SMA20 (precio = 1.0930)
+        - SMA20 = 1.0965 (por encima de SMA200)
+        
+        Esto es una TRAMPA: vender aquí es ir contra la tendencia mayor
+        """
+        dates = pd.date_range(start='2024-01-01', periods=250, freq='1min')
+        
+        # Crear tendencia alcista + pullback
+        # Velas 0-229: Subida gradual de 1.0700 a 1.1000
+        base_trend = np.linspace(1.0700, 1.1000, 230)
+        # Velas 230-249: Pullback bajista bajo SMA20
+        pullback = np.linspace(1.1000, 1.0930, 20)
+        close_prices = np.concatenate([base_trend, pullback])
+        
+        df = pd.DataFrame({
+            'open': close_prices + 0.0002,
+            'high': close_prices + 0.0003,
+            'low': close_prices - 0.0003,
+            'close': close_prices,
+        }, index=dates)
+        
+        # Verificar que efectivamente es Trap Zone inverso
+        sma20 = df['close'].rolling(20).mean().iloc[-1]
+        sma200 = df['close'].rolling(200).mean().iloc[-1]
+        price = df['close'].iloc[-1]
+        
+        # Assertions de setup (debug)
+        assert price < sma20, f"Test setup error: Precio {price} debe ser < SMA20 {sma20}"
+        assert sma20 > sma200, f"Test setup error: SMA20 {sma20} debe ser > SMA200 {sma200}"
+        
+        # Datos multi-timeframe (mismo patrón en los 3)
+        trap_data = {
+            "M1": df.copy(),
+            "M5": df.copy(),
+            "M15": df.copy()
+        }
+        
+        result = analyzer.analyze("EURUSD", trap_data)
+        
+        # EXPECTATIVA: La señal debe ser RECHAZADA
+        assert result["valid"] is False, "Trap Zone debe ser rechazada (precio bearish en tendencia bullish)"
+        assert "Trap Zone" in result["reason"] or "Misaligned" in result["reason"], \
+            f"Reason debe mencionar 'Trap Zone', obtuvo: {result['reason']}"
+
+    def test_valid_hierarchy_bullish_approved(self, analyzer):
+        """
+        GIVEN: Precio > SMA20 > SMA200 (jerarquía alcista perfecta)
+        WHEN: TrifectaAnalyzer.analyze() se ejecuta
+        THEN: Debe aprobar con valid=True, direction='BUY'
+        
+        Control positivo: Este test verifica que la corrección NO rompe casos válidos
+        """
+        dates = pd.date_range(start='2024-01-01', periods=250, freq='1min')
+        
+        # Tendencia alcista limpia
+        close_prices = np.linspace(1.0900, 1.1000, 250)
+        
+        df = pd.DataFrame({
+            'open': close_prices - 0.0002,
+            'high': close_prices + 0.0003,
+            'low': close_prices - 0.0003,
+            'close': close_prices,
+        }, index=dates)
+        
+        # Verificar jerarquía válida
+        sma20 = df['close'].rolling(20).mean().iloc[-1]
+        sma200 = df['close'].rolling(200).mean().iloc[-1]
+        price = df['close'].iloc[-1]
+        
+        assert price > sma20 > sma200, f"Test setup: Debe cumplir Precio > SMA20 > SMA200"
+        
+        data = {
+            "M1": df.copy(),
+            "M5": df.copy(),
+            "M15": df.copy()
+        }
+        
+        result = analyzer.analyze("EURUSD", data)
+        
+        # EXPECTATIVA: Señal VÁLIDA (jerarquía correcta)
+        assert result["valid"] is True, "Jerarquía alcista válida debe ser aprobada"
+        assert result["direction"] == "BUY"
+
+    def test_valid_hierarchy_bearish_approved(self, analyzer):
+        """
+        GIVEN: Precio < SMA20 < SMA200 (jerarquía bajista perfecta)
+        WHEN: TrifectaAnalyzer.analyze() se ejecuta
+        THEN: Debe aprobar con valid=True, direction='SELL'
+        
+        Control positivo: Verificar caso válido bearish
+        """
+        dates = pd.date_range(start='2024-01-01', periods=250, freq='1min')
+        
+        # Tendencia bajista limpia
+        close_prices = np.linspace(1.1000, 1.0900, 250)
+        
+        df = pd.DataFrame({
+            'open': close_prices + 0.0002,
+            'high': close_prices + 0.0003,
+            'low': close_prices - 0.0003,
+            'close': close_prices,
+        }, index=dates)
+        
+        # Verificar jerarquía válida
+        sma20 = df['close'].rolling(20).mean().iloc[-1]
+        sma200 = df['close'].rolling(200).mean().iloc[-1]
+        price = df['close'].iloc[-1]
+        
+        assert price < sma20 < sma200, f"Test setup: Debe cumplir Precio < SMA20 < SMA200"
+        
+        data = {
+            "M1": df.copy(),
+            "M5": df.copy(),
+            "M15": df.copy()
+        }
+        
+        result = analyzer.analyze("EURUSD", data)
+        
+        # EXPECTATIVA: Señal VÁLIDA (jerarquía correcta)
+        assert result["valid"] is True, "Jerarquía bajista válida debe ser aprobada"
+        assert result["direction"] == "SELL"
+
+
 class TestTrifectaTrendValidation:
     """
     Tests para validar que Trifecta rechaza trades cuando:

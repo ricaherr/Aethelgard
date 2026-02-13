@@ -115,6 +115,10 @@ class OliverVelezStrategy(BaseStrategy):
             if pd.isna(latest_candle[f'sma_{self.sma_long_p}']) or pd.isna(latest_candle['atr']):
                 return None
 
+            # --- Análisis de Fuerza de Tendencia (Nuevo) ---
+            trend_class = TechnicalAnalyzer.classify_trend(df, self.sma_short_p, self.sma_long_p)
+            trend_strength = TechnicalAnalyzer.calculate_trend_strength(df, self.sma_short_p, self.sma_long_p)
+            
             # --- Lógica de Tendencia ---
             is_bullish_trend = latest_candle['close'] > latest_candle[f'sma_{self.sma_long_p}']
             is_bearish_trend = latest_candle['close'] < latest_candle[f'sma_{self.sma_long_p}']
@@ -168,6 +172,8 @@ class OliverVelezStrategy(BaseStrategy):
             candle_data = {
                 "sma20_dist_pct": sma20_dist_pct,
                 "body_atr_ratio": body_atr_ratio,
+                "trend_class": trend_class,
+                "trend_strength": trend_strength,
             }
 
             score = self._calculate_opportunity_score(validation_results, candle_data, regime)
@@ -221,7 +227,10 @@ class OliverVelezStrategy(BaseStrategy):
                     "near_sma20": is_near_sma20,
                     "body_atr_ratio": round(body_atr_ratio, 2),
                     "sma20_dist_pct": round(sma20_dist_pct, 2),
-                    "execution_observation": f"Setup Oliver Velez {signal_type.value} en {symbol}"
+                    "trend_classification": trend_class,
+                    "trend_strength_score": round(trend_strength["strength_score"], 1),
+                    "sma200_slope": round(trend_strength["slope_slow"], 3),
+                    "execution_observation": f"Setup Oliver Velez {signal_type.value} en {symbol} ({trend_class})"
                 }
             )
             
@@ -239,11 +248,27 @@ class OliverVelezStrategy(BaseStrategy):
 
         score = self.base_score
 
-        if regime == MarketRegime.TREND:
-            score += self.regime_bonus
-
+        # Bonificación por proximidad a SMA20
         proximity_ratio = (candle_data["sma20_dist_pct"] / self.sma20_proximity_percent)
         score += (1 - proximity_ratio) * self.proximity_bonus_weight
+
+        # Bonificación por cuerpo de vela (elefante)
+        strength_ratio = (candle_data["body_atr_ratio"] / self.elephant_atr_multiplier)
+        score += min(1.0, strength_ratio - 1.0) * self.candle_bonus_weight
+
+        # NUEVO: Bonificación/penalización por fuerza de tendencia
+        trend_class = candle_data.get("trend_class", "SIDEWAYS")
+        trend_strength_score = candle_data.get("trend_strength", {}).get("strength_score", 0.0)
+        
+        # Bonus por tendencia fuerte (mejor probabilidad)
+        if trend_class in ["UPTREND_STRONG", "DOWNTREND_STRONG"]:
+            score += 15.0  # Bonus significativo para tendencias fuertes
+        elif trend_class in ["UPTREND_WEAK", "DOWNTREND_WEAK"]:
+            score += 5.0   # Bonus menor para tendencias débiles
+        # SIDEWAYS: sin bonus (tendencias laterales = menor probabilidad)
+        
+        # Bonus por strength_score (0-100) convertido a 0-10 puntos adicionales
+        score += (trend_strength_score / 100.0) * 10.0
 
         strength_ratio = (candle_data["body_atr_ratio"] / self.elephant_atr_multiplier)
         score += min(1.0, strength_ratio - 1.0) * self.candle_bonus_weight

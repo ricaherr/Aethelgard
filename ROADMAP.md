@@ -1,5 +1,390 @@
 # Aethelgard – Roadmap
 
+## 🎯 MILESTONE: Aethelgard Observatory - Visualización Completa del Sistema (2026-02-13)
+**Estado: 📋 PLANIFICADO (NO EJECUTAR)**
+**Criterio: Diseñar e implementar visualización completa de análisis, señales, y decisiones del sistema con diferenciación por perfiles de usuario**
+
+### Problema Identificado
+El sistema tiene capacidades avanzadas (scanner, análisis de tendencia, estrategia trifecta, clasificación de régimen) pero están **invisibles** para el usuario:
+- ❌ No se ve el análisis de tendencia (5 niveles de fuerza, slopes SMA)
+- ❌ No se ve el estado del scanner (prioridades, ciclo de escaneo)
+- ❌ No se ve trazabilidad de señales (por qué se tomó una decisión)
+- ❌ No se ven estrategias aplicables a un instrumento
+- ❌ No hay gráficas visuales con indicadores
+- ❌ No hay diferenciación entre usuario retail vs administrador
+
+### Concepto de Solución: "Aethelgard Observatory"
+Sistema de visualización en **3 niveles de profundidad**:
+
+#### NIVEL 1: Admin (God Mode)
+Vista completa del "cerebro" para debugging y optimización:
+- Estado del scanner en tiempo real (CPU, prioridades, última scan)
+- Trazabilidad completa de señales (pipeline tracking)
+- Debug tools (force scan, clear cache, export logs)
+- Acceso a todos los componentes avanzados
+
+#### NIVEL 2: Trader Profesional
+Análisis profundo de instrumentos y decisiones:
+- Panel de análisis por instrumento (régimen, tendencia, trifecta)
+- Gráficas con indicadores (SMA20, SMA200, ADX)
+- Explorador de estrategias (registradas + biblioteca educativa)
+- Historial de cambios de régimen
+
+#### NIVEL 3: Usuario Retail (Simplificado)
+Dashboard básico con señales y métricas clave:
+- Señales activas (BUY/SELL + score)
+- Posiciones abiertas (P&L)
+- Balance + risk meter
+- NO detalles técnicos (ADX, slopes, metadata)
+
+### Arquitectura Técnica
+
+#### Backend: Nuevos Endpoints API
+```
+GET /api/analysis/{symbol}          → Análisis completo de instrumento
+GET /api/scanner/status              → Estado del scanner en tiempo real
+GET /api/signal/{signal_id}/trace    → Auditoría completa de señal
+GET /api/chart/{symbol}/{timeframe}  → Datos para gráficas (500 velas)
+GET /api/regime/{symbol}/history     → Historial de cambios de régimen
+GET /api/strategies/library          → Estrategias (registradas + biblioteca)
+```
+
+#### Frontend: Nuevos Componentes React
+```tsx
+<InstrumentAnalysis />     → Panel completo de análisis (Nivel 2)
+<ScannerLiveView />        → Monitor del scanner (Nivel 1)
+<SignalTrace />            → Timeline de auditoría de señal (Nivel 1)
+<StrategyExplorer />       → Explorador de estrategias (Nivel 2)
+<RegimeHistoryChart />     → Historial visual de régimen (Nivel 2)
+<RetailDashboard />        → Vista simplificada (Nivel 3)
+<AdminObservatory />       → Vista completa admin (Nivel 1)
+```
+
+#### Base de Datos: Nuevas Tablas
+```sql
+regime_history      → Historial de cambios de régimen por símbolo
+signal_pipeline     → Auditoría de etapas del pipeline de señales
+users               → Gestión de perfiles (RBAC)
+```
+
+#### Sistema de Perfiles (RBAC)
+```typescript
+UserProfile = RETAIL | TRADER | ADMIN
+Permisos por perfil (vistas, acciones, features)
+```
+
+### Plan de Implementación (6 Fases)
+
+#### ✅ **FASE 0: Diseño y Planificación** (ACTUAL - Design Only)
+- [ ] **Tarea 0.1**: Actualizar ROADMAP.md con arquitectura completa
+- [ ] **Tarea 0.2**: Analizar sistema actual (endpoints, componentes, DB)
+- [ ] **Tarea 0.3**: Diseñar arquitectura de solución (3 niveles)
+- [ ] **Tarea 0.4**: Definir endpoints API necesarios
+- [ ] **Tarea 0.5**: Definir componentes React necesarios
+- [ ] **Tarea 0.6**: Definir esquema de DB (nuevas tablas)
+- [ ] **Tarea 0.7**: Entregar resumen ejecutivo en chat (NO archivo .md)
+- [ ] **Tarea 0.8**: ESPERAR APROBACIÓN antes de ejecutar
+
+#### 📋 **FASE 1: Backend - Nuevos Endpoints API** (5-7 días)
+- [ ] **Tarea 1.1**: Crear `core_brain/analysis_service.py` (análisis completo de instrumentos)
+- [ ] **Tarea 1.2**: Crear `core_brain/scanner_monitor.py` (estado del scanner en tiempo real)
+- [ ] **Tarea 1.3**: Agregar endpoints en `server.py`:
+  - `GET /api/analysis/{symbol}`
+  - `GET /api/scanner/status`
+  - `GET /api/signal/{signal_id}/trace`
+  - `GET /api/chart/{symbol}/{timeframe}`
+  - `GET /api/regime/{symbol}/history`
+  - `GET /api/strategies/library`
+- [ ] **Tarea 1.4**: Crear migraciones DB (`regime_history`, `signal_pipeline`, `users`)
+- [ ] **Tarea 1.5**: Tests unitarios para nuevos servicios
+- [ ] **Tarea 1.6**: Ejecutar `validate_all.py` (debe pasar 6/6)
+- [ ] **Tarea 1.7**: Actualizar MANIFESTO
+
+#### 📋 **FASE 2: Backend - Pipeline Tracking** (3-4 días)
+- [ ] **Tarea 2.1**: Modificar `scanner.py` para registrar en `signal_pipeline` (stage: CREATED)
+- [ ] **Tarea 2.2**: Modificar estrategias para registrar decisiones (stage: STRATEGY_ANALYSIS)
+- [ ] **Tarea 2.3**: Modificar `risk_manager.py` para registrar validaciones (stage: RISK_VALIDATION)
+- [ ] **Tarea 2.4**: Modificar `executor.py` para registrar ejecuciones (stage: EXECUTED)
+- [ ] **Tarea 2.5**: Crear `SignalTraceService` para consultas de auditoría
+- [ ] **Tarea 2.6**: Tests de integración (pipeline completo)
+- [ ] **Tarea 2.7**: Ejecutar `validate_all.py`
+- [ ] **Tarea 2.8**: Actualizar MANIFESTO
+
+#### 📋 **FASE 3: Frontend - Componentes Básicos** (7-10 días)
+- [ ] **Tarea 3.1**: Crear `InstrumentAnalysis.tsx` (panel de análisis completo)
+- [ ] **Tarea 3.2**: Crear `ScannerLiveView.tsx` (monitor del scanner)
+- [ ] **Tarea 3.3**: Crear `SignalTrace.tsx` (timeline de auditoría)
+- [ ] **Tarea 3.4**: Crear `StrategyExplorer.tsx` (explorador de estrategias)
+- [ ] **Tarea 3.5**: Crear `RegimeHistoryChart.tsx` (historial de régimen)
+- [ ] **Tarea 3.6**: Integrar TradingView Lightweight Charts
+- [ ] **Tarea 3.7**: Tests de componentes (React Testing Library)
+- [ ] **Tarea 3.8**: Ejecutar `ui_qa_guard.py`
+
+#### 📋 **FASE 4: Frontend - Sistema de Perfiles** (3-5 días)
+- [ ] **Tarea 4.1**: Crear `AuthContext.tsx` (gestión de perfiles)
+- [ ] **Tarea 4.2**: Implementar RBAC en componentes (HOC `withProfile`)
+- [ ] **Tarea 4.3**: Crear `RetailDashboard.tsx` (vista simplificada)
+- [ ] **Tarea 4.4**: Crear `TraderDashboard.tsx` (vista profesional)
+- [ ] **Tarea 4.5**: Crear `AdminObservatory.tsx` (vista admin)
+- [ ] **Tarea 4.6**: Crear Login/Logout UI
+- [ ] **Tarea 4.7**: Tests E2E de perfiles
+- [ ] **Tarea 4.8**: Ejecutar `ui_qa_guard.py`
+
+#### 📋 **FASE 5: Integración y Optimización** (5-7 días)
+- [ ] **Tarea 5.1**: WebSocket events para updates en tiempo real
+- [ ] **Tarea 5.2**: Implementar caché en frontend (React Query o SWR)
+- [ ] **Tarea 5.3**: Optimización de consultas DB (índices)
+- [ ] **Tarea 5.4**: Lazy loading de componentes pesados
+- [ ] **Tarea 5.5**: Tests E2E completos (Playwright o Cypress)
+- [ ] **Tarea 5.6**: Performance profiling (React DevTools)
+- [ ] **Tarea 5.7**: Ejecutar `validate_all.py` + `ui_qa_guard.py`
+- [ ] **Tarea 5.8**: Actualizar MANIFESTO
+
+#### 📋 **FASE 6: Características Avanzadas** (Opcional - 7-10 días)
+- [ ] **Tarea 6.1**: Export de reportes (PDF/Excel)
+- [ ] **Tarea 6.2**: Alertas visuales (notificaciones push)
+- [ ] **Tarea 6.3**: Backtesting visual (replay de señales históricas)
+- [ ] **Tarea 6.4**: Comparación de instrumentos (side-by-side)
+- [ ] **Tarea 6.5**: Dashboard personalizable (drag & drop widgets)
+- [ ] **Tarea 6.6**: Tests finales
+- [ ] **Tarea 6.7**: Actualizar MANIFESTO
+
+### Criterios de Aceptación
+- [ ] Sistema RBAC implementado (3 perfiles: Retail, Trader, Admin)
+- [ ] Endpoint `/api/analysis/{symbol}` retorna análisis completo
+- [ ] Endpoint `/api/scanner/status` muestra estado en tiempo real
+- [ ] Endpoint `/api/signal/{signal_id}/trace` muestra pipeline completo
+- [ ] Componente `InstrumentAnalysis` muestra tendencia + gráfica
+- [ ] Componente `ScannerLiveView` muestra estado del scanner
+- [ ] Componente `SignalTrace` muestra timeline de auditoría
+- [ ] Usuario RETAIL ve dashboard simplificado
+- [ ] Usuario TRADER ve análisis avanzados
+- [ ] Usuario ADMIN ve debug tools y pipeline tracking
+- [ ] `validate_all.py` pasa 6/6
+- [ ] `ui_qa_guard.py` pasa sin errores
+- [ ] Tests E2E cubren flujos críticos
+- [ ] MANIFESTO actualizado con arquitectura completa
+
+### Impacto Esperado
+**ANTES**:
+- Sistema "ciego": análisis avanzados invisibles para usuario
+- No diferenciación entre perfiles (todos ven lo mismo)
+- Debugging difícil (sin trazabilidad de señales)
+- Usuario no entiende por qué se tomó una decisión
+
+**DESPUÉS**:
+- Sistema "transparente": todas las decisiones son visibles y justificadas
+- 3 niveles de visualización (Retail → Trader → Admin)
+- Trazabilidad completa (pipeline tracking de señales)
+- Usuario entiende el "por qué" detrás de cada decisión
+- Herramientas de debugging para administrador
+- Experiencia educativa (biblioteca de estrategias)
+
+### Tecnologías a Integrar
+- **TradingView Lightweight Charts**: Gráficas profesionales
+- **React Query / SWR**: Caché inteligente en frontend
+- **Framer Motion**: Animaciones fluidas
+- **Playwright / Cypress**: Tests E2E
+- **React Testing Library**: Tests de componentes
+- **RBAC Pattern**: Role-Based Access Control
+
+### Notas Importantes
+1. **NO EJECUTAR** hasta recibir aprobación explícita
+2. Esta es la **planificación completa** (diseño + arquitectura + fases)
+3. Resumen ejecutivo entregado en **chat** (NO archivo .md - Regla 12)
+4. ROADMAP actualizado con plan completo (Regla 13)
+5. Documentación técnica permanente irá a **MANIFESTO** (Regla 8)
+
+---
+
+## 🎯 MILESTONE: Trend Strength Analysis (2026-02-13)
+**Estado: ✅ COMPLETADO**
+**Criterio: Implementar análisis de fuerza de tendencia con pendiente SMA200 y clasificación en 5 niveles**
+
+### Objetivo
+Mejorar la capacidad del sistema para distinguir entre tendencias fuertes (mejores probabilidades) y tendencias débiles, agregando:
+1. Cálculo de pendiente (slope) de SMA200
+2. Medición de separación entre SMA20 y SMA200
+3. Clasificación de tendencia en 5 niveles de fuerza
+4. Integración centralizada en TechnicalAnalyzer
+
+### Investigación Realizada
+**Hallazgos**:
+- ✅ Sistema usa SMA200 correctamente para tendencia mayor
+- ✅ Sistema usa SMA20 correctamente para entradas tácticas
+- ✅ Ya existe cálculo de pendiente de SMA20 en trifecta_logic.py
+- ⚠️ NO existe cálculo de pendiente de SMA200
+- ⚠️ NO existe clasificación de fuerza de tendencia
+
+**Mejores Prácticas (Investopedia + Sistemas Profesionales)**:
+- SMA200 = Tendencia estratégica (largo plazo)
+- SMA20/50 = Tendencia táctica (timing de entradas)
+- Fuerza de tendencia = slope + separación entre SMAs + ADX
+
+### Plan de Implementación
+- [x] **Tarea 1**: Actualizar ROADMAP.md (este documento)
+- [x] **Tarea 2**: Agregar `calculate_trend_strength()` en TechnicalAnalyzer
+- [x] **Tarea 3**: Agregar `calculate_sma_slope()` en TechnicalAnalyzer
+- [x] **Tarea 4**: Agregar `classify_trend()` con 5 niveles
+- [x] **Tarea 5**: Actualizar oliver_velez.py para usar nuevo análisis
+- [x] **Tarea 6**: Actualizar trifecta_logic.py para usar nuevo análisis
+- [x] **Tarea 7**: Ejecutar validate_all.py (6/6 PASSED)
+- [x] **Tarea 8**: Actualizar MANIFESTO
+
+### Clasificación de Tendencia Implementada
+```python
+DOWNTREND_STRONG   = precio < SMA20 < SMA200, slope200 < -0.1%, sep > 2%
+DOWNTREND_WEAK     = precio < SMA20 < SMA200, slope200 < -0.05%, sep > 1%
+SIDEWAYS           = slope200 entre -0.05% y 0.05%, sep < 1%
+UPTREND_WEAK       = precio > SMA20 > SMA200, slope200 > 0.05%, sep > 1%
+UPTREND_STRONG     = precio > SMA20 > SMA200, slope200 > 0.1%, sep > 2%
+```
+
+### Nuevos Métodos en TechnicalAnalyzer
+1. **`calculate_sma_slope(df, period, lookback=5)`**:
+   - Calcula pendiente de una SMA como % de cambio
+   - Ejemplo: slope=0.15 → SMA subiendo 0.15% en últimas 5 velas
+   
+2. **`calculate_trend_strength(df, fast_period=20, slow_period=200)`**:
+   - Retorna dict con:
+     - `slope_fast`: Pendiente SMA20
+     - `slope_slow`: Pendiente SMA200
+     - `separation_pct`: Separación entre SMAs
+     - `price_position`: Posición del precio ("above_both", "below_both", "between")
+     - `strength_score`: Score 0-100 (100 = tendencia muy fuerte)
+   
+3. **`classify_trend(df, fast_period=20, slow_period=200)`**:
+   - Retorna clasificación en 5 niveles
+   - Valida jerarquía de precios + slope + separación
+
+### Integración en Estrategias
+**oliver_velez.py**:
+- Calcula `trend_class` y `trend_strength` en cada análisis
+- Bonificación en scoring:
+  - +15 puntos: UPTREND_STRONG / DOWNTREND_STRONG
+  - +5 puntos: UPTREND_WEAK / DOWNTREND_WEAK
+  - 0 puntos: SIDEWAYS
+- Expone metadata: `trend_classification`, `trend_strength_score`, `sma200_slope`
+
+**trifecta_logic.py**:
+- Calcula `trend_class` y `trend_strength` usando M5 como referencia
+- Bonificación en scoring:
+  - +15 puntos: Tendencias fuertes
+  - +5 puntos: Tendencias débiles
+  - -10 puntos: SIDEWAYS (penalización)
+- Bonus adicional: `(strength_score / 100) * 10` (0-10 puntos extra)
+
+### Criterios de Aceptación
+- [x] `TechnicalAnalyzer.calculate_sma_slope()` implementado
+- [x] `TechnicalAnalyzer.calculate_trend_strength()` implementado
+- [x] `TechnicalAnalyzer.classify_trend()` retorna 5 niveles
+- [x] Estrategias usan nuevo análisis para scoring
+- [x] `validate_all.py` pasa 100% (6/6)
+- [x] MANIFESTO documentado
+
+### Impacto
+**ANTES**: Sistema solo distinguía tendencia alcista vs bajista (binario)  
+**DESPUÉS**: Sistema clasifica fuerza de tendencia en 5 niveles:
+- Bonifica tendencias fuertes (mejores probabilidades)
+- Penaliza tendencias laterales (menor probabilidad)
+- Expone métricas avanzadas: slope SMA200, separación SMAs, strength_score
+
+**Validaciones**: 6/6 OK (arquitectura, QA, calidad, UI, tests críticos, integración)  
+**Tests**: 30/30 OK (25 críticos + 5 integración)
+
+---
+
+## 🎯 MILESTONE: Trifecta Analyzer - Trap Zone Fix (2026-02-13)
+**Estado: ✅ COMPLETADO**
+**Criterio: Corregir validación de jerarquía SMA20 vs SMA200 para evitar señales en "Zona de Trampa"**
+
+### Problema Detectado (Bug Crítico)
+**Síntoma**: El sistema generaba señales BUY cuando el precio rebotaba sobre SMA20, INCLUSO cuando la tendencia mayor (SMA200) era bajista.
+
+**Escenario Real de Error (Trap Zone)**:
+```
+Precio: 1.09700  (rebote actual)
+SMA20:  1.09350  (soporte inmediato)
+SMA200: 1.10090  (resistencia mayor - TECHO)
+
+✅ Trifecta ANTES: APROBABA señal BUY (precio > SMA20 en 3 TFs)
+❌ Realidad: TRAP ZONE (SMA20 < SMA200 = tendencia bajista mayor)
+```
+
+**Causa Raíz**: 
+- `_analyze_tf()` solo validaba `close > sma20` (línea 213)
+- NO validaba la jerarquía `SMA20 > SMA200` requerida para BUY
+- Permitía trades contra la tendencia mayor (rebotes hacia resistencia)
+
+### Solución Implementada (Oliver Velez Hierarchy Rule)
+**Regla de Oro**: Para una señal BUY válida, la jerarquía DEBE ser:
+```
+Precio > SMA20 > SMA200  (Tendencia alcista confirmada)
+```
+
+Para SELL:
+```
+Precio < SMA20 < SMA200  (Tendencia bajista confirmada)
+```
+
+**Cualquier violación = TRAP ZONE (rechazar señal)**
+
+### Cambios Realizados
+1. **`_analyze_tf()` modificado**:
+   - Ahora expone `sma20_value` y `sma200_value` en el dict de retorno
+   - Permite validar jerarquía en el método `analyze()`
+
+2. **`analyze()` modificado**:
+   - Validación bullish: `precio > sma20 AND sma20 > sma200`
+   - Validación bearish: `precio < sma20 AND sma20 < sma200`
+   - Detección explícita de Trap Zone con mensajes específicos
+
+### Plan de Implementación
+- [x] **Tarea 1**: Crear test `test_trap_zone_bullish_rejected` en `test_trifecta_logic.py`
+- [x] **Tarea 2**: Crear test `test_trap_zone_bearish_rejected` (caso inverso)
+- [x] **Tarea 3**: Modificar `_analyze_tf()` para exponer `sma20_value` y `sma200_value`
+- [x] **Tarea 4**: Validar jerarquía en `analyze()` (líneas 112-136)
+- [x] **Tarea 5**: Ejecutar tests (17/17 tests OK - 4 nuevos + 13 existentes)
+- [x] **Tarea 6**: Ejecutar `validate_all.py` (6/6 validaciones OK)
+- [x] **Tarea 7**: Actualizar `AETHELGARD_MANIFESTO.md` con regla de jerarquía
+
+### Criterios de Aceptación
+✅ Test con Trap Zone bullish (precio > SMA20, SMA20 < SMA200) → `valid=False, reason="Trap Zone"`
+✅ Test con Trap Zone bearish (precio < SMA20, SMA20 > SMA200) → `valid=False, reason="Trap Zone"`
+✅ Test con jerarquía válida (precio > SMA20 > SMA200) → `valid=True, direction=BUY`
+✅ Todos los tests existentes siguen pasando (13/13 anteriores)
+✅ `validate_all.py` pasa 100% (6/6)
+
+### Test de Verificación en Vivo
+```
+=== TEST TRAP ZONE FIX ===
+Precio: 1.09700
+SMA20:  1.09350
+SMA200: 1.10090
+
+Condiciones:
+  Precio > SMA20:   True
+  SMA20 < SMA200:   True
+
+Trifecta Result:
+  Valid: False
+  Reason: Trap Zone (Bullish price in Bearish trend)
+
+✅ FIX CONFIRMADO: Sistema rechaza Trap Zone correctamente
+```
+
+### Impacto
+**ANTES**: Sistema APROBABA señales BUY en rebotes contra tendencia mayor (pérdidas garantizadas)  
+**DESPUÉS**: Sistema RECHAZA señales en Trap Zone mediante validación de jerarquía SMA:
+- Bullish requiere: `Precio > SMA20 > SMA200`
+- Bearish requiere: `Precio < SMA20 < SMA200`
+- Cualquier violación = rechazo con mensaje explícito
+
+**Tests**: 17/17 OK (incluye 4 nuevos de Trap Zone)  
+**Validaciones**: 6/6 OK (arquitectura, calidad, tests, integración)
+
+---
+
 ## 🎯 MILESTONE: Trifecta Analyzer - Corrección Validación de Tendencia (2026-02-12)
 **Estado: ✅ COMPLETADO**
 **Criterio: Corregir lógica de Trifecta para rechazar trades cuando EMAs están planas o sin separación adecuada**
