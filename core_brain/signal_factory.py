@@ -81,8 +81,12 @@ class SignalFactory:
             enabled=confluence_enabled
         )
         
-        # FASE 2.6: Initialize Oliver Velez Trifecta Optimizer
-        self.trifecta_analyzer = TrifectaAnalyzer()
+        # FASE 2.6: Initialize Oliver Velez Trifecta Optimizer (HYBRID mode)
+        # Passes config path for auto-enabling timeframes + degraded mode fallback
+        self.trifecta_analyzer = TrifectaAnalyzer(
+            config_path="config/config.json",
+            auto_enable_tfs=True  # Intentará auto-habilitar M1/M5/M15
+        )
         
         if not self.notifier or not self.notifier.is_configured():
             logger.warning("Notificador de Telegram no está configurado. No se enviarán alertas.")
@@ -374,6 +378,7 @@ class SignalFactory:
             #     all_signals = self._apply_confluence(all_signals, scan_results)
             
             # FASE 2.6: Apply Trifecta Optimization (Oliver Velez Multi-TF)
+            # FASE 2.6: Apply Trifecta Optimization
             if all_signals:
                 all_signals = self._apply_trifecta_optimization(all_signals, scan_results)
 
@@ -480,34 +485,52 @@ class SignalFactory:
                 analysis = self.trifecta_analyzer.analyze(signal.symbol, market_data)
                 
                 if analysis["valid"]:
-                    # Update score and metadata
-                    signal.metadata["trifecta_score"] = analysis["score"]
-                    signal.metadata["trifecta_data"] = analysis["metadata"]
+                    # Check if operating in DEGRADED MODE (fallback)
+                    is_degraded = analysis.get("metadata", {}).get("degraded_mode", False)
                     
-                    # Combine original score with Trifecta score (weighted average)
-                    original_score = signal.metadata.get("score", 50.0)
-                    final_score = (original_score * 0.4) + (analysis["score"] * 0.6)
-                    signal.metadata["score"] = final_score
-                    
-                    # Update signal confidence (0-1 scale)
-                    signal.confidence = final_score / 100.0
-                    
-                    # Filter: only keep signals with final score >= 60
-                    if final_score >= 60.0:
+                    if is_degraded:
+                        # HYBRID FALLBACK 2: Pass signal without Trifecta modification
+                        signal.metadata["trifecta_degraded"] = True
+                        signal.metadata["trifecta_missing_data"] = analysis["metadata"]["missing_timeframes"]
+                        
+                        logger.warning(
+                            f"⚠️ [{signal.symbol}] Trifecta DEGRADED MODE: "
+                            f"Passing original signal without multi-TF filtering. "
+                            f"Missing: {analysis['metadata']['missing_timeframes']}"
+                        )
+                        
+                        # Keep original signal as-is (no score modification)
                         optimized_signals.append(signal)
-                        logger.info(
-                            f"[{signal.symbol}] Trifecta APPROVED: "
-                            f"Original={original_score:.1f}, Trifecta={analysis['score']:.1f}, "
-                            f"Final={final_score:.1f}"
-                        )
                     else:
-                        logger.info(
-                            f"[{signal.symbol}] Trifecta FILTERED: "
-                            f"Final score {final_score:.1f} < 60 threshold"
-                        )
+                        # FULL TRIFECTA MODE: Apply scoring and filtering
+                        signal.metadata["trifecta_score"] = analysis["score"]
+                        signal.metadata["trifecta_data"] = analysis["metadata"]
+                        
+                        # Combine original score with Trifecta score (weighted average)
+                        original_score = signal.metadata.get("score", 50.0)
+                        final_score = (original_score * 0.4) + (analysis["score"] * 0.6)
+                        signal.metadata["score"] = final_score
+                        
+                        # Update signal confidence (0-1 scale)
+                        signal.confidence = final_score / 100.0
+                        
+                        # Filter: only keep signals with final score >= 60
+                        if final_score >= 60.0:
+                            optimized_signals.append(signal)
+                            logger.info(
+                                f"✅ [{signal.symbol}] Trifecta APPROVED: "
+                                f"Original={original_score:.1f}, Trifecta={analysis['score']:.1f}, "
+                                f"Final={final_score:.1f}"
+                            )
+                        else:
+                            logger.info(
+                                f"❌ [{signal.symbol}] Trifecta FILTERED: "
+                                f"Final score {final_score:.1f} < 60 threshold"
+                            )
                 else:
+                    # FULL REJECTION (not degraded mode, but failed validation)
                     logger.info(
-                        f"[{signal.symbol}] Trifecta REJECTED: {analysis['reason']}"
+                        f"❌ [{signal.symbol}] Trifecta REJECTED: {analysis['reason']}"
                     )
             else:
                 # Pass non-Oliver strategies without changes

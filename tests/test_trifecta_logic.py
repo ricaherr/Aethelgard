@@ -237,20 +237,40 @@ class TestTrifectaAnalyzer:
 
     def test_insufficient_data_rejected(self, analyzer):
         """
-        GIVEN: Datos insuficientes (< 200 velas o timeframes faltantes)
-        WHEN: TrifectaAnalyzer.analyze() se ejecuta
-        THEN: Debe rechazar con valid=False, reason='Insufficient Data'
+        GIVEN: Datos insuficientes (timeframes faltantes)
+        WHEN: TrifectaAnalyzer.analyze() se ejecuta (HYBRID MODE)
+        THEN: Debe operar en DEGRADED MODE (valid=True, degraded_mode=True, score neutral)
         """
-        # Datos incompletos
+        # Crear DataFrames simples para M1 y M5 (M15 faltante)
+        dates = pd.date_range(start='2024-01-01', periods=250, freq='1min')
+        close_prices = np.linspace(1.0900, 1.1000, 250)
+        
+        df_m1 = pd.DataFrame({
+            'open': close_prices - 0.0002,
+            'high': close_prices + 0.0003,
+            'low': close_prices - 0.0003,
+            'close': close_prices,
+        }, index=dates)
+        
+        df_m5 = df_m1.copy()
+        
+        # Datos incompletos: solo M1 y M5, falta M15 → Activa DEGRADED MODE
         incomplete_data = {
-            "M1": pd.DataFrame(),  # DataFrame vacío
-            "M5": pd.DataFrame({'close': [1.0950] * 50}),  # Muy pocas velas
+            "M1": df_m1,
+            "M5": df_m5,
+            # M15 faltante
         }
         
         result = analyzer.analyze("EURUSD", incomplete_data)
         
-        assert result["valid"] is False
-        assert result["reason"] == "Insufficient Data"
+        # HYBRID MODE: Señal válida PERO en modo degradado
+        assert result["valid"] is True
+        assert result["metadata"]["degraded_mode"] is True
+        assert "M15" in result["metadata"]["missing_timeframes"]
+        
+        # Valores neutrales (score base 50, dirección UNKNOWN)
+        assert result["score"] == 50.0
+        assert result["direction"] == "UNKNOWN"
 
     def test_score_range_0_to_100(self, analyzer, bullish_aligned_data):
         """

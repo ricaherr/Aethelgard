@@ -7,8 +7,11 @@ ARCHITECTURE:
 - Pure business logic (NO broker imports allowed - agnóstico)
 - Receives pandas DataFrames for M1, M5, M15
 - Returns Dict with validation result, direction, score, metadata
+- AUTONOMY: Auto-enables required timeframes if disabled (HYBRID approach)
 """
 import logging
+import json
+from pathlib import Path
 import pandas as pd
 import numpy as np
 from datetime import datetime, time
@@ -26,22 +29,45 @@ class TrifectaAnalyzer:
     2. Location: Precio no debe estar extendido >1% de SMA20
     3. Narrow State: SMA20 cerca de SMA200 (<1.5%) = setup explosivo
     4. Time of Day: Evitar Midday Doldrums (11:30-14:00 EST)
+    
+    HYBRID MODE:
+    - Intenta auto-habilitar M1/M5/M15 en config.json (Autonomía)
+    - Si falla o datos faltantes → opera en modo DEGRADADO (sin filtros Trifecta)
     """
 
-    def __init__(self):
+    def __init__(self, config_path: str = "config/config.json", auto_enable_tfs: bool = True):
+        """
+        Args:
+            config_path: Path to config.json for scanner configuration
+            auto_enable_tfs: If True, attempts to auto-enable required timeframes
+        """
         self.micro_tf = "M1"  # Proxy para 2m (MT5 usa M1)
         self.mid_tf = "M5"
         self.macro_tf = "M15"
+        self.required_tfs = [self.micro_tf, self.mid_tf, self.macro_tf]
+        self.config_path = config_path
         
         # Oliver Velez Time Zones (EST - Eastern Standard Time)
         self.open_start = time(9, 30)
         self.doldrums_start = time(11, 30)
         self.doldrums_end = time(14, 00)
         self.close_end = time(16, 00)
+        
+        # HYBRID MODE: Try to auto-enable required timeframes
+        if auto_enable_tfs:
+            try:
+                self._ensure_required_timeframes()
+            except Exception as e:
+                logger.warning(
+                    f"⚠️ TrifectaAnalyzer: Auto-enable failed ({e}). "
+                    f"Will operate in DEGRADED mode if data is missing."
+                )
 
     def analyze(self, symbol: str, market_data: Dict[str, pd.DataFrame]) -> Dict:
         """
         Ejecuta el análisis completo de Trifecta + Optimizaciones.
+        
+        HYBRID MODE: Si faltan timeframes → retorna en modo DEGRADED (permite señal base)
         
         Args:
             symbol: Symbol to analyze (e.g., "EURUSD")
@@ -50,14 +76,33 @@ class TrifectaAnalyzer:
         
         Returns:
             Dict with keys:
-                - valid (bool): True if setup is valid
-                - direction (str): "BUY" or "SELL"
-                - score (float): 0-100 scoring
+                - valid (bool): True if setup is valid (or degraded mode)
+                - direction (str): "BUY"/"SELL"/"UNKNOWN" (unknown in degraded)
+                - score (float): 0-100 scoring (50 neutral in degraded mode)
                 - reason (str): Rejection reason if valid=False
-                - metadata (dict): Additional data (is_narrow, in_doldrums, etc.)
+                - metadata (dict): Additional data (degraded_mode, missing_timeframes)
         """
+        # HYBRID FALLBACK 1: Check if required data is available
         if not self._validate_data(market_data):
-            return {"valid": False, "reason": "Insufficient Data"}
+            missing_tfs = [tf for tf in self.required_tfs if tf not in market_data]
+            
+            # DEGRADED MODE: Allow signal to pass without Trifecta filtering
+            logger.warning(
+                f"⚠️ [{symbol}] TrifectaAnalyzer operating in DEGRADED MODE: "
+                f"Missing {missing_tfs}. Signal quality is REDUCED. "
+                f"Enable {missing_tfs} in config.json for full Trifecta filtering."
+            )
+            
+            return {
+                "valid": True,  # ← Allow signal to pass
+                "direction": "UNKNOWN",  # No puede determinar dirección sin 3 TFs
+                "score": 50.0,  # Neutral score (ni bonifica ni penaliza)
+                "metadata": {
+                    "degraded_mode": True,
+                    "missing_timeframes": missing_tfs,
+                    "reason": "Insufficient Data - Operating in fallback mode"
+                }
+            }
 
         # 1. Análisis Técnico por Timeframe
         micro = self._analyze_tf(market_data[self.micro_tf])
@@ -170,3 +215,65 @@ class TrifectaAnalyzer:
             "low": low,
             "high": high
         }
+    
+    def _ensure_required_timeframes(self) -> None:
+        """
+        Auto-habilita M1, M5, M15 en config.json si están deshabilitados.
+        Coherente con Principio #1 de Autonomía de Aethelgard.
+        
+        Cambios se persisten a disco para que Scanner los detecte en próximo ciclo.
+        """
+        try:
+            config_file = Path(self.config_path)
+            if not config_file.exists():
+                logger.warning(
+                    f"TrifectaAnalyzer: Config file {self.config_path} not found. "
+                    f"Cannot auto-enable timeframes. Please enable {self.required_tfs} manually."
+                )
+                return
+            
+            # Read current config
+            with open(config_file, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            
+            # Get timeframes array from scanner config
+            scanner_config = config.get("scanner", {})
+            timeframes = scanner_config.get("timeframes", [])
+            
+            if not timeframes:
+                logger.warning(
+                    "TrifectaAnalyzer: No 'timeframes' array in config.json. "
+                    "Cannot auto-enable. Please add M1, M5, M15 manually."
+                )
+                return
+            
+            # Check and enable required timeframes
+            modified = False
+            for tf_config in timeframes:
+                tf_name = tf_config.get("timeframe")
+                if tf_name in self.required_tfs and not tf_config.get("enabled", False):
+                    logger.warning(
+                        f"🔧 TrifectaAnalyzer: Auto-enabling {tf_name} "
+                        f"(required for Oliver Velez Multi-Timeframe strategy)"
+                    )
+                    tf_config["enabled"] = True
+                    modified = True
+            
+            # Persist changes to disk if any modifications were made
+            if modified:
+                with open(config_file, 'w', encoding='utf-8') as f:
+                    json.dump(config, f, indent=2, ensure_ascii=False)
+                
+                logger.info(
+                    f"✅ TrifectaAnalyzer: Required timeframes {self.required_tfs} enabled in {self.config_path}. "
+                    f"Scanner will detect changes and reload automatically."
+                )
+            else:
+                logger.debug("TrifectaAnalyzer: All required timeframes already enabled.")
+        
+        except Exception as e:
+            logger.error(
+                f"TrifectaAnalyzer: Failed to auto-enable timeframes: {e}. "
+                f"Please enable {self.required_tfs} manually in {self.config_path}",
+                exc_info=True
+            )

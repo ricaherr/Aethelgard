@@ -1,6 +1,11 @@
 {
   "scanner": {
-    "assets": ["AAPL", "TSLA", "MES", "EURUSD"],
+    "assets": [
+      "AAPL",
+      "TSLA",
+      "MES",
+      "EURUSD"
+    ],
     "cpu_limit_pct": 80.0,
     "sleep_trend_seconds": 1.0,
     "sleep_range_seconds": 10.0,
@@ -12,12 +17,30 @@
     "mt5_bars_count": 500,
     "config_path": "config/dynamic_params.json",
     "timeframes": [
-      {"timeframe": "M1", "enabled": false},
-      {"timeframe": "M5", "enabled": true},
-      {"timeframe": "M15", "enabled": true},
-      {"timeframe": "H1", "enabled": true},
-      {"timeframe": "H4", "enabled": true},
-      {"timeframe": "D1", "enabled": true}
+      {
+        "timeframe": "M1",
+        "enabled": true
+      },
+      {
+        "timeframe": "M5",
+        "enabled": true
+      },
+      {
+        "timeframe": "M15",
+        "enabled": true
+      },
+      {
+        "timeframe": "H1",
+        "enabled": true
+      },
+      {
+        "timeframe": "H4",
+        "enabled": true
+      },
+      {
+        "timeframe": "D1",
+        "enabled": true
+      }
     ]
   },
   "orchestrator": {
@@ -43,4 +66,3 @@
     }
   }
 }
-
