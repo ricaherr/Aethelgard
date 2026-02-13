@@ -1,5 +1,66 @@
 # Aethelgard – Roadmap
 
+## 🎯 MILESTONE: Trifecta Analyzer - Oliver Velez Multi-Timeframe Optimization (2026-02-12)
+**Estado: ✅ COMPLETADO**
+**Criterio: Implementar módulo TrifectaAnalyzer con reglas avanzadas de alineación 2m-5m-15m + Location + Narrow State + Time of Day**
+
+### Objetivo
+Crear módulo independiente que encapsule la lógica pura de Oliver Velez con optimizaciones detectadas:
+1. **Alineación Fractal**: Precio vs SMA20 en M1, M5, M15 (Trifecta Core)
+2. **Location Filter**: Evitar compras cuando precio está extendido >1% de SMA20 (Rubber Band)
+3. **Narrow State Bonus**: Bonificar setups donde SMA20 y SMA200 están comprimidas <1.5% (explosividad)
+4. **Time of Day Filter**: Penalizar/evitar "Midday Doldrums" (11:30-14:00 EST)
+5. **Scoring System**: 0-100 puntos con ponderación 60% Trifecta + 40% estrategia base
+
+### Plan de Implementación ✅
+- [x] **Tarea 1**: Crear `tests/test_trifecta_logic.py` (TDD - Test Driven Development)
+- [x] **Tarea 2**: Implementar `core_brain/strategies/trifecta_logic.py` 
+- [x] **Tarea 3**: Limpiar `signal_factory.py` (remover código pegado incorrectamente)
+- [x] **Tarea 4**: Integrar TrifectaAnalyzer en `signal_factory.py` con método `_apply_trifecta_optimization`
+- [x] **Tarea 5**: Ejecutar `validate_all.py` + `start.py` (verificación completa)
+- [x] **Tarea 6**: Actualizar `AETHELGARD_MANIFESTO.md` con documentación Trifecta
+
+### Resultados de Validación
+```
+[OK] Architecture Audit (Duplicados + Context Manager) - PASSED
+[OK] QA Guard (Sintaxis + Tipos + Style) - PASSED
+[OK] Code Quality (Copy-Paste + Complejidad) - PASSED
+[OK] UI QA Guard (TypeScript + Build Validation) - PASSED
+[OK] Critical Tests (25 tests) - PASSED
+[OK] Integration Tests (5 tests) - PASSED
+[OK] Trifecta Logic Tests (10/10 tests) - PASSED
+✅ Sistema arranca sin errores
+```
+
+### Arquitectura Propuesta
+```python
+TrifectaAnalyzer
+├─ analyze(symbol, market_data) → Dict
+│  ├─ 1. _validate_data() # Verificar M1, M5, M15 disponibles
+│  ├─ 2. _analyze_tf(df) → Dict # SMA20, SMA200, Extension, Elephant Candle
+│  ├─ 3. Verificar Alineación (bullish/bearish en 3 TFs)
+│  ├─ 4. Location Filter (extension_pct > 1.0% → REJECT)
+│  ├─ 5. Narrow State Bonus (sma_diff_pct < 1.5% → +20pts)
+│  ├─ 6. Time of Day Filter (11:30-14:00 EST → -20pts)
+│  └─ 7. Return {valid, direction, score, metadata}
+```
+
+### Integración con SignalFactory
+```python
+SignalFactory.generate_signals_batch()
+├─ 1. Ejecutar estrategias (OliverVelezStrategy, etc.)
+├─ 2. [NUEVO] _apply_trifecta_optimization(signals, scan_results)
+│  ├─ Agrupar market_data por símbolo (M1, M5, M15)
+│  ├─ Para cada señal "oliver":
+│  │  ├─ TrifectaAnalyzer.analyze(symbol, data)
+│  │  ├─ Recalcular score: 40% original + 60% trifecta
+│  │  └─ Filtrar si score final < 60
+│  └─ Pasar otras estrategias sin cambios
+├─ 3. Guardar en DB y notificar
+```
+
+---
+
 ## � MILESTONE: Orphan Position Metadata Auto-Sync (2026-02-12)
 **Estado: ✅ COMPLETADO**
 **Criterio: Sistema debe crear metadata automáticamente para posiciones sin ella, eliminando warnings repetitivos** ✅

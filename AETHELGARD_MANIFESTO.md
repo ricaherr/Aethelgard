@@ -3998,6 +3998,304 @@ return min(100.0, max(0.0, score))
 ✅ **Protección de Capital**: Risk multipliers reducidos en instrumentos volátiles  
 ✅ **SaaS Ready**: Membresías Basic (solo majors) vs Premium (todo)  
 ✅ **Auto-Adaptación**: Tuner puede ajustar min_score por categoría según win-rate  
+
+---
+
+### 🎯 FASE 2.6: TrifectaAnalyzer - Oliver Velez Multi-Timeframe Optimization
+
+**Estado:** ✅ IMPLEMENTADO (Febrero 2026)  
+**Módulo:** `core_brain/strategies/trifecta_logic.py`  
+**Tests:** `tests/test_trifecta_logic.py` (10/10 tests pasando)
+
+#### Objetivo
+
+Implementar la metodología "Trifecta" de Oliver Velez: alineación fractal de precio vs SMA20 en 3 timeframes (2m-5m-15m), con optimizaciones detectadas para mejorar la calidad de entrada.
+
+#### Reglas de Trifecta (Oliver Velez)
+
+**1. Alineación Fractal (Core)**
+- **BUY Setup**: Precio debe estar ARRIBA de SMA20 en M1, M5 y M15 simultáneamente
+- **SELL Setup**: Precio debe estar ABAJO de SMA20 en M1, M5 y M15 simultáneamente
+- **Rationale**: Confirmación de tendencia en múltiples escalas temporales
+
+**2. Location Filter (Rubber Band)**
+- **Regla**: Evitar entradas cuando precio está extendido >1% de SMA20
+- **Analogía**: Cuando un "elástico" está muy estirado, tiende a retroceder
+- **Implementación**: `extension_pct = abs(close - sma20) / sma20 * 100`
+- **Threshold**: `>1.0%` → RECHAZAR setup
+
+**3. Narrow State Bonus (Explosividad)**
+- **Regla**: Bonificar setups donde SMA20 y SMA200 están comprimidas <1.5%
+- **Rationale**: Compresión indica consolidación → potencial explosión (breakout)
+- **Implementación**: `sma_diff_pct = abs(sma20 - sma200) / sma200 * 100`
+- **Bonus**: `<1.5%` → +20 puntos
+
+**4. Time of Day Filter (Midday Doldrums)**
+- **Regla**: Evitar/penalizar operaciones entre 11:30 AM - 2:00 PM EST
+- **Rationale**: Sesión de NY post-apertura tiene bajo volumen y rangos estrechos
+- **Implementación**: `current_time in [11:30, 14:00]` → -20 puntos
+- **Nota**: En producción ajustar timezone a EST (actualmente usa hora local)
+
+**5. Elephant Candle (Momentum)**
+- **Regla**: Bonificar velas con cuerpo >2x promedio (ignición fuerte)
+- **Implementación**: `body > (avg_body_20 * 2.0)`
+- **Bonus**: Si detectada en M1 o M5 → +15 puntos
+
+#### Sistema de Scoring (0-100)
+
+```python
+score = 50.0  # Base por alineación confirmada
+
+# Bonificaciones
+if is_narrow:         score += 20.0  # Compresión de medias
+if has_momentum:      score += 15.0  # Vela elefante
+if not in_doldrums:   score += 15.0  # Buen horario
+
+# Penalizaciones
+if in_doldrums:       score -= 20.0  # Horario de baja actividad
+
+# Total posible: 50 + 20 + 15 + 15 = 100 puntos
+```
+
+**Rangos de Interpretación:**
+- **90-100**: Setup óptimo (alineación + narrow + momentum + timing)
+- **70-89**: Setup bueno (alineación + 1-2 bonificaciones)
+- **60-69**: Setup marginal (alineación básica, pocas bonificaciones)
+- **<60**: RECHAZADO (no cumple criterios mínimos)
+
+#### Arquitectura del Módulo
+
+**Clase:** `TrifectaAnalyzer`
+
+```python
+class TrifectaAnalyzer:
+    def __init__(self):
+        self.micro_tf = "M1"   # Proxy para 2m (MT5 usa M1)
+        self.mid_tf = "M5"
+        self.macro_tf = "M15"
+        
+        # Oliver Velez Time Zones (EST)
+        self.doldrums_start = time(11, 30)
+        self.doldrums_end = time(14, 00)
+    
+    def analyze(self, symbol: str, market_data: Dict[str, pd.DataFrame]) -> Dict:
+        """
+        Ejecuta análisis completo de Trifecta + Optimizaciones.
+        
+        Args:
+            symbol: Symbol to analyze (e.g., "EURUSD")
+            market_data: Dict with DataFrames {"M1": df1, "M5": df5, "M15": df15}
+        
+        Returns:
+            {
+                "valid": bool,
+                "direction": "BUY"|"SELL",
+                "score": float (0-100),
+                "reason": str (if rejected),
+                "metadata": {
+                    "is_narrow": bool,
+                    "in_doldrums": bool,
+                    "extension_pct": float,
+                    "stop_loss_ref": float
+                }
+            }
+        """
+        # 1. Validar datos (M1, M5, M15 disponibles, >200 velas)
+        if not self._validate_data(market_data):
+            return {"valid": False, "reason": "Insufficient Data"}
+        
+        # 2. Análisis técnico por timeframe
+        micro = self._analyze_tf(market_data["M1"])
+        mid = self._analyze_tf(market_data["M5"])
+        macro = self._analyze_tf(market_data["M15"])
+        
+        # 3. Verificar alineación
+        is_bullish = micro['bullish'] and mid['bullish'] and macro['bullish']
+        is_bearish = micro['bearish'] and mid['bearish'] and macro['bearish']
+        
+        if not (is_bullish or is_bearish):
+            return {"valid": False, "reason": "No Alignment"}
+        
+        # 4. Location Filter
+        if mid['extension_pct'] > 1.0:
+            return {"valid": False, "reason": "Extended from SMA20 (Rubber Band)"}
+        
+        # 5-6. Calcular score con bonificaciones/penalizaciones
+        score = self._calculate_score(mid, micro, ...)
+        
+        return {"valid": True, "direction": ..., "score": score, ...}
+    
+    def _analyze_tf(self, df: pd.DataFrame) -> Dict:
+        """Calcula SMA20, SMA200, extension, narrow state, elephant candle"""
+        ...
+```
+
+#### Integración con SignalFactory
+
+**Método:** `SignalFactory._apply_trifecta_optimization()`
+
+```python
+def _apply_trifecta_optimization(
+    self, 
+    signals: List[Signal], 
+    scan_results: Dict[str, Dict]
+) -> List[Signal]:
+    """
+    Aplica Trifecta Logic para filtrar y puntuar señales de Oliver Velez.
+    
+    Workflow:
+    1. Agrupar market_data por símbolo (M1, M5, M15)
+    2. Para cada señal con strategy_id="oliver_velez":
+       a. Ejecutar TrifectaAnalyzer.analyze(symbol, data)
+       b. Si analysis["valid"]:
+          - Recalcular score: 40% original + 60% trifecta
+          - Actualizar signal.confidence y metadata
+          - Filtrar si score final < 60
+       c. Si analysis["valid"] == False:
+          - Descartar señal (log reason)
+    3. Pasar otras estrategias sin cambios
+    
+    Returns:
+        Lista de señales filtradas y re-puntadas
+    """
+```
+
+**Flujo Completo (Pipeline):**
+
+```
+ScannerEngine
+├─ Escanea M1, M5, M15 para cada símbolo
+├─ Detecta régimen de mercado
+│
+▼
+SignalFactory.generate_signals_batch()
+├─ 1. Ejecuta OliverVelezStrategy en cada timeframe
+│  ├─ Genera señales basadas en SMA200, Elephant, SMA20
+│  └─ Score inicial (40% del peso final)
+│
+├─ 2. [NUEVO] _apply_trifecta_optimization()
+│  ├─ TrifectaAnalyzer valida alineación 3-TF
+│  ├─ Aplica Location, Narrow State, Time of Day
+│  ├─ Recalcula score: 40% original + 60% trifecta
+│  └─ Filtra si score < 60
+│
+├─ 3. Persiste en DB (signals_db.py)
+└─ 4. Notifica vía Telegram
+```
+
+#### Ejemplo de Ejecución
+
+**Caso 1: Setup Aprobado (Score Alto)**
+```
+[EURUSD] OliverVelezStrategy: Setup detectado (score original=75)
+[EURUSD] TrifectaAnalyzer:
+  - M1: Precio > SMA20 ✅
+  - M5: Precio > SMA20 ✅
+  - M15: Precio > SMA20 ✅
+  - Extension: 0.3% < 1.0% ✅
+  - Narrow State: SMA diff 1.2% < 1.5% ✅ (+20pts)
+  - Elephant Candle: Detectada en M5 ✅ (+15pts)
+  - Time: 10:30 AM (outside doldrums) ✅ (+15pts)
+  - Trifecta Score: 50 + 20 + 15 + 15 = 100
+  - Final Score: (75 * 0.4) + (100 * 0.6) = 90
+[EURUSD] Trifecta APPROVED: Final=90 >= 60 ✅ Signal ejecutada
+```
+
+**Caso 2: Setup Rechazado (Location Filter)**
+```
+[GBPUSD] OliverVelezStrategy: Setup detectado (score original=78)
+[GBPUSD] TrifectaAnalyzer:
+  - M1: Precio > SMA20 ✅
+  - M5: Precio > SMA20 ✅
+  - M15: Precio > SMA20 ✅
+  - Extension: 1.8% > 1.0% ❌
+[GBPUSD] Trifecta REJECTED: Extended from SMA20 (Rubber Band)
+❌ Signal descartada
+```
+
+**Caso 3: Sin Alineación**
+```
+[USDJPY] OliverVelezStrategy: Setup detectado (score original=72)
+[USDJPY] TrifectaAnalyzer:
+  - M1: Precio > SMA20 ✅
+  - M5: Precio < SMA20 ❌
+  - M15: Precio > SMA20 ✅
+[USDJPY] Trifecta REJECTED: No Alignment
+❌ Signal descartada
+```
+
+#### Tests Implementados
+
+**Archivo:** `tests/test_trifecta_logic.py`  
+**Cobertura:** 10/10 tests pasando
+
+**Casos de Prueba:**
+1. ✅ `test_bullish_alignment_valid_signal`: Alineación perfecta bullish → valid=True, direction=BUY
+2. ✅ `test_bearish_alignment_valid_signal`: Alineación perfecta bearish → valid=True, direction=SELL
+3. ✅ `test_no_alignment_rejected`: Timeframes desalineados → valid=False, reason="No Alignment"
+4. ✅ `test_extended_price_rejected_location_filter`: Precio >1% de SMA20 → valid=False, reason="Extended"
+5. ✅ `test_narrow_state_bonus`: SMA20-SMA200 <1.5% → is_narrow=True, score >= 70
+6. ✅ `test_insufficient_data_rejected`: DataFrame vacío o <200 velas → valid=False
+7. ✅ `test_score_range_0_to_100`: Score siempre en rango [0, 100]
+8. ✅ `test_metadata_contains_required_fields`: Metadata incluye is_narrow, in_doldrums, extension_pct, stop_loss_ref
+9. ✅ `test_stop_loss_reference_correct_direction`: BUY usa 'low', SELL usa 'high' de M5
+10. ✅ `test_doldrums_penalty`: Hora en 11:30-14:00 → in_doldrums=True, score penalizado
+
+#### Agnosticismo de Plataforma
+
+**Cumple Regla de Oro #3:**
+- ✅ **NO** importa librerías de MT5/Rithmic/NinjaTrader
+- ✅ Recibe `pd.DataFrame` (estructura universal)
+- ✅ Retorna `Dict` (JSON-serializable)
+- ✅ Lógica pura de negocio (sin dependencias de broker)
+
+**Ubicación en Arquitectura:**
+```
+core_brain/strategies/
+├── base_strategy.py       # Abstract Base Class (agnóstico)
+├── oliver_velez.py        # Estrategia (agnóstico)
+└── trifecta_logic.py      # 🆕 Módulo de optimización (agnóstico)
+
+connectors/
+├── mt5_connector.py       # ✅ Permitido importar MetaTrader5
+└── bridge_nt8.cs          # ✅ Permitido importar NinjaTrader API
+```
+
+#### Configuración Requerida
+
+**Asegurar Timeframes Habilitados:**
+
+`config/config.json`:
+```json
+{
+  "timeframes": {
+    "M1": {"enabled": true, "priority": 3},
+    "M5": {"enabled": true, "priority": 2},
+    "M15": {"enabled": true, "priority": 1}
+  }
+}
+```
+
+**Nota:** Si M1, M5 o M15 están deshabilitados, TrifectaAnalyzer retornará `{"valid": False, "reason": "Insufficient Data"}`
+
+#### Mejoras Futuras (Nivel 2)
+
+**Optimizaciones Planificadas:**
+1. **Timezone Awareness**: Convertir hora local a EST para Time of Day filter consistente
+2. **Parámetros Configurables**: Umbrales de extension_pct, sma_diff_pct vía dynamic_params.json
+3. **Calibración Adaptativa**: EdgeTuner ajusta pesos de bonificaciones basado en win-rate histórico
+4. **Multi-Strategy**: Generalizar lógica para aplicar a otras estrategias (no solo Oliver Velez)
+5. **Higher Timeframes**: Agregar validación en H1/H4 para confirmación macro-tendencia
+
+#### Beneficios del Sistema
+
+✅ **Mayor Precisión**: Filtrado multi-timeframe elimina señales de baja probabilidad  
+✅ **Evita Entradas Extendidas**: Location filter previene compras "caras" (rubber band effect)  
+✅ **Aprovecha Setups Explosivos**: Narrow state bonus identifica consolidaciones pre-breakout  
+✅ **Timing Optimizado**: Evita horarios de baja liquidez (doldrums)  
+✅ **Score Transparente**: Sistema de puntuación claro (0-100) para auditoría  
+✅ **TDD Completo**: 10/10 tests garantizan robustez del módulo  
+✅ **Agnóstico**: Funciona con cualquier proveedor de datos (MT5, TV, IEX, etc.)
 ✅ **Transparencia**: Logs detallados de por qué se rechaza cada setup  
 ✅ **Testing Robusto**: 20 tests validan toda la lógica de filtrado
 

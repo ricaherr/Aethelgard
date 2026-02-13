@@ -25,6 +25,7 @@ from data_vault.storage import StorageManager
 from core_brain.notificator import get_notifier, TelegramNotifier
 from core_brain.module_manager import MembershipLevel
 from core_brain.confluence import MultiTimeframeConfluenceAnalyzer
+from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
 
 # Import strategies
 from core_brain.strategies.base_strategy import BaseStrategy
@@ -79,6 +80,9 @@ class SignalFactory:
             config_path=config_path,
             enabled=confluence_enabled
         )
+        
+        # FASE 2.6: Initialize Oliver Velez Trifecta Optimizer
+        self.trifecta_analyzer = TrifectaAnalyzer()
         
         if not self.notifier or not self.notifier.is_configured():
             logger.warning("Notificador de Telegram no está configurado. No se enviarán alertas.")
@@ -368,6 +372,10 @@ class SignalFactory:
             # FASE 2.5: Apply Multi-Timeframe Confluence
             # if all_signals and self.confluence_analyzer.enabled:
             #     all_signals = self._apply_confluence(all_signals, scan_results)
+            
+            # FASE 2.6: Apply Trifecta Optimization (Oliver Velez Multi-TF)
+            if all_signals:
+                all_signals = self._apply_trifecta_optimization(all_signals, scan_results)
 
             if all_signals:
                 logger.info(
@@ -434,6 +442,78 @@ class SignalFactory:
                 adjusted_signals.append(signal)
         
         return adjusted_signals
+
+    def _apply_trifecta_optimization(
+        self, 
+        signals: List[Signal], 
+        scan_results: Dict[str, Dict]
+    ) -> List[Signal]:
+        """
+        Apply Trifecta Logic (Oliver Velez 2m-5m-15m) to filter and score signals.
+        
+        Only applies to Oliver Velez strategy signals.
+        Recalculates score with 40% original + 60% trifecta.
+        Filters out signals with final score < 60.
+        
+        Args:
+            signals: List of generated signals
+            scan_results: Original scan data with DataFrames for M1, M5, M15
+        
+        Returns:
+            Filtered and re-scored signals
+        """
+        optimized_signals = []
+        
+        # Group market data by symbol for multi-timeframe analysis
+        symbol_data = defaultdict(dict)
+        for key, data in scan_results.items():
+            if data.get("df") is not None:
+                symbol_data[data["symbol"]][data["timeframe"]] = data["df"]
+
+        for signal in signals:
+            # Only apply to Oliver Velez strategy signals
+            strategy_id = str(signal.metadata.get("strategy_id", "")).lower()
+            if "oliver" in strategy_id:
+                market_data = symbol_data.get(signal.symbol, {})
+                
+                # Analyze Trifecta
+                analysis = self.trifecta_analyzer.analyze(signal.symbol, market_data)
+                
+                if analysis["valid"]:
+                    # Update score and metadata
+                    signal.metadata["trifecta_score"] = analysis["score"]
+                    signal.metadata["trifecta_data"] = analysis["metadata"]
+                    
+                    # Combine original score with Trifecta score (weighted average)
+                    original_score = signal.metadata.get("score", 50.0)
+                    final_score = (original_score * 0.4) + (analysis["score"] * 0.6)
+                    signal.metadata["score"] = final_score
+                    
+                    # Update signal confidence (0-1 scale)
+                    signal.confidence = final_score / 100.0
+                    
+                    # Filter: only keep signals with final score >= 60
+                    if final_score >= 60.0:
+                        optimized_signals.append(signal)
+                        logger.info(
+                            f"[{signal.symbol}] Trifecta APPROVED: "
+                            f"Original={original_score:.1f}, Trifecta={analysis['score']:.1f}, "
+                            f"Final={final_score:.1f}"
+                        )
+                    else:
+                        logger.info(
+                            f"[{signal.symbol}] Trifecta FILTERED: "
+                            f"Final score {final_score:.1f} < 60 threshold"
+                        )
+                else:
+                    logger.info(
+                        f"[{signal.symbol}] Trifecta REJECTED: {analysis['reason']}"
+                    )
+            else:
+                # Pass non-Oliver strategies without changes
+                optimized_signals.append(signal)
+                
+        return optimized_signals
 
     async def process_scan_results(self, scan_results: Dict[str, MarketRegime]) -> List[Signal]:
         """
