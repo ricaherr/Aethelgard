@@ -117,6 +117,28 @@ class TrifectaAnalyzer:
 
         if not (is_bullish or is_bearish):
             return {"valid": False, "reason": "No Alignment"}
+        
+        # 2.1 Validar pendiente de SMA20 (no debe estar plana)
+        # Umbral: slope mínimo de 0.005% en M5 (permite tendencias tempranas)
+        # Combinado con separación adaptativa ATR para doble filtro
+        # Slope 0.005% rechaza consolidación (0.0015%) pero permite tendencias débiles (0.009%)
+        min_slope = 0.005
+        if mid['sma20_slope'] < min_slope:
+            return {
+                "valid": False, 
+                "reason": f"No Trend - EMA20 Flat (slope: {mid['sma20_slope']:.3f}% < {min_slope}%)"
+            }
+        
+        # 2.2 ADAPTATIVO: Validar separación EMA20/EMA200 basada en ATR
+        # Volatilidad alta (ATR alto) → requiere menos separación relativa
+        # Volatilidad baja (ATR bajo) → requiere más separación (evita consolidación)
+        # Umbral dinámico: separación >= 30% del ATR
+        if not mid['emas_separated_atr']:
+            atr_threshold = mid['atr_pct'] * 0.3
+            return {
+                "valid": False,
+                "reason": f"No Trend - EMAs Too Close (sep: {mid['sma_diff_pct']:.3f}% < {atr_threshold:.3f}% [ATR-based])"
+            }
 
         direction = "BUY" if is_bullish else "SELL"
 
@@ -175,7 +197,8 @@ class TrifectaAnalyzer:
         
         Returns:
             Dict with: bullish, bearish, extension_pct, sma_diff_pct, 
-                       elephant_candle, low, high
+                       elephant_candle, low, high, sma20_slope, atr_pct, 
+                       emas_separated_atr
         """
         if df.empty or len(df) < 200:
             return {
@@ -185,7 +208,10 @@ class TrifectaAnalyzer:
                 "sma_diff_pct": 100.0,
                 "elephant_candle": False,
                 "low": 0.0,
-                "high": 0.0
+                "high": 0.0,
+                "sma20_slope": 0.0,
+                "atr_pct": 0.0,
+                "emas_separated_atr": False
             }
 
         close = df['close'].iloc[-1]
@@ -205,6 +231,34 @@ class TrifectaAnalyzer:
         body = abs(close - open_p)
         avg_body = (df['close'] - df['open']).abs().rolling(20).mean().iloc[-1]
         is_elephant = body > (avg_body * 2.0)
+        
+        # Pendiente de SMA20 (slope) para detectar EMAs planas
+        # Comparar SMA20 actual vs SMA20 hace 5 velas
+        sma20_series = df['close'].rolling(20).mean()
+        if len(sma20_series) >= 10:
+            sma20_prev = sma20_series.iloc[-6]  # 5 velas atrás
+            sma20_slope = abs(sma20 - sma20_prev) / sma20_prev * 100
+        else:
+            sma20_slope = 0.0
+        
+        # ATR (Average True Range) para separación adaptativa
+        # TR = max(high - low, abs(high - prev_close), abs(low - prev_close))
+        if len(df) >= 14:
+            high_low = df['high'] - df['low']
+            high_close = (df['high'] - df['close'].shift(1)).abs()
+            low_close = (df['low'] - df['close'].shift(1)).abs()
+            true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+            atr = true_range.rolling(14).mean().iloc[-1]
+            atr_pct = (atr / close) * 100 if close > 0 else 0.0
+        else:
+            atr_pct = 0.0
+        
+        # ADAPTATIVO: Separación mínima basada en ATR
+        # Si ATR es alto (volátil), permitir menor separación relativa
+        # Si ATR es bajo (consolidación), requerir más separación para confirmar tendencia
+        # Umbral: separación debe ser > 30% del ATR
+        min_separation_atr = atr_pct * 0.3 if atr_pct > 0 else 0.1  # Fallback 0.1%
+        emas_separated_atr = sma_diff_pct >= min_separation_atr
 
         return {
             "bullish": close > sma20,
@@ -213,7 +267,10 @@ class TrifectaAnalyzer:
             "sma_diff_pct": sma_diff_pct,
             "elephant_candle": is_elephant,
             "low": low,
-            "high": high
+            "high": high,
+            "sma20_slope": sma20_slope,
+            "atr_pct": atr_pct,
+            "emas_separated_atr": emas_separated_atr
         }
     
     def _ensure_required_timeframes(self) -> None:

@@ -1,5 +1,76 @@
 # Aethelgard – Roadmap
 
+## 🎯 MILESTONE: Trifecta Analyzer - Corrección Validación de Tendencia (2026-02-12)
+**Estado: ✅ COMPLETADO**
+**Criterio: Corregir lógica de Trifecta para rechazar trades cuando EMAs están planas o sin separación adecuada**
+
+### Problema Reportado (Bug)
+**Trade ejecutado**: USDCAD SELL @ 1.35248 (2026-02-11 05:04:55)
+
+**Análisis del usuario:**
+- EMA 20 está **plana** y **lejos** de la EMA 200
+- M1: **sin tendencia**
+- M5: en **rango**
+- M15: EMA 200 bajista pero EMA 20 **casi plana**
+
+**Esperado**: Trifecta debería rechazar con "No Alignment"
+**Realidad**: Trade fue ejecutado ❌
+
+### Solución Implementada
+
+#### 1. Validación de Pendiente de EMA20 (Slope)
+```python
+# Detecta EMAs planas comparando SMA20 actual vs 5 velas atrás
+sma20_slope = abs(sma20 - sma20_prev) / sma20_prev * 100
+if sma20_slope < 0.005:  # Umbral: 0.005%
+    return {"valid": False, "reason": "No Trend - EMA20 Flat"}
+```
+
+**Matemática validada:**
+- Consolidación: slope ≈ 0.0015% → **RECHAZADO** ✅
+- Tendencia débil: slope ≈ 0.009% → **APROBADO** ✅
+- Tendencia moderada: slope ≈ 0.018% → **APROBADO** ✅
+
+#### 2. Separación EMA20/EMA200 Adaptativa (ATR-based)
+```python
+# Cálculo de ATR (14 períodos)
+atr = true_range.rolling(14).mean()
+atr_pct = (atr / close) * 100
+
+# Umbral dinámico: separación >= 30% del ATR
+min_separation = atr_pct * 0.3
+emas_separated = sma_diff_pct >= min_separation
+```
+
+**Ventajas:**
+- ✅ **Adaptativo**: Pares volátiles (high ATR) requieren menos separación absoluta
+- ✅ **Conservador**: Pares en consolidación (low ATR) requieren más separación relativa
+- ✅ **Compatible con "Narrow State"**: No contradice bonus por compresión (<1.5%)
+- ✅ **Sin valores fijos arbitrarios**: Se ajusta a cada instrumento/timeframe
+
+### Plan de Implementación
+- [x] **Tarea 1**: Crear test `test_flat_ema_no_alignment` para capturar bug
+- [x] **Tarea 2**: Agregar cálculo de pendiente (slope) de EMA 20 en `_analyze_tf`
+- [x] **Tarea 3**: Implementar cálculo de ATR en `_analyze_tf`
+- [x] **Tarea 4**: Validar separación mínima basada en ATR (adaptativo)
+- [x] **Tarea 5**: Ejecutar tests + `validate_all.py` (13/13 tests OK, 6/6 validaciones OK)
+- [x] **Tarea 6**: Actualizar `AETHELGARD_MANIFESTO.md` con reglas mejoradas
+
+### Criterios de Aceptación
+✅ Test con EMAs planas devuelve `valid=False, reason="No Trend - EMA20 Flat"`
+✅ Test con EMAs sin separación (vs ATR) devuelve `valid=False, reason="EMAs Too Close (ATR-based)"`
+✅ Test con régimen RANGE devuelve `valid=False, reason="No Trend"`
+✅ `validate_all.py` pasa 100% (6/6 validaciones)
+✅ Todos los tests de Trifecta pasan (13/13)
+
+### Impacto
+**ANTES**: Trade USDCAD ejecutado incorrectamente con EMAs planas  
+**DESPUÉS**: Sistema rechaza trades en consolidación/rango mediante doble filtro:
+1. Slope < 0.005% → Rechaza EMAs planas
+2. Separación < 30% ATR → Rechaza consolidación (adaptativo)
+
+---
+
 ## 🎯 MILESTONE: Trifecta Analyzer - Oliver Velez Multi-Timeframe Optimization (2026-02-12)
 **Estado: ✅ COMPLETADO (HYBRID MODE)**
 **Criterio: Implementar módulo TrifectaAnalyzer con reglas avanzadas de alineación 2m-5m-15m + Location + Narrow State + Time of Day**

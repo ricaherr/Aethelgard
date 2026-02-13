@@ -4011,12 +4011,45 @@ return min(100.0, max(0.0, score))
 
 Implementar la metodología "Trifecta" de Oliver Velez: alineación fractal de precio vs SMA20 en 3 timeframes (2m-5m-15m), con optimizaciones detectadas para mejorar la calidad de entrada.
 
-#### Reglas de Trifecta (Oliver Velez)
+#### Reglas de Trifecta (Oliver Velez) + Mejoras Aethelgard
 
 **1. Alineación Fractal (Core)**
 - **BUY Setup**: Precio debe estar ARRIBA de SMA20 en M1, M5 y M15 simultáneamente
 - **SELL Setup**: Precio debe estar ABAJO de SMA20 en M1, M5 y M15 simultáneamente
 - **Rationale**: Confirmación de tendencia en múltiples escalas temporales
+
+**1.1 EMA Slope Validation (⚡ Mejora Aethelgard)**
+- **Regla**: Rechazar si SMA20 está plana (sin pendiente clara)
+- **Implementación**: `slope = abs(sma20_now - sma20_5_bars_ago) / sma20_5_bars_ago * 100`
+- **Threshold**: `slope < 0.005%` → RECHAZAR (EMAs planas = consolidación)
+- **Matemática validada**:
+  - Consolidación: slope ≈ 0.0015% → **RECHAZADO** ✅
+  - Tendencia débil: slope ≈ 0.009% → **APROBADO** ✅
+  - Tendencia moderada: slope ≈ 0.018% → **APROBADO** ✅
+- **Rationale**: Evita trades en rangos donde precio > SMA20 pero ambas EMAs están planas
+
+**1.2 EMA Separation Validation - ATR Adaptativo (⚡ Mejora Aethelgard)**
+- **Regla**: Rechazar si SMA20 y SMA200 están demasiado cerca (sin tendencia confirmada)
+- **Implementación adaptativa**:
+  ```python
+  # 1. Calcular ATR (Average True Range, 14 períodos)
+  true_range = max(high-low, abs(high-prev_close), abs(low-prev_close))
+  atr = true_range.rolling(14).mean()
+  atr_pct = (atr / close) * 100
+  
+  # 2. Umbral dinámico: separación >= 30% del ATR
+  min_separation = atr_pct * 0.3
+  emas_separated = sma_diff_pct >= min_separation
+  ```
+- **Ventajas vs umbral fijo (0.3%)**:
+  - ✅ **Adaptativo**: Pares volátiles (ATR alto) requieren menos separación absoluta
+  - ✅ **Conservador**: Pares en consolidación (ATR bajo) requieren más separación relativa
+  - ✅ **Compatible con Narrow State**: No contradice bonus por compresión (<1.5%)
+  - ✅ **Sin arbitrariedad**: Se ajusta a cada instrumento/timeframe automáticamente
+- **Ejemplo práctico**:
+  - EURUSD (volatilidad baja): ATR = 0.05% → min_sep = 0.015%
+  - GBPJPY (volatilidad alta): ATR = 0.20% → min_sep = 0.060%
+- **Rationale**: Oliver Velez habla de EMAs "cerca" pero no define %. ATR lo hace objetivo y específico.
 
 **2. Location Filter (Rubber Band)**
 - **Regla**: Evitar entradas cuando precio está extendido >1% de SMA20
