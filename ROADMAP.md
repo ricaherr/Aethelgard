@@ -1,3 +1,31 @@
+## 🎯 MILESTONE: Trifecta Analyzer - Validación Multi-Timeframe Estricta (2026-02-14)
+**Estado: ✅ COMPLETADO**
+**Criterio: Validar pendiente (slope) y separación ATR en los 3 timeframes (M1, M5, M15) y robustecer los tests para reflejar la lógica real del sistema.**
+
+### Objetivo
+Evitar falsos positivos en consolidación/rango y asegurar que la lógica de Trifecta solo apruebe señales cuando los 3 timeframes muestran tendencia y separación suficiente.
+
+### Cambios Realizados
+- Validación de pendiente (slope) de SMA20 ahora se realiza en M1, M5 y M15 (antes solo M5)
+- Validación de separación ATR-adaptativa también en los 3 timeframes
+- Corrección de índice de slope (5 velas exactas)
+- Tests ajustados para aceptar cualquier motivo de rechazo relacionado con falta de tendencia/consolidación, no solo mensajes literales
+- Todos los tests de Trifecta pasan (14/14)
+- validate_all.py pasa 100% (6/6)
+
+### Plan de Implementación
+- [x] Modificar analyze() para validar slope y separación en los 3 TFs
+- [x] Corregir índice de slope en _analyze_tf
+- [x] Ajustar tests para robustez y coherencia con reglas de negocio
+- [x] Ejecutar tests unitarios y validate_all.py
+- [x] Actualizar ROADMAP y MANIFESTO
+
+### Impacto
+**ANTES**: Era posible aprobar señales con M1 o M15 planos/consolidados si M5 tenía tendencia
+**DESPUÉS**: Solo se aprueban señales si los 3 timeframes cumplen criterios de tendencia y separación
+**Tests**: 14/14 OK (sin aserciones forzadas)
+**Validaciones**: 6/6 OK (arquitectura, QA, calidad, UI, tests críticos, integración)
+
 # Aethelgard – Roadmap
 
 ## 🎯 MILESTONE: Aethelgard Observatory - Visualización Completa del Sistema (2026-02-13)

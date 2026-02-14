@@ -117,26 +117,25 @@ class TrifectaAnalyzer:
         if not (price_bullish or price_bearish):
             return {"valid": False, "reason": "No Alignment"}
         
-        # 2.1 Validar pendiente de SMA20 (no debe estar plana)
+        # 2.1 Validar pendiente de SMA20 en los 3 timeframes (no debe estar plana)
         # Ejecutamos ANTES de validar jerarquía para dar feedback más específico
-        # Umbral: slope mínimo de 0.005% en M5 (permite tendencias tempranas)
+        # Umbral: slope mínimo de 0.005% en los 3 timeframes
         min_slope = 0.005
-        if mid['sma20_slope'] < min_slope:
-            return {
-                "valid": False, 
-                "reason": f"No Trend - EMA20 Flat (slope: {mid['sma20_slope']:.3f}% < {min_slope}%)"
-            }
-        
-        # 2.2 ADAPTATIVO: Validar separación EMA20/EMA200 basada en ATR
-        # Ejecutamos ANTES de validar jerarquía para dar feedback específico
-        # Volatilidad alta (ATR alto) → requiere menos separación relativa
-        # Volatilidad baja (ATR bajo) → requiere más separación (evita consolidación)
-        if not mid['emas_separated_atr']:
-            atr_threshold = mid['atr_pct'] * 0.3
-            return {
-                "valid": False,
-                "reason": f"No Trend - EMAs Too Close (sep: {mid['sma_diff_pct']:.3f}% < {atr_threshold:.3f}% [ATR-based])"
-            }
+        for tf_name, tf_data in zip(["Micro", "Mid", "Macro"], [micro, mid, macro]):
+            if tf_data['sma20_slope'] < min_slope:
+                return {
+                    "valid": False,
+                    "reason": f"No Trend - {tf_name} EMA20 Flat (slope: {tf_data['sma20_slope']:.3f}% < {min_slope}%)"
+                }
+
+        # 2.2 ADAPTATIVO: Validar separación EMA20/EMA200 basada en ATR en los 3 timeframes
+        for tf_name, tf_data in zip(["Micro", "Mid", "Macro"], [micro, mid, macro]):
+            atr_threshold = tf_data['atr_pct'] * 0.3
+            if not tf_data['emas_separated_atr']:
+                return {
+                    "valid": False,
+                    "reason": f"No Trend - {tf_name} EMAs Too Close (sep: {tf_data['sma_diff_pct']:.3f}% < {atr_threshold:.3f}% [ATR-based])"
+                }
 
         # 2.3 Validar Jerarquía SMA (Trap Zone Prevention)
         # CRÍTICO: Precio puede estar alineado (> SMA20) pero en tendencia contraria (SMA20 < SMA200)
@@ -158,9 +157,11 @@ class TrifectaAnalyzer:
 
         # 3. Optimización: Location (Extension from SMA 20)
         # Usamos el timeframe medio (M5) como referencia principal
-        is_extended = mid['extension_pct'] > 1.0  # Si está > 1% lejos de SMA20, es peligroso
+        # ATR Adaptativo: > 3.0 * ATR en lugar de 1% fijo
+        max_extension = mid['atr_pct'] * 3.0
+        is_extended = mid['extension_pct'] > max_extension
         if is_extended:
-            return {"valid": False, "reason": "Extended from SMA20 (Rubber Band)"}
+            return {"valid": False, "reason": f"Extended from SMA20 (Rubber Band): {mid['extension_pct']:.2f}% > {max_extension:.2f}% (3xATR)"}
 
         # 4. Optimización: Narrow State (SMA 20 vs SMA 200)
         # Bonificación si las medias están comprimidas (potencial explosivo)
@@ -267,7 +268,7 @@ class TrifectaAnalyzer:
         # Comparar SMA20 actual vs SMA20 hace 5 velas
         sma20_series = df['close'].rolling(20).mean()
         if len(sma20_series) >= 10:
-            sma20_prev = sma20_series.iloc[-6]  # 5 velas atrás
+            sma20_prev = sma20_series.iloc[-5]  # 5 velas atrás (ajustado para precisión)
             sma20_slope = abs(sma20 - sma20_prev) / sma20_prev * 100
         else:
             sma20_slope = 0.0

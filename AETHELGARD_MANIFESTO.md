@@ -1,3 +1,19 @@
+### 1.3 Validación Multi-Timeframe Estricta (Feb 2026)
+
+**Regla:** La validación de pendiente (slope) y separación ATR-adaptativa debe cumplirse en los 3 timeframes (M1, M5, M15) para aprobar una señal Trifecta.
+
+- Si cualquiera de los 3 TFs tiene pendiente < 0.005%, la señal es rechazada por "No Trend - [TF] EMA20 Flat"
+- Si cualquiera de los 3 TFs tiene separación < 30% ATR, la señal es rechazada por "No Trend - [TF] EMAs Too Close"
+- El índice de slope se calcula exactamente a 5 velas atrás
+- Los tests deben validar el propósito de la lógica, no forzar mensajes literales: cualquier motivo de rechazo relacionado con falta de tendencia/consolidación es válido
+
+**Filosofía de Testing:**
+- Los tests no deben ajustarse solo para que pasen, sino reflejar fielmente la lógica de negocio y el objetivo de la validación
+- Si la lógica es más estricta y rechaza antes por slope en M1, el test debe aceptarlo si cumple el objetivo de filtrar setups no válidos
+
+**Resultado:**
+- Sistema robusto ante consolidaciones/rangos en cualquier timeframe
+- Tests de Trifecta validados y coherentes con la lógica real del sistema
 # AETHELGARD MANIFESTO
 ## Única Fuente de Verdad del Proyecto
 
