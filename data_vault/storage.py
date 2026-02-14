@@ -218,6 +218,39 @@ class StorageManager(
             """)
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_signal_pipeline_signal_id ON signal_pipeline (signal_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_signal_pipeline_stage ON signal_pipeline (stage)")
+            
+            # User Preferences (Perfiles y configuración de autonomía)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS user_preferences (
+                    user_id TEXT PRIMARY KEY DEFAULT 'default',
+                    profile_type TEXT DEFAULT 'active_trader',
+                    
+                    -- AUTONOMÍA DEL SISTEMA
+                    auto_trading_enabled BOOLEAN DEFAULT 0,
+                    auto_trading_max_risk REAL DEFAULT 1.0,
+                    auto_trading_symbols TEXT,
+                    auto_trading_strategies TEXT,
+                    auto_trading_timeframes TEXT,
+                    
+                    -- NOTIFICACIONES INTELIGENTES
+                    notify_signals BOOLEAN DEFAULT 1,
+                    notify_executions BOOLEAN DEFAULT 1,
+                    notify_risks BOOLEAN DEFAULT 1,
+                    notify_regime_changes BOOLEAN DEFAULT 1,
+                    notify_threshold_score REAL DEFAULT 0.85,
+                    
+                    -- PREFERENCIAS DE VISTA
+                    default_view TEXT DEFAULT 'feed',
+                    active_filters TEXT,
+                    
+                    -- SEGURIDAD
+                    require_confirmation BOOLEAN DEFAULT 1,
+                    max_daily_trades INTEGER DEFAULT 10,
+                    
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
 
             # Migrations / Fixes
             cursor.execute("PRAGMA table_info(data_providers)")
@@ -227,6 +260,14 @@ class StorageManager(
 
             # Enable WAL mode for performance
             cursor.execute("PRAGMA journal_mode=WAL;")
+            
+            conn.commit()
+            
+            # Insertar perfil por defecto si no existe (después del commit)
+            cursor.execute("""
+                INSERT OR IGNORE INTO user_preferences (user_id, profile_type)
+                VALUES ('default', 'active_trader')
+            """)
             
             conn.commit()
             logger.info("Database initialized with modular schemas and WAL mode.")
@@ -723,6 +764,142 @@ class StorageManager(
             
         finally:
             self._close_conn(conn)
+
+    # ============================================================
+    # USER PREFERENCES (Perfiles y Autonomía)
+    # ============================================================
+    
+    def get_user_preferences(self, user_id: str = 'default') -> Optional[Dict[str, Any]]:
+        """Obtiene las preferencias del usuario desde la base de datos."""
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM user_preferences WHERE user_id = ?", (user_id,))
+            
+            row = cursor.fetchone()
+            if not row:
+                return None
+            
+            columns = [desc[0] for desc in cursor.description]
+            prefs = dict(zip(columns, row))
+            
+            # Parsear campos JSON
+            for json_field in ['auto_trading_symbols', 'auto_trading_strategies', 
+                              'auto_trading_timeframes', 'active_filters']:
+                if prefs.get(json_field):
+                    try:
+                        prefs[json_field] = json.loads(prefs[json_field])
+                    except:
+                        prefs[json_field] = None
+            
+            return prefs
+        except Exception as e:
+            logger.error(f"Error getting user preferences: {e}")
+            return None
+        finally:
+            self._close_conn(conn)
+    
+    def update_user_preferences(self, user_id: str, preferences: Dict[str, Any]) -> bool:
+        """Actualiza las preferencias del usuario en la base de datos."""
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            
+            # Serializar campos JSON
+            for json_field in ['auto_trading_symbols', 'auto_trading_strategies',
+                              'auto_trading_timeframes', 'active_filters']:
+                if json_field in preferences and preferences[json_field] is not None:
+                    if not isinstance(preferences[json_field], str):
+                        preferences[json_field] = json.dumps(preferences[json_field])
+            
+            # Construir UPDATE dinámico
+            fields = [f"{k} = ?" for k in preferences.keys() if k != 'user_id']
+            values = [v for k, v in preferences.items() if k != 'user_id']
+            
+            if not fields:
+                return False
+            
+            fields.append("updated_at = CURRENT_TIMESTAMP")
+            
+            query = f"UPDATE user_preferences SET {', '.join(fields)} WHERE user_id = ?"
+            values.append(user_id)
+            
+            cursor.execute(query, values)
+            
+            # Si no existe, insertar
+            if cursor.rowcount == 0:
+                preferences['user_id'] = user_id
+                placeholders = ', '.join(['?' for _ in preferences])
+                columns = ', '.join(preferences.keys())
+                cursor.execute(f"INSERT INTO user_preferences ({columns}) VALUES ({placeholders})", 
+                             list(preferences.values()))
+            
+            conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Error updating user preferences: {e}")
+            conn.rollback()
+            return False
+        finally:
+            self._close_conn(conn)
+    
+    def get_default_profile(self, profile_type: str) -> Dict[str, Any]:
+        """Retorna configuración por defecto para un tipo de perfil."""
+        profiles = {
+            'explorer': {
+                'profile_type': 'explorer',
+                'auto_trading_enabled': False,
+                'notify_signals': True,
+                'notify_executions': False,
+                'notify_threshold_score': 0.90,
+                'default_view': 'feed',
+                'require_confirmation': True,
+            },
+            'active_trader': {
+                'profile_type': 'active_trader',
+                'auto_trading_enabled': False,
+                'auto_trading_max_risk': 1.5,
+                'notify_signals': True,
+                'notify_executions': True,
+                'notify_threshold_score': 0.85,
+                'default_view': 'grid',
+                'require_confirmation': True,
+                'max_daily_trades': 10,
+            },
+            'analyst': {
+                'profile_type': 'analyst',
+                'auto_trading_enabled': False,
+                'notify_signals': True,
+                'notify_executions': False,
+                'notify_threshold_score': 0.80,
+                'default_view': 'charts',
+                'require_confirmation': True,
+            },
+            'scalper': {
+                'profile_type': 'scalper',
+                'auto_trading_enabled': True,
+                'auto_trading_max_risk': 1.0,
+                'auto_trading_timeframes': ['M1', 'M5'],
+                'notify_signals': False,
+                'notify_executions': True,
+                'notify_threshold_score': 0.90,
+                'default_view': 'feed',
+                'require_confirmation': False,
+                'max_daily_trades': 20,
+            },
+            'custom': {
+                'profile_type': 'custom',
+                'auto_trading_enabled': False,
+                'notify_signals': True,
+                'notify_executions': True,
+                'notify_threshold_score': 0.85,
+                'default_view': 'feed',
+                'require_confirmation': True,
+            }
+        }
+        
+        return profiles.get(profile_type, profiles['active_trader'])
+
 
     def close(self) -> None:
         """Close persistent connection if it exists"""

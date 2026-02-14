@@ -26,7 +26,98 @@ Evitar falsos positivos en consolidación/rango y asegurar que la lógica de Tri
 **Tests**: 14/14 OK (sin aserciones forzadas)
 **Validaciones**: 6/6 OK (arquitectura, QA, calidad, UI, tests críticos, integración)
 
+## 🎯 MILESTONE: Analysis Hub con Sistema EDGE Inteligente (2026-02-14)
+**Estado: 📋 PLANIFICADO - ESPERANDO APROBACIÓN**
+**Criterio: Implementar sistema de análisis versátil con UI inteligente, notificaciones contextuales y múltiples vistas adaptativas**
+
+### Objetivo
+Crear un hub de análisis profesional que se adapta al perfil del usuario (Explorador, Trader Activo, Analista, Scalper), con notificaciones contextuales según nivel de autonomía configurado, y múltiples vistas para diferentes estilos de trading.
+
+### Documentación
+- **Plan de Implementación**: [implementation_plan.md](file:///C:/Users/Jose%20Herrera/.gemini/antigravity/brain/1fb0bd16-1f5d-48aa-8feb-8f9ba054a117/implementation_plan.md)
+- **Matriz de Notificaciones**: [notification_matrix.md](file:///C:/Users/Jose%20Herrera/.gemini/antigravity/brain/1fb0bd16-1f5d-48aa-8feb-8f9ba054a117/notification_matrix.md)
+
+### Características Principales
+
+#### 1. Sistema de Perfiles de Usuario (DB-based, NO localStorage)
+- 5 perfiles predefinidos: Explorador, Trader Activo, Analista, Scalper, Personalizado
+- Configuración de autonomía: auto-trading ON/OFF, límites de riesgo, símbolos permitidos
+- Persistencia en tabla `user_preferences` (SQLite)
+
+#### 2. Notificaciones EDGE Contextuales
+- **Lógica inteligente**: Mensaje varía según nivel de autonomía del usuario
+- **Auto-trading OFF**: Notifica señales detectadas ("SETUP DETECTADO - ACCIÓN MANUAL REQUERIDA")
+- **Auto-trading ON**: Notifica ejecuciones ("POSICIÓN ABIERTA - EJECUCIÓN AUTOMÁTICA")
+- **Riesgos**: Siempre notifica con análisis y recomendaciones específicas
+- **Jerga profesional**: Mensajes con terminología de trading real
+
+#### 3. Vistas Múltiples Adaptativas
+- **Feed**: Stream de señales priorizadas con auto-refresh
+- **Grid**: Dashboard con métricas y top oportunidades
+- **Heatmap**: Mapa de calor símbolos × timeframes
+- **Charts**: Análisis gráfico con TradingView
+- **Advanced**: Layout personalizable (drag & drop)
+
+#### 4. Filtros Multi-Selección Simultáneos
+- Probabilidad (>90%, 80-90%, 70-80%)
+- Tiempo (15min, Hoy, Semana)
+- Régimen (TREND, RANGE, VOLATILITY)
+- Estrategia (Trifecta, Oliver Velez, RSI_MACD)
+- Símbolos (Majors, Minors, Exóticos)
+- Persistencia de última configuración en DB
+
+### Plan de Implementación (3 Fases)
+
+#### FASE 1: Core - Sistema de Perfiles y Filtros (Prioridad Alta)
+**Backend**:
+- Tabla `user_preferences` en storage.py
+- Endpoints: `/api/user/preferences`, `/api/notifications/unread`, `/api/auto-trading/toggle`
+- `NotificationService` con lógica contextual
+
+**Frontend**:
+- `ProfileSelector.tsx`, `FilterPanel.tsx`, `NotificationCenter.tsx`, `AutonomyControl.tsx`
+- `SignalFeed.tsx` con auto-refresh
+- `SignalCard.tsx` con acciones rápidas
+
+#### FASE 2: Vistas Adicionales (Prioridad Media)
+- `GridDashboard.tsx` con métricas en tiempo real
+- `HeatmapView.tsx` con colores por score
+- `ChartView.tsx` con integración TradingView
+
+#### FASE 3: Advanced (Prioridad Baja)
+- `AdvancedView.tsx` con drag & drop
+- Exportar/importar configuración
+
+### Criterios de Aceptación
+- [ ] Tabla `user_preferences` creada con campos de autonomía
+- [ ] Endpoints de preferencias y notificaciones funcionando
+- [ ] `NotificationService` genera mensajes contextuales correctos
+- [ ] Vista Feed muestra señales priorizadas con filtros
+- [ ] Filtros multi-selección persisten en DB
+- [ ] Auto-trading toggle funciona con validación backend
+- [ ] Notificaciones varían según configuración del usuario
+- [ ] Build UI sin errores TypeScript
+- [ ] Tests de integración pasan
+
+### Impacto Esperado
+**ANTES**:
+- UI genérica para todos los usuarios
+- Sin diferenciación de perfiles
+- Notificaciones no contextuales
+- Configuración en localStorage (inseguro)
+
+**DESPUÉS**:
+- UI adaptativa según perfil de usuario
+- 5 perfiles con configuraciones específicas
+- Notificaciones inteligentes según autonomía
+- Configuración segura en DB
+- Múltiples vistas para diferentes estilos
+- Sistema EDGE que "entiende" al usuario
+
+---
+
 # Aethelgard – Roadmap
+
 
 ## 🎯 MILESTONE: Aethelgard Observatory - Visualización Completa del Sistema (2026-02-13)
 **Estado: 📋 PLANIFICADO (NO EJECUTAR)**

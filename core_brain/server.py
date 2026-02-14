@@ -584,6 +584,91 @@ def create_app() -> FastAPI:
         except Exception as e:
             logger.error(f"Error getting signal trace: {e}")
             raise HTTPException(status_code=500, detail=str(e))
+    
+    # ============================================================
+    # USER PREFERENCES & NOTIFICATIONS ENDPOINTS
+    # ============================================================
+    
+    # Inicializar NotificationService
+    from core_brain.notification_service import NotificationService
+    notification_service = NotificationService(storage)
+    
+    @app.get("/api/user/preferences")
+    async def get_user_preferences(user_id: str = 'default') -> Dict[str, Any]:
+        """Obtiene las preferencias del usuario"""
+        try:
+            prefs = storage.get_user_preferences(user_id)
+            if not prefs:
+                prefs = storage.get_default_profile('active_trader')
+                prefs['user_id'] = user_id
+            return prefs
+        except Exception as e:
+            logger.error(f"Error getting user preferences: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.post("/api/user/preferences")
+    async def update_user_preferences(user_id: str, preferences: Dict[str, Any]) -> Dict[str, Any]:
+        """Actualiza las preferencias del usuario"""
+        try:
+            success = storage.update_user_preferences(user_id, preferences)
+            if success:
+                return {"success": True, "message": "Preferences updated successfully"}
+            else:
+                raise HTTPException(status_code=400, detail="Failed to update preferences")
+        except Exception as e:
+            logger.error(f"Error updating user preferences: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.get("/api/user/profiles")
+    async def get_available_profiles() -> Dict[str, Any]:
+        """Retorna los perfiles disponibles"""
+        profiles = {
+            'explorer': storage.get_default_profile('explorer'),
+            'active_trader': storage.get_default_profile('active_trader'),
+            'analyst': storage.get_default_profile('analyst'),
+            'scalper': storage.get_default_profile('scalper'),
+            'custom': storage.get_default_profile('custom'),
+        }
+        return {"profiles": profiles}
+    
+    @app.get("/api/notifications/unread")
+    async def get_unread_notifications(user_id: str = 'default') -> Dict[str, Any]:
+        """Obtiene notificaciones no leídas"""
+        try:
+            notifications = notification_service.get_unread_notifications(user_id)
+            return {"notifications": notifications, "count": len(notifications)}
+        except Exception as e:
+            logger.error(f"Error getting notifications: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.post("/api/notifications/{notification_id}/mark-read")
+    async def mark_notification_read(notification_id: str) -> Dict[str, Any]:
+        """Marca notificación como leída"""
+        try:
+            success = notification_service.mark_as_read(notification_id)
+            if success:
+                return {"success": True}
+            else:
+                raise HTTPException(status_code=404, detail="Notification not found")
+        except Exception as e:
+            logger.error(f"Error marking notification as read: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.post("/api/auto-trading/toggle")
+    async def toggle_auto_trading(user_id: str = 'default', enabled: bool = False) -> Dict[str, Any]:
+        """Activa o desactiva el auto-trading"""
+        try:
+            success = storage.update_user_preferences(user_id, {'auto_trading_enabled': enabled})
+            if success:
+                status = "enabled" if enabled else "disabled"
+                logger.info(f"Auto-trading {status} for user {user_id}")
+                return {"success": True, "auto_trading_enabled": enabled, "message": f"Auto-trading {status}"}
+            else:
+                raise HTTPException(status_code=400, detail="Failed to toggle auto-trading")
+        except Exception as e:
+            logger.error(f"Error toggling auto-trading: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
 
     @app.get("/api/config/{category}")
     async def get_config(category: str) -> Dict[str, Any]:
