@@ -27,7 +27,7 @@ Evitar falsos positivos en consolidación/rango y asegurar que la lógica de Tri
 **Validaciones**: 6/6 OK (arquitectura, QA, calidad, UI, tests críticos, integración)
 
 ## 🎯 MILESTONE: Analysis Hub con Sistema EDGE Inteligente (2026-02-14)
-**Estado: 📋 PLANIFICADO - ESPERANDO APROBACIÓN**
+**Estado: ✅ COMPLETADO**
 **Criterio: Implementar sistema de análisis versátil con UI inteligente, notificaciones contextuales y múltiples vistas adaptativas**
 
 ### Objetivo
@@ -68,16 +68,21 @@ Crear un hub de análisis profesional que se adapta al perfil del usuario (Explo
 
 ### Plan de Implementación (3 Fases)
 
-#### FASE 1: Core - Sistema de Perfiles y Filtros (Prioridad Alta)
+#### FASE 1: Core - Sistema de Perfiles y Filtros (Prioridad Alta) ✅ COMPLETADO
 **Backend**:
 - Tabla `user_preferences` en storage.py
 - Endpoints: `/api/user/preferences`, `/api/notifications/unread`, `/api/auto-trading/toggle`
 - `NotificationService` con lógica contextual
+- **Mejora**: Soporte de filtrado por estados (`PENDING`, `EXECUTED`, etc.) en `/api/signals`
 
 **Frontend**:
 - `ProfileSelector.tsx`, `FilterPanel.tsx`, `NotificationCenter.tsx`, `AutonomyControl.tsx`
-- `SignalFeed.tsx` con auto-refresh
-- `SignalCard.tsx` con acciones rápidas
+- `SignalFeed.tsx` con soporte de filtrado por estados
+- `SignalCard.tsx` rediseñado:
+  - Iconos: `Play` (Execute), `ListTree` (Trace), `LineChart` (Chart)
+  - Botón "Execute" inteligente (deshabilitado si no es PENDING)
+  - Botón "Trace" protegido (deshabilitado si no hay pipeline data)
+  - Todas las etiquetas migradas a Inglés
 
 #### FASE 2: Vistas Adicionales (Prioridad Media)
 - `GridDashboard.tsx` con métricas en tiempo real

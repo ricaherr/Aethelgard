@@ -254,23 +254,52 @@ class SignalsMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_recent_signals(self, minutes: int = 60, limit: int = 100) -> List[Dict]:
-        """Get recent signals within the last N minutes"""
+    def get_recent_signals(self, minutes: int = 60, limit: int = 100, symbol: str = None, timeframe: str = None, status: str = None) -> List[Dict]:
+        """Get recent signals within the last N minutes with optional filters"""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT * FROM signals 
-                WHERE timestamp >= datetime('now', 'localtime', '-' || ? || ' minutes')
-                ORDER BY timestamp DESC 
-                LIMIT ?
-            """, (minutes, limit))
+            
+            query = "SELECT * FROM signals WHERE datetime(timestamp) >= datetime('now', '-' || ? || ' minutes')"
+            params = [minutes]
+            
+            if symbol:
+                symbol_list = [s.strip().upper().replace('=X', '') for s in symbol.split(',') if s.strip()]
+                if symbol_list:
+                    placeholders = ','.join(['?'] * len(symbol_list))
+                    query += f" AND UPPER(REPLACE(symbol, '=X', '')) IN ({placeholders})"
+                    params.extend(symbol_list)
+            
+            if timeframe:
+                tf_list = [tf.strip().upper() for tf in timeframe.split(',') if tf.strip()]
+                if tf_list:
+                    placeholders = ','.join(['?'] * len(tf_list))
+                    query += f" AND timeframe IN ({placeholders})"
+                    params.extend(tf_list)
+
+            if status:
+                status_list = [s.strip().upper() for s in status.split(',') if s.strip()]
+                if status_list:
+                    placeholders = ','.join(['?'] * len(status_list))
+                    query += f" AND UPPER(status) IN ({placeholders})"
+                    params.extend(status_list)
+                
+            query += " ORDER BY timestamp DESC LIMIT ?"
+            params.append(limit)
+            
+            cursor.execute(query, params)
             rows = cursor.fetchall()
             signals = []
             for row in rows:
                 signal = dict(row)
-                if signal.get('metadata'):
-                    signal['metadata'] = json.loads(signal['metadata'])
+                metadata_raw = signal.get('metadata')
+                if metadata_raw:
+                    try:
+                        signal['metadata'] = json.loads(metadata_raw) if isinstance(metadata_raw, str) else metadata_raw
+                    except:
+                        signal['metadata'] = {}
+                else:
+                    signal['metadata'] = {}
                 signals.append(signal)
             return signals
         finally:

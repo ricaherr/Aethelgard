@@ -8,7 +8,7 @@ import asyncio
 from typing import Dict, Set, Any, AsyncGenerator, Optional
 from datetime import datetime
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
@@ -450,11 +450,6 @@ def create_app() -> FastAPI:
             "timestamp": datetime.now().isoformat()
         }
     
-    @app.get("/api/signals")
-    async def get_signals(limit: int = 100) -> Dict[str, Any]:
-        """Obtiene las últimas señales registradas"""
-        signals = storage.get_recent_signals(limit=limit)
-        return {"signals": signals, "count": len(signals)}
 
     @app.get("/api/instruments")
     async def get_instruments() -> Dict[str, Any]:
@@ -607,9 +602,13 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=500, detail=str(e))
     
     @app.post("/api/user/preferences")
-    async def update_user_preferences(user_id: str, preferences: Dict[str, Any]) -> Dict[str, Any]:
+    async def update_user_preferences(request: Request) -> Dict[str, Any]:
         """Actualiza las preferencias del usuario"""
         try:
+            body = await request.json()
+            user_id = body.pop('user_id', 'default')
+            preferences = body  # El resto del body son las preferences
+            
             success = storage.update_user_preferences(user_id, preferences)
             if success:
                 return {"success": True, "message": "Preferences updated successfully"}
@@ -668,6 +667,118 @@ def create_app() -> FastAPI:
         except Exception as e:
             logger.error(f"Error toggling auto-trading: {e}")
             raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.get("/api/signals")
+    async def get_signals(
+        limit: int = 100, 
+        minutes: int = 10080,
+        symbols: str = None,  # Comma-separated: "EURUSD,GBPUSD"
+        timeframes: str = None,  # Comma-separated: "M1,M5"
+        regimes: str = None,  # Comma-separated: "TREND,RANGE"
+        strategies: str = None,  # Comma-separated: "Trifecta,Oliver Velez"
+        status: str = 'PENDING,EXECUTED,EXPIRED'  # Default to recent signals
+    ) -> Dict[str, Any]:
+        """
+        Get recent signals from database with optional filters
+        All filters are applied in BACKEND
+        """
+        try:
+            logger.info(f"GET /api/signals: limit={limit}, minutes={minutes}, symbols={symbols}, status={status}")
+            
+            # Get signals from DB with SQL-level filtering
+            all_signals = storage.get_recent_signals(
+                minutes=minutes, 
+                limit=limit,
+                symbol=symbols,
+                timeframe=timeframes,
+                status=status
+            )
+            logger.info(f"DB returned {len(all_signals)} signals (SQL filtered)")
+            
+            # Apply remaining filters in BACKEND (Python side) for metadata-based fields
+            filtered = all_signals
+            
+            # Regime filter
+            regime_filtered_count = len(filtered)
+            if regimes and regimes.strip():
+                regime_list = [r.strip().upper() for r in regimes.split(',') if r.strip()]
+                if regime_list:
+                    filtered = [
+                        sig for sig in filtered 
+                        if isinstance(sig.get('metadata'), dict) and sig.get('metadata', {}).get('regime', '').upper() in regime_list
+                    ]
+                    regime_filtered_count = len(filtered)
+            
+            # Strategy filter
+            strategy_filtered_count = len(filtered)
+            if strategies and strategies.strip():
+                strategy_list = [s.strip() for s in strategies.split(',') if s.strip()]
+                if strategy_list:
+                    filtered = [
+                        sig for sig in filtered 
+                        if isinstance(sig.get('metadata'), dict) and sig.get('metadata', {}).get('strategy', '') in strategy_list
+                    ]
+                    strategy_filtered_count = len(filtered)
+                    logger.info(f"After strategy filter: {len(filtered)} signals")
+            
+            # Limit results
+            filtered = filtered[:limit]
+            
+            # Get signal IDs that have trace data
+            signal_ids = [s.get('id') for s in filtered]
+            has_trace_set = set()
+            if signal_ids:
+                placeholders = ','.join(['?'] * len(signal_ids))
+                trace_query = f"SELECT DISTINCT signal_id FROM signal_pipeline WHERE signal_id IN ({placeholders})"
+                trace_results = storage.execute_query(trace_query, tuple(signal_ids))
+                has_trace_set = {r['signal_id'] for r in trace_results}
+
+            # Format signals for frontend
+            formatted_signals = []
+            for signal in filtered:
+                sig_id = signal.get('id')
+                formatted = {
+                    'id': sig_id,
+                    'symbol': signal.get('symbol'),
+                    'direction': signal.get('direction') or signal.get('signal_type'),
+                    'score': signal.get('score') or signal.get('confidence') or 0.75,
+                    'timeframe': signal.get('timeframe'),
+                    'strategy': signal.get('metadata', {}).get('strategy', 'Unknown') if isinstance(signal.get('metadata'), dict) else 'Unknown',
+                    'entry_price': signal.get('entry_price') or signal.get('price') or 0.0,
+                    'sl': signal.get('sl') or signal.get('stop_loss') or 0.0,
+                    'tp': signal.get('tp') or signal.get('take_profit') or 0.0,
+                    'r_r': signal.get('metadata', {}).get('r_r', 2.0) if isinstance(signal.get('metadata'), dict) else 2.0,
+                    'regime': signal.get('metadata', {}).get('regime', 'UNKNOWN') if isinstance(signal.get('metadata'), dict) else 'UNKNOWN',
+                    'timestamp': signal.get('timestamp'),
+                    'status': signal.get('status', 'PENDING'),
+                    'has_trace': sig_id in has_trace_set,
+                    'confluences': signal.get('metadata', {}).get('confluences', []) if isinstance(signal.get('metadata'), dict) else []
+                }
+                formatted_signals.append(formatted)
+            
+            logger.info(f"Returning {len(formatted_signals)} formatted signals")
+            
+            return {
+                "signals": formatted_signals, 
+                "count": len(formatted_signals)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting signals: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.get("/api/signals/debug")
+    async def debug_signals(limit: int = 10, minutes: int = 100000) -> Dict[str, Any]:
+        """Debug endpoint to see raw signals from storage"""
+        try:
+            signals = storage.get_recent_signals(minutes=minutes, limit=limit)
+            return {
+                "raw_signals_count": len(signals),
+                "raw_signals": signals[:3] if signals else [],
+                "storage_db_path": storage.db_path
+            }
+        except Exception as e:
+            return {"error": str(e), "traceback": str(e.__traceback__)}
 
 
     @app.get("/api/config/{category}")
