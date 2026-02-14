@@ -245,14 +245,97 @@ async def seed_config_to_db() -> None:
 
 
 def create_app() -> FastAPI:
-    """Crea y configura la aplicación FastAPI"""
     app = FastAPI(
         title="Aethelgard Trading System",
         description="Sistema de trading algorítmico agnóstico",
         version="1.0.0",
         lifespan=lifespan
     )
-    
+
+    # Servicio de análisis profundo de instrumentos
+    from core_brain.analysis_service import InstrumentAnalysisService
+    instrument_analysis_service = InstrumentAnalysisService()
+
+    @app.get("/api/instrument/{symbol}/analysis")
+    async def instrument_analysis(symbol: str) -> Dict[str, Any]:
+        """Retorna análisis completo de un instrumento (régimen, tendencia, trifecta, estrategias)"""
+        try:
+            result = instrument_analysis_service.get_analysis(symbol)
+            return result
+        except Exception as e:
+            logger.error(f"Error en instrument_analysis: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    # Endpoint de estado del escáner
+    import sys
+    from pathlib import Path
+    sys.path.append(str(Path(__file__).parent))
+    try:
+        from core_brain.main_orchestrator import scanner
+    except ImportError:
+        scanner = None
+
+    @app.get("/api/scanner/status")
+    async def scanner_status() -> Dict[str, Any]:
+        """Retorna el estado actual del escáner (CPU, activos, régimen, última scan). Nunca falla."""
+        fallback = {
+            "assets": [],
+            "last_regime": {},
+            "last_scan_time": {},
+            "cpu_percent": 0.0,
+            "cpu_limit_pct": 80.0,
+            "running": False,
+            "error": None
+        }
+        if scanner is None:
+            fallback["error"] = "ScannerEngine no está inicializado"
+            return fallback
+        try:
+            status = scanner.get_status()
+            status["error"] = None
+            return status
+        except Exception as e:
+            logger.error(f"Error en scanner_status: {e}")
+            fallback["error"] = str(e)
+            return fallback
+
+    # Endpoint de historial de régimen
+    from data_vault.market_db import MarketMixin
+    market_db = MarketMixin()
+
+    @app.get("/api/regime/{symbol}/history")
+    async def regime_history(symbol: str, limit: int = 100) -> Dict[str, Any]:
+        """Retorna el historial de cambios de régimen para un símbolo"""
+        try:
+            history = market_db.get_market_state_history(symbol, limit=limit)
+            formatted = [
+                {
+                    "regime": h["data"].get("regime"),
+                    "start": h["data"].get("timestamp"),
+                    "adx": h["data"].get("adx"),
+                    "volatility": h["data"].get("volatility"),
+                    "strength": h["data"].get("trend_strength"),
+                }
+                for h in history
+            ]
+            return {"symbol": symbol, "history": formatted}
+        except Exception as e:
+            logger.error(f"Error en regime_history: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    # Endpoint de datos de gráfica
+    from core_brain.chart_service import ChartService
+    chart_service = ChartService()
+
+    @app.get("/api/chart/{symbol}/{timeframe}")
+    async def chart_data(symbol: str, timeframe: str = "M5", count: int = 500) -> Dict[str, Any]:
+        """Retorna datos de OHLC + indicadores para un símbolo y timeframe"""
+        try:
+            return chart_service.get_chart_data(symbol, timeframe, count)
+        except Exception as e:
+            logger.error(f"Error en chart_data: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
     @app.get("/api/system/status")
     async def system_status() -> Dict[str, Any]:
         """Endpoint de estado del sistema"""
@@ -372,6 +455,135 @@ def create_app() -> FastAPI:
         """Obtiene las últimas señales registradas"""
         signals = storage.get_recent_signals(limit=limit)
         return {"signals": signals, "count": len(signals)}
+
+    @app.get("/api/instruments")
+    async def get_instruments() -> Dict[str, Any]:
+        """Retorna la lista de instrumentos activos agrupados por mercado/categoría"""
+        config_path = os.path.join(os.getcwd(), "config", "instruments.json")
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            result = {}
+            for market, categories in data.items():
+                if market.startswith("_"):
+                    continue
+                result[market] = {}
+                for cat, cat_data in categories.items():
+                    if not cat_data.get("enabled", False):
+                        continue
+                    instruments = cat_data.get("instruments", [])
+                    if instruments:
+                        result[market][cat] = {
+                            "description": cat_data.get("description", ""),
+                            "instruments": instruments,
+                            "priority": cat_data.get("priority", 0),
+                            "min_score": cat_data.get("min_score", None),
+                            "risk_multiplier": cat_data.get("risk_multiplier", None)
+                        }
+            return {"markets": result}
+        except Exception as e:
+            logger.error(f"Error loading instruments.json: {e}")
+            # Fallback: lista mínima hardcodeada
+            return {
+                "markets": {
+                    "FOREX": {
+                        "majors": {
+                            "description": "Fallback: Pares principales",
+                            "instruments": ["EURUSD", "GBPUSD", "USDJPY"],
+                            "priority": 1,
+                            "min_score": 70,
+                            "risk_multiplier": 1.0
+                        }
+                    }
+                },
+                "error": f"No se pudo cargar instruments.json: {str(e)}"
+            }
+
+    @app.get("/api/strategies/library")
+    async def get_strategies_library() -> Dict[str, Any]:
+        """Retorna la biblioteca de estrategias (registradas + educativas)"""
+        try:
+            # Leer estrategias registradas desde modules.json
+            modules_path = os.path.join(os.getcwd(), "config", "modules.json")
+            registered_strategies = []
+            
+            if os.path.exists(modules_path):
+                with open(modules_path, "r", encoding="utf-8") as f:
+                    modules = json.load(f)
+                
+                for name, mod in modules.get("active_modules", {}).items():
+                    if mod.get("type") == "strategy":
+                        registered_strategies.append({
+                            "name": name,
+                            "description": mod.get("description", ""),
+                            "enabled": mod.get("enabled", False),
+                            "membership_required": mod.get("membership_required", "basic"),
+                            "required_regime": mod.get("required_regime", []),
+                            "timeframes": mod.get("timeframes", [])
+                        })
+            
+            # Biblioteca educativa (hardcoded por ahora - puede venir de un archivo JSON)
+            educational_library = [
+                {
+                    "name": "Oliver Velez 90% Sniper",
+                    "category": "Trend Following",
+                    "description": "Estrategia de seguimiento de tendencia con confirmación multi-timeframe",
+                    "timeframes": ["M1", "M5", "M15"],
+                    "regimes": ["TREND", "NORMAL"],
+                    "difficulty": "Intermediate",
+                    "risk_level": "Medium"
+                },
+                {
+                    "name": "Trifecta Analyzer",
+                    "category": "Multi-Timeframe Confirmation",
+                    "description": "Análisis de alineación fractal en 3 timeframes con filtros de ubicación y estado estrecho",
+                    "timeframes": ["M1", "M5", "M15"],
+                    "regimes": ["TREND"],
+                    "difficulty": "Advanced",
+                    "risk_level": "Medium-High"
+                }
+            ]
+            
+            return {
+                "registered": registered_strategies,
+                "educational": educational_library,
+                "total_registered": len(registered_strategies),
+                "total_educational": len(educational_library)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error loading strategies library: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/api/signal/{signal_id}/trace")
+    async def get_signal_trace(signal_id: str) -> Dict[str, Any]:
+        """Retorna la trazabilidad completa de una señal (pipeline tracking)"""
+        try:
+            trace = storage.get_signal_pipeline_trace(signal_id)
+            
+            if not trace:
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"No trace found for signal {signal_id}"
+                )
+            
+            # Obtener información básica de la señal
+            signals = storage.get_recent_signals(limit=1000)  # TODO: Optimizar con query directo
+            signal_info = next((s for s in signals if s.get("id") == signal_id), None)
+            
+            return {
+                "signal_id": signal_id,
+                "signal_info": signal_info,
+                "trace": trace,
+                "stages_count": len(trace),
+                "final_decision": trace[-1].get("decision") if trace else None
+            }
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error getting signal trace: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
 
     @app.get("/api/config/{category}")
     async def get_config(category: str) -> Dict[str, Any]:

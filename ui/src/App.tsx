@@ -24,6 +24,7 @@ import { EdgeHub } from './components/edge/EdgeHub';
 import { ConfigHub } from './components/config/ConfigHub';
 import { PortfolioView } from './components/portfolio/PortfolioView';
 import { GlassPanel } from './components/common/GlassPanel';
+import { AnalysisPage } from './components/analysis';
 
 function App() {
     const [activeTab, setActiveTab] = useState('trader');
@@ -64,6 +65,12 @@ function App() {
                         active={activeTab === 'monitor'}
                         onClick={() => setIsDiagOpen(true)}
                         label="Monitor"
+                    />
+                    <NavIcon
+                        icon={<Search size={22} />}
+                        active={activeTab === 'analysis'}
+                        onClick={() => setActiveTab('analysis')}
+                        label="Análisis"
                     />
                 </div>
 
@@ -151,6 +158,17 @@ function App() {
                                     {/* Main Opportunity Stream */}
                                     <AlphaSignals signals={signals} />
                                 </div>
+                            </motion.div>
+                        )}
+                        {activeTab === 'analysis' && (
+                            <motion.div
+                                key="analysis-view"
+                                initial={{ opacity: 0, x: 20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                exit={{ opacity: 0, x: -20 }}
+                                className="h-full"
+                            >
+                                <AnalysisPage />
                             </motion.div>
                         )}
 

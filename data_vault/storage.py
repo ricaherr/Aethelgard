@@ -203,6 +203,22 @@ class StorageManager(
                 )
             """)
 
+            # 6. Signal Pipeline Tracking (Auditoría de señales)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS signal_pipeline (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    signal_id TEXT NOT NULL,
+                    stage TEXT NOT NULL,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    decision TEXT,
+                    reason TEXT,
+                    metadata TEXT,
+                    FOREIGN KEY (signal_id) REFERENCES signals (id)
+                )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_signal_pipeline_signal_id ON signal_pipeline (signal_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_signal_pipeline_stage ON signal_pipeline (stage)")
+
             # Migrations / Fixes
             cursor.execute("PRAGMA table_info(data_providers)")
             columns = [row[1] for row in cursor.fetchall()]
@@ -613,6 +629,100 @@ class StorageManager(
             f"global={global_enabled}, individual={individual_enabled}, final={individual_enabled}"
         )
         return individual_enabled
+
+    def log_signal_pipeline_event(
+        self,
+        signal_id: str,
+        stage: str,
+        decision: Optional[str] = None,
+        reason: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> bool:
+        """
+        Log signal pipeline event for audit trail.
+        
+        Stages:
+        - CREATED: Signal created by scanner
+        - STRATEGY_ANALYSIS: Strategy evaluation
+        - RISK_VALIDATION: Risk manager validation
+        - EXECUTED: Order executed
+        - REJECTED: Signal rejected at any stage
+        
+        Args:
+            signal_id: Signal ID
+            stage: Pipeline stage
+            decision: APPROVED, REJECTED, PENDING
+            reason: Human-readable reason
+            metadata: Additional metadata as dict
+            
+        Returns:
+            True if logged successfully, False otherwise
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            
+            # Serialize metadata to JSON
+            metadata_json = json.dumps(metadata) if metadata else None
+            
+            cursor.execute("""
+                INSERT INTO signal_pipeline 
+                (signal_id, stage, decision, reason, metadata)
+                VALUES (?, ?, ?, ?, ?)
+            """, (
+                signal_id, stage, decision, reason, metadata_json
+            ))
+            
+            conn.commit()
+            logger.debug(
+                f"[PIPELINE] {signal_id} → {stage} ({decision}): {reason}"
+            )
+            return True
+            
+        except Exception as e:
+            logger.error(f"[PIPELINE] Failed to log event for {signal_id}: {e}")
+            return False
+        finally:
+            self._close_conn(conn)
+    
+    def get_signal_pipeline_trace(self, signal_id: str) -> List[Dict[str, Any]]:
+        """
+        Get complete pipeline trace for a signal.
+        
+        Args:
+            signal_id: Signal ID
+            
+        Returns:
+            List of pipeline events (chronological order)
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                SELECT * FROM signal_pipeline 
+                WHERE signal_id = ?
+                ORDER BY timestamp ASC
+            """, (signal_id,))
+            
+            rows = cursor.fetchall()
+            
+            # Convert to dict list
+            events = []
+            for row in rows:
+                event = dict(row)
+                # Deserialize metadata if present
+                if event.get('metadata'):
+                    try:
+                        event['metadata'] = json.loads(event['metadata'])
+                    except:
+                        pass
+                events.append(event)
+            
+            return events
+            
+        finally:
+            self._close_conn(conn)
 
     def close(self) -> None:
         """Close persistent connection if it exists"""

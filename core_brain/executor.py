@@ -147,6 +147,14 @@ class OrderExecutor:
         if not self._validate_signal(signal):
             logger.warning(f"Invalid signal rejected: {signal.symbol}")
             self._register_failed_signal(signal, "INVALID_DATA")
+            # PIPELINE TRACKING: Log rejection
+            signal_id = signal.metadata.get('signal_id', signal.symbol)
+            self.storage.log_signal_pipeline_event(
+                signal_id=signal_id,
+                stage='RISK_VALIDATION',
+                decision='REJECTED',
+                reason='Invalid signal data'
+            )
             return False
         
         # Step 2: Check for duplicate signals
@@ -222,6 +230,16 @@ class OrderExecutor:
         # Step 4: Register signal as PENDING
         self._register_pending_signal(signal)
         
+        # PIPELINE TRACKING: Log risk validation approval
+        signal_id = signal.metadata.get('signal_id', signal.symbol)
+        self.storage.log_signal_pipeline_event(
+            signal_id=signal_id,
+            stage='RISK_VALIDATION',
+            decision='APPROVED',
+            reason='Risk checks passed',
+            metadata={'position_size': position_size, 'account_risk_ok': True}
+        )
+        
         # Step 5: Execute via connector
         # (connector already obtained in Step 3.5)
         try:
@@ -274,6 +292,16 @@ class OrderExecutor:
                 if hasattr(signal, 'metadata') and isinstance(signal.metadata, dict):
                     signal.metadata['execution_observation'] = f"Executed successfully. Ticket={ticket}"
                 self._register_successful_signal(signal, result)
+                
+                # PIPELINE TRACKING: Log successful execution
+                signal_id = signal.metadata.get('signal_id', signal.symbol)
+                self.storage.log_signal_pipeline_event(
+                    signal_id=signal_id,
+                    stage='EXECUTED',
+                    decision='APPROVED',
+                    reason=f'Order executed successfully. Ticket={ticket}',
+                    metadata={'ticket': ticket, 'execution_price': result.get('price')}
+                )
                 
                 # FASE 2.3: Save position metadata for PositionManager
                 self._save_position_metadata(signal, result, ticket)
