@@ -61,7 +61,7 @@ const InstrumentAnalysisPanel: React.FC<InstrumentAnalysisPanelProps> = ({ symbo
       )}
       {!loading && !error && data && (
         <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm text-white/60">Fuerza de tendencia:</span>
             <span className="font-mono text-base text-aethelgard-green">
               {typeof data.trend?.strength === 'number'
@@ -72,7 +72,7 @@ const InstrumentAnalysisPanel: React.FC<InstrumentAnalysisPanelProps> = ({ symbo
             </span>
             {((data.trend?.strength !== undefined && typeof data.trend.strength === 'number') ||
               (data.trend_strength !== undefined && typeof data.trend_strength === 'number')) && (
-                <div className="w-32 h-2 bg-white/10 rounded-full overflow-hidden">
+                <div className="w-32 h-2 bg-white/10 rounded-full overflow-hidden min-w-[100px]">
                   <div
                     className="h-2 bg-aethelgard-green"
                     style={{
@@ -84,8 +84,8 @@ const InstrumentAnalysisPanel: React.FC<InstrumentAnalysisPanelProps> = ({ symbo
                 </div>
               )}
           </div>
-          <div className="flex items-center gap-2">
-            <Zap size={16} className="text-yellow-400" />
+          <div className="flex items-center gap-2 flex-wrap">
+            <Zap size={16} className="text-yellow-400 shrink-0" />
             <span className="text-sm text-white/60">ADX:</span>
             <span className="font-mono text-base">
               {typeof data.regime?.adx === 'number'
@@ -96,10 +96,10 @@ const InstrumentAnalysisPanel: React.FC<InstrumentAnalysisPanelProps> = ({ symbo
             </span>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm text-white/60">Estrategias sugeridas:</span>
+            <span className="text-sm text-white/60 shrink-0">Estrategias sugeridas:</span>
             {data.applicable_strategies?.length > 0 || data.strategies?.length > 0 ? (
               (data.applicable_strategies || data.strategies || []).map((s: any, idx: number) => (
-                <span key={idx} className="px-2 py-1 bg-aethelgard-blue/20 rounded text-xs font-semibold text-aethelgard-blue border border-aethelgard-blue/30 mr-1 mb-1">
+                <span key={idx} className="px-2 py-1 bg-aethelgard-blue/20 rounded text-xs font-semibold text-aethelgard-blue border border-aethelgard-blue/30 mr-1 mb-1 whitespace-nowrap">
                   {typeof s === 'string' ? s : s.name || s.description || 'Strategy'}
                 </span>
               ))
@@ -108,11 +108,11 @@ const InstrumentAnalysisPanel: React.FC<InstrumentAnalysisPanelProps> = ({ symbo
             )}
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm text-white/60">Señales activas:</span>
+            <span className="text-sm text-white/60 shrink-0">Señales activas:</span>
             {data.signals?.length > 0 ? (
               data.signals.map((sig: any, idx: number) => (
-                <span key={idx} className="flex items-center gap-1 px-2 py-1 bg-aethelgard-green/20 rounded text-xs font-semibold text-aethelgard-green border border-aethelgard-green/30 mr-1 mb-1">
-                  <CheckCircle size={12} /> {typeof sig === 'string' ? sig : sig.symbol || 'Signal'}
+                <span key={idx} className="flex items-center gap-1 px-2 py-1 bg-aethelgard-green/20 rounded text-xs font-semibold text-aethelgard-green border border-aethelgard-green/30 mr-1 mb-1 whitespace-nowrap">
+                  <CheckCircle size={12} className="shrink-0" /> {typeof sig === 'string' ? sig : sig.symbol || 'Signal'}
                 </span>
               ))
             ) : (

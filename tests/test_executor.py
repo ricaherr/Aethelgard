@@ -23,6 +23,7 @@ class TestOrderExecutor:
         risk_manager = Mock(spec=RiskManager)
         risk_manager.is_locked.return_value = False  # Default: not locked
         risk_manager.calculate_position_size_master.return_value = 0.01  # Default position size (UPDATED to master method)
+        risk_manager.can_take_new_trade.return_value = (True, "OK") # Default: Trade allowed
         return risk_manager
     
     @pytest.fixture

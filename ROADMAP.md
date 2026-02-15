@@ -84,10 +84,14 @@ Crear un hub de análisis profesional que se adapta al perfil del usuario (Explo
   - Botón "Trace" protegido (deshabilitado si no hay pipeline data)
   - Todas las etiquetas migradas a Inglés
 
-#### FASE 2: Vistas Adicionales (Prioridad Media)
-- `GridDashboard.tsx` con métricas en tiempo real
-- `HeatmapView.tsx` con colores por score
-- `ChartView.tsx` con integración TradingView
+#### FASE 2: Vistas Adicionales (Prioridad Media) [/] EN PROCESO
+- **Heatmap View** ✅ COMPLETADO
+    - Matriz Símbolo x Timeframe (M1/M5/M15/H1)
+    - Confluencia Fractal inteligente
+    - Modo Resiliente (Health monitoring por celda)
+    - Autodescubrimiento de activos activos
+- `GridDashboard.tsx` con métricas en tiempo real 📋 PENDIENTE
+- `TopOpportunities.tsx` con scoring dinámico 📋 PENDIENTE
 
 #### FASE 3: Advanced (Prioridad Baja)
 - `AdvancedView.tsx` con drag & drop

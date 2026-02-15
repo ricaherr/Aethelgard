@@ -9,10 +9,15 @@ import SignalTrace from './SignalTrace';
 import { FilterPanel } from './FilterPanel';
 import { NotificationCenter } from './NotificationCenter';
 import { SignalFeed } from './SignalFeed';
+import HeatmapView from './HeatmapView';
+import MetricWidget from './MetricWidget';
+import TopOpportunities from './TopOpportunities';
+import InfoTooltip from './InfoTooltip';
+import { useHeatmapData } from '../../hooks/useHeatmapData';
 
 const DEFAULT_SYMBOL = 'EURUSD';
 
-type ViewMode = 'feed' | 'grid' | 'overview' | 'strategies' | 'trace';
+type ViewMode = 'feed' | 'heatmap' | 'grid' | 'overview' | 'strategies' | 'trace';
 
 const AnalysisPage: React.FC = () => {
   const [symbol, setSymbol] = useState<string>(DEFAULT_SYMBOL);
@@ -31,6 +36,8 @@ const AnalysisPage: React.FC = () => {
   });
 
   // View mode con persistencia en localStorage (dato NO sensible)
+  const { data: heatmapData, loading: heatmapLoading } = useHeatmapData();
+
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     const saved = localStorage.getItem('aethelgard_analysis_view');
     return (saved as ViewMode) || 'feed';
@@ -95,6 +102,7 @@ const AnalysisPage: React.FC = () => {
 
   const tabs = [
     { id: 'feed', label: 'Feed', icon: List },
+    { id: 'heatmap', label: 'Heatmap', icon: Map },
     { id: 'grid', label: 'Grid', icon: LayoutGrid },
     { id: 'overview', label: 'Overview', icon: BarChart3 },
     { id: 'strategies', label: 'Strategies', icon: Settings },
@@ -107,6 +115,20 @@ const AnalysisPage: React.FC = () => {
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-white">Analysis Hub</h1>
         <NotificationCenter />
+      </div>
+
+      {/* Dashboard Section (Metrics & Alpha Opportunities) */}
+      <div className="flex flex-col xl:flex-row gap-4 mb-4">
+        <div className="flex-1">
+          <MetricWidget data={heatmapData} loading={heatmapLoading} />
+        </div>
+        <div className="xl:w-auto">
+          <TopOpportunities
+            data={heatmapData}
+            loading={heatmapLoading}
+            onViewChart={handleViewChart}
+          />
+        </div>
       </div>
 
       {/* Tabs */}
@@ -142,7 +164,7 @@ const AnalysisPage: React.FC = () => {
         )}
 
         {/* Main Panel con scroll independiente */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto pr-4">
           {viewMode === 'feed' && (
             <SignalFeed
               filters={activeFilters}
@@ -150,6 +172,10 @@ const AnalysisPage: React.FC = () => {
               onViewChart={handleViewChart}
               onViewTrace={handleViewTrace}
             />
+          )}
+
+          {viewMode === 'heatmap' && (
+            <HeatmapView />
           )}
 
           {viewMode === 'grid' && (
@@ -161,11 +187,28 @@ const AnalysisPage: React.FC = () => {
 
           {viewMode === 'overview' && (
             <div className="space-y-4">
-              <InstrumentAnalysisPanel symbol={symbol} />
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <ScannerStatusMonitor />
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                <div className="xl:col-span-2 min-w-0">
+                  <InstrumentAnalysisPanel symbol={symbol} />
+                </div>
+                <div className="xl:col-span-1 min-w-0 h-full">
+                  <ScannerStatusMonitor />
+                </div>
+              </div>
+
+              <div className="bg-gray-800/40 rounded-xl border border-gray-700 flex flex-col">
+                <div className="p-3 border-b border-gray-800 flex items-center justify-between">
+                  <div className="flex items-center">
+                    <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Market Regime Timeline</h3>
+                    <InfoTooltip
+                      title="Regime Timeline"
+                      content="Histórico reciente de los regímenes detectados (NORMAL, TREND, RANGE). Permite visualizar cómo ha evolucionado el comportamiento del precio en el tiempo."
+                    />
+                  </div>
+                </div>
                 <RegimeTimeline symbol={symbol} />
               </div>
+
               <InstrumentChartWithIndicators symbol={symbol} />
             </div>
           )}

@@ -62,9 +62,9 @@ const RegimeTimeline: React.FC<RegimeTimelineProps> = ({ symbol }) => {
       )}
       {!loading && !error && history.length > 0 && (
         <div className="flex flex-col gap-2">
-          <div className="flex flex-row items-center gap-2 overflow-x-auto pb-2">
+          <div className="flex flex-row items-center gap-2 overflow-x-auto pb-2 flex-wrap">
             {history.slice(-12).map((reg, idx) => (
-              <span key={idx} className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold uppercase ${regimeColor(reg.regime)}`} title={reg.timestamp}>
+              <span key={idx} className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold uppercase whitespace-nowrap ${regimeColor(reg.regime)}`} title={reg.timestamp}>
                 {regimeIcon(reg.regime)}
                 {reg.regime}
                 <span className="ml-1 text-[10px] text-white/40">{new Date(reg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>

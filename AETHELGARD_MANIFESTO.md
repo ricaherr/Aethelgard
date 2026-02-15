@@ -17,9 +17,9 @@
 # AETHELGARD MANIFESTO
 ## Única Fuente de Verdad del Proyecto
 
-> **Versión:** 1.0  
-> **Última Actualización:** Febrero 2026 - Signal Feed Refinements & Analysis Hub Core  
-> **Estado del Proyecto:** Fase 2 - Implementación de Estrategias Modulares (Phase 1 Hub Core COMPLETADO)
+> **Versión:** 1.1  
+> **Última Actualización:** Febrero 2026 - Fractal Heatmap & Edge Intelligence  
+> **Estado del Proyecto:** Fase 2 - Implementación de Estrategias Modulares (Heatmap COMPLETADO)
 
 ---
 

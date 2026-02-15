@@ -55,21 +55,21 @@ const ScannerStatusMonitor: React.FC = () => {
       )}
       {!loading && !error && status && (
         <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm text-white/60">Último escaneo:</span>
-            <span className="font-mono text-base text-aethelgard-blue">{status.last_scan ? new Date(status.last_scan).toLocaleString() : 'N/A'}</span>
-            {status.last_result === 'OK' && <CheckCircle size={16} className="text-aethelgard-green" />}
-            {status.last_result === 'ERROR' && <AlertTriangle size={16} className="text-red-500" />}
+            <span className="font-mono text-base text-aethelgard-blue whitespace-nowrap">{status.last_scan ? new Date(status.last_scan).toLocaleString() : 'N/A'}</span>
+            {status.last_result === 'OK' && <CheckCircle size={16} className="text-aethelgard-green shrink-0" />}
+            {status.last_result === 'ERROR' && <AlertTriangle size={16} className="text-red-500 shrink-0" />}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm text-white/60">Próximo escaneo:</span>
-            <span className="font-mono text-base text-yellow-400">{status.next_scan ? new Date(status.next_scan).toLocaleString() : 'N/A'}</span>
-            <Clock size={16} className="text-yellow-400" />
+            <span className="font-mono text-base text-yellow-400 whitespace-nowrap">{status.next_scan ? new Date(status.next_scan).toLocaleString() : 'N/A'}</span>
+            <Clock size={16} className="text-yellow-400 shrink-0" />
           </div>
           {status.upcoming_scans?.length > 0 && (
-            <div className="flex flex-col gap-1 mt-2">
+            <div className="flex flex-col gap-1 mt-2 w-full overflow-hidden">
               <span className="text-xs text-white/40 mb-1">Próximos escaneos programados:</span>
-              <ul className="list-disc ml-6">
+              <ul className="list-disc ml-6 break-all">
                 {status.upcoming_scans.map((ts: string, idx: number) => (
                   <li key={idx} className="text-xs text-white/60">{new Date(ts).toLocaleString()}</li>
                 ))}

@@ -19,6 +19,7 @@ from core_brain.notificator import get_notifier
 from core_brain.module_manager import get_module_manager, MembershipLevel
 from fastapi.staticfiles import StaticFiles
 import os
+import time
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -298,6 +299,142 @@ def create_app() -> FastAPI:
             logger.error(f"Error en scanner_status: {e}")
             fallback["error"] = str(e)
             return fallback
+
+    @app.get("/api/analysis/heatmap")
+    async def get_heatmap_data() -> Dict[str, Any]:
+        """
+        Retorna la matriz de calor (Heatmap) AGNOSTICA de símbolos x timeframes.
+        Recopila regímenes, métricas técnicas y señales activas.
+        Implementa principios de RESILIENCIA y AUTOGESTIÓN con CROSS-PROCESS fallback.
+        """
+        # RECOPILACIÓN DE DATOS REILIENTE
+        cells = []
+        assets = []
+        timeframes = []
+        now_mono = time.monotonic()
+        now_ts = time.time()
+
+        # Intento 1: Obtener datos del scanner local (si está en el mismo proceso)
+        if scanner is not None:
+            try:
+                with scanner._lock:
+                    assets = list(scanner.assets)
+                    timeframes = list(scanner.active_timeframes)
+                    regimes = dict(scanner.last_regime)
+                    last_scans = dict(scanner.last_scan_time)
+                    
+                    for symbol in assets:
+                        for tf in timeframes:
+                            key = f"{symbol}|{tf}"
+                            cl = scanner.classifiers.get(key)
+                            
+                            last_scan_val = last_scans.get(key, 0)
+                            cell = {
+                                "symbol": symbol,
+                                "timeframe": tf,
+                                "regime": regimes.get(key, MarketRegime.NORMAL).value,
+                                "last_scan": last_scan_val,
+                                "is_stale": (now_mono - last_scan_val) > 300 if last_scan_val > 0 else True,
+                                "metrics": {},
+                                "signal": None,
+                                "source": "memory"
+                            }
+                            if cl:
+                                try: cell["metrics"] = cl.get_metrics()
+                                except Exception: pass
+                            cells.append(cell)
+            except Exception as e:
+                logger.warning(f"Error leyendo scanner local: {e}")
+
+        # Intento 2: Fallback a Base de Datos (Cross-Process Resilience)
+        if not cells:
+            try:
+                db_states = storage.get_latest_heatmap_state()
+                if db_states:
+                    # Deducir assets y timeframes de los datos
+                    assets = sorted(list(set(s["symbol"] for s in db_states)))
+                    timeframes = sorted(list(set(s["timeframe"] for s in db_states)))
+                    
+                    for s in db_states:
+                        ts_str = s.get("timestamp")
+                        last_scan_ts = datetime.fromisoformat(ts_str).timestamp() if ts_str else 0
+                        cells.append({
+                            "symbol": s["symbol"],
+                            "timeframe": s["timeframe"],
+                            "regime": s["regime"],
+                            "last_scan": last_scan_ts,
+                            "is_stale": (now_ts - last_scan_ts) > 600 if last_scan_ts > 0 else True,
+                            "metrics": s.get("metrics", {}),
+                            "signal": None,
+                            "source": "database"
+                        })
+            except Exception as e:
+                logger.error(f"Error en fallback de base de datos para heatmap: {e}")
+
+        if not cells:
+            # DIAGNÓSTICO INTELIGENTE (Auto-gestión)
+            diag = "Scanner offline."
+            if scanner is not None:
+                diag = "Scanner local activo pero sin datos (Verificar conexión a MT5/DataProv)."
+            elif storage:
+                try:
+                    # Verificar si la tabla existe y tiene algo
+                    count = storage.execute_query("SELECT COUNT(*) as c FROM market_state")[0]['c']
+                    if count == 0:
+                        diag = "Scanner en otro proceso pero base de datos vacía (Iniciando primera recolección)."
+                    else:
+                        diag = "Scanner en otro proceso pero datos en DB son demasiado antiguos (>24h)."
+                except Exception as e:
+                    diag = f"Error de acceso a datos: {str(e)}"
+            
+            logger.warning(f"Heatmap 503 Diagnostic: {diag}")
+            raise HTTPException(status_code=503, detail=f"Análisis no disponible: {diag}")
+
+        # 2. Integrar Señales Recientes (CONFLUENCIA)
+        # Buscamos señales PENDING de la última hora
+        try:
+            recent_signals = storage.get_recent_signals(minutes=60, status='PENDING')
+            # Indexar señales por clave para búsqueda rápida
+            signals_lookup = {f"{s['symbol']}|{s['timeframe']}": s for s in recent_signals}
+            
+            for cell in cells:
+                key = f"{cell['symbol']}|{cell['timeframe']}"
+                sig = signals_lookup.get(key)
+                if sig:
+                    cell["signal"] = {
+                        "id": sig["id"],
+                        "type": sig["signal_type"],
+                        "score": sig["score"]
+                    }
+        except Exception as e:
+            logger.warning(f"Error agregando señales al heatmap: {e}")
+
+        # 3. Cálculo de Confluencia Fractal (INTELIGENCIA)
+        # Si un símbolo tiene el mismo sesgo (bias) en 3+ timeframes, marcar confluencia
+        for symbol in assets:
+            symbol_cells = [c for c in cells if c["symbol"] == symbol]
+            biases = [c["metrics"].get("bias") for c in symbol_cells if c["metrics"].get("bias")]
+            
+            if len(biases) >= 2: # Al menos 2 para considerar confluencia mínima
+                # Contar sesgo dominante
+                bullish_count = biases.count("BULLISH")
+                bearish_count = biases.count("BEARISH")
+                
+                confluence = None
+                if bullish_count >= 2: confluence = "BULLISH"
+                if bearish_count >= 2: confluence = "BEARISH"
+                
+                if confluence:
+                    for cell in symbol_cells:
+                        cell["confluence"] = confluence
+                        cell["confluence_strength"] = max(bullish_count, bearish_count)
+
+        return {
+            "symbols": assets,
+            "timeframes": timeframes,
+            "cells": cells,
+            "timestamp": datetime.now().isoformat()
+        }
 
     # Endpoint de historial de régimen
     from data_vault.market_db import MarketMixin

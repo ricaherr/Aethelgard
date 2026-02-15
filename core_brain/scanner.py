@@ -10,6 +10,7 @@ import json
 import logging
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -227,6 +228,21 @@ class ScannerEngine:
                     self.last_regime[key] = regime
                     self.last_scan_time[key] = now
                     self.last_dataframes[key] = df
+                
+                # PERSISTENCIA PARA CROSS-PROCESS (Heatmap Resilience)
+                if self.storage:
+                    try:
+                        state_data = {
+                            "symbol": symbol,
+                            "timeframe": timeframe,
+                            "regime": regime.value,
+                            "metrics": metrics,
+                            "timestamp": datetime.now().isoformat()
+                        }
+                        self.storage.log_market_state(state_data)
+                    except Exception as e:
+                        logger.error(f"Error persistiendo estado de mercado para {key}: {e}")
+
                 logger.info(
                     "Escáner %s [%s] -> %s (ADX=%.2f)",
                     symbol,

@@ -79,3 +79,46 @@ class MarketMixin(BaseRepository):
             logger.error(f"Error clearing ghost position for {symbol}: {e}")
         finally:
             self._close_conn(conn)
+
+    def get_latest_heatmap_state(self) -> List[Dict]:
+        """
+        Obtiene el último estado conocido (`JSON`) de cada símbolo/timeframe
+        de forma eficiente para reconstruir la matriz de calor.
+        Recupera datos de las últimas 24 horas para asegurar frescura.
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            # Query robusta usando CTE y ROW_NUMBER para obtener el ÚLTIMO registro real de cada par
+            cursor.execute("""
+                WITH LatestStates AS (
+                    SELECT 
+                        symbol, 
+                        data, 
+                        timestamp,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY symbol, json_extract(data, '$.timeframe') 
+                            ORDER BY timestamp DESC
+                        ) as rn
+                    FROM market_state
+                    WHERE timestamp > datetime('now', '-24 hours')
+                )
+                SELECT symbol, data, timestamp
+                FROM LatestStates
+                WHERE rn = 1
+                ORDER BY timestamp DESC
+            """)
+            rows = cursor.fetchall()
+            results = []
+            for row in rows:
+                try:
+                    state = json.loads(row['data'])
+                    results.append(state)
+                except Exception:
+                    continue
+            return results
+        except Exception as e:
+            logger.error(f"Error recuperando estado de heatmap: {e}")
+            return []
+        finally:
+            self._close_conn(conn)
