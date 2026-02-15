@@ -2,8 +2,9 @@ import { TrendingUp, TrendingDown, Info, LineChart, Maximize2, Minimize2 } from 
 import { PositionMetadata } from '../../types/aethelgard';
 import { GlassPanel } from '../common/GlassPanel';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState } from 'react';
-import { TradingViewChart } from './TradingViewChart';
+import { useState, useEffect } from 'react';
+import ChartView from '../analysis/ChartView';
+import { CandlestickData } from 'lightweight-charts';
 
 interface ActivePositionsProps {
     positions: PositionMetadata[];
@@ -13,10 +14,10 @@ interface ActivePositionsProps {
 
 export function ActivePositions({ positions, fullscreenTicket, onFullscreenToggle }: ActivePositionsProps) {
     // Filter positions: if fullscreen active, show only that trade
-    const displayPositions = fullscreenTicket !== null 
+    const displayPositions = fullscreenTicket !== null
         ? positions.filter(p => p.ticket === fullscreenTicket)
         : positions;
-    
+
     const totalProfit = displayPositions.reduce((sum, p) => sum + p.profit_usd, 0);
     const totalRisk = displayPositions.reduce((sum, p) => sum + p.initial_risk_usd, 0);
     const avgRMultiple = displayPositions.length > 0
@@ -64,8 +65,8 @@ export function ActivePositions({ positions, fullscreenTicket, onFullscreenToggl
                         </div>
                     ) : (
                         displayPositions.map((position) => (
-                            <PositionCard 
-                                key={position.ticket} 
+                            <PositionCard
+                                key={position.ticket}
                                 position={position}
                                 fullscreenTicket={fullscreenTicket}
                                 onFullscreenToggle={onFullscreenToggle}
@@ -86,24 +87,45 @@ interface PositionCardProps {
 
 function PositionCard({ position, fullscreenTicket, onFullscreenToggle }: PositionCardProps) {
     const [showChart, setShowChart] = useState(false);
+    const [chartData, setChartData] = useState<CandlestickData[]>([]);
+    const [loadingChart, setLoadingChart] = useState(false);
+
     const isFullscreen = fullscreenTicket === position.ticket;
     const isProfit = position.profit_usd >= 0;
-    
+
     // Infer position type if not provided
-    const isBuy = position.type === 'BUY' || 
-                  (!position.type && position.sl < position.entry_price && position.tp > position.entry_price);
-    
+    const isBuy = position.type === 'BUY' ||
+        (!position.type && position.sl < position.entry_price && position.tp > position.entry_price);
+
     const rColor =
         position.r_multiple >= 1 ? 'text-green-400' :
-        position.r_multiple >= 0 ? 'text-yellow-400' :
-        'text-red-400';
+            position.r_multiple >= 0 ? 'text-yellow-400' :
+                'text-red-400';
 
-    const assetBadge = {
+    const assetBadge: Record<string, string> = {
         forex: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
         metal: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
         crypto: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
         index: 'bg-gray-500/20 text-gray-400 border-gray-500/30'
     };
+
+    // Cargar datos del gráfico si se muestra
+    useEffect(() => {
+        if ((showChart || isFullscreen) && position.timeframe && chartData.length === 0) {
+            setLoadingChart(true);
+            fetch(`/api/chart/${position.symbol}/${position.timeframe}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.candles && Array.isArray(data.candles)) {
+                        setChartData(data.candles);
+                    } else if (Array.isArray(data)) { // Fallback si el backend devuelve array directo
+                        setChartData(data);
+                    }
+                })
+                .catch(err => console.error("Error loading chart:", err))
+                .finally(() => setLoadingChart(false));
+        }
+    }, [showChart, isFullscreen, position.symbol, position.timeframe, chartData.length]);
 
     return (
         <motion.div
@@ -117,10 +139,10 @@ function PositionCard({ position, fullscreenTicket, onFullscreenToggle }: Positi
             <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-3">
                     <span className="text-base font-outfit font-bold text-white/90">{position.symbol}</span>
-                    <span className={`text-[9px] px-2 py-0.5 rounded uppercase font-bold border ${assetBadge[position.asset_type]}`}>
+                    <span className={`text-[9px] px-2 py-0.5 rounded uppercase font-bold border ${assetBadge[position.asset_type] || assetBadge['forex']}`}>
                         {position.asset_type}
                     </span>
-                    
+
                     {/* Chart Toggle Button */}
                     {position.timeframe && (
                         <>
@@ -128,8 +150,8 @@ function PositionCard({ position, fullscreenTicket, onFullscreenToggle }: Positi
                                 onClick={() => setShowChart(!showChart)}
                                 className={`
                                     px-2 py-0.5 rounded text-[9px] transition-all border
-                                    ${showChart 
-                                        ? 'bg-aethelgard-blue/20 text-aethelgard-blue border-aethelgard-blue/30' 
+                                    ${showChart
+                                        ? 'bg-aethelgard-blue/20 text-aethelgard-blue border-aethelgard-blue/30'
                                         : 'bg-white/5 text-white/40 hover:text-white/70 hover:bg-white/10 border-white/10'
                                     }
                                 `}
@@ -144,8 +166,8 @@ function PositionCard({ position, fullscreenTicket, onFullscreenToggle }: Positi
                                     onClick={() => onFullscreenToggle(isFullscreen ? null : position.ticket)}
                                     className={`
                                         px-2 py-0.5 rounded text-[9px] transition-all border
-                                        ${isFullscreen 
-                                            ? 'bg-purple-500/20 text-purple-400 border-purple-500/30' 
+                                        ${isFullscreen
+                                            ? 'bg-purple-500/20 text-purple-400 border-purple-500/30'
                                             : 'bg-white/5 text-white/40 hover:text-white/70 hover:bg-white/10 border-white/10'
                                         }
                                     `}
@@ -224,7 +246,7 @@ function PositionCard({ position, fullscreenTicket, onFullscreenToggle }: Positi
                     </span>
                 </div>
             </div>
-            
+
             {/* Expandable Chart */}
             <AnimatePresence>
                 {(showChart || isFullscreen) && position.timeframe && (
@@ -242,16 +264,14 @@ function PositionCard({ position, fullscreenTicket, onFullscreenToggle }: Positi
                                     <span className="ml-2 text-purple-400">· FULLSCREEN MODE</span>
                                 )}
                             </div>
-                            {position.strategy && (
-                                <div className="text-[9px] px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">
-                                    {position.strategy}
-                                </div>
-                            )}
+                            {loadingChart && <span className="text-[10px] text-aethelgard-blue animate-pulse">Loading Chart...</span>}
                         </div>
-                        <div className="flex-1 min-h-0">
-                            <TradingViewChart 
-                                symbol={position.symbol} 
-                                timeframe={position.timeframe} 
+                        <div className="flex-1 min-h-0 relative">
+                            <ChartView
+                                symbol={position.symbol}
+                                data={chartData}
+                                currentTimeframe={position.timeframe}
+                                // Hide controls for compact view if not fullscreen? Maybe in future.
                                 height={isFullscreen ? 600 : 350}
                                 entryPrice={position.entry_price}
                                 stopLoss={position.sl}

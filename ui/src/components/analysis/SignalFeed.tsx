@@ -23,7 +23,7 @@ interface Signal {
 interface SignalFeedProps {
     filters: any;
     onExecuteSignal?: (signalId: string) => void;
-    onViewChart?: (symbol: string) => void;
+    onViewChart?: (signal: any) => void;
     onViewTrace?: (signalId: string) => void;
 }
 

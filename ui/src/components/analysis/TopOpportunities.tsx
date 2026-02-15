@@ -5,7 +5,7 @@ import { HeatmapData } from '../../hooks/useHeatmapData';
 interface TopOpportunitiesProps {
     data: HeatmapData | null;
     loading: boolean;
-    onViewChart: (symbol: string) => void;
+    onViewChart: (signal: any) => void;
 }
 
 const TopOpportunities: React.FC<TopOpportunitiesProps> = ({ data, loading, onViewChart }) => {
@@ -34,7 +34,7 @@ const TopOpportunities: React.FC<TopOpportunitiesProps> = ({ data, loading, onVi
                     return (
                         <div
                             key={`${opp.symbol}-${idx}`}
-                            onClick={() => onViewChart(opp.symbol)}
+                            onClick={() => onViewChart({ symbol: opp.symbol })}
                             className="flex items-center gap-2 bg-gray-800/40 hover:bg-gray-800/80 border border-gray-700/50 hover:border-blue-500/30 p-1.5 px-3 rounded-lg cursor-pointer transition-all group"
                         >
                             <div className={`p-1 rounded ${isBullish ? 'bg-emerald-500/10' : 'bg-rose-500/10'}`}>

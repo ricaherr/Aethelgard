@@ -18,12 +18,18 @@ class ChartService:
 
         # 2. Calcular indicadores
         df = df.copy()
+        
+        # Ensure 'time' is Unix timestamp (seconds) for lightweight-charts
+        if pd.api.types.is_datetime64_any_dtype(df['time']):
+            # Convert to int seconds
+            df['time'] = df['time'].astype(int) // 10**9
+        
         df["sma20"] = df["close"].rolling(window=20).mean()
         df["sma200"] = df["close"].rolling(window=200).mean()
         df["adx"] = self._calculate_adx(df)
 
         # 3. Formatear para frontend
-        data = df.tail(count).to_dict(orient="records")
+        candles = df.tail(count).to_dict(orient="records")
         indicators = {
             "sma20": df["sma20"].dropna().tolist(),
             "sma200": df["sma200"].dropna().tolist(),
@@ -32,8 +38,13 @@ class ChartService:
         return {
             "symbol": symbol,
             "timeframe": timeframe,
-            "data": data,
-            "indicators": indicators
+            "candles": candles,
+            "indicators": indicators,
+            # Metadatos para marcadores (Placeholders por ahora)
+            "entryPrice": None,
+            "stopLoss": None,
+            "takeProfit": None,
+            "isBuy": None
         }
 
     def _calculate_adx(self, df: pd.DataFrame, period: int = 14) -> pd.Series:

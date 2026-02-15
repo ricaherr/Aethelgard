@@ -20,7 +20,7 @@ interface SignalCardProps {
         confluences?: string[];
     };
     onExecute?: (signalId: string) => void;
-    onViewChart?: (symbol: string) => void;
+    onViewChart?: (signal: any) => void;
     onViewTrace?: (signalId: string) => void;
 }
 
@@ -165,7 +165,7 @@ export const SignalCard: React.FC<SignalCardProps> = ({
                     <ListTree className="w-4 h-4" />
                 </button>
                 <button
-                    onClick={() => onViewChart?.(signal.symbol)}
+                    onClick={() => onViewChart?.(signal)}
                     className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-blue-400 rounded-lg transition-colors"
                     title="Chart"
                 >
