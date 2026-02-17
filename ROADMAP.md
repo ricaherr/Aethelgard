@@ -1,3 +1,28 @@
+## 🎯 MILESTONE: Estrategia Oliver Velez Estricta (EDGE STRICT) (2026-02-17)
+**Estado: ✅ COMPLETADO**
+**Criterio: Redefinir la detección de Velas Elefante y ubicación en SMA20 para eliminar falsos positivos y asegurar rastro institucional (Z-Score).**
+
+### Logros Clave
+- [x] **Detección Estadística (Z-Score)**: Implementado cálculo de Z-Score de cuerpo (>2.0) para identificar outliers reales (manos fuertes).
+- [x] **Filtro de Solidez**: Requisito de >80% cuerpo vs rango total para eliminar Dojis y mechas.
+- [x] **Ubicación Milimétrica**: Zonas de contacto SMA20 definidas por ATR (buffer 0.2-0.5 ATR).
+- [x] **Direccionalidad OHLC**: Validación binaria innegociable (`close > open` para BUY).
+- [x] **Alineación de Tendencia**: Filtro de SMA200 activado como "locomotora" inmutable.
+
+---
+
+## 🎯 MILESTONE: Investigación Gestión Posición GBPJPY (2026-02-17)
+**Estado: 📋 EN PROCESO**
+**Criterio: Analizar el fallo en la gestión de la última posición de GBPJPY y entender por qué no se detectó la debilidad del mercado.**
+
+### Plan de Trabajo
+- [ ] Localizar trade en `aethelgard.db` o `trades_db.sqlite`.
+- [ ] Analizar lógica de salida y Stop Loss técnica (Oliver Vélez).
+- [ ] Verificar algoritmos de detección de fuerza/movimientos.
+- [ ] Documentar hallazgos en resumen ejecutivo para el usuario.
+
+---
+
 ## 🎯 MILESTONE: Market-Agnostic Normalization & Centralized Utilities (2026-02-17)
 **Estado: ✅ COMPLETADO**
 **Criterio: Centralizar la normalización de precios y volúmenes, eliminando lógica hardcodeada (JPY, Metales) y estableciendo un sistema de fallback jerárquico agnóstico.**

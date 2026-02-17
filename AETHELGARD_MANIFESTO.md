@@ -1,3 +1,22 @@
+### 1.6 Estrategia Oliver Velez Estricta (Feb 2026)
+
+**Regla:** El sistema debe priorizar la calidad estadística y la ubicación milimétrica sobre la cantidad de señales. Se prohíbe la generación de señales basadas en velas de baja volatilidad o fuera de la zona de valor.
+
+#### 1. Detección de "Manos Fuertes" (Z-Score)
+- **Vela Elefante**: No se define por tamaño absoluto, sino por **Z-Score > 2.0** (Cuerpo > 2 desviaciones estándar de las últimas 50 velas).
+- **Filtro de Solidez**: El cuerpo de la vela debe ser **> 80%** del rango total (High-Low) para ser considerada de ignición.
+- **Direccionalidad**: Validación binaria `Close > Open` (BUY) o `Close < Open` (SELL).
+
+#### 2. Ubicación Milimétrica (SMA20)
+- **BUY**: El `Low` debe estar en el buffer `[SMA20 - 0.2*ATR, SMA20 + 0.5*ATR]`.
+- **SELL**: El `High` debe estar en el buffer `[SMA20 - 0.5*ATR, SMA20 + 0.2*ATR]`.
+- **Confirmación**: El cierre debe estar del lado correcto de la media (encima para BUY, debajo para SELL).
+
+#### 3. Filtro de la Locomotora (SMA200)
+- **Trend Alignment**: Innegociable operar a favor de la SMA200 con pendiente mínima confirmada (>0.05%).
+
+---
+
 ### 1.5 Normalización Agnóstica de Mercado (Feb 2026)
 
 **Regla:** El núcleo del sistema (`core_brain`) nunca debe contener lógica hardcodeada para instrumentos específicos (ej: JPY, XAUUSD). Toda normalización matemática de precios, volúmenes y pips debe delegarse a utilidades globales con fallback jerárquico.

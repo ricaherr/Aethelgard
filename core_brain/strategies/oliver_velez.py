@@ -25,12 +25,11 @@ class OliverVelezStrategy(BaseStrategy):
     def __init__(self, config: Dict):
         super().__init__(config)
         
-        # Parámetros EDGE (auto-ajustables)
-        self.adx_threshold = config.get("adx_threshold", 25)
-        # FIX: Increased from 0.3 to 1.1 to avoid false positives (0.65 is not an elephant)
-        self.elephant_atr_multiplier = config.get("elephant_atr_multiplier", 1.1)
-        self.sma20_proximity_percent = config.get("sma20_proximity_percent", 1.5)
-        self.min_signal_score = config.get("min_signal_score", 60)
+        # Parámetros EDGE STRICT (Innegociables)
+        self.elephant_zscore_threshold = config.get("elephant_zscore_threshold", 2.0)
+        self.elephant_solidness_min = config.get("elephant_solidness_min", 0.8)
+        self.sma20_proximity_atr_max = config.get("sma20_proximity_atr_max", 0.5)
+        self.min_signal_score = config.get("min_signal_score", 85)
         
         # Parámetros de estrategia (fijos)
         self.sma_long_p = config.get("sma_long_period", 200)
@@ -111,6 +110,13 @@ class OliverVelezStrategy(BaseStrategy):
             if 'atr' not in df.columns:
                 df['atr'] = TechnicalAnalyzer.calculate_atr(df, 14)
 
+            # --- Nuevas Métricas Estadísticas (EDGE STRICT) ---
+            if 'zscore_body' not in df.columns:
+                df['zscore_body'] = TechnicalAnalyzer.calculate_body_zscore(df, 50)
+            
+            if 'solidness' not in df.columns:
+                df['solidness'] = TechnicalAnalyzer.calculate_candle_solidness(df)
+
             latest_candle = df.iloc[-1]
 
             if pd.isna(latest_candle[f'sma_{self.sma_long_p}']) or pd.isna(latest_candle['atr']):
@@ -124,69 +130,71 @@ class OliverVelezStrategy(BaseStrategy):
             is_bullish_trend = latest_candle['close'] > latest_candle[f'sma_{self.sma_long_p}']
             is_bearish_trend = latest_candle['close'] < latest_candle[f'sma_{self.sma_long_p}']
             
-            # --- Lógica de Vela Elefante ---
-            candle_body = abs(latest_candle['close'] - latest_candle['open'])
-            body_atr_ratio = (
-                candle_body / latest_candle['atr'] if latest_candle['atr'] > 0 else 0
+            # --- 1. Lógica de Vela Elefante (Z-Score + Solidez) ---
+            current_zscore = latest_candle['zscore_body']
+            current_solidness = latest_candle['solidness']
+            is_elephant_body = (
+                current_zscore >= self.elephant_zscore_threshold and
+                current_solidness >= self.elephant_solidness_min
             )
-            is_elephant_body = body_atr_ratio >= self.elephant_atr_multiplier
             
-            # --- Lógica de Proximidad SMA20 ---
-            sma20_dist_pct = (
-                abs(latest_candle['close'] - latest_candle[f'sma_{self.sma_short_p}']) 
-                / latest_candle[f'sma_{self.sma_short_p}'] * 100
-            )
-            is_near_sma20 = sma20_dist_pct < self.sma20_proximity_percent
-            
-            # --- Lógica de Dirección ---
+            # --- 2. Direccionalidad OHLC Innegociable ---
             is_bullish_candle = latest_candle['close'] > latest_candle['open']
             is_bearish_candle = latest_candle['close'] < latest_candle['open']
+            
+            # --- 3. Ubicación Táctica SMA20 (Zona ATR) ---
+            sma20 = latest_candle[f'sma_{self.sma_short_p}']
+            atr = latest_candle['atr']
+            
+            # Rangos de ubicación milimétricos
+            # BUY: Low debe estar cerca o tocando SMA20. Cierre debe estar por encima.
+            is_located_buy = (
+                latest_candle['low'] <= sma20 + (0.5 * atr) and
+                latest_candle['low'] >= sma20 - (0.2 * atr) and
+                latest_candle['close'] > sma20
+            )
+            
+            # SELL: High debe estar cerca o tocando SMA20. Cierre debe estar por debajo.
+            is_located_sell = (
+                latest_candle['high'] >= sma20 - (0.5 * atr) and
+                latest_candle['high'] <= sma20 + (0.2 * atr) and
+                latest_candle['close'] < sma20
+            )
+            
+            # --- 4. Filtro de Tendencia SMA200 (LA LOCOMOTORA) ---
+            sma200 = latest_candle[f'sma_{self.sma_long_p}']
+            slope_slow = trend_strength["slope_slow"]
+            
+            is_trend_aligned_buy = latest_candle['close'] > sma200 and slope_slow > 0.05
+            is_trend_aligned_sell = latest_candle['close'] < sma200 and slope_slow < -0.05
 
-            # Determinar dirección de la señal
+            # --- Consolidación de Señal ---
             signal_type = None
-            if is_bullish_trend and is_bullish_candle:
+            if is_elephant_body and is_bullish_candle and is_located_buy and is_trend_aligned_buy:
                 signal_type = SignalType.BUY
-            elif is_bearish_trend and is_bearish_candle:
+            elif is_elephant_body and is_bearish_candle and is_located_sell and is_trend_aligned_sell:
                 signal_type = SignalType.SELL
+
+            # Log de diagnóstico estricto
+            logger.info(
+                f"[{symbol}] STRICT DIAGNOSTIC: "
+                f"ELEPHANT={'OK' if is_elephant_body else 'FAIL'} (Z:{current_zscore:.1f}, S:{current_solidness:.2f}), "
+                f"DIRECTION={'OK' if (is_bullish_candle if signal_type == SignalType.BUY else is_bearish_candle) else 'FAIL'}, "
+                f"LOCATION={'OK' if (is_located_buy if signal_type == SignalType.BUY else is_located_sell) else 'FAIL'}, "
+                f"TREND_200={'OK' if (is_trend_aligned_buy if signal_type == SignalType.BUY else is_trend_aligned_sell) else 'FAIL'}"
+            )
 
             if not signal_type:
                 return None
 
-            v_trend = regime == MarketRegime.TREND
-            v_candle = is_elephant_body
-            v_proximity = is_near_sma20
-
-            # Log de diagnóstico para entender por qué no hay setups (cada 10 velas para no saturar)
-            if True: # FORCE LOGGING
-                logger.info(
-                    f"[{symbol}] DIAGNOSTIC: TREND={'OK' if v_trend else 'FAIL'} ({regime}), "
-                    f"ELEPHANT={'OK' if v_candle else 'FAIL'} (Ratio: {body_atr_ratio:.2f} >= {self.elephant_atr_multiplier}), "
-                    f"SMA20_PROX={'OK' if v_proximity else 'FAIL'} ({sma20_dist_pct:.2f}% < {self.sma20_proximity_percent}%)"
-                )
-
-            validation_results = {
-                "regime_ok": v_trend,
-                "candle_ok": v_candle,
-                "proximity_ok": v_proximity,
-            }
-
-            # CRITICAL FIX: Enforce elephant candle requirement
-            # Oliver Velez strategy REQUIRES elephant candle - this is non-negotiable
-            if not v_candle:
-                logger.info(
-                    f"[{symbol}] Setup REJECTED: No elephant candle. "
-                    f"Body/ATR ratio: {body_atr_ratio:.2f} < {self.elephant_atr_multiplier:.2f} required"
-                )
-                return None
-
             candle_data = {
-                "sma20_dist_pct": sma20_dist_pct,
-                "body_atr_ratio": body_atr_ratio,
+                "zscore": current_zscore,
+                "solidness": current_solidness,
                 "trend_class": trend_class,
                 "trend_strength": trend_strength,
             }
 
-            score = self._calculate_opportunity_score(validation_results, candle_data, regime)
+            score = self._calculate_opportunity_score({}, candle_data, regime)
 
             if score <= 0:
                 return None
@@ -244,16 +252,15 @@ class OliverVelezStrategy(BaseStrategy):
                 metadata={
                     "regime": regime.value,
                     "strategy_id": self.strategy_id,
-                    "score": score,
+                "score": score,
                     "membership_tier": membership_tier.value,
                     "is_elephant_candle": is_elephant_body,
-                    "near_sma20": is_near_sma20,
-                    "body_atr_ratio": round(body_atr_ratio, 2),
-                    "sma20_dist_pct": round(sma20_dist_pct, 2),
+                    "zscore_body": round(current_zscore, 2),
+                    "solidness": round(current_solidness, 2),
                     "trend_classification": trend_class,
                     "trend_strength_score": round(trend_strength["strength_score"], 1),
-                    "sma200_slope": round(trend_strength["slope_slow"], 3),
-                    "execution_observation": f"Setup Oliver Velez {signal_type.value} en {symbol} ({trend_class})"
+                    "sma200_slope": round(slope_slow, 3),
+                    "execution_observation": f"Setup Oliver Velez {signal_type.value} STRICT en {symbol}"
                 }
             )
             
@@ -269,37 +276,22 @@ class OliverVelezStrategy(BaseStrategy):
         # ESTRICTO: Sistema de Puntuación por Pilares (0-100) - REFINADO
         # Precision Quirúrgica: Refleja calidad exacta de Vela, Ubicación y Tendencia.
 
-        # Pilar 1: Vela Elefante (Max 40 pts)
-        # Binary Gate: Si ratio < 1.1, ya habría retornado None antes.
-        score_candle = 40.0
+        # Pilar 1: Vela Elefante (Max 50 pts)
+        # Basado en Z-Score (2.0 = 40 pts, 3.0+ = 50 pts)
+        zscore = candle_data.get("zscore", 0.0)
+        score_candle = min(50.0, (zscore / 2.0) * 40.0) if zscore >= 2.0 else 0.0
 
-        # Pilar 2: Ubicación / Proximidad SMA20 (Max 35 pts)
-        # Increased weight (30 -> 35) because location is the most critical factor for risk.
-        # 0% distance = 35 pts.
-        # 100% distance limit = 0 pts.
-        proximity_ratio = (candle_data["sma20_dist_pct"] / self.sma20_proximity_percent)
-        proximity_ratio = max(0.0, min(1.0, proximity_ratio))
-        score_location = 35.0 * (1.0 - proximity_ratio)
-
-        # Pilar 3: Contexto de Tendencia (Max 25 pts)
-        # Breakdown: Base Class + Strength Scalar for nuance.
-        trend_class = candle_data.get("trend_class", "SIDEWAYS")
-        trend_strength = candle_data.get("trend_strength", {}).get("strength_score", 0.0)
+        # Pilar 2: Ubicación / Solidez (Max 50 pts)
+        # Mezclamos solidez de la vela con proximidad a SMA20.
+        solidness = candle_data.get("solidness", 0.0)
+        score_solid = solidness * 25.0
         
-        base_trend = 5.0
-        if "STRONG" in trend_class:
-            base_trend = 15.0
-        elif "WEAK" in trend_class:
-            base_trend = 10.0
-        # SIDEWAYS base remains 5.0
-            
-        # Scalar bias (0-10 pts based on ADX/Slope strength)
-        # This restores the "surgical" nuance of trend quality.
-        scalar_trend = (trend_strength / 100.0) * 10.0
+        # Proximidad SMA20 (ya validada en analyze, aquí solo puntuamos fine-tuning)
+        score_proximity = 25.0 # Ya filtrado
         
-        score_trend = base_trend + scalar_trend
-
-        final_score = score_candle + score_location + score_trend
+        final_score = score_candle + score_solid + score_proximity
+        
+        return min(100.0, max(0.0, final_score))
         
         return min(100.0, max(0.0, final_score))
 

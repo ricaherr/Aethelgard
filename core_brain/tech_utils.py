@@ -102,6 +102,36 @@ class TechnicalAnalyzer:
         return returns.rolling(window=window).std()
 
     @staticmethod
+    def calculate_body_zscore(df: pd.DataFrame, window: int = 50) -> pd.Series:
+        """
+        Calcula el Z-Score del tamaño del cuerpo de la vela actual respecto a una ventana.
+        Identifica 'outliers' estadísticos (posibles manos fuertes).
+        """
+        if len(df) < window:
+            return pd.Series(0.0, index=df.index)
+            
+        bodies = abs(df['close'] - df['open'])
+        mean_body = bodies.rolling(window=window).mean()
+        std_body = bodies.rolling(window=window).std()
+        
+        # Evitar división por cero
+        zscore = (bodies - mean_body) / std_body.replace(0, np.nan)
+        return zscore.fillna(0.0)
+
+    @staticmethod
+    def calculate_candle_solidness(df: pd.DataFrame) -> pd.Series:
+        """
+        Calcula qué tan sólida es una vela (Cuerpo / Rango Total).
+        Descarta Dojis y velas con mechas excesivas.
+        """
+        bodies = abs(df['close'] - df['open'])
+        ranges = df['high'] - df['low']
+        
+        # Evitar división por cero si high == low
+        solidness = bodies / ranges.replace(0, np.nan)
+        return solidness.fillna(0.0)
+
+    @staticmethod
     def calculate_sma_slope(df: pd.DataFrame, period: int, lookback: int = 5, column: str = 'close') -> pd.Series:
         """
         Calcula la pendiente (slope) de una SMA como porcentaje de cambio.
