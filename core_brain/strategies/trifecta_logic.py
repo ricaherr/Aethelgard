@@ -207,7 +207,7 @@ class TrifectaAnalyzer:
                 "is_narrow": is_narrow,
                 "in_doldrums": in_doldrums,
                 "extension_pct": mid['extension_pct'],
-                "stop_loss_ref": mid['low'] if direction == "BUY" else mid['high'],
+                "stop_loss_ref": mid['low'] if direction == "BUY" else mid['high'],  # OV Original: Base de la vela
                 "trend_classification": trend_class,
                 "trend_strength_score": round(trend_strength["strength_score"], 1),
                 "sma200_slope": round(trend_strength["slope_slow"], 3),

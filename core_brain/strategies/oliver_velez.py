@@ -211,13 +211,26 @@ class OliverVelezStrategy(BaseStrategy):
             current_price = latest_candle['close']
             membership_tier = self._determine_membership_tier(score)
             
-            # SL/TP dinámico según dirección
+            # 1. Definir Buffer (1 Pip dinámico para seguridad)
+            # Usar 0.0001 (5d) o 0.01 (3d) según símbolo
+            buffer_pips = 1.0
+            from core_brain.market_utils import calculate_pip_size
+            pip_size = calculate_pip_size(None, symbol, self.instrument_manager)
+            buffer = buffer_pips * pip_size
+
+            # 2. SL/TP dinámico según la base de la Vela Elefante (OV Original)
             if signal_type == SignalType.BUY:
-                stop_loss = current_price - (1.5 * latest_candle['atr'])
-                take_profit = current_price + (3.0 * latest_candle['atr'])
+                # Stop Loss en el Low de la vela de entrada (Elefante)
+                stop_loss = latest_candle['low'] - buffer
+                risk_pips = (current_price - stop_loss) / pip_size
+                # TP al menos 2:1 basado en el riesgo técnico
+                take_profit = current_price + (risk_pips * 2.0 * pip_size)
             else: # SELL
-                stop_loss = current_price + (1.5 * latest_candle['atr'])
-                take_profit = current_price - (3.0 * latest_candle['atr'])
+                # Stop Loss en el High de la vela de entrada (Elefante)
+                stop_loss = latest_candle['high'] + buffer
+                risk_pips = (stop_loss - current_price) / pip_size
+                # TP al menos 2:1 basado en el riesgo técnico
+                take_profit = current_price - (risk_pips * 2.0 * pip_size)
 
             signal = Signal(
                 symbol=symbol,

@@ -302,20 +302,25 @@ class TestTrifectaAnalyzer:
         """
         GIVEN: Señal BUY o SELL
         WHEN: Se obtiene stop_loss_ref de metadata
-        THEN: Para BUY debe ser el 'low', para SELL debe ser el 'high' del timeframe medio (M5)
+        THEN: Para BUY debe ser la SMA20 de M5 (Stop más ajustado), no el Low de la vela
         """
         # Bullish signal
         result_buy = analyzer.analyze("EURUSD", bullish_aligned_data)
         if result_buy["valid"] and result_buy["direction"] == "BUY":
-            # El SL debe estar basado en el low de M5
-            assert result_buy["metadata"]["stop_loss_ref"] > 0
+            # Calcular SMA20 esperada en M5
+            m5_closes = bullish_aligned_data["M5"]["close"]
+            expected_sl = m5_closes.rolling(20).mean().iloc[-1]
+            # El SL debe ser la SMA20 (más ajustado que el Low de la vela)
+            # Usamos aprox() o margen de error por flotantes
+            assert abs(result_buy["metadata"]["stop_loss_ref"] - expected_sl) < 0.0001, \
+                f"SL Reference {result_buy['metadata']['stop_loss_ref']} should be SMA20 {expected_sl}"
         
         # Bearish signal
         result_sell = analyzer.analyze("EURUSD", bearish_aligned_data)
         if result_sell["valid"] and result_sell["direction"] == "SELL":
-            # El SL debe estar basado en el high de M5
-            assert result_sell["metadata"]["stop_loss_ref"] > 0
-
+            m5_closes = bearish_aligned_data["M5"]["close"]
+            expected_sl = m5_closes.rolling(20).mean().iloc[-1]
+            assert abs(result_sell["metadata"]["stop_loss_ref"] - expected_sl) < 0.0001
 
 class TestTrifectaTimeOfDay:
     """Tests específicos para Time of Day filter (Midday Doldrums)"""

@@ -1310,6 +1310,12 @@ class MT5Connector:
             # Prepare modification request
             comment = f"Aethelgard_{reason}" if reason else "Aethelgard_Modified"
             
+            # 🛡️ REDUNDANT NORMALIZATION: Guarantee no dirty floats reach MT5
+            from core_brain.market_utils import normalize_price as global_normalize
+            new_sl = global_normalize(new_sl, symbol_info)
+            if new_tp and new_tp > 0:
+                new_tp = global_normalize(new_tp, symbol_info)
+            
             modify_request = {
                 "action": mt5.TRADE_ACTION_SLTP,
                 "symbol": position.symbol,

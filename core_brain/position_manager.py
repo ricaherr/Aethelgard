@@ -140,6 +140,11 @@ class PositionManager:
                             # Keep current TP, only modify SL to breakeven
                             current_tp = position.get('tp', 0)
                             
+                            # Ensure price is normalized before sending to broker
+                            im = InstrumentManager()
+                            symbol_info = self.connector.get_symbol_info(symbol)
+                            breakeven_price = normalize_price(breakeven_price, symbol_info, symbol, im)
+                            
                             logger.info(
                                 f"Position {ticket} ({symbol}) moving SL to breakeven - "
                                 f"New SL: {breakeven_price}"
@@ -173,6 +178,11 @@ class PositionManager:
                         if trailing_sl:
                             # Keep current TP, only modify SL to trailing
                             current_tp = position.get('tp', 0)
+                            
+                            # Ensure price is normalized before sending to broker
+                            im = InstrumentManager()
+                            symbol_info = self.connector.get_symbol_info(symbol)
+                            trailing_sl = normalize_price(trailing_sl, symbol_info, symbol, im)
                             
                             logger.info(
                                 f"Position {ticket} ({symbol}) applying trailing stop - "

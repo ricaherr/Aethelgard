@@ -6,7 +6,21 @@ from types import SimpleNamespace
 from core_brain.market_utils import normalize_price, normalize_volume, calculate_pip_size
 from core_brain.instrument_manager import InstrumentManager
 
-# Using MockSymbolInfo from conftest.py
+# Import MockSymbolInfo from conftest or define locally for robustness
+try:
+    from tests.conftest import MockSymbolInfo
+except ImportError:
+    class MockSymbolInfo:
+        def __init__(self, **kwargs):
+            # Positional fallback logic not needed for these tests
+            # Just set what is provided
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+            
+            # Default logic for volume/limits
+            if not hasattr(self, 'volume_min'): self.volume_min = 0.01
+            if not hasattr(self, 'volume_max'): self.volume_max = 100.0
+            if not hasattr(self, 'volume_step'): self.volume_step = 0.01
 
 def test_normalize_price_with_broker_digits():
     # Case: Broker provides digits
@@ -17,8 +31,11 @@ def test_normalize_price_with_broker_digits():
     assert normalize_price(150.12345, info_jpy) == 150.123
 
 def test_normalize_price_fallback_to_point():
-    # Case: No digits, but point exists
-    info = MockSymbolInfo(point=0.001) # JPY-like
+    # Case: No digits, but point exists (MUST pass digits=None or omit it)
+    info = MockSymbolInfo(point=0.001) 
+    # Ensure it doesn't have digits attribute for this test
+    if hasattr(info, 'digits'): delattr(info, 'digits')
+    
     assert normalize_price(150.12345, info) == 150.123
     
     info_fx = MockSymbolInfo(point=0.00001)

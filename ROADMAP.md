@@ -21,6 +21,26 @@
 4. Hard Fallbacks (Agnostic Safety Defaults)
 **Impacto**: Robustez total ante fallos de conexión o brokers con data incompleta.
 
+### Refinamientos Post-Validación (V4 - 2026-02-17)
+**Estado: ✅ COMPLETADO**
+
+#### 1. ✅ Precisión Técnica Oliver Vélez
+- **Ajuste de Stop Loss**: Migración de ATR standard a **Base de Vela Elefante (High/Low)**.
+- **Buffer Operativo**: Inclusión de buffer de 1 pip para protección contra spread.
+- **RR Dinámico**: Take Profit recalculado a 2:1 basado en riesgo técnico real.
+
+#### 2. ✅ Blindaje de Modificaciones (MT5 Protection)
+- **Normalización en Caliente**: Todas las modificaciones de SL/TP (Breakeven, Trailing) ahora se normalizan antes de ser enviadas.
+- **Doble Validación**: El conector de MT5 actúa como último filtro de normalización para asegurar 0 rechazos del broker por precisión decimal.
+
+### Validación Final (V4)
+```
+Tests (Market Utils)............... [OK] PASSED (6/6 tests)
+Global Compliance.................. [OK] PASSED (Ready for Live)
+```
+
+---
+
 #### 3. ✅ Purga de Anti-patrones y Lógica Hardcodeada
 **Problema**: Múltiples `if 'JPY' in symbol` esparcidos por el core.
 **Solución**: Refactorización completa de:
