@@ -53,27 +53,27 @@ BROKERS_CONFIG = {
 def print_header():
     """Print welcome header"""
     print("\n" + "=" * 70)
-    print("🚀 AETHELGARD - MetaTrader 5 Demo Account Setup")
+    print(">>> AETHELGARD - MetaTrader 5 Demo Account Setup")
     print("=" * 70)
     print()
 
 
 def check_mt5_installation():
     """Check if MT5 is installed and accessible"""
-    print("🔍 Checking MetaTrader 5 installation...")
+    print("[SEARCH] Checking MetaTrader 5 installation...")
     
     if not mt5.initialize():
         error = mt5.last_error()
-        print(f"❌ Error: Could not initialize MT5: {error}")
+        print(f"[ERROR] Error: Could not initialize MT5: {error}")
         print()
-        print("💡 Solutions:")
+        print("[TIP] Solutions:")
         print("   1. Install MetaTrader 5 from: https://www.metatrader5.com/en/download")
         print("   2. Make sure MT5 is closed before running this script")
         print("   3. Run this script as Administrator")
         return False
     
     version = mt5.version()
-    print(f"✅ MT5 Found! Version: {version[0]}.{version[1]}.{version[2]}")
+    print(f"[OK] MT5 Found! Version: {version[0]}.{version[1]}.{version[2]}")
     mt5.shutdown()
     return True
 
@@ -96,13 +96,13 @@ def display_broker_menu():
         choice = input("Enter your choice [1-5]: ").strip()
         if choice in BROKERS_CONFIG:
             return BROKERS_CONFIG[choice]
-        print("❌ Invalid choice. Please enter 1-5")
+        print("[ERROR] Invalid choice. Please enter 1-5")
 
 
 def get_broker_credentials(broker):
     """Get broker login credentials from user"""
     print()
-    print(f"📝 Enter credentials for {broker['name']}:")
+    print(f"[INPUT] Enter credentials for {broker['name']}:")
     print()
     
     if broker['server'] == 'CUSTOM':
@@ -114,9 +114,9 @@ def get_broker_credentials(broker):
     print()
     print("   If you don't have a demo account yet:")
     if broker['website']:
-        print(f"   👉 Visit: {broker['website']}")
+        print(f"   -> Visit: {broker['website']}")
     else:
-        print(f"   👉 Search for '{broker['name']} demo account'")
+        print(f"   -> Search for '{broker['name']} demo account'")
     print()
     
     login = input("   Login (account number): ").strip()
@@ -133,11 +133,11 @@ def get_broker_credentials(broker):
 def test_connection(credentials):
     """Test MT5 connection with provided credentials"""
     print()
-    print("🔌 Testing connection...")
+    print("[CONNECT] Testing connection...")
     
     # Initialize MT5
     if not mt5.initialize():
-        print(f"❌ Failed to initialize MT5: {mt5.last_error()}")
+        print(f"[ERROR] Failed to initialize MT5: {mt5.last_error()}")
         return False
     
     # Attempt login
@@ -149,9 +149,9 @@ def test_connection(credentials):
     
     if not authorized:
         error = mt5.last_error()
-        print(f"❌ Login failed: {error}")
+        print(f"[ERROR] Login failed: {error}")
         print()
-        print("💡 Common issues:")
+        print("[TIP] Common issues:")
         print("   - Incorrect login/password")
         print("   - Wrong server name")
         print("   - Demo account expired (most brokers expire after 30 days)")
@@ -163,7 +163,7 @@ def test_connection(credentials):
     account_info = mt5.account_info()
     
     if account_info is None:
-        print("❌ Could not retrieve account information")
+        print("[ERROR] Could not retrieve account information")
         mt5.shutdown()
         return False
     
@@ -172,7 +172,7 @@ def test_connection(credentials):
     
     print()
     print("=" * 70)
-    print("✅ CONNECTION SUCCESSFUL!")
+    print("[OK] CONNECTION SUCCESSFUL!")
     print("=" * 70)
     print()
     print(f"   Account: {account_info.login}")
@@ -181,15 +181,15 @@ def test_connection(credentials):
     print(f"   Currency: {account_info.currency}")
     print(f"   Balance: {account_info.balance:,.2f} {account_info.currency}")
     print(f"   Leverage: 1:{account_info.leverage}")
-    print(f"   Account Type: {'DEMO' if is_demo else '⚠️  REAL ACCOUNT'}")
+    print(f"   Account Type: {'DEMO' if is_demo else '[WARNING]  REAL ACCOUNT'}")
     print()
     
     if not is_demo:
-        print("⚠️  WARNING: This appears to be a REAL MONEY account!")
-        print("⚠️  Aethelgard will NOT execute trades on real accounts without explicit override.")
+        print("[WARNING]  WARNING: This appears to be a REAL MONEY account!")
+        print("[WARNING]  Aethelgard will NOT execute trades on real accounts without explicit override.")
         confirm = input("\n   Type 'I UNDERSTAND THE RISK' to continue anyway: ")
         if confirm != "I UNDERSTAND THE RISK":
-            print("\n❌ Setup cancelled for safety.")
+            print("\n[ERROR] Setup cancelled for safety.")
             mt5.shutdown()
             return False
     
@@ -200,7 +200,7 @@ def test_connection(credentials):
 def save_configuration(credentials):
     """Save broker configuration to database (single source of truth)"""
     print()
-    print("💾 Saving configuration...")
+    print("[SAVE] Saving configuration...")
     
     broker_id = credentials['broker_name'].lower().replace(" ", "_")
     account_name = f"{credentials['broker_name']} Demo"
@@ -229,15 +229,15 @@ def save_configuration(credentials):
         }
     )
     
-    print(f"✅ Cuenta guardada en DB (ID: {account_id})")
-    print("✅ Configuración MT5 guardada en data_providers")
+    print(f"[OK] Cuenta guardada en DB (ID: {account_id})")
+    print("[OK] Configuración MT5 guardada en data_providers")
 
 
 def run_test_trade():
     """Offer to run a test trade"""
     print()
     print("=" * 70)
-    print("🧪 Test Trade")
+    print("[TEST] Test Trade")
     print("=" * 70)
     print()
     print("Would you like to execute a test trade to verify everything works?")
@@ -248,12 +248,12 @@ def run_test_trade():
     
     if response == 'y':
         print()
-        print("🔄 Running test trade...")
+        print("[RUN] Running test trade...")
         print("   (Feature coming soon - will execute via MT5Bridge)")
         print()
     else:
         print()
-        print("⏭️  Skipped test trade")
+        print("[SKIP]  Skipped test trade")
 
 
 def main():
@@ -273,7 +273,7 @@ def main():
     # Step 4: Test connection
     if not test_connection(credentials):
         print()
-        print("❌ Setup failed. Please check your credentials and try again.")
+        print("[ERROR] Setup failed. Please check your credentials and try again.")
         return
     
     # Step 5: Save configuration
@@ -285,7 +285,7 @@ def main():
     # Final instructions
     print()
     print("=" * 70)
-    print("✅ SETUP COMPLETE!")
+    print("[OK] SETUP COMPLETE!")
     print("=" * 70)
     print()
     print("Next steps:")
@@ -294,11 +294,11 @@ def main():
     print("   3. Go to tab '💰 Análisis de Activos' to see results")
     print()
     print("The system will now:")
-    print("   ✓ Scan markets automatically")
-    print("   ✓ Generate trading signals")
-    print("   ✓ Execute trades on your MT5 demo account")
-    print("   ✓ Monitor closed positions")
-    print("   ✓ Display results in real-time dashboard")
+    print("   [OK] Scan markets automatically")
+    print("   [OK] Generate trading signals")
+    print("   [OK] Execute trades on your MT5 demo account")
+    print("   [OK] Monitor closed positions")
+    print("   [OK] Display results in real-time dashboard")
     print()
     print("=" * 70)
 
@@ -307,8 +307,8 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\n\n⚠️  Setup cancelled by user.")
+        print("\n\n[WARNING]  Setup cancelled by user.")
     except Exception as e:
-        print(f"\n❌ Error: {e}")
+        print(f"\n[ERROR] Error: {e}")
         import traceback
         traceback.print_exc()

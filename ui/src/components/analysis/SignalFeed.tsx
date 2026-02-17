@@ -55,16 +55,20 @@ export const SignalFeed: React.FC<SignalFeedProps> = ({
             setLoading(true);
             console.log('[SignalFeed] Fetching with filters:', JSON.stringify(filters));
 
-            // Construir query params - BACKEND hace el filtrado
+            // Construir query params
             const params = new URLSearchParams();
-            params.append('limit', '100');
+
+            // Use configured limit or default to 100
+            const limit = filters.limit || 100;
+            params.append('limit', limit.toString());
 
             // Time filter -> minutes param
-            let minutes = 43200; // Default: 30 días
+            let minutes = 1440; // Default: 24h
             if (filters.time && Array.isArray(filters.time) && filters.time.length > 0) {
                 if (filters.time.includes('15min')) minutes = 15;
                 else if (filters.time.includes('today')) minutes = 1440;
                 else if (filters.time.includes('week')) minutes = 10080;
+                else if (filters.time.includes('month')) minutes = 43200; // 30 days
                 console.log(`[SignalFeed] Time filter active: ${filters.time}, using minutes: ${minutes}`);
             }
             params.append('minutes', minutes.toString());

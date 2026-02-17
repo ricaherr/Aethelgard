@@ -349,13 +349,13 @@ class ScannerEngine:
                         for tf in self.active_timeframes:
                             key = f"{symbol}|{tf}"
                             if key not in self.classifiers:
-                                logger.info(f"🔄 [SCANNER] Creating classifier for new timeframe: {key}")
+                                logger.info(f"[RELOAD] [SCANNER] Creating classifier for new timeframe: {key}")
                                 self.classifiers[key] = RegimeClassifier(config_path=self.regime_config_path)
                                 self.last_regime[key] = MarketRegime.NORMAL
                                 self.last_scan_time[key] = 0.0
                 
                 logger.warning(
-                    f"🔄 [SCANNER] Timeframes hot-reloaded: {old_tfs} → {enabled_tfs}. "
+                    f"[RELOAD] [SCANNER] Timeframes hot-reloaded: {old_tfs} -> {enabled_tfs}. "
                     f"Scanning will now include all enabled timeframes."
                 )
         

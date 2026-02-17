@@ -290,7 +290,7 @@ class GenericDataProvider:
                 df = df.tail(count)
             
             logger.info(
-                f"✓ {symbol}: {len(df)} velas obtenidas "
+                f"[OK] {symbol}: {len(df)} velas obtenidas "
                 f"(timeframe: {timeframe}, período: {period})"
             )
             

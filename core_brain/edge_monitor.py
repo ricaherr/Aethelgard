@@ -29,7 +29,7 @@ class EdgeMonitor(threading.Thread):
         
     def run(self) -> None:
         """Loop principal del monitor"""
-        logger.info("🧠 EDGE Monitor started - checking for inconsistencies every 60s")
+        logger.info("[EDGE] EDGE Monitor started - checking for inconsistencies every 60s")
         
         # PRUEBA DE AUTOINYECCIÓN
         try:

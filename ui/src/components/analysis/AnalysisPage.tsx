@@ -37,7 +37,8 @@ const AnalysisPage: React.FC = () => {
     symbols: [],
     timeframes: [],
     category: [],
-    status: ['PENDING']
+    status: [],
+    limit: 100
   });
 
   // View mode con persistencia en localStorage (dato NO sensible)
@@ -63,9 +64,14 @@ const AnalysisPage: React.FC = () => {
       const response = await fetch('/api/user/preferences?user_id=default');
       const prefs = await response.json();
 
-      // Restaurar filtros activos si existen
+      // Restaurar filtros activos si existen, preservando defaults nuevos (como limit)
       if (prefs.active_filters) {
-        setActiveFilters(prefs.active_filters);
+        setActiveFilters(prev => ({
+          ...prev,
+          ...prefs.active_filters,
+          // Ensure limit exists if not in prefs
+          limit: prefs.active_filters.limit || prev.limit || 100
+        }));
       }
     } catch (error) {
       console.error('Error fetching user preferences:', error);

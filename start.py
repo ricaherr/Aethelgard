@@ -64,16 +64,16 @@ def launch_server() -> None:
     """Lanza el servidor FastAPI (Uvicorn) en un proceso COMPLETAMENTE INDEPENDIENTE (detached)."""
     global server_process
     try:
-        logger.info("🌐 Iniciando Cerebro Aethelgard & UI Next-Gen (detached)...")
+        logger.info("[INFO] Iniciando Cerebro Aethelgard & UI Next-Gen (detached)...")
         # Verificar si la UI está compilada
         ui_dist = os.path.join(os.getcwd(), "ui", "dist")
         if not os.path.exists(ui_dist):
-            logger.warning("⚠️  UI Next-Gen no compilada. Ejecutando build rápido...")
+            logger.warning("[WARNING]  UI Next-Gen no compilada. Ejecutando build rápido...")
             try:
                 subprocess.run(["npm", "run", "build"], cwd=os.path.join(os.getcwd(), "ui"), shell=True, check=True)
-                logger.info("✅ UI compilada correctamente.")
+                logger.info("[OK] UI compilada correctamente.")
             except Exception as e:
-                logger.error(f"❌ Falló la compilación de la UI: {e}. Se servirá solo la API.")
+                logger.error(f"[ERROR] Falló la compilación de la UI: {e}. Se servirá solo la API.")
 
         # Ejecutar uvicorn como módulo en subproceso detached
         server_process = subprocess.Popen(
@@ -83,13 +83,13 @@ def launch_server() -> None:
             cwd=os.getcwd(),
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0
         )
-        logger.info("✅ Cerebro lanzado en proceso independiente")
-        logger.info("🔗 Interfaz Principal: http://localhost:8000")
-        logger.info("🔗 Documentación API: http://localhost:8000/docs")
+        logger.info("[OK] Cerebro lanzado en proceso independiente")
+        logger.info("[LINK] Interfaz Principal: http://localhost:8000")
+        logger.info("[LINK] Documentación API: http://localhost:8000/docs")
         # NO esperar - continuar inmediatamente
         
     except Exception as e:
-        logger.error(f"❌ Error al iniciar servidor API: {e}")
+        logger.error(f"[ERROR] Error al iniciar servidor API: {e}")
 
 async def main() -> None:
     """
@@ -97,7 +97,7 @@ async def main() -> None:
     Inicializa motor de trading + dashboard.
     """
     logger.info("=" * 70)
-    logger.info("🚀 AETHELGARD TRADING SYSTEM - UNIFIED LAUNCHER")
+    logger.info("[START] AETHELGARD TRADING SYSTEM - UNIFIED LAUNCHER")
     logger.info("=" * 70)
     
     # Crear directorios necesarios
@@ -106,10 +106,10 @@ async def main() -> None:
     
     try:
         # === SISTEMA CORE ===
-        logger.info("📦 Inicializando Storage Manager...")
+        logger.info("[INIT] Inicializando Storage Manager...")
         storage = StorageManager()
         
-        logger.info("⚖️  Inicializando Risk Manager...")
+        logger.info("[INIT]  Inicializando Risk Manager...")
         risk_manager = RiskManager(
             storage=storage,
             initial_capital=10000.0,
@@ -118,7 +118,7 @@ async def main() -> None:
         logger.info(f"   Capital: ${risk_manager.capital:,.2f}")
         logger.info(f"   Riesgo por trade: {risk_manager.risk_per_trade:.1%}")
         
-        logger.info("📡 Inicializando Data Provider Manager (DB backend)...")
+        logger.info("[INIT] Inicializando Data Provider Manager (DB backend)...")
         provider_manager = DataProviderManager()
         data_provider = provider_manager
         
@@ -174,25 +174,25 @@ async def main() -> None:
                     # Esperar 1 hora
                     await asyncio.sleep(3600)  # 3600 segundos = 1 hora
                     
-                    tuner_logger.info("⏰ Ejecutando ajuste EDGE de parámetros...")
+                    tuner_logger.info("[EDGE] Ejecutando ajuste EDGE de parámetros...")
                     adjustment = edge_tuner.adjust_parameters()
                     
                     if adjustment and not adjustment.get("skipped_reason"):
-                        tuner_logger.info(f"✅ Ajuste EDGE completado: {adjustment.get('trigger')}")
+                        tuner_logger.info(f"[OK] Ajuste EDGE completado: {adjustment.get('trigger')}")
                         # Recargar parámetros en SignalFactory
                         signal_factory._load_parameters()
-                        tuner_logger.info("🔄 Parámetros recargados en SignalFactory")
+                        tuner_logger.info("[INFO] Parámetros recargados en SignalFactory")
                     else:
                         reason = adjustment.get("skipped_reason") if adjustment else "unknown"
-                        tuner_logger.info(f"⏸️ Sin ajustes: {reason}")
+                        tuner_logger.info(f"[INFO] Sin ajustes: {reason}")
                         
                 except Exception as e:
-                    tuner_logger.error(f"❌ Error en EDGE Tuner: {e}", exc_info=True)
+                    tuner_logger.error(f"[ERROR] Error en EDGE Tuner: {e}", exc_info=True)
                     # Continuar ejecutándose a pesar del error
                     await asyncio.sleep(60)  # Esperar 1 minuto antes de reintentar
         
         # 4. Scanner Engine (con storage para hot-reload)
-        logger.info("🔍 Inicializando Scanner Engine...")
+        logger.info("[INIT] Inicializando Scanner Engine...")
         scanner = ScannerEngine(
             assets=symbols,
             data_provider=data_provider,
@@ -202,14 +202,14 @@ async def main() -> None:
         )
         
         # 5. Signal Factory
-        logger.info("⚡ Inicializando Signal Factory...")
+        logger.info("[INIT] Inicializando Signal Factory...")
         signal_factory = SignalFactory(
             storage_manager=storage,
             strategy_id="oliver_velez_swing_v2"
         )
         
         # 6. Order Executor (carga cuentas habilitadas desde DB)
-        logger.info("🎯 Inicializando Order Executor...")
+        logger.info("[INIT] Inicializando Order Executor...")
         
         # Inyectar PaperConnector
         connectors = {ConnectorType.PAPER: PaperConnector()}
@@ -221,7 +221,7 @@ async def main() -> None:
         )
         
         # 7. Closing Monitor (Feedback Loop)
-        logger.info("💰 Inicializando Closing Monitor...")
+        logger.info("[INIT] Inicializando Closing Monitor...")
         monitor = ClosingMonitor(
             storage=storage,
             connectors=connectors,
@@ -230,14 +230,14 @@ async def main() -> None:
         logger.info("   Intervalo: 60 segundos | Estado: Activo")
         
         # 8. EDGE Tuner (Auto-calibración)
-        logger.info("🤖 Inicializando EDGE Tuner...")
+        logger.info("[INIT] Inicializando EDGE Tuner...")
         edge_tuner = EdgeTuner(
             storage=storage,
             config_path="config/dynamic_params.json"
         )
         
         # 8b. Trade Closure Listener (Event-driven feedback loop)
-        logger.info("📡 Inicializando Trade Closure Listener...")
+        logger.info("[INIT] Inicializando Trade Closure Listener...")
         from core_brain.trade_closure_listener import TradeClosureListener
         trade_listener = TradeClosureListener(
             storage=storage,
@@ -246,10 +246,10 @@ async def main() -> None:
             max_retries=3,
             retry_backoff=0.5
         )
-        logger.info("   ✅ Trade Closure Listener: Event-driven reconciliation activo")
+        logger.info("   [OK] Trade Closure Listener: Event-driven reconciliation activo")
         
         # 9. Main Orchestrator
-        logger.info("🧠 Inicializando Main Orchestrator...")
+        logger.info("[INIT] Inicializando Main Orchestrator...")
         orchestrator = MainOrchestrator(
             scanner=scanner,
             signal_factory=signal_factory,
@@ -259,7 +259,7 @@ async def main() -> None:
         )
         
         # === INICIAR MT5 SINCRÓNICAMENTE (MT5 library doesn't share state across threads) ===
-        logger.info("🔌 Conectando a MT5 (sincrónico en thread principal)...")
+        logger.info("[CONNECT] Conectando a MT5 (sincrónico en thread principal)...")
         mt5_connector = None
         if hasattr(executor, 'connectors') and ConnectorType.METATRADER5 in executor.connectors:
             mt5_connector = executor.connectors[ConnectorType.METATRADER5]
@@ -267,7 +267,7 @@ async def main() -> None:
             # This ensures mt5.initialize() happens in the SAME thread that will call execute_signal()
             connected = mt5_connector.connect_blocking()
             if connected:
-                logger.info(f"✅ MT5 conectado exitosamente. Símbolos disponibles: {len(mt5_connector.available_symbols)}")
+                logger.info(f"[OK] MT5 conectado exitosamente. Símbolos disponibles: {len(mt5_connector.available_symbols)}")
                 
                 # Cache account balance in system_state for API queries
                 try:
@@ -279,16 +279,16 @@ async def main() -> None:
                     })
                     logger.info(f"   Balance cacheado: ${account_balance:,.2f} (MT5_LIVE)")
                 except Exception as e:
-                    logger.warning(f"⚠️  No se pudo cachear balance de MT5: {e}")
+                    logger.warning(f"[WARNING]  No se pudo cachear balance de MT5: {e}")
             else:
-                logger.error("❌ MT5 connection failed!")
+                logger.error("[ERROR] MT5 connection failed!")
             
             # Set MT5 connector in SignalFactory for reconciliation
             signal_factory.set_mt5_connector(mt5_connector)
         
         logger.info("")
         logger.info("=" * 70)
-        logger.info("✅ SISTEMA COMPLETO INICIADO")
+        logger.info("[OK] SISTEMA COMPLETO INICIADO")
         logger.info("=" * 70)
         logger.info("")
         
@@ -297,56 +297,56 @@ async def main() -> None:
         server_thread.start()
         
         # Scanner thread: SIEMPRE arranca (verifica toggle internamente con hot-reload)
-        logger.info("🔄 Iniciando Scanner (con hot-reload toggle)...")
+        logger.info("[INFO] Iniciando Scanner (con hot-reload toggle)...")
         scanner_thread = threading.Thread(target=scanner.run, daemon=True)
         scanner_thread.start()
         
         modules_enabled = storage.get_global_modules_enabled()
         if modules_enabled.get("scanner", True):
-            logger.info("✅ Scanner ejecutándose (habilitado)")
+            logger.info("[OK] Scanner ejecutándose (habilitado)")
         else:
-            logger.warning("⚠️  Scanner en espera (deshabilitado - activar desde UI para iniciar)")
+            logger.warning("[WARNING]  Scanner en espera (deshabilitado - activar desde UI para iniciar)")
         
         # Iniciar Closing Monitor en tarea asíncrona
-        logger.info("🔄 Iniciando Closing Monitor...")
+        logger.info("[INFO] Iniciando Closing Monitor...")
         monitor_task = asyncio.create_task(monitor.start())
-        logger.info("✅ Closing Monitor activo (Feedback Loop)")
+        logger.info("[OK] Closing Monitor activo (Feedback Loop)")
         
         # Iniciar EDGE Monitor (inject MT5 connector & trade listener for reconciliation)
-        logger.info("🔄 Iniciando EDGE Monitor...")
+        logger.info("[INFO] Iniciando EDGE Monitor...")
         edge_monitor = EdgeMonitor(
             storage=storage,
             mt5_connector=mt5_connector,
             trade_listener=trade_listener
         )
         edge_monitor.start()
-        logger.info("✅ EDGE Monitor activo (Observabilidad + Reconciliación Automática)")
+        logger.info("[OK] EDGE Monitor activo (Observabilidad + Reconciliación Automática)")
         
         logger.info("")
         logger.info("   -> [PRINCIPAL] Command Center Next-Gen: http://localhost:8000")
         logger.info("")
-        logger.info("🛑 Presiona Ctrl+C para detener todo el ecosistema")
+        logger.info("[STOP] Presiona Ctrl+C para detener todo el ecosistema")
         
         # Crear tarea asíncrona del EDGE Tuner
         tuner_task = asyncio.create_task(run_edge_tuner_loop(edge_tuner))
-        logger.info("🤖 EDGE Tuner: ajustes automáticos cada 1 hora")
+        logger.info("[AUTO] EDGE Tuner: ajustes automáticos cada 1 hora")
         
         # Ejecutar loop principal
         await orchestrator.run()
         
     except KeyboardInterrupt:
-        logger.info("\n⚠️  Deteniendo sistema...")
+        logger.info("\n[STOP]  Deteniendo sistema...")
         scanner.stop()
         if 'monitor' in locals():
             await monitor.stop()
         # Cleanup
     except Exception as e:
-        logger.error(f"❌ Error crítico: {e}", exc_info=True)
+        logger.error(f"[FATAL] Error crítico: {e}", exc_info=True)
         raise
     finally:
         if server_process and server_process.poll() is None:
             server_process.terminate()
-        logger.info("💾 Sistema detenido completamente.")
+        logger.info("[STOP] Sistema detenido completamente.")
 
 
 if __name__ == "__main__":

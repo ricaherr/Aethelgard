@@ -317,7 +317,7 @@ class EdgeTuner:
         """Guarda configuración actualizada"""
         with open(self.config_path, 'w', encoding='utf-8') as f:
             json.dump(config, f, indent=2, ensure_ascii=False)
-        self.logger.info(f"✅ Configuración actualizada: {self.config_path}")
+        self.logger.info(f"[OK] Configuración actualizada: {self.config_path}")
     
     def _calculate_stats(self, trades: List[Dict]) -> Dict:
         """
@@ -397,7 +397,7 @@ class EdgeTuner:
         
         # Verificar si tuning está habilitado
         if not config.get("tuning_enabled", False):
-            self.logger.info("⏸️ Tuning deshabilitado en config")
+            self.logger.info("[INFO] Tuning deshabilitado en config")
             return {"skipped_reason": "tuning_disabled"}
         
         # Obtener trades recientes
@@ -405,12 +405,12 @@ class EdgeTuner:
         
         min_trades = config.get("min_trades_for_tuning", 20)
         if len(trades) < min_trades:
-            self.logger.info(f"⏳ Insuficientes trades para ajuste ({len(trades)}/{min_trades})")
+            self.logger.info(f"[INFO] Insuficientes trades para ajuste ({len(trades)}/{min_trades})")
             return {"skipped_reason": "insufficient_data"}
         
         # Calcular estadísticas
         stats = self._calculate_stats(trades)
-        self.logger.info(f"📊 Stats: Win Rate={stats['win_rate']:.1%}, Trades={stats['total_trades']}, "
+        self.logger.info(f"[INFO] Stats: Win Rate={stats['win_rate']:.1%}, Trades={stats['total_trades']}, "
                         f"Consecutive Losses={stats['consecutive_losses']}")
         
         # Guardar parámetros actuales para comparación
@@ -442,20 +442,20 @@ class EdgeTuner:
         elif stats["win_rate"] < conservative_threshold:
             trigger = "low_win_rate"
             adjustment_factor = 1.5  # +50% más conservador
-            self.logger.warning(f"⚠️ Win rate bajo ({stats['win_rate']:.1%}) → Modo conservador")
+            self.logger.warning(f"[WARNING] Win rate bajo ({stats['win_rate']:.1%}) -> Modo conservador")
         
         # WIN RATE MUY ALTO → Agresivo
         elif stats["win_rate"] > aggressive_threshold:
             trigger = "high_win_rate"
             adjustment_factor = 0.7  # -30% menos filtros
-            self.logger.info(f"🚀 Win rate alto ({stats['win_rate']:.1%}) → Modo agresivo")
+            self.logger.info(f"[INFO] Win rate alto ({stats['win_rate']:.1%}) -> Modo agresivo")
         
         # WIN RATE CERCANO AL TARGET → Ajuste gradual
         else:
             # Ajuste proporcional: cuanto más lejos del target, mayor el ajuste
             deviation = stats["win_rate"] - target_win_rate
             adjustment_factor = 1.0 - (deviation * 0.5)  # Max ±25% ajuste
-            self.logger.info(f"⚖️ Ajuste gradual: win_rate={stats['win_rate']:.1%}, target={target_win_rate:.1%}")
+            self.logger.info(f"[INFO] Ajuste gradual: win_rate={stats['win_rate']:.1%}, target={target_win_rate:.1%}")
         
         # === APLICAR AJUSTES ===
         new_params = old_params.copy()
@@ -491,9 +491,9 @@ class EdgeTuner:
         
         self.storage.save_tuning_adjustment(adjustment_record)
         
-        self.logger.info(f"✅ Parámetros ajustados:")
-        self.logger.info(f"   ADX: {old_params['adx_threshold']:.1f} → {new_params['adx_threshold']:.1f}")
-        self.logger.info(f"   ATR: {old_params['elephant_atr_multiplier']:.2f} → {new_params['elephant_atr_multiplier']:.2f}")
-        self.logger.info(f"   SMA20: {old_params['sma20_proximity_percent']:.1f}% → {new_params['sma20_proximity_percent']:.1f}%")
+        self.logger.info(f"[OK] Parámetros ajustados:")
+        self.logger.info(f"   ADX: {old_params['adx_threshold']:.1f} -> {new_params['adx_threshold']:.1f}")
+        self.logger.info(f"   ATR: {old_params['elephant_atr_multiplier']:.2f} -> {new_params['elephant_atr_multiplier']:.2f}")
+        self.logger.info(f"   SMA20: {old_params['sma20_proximity_percent']:.1f}% -> {new_params['sma20_proximity_percent']:.1f}%")
         
         return adjustment_record

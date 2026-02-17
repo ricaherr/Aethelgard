@@ -202,7 +202,7 @@ class SignalFactory:
         if self.storage_manager.has_open_position(signal.symbol, signal.timeframe):
             # Reconcilia directamente con MT5 reality
             if self.mt5_connector:
-                logger.debug(f"🔍 Reconciling position for {signal.symbol} with MT5")
+                logger.debug(f"[CHECK] Reconciling position for {signal.symbol} with MT5")
                 # Get open signal ID
                 open_signal_id = self.storage_manager.get_open_signal_id(signal.symbol)
                 if open_signal_id:
@@ -213,7 +213,7 @@ class SignalFactory:
                         if signal.symbol not in real_symbols:
                             # Ghost position detected - clear it
                             self.storage_manager._clear_ghost_position_inline(signal.symbol)
-                            logger.info(f"🧹 Cleared ghost position for {signal.symbol} (ID: {open_signal_id})")
+                            logger.info(f"[CLEAN] Cleared ghost position for {signal.symbol} (ID: {open_signal_id})")
                             # EDGE Learning
                             self.storage_manager.save_edge_learning(
                                 detection=f"Discrepancia DB vs MT5: {signal.symbol} tiene posición en DB pero no en MT5",
@@ -240,7 +240,7 @@ class SignalFactory:
                         "Riesgo_$": round(risk_usd, 2),
                         "ID_Posicion_Existente": ghost_id or "UNKNOWN"
                     }
-                    logger.info(f"🧠 VOLCADO EXCEPCIÓN: Señal descartada por posición abierta: {dump}")
+                    logger.info(f"[DUMP] VOLCADO EXCEPCION: Señal descartada por posición abierta: {dump}")
                     return True
             else:
                 # Sin MT5, asumir existe
@@ -254,13 +254,20 @@ class SignalFactory:
                     "Riesgo_$": round(risk_usd, 2),
                     "ID_Posicion_Existente": "UNKNOWN"
                 }
-                logger.info(f"🧠 VOLCADO EXCEPCIÓN: Señal descartada por posición abierta: {dump}")
+                logger.info(f"[DUMP] VOLCADO EXCEPCION: Señal descartada por posición abierta: {dump}")
                 return True
         
-        # DUPLICATE VALIDATION REMOVED: Now handled by Executor at execution time
-        # Executor validates against EXECUTED positions before submitting to MT5
-        # This allows SignalFactory to generate signals freely (architectural fix)
-        
+        if self.storage_manager.has_recent_signal(
+            signal.symbol, 
+            signal_type_str, 
+            timeframe=signal.timeframe
+        ):
+            logger.info(
+                f"Duplicate signal detected for {signal.symbol} "
+                f"({signal_type_str} in {signal.timeframe}). Skipping."
+            )
+            return True
+            
         return False
 
     async def _process_valid_signal(self, signal: Signal) -> None:
@@ -497,7 +504,7 @@ class SignalFactory:
                         signal.metadata["trifecta_missing_data"] = analysis["metadata"]["missing_timeframes"]
                         
                         logger.warning(
-                            f"⚠️ [{signal.symbol}] Trifecta DEGRADED MODE: "
+                            f"[WARNING] [{signal.symbol}] Trifecta DEGRADED MODE: "
                             f"Passing original signal without multi-TF filtering. "
                             f"Missing: {analysis['metadata']['missing_timeframes']}"
                         )
@@ -521,19 +528,19 @@ class SignalFactory:
                         if final_score >= 60.0:
                             optimized_signals.append(signal)
                             logger.info(
-                                f"✅ [{signal.symbol}] Trifecta APPROVED: "
+                                f"[OK] [{signal.symbol}] Trifecta APPROVED: "
                                 f"Original={original_score:.1f}, Trifecta={analysis['score']:.1f}, "
                                 f"Final={final_score:.1f}"
                             )
                         else:
                             logger.info(
-                                f"❌ [{signal.symbol}] Trifecta FILTERED: "
+                                f"[FILTER] [{signal.symbol}] Trifecta FILTERED: "
                                 f"Final score {final_score:.1f} < 60 threshold"
                             )
                 else:
                     # FULL REJECTION (not degraded mode, but failed validation)
                     logger.info(
-                        f"❌ [{signal.symbol}] Trifecta REJECTED: {analysis['reason']}"
+                        f"[REJECT] [{signal.symbol}] Trifecta REJECTED: {analysis['reason']}"
                     )
             else:
                 # Pass non-Oliver strategies without changes

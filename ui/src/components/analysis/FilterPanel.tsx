@@ -11,6 +11,7 @@ interface FilterPanelProps {
         timeframes: string[];
         category: string[];
         status: string[];
+        limit?: number;
     };
     onFiltersChange: (filters: any) => void;
 }
@@ -77,7 +78,10 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
 
     const toggleFilter = (category: keyof typeof activeFilters, value: string) => {
-        const current = activeFilters[category] || [];
+        // Skip for non-array filters like limit
+        if (category === 'limit') return;
+
+        const current = activeFilters[category] as string[] || [];
         const updated = current.includes(value)
             ? current.filter(v => v !== value)
             : [...current, value];
@@ -346,6 +350,26 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                         }`}
                                 >
                                     {option.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                    {/* Limit */}
+                    <div>
+                        <label className="text-xs font-semibold text-gray-400 mb-2 block">
+                            🔢 LIMIT
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                            {[100, 200, 500, 1000].map(limit => (
+                                <button
+                                    key={limit}
+                                    onClick={() => onFiltersChange({ ...activeFilters, limit: limit })}
+                                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${activeFilters.limit === limit
+                                        ? 'bg-blue-600 text-white'
+                                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                                        }`}
+                                >
+                                    {limit}
                                 </button>
                             ))}
                         </div>

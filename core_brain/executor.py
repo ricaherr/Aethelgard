@@ -108,13 +108,13 @@ class OrderExecutor:
             # Import only when needed (lazy loading)
             from connectors.mt5_connector import MT5Connector
             
-            logger.info("🔌 Loading MT5 connector from DB (lazy loading)...")
+            logger.info("[CONNECT] Loading MT5 connector from DB (lazy loading)...")
             
             mt5_connector = MT5Connector()
             
             # Store connector - connection will be initialized by start.py
             self.connectors[ConnectorType.METATRADER5] = mt5_connector
-            logger.info("✅ MT5Connector loaded (connection managed by start.py)")
+            logger.info("[OK] MT5Connector loaded (connection managed by start.py)")
                 
         except ImportError:
             logger.warning("MT5Connector not available (MetaTrader5 library not installed)")
@@ -169,10 +169,10 @@ class OrderExecutor:
             
             # Perform immediate reconciliation before rejecting
             if self._reconcile_positions(signal.symbol):
-                logger.info(f"✅ Reconciliation cleared ghost position for {signal.symbol}, proceeding with signal")
+                logger.info(f"[OK] Reconciliation cleared ghost position for {signal.symbol}, proceeding with signal")
             else:
                 logger.warning(
-                    f"❌ Signal rejected: Real open position confirmed for {signal.symbol} [{signal.timeframe}]. "
+                    f"[ERROR] Signal rejected: Real open position confirmed for {signal.symbol} [{signal.timeframe}]. "
                     f"Preventing duplicate operation."
                 )
                 self._register_failed_signal(signal, "DUPLICATE_OPEN_POSITION")
@@ -258,7 +258,7 @@ class OrderExecutor:
                     self._register_failed_signal(signal, "MT5_CONNECTION_TIMEOUT")
                     return False
                 else:
-                    logger.info(f"[RACE FIX] ✅ MT5 connected successfully after {waited}s wait")
+                    logger.info(f"[RACE FIX] [OK] MT5 connected successfully after {waited}s wait")
             
             # Execute signal through connector
             result = connector.execute_signal(signal)
@@ -280,12 +280,12 @@ class OrderExecutor:
                     self._register_failed_signal(signal, error_msg)
                     if self.notificator:
                         await self.notificator.send_alert(
-                            f"⚠️ Execution Failed\nSymbol: {signal.symbol}\nError: {error_msg}"
+                            f"[ERROR] Execution Failed\nSymbol: {signal.symbol}\nError: {error_msg}"
                         )
                     return False
 
                 logger.info(
-                    f"✅ Signal executed successfully: {signal.symbol} {signal.signal_type}, "
+                    f"[OK] Signal executed successfully: {signal.symbol} {signal.signal_type}, "
                     f"Ticket={ticket}"
                 )
                 # Registrar observación de éxito
@@ -327,7 +327,7 @@ class OrderExecutor:
             # Notify about connection failure
             if self.notificator:
                 await self.notificator.send_alert(
-                    f"⚠️ Connection Error\nSymbol: {signal.symbol}\nError: {str(e)}"
+                    f"[ERROR] Connection Error\nSymbol: {signal.symbol}\nError: {str(e)}"
                 )
             return False
         

@@ -22,7 +22,7 @@ import os
 import time
 
 # Configurar logging
-logging.basicConfig(level=logging.INFO)
+# logging.basicConfig(level=logging.INFO)  # DISABLED: Let start.py configure logging
 logger = logging.getLogger(__name__)
 
 

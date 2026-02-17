@@ -156,15 +156,15 @@ class MainOrchestrator:
                     success, result = await provisioner.ensure_demo_account(broker_id)
                     if success:
                         self.broker_status[broker_id]['status'] = 'demo_ready'
-                        logger.info(f"✅ Cuenta demo lista para {broker_id}")
+                        logger.info(f"[OK] Cuenta demo lista para {broker_id}")
                     else:
                         self.broker_status[broker_id]['status'] = f"error: {result.get('error', 'unknown')}"
-                        logger.warning(f"❌ Error al provisionar demo {broker_id}: {result}")
+                        logger.warning(f"[ERROR] Error al provisionar demo {broker_id}: {result}")
                 else:
                     logger.info(f"[EDGE] Ya existe cuenta demo válida para {broker_id}. No se reprovisiona.")
             else:
                 self.broker_status[broker_id]['status'] = 'manual_required'
-                logger.info(f"⚠️  {broker_id} requiere provisión manual")
+                logger.info(f"[WARNING]  {broker_id} requiere provisión manual")
     """
     Main orchestrator for the Aethelgard trading system.
     
@@ -221,9 +221,9 @@ class MainOrchestrator:
         # Log module states on startup
         disabled_modules = [k for k, v in self.modules_enabled_global.items() if not v]
         if disabled_modules:
-            logger.warning(f"⚠️  Módulos DESHABILITADOS globalmente: {', '.join(disabled_modules)}")
+            logger.warning(f"[WARNING]  Módulos DESHABILITADOS globalmente: {', '.join(disabled_modules)}")
         else:
-            logger.info("✅ Todos los módulos están HABILITADOS globalmente")
+            logger.info("[OK] Todos los módulos están HABILITADOS globalmente")
 
 
         # Session tracking - RECONSTRUCT FROM DB
@@ -319,13 +319,13 @@ class MainOrchestrator:
                 success, result = await provisioner.ensure_demo_account(broker_id)
                 if success:
                     self.broker_status[broker_id]['status'] = 'demo_ready'
-                    logger.info(f"✅ Cuenta demo lista para {broker_id}")
+                    logger.info(f"[OK] Cuenta demo lista para {broker_id}")
                 else:
                     self.broker_status[broker_id]['status'] = f"error: {result.get('error', 'unknown')}"
-                    logger.warning(f"❌ Error al provisionar demo {broker_id}: {result}")
+                    logger.warning(f"[ERROR] Error al provisionar demo {broker_id}: {result}")
             else:
                 self.broker_status[broker_id]['status'] = 'manual_required'
-                logger.info(f"⚠️  {broker_id} requiere provisión manual")
+                logger.info(f"[WARNING]  {broker_id} requiere provisión manual")
         
         # Session tracking - RECONSTRUCT FROM DB
         self.stats = SessionStats.from_storage(self.storage)
@@ -456,7 +456,7 @@ class MainOrchestrator:
             logger.info(f"[EXPIRATION] Processed {expiration_stats.get('total_checked', 0)} signals, "
                        f"expired {expiration_stats['total_expired']}")
             if expiration_stats['total_expired'] > 0:
-                logger.info(f"[EXPIRATION] ✅ Breakdown: {expiration_stats['by_timeframe']}")
+                logger.info(f"[EXPIRATION] [OK] Breakdown: {expiration_stats['by_timeframe']}")
             
             # MODULE TOGGLE: Position Manager
             if not self.modules_enabled_global.get("position_manager", True):
@@ -469,7 +469,7 @@ class MainOrchestrator:
                         f"executed {len(position_stats['actions'])} actions"
                     )
                     for action in position_stats['actions']:
-                        logger.info(f"[POSITION_MANAGER] ✅ {action['action']}: ticket={action.get('ticket')}")
+                        logger.info(f"[POSITION_MANAGER] [OK] {action['action']}: ticket={action.get('ticket')}")
             
             # MODULE TOGGLE: Scanner
             if not self.modules_enabled_global.get("scanner", True):
@@ -561,7 +561,7 @@ class MainOrchestrator:
                 
                 if lockdown_check.get("action_taken") == "LOCKDOWN_DEACTIVATED":
                     logger.warning(
-                        f"⚡ EDGE AUTO-CORRECTION: {lockdown_check['reason']}"
+                        f"[AUTO] EDGE AUTO-CORRECTION: {lockdown_check['reason']}"
                     )
             
             # Step 4: Check risk manager lockdown (additional check)
@@ -748,7 +748,7 @@ async def main() -> None:
     from core_brain.tuner import EdgeTuner
     
     print("=" * 50)
-    print("🚀 AETHELGARD ORCHESTRATOR STARTUP")
+    print(">>> AETHELGARD ORCHESTRATOR STARTUP")
     print("=" * 50)
     
     # 1. Pre-flight Health Check
@@ -756,23 +756,23 @@ async def main() -> None:
     summary = health.run_full_diagnostic()
     
     if summary["overall_status"] != "GREEN":
-        print(f"⚠️  ISSUES DETECTED: {summary['overall_status']}. Attempting auto-repair...")
+        print(f"[WARNING]  ISSUES DETECTED: {summary['overall_status']}. Attempting auto-repair...")
         if health.try_auto_repair():
-            print("✅ Auto-repair successful. Re-checking...")
+            print("[OK] Auto-repair successful. Re-checking...")
             summary = health.run_full_diagnostic()
         else:
-            print("❌ Auto-repair failed.")
+            print("[ERROR] Auto-repair failed.")
 
     if summary["overall_status"] == "RED":
-        print("🚨 CRITICAL ERRORS STILL PRESENT. ABORTING STARTUP.")
+        print("[CRITICAL] CRITICAL ERRORS STILL PRESENT. ABORTING STARTUP.")
         print(json.dumps(summary["config"], indent=2))
         print(json.dumps(summary["db"], indent=2))
         return
     
     if summary["overall_status"] == "YELLOW":
-        print("⚠️  SYSTEM READY WITH WARNINGS. PROCEEDING...")
+        print("[WARNING]  SYSTEM READY WITH WARNINGS. PROCEEDING...")
     else:
-        print("✅ HEALTH CHECK PASSED.")
+        print("[OK] HEALTH CHECK PASSED.")
     
     # 2. Component Initialization
     storage = StorageManager()
@@ -782,7 +782,7 @@ async def main() -> None:
     data_provider = provider_manager.get_best_provider()
     
     if not data_provider:
-        print("🚨 No data provider available. Aborting.")
+        print("[CRITICAL] No data provider available. Aborting.")
         return
     
     # Instrument Manager: Get only enabled instruments for scanning
@@ -791,10 +791,10 @@ async def main() -> None:
     enabled_assets = instrument_mgr.get_enabled_symbols()
     
     if not enabled_assets:
-        print("🚨 No enabled instruments found in config/instruments.json. Aborting.")
+        print("[CRITICAL] No enabled instruments found in config/instruments.json. Aborting.")
         return
     
-    print(f"📊 Scanning {len(enabled_assets)} enabled instruments: {enabled_assets[:10]}...")
+    print(f"[SCAN] Scanning {len(enabled_assets)} enabled instruments: {enabled_assets[:10]}...")
     
     # Scanner (Only scans enabled instruments from configuration)
     scanner = ScannerEngine(assets=enabled_assets, data_provider=data_provider)
