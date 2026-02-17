@@ -8,6 +8,8 @@ import logging
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 from data_vault.storage import StorageManager
+from core_brain.market_utils import calculate_pip_size
+from core_brain.instrument_manager import InstrumentManager
 
 logger = logging.getLogger(__name__)
 
@@ -204,32 +206,15 @@ class ClosingMonitor:
         exit_price: float
     ) -> float:
         """
-        Calculate PIPs based on symbol type.
-        
-        Args:
-            symbol: Trading symbol
-            entry_price: Entry price
-            exit_price: Exit price
-        
-        Returns:
-            PIPs gained/lost
+        Calculate PIPs based on symbol type using agnostic market utilities.
         """
-        # Detect instrument type
-        if 'JPY' in symbol:
-            # JPY pairs: 2 decimal places
-            pip_multiplier = 100
-        elif 'XAU' in symbol or 'GOLD' in symbol:
-            # Gold: 10 = 1000 pips
-            pip_multiplier = 100
-        else:
-            # Standard forex: 4 decimal places
-            pip_multiplier = 10000
+        # Usar utilidades globales
+        im = InstrumentManager()
+        # Intentar obtener el conector para el símbolo para pasar info del broker si es posible
+        # Pero ClosingMonitor es asíncrono y broad, market_utils tiene fallbacks para esto
         
-        pips = abs(exit_price - entry_price) * pip_multiplier
-        
-        # Apply sign (positive for profit, negative for loss)
-        if exit_price < entry_price:
-            pips = -pips
+        pip_size = calculate_pip_size(symbol=symbol, instrument_manager=im)
+        pips = (exit_price - entry_price) / pip_size
         
         return round(pips, 2)
     

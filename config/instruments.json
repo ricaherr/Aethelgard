@@ -141,6 +141,33 @@
       "priority": 2
     }
   },
+  "METALS": {
+    "spot": {
+      "enabled": true,
+      "description": "Metales al contado: Oro, Plata",
+      "instruments": [
+        "XAUUSD",
+        "XAGUSD"
+      ],
+      "min_score": 75,
+      "risk_multiplier": 0.8,
+      "priority": 1
+    }
+  },
+  "INDEXES": {
+    "majors": {
+      "enabled": true,
+      "description": "Índices mayores: US30, NAS100",
+      "instruments": [
+        "US30",
+        "NAS100",
+        "SPX500"
+      ],
+      "min_score": 75,
+      "risk_multiplier": 0.8,
+      "priority": 1
+    }
+  },
   "_global_settings": {
     "default_min_score": 80,
     "default_risk_multiplier": 1.0,

@@ -12,8 +12,12 @@ from typing import Optional, Dict, Any
 
 # Dependencies aligned with the project structure
 from data_vault.storage import StorageManager
-from models.signal import MarketRegime, Signal
+from models.signal import Signal, ConnectorType, MarketRegime
 from core_brain.position_size_monitor import PositionSizeMonitor, CalculationStatus
+from core_brain.risk_calculator import RiskCalculator
+from core_brain.multi_timeframe_limiter import MultiTimeframeLimiter
+from core_brain.market_utils import normalize_price, normalize_volume, calculate_pip_size
+from core_brain.instrument_manager import InstrumentManager
 
 logger = logging.getLogger(__name__)
 
@@ -509,20 +513,19 @@ class RiskManager:
             logger.error(f"Error getting symbol info for {symbol}: {e}")
             return None
     
-    def _calculate_pip_size(self, symbol: str) -> float:
+    def _calculate_pip_size(self, symbol: str, connector: Any = None) -> float:
         """
-        Calcula pip size basado en el símbolo.
+        Calcula pip size basado en el símbolo y la información del broker.
+        Usa la utilidad global agnóstica de mercado.
+        """
+        symbol_info = self._get_symbol_info(connector, symbol) if connector else None
         
-        Returns:
-            0.01 para pares JPY (2 decimales)
-            0.0001 para pares forex estándar (4 decimales)
-        """
-        if 'JPY' in symbol:
-            return 0.01
-        elif 'XAU' in symbol or 'XAG' in symbol:  # Oro/Plata
-            return 0.01
-        else:
-            return 0.0001
+        # Obtener InstrumentManager (asumiendo que está disponible o se puede instanciar)
+        # En una arquitectura real, esto se inyectaría. Por ahora creamos uno local si es necesario
+        # o usamos una instancia global si existe.
+        im = InstrumentManager()
+        
+        return calculate_pip_size(symbol_info, symbol, im)
     
     def _calculate_point_value(
         self,
@@ -666,47 +669,9 @@ class RiskManager:
     
     def _apply_broker_limits(self, position_size: float, symbol_info: Any) -> float:
         """
-        Aplica límites de broker (min/max volume) y redondea al step.
-        
-        Returns:
-            Position size ajustado a límites del broker
+        Aplica límites de broker (min/max volume) y redondea al step usando utilidades globales.
         """
-        try:
-            min_lot = symbol_info.volume_min
-            max_lot = symbol_info.volume_max
-            step = symbol_info.volume_step
-            
-            # Clamp a rango min/max
-            position_size_clamped = max(min_lot, min(position_size, max_lot))
-            
-            # Redondear al step más cercano (round, no floor)
-            if step > 0:
-                # Round to nearest step (not down)
-                steps_count = round(position_size_clamped / step)
-                position_size_final = steps_count * step
-                
-                # Si quedó en 0, usar al menos el min_lot
-                if position_size_final < min_lot:
-                    position_size_final = min_lot
-            else:
-                # Si no hay step, redondear a 2 decimales
-                position_size_final = round(position_size_clamped, 2)
-            
-            # Asegurar que está dentro de límites después del redondeo
-            position_size_final = max(min_lot, min(position_size_final, max_lot))
-            
-            if position_size_final != position_size:
-                logger.debug(
-                    f"Position size adjusted: {position_size:.4f} → {position_size_final:.2f} "
-                    f"(limits: {min_lot}-{max_lot}, step={step})"
-                )
-            
-            return position_size_final
-            
-        except Exception as e:
-            logger.error(f"Error applying broker limits: {e}")
-            # Fallback conservador
-            return max(0.01, min(round(position_size, 2), 10.0))
+        return normalize_volume(position_size, symbol_info)
     
     # =========================================================================
     # LEGACY METHOD - Deprecated, mantener por compatibilidad

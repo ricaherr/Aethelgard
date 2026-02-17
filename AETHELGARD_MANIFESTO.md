@@ -1,3 +1,34 @@
+### 1.5 Normalización Agnóstica de Mercado (Feb 2026)
+
+**Regla:** El núcleo del sistema (`core_brain`) nunca debe contener lógica hardcodeada para instrumentos específicos (ej: JPY, XAUUSD). Toda normalización matemática de precios, volúmenes y pips debe delegarse a utilidades globales con fallback jerárquico.
+
+#### 1. Principio de la Fuente de Verdad Jerárquica
+Para cualquier cálculo de mercado, el sistema debe seguir este orden de prioridad:
+1. **Broker Live Data**: Si el conector está activo, usar `digits`, `point` y `volume_step` reales.
+2. **Point Deduction**: Si falta info, deducir de la diferencia entre `bid` y `ask` o `pip_size`.
+3. **Internal Classification**: Usar `InstrumentManager` para clasificar por categoría (FOREX_JPY, METALS, etc.).
+4. **Safety Defaults**: Fallback agnóstico (ej: 5 decimales para precio, 0.01 para volumen).
+
+#### 2. Utilidades Centralizadas (`market_utils.py`)
+- **Prohibición**: Se prohíbe el uso de `round(price, 2)` o `if 'JPY' in symbol` en estrategias o managers.
+- **Obligación**: Usar `normalize_price(symbol, price)`, `normalize_volume(symbol, volume)` y `calculate_pip_size(symbol)`.
+- **Agnosticismo**: Las utilidades deben funcionar tanto con objetos `symbol_info` reales (MT5) como con Mocks o deducciones lógicas sin error.
+
+#### 3. Clasificación Automática de Activos
+El `InstrumentManager` es responsable de mantener el mapeo de categorías en `config/instruments.json`:
+- **FOREX**: Majors y Minors estándar.
+- **FOREX_JPY**: Pares con JPY (2/3 decimales).
+- **METALS**: Oro, Plata, etc. (ajuste de pips por contrato).
+- **INDEXES**: S&P500, NASDAQ, etc.
+- **CRYPTO**: Bitcoin, Ethereum, etc.
+
+**Filosofía de Normalización:**
+- El sistema debe ser "Ciego al Símbolo" en su lógica de negocio.
+- El riesgo y el profit se calculan en base a **Pips Reales** detectados, no por posiciones decimales estáticas.
+- La precisión es un atributo del mercado provisto por el broker, no una constante del programador.
+
+---
+
 ### 1.4 Critical Bug Fixes - Production Stability (Feb 2026)
 
 **Regla:** El sistema debe operar con datos precisos y sincronizados entre DB y MT5, con validaciones estrictas de señales y UI responsive.

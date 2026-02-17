@@ -1,4 +1,55 @@
-## 🎯 MILESTONE: Critical Bug Fixes - RiskManager, Signals & Position Tracking (2026-02-16)
+## 🎯 MILESTONE: Market-Agnostic Normalization & Centralized Utilities (2026-02-17)
+**Estado: ✅ COMPLETADO**
+**Criterio: Centralizar la normalización de precios y volúmenes, eliminando lógica hardcodeada (JPY, Metales) y estableciendo un sistema de fallback jerárquico agnóstico.**
+
+### Logros Clave
+
+#### 1. ✅ Centralización Global (`market_utils.py`)
+**Problema**: Lógica de redondeo y pips dispersa y duplicada en múltiples módulos con asunciones hardcodeadas para JPY.
+**Solución**: Creada utilidad global que centraliza:
+- `normalize_price()`: Basado en dígitos del broker con fallback a precisión por categoría.
+- `normalize_volume()`: Respeta límites y steps del broker.
+- `calculate_pip_size()`: Cálculo dinámico para Forex, Metales, Índices y Crypto.
+**Impacto**: Una única fuente de verdad para todos los cálculos matemáticos del mercado.
+
+#### 2. ✅ Fallback Jerárquico Agnóstico (`InstrumentManager`)
+**Problema**: El sistema fallaba o usaba precisiones incorrectas si el broker no proveía info total.
+**Solución**: Implementado sistema de 4 niveles:
+1. Broker Data (Real-time)
+2. Point Deduction (Calculado)
+3. Category Defaults (Instruments.json)
+4. Hard Fallbacks (Agnostic Safety Defaults)
+**Impacto**: Robustez total ante fallos de conexión o brokers con data incompleta.
+
+#### 3. ✅ Purga de Anti-patrones y Lógica Hardcodeada
+**Problema**: Múltiples `if 'JPY' in symbol` esparcidos por el core.
+**Solución**: Refactorización completa de:
+- `RiskManager.py`: Ahora usa pips calculados dinámicamente.
+- `PositionManager.py`: Sincronización de huérfanas agnóstica.
+- `MT5Connector.py` & `PaperConnector.py`: Normalización delegada a `market_utils`.
+- `monitor.py`: Cálculo de P&L en pips 100% dinámico.
+**Impacto**: Código más limpio, mantenible y listo para cualquier mercado del mundo.
+
+### Módulos Refactorizados
+- `core_brain/market_utils.py` [NUEVO]
+- `core_brain/instrument_manager.py` (Mejorada auto-clasificación de Metales/Índices/Crypto)
+- `core_brain/risk_manager.py` (Eliminada redundancia de volúmenes y JPY)
+- `core_brain/main_orchestrator.py` (Eliminada dependencia prohibida de MT5 - Agnosticismo puro)
+- `core_brain/monitor.py` (Pip calculation global)
+- `config/instruments.json` (Nuevas categorías METALS y INDEXES)
+
+### Validación Final (100% GREEN)
+```
+Architecture Audit................. [OK] PASSED
+QA Guard........................... [OK] PASSED (Agnosticism Checked)
+Code Quality....................... [OK] PASSED
+UI Quality......................... [OK] PASSED
+Tests (Market Utils)............... [OK] PASSED (6/6 tests)
+Critical Tests (Risk/Deduplication) [OK] PASSED
+```
+
+---
+
 **Estado: ✅ COMPLETADO**
 **Criterio: Fix 5 critical bugs affecting lockdown logic, signal validation, position tracking, and UI synchronization**
 

@@ -58,13 +58,19 @@ class PaperConnector:
         """
         Return simulated symbol info for paper trading.
         Creates a minimal SymbolInfo-like object with required attributes.
+        Uses InstrumentManager for agnostic fallback precision.
         """
         from types import SimpleNamespace
+        from core_brain.instrument_manager import InstrumentManager
         
-        # Simular symbol_info con atributos básicos
+        im = InstrumentManager()
+        digits = im.get_default_precision(symbol)
+        point = 1.0 / (10**digits)
+        
+        # Simular symbol_info con atributos básicos dinámicos
         return SimpleNamespace(
-            digits=5 if 'JPY' not in symbol else 3,
-            point=0.00001 if 'JPY' not in symbol else 0.001,
+            digits=digits,
+            point=point,
             volume_min=0.01,
             volume_max=100.0,
             volume_step=0.01,

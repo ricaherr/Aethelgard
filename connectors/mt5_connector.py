@@ -25,6 +25,7 @@ except ImportError:
 from models.signal import Signal, SignalType
 from data_vault.storage import StorageManager
 from models.broker_event import BrokerTradeClosedEvent, TradeResult, BrokerEvent
+from core_brain.market_utils import normalize_price, normalize_volume
 
 logger = logging.getLogger(__name__)
 
@@ -763,13 +764,21 @@ class MT5Connector:
                 logger.error(f"Could not get tick for {symbol} (symbol visible but market may be closed)")
                 return {'success': False, 'error': f'Cannot get price for {symbol}'}
             
+            # Get symbol info for normalization
+            symbol_info = mt5.symbol_info(symbol)
+            
             price = tick.ask if order_type == mt5.ORDER_TYPE_BUY else tick.bid
             
-            # Calculate volume (use signal volume if available, else default 0.01 lot = micro lot)
+            # Normalizar precio
+            price = normalize_price(price, symbol_info)
+            
+            # Get volume (use signal volume if available, else default 0.01 lot = micro lot)
             volume = getattr(signal, 'volume', 0.01)
-            if volume <= 0:
-                volume = 0.01
-                logger.warning(f"Invalid volume {volume}, using default 0.01")
+            volume = normalize_volume(volume, symbol_info)
+            
+            # Normalizar SL y TP
+            sl = normalize_price(signal.stop_loss, symbol_info) if signal.stop_loss else 0.0
+            tp = normalize_price(signal.take_profit, symbol_info) if signal.take_profit else 0.0
             
             request = {
                 "action": mt5.TRADE_ACTION_DEAL,
@@ -777,8 +786,8 @@ class MT5Connector:
                 "volume": volume,
                 "type": order_type,
                 "price": price,
-                "sl": signal.stop_loss if signal.stop_loss else 0.0,
-                "tp": signal.take_profit if signal.take_profit else 0.0,
+                "sl": sl,
+                "tp": tp,
                 "deviation": 20,
                 "magic": self.magic_number,
                 "comment": self._build_trade_comment(signal),
@@ -1378,7 +1387,7 @@ class MT5Connector:
                 "volume": position.volume,
                 "type": mt5.ORDER_TYPE_SELL if position.type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY,
                 "position": ticket,
-                "price": mt5.symbol_info_tick(position.symbol).bid if position.type == mt5.ORDER_TYPE_BUY else mt5.symbol_info_tick(position.symbol).ask,
+                "price": normalize_price(mt5.symbol_info_tick(position.symbol).bid if position.type == mt5.ORDER_TYPE_BUY else mt5.symbol_info_tick(position.symbol).ask, mt5.symbol_info(position.symbol)),
                 "deviation": 20,
                 "magic": self.magic_number,
                 "comment": comment,

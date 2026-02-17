@@ -457,83 +457,70 @@ class MainOrchestrator:
     
     async def _check_closed_positions(self) -> None:
         """
-        Check MT5 for newly closed positions and process them through TradeClosureListener.
-        
-        This method polls MT5 history_deals_get() for new closed positions since the last check,
-        converts them to BrokerTradeClosedEvent, and passes them to the listener for processing.
+        Check connectors for newly closed positions and process them through TradeClosureListener.
         """
         try:
-            # Import here to avoid circular dependencies
-            import MetaTrader5 as mt5
-            from datetime import datetime, timedelta
+            from datetime import datetime
             from models.broker_event import BrokerEvent, BrokerEventType, BrokerTradeClosedEvent
+            from models.signal import ConnectorType
             
             # Get connector from executor
-            from models.signal import ConnectorType
             if not hasattr(self.executor, 'connectors'):
-                logger.debug("Executor has no connectors, skipping closed position check")
                 return
             
             mt5_connector = self.executor.connectors.get(ConnectorType.METATRADER5)
-            if not mt5_connector:
-                logger.debug("MT5 connector not available, skipping closed position check")
+            if not mt5_connector or not mt5_connector.is_connected:
                 return
             
-            # Ensure MT5 is connected
-            if not mt5_connector.connect():
-                logger.warning("Failed to connect to MT5 for position tracking")
+            # Get closed positions from connector (agnostic)
+            # This avoids direct MetaTrader5 import in core_brain
+            closed_positions = mt5_connector.get_closed_positions(hours=24)
+            
+            if not closed_positions:
                 return
             
-            # Get deals from last 24 hours (or since last check)
-            from_date = datetime.now() - timedelta(hours=24)
-            to_date = datetime.now()
+            # Filter for new ones (ticket > last_checked)
+            new_positions = [p for p in closed_positions if p['ticket'] > self._last_checked_deal_ticket]
             
-            deals = mt5.history_deals_get(from_date, to_date)
-            
-            if not deals or len(deals) == 0:
-                logger.debug("No deals found in MT5 history")
+            if not new_positions:
                 return
             
-            # Filter for new deals (ticket > last_checked)
-            new_deals = [d for d in deals if d.ticket > self._last_checked_deal_ticket]
+            logger.info(f"Found {len(new_positions)} new closed positions to process via Listener")
             
-            if not new_deals:
-                return
-            
-            logger.info(f"Found {len(new_deals)} new closed deals to process")
-            
-            # Process each deal
-            for deal in new_deals:
-                # Only process OUT deals (position closures)
-                if deal.entry != 1:  # 1 = DEAL_ENTRY_OUT (position close)
-                    continue
-                
-                # Find corresponding signal in DB by order_id
-                signals = self.storage.get_signals(limit=100)
+            # Process each position
+            for pos in new_positions:
+                # Find corresponding signal in DB
+                signal_id = pos.get('signal_id')
                 matching_signal = None
-                for sig in signals:
-                    if sig.get('order_id') == str(deal.position_id):
-                        matching_signal = sig
-                        break
+                
+                if signal_id:
+                    matching_signal = self.storage.get_signal_by_id(signal_id)
                 
                 if not matching_signal:
-                    logger.debug(f"No matching signal found for position_id {deal.position_id}")
+                    # Fallback: search by ticket
+                    signals = self.storage.get_signals(limit=100)
+                    for sig in signals:
+                        if sig.get('order_id') == str(pos['ticket']):
+                            matching_signal = sig
+                            break
+                
+                if not matching_signal:
                     continue
                 
                 # Create BrokerTradeClosedEvent
                 trade_event = BrokerTradeClosedEvent(
-                    ticket=deal.ticket,
+                    ticket=pos['ticket'],
                     signal_id=matching_signal.get('id'),
-                    symbol=deal.symbol,
-                    entry_price=matching_signal.get('entry_price', 0.0),
-                    exit_price=deal.price,
-                    profit_loss=deal.profit,
-                    pips=0.0,  # Calculate if needed
-                    exit_reason="MT5_CLOSE",
-                    entry_time=datetime.fromtimestamp(matching_signal.get('timestamp', 0)) if isinstance(matching_signal.get('timestamp'), (int, float)) else datetime.fromisoformat(matching_signal.get('timestamp', datetime.now().isoformat())),
-                    exit_time=datetime.fromtimestamp(deal.time),
+                    symbol=pos['symbol'],
+                    entry_price=pos.get('entry_price') or matching_signal.get('entry_price', 0.0),
+                    exit_price=pos['exit_price'],
+                    profit_loss=pos['profit'],
+                    pips=0.0,
+                    exit_reason=pos.get('exit_reason', "MT5_CLOSE"),
+                    entry_time=datetime.fromisoformat(matching_signal['timestamp']) if 'timestamp' in matching_signal else datetime.now(),
+                    exit_time=pos['close_time'],
                     broker_id="MT5",
-                    metadata={"deal_ticket": deal.ticket, "position_id": deal.position_id}
+                    metadata={"ticket": pos['ticket']}
                 )
                 
                 # Wrap in BrokerEvent
@@ -546,20 +533,11 @@ class MainOrchestrator:
                 # Process through listener
                 await self.trade_closure_listener.handle_trade_closed_event(event)
                 
-                # Update signal status to CLOSED
-                self.storage.update_signal_status(
-                    signal_id=matching_signal.get('id'),
-                    status='CLOSED',
-                    metadata={'closed_at': datetime.now().isoformat(), 'pnl': deal.profit}
-                )
-                
                 # Update last checked ticket
-                self._last_checked_deal_ticket = max(self._last_checked_deal_ticket, deal.ticket)
-            
-            logger.info(f"Processed {len(new_deals)} closed positions. Last ticket: {self._last_checked_deal_ticket}")
+                self._last_checked_deal_ticket = max(self._last_checked_deal_ticket, pos['ticket'])
             
         except Exception as e:
-            logger.error(f"Error checking closed positions: {e}", exc_info=True)
+            logger.error(f"Error checking closed positions: {e}")
 
     async def run_single_cycle(self) -> None:
         """

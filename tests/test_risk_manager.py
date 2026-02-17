@@ -125,11 +125,13 @@ def test_lockdown_persistence_on_init():
 
     """
 
-    # Simula que la base de datos reporta que el sistema YA ESTABA en lockdown
-
     mock_storage_in_lockdown = MagicMock()
-
-    mock_storage_in_lockdown.get_system_state.return_value = {'lockdown_mode': True}
+    from datetime import datetime
+    mock_storage_in_lockdown.get_system_state.return_value = {
+        'lockdown_mode': True,
+        'lockdown_date': datetime.now().isoformat(),
+        'lockdown_balance': 10000
+    }
 
 
 

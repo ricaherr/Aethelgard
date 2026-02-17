@@ -168,41 +168,47 @@ class InstrumentManager:
         Returns:
             InstrumentConfig if classification succeeds, None otherwise
         """
+        symbol = symbol.upper()
+        
+        # METALS patterns (XAUUSD, XAGUSD, GOLD, SILVER)
+        metals = ["XAU", "XAG", "GOLD", "SILVER", "XPT", "XPD"]
+        if any(m in symbol for m in metals):
+            return self._get_category_config("METALS", "spot")
+            
+        # INDEXES patterns (US30, NAS100, SPX500, GER40, HK50)
+        indexes = ["US30", "NAS100", "US100", "SPX500", "US500", "GER40", "DAX", "HK50", "UK100", "WS30"]
+        if any(idx in symbol for idx in indexes):
+            return self._get_category_config("INDEXES", "majors")
+
+        # CRYPTO patterns (ends with USDT, BUSD, USD)
+        crypto_quotes = ["USDT", "BUSD", "USDC", "BTC", "ETH", "USD"]
+        # Check if it looks like a crypto (not exactly 6 chars or starts with common crypto)
+        # Most major cryptos are BTC, ETH, SOL, ADA, etc.
+        cryptos_seeds = ["BTC", "ETH", "SOL", "ADA", "DOT", "XRP", "LTC", "LINK", "AVAX"]
+        
+        for quote in crypto_quotes:
+            if symbol.endswith(quote):
+                base = symbol[:-len(quote)]
+                # If it's a known crypto base or has unusual length for forex
+                if base in cryptos_seeds or len(symbol) > 6:
+                    if base in ["BTC", "ETH", "BNB"]:
+                        return self._get_category_config("CRYPTO", "tier1")
+                    else:
+                        return self._get_category_config("CRYPTO", "altcoins")
+        
         # FOREX patterns (currency pairs)
         if len(symbol) == 6 and symbol.isalpha():
             base = symbol[:3]
             quote = symbol[3:]
             
-            # Major currencies (including SGD, HKD for broader coverage)
+            # Major currencies
             majors = ["EUR", "USD", "GBP", "JPY", "CHF", "AUD", "CAD", "NZD", "SGD", "HKD"]
             
             if base in majors and quote in majors:
-                # Check if it's a true major pair (involves USD)
                 if "USD" in symbol:
                     return self._get_category_config("FOREX", "majors")
                 else:
                     return self._get_category_config("FOREX", "minors")
-        
-        # CRYPTO patterns (ends with USDT, BUSD, etc.)
-        crypto_quotes = ["USDT", "BUSD", "USDC", "BTC", "ETH"]
-        for quote in crypto_quotes:
-            if symbol.endswith(quote):
-                base = symbol[:-len(quote)]
-                
-                # Tier 1 cryptos
-                if base in ["BTC", "ETH", "BNB"]:
-                    return self._get_category_config("CRYPTO", "tier1")
-                else:
-                    return self._get_category_config("CRYPTO", "altcoins")
-        
-        # FUTURES patterns (2-3 letter codes)
-        if len(symbol) <= 3 and symbol.isalpha():
-            futures = ["ES", "NQ", "YM", "RTY", "CL", "GC", "SI", "NG"]
-            if symbol in futures:
-                if symbol in ["ES", "NQ", "YM", "RTY"]:
-                    return self._get_category_config("FUTURES", "indices")
-                else:
-                    return self._get_category_config("FUTURES", "commodities")
         
         logger.debug(f"Could not auto-classify symbol: {symbol}")
         return None
@@ -308,6 +314,40 @@ class InstrumentManager:
         """
         config = self.get_config(symbol)
         return config.max_spread if config else None
+    
+    def get_default_precision(self, symbol: str) -> int:
+        """
+        Get default decimal precision for a symbol based on its category.
+        Used as a fallback when broker information is unavailable.
+        """
+        symbol = symbol.upper()
+        category, subcategory = self.get_category_info(symbol)
+        
+        # Mapping by category
+        precision_map = {
+            "FOREX": 5,
+            "METALS": 2,
+            "CRYPTO": 2,
+            "INDEXES": 2,
+            "INDEX": 2,
+            "FUTURES": 2,
+            "STOCKS": 2
+        }
+        
+        # SPECIAL CASE: Manual overrides if category is UNKNOWN
+        if category == "UNKNOWN":
+            if 'JPY' in symbol: return 3
+            if any(m in symbol for m in ["XAU", "XAG", "GOLD", "SILVER"]): return 2
+            if any(idx in symbol for idx in ["US30", "NAS100", "SPX500", "US500", "DOW"]): return 2
+            if any(c in symbol for c in ["BTC", "ETH", "SOL", "USDT"]): return 2
+            if len(symbol) == 6: return 5
+            return 5
+            
+        # Special case: JPY pairs always have 3 digits (fractional) or 2
+        if 'JPY' in symbol:
+            return 3
+            
+        return precision_map.get(category, 5)
     
     def get_category_info(self, symbol: str) -> Tuple[str, str]:
         """

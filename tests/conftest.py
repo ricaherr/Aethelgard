@@ -32,7 +32,8 @@ class MockSymbolInfo:
     - Indices (US30): contract_size=10
     """
     def __init__(self, contract_size_or_symbol=None, contract_size=None, point=0.00001, 
-                 ask=None, bid=None, trade_mode=None, symbol=None):
+                 ask=None, bid=None, trade_mode=None, symbol=None, 
+                 v_min=0.01, v_max=100.0, v_step=0.01, digits=5):
         # Handle positional usage: MockSymbolInfo(100000)
         if contract_size_or_symbol is not None and isinstance(contract_size_or_symbol, (int, float)):
             self.trade_contract_size = contract_size_or_symbol
@@ -45,8 +46,13 @@ class MockSymbolInfo:
         self.point = point
         self.ask = ask or 1.10000
         self.bid = bid or 1.09990
-        self.digits = 5
+        self.digits = digits
         self.trade_mode = trade_mode or 4  # TRADE_MODE_FULL
+        
+        # Volume/Lot limits (for normalize_volume)
+        self.volume_min = v_min
+        self.volume_max = v_max
+        self.volume_step = v_step
 
 
 @pytest.fixture

@@ -17,6 +17,8 @@ from typing import Dict, List, Optional, Any
 from decimal import Decimal
 
 from models.signal import MarketRegime
+from core_brain.market_utils import normalize_price, calculate_pip_size
+from core_brain.instrument_manager import InstrumentManager
 
 logger = logging.getLogger(__name__)
 
@@ -269,29 +271,27 @@ class PositionManager:
         # Estimate initial risk (distance from entry to SL)
         initial_risk_usd = 0.0
         if current_sl and current_sl > 0 and entry_price > 0 and volume > 0:
-            # Determine point size based on instrument
-            if 'JPY' in symbol:
-                point = 0.001  # Japanese Yen pairs (3 decimal places)
-            elif any(metal in symbol for metal in ['XAU', 'XAG', 'GOLD', 'SILVER']):
-                point = 0.01  # Metals (2 decimal places)
-            else:
-                point = 0.00001  # Standard forex (5 decimal places)
+            # Usar utilidades globales agnósticas
+            im = InstrumentManager()
+            symbol_info = self.connector.get_symbol_info(symbol)
+            pip_size = calculate_pip_size(symbol_info, symbol, im)
             
-            # Calculate risk in points
+            # Calculate risk in pips/points
             sl_distance = abs(entry_price - current_sl)
-            sl_distance_points = sl_distance / point
             
             # Estimate USD risk per lot (simplified)
             # Standard forex: ~$10 per pip per standard lot
-            # This is a rough estimate for monitoring purposes
-            # For accurate calculation, we'd need account currency, conversion rates, etc.
-            usd_per_pip = 10.0  # Approximate for major pairs
-            initial_risk_usd = sl_distance * volume * usd_per_pip
+            # Para una estimación robusta, usamos contract_size y pip_size
+            contract_size = getattr(symbol_info, 'trade_contract_size', 100000)
+            
+            # Una aproximación agnóstica de riesgo USD
+            # (En el futuro esto debería usar RiskCalculator para precisión total)
+            initial_risk_usd = (sl_distance / pip_size) * volume * 10.0 # $10 per pip default
             
             logger.debug(
                 f"Orphan position {ticket} risk calculation: "
                 f"SL distance={sl_distance:.5f}, volume={volume}, "
-                f"estimated_risk=${initial_risk_usd:.2f}"
+                f"pip_size={pip_size}, estimated_risk=${initial_risk_usd:.2f}"
             )
         else:
             logger.debug(
