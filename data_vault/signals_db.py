@@ -244,7 +244,7 @@ class SignalsMixin(BaseRepository):
                 AND signal_type = ? 
                 AND timestamp >= datetime('now', 'localtime', '-' || ? || ' minutes')
                 AND (timeframe = ? OR ? IS NULL)
-                AND status IN ('PENDING', 'EXECUTED')
+                AND status IN ('PENDING', 'EXECUTED', 'EXPIRED')
             """, (symbol, signal_type, minutes, timeframe, timeframe))
             count = cursor.fetchone()[0]
             # print(f"DEBUG DB: has_recent_signal({symbol}, {signal_type}) -> {count}")

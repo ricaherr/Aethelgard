@@ -27,7 +27,8 @@ class OliverVelezStrategy(BaseStrategy):
         
         # Parámetros EDGE (auto-ajustables)
         self.adx_threshold = config.get("adx_threshold", 25)
-        self.elephant_atr_multiplier = config.get("elephant_atr_multiplier", 0.3)
+        # FIX: Increased from 0.3 to 1.1 to avoid false positives (0.65 is not an elephant)
+        self.elephant_atr_multiplier = config.get("elephant_atr_multiplier", 1.1)
         self.sma20_proximity_percent = config.get("sma20_proximity_percent", 1.5)
         self.min_signal_score = config.get("min_signal_score", 60)
         
@@ -169,6 +170,15 @@ class OliverVelezStrategy(BaseStrategy):
                 "proximity_ok": v_proximity,
             }
 
+            # CRITICAL FIX: Enforce elephant candle requirement
+            # Oliver Velez strategy REQUIRES elephant candle - this is non-negotiable
+            if not v_candle:
+                logger.info(
+                    f"[{symbol}] Setup REJECTED: No elephant candle. "
+                    f"Body/ATR ratio: {body_atr_ratio:.2f} < {self.elephant_atr_multiplier:.2f} required"
+                )
+                return None
+
             candle_data = {
                 "sma20_dist_pct": sma20_dist_pct,
                 "body_atr_ratio": body_atr_ratio,
@@ -243,37 +253,42 @@ class OliverVelezStrategy(BaseStrategy):
     def _calculate_opportunity_score(
         self, validation_results: dict, candle_data: dict, regime: MarketRegime
     ) -> float:
-        if not all(validation_results.values()):
-            return 0.0
+        # ESTRICTO: Sistema de Puntuación por Pilares (0-100) - REFINADO
+        # Precision Quirúrgica: Refleja calidad exacta de Vela, Ubicación y Tendencia.
 
-        score = self.base_score
+        # Pilar 1: Vela Elefante (Max 40 pts)
+        # Binary Gate: Si ratio < 1.1, ya habría retornado None antes.
+        score_candle = 40.0
 
-        # Bonificación por proximidad a SMA20
+        # Pilar 2: Ubicación / Proximidad SMA20 (Max 35 pts)
+        # Increased weight (30 -> 35) because location is the most critical factor for risk.
+        # 0% distance = 35 pts.
+        # 100% distance limit = 0 pts.
         proximity_ratio = (candle_data["sma20_dist_pct"] / self.sma20_proximity_percent)
-        score += (1 - proximity_ratio) * self.proximity_bonus_weight
+        proximity_ratio = max(0.0, min(1.0, proximity_ratio))
+        score_location = 35.0 * (1.0 - proximity_ratio)
 
-        # Bonificación por cuerpo de vela (elefante)
-        strength_ratio = (candle_data["body_atr_ratio"] / self.elephant_atr_multiplier)
-        score += min(1.0, strength_ratio - 1.0) * self.candle_bonus_weight
-
-        # NUEVO: Bonificación/penalización por fuerza de tendencia
+        # Pilar 3: Contexto de Tendencia (Max 25 pts)
+        # Breakdown: Base Class + Strength Scalar for nuance.
         trend_class = candle_data.get("trend_class", "SIDEWAYS")
-        trend_strength_score = candle_data.get("trend_strength", {}).get("strength_score", 0.0)
+        trend_strength = candle_data.get("trend_strength", {}).get("strength_score", 0.0)
         
-        # Bonus por tendencia fuerte (mejor probabilidad)
-        if trend_class in ["UPTREND_STRONG", "DOWNTREND_STRONG"]:
-            score += 15.0  # Bonus significativo para tendencias fuertes
-        elif trend_class in ["UPTREND_WEAK", "DOWNTREND_WEAK"]:
-            score += 5.0   # Bonus menor para tendencias débiles
-        # SIDEWAYS: sin bonus (tendencias laterales = menor probabilidad)
+        base_trend = 5.0
+        if "STRONG" in trend_class:
+            base_trend = 15.0
+        elif "WEAK" in trend_class:
+            base_trend = 10.0
+        # SIDEWAYS base remains 5.0
+            
+        # Scalar bias (0-10 pts based on ADX/Slope strength)
+        # This restores the "surgical" nuance of trend quality.
+        scalar_trend = (trend_strength / 100.0) * 10.0
         
-        # Bonus por strength_score (0-100) convertido a 0-10 puntos adicionales
-        score += (trend_strength_score / 100.0) * 10.0
+        score_trend = base_trend + scalar_trend
 
-        strength_ratio = (candle_data["body_atr_ratio"] / self.elephant_atr_multiplier)
-        score += min(1.0, strength_ratio - 1.0) * self.candle_bonus_weight
-
-        return min(100.0, max(0.0, score))
+        final_score = score_candle + score_location + score_trend
+        
+        return min(100.0, max(0.0, final_score))
 
     def _determine_membership_tier(self, score: float) -> MembershipTier:
         if score >= self.elite_threshold:

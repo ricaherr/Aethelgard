@@ -9,6 +9,7 @@ import SignalTrace from './SignalTrace';
 import { FilterPanel } from './FilterPanel';
 import { NotificationCenter } from './NotificationCenter';
 import { SignalFeed } from './SignalFeed';
+import { useToast, ToastContainer } from '../common/Toast';
 import HeatmapView from './HeatmapView';
 import MetricWidget from './MetricWidget';
 import TopOpportunities from './TopOpportunities';
@@ -27,6 +28,8 @@ const AnalysisPage: React.FC = () => {
   // Chart Context State
   const [selectedSignal, setSelectedSignal] = useState<any | null>(null);
   const [showContextPanel, setShowContextPanel] = useState(true);
+  const toast = useToast();
+
 
   // Estado de filtros
   const [activeFilters, setActiveFilters] = useState({
@@ -96,9 +99,37 @@ const AnalysisPage: React.FC = () => {
     }
   };
 
-  const handleExecuteSignal = (signalId: string) => {
-    console.log('Execute signal:', signalId);
-    // TODO: Implementar ejecución de señal
+  const handleExecuteSignal = async (signalId: string) => {
+    try {
+      console.log('Executing signal:', signalId);
+
+      const response = await fetch('/api/signals/execute', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ signal_id: signalId }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        console.log('Signal executed successfully:', result.message);
+        toast.success(result.message);
+
+        // Refresh feed to remove executed signal immediately
+        if ((window as any).__signalFeedRefresh) {
+          console.log('Refreshing signal feed after execution...');
+          (window as any).__signalFeedRefresh();
+        }
+      } else {
+        console.error('Signal execution failed:', result.message);
+        toast.error(result.message);
+      }
+    } catch (error) {
+      console.error('Error executing signal:', error);
+      toast.error('Error executing signal. Check console for details.');
+    }
   };
 
   const handleViewChart = (signal: any) => {
@@ -292,6 +323,7 @@ const AnalysisPage: React.FC = () => {
           </div>
         </div>
       )}
+      <ToastContainer toasts={toast.toasts} onClose={toast.closeToast} />
     </div>
   );
 };

@@ -3,7 +3,7 @@
   "max_consecutive_losses": 5,
   "_comment_signal_generation": "Parámetros ajustados dinámicamente por tuner.py",
   "adx_threshold": 35,
-  "elephant_atr_multiplier": 0.51,
+  "elephant_atr_multiplier": 1.1,
   "sma20_proximity_percent": 0.8823529411764706,
   "min_signal_score": 80,
   "_comment_sma_periods": "Períodos de medias móviles para estrategia Oliver Vélez",

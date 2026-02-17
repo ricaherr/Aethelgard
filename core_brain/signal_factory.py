@@ -198,8 +198,23 @@ class SignalFactory:
         """
         signal_type_str = signal.signal_type.value if hasattr(signal.signal_type, 'value') else str(signal.signal_type)
         
+        # FASE 2.5 FIX: Normalize symbol BEFORE checking for duplicates
+        # Providers send 'GBPUSD=X', but we save 'GBPUSD'.
+        # We must check against the NORMALIZED symbol.
+        normalized_symbol = signal.symbol
+        if signal.connector_type == ConnectorType.METATRADER5:
+            try:
+                # Lazy import to avoid circular dependency
+                from connectors.mt5_connector import MT5Connector
+                normalized_symbol = MT5Connector.normalize_symbol(signal.symbol)
+            except ImportError:
+                # Fallback: simple replace if connector not available
+                normalized_symbol = signal.symbol.replace("=X", "")
+            except Exception as e:
+                logger.warning(f"Normalization failed in is_duplicate_signal: {e}")
+        
         # Verificar posición abierta (filtrar por symbol + timeframe)
-        if self.storage_manager.has_open_position(signal.symbol, signal.timeframe):
+        if self.storage_manager.has_open_position(normalized_symbol, signal.timeframe):
             # Reconcilia directamente con MT5 reality
             if self.mt5_connector:
                 logger.debug(f"[CHECK] Reconciling position for {signal.symbol} with MT5")
@@ -210,10 +225,10 @@ class SignalFactory:
                     real_positions = self.mt5_connector.get_open_positions()
                     if real_positions is not None:
                         real_symbols = {pos.get('symbol') for pos in real_positions}
-                        if signal.symbol not in real_symbols:
+                        if normalized_symbol not in real_symbols:
                             # Ghost position detected - clear it
-                            self.storage_manager._clear_ghost_position_inline(signal.symbol)
-                            logger.info(f"[CLEAN] Cleared ghost position for {signal.symbol} (ID: {open_signal_id})")
+                            self.storage_manager._clear_ghost_position_inline(normalized_symbol)
+                            logger.info(f"[CLEAN] Cleared ghost position for {normalized_symbol} (ID: {open_signal_id})")
                             # EDGE Learning
                             self.storage_manager.save_edge_learning(
                                 detection=f"Discrepancia DB vs MT5: {signal.symbol} tiene posición en DB pero no en MT5",
@@ -257,14 +272,15 @@ class SignalFactory:
                 logger.info(f"[DUMP] VOLCADO EXCEPCION: Señal descartada por posición abierta: {dump}")
                 return True
         
+        # Check DB for recent duplicates using NORMALIZED symbol
         if self.storage_manager.has_recent_signal(
-            signal.symbol, 
+            normalized_symbol, 
             signal_type_str, 
             timeframe=signal.timeframe
         ):
             logger.info(
-                f"Duplicate signal detected for {signal.symbol} "
-                f"({signal_type_str} in {signal.timeframe}). Skipping."
+                f"[DUPLICATE] Signal for {normalized_symbol} ({signal_type_str} {signal.timeframe}) "
+                f"skipped (Normalized from {signal.symbol})"
             )
             return True
             

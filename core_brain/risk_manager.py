@@ -72,6 +72,37 @@ class RiskManager:
         # 3. Persistencia de Lockdown: Storage inyectado, no creado aquí
         system_state = self.storage.get_system_state()
         self.lockdown_mode = system_state.get('lockdown_mode', False)
+        lockdown_date = system_state.get('lockdown_date', None)
+        lockdown_balance = system_state.get('lockdown_balance', None)
+        
+        # ADAPTIVE LOCKDOWN: Auto-reset based on market conditions, not calendar
+        from datetime import datetime
+        
+        if self.lockdown_mode:
+            should_reset, reason = self._should_reset_lockdown(
+                lockdown_date=lockdown_date,
+                lockdown_balance=lockdown_balance,
+                current_balance=initial_capital
+            )
+            
+            if should_reset:
+                logger.warning(
+                    f"Lockdown auto-reset triggered: {reason}. "
+                    f"Lockdown was active since {lockdown_date or 'unknown'}."
+                )
+                self.lockdown_mode = False
+                self.storage.update_system_state({
+                    'lockdown_mode': False,
+                    'lockdown_date': None,
+                    'lockdown_balance': None,
+                    'consecutive_losses': 0
+                })
+                logger.info(f"✅ Lockdown deactivated: {reason}. Trading enabled.")
+            else:
+                logger.info(
+                    f"Lockdown still active (since {lockdown_date}). "
+                    f"Waiting for: balance recovery or 24h system rest."
+                )
         
         self.consecutive_losses = 0 # Se resetea, la persistencia está en el estado de lockdown
         
@@ -760,13 +791,22 @@ class RiskManager:
                 self._activate_lockdown()
 
     def _activate_lockdown(self) -> None:
-        """Activa y persiste el modo lockdown."""
+        """Activa y persiste el modo lockdown con fecha y balance."""
         if not self.lockdown_mode:
+            from datetime import datetime
+            now = datetime.now().isoformat()
+            
             self.lockdown_mode = True
-            self.storage.update_system_state({'lockdown_mode': True})
+            self.storage.update_system_state({
+                'lockdown_mode': True,
+                'lockdown_date': now,
+                'lockdown_balance': self.capital,  # Save balance for recovery tracking
+                'consecutive_losses': self.consecutive_losses
+            })
             logger.error(
-                f"LOCKDOWN ACTIVATED: {self.consecutive_losses} consecutive losses. "
-                "Trading disabled."
+                f"🔒 LOCKDOWN ACTIVATED: {self.consecutive_losses} consecutive losses at {now}. "
+                f"Balance: ${self.capital:,.2f}. "
+                "Trading disabled until balance recovers or system rests 24h."
             )
 
     def _deactivate_lockdown(self) -> None:
@@ -774,8 +814,90 @@ class RiskManager:
         if self.lockdown_mode:
             self.lockdown_mode = False
             self.consecutive_losses = 0
-            self.storage.update_system_state({'lockdown_mode': False})
-            logger.info("Lockdown DEACTIVATED. Trading resumed.")
+            self.storage.update_system_state({
+                'lockdown_mode': False,
+                'lockdown_date': None,
+                'lockdown_balance': None,
+                'consecutive_losses': 0
+            })
+            logger.info("✅ Lockdown DEACTIVATED. Trading resumed.")
+    
+    def _should_reset_lockdown(
+        self, 
+        lockdown_date: Optional[str], 
+        lockdown_balance: Optional[float],
+        current_balance: float
+    ) -> tuple[bool, str]:
+        """
+        Adaptive lockdown reset logic based on market conditions, not calendar.
+        
+        Resets lockdown if:
+        1. Balance recovered (account recovered from drawdown), OR
+        2. System rested (24h without trading)
+        
+        Args:
+            lockdown_date: ISO timestamp when lockdown was activated
+            lockdown_balance: Account balance when lockdown was activated
+            current_balance: Current account balance
+            
+        Returns:
+            tuple[bool, str]: (should_reset, reason)
+        """
+        from datetime import datetime, timedelta
+        
+        # Safety: If no lockdown_date, assume it's old and reset
+        if not lockdown_date:
+            return True, "No lockdown date found (stale lockdown)"
+        
+        try:
+            lockdown_time = datetime.fromisoformat(lockdown_date)
+        except (ValueError, TypeError):
+            return True, "Invalid lockdown date format"
+        
+        # Criterion 1: Balance Recovery (PRIORITY)
+        # If balance recovered 2% from lockdown level, conditions likely improved
+        if lockdown_balance and current_balance >= lockdown_balance * 1.02:
+            recovery_pct = ((current_balance - lockdown_balance) / lockdown_balance) * 100
+            return True, f"Balance recovered +{recovery_pct:.1f}% from lockdown level"
+        
+        # Criterion 2: System Rest (24h without trading)
+        # Get last trade time from storage
+        try:
+            conn = self.storage._get_conn()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT MAX(timestamp) 
+                FROM trades 
+                WHERE timestamp > ?
+            """, (lockdown_date,))
+            result = cursor.fetchone()
+            last_trade_time = result[0] if result and result[0] else None
+            conn.close()
+            
+            if last_trade_time:
+                # There were trades after lockdown - check if system rested since then
+                try:
+                    last_trade = datetime.fromisoformat(last_trade_time)
+                    hours_since_trade = (datetime.now() - last_trade).total_seconds() / 3600
+                    
+                    if hours_since_trade >= 24:
+                        return True, f"System rested {hours_since_trade:.1f}h without trading"
+                except (ValueError, TypeError):
+                    pass
+            else:
+                # No trades since lockdown - check time since lockdown
+                hours_since_lockdown = (datetime.now() - lockdown_time).total_seconds() / 3600
+                
+                if hours_since_lockdown >= 24:
+                    return True, f"System rested {hours_since_lockdown:.1f}h since lockdown"
+        
+        except Exception as e:
+            logger.error(f"Error checking trade history for lockdown reset: {e}")
+            # Don't reset on error - be conservative
+        
+        # Lockdown persists
+        hours_since_lockdown = (datetime.now() - lockdown_time).total_seconds() / 3600
+        return False, f"Lockdown active for {hours_since_lockdown:.1f}h - waiting for recovery or 24h rest"
             
     def _get_volatility_multiplier(self, regime: MarketRegime) -> float:
         """Determina un multiplicador de riesgo basado en el régimen."""

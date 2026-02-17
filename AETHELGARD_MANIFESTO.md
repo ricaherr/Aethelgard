@@ -1,3 +1,62 @@
+### 1.4 Critical Bug Fixes - Production Stability (Feb 2026)
+
+**Regla:** El sistema debe operar con datos precisos y sincronizados entre DB y MT5, con validaciones estrictas de señales y UI responsive.
+
+#### 1. Adaptive Lockdown Management
+- **Problema**: Lockdown se reseteaba diariamente a medianoche sin considerar condiciones de mercado
+- **Solución**: Implementado reset adaptativo basado en:
+  - Balance recovery: +2% desde `lockdown_balance`
+  - System rest: 24h sin trading
+- **Método**: `RiskManager._should_reset_lockdown()` verifica ambas condiciones
+- **Persistencia**: `lockdown_balance` y `lockdown_date` (ISO timestamp) guardados en `system_state`
+
+#### 2. Real-Time Signal Status Update
+- **Problema**: Señales ejecutadas permanecían en feed UI tras ejecución manual
+- **Solución Backend**: `server.py` actualiza signal status a `EXECUTED` con timestamp
+- **Solución Frontend**: 
+  - `SignalFeed.tsx` expone `fetchSignals` vía `window.__signalFeedRefresh`
+  - `AnalysisPage.tsx` llama refresh tras ejecución exitosa
+- **Resultado**: UI refleja cambios instantáneamente
+
+#### 3. Elephant Candle Validation (Oliver Velez Strategy)
+- **Problema**: Señales generadas sin vela elefante (body_atr_ratio: 0.13 < 0.3 requerido)
+- **Causa Raíz**: `_calculate_opportunity_score()` asignaba 40 puntos sin validar `is_elephant_body`
+- **Solución**: Gate de validación estricta antes de scoring:
+  ```python
+  if not v_candle:
+      logger.info(f"Setup REJECTED: No elephant candle")
+      return None
+  ```
+- **Impacto**: Elimina falsos positivos, respeta estrategia Oliver Velez original
+
+#### 4. Multi-Timeframe Position Tracking
+- **Problema**: Sistema bloqueaba trades alegando "3/3 positions" cuando MT5 mostraba 0 posiciones
+- **Causa Raíz**: `MultiTimeframeLimiter._get_open_positions_by_symbol()` contaba TODAS las señales `status='EXECUTED'` en DB, incluyendo posiciones cerradas hace días
+- **Solución**: Verificación contra MT5 real:
+  ```python
+  def _get_open_positions_by_symbol(self, symbol: str):
+      mt5 = MT5Connector()
+      mt5_positions = mt5.get_open_positions()
+      return [p for p in mt5_positions if p['symbol'] == symbol]
+  ```
+- **Fallback**: Si MT5 no disponible, usa DB con WARNING
+- **Resultado**: Count preciso, no bloqueos falsos
+
+#### 5. Auto-Trading Toggle API Response
+- **Problema**: Toggle UI no cambiaba estado (mostraba disabled cuando DB tenía enabled=1)
+- **Causa Raíz**: Backend retornaba `{auto_trading_enabled: 1}` pero frontend esperaba `{preferences: {auto_trading_enabled: 1}}`
+- **Solución**: Wrapper en response:
+  ```python
+  return {"preferences": prefs}
+  ```
+- **Resultado**: UI/DB sincronizados correctamente
+
+**Filosofía de Fixes:**
+- Todos los fixes priorizan **sincronización DB ↔ MT5** como fuente de verdad
+- Validaciones estrictas en estrategias (no scoring sin requisitos cumplidos)
+- UI responsive con refresh mechanisms explícitos
+- Adaptive logic sobre calendar-based logic (lockdown)
+
 ### 1.3 Validación Multi-Timeframe Estricta (Feb 2026)
 
 **Regla:** La validación de pendiente (slope) y separación ATR-adaptativa debe cumplirse en los 3 timeframes (M1, M5, M15) para aprobar una señal Trifecta.

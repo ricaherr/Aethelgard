@@ -733,7 +733,8 @@ def create_app() -> FastAPI:
             if not prefs:
                 prefs = storage.get_default_profile('active_trader')
                 prefs['user_id'] = user_id
-            return prefs
+            # Wrap in preferences object for frontend compatibility
+            return {"preferences": prefs}
         except Exception as e:
             logger.error(f"Error getting user preferences: {e}")
             raise HTTPException(status_code=500, detail=str(e))
@@ -791,9 +792,14 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=500, detail=str(e))
     
     @app.post("/api/auto-trading/toggle")
-    async def toggle_auto_trading(user_id: str = 'default', enabled: bool = False) -> Dict[str, Any]:
+    async def toggle_auto_trading(request: Request) -> Dict[str, Any]:
         """Activa o desactiva el auto-trading"""
         try:
+            # Parse JSON body
+            body = await request.json()
+            user_id = body.get('user_id', 'default')
+            enabled = body.get('enabled', False)
+            
             success = storage.update_user_preferences(user_id, {'auto_trading_enabled': enabled})
             if success:
                 status = "enabled" if enabled else "disabled"
@@ -901,8 +907,131 @@ def create_app() -> FastAPI:
             }
             
         except Exception as e:
-            logger.error(f"Error getting signals: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.post("/api/signals/execute")
+    async def execute_signal_manual(data: dict) -> Dict[str, Any]:
+        """
+        Manually execute a signal by ID (triggered from UI Execute button).
+        
+        NOTE: Manual execution BYPASSES auto_trading_enabled setting.
+        This is intentional - manual execution should always work regardless of auto-trading state.
+        
+        Body: {
+            "signal_id": "uuid-string"
+        }
+        """
+        try:
+            signal_id = data.get("signal_id")
+            if not signal_id:
+                raise HTTPException(status_code=400, detail="signal_id is required")
+            
+            logger.info(f"Manual execution requested for signal: {signal_id}")
+            
+            # Get signal from database
+            signal_data = storage.get_signal_by_id(signal_id)
+            if not signal_data:
+                raise HTTPException(status_code=404, detail=f"Signal {signal_id} not found")
+            
+            # Check if already executed
+            if signal_data.get('status', '').upper() == 'EXECUTED':
+                return {
+                    "success": False,
+                    "message": "Signal already executed",
+                    "signal_id": signal_id
+                }
+            
+            # Reconstruct Signal object from database data
+            from models.signal import Signal, SignalType, ConnectorType
+            
+            # Parse metadata
+            metadata = signal_data.get('metadata', {})
+            if isinstance(metadata, str):
+                import json
+                metadata = json.loads(metadata)
+            
+            # Create Signal object
+            signal = Signal(
+                symbol=signal_data['symbol'],
+                signal_type=SignalType(signal_data['signal_type']),
+                price=signal_data.get('price', 0.0),
+                confidence=signal_data.get('confidence', signal_data.get('score', 0.75)),
+                timeframe=signal_data.get('timeframe', 'M15'),
+                connector_type=ConnectorType(signal_data.get('connector_type', 'METATRADER5')),
+                metadata=metadata
+            )
+            
+            # Add signal_id to metadata for tracking
+            signal.metadata['signal_id'] = signal_id
+            
+            # Create executor instance (with lazy-loaded MT5 connector)
+            from core_brain.executor import OrderExecutor
+            from core_brain.risk_manager import RiskManager
+            
+            # Get MT5 connector
+            mt5_connector = _get_mt5_connector()
+            if not mt5_connector:
+                return {
+                    "success": False,
+                    "message": "MT5 connector not available. Check connection.",
+                    "signal_id": signal_id
+                }
+            
+            # Create risk manager and executor
+            # Get account balance for risk manager
+            account_balance = _get_account_balance()
+            risk_manager = RiskManager(storage=storage, initial_capital=account_balance)
+            executor = OrderExecutor(
+                risk_manager=risk_manager,
+                storage=storage,
+                connectors={ConnectorType.METATRADER5: mt5_connector}
+            )
+            
+            # Execute signal
+            logger.info(f"Attempting to execute signal {signal_id}: {signal.symbol} {signal.signal_type.value}")
+            logger.info(f"Signal details - Price: {signal.price}, Confidence: {signal.confidence}, TF: {signal.timeframe}")
+            
+            # Reset rejection reason before execution
+            executor.last_rejection_reason = None
+            success = await executor.execute_signal(signal)
+            
+            logger.info(f"Execution result for {signal_id}: {'SUCCESS' if success else 'FAILED'}")
+            
+            if success:
+                # Update signal status to EXECUTED
+                storage.update_signal_status(signal_id, 'EXECUTED', {
+                    'executed_at': datetime.now().isoformat(),
+                    'execution_method': 'manual'
+                })
+                
+                await broadcast_thought(
+                    f"Signal {signal_id} executed manually: {signal.symbol} {signal.signal_type.value}",
+                    module="EXECUTOR"
+                )
+                return {
+                    "success": True,
+                    "message": f"✅ Trade executed: {signal.symbol} {signal.signal_type.value}",
+                    "signal_id": signal_id
+                }
+            else:
+                # Get specific rejection reason from executor
+                rejection_reason = executor.last_rejection_reason or "Unknown reason (check logs)"
+                logger.warning(f"Signal execution failed for {signal_id}. Reason: {rejection_reason}")
+                return {
+                    "success": False,
+                    "message": f"❌ {rejection_reason}",
+                    "signal_id": signal_id
+                }
+                
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error executing signal manually: {e}", exc_info=True)
+            return {
+                "success": False,
+                "message": f"❌ Error: {str(e)}",
+                "signal_id": signal_id if 'signal_id' in locals() else None
+            }
     
     @app.get("/api/signals/debug")
     async def debug_signals(limit: int = 10, minutes: int = 100000) -> Dict[str, Any]:

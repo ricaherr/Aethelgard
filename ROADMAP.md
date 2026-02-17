@@ -1,3 +1,69 @@
+## 🎯 MILESTONE: Critical Bug Fixes - RiskManager, Signals & Position Tracking (2026-02-16)
+**Estado: ✅ COMPLETADO**
+**Criterio: Fix 5 critical bugs affecting lockdown logic, signal validation, position tracking, and UI synchronization**
+
+### Bugs Fixed
+
+#### 1. ✅ Adaptive Lockdown Management (`risk_manager.py`)
+**Problem**: Lockdown reset daily at midnight regardless of market conditions
+**Solution**: Implemented adaptive lockdown based on:
+- Balance recovery (+2% from lockdown level)
+- System rest (24h without trading)
+**Impact**: Lockdown now resets intelligently, not arbitrarily
+
+#### 2. ✅ Real-Time Signal Status Update (`server.py`, `SignalFeed.tsx`, `AnalysisPage.tsx`)
+**Problem**: Executed signals remained in feed after manual execution
+**Solution**: 
+- Backend updates signal status to `EXECUTED`
+- Frontend triggers immediate refresh via `__signalFeedRefresh()` callback
+**Impact**: UI now reflects signal execution instantly
+
+#### 3. ✅ Elephant Candle Validation (`oliver_velez.py`)
+**Problem**: USDCHF signal generated without elephant candle (body_atr_ratio: 0.13 < 0.3 required)
+**Root Cause**: `_calculate_opportunity_score()` always assigned 40 points without validating `is_elephant_body`
+**Solution**: Added strict validation gate before scoring
+**Impact**: Eliminates false positive signals
+
+#### 4. ✅ Multi-Timeframe Position Tracking (`multi_timeframe_limiter.py`)
+**Problem**: System blocked USDJPY claiming "3/3 positions" when MT5 showed 0 open positions
+**Root Cause**: Counted all `status='EXECUTED'` signals from DB, including positions closed days ago
+**Solution**: Verify against actual MT5 positions via `MT5Connector.get_open_positions()`
+**Impact**: Accurate position count, no false blocking
+
+#### 5. ✅ Auto-Trading Toggle (`server.py`)
+**Problem**: Toggle didn't change state (UI showed disabled when DB had enabled=1)
+**Root Cause**: Backend returned `{auto_trading_enabled: 1}` but frontend expected `{preferences: {auto_trading_enabled: 1}}`
+**Solution**: Wrapped response in `preferences` object
+**Impact**: Toggle now works correctly
+
+### Files Modified
+- `core_brain/risk_manager.py` - Adaptive lockdown logic
+- `core_brain/server.py` - Signal status update + auto-trading fix + preferences wrapper
+- `core_brain/strategies/oliver_velez.py` - Elephant candle validation
+- `core_brain/multi_timeframe_limiter.py` - MT5 position sync
+- `ui/src/components/analysis/SignalFeed.tsx` - UI refresh mechanism
+- `ui/src/components/analysis/AnalysisPage.tsx` - Trigger refresh after execution
+
+### Validation Results
+```
+Architecture Audit................. [OK] PASSED
+QA Guard........................... [OK] PASSED
+Code Quality....................... [OK] PASSED
+UI Quality......................... [OK] PASSED
+Integration Tests.................. [OK] PASSED
+```
+
+### Impact Summary
+| Bug | Severity | Before | After |
+|-----|----------|--------|-------|
+| Lockdown Reset | High | Daily reset (arbitrary) | Adaptive (balance/rest) |
+| Signal UI | Medium | Stale data in feed | Real-time updates |
+| Elephant Candle | Critical | False positives | Strict validation |
+| Position Tracking | Critical | Counted closed positions | Verifies MT5 actual |
+| Auto-Trading Toggle | Medium | UI/DB mismatch | Synchronized |
+
+---
+
 ## 🎯 MILESTONE: Trifecta Analyzer - Validación Multi-Timeframe Estricta (2026-02-14)
 **Estado: ✅ COMPLETADO**
 **Criterio: Validar pendiente (slope) y separación ATR en los 3 timeframes (M1, M5, M15) y robustecer los tests para reflejar la lógica real del sistema.**

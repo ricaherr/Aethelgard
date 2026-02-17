@@ -25,18 +25,28 @@ interface SignalFeedProps {
     onExecuteSignal?: (signalId: string) => void;
     onViewChart?: (signal: any) => void;
     onViewTrace?: (signalId: string) => void;
+    onRefreshNeeded?: () => void;  // Callback to trigger refresh
 }
 
 export const SignalFeed: React.FC<SignalFeedProps> = ({
     filters,
     onExecuteSignal,
     onViewChart,
-    onViewTrace
+    onViewTrace,
+    onRefreshNeeded
 }) => {
     const [signals, setSignals] = useState<Signal[]>([]);
     const [loading, setLoading] = useState(true);
     const [autoRefresh, setAutoRefresh] = useState(true);
     const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
+
+    // Expose fetchSignals to parent via callback
+    useEffect(() => {
+        if (onRefreshNeeded) {
+            // Store fetchSignals reference for parent to call
+            (window as any).__signalFeedRefresh = fetchSignals;
+        }
+    }, [onRefreshNeeded]);
 
     useEffect(() => {
         fetchSignals();

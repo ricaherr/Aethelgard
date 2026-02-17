@@ -121,6 +121,9 @@ class OrderExecutor:
         except Exception as e:
             logger.error(f"Error loading MT5Connector: {e}", exc_info=True)
     
+        # Track last rejection reason for better error reporting
+        self.last_rejection_reason = None
+    
     async def execute_signal(self, signal: Signal) -> bool:
         """
         Execute a trading signal with full validation and resilience.
@@ -145,6 +148,7 @@ class OrderExecutor:
         
         # Step 1: Validate signal data
         if not self._validate_signal(signal):
+            self.last_rejection_reason = "Invalid signal data (missing required fields)"
             logger.warning(f"Invalid signal rejected: {signal.symbol}")
             self._register_failed_signal(signal, "INVALID_DATA")
             # PIPELINE TRACKING: Log rejection
@@ -171,6 +175,7 @@ class OrderExecutor:
             if self._reconcile_positions(signal.symbol):
                 logger.info(f"[OK] Reconciliation cleared ghost position for {signal.symbol}, proceeding with signal")
             else:
+                self.last_rejection_reason = f"Duplicate position: Already have open position for {signal.symbol} [{signal.timeframe}]"
                 logger.warning(
                     f"[ERROR] Signal rejected: Real open position confirmed for {signal.symbol} [{signal.timeframe}]. "
                     f"Preventing duplicate operation."
@@ -184,6 +189,7 @@ class OrderExecutor:
         
         # Step 3: Check RiskManager lockdown
         if self.risk_manager.is_locked():
+            self.last_rejection_reason = "Risk Manager is in LOCKDOWN mode (too many consecutive losses)"
             logger.warning(
                 f"Signal rejected: RiskManager in LOCKDOWN mode. "
                 f"Symbol={signal.symbol}, Type={signal.signal_type}"
@@ -194,6 +200,7 @@ class OrderExecutor:
         # Step 3.25: EDGE - Check multi-timeframe limits
         is_valid, reason = self.multi_tf_limiter.validate_new_signal(signal)
         if not is_valid:
+            self.last_rejection_reason = f"Multi-timeframe limit: {reason}"
             logger.warning(
                 f"Signal rejected: {reason}. "
                 f"Symbol={signal.symbol}, Type={signal.signal_type}, TF={signal.timeframe}"
@@ -205,6 +212,7 @@ class OrderExecutor:
         try:
             connector = self._get_connector(signal.connector_type)
         except Exception as e:
+            self.last_rejection_reason = f"Connector unavailable: {signal.connector_type.value} not connected"
             logger.error(f"Failed to get connector for {signal.connector_type}: {e}")
             self._register_failed_signal(signal, "CONNECTOR_UNAVAILABLE")
             return False
@@ -212,6 +220,7 @@ class OrderExecutor:
         # Step 3.75: Check total account risk
         can_trade, risk_reason = self.risk_manager.can_take_new_trade(signal, connector)
         if not can_trade:
+            self.last_rejection_reason = f"Risk limit exceeded: {risk_reason}"
             logger.warning(
                 f"Signal rejected: {risk_reason}. "
                 f"Symbol={signal.symbol}, Type={signal.signal_type}"
@@ -222,6 +231,7 @@ class OrderExecutor:
         # Step 4: Calculate position size
         position_size = self._calculate_position_size(signal)
         if position_size <= 0:
+            self.last_rejection_reason = f"Position size calculation failed (result: {position_size})"
             logger.warning(f"Position size calculation failed or too small: {position_size}")
             self._register_failed_signal(signal, "INVALID_POSITION_SIZE")
             return False

@@ -17,6 +17,7 @@ from typing import Dict, Tuple, List, Any
 import logging
 
 from models.signal import Signal
+from connectors.mt5_connector import MT5Connector
 
 logger = logging.getLogger(__name__)
 
@@ -94,13 +95,57 @@ class MultiTimeframeLimiter:
         
         return True, "OK"
     
+    
     def _get_open_positions_by_symbol(self, symbol: str) -> list:
         """
-        Get all EXECUTED signals for symbol (open positions).
+        Get all ACTUALLY OPEN positions for symbol from MT5.
         
-        Returns signals with status='EXECUTED' that have order_id (confirmed by broker).
+        CRITICAL FIX: Don't rely on DB status='EXECUTED' alone.
+        Positions may be closed in MT5 but still marked EXECUTED in DB.
+        
+        Returns only positions that are confirmed open in MT5.
         """
-        # Get all EXECUTED signals
+        try:
+            # Import connector to check actual MT5 positions
+            
+            mt5 = MT5Connector()
+            if not mt5.connect():
+                logger.warning(
+                    f"Could not connect to MT5 to verify positions for {symbol}. "
+                    "Falling back to DB-only check (may be inaccurate)."
+                )
+                return self._get_open_positions_from_db_only(symbol)
+            
+            # Get actual open positions from MT5
+            mt5_positions = mt5.get_open_positions()
+            
+            # Filter by symbol
+            open_for_symbol = [
+                pos for pos in mt5_positions 
+                if pos.get('symbol') == symbol
+            ]
+            
+            logger.info(
+                f"[MultiTimeframeLimiter] {symbol}: {len(open_for_symbol)} positions "
+                f"actually open in MT5"
+            )
+            
+            return open_for_symbol
+            
+        except Exception as e:
+            logger.error(
+                f"Error checking MT5 positions for {symbol}: {e}. "
+                "Falling back to DB-only check."
+            )
+            return self._get_open_positions_from_db_only(symbol)
+    
+    def _get_open_positions_from_db_only(self, symbol: str) -> list:
+        """
+        Fallback: Get EXECUTED signals from DB (may include closed positions).
+        
+        WARNING: This method is INACCURATE if positions were closed in MT5
+        but not updated in DB. Use only as fallback.
+        """
         all_executed = self.storage.get_signals(status='EXECUTED', limit=1000)
         
         # Filter by symbol and confirmed orders (have order_id/ticket)
@@ -108,6 +153,11 @@ class MultiTimeframeLimiter:
             sig for sig in all_executed
             if sig.get('symbol') == symbol and sig.get('order_id')
         ]
+        
+        logger.warning(
+            f"[MultiTimeframeLimiter] Using DB-only check for {symbol}: "
+            f"{len(open_positions)} EXECUTED signals found (may include closed positions)"
+        )
         
         return open_positions
     

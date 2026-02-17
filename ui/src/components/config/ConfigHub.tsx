@@ -4,6 +4,7 @@ import { Save, RefreshCw, AlertTriangle, Shield, Sliders, Settings, Bell, Power 
 import { GlassPanel } from '../common/GlassPanel';
 import { TelegramSetup } from './TelegramSetup';
 import { ModulesControl } from './ModulesControl';
+import { AutoTradingControl } from './AutoTradingControl';
 
 type ConfigCategory = 'trading' | 'risk' | 'system' | 'notifications' | 'modules';
 
@@ -194,37 +195,46 @@ export function ConfigHub() {
                                 )}
 
                                 {!loading && config && activeCategory !== 'notifications' && activeCategory !== 'modules' && (
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
-                                        {Object.entries(config).map(([key, value]) => {
-                                            if (key.startsWith('_')) return null; // Skip comments
-                                            if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-                                                // Handle one level of nesting (e.g. confluence.weights)
-                                                return (
-                                                    <div key={key} className="col-span-full border-t border-white/5 pt-6 mt-4">
-                                                        <h4 className="text-aethelgard-blue text-[10px] font-bold uppercase tracking-[0.3em] mb-4">{key} Cluster</h4>
-                                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                                            {Object.entries(value).map(([subKey, subValue]) => (
-                                                                <ConfigInput
-                                                                    key={`${key}.${subKey}`}
-                                                                    label={subKey}
-                                                                    value={subValue}
-                                                                    onChange={(v) => handleInputChange(`${key}.${subKey}`, v)}
-                                                                />
-                                                            ))}
+                                    <>
+                                        {/* Auto-Trading Control (only in trading category) */}
+                                        {activeCategory === 'trading' && (
+                                            <div className="mb-8">
+                                                <AutoTradingControl />
+                                            </div>
+                                        )}
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
+                                            {Object.entries(config).map(([key, value]) => {
+                                                if (key.startsWith('_')) return null; // Skip comments
+                                                if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+                                                    // Handle one level of nesting (e.g. confluence.weights)
+                                                    return (
+                                                        <div key={key} className="col-span-full border-t border-white/5 pt-6 mt-4">
+                                                            <h4 className="text-aethelgard-blue text-[10px] font-bold uppercase tracking-[0.3em] mb-4">{key} Cluster</h4>
+                                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                                                {Object.entries(value).map(([subKey, subValue]) => (
+                                                                    <ConfigInput
+                                                                        key={`${key}.${subKey}`}
+                                                                        label={subKey}
+                                                                        value={subValue}
+                                                                        onChange={(v) => handleInputChange(`${key}.${subKey}`, v)}
+                                                                    />
+                                                                ))}
+                                                            </div>
                                                         </div>
-                                                    </div>
+                                                    );
+                                                }
+                                                return (
+                                                    <ConfigInput
+                                                        key={key}
+                                                        label={key}
+                                                        value={value}
+                                                        onChange={(v) => handleInputChange(key, v)}
+                                                    />
                                                 );
-                                            }
-                                            return (
-                                                <ConfigInput
-                                                    key={key}
-                                                    label={key}
-                                                    value={value}
-                                                    onChange={(v) => handleInputChange(key, v)}
-                                                />
-                                            );
-                                        })}
-                                    </div>
+                                            })}
+                                        </div>
+                                    </>
                                 )}
                             </motion.div>
                         </AnimatePresence>
@@ -240,8 +250,8 @@ function TabButton({ active, onClick, icon, title, description }: any) {
         <button
             onClick={onClick}
             className={`w-full p-4 rounded-xl border flex items-center gap-4 text-left transition-all ${active
-                    ? 'bg-aethelgard-blue/10 border-aethelgard-blue/30 text-white shadow-lg shadow-aethelgard-blue/10'
-                    : 'bg-white/2 label-transparent border-white/5 text-white/40 hover:bg-white/5'
+                ? 'bg-aethelgard-blue/10 border-aethelgard-blue/30 text-white shadow-lg shadow-aethelgard-blue/10'
+                : 'bg-white/2 label-transparent border-white/5 text-white/40 hover:bg-white/5'
                 }`}
         >
             <div className={`p-2 rounded-lg ${active ? 'bg-aethelgard-blue/20 text-aethelgard-blue' : 'bg-white/5'}`}>
