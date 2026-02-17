@@ -1,60 +1,28 @@
 # Aethelgard: Framework de Inteligencia Financiera Agnóstico
 
 ## Identidad del Proyecto
-- Nombre: Aethelgard
-- Misión: Cerebro centralizado para trading algorítmico multi-plataforma.
-- Arquitectura: Hub-and-Spoke (Python Core <-> Conectores Externos).
+- **Nombre**: Aethelgard
+- **Misión**: Cerebro centralizado para trading algorítmico multi-plataforma.
+- **Arquitectura**: Hub-and-Spoke (Python Core <-> Conectores Externos).
 
-## Reglas de Desarrollo
-1. **Agnosticismo de Plataforma**: El código en `core_brain` nunca debe depender de librerías específicas de NinjaTrader o MetaTrader. Todo debe comunicarse vía JSON por WebSockets.
-2. **Modularidad de Estrategias**: Las estrategias no se programan en el servidor principal, sino en archivos independientes que el `MarketRegime` consulta.
-3. **Manejo de Errores**: Todo proceso de red (WebSockets/API) debe incluir bloques try-except y reconexión automática.
-4. **Tipado**: Usar Type Hints de Python y modelos Pydantic (ya definidos en `models/signal.py`) para asegurar la integridad de los datos.
-5. **Base de Datos**: Cada operación debe registrarse en `data_vault` para permitir el aprendizaje continuo (Feedback Loop).
+## Reglas de Desarrollo Críticas
+1. **Agnosticismo de Plataforma**: El código en `core_brain` nunca debe depender de librerías específicas de brokers. Comunicación vía JSON por WebSockets.
+2. **Inyección de Dependencias**: Obligatoria para todas las clases de lógica. Inyectar desde `MainOrchestrator` o tests.
+3. **Single Source of Truth (SSOT)**: Configuración y credenciales en la BASE DE DATOS.
+4. **TDD & Validación**: Test primero. Ejecutar `scripts/validate_all.py` antes de completar cualquier tarea.
+5. **Documentación**: Centralizada en `AETHELGARD_MANIFESTO.md`.
+
+## Regla de Autonomía y Evolución (Core Rule)
+1. **Feedback Loop**: Contrastar cada decisión con el resultado a 5, 10 y 20 velas.
+2. **Auto-Tune**: Re-ejecutar tests de sensibilidad sobre `data_vault` de forma autónoma.
+3. **Detección de Drift**: Entrar en modo 'Seguridad' si las predicciones fallan sistemáticamente.
 
 ## Preferencias de Código
-- Python: Estilo PEP 8, asíncrono (asyncio/fastapi).
-- C#: Estilo NinjaScript profesional, uso eficiente de recursos.
-- Documentación: Comentarios claros en funciones críticas explicando la lógica matemática de los indicadores.
+- **Python**: Estilo PEP 8, asíncrono (asyncio/fastapi), Type Hints y Pydantic.
+- **UI**: React + TypeScript + Vite.
+- **Idioma**: Chat en Español, Código/Comentarios en Inglés.
 
 ## Contexto del Mercado
 - Priorizar la detección de "Régimen de Mercado" antes de validar señales técnicas.
-- No sesgarse por una sola estrategia (ej. Oliver Vélez); evaluar la probabilidad estadística del contexto.
-
-## Regla de Autonomía y Evolución (Core Rule)
-1. **Auto-Calibración**: Ningún parámetro numérico (umbrales de ADX, multiplicadores de volatilidad, periodos de SMA) debe considerarse estático. 
-2. **Feedback Loop Obligatorio**: Cada decisión tomada por el sistema debe ser contrastada con el resultado del mercado 5, 10 y 20 velas después.
-3. **Aprendizaje Continuo**: El sistema debe incluir un proceso de 'Auto-Tune' que re-ejecute tests de sensibilidad sobre los datos históricos guardados en `data_vault` para proponer mejores parámetros de forma autónoma.
-4. **Independencia**: El sistema debe ser capaz de detectar si sus predicciones están fallando (drift) y entrar en modo 'Seguridad' sin intervención humana.
-
-## [REGLAS DE ORE DE DESARROLLO - PROYECTO AETHELGARD]
-
-1. Inyección de Dependencias Obligatoria:
-
-Ninguna clase de lógica (RiskManager, Tuner, Executor, Monitor) puede instanciar el StorageManager o configuraciones dentro de su __init__.
-
-Todas las dependencias deben ser pasadas (inyectadas) desde el MainOrchestrator o los tests.
-
-Prohibido: self.storage = StorageManager().
-
-Obligatorio: def __init__(self, storage, config): self.storage = storage.
-
-2. Inmutabilidad de los Tests:
-
-Si un test de lógica de negocio falla, está prohibido modificar el archivo del test para "hacerlo pasar".
-
-El fallo se corrige en el código de producción. Si crees que el test tiene un bug, debes pedir permiso explícito explicando la falla lógica.
-
-3. Single Source of Truth (SSOT):
-
-Los valores críticos (como max_consecutive_losses) no pueden estar hardcodeados. Deben leerse de un archivo de configuración único o de la base de datos que compartan todos los componentes.
-
-4. Limpieza de Deuda Técnica (DRY):
-
-Antes de crear una función, busca si ya existe una similar. Si existe, refactoriza la original para que sea reutilizable.
-
-Queda prohibido crear métodos "gemelos" (ej. _load_frrom_db vs _load_from_db).
-
-5. Aislamiento de Tests:
-
-Los tests deben usar bases de datos en memoria (:memory:) o temporales. No se permite que un test dependa del estado dejado por un test anterior.
+- Validar jerarquía de SMA (Precio > SMA20 > SMA200 para BUY).
+- 3 pérdidas consecutivas activan el modo **Lockdown**.
