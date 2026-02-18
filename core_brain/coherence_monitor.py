@@ -37,11 +37,11 @@ class CoherenceMonitor:
 
     def __init__(
         self,
-        storage: Optional[StorageManager] = None,
+        storage: StorageManager,
         pending_timeout_minutes: int = 15,
         lookback_minutes: int = 120
     ):
-        self.storage = storage or StorageManager()
+        self.storage = storage
         self.pending_timeout_minutes = pending_timeout_minutes
         self.lookback_minutes = lookback_minutes
 

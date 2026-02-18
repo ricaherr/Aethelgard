@@ -36,11 +36,19 @@ from core_brain.tuner import EdgeTuner
 from core_brain.edge_monitor import EdgeMonitor
 from data_vault.storage import StorageManager
 from connectors.paper_connector import PaperConnector
+from connectors.mt5_connector import MT5Connector
 from models.signal import ConnectorType
 
 # Core Brain Imports
 from core_brain.data_provider_manager import DataProviderManager
 from connectors.generic_data_provider import GenericDataProvider
+from core_brain.notificator import get_notifier
+from core_brain.multi_timeframe_limiter import MultiTimeframeLimiter
+from core_brain.coherence_monitor import CoherenceMonitor
+from core_brain.signal_expiration_manager import SignalExpirationManager
+from core_brain.regime import RegimeClassifier
+from core_brain.trade_closure_listener import TradeClosureListener
+from core_brain.position_manager import PositionManager
 
 # Configurar logging
 logging.basicConfig(
@@ -105,23 +113,16 @@ async def main() -> None:
     Path("data_vault").mkdir(exist_ok=True)
     
     try:
-        # === SISTEMA CORE ===
+        # 1. Storage Manager (SSOT - Regla 14)
         logger.info("[INIT] Inicializando Storage Manager...")
         storage = StorageManager()
         
-        logger.info("[INIT]  Inicializando Risk Manager...")
-        risk_manager = RiskManager(
-            storage=storage,
-            initial_capital=10000.0,
-            config_path='config/dynamic_params.json'
-        )
-        logger.info(f"   Capital: ${risk_manager.capital:,.2f}")
-        logger.info(f"   Riesgo por trade: {risk_manager.risk_per_trade:.1%}")
-        
-        logger.info("[INIT] Inicializando Data Provider Manager (DB backend)...")
-        provider_manager = DataProviderManager()
-        data_provider = provider_manager
-        
+        # 1.5. Configuración SSOT (Regla 14) 
+        # Cargar configuraciones (StorageManager ya manejó la migración inicial en su __init__)
+        system_state = storage.get_system_state()
+        global_config = system_state.get("global_config", {})
+        dynamic_params = storage.get_dynamic_params()
+
         # Símbolos a monitorear - FOREX MAJORS + MINORS + EXOTICS
         symbols = [
             # === MAJORS (6 pares - 85% del volumen forex) ===
@@ -162,7 +163,7 @@ async def main() -> None:
         logger.info(f"   - Majors: 6 | Minors: 6 | Commodities: 4 | Exotics: 6 | Scandinavian: 2")
         
         # === FUNCIONES AUXILIARES EDGE ===
-        async def run_edge_tuner_loop(edge_tuner: EdgeTuner) -> None:
+        async def run_edge_tuner_loop(edge_tuner: EdgeTuner, signal_factory: SignalFactory) -> None:
             """
             Tarea asíncrona que ejecuta el EDGE Tuner cada hora.
             Ajusta parámetros basándose en resultados de trades.
@@ -179,7 +180,9 @@ async def main() -> None:
                     
                     if adjustment and not adjustment.get("skipped_reason"):
                         tuner_logger.info(f"[OK] Ajuste EDGE completado: {adjustment.get('trigger')}")
-                        # Recargar parámetros en SignalFactory
+                        # En el nuevo SignalFactory (DI), los parámetros se cargan vía StorageManager
+                        # pero si la estrategia es inyectada, puede que necesitemos avisar.
+                        # El factory tiene su propio _load_parameters.
                         signal_factory._load_parameters()
                         tuner_logger.info("[INFO] Parámetros recargados en SignalFactory")
                     else:
@@ -190,79 +193,125 @@ async def main() -> None:
                     tuner_logger.error(f"[ERROR] Error en EDGE Tuner: {e}", exc_info=True)
                     # Continuar ejecutándose a pesar del error
                     await asyncio.sleep(60)  # Esperar 1 minuto antes de reintentar
+
+        # 2. Risk Manager (Regla 1 - DI)
+        logger.info("[INIT]  Inicializando Risk Manager...")
+        from core_brain.position_size_monitor import PositionSizeMonitor
+        risk_monitor = PositionSizeMonitor(
+            max_consecutive_failures=3,
+            circuit_breaker_timeout=300
+        )
         
-        # 4. Scanner Engine (con storage para hot-reload)
+        risk_manager = RiskManager(
+            storage=storage,
+            initial_capital=10000.0, # TODO: Leer de la DB o inyectar
+            monitor=risk_monitor
+        )
+        logger.info(f"   Capital: ${risk_manager.capital:,.2f}")
+        logger.info(f"   Riesgo por trade (SST): {risk_manager.risk_per_trade:.1%}")
+        
+        # 3. Data Provider & Scanner (Regla 2 - Agnóstico)
+        logger.info("[INIT] Inicializando Data Provider Manager (DI)...")
+        provider_manager = DataProviderManager(storage=storage)
+        
         logger.info("[INIT] Inicializando Scanner Engine...")
         scanner = ScannerEngine(
             assets=symbols,
-            data_provider=data_provider,
-            config_path='config/config.json',
+            data_provider=provider_manager,
+            config_data=global_config, # Inyectar desde DB (SSOT)
             scan_mode="STANDARD",
-            storage=storage  # Para verificar toggles en tiempo real
+            storage=storage
         )
         
-        # 5. Signal Factory
-        logger.info("[INIT] Inicializando Signal Factory...")
+        # 4. Connectors (Regla 3 - Agnóstico)
+        logger.info("[INIT] Inicializando MT5 Connector (DI)...")
+        mt5_connector = MT5Connector(storage=storage)
+        
+        # 5. Signal Factory - FASE DI (Regla 1)
+        logger.info("[INIT] Inicializando Signal Factory (DI)...")
+        from core_brain.strategies.oliver_velez import OliverVelezStrategy
+        from core_brain.confluence import MultiTimeframeConfluenceAnalyzer
+        from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
+        
+        ov_strategy = OliverVelezStrategy(dynamic_params)
+        
+        confluence_config = dynamic_params.get("confluence", {})
+        confluence_analyzer = MultiTimeframeConfluenceAnalyzer(
+            storage=storage,
+            enabled=confluence_config.get("enabled", True)
+        )
+        
+        trifecta_analyzer = TrifectaAnalyzer(
+            storage=storage,
+            config_data=global_config, # Inyectar desde DB (SSOT)
+            auto_enable_tfs=True
+        )
+        
         signal_factory = SignalFactory(
             storage_manager=storage,
-            strategy_id="oliver_velez_swing_v2"
+            strategies=[ov_strategy],
+            confluence_analyzer=confluence_analyzer,
+            trifecta_analyzer=trifecta_analyzer,
+            mt5_connector=mt5_connector
         )
         
-        # 6. Order Executor (carga cuentas habilitadas desde DB)
-        logger.info("[INIT] Inicializando Order Executor...")
+        # 6. Order Executor - FASE DI (Regla 1)
+        logger.info("[INIT] Inicializando Order Executor (DI)...")
         
-        # Inyectar PaperConnector
-        connectors = {ConnectorType.PAPER: PaperConnector()}
+        multi_tf_limiter = MultiTimeframeLimiter(
+            storage=storage,
+            config=dynamic_params,
+            mt5_connector=mt5_connector
+        )
         
-        executor = OrderExecutor(
+        order_executor = OrderExecutor(
             risk_manager=risk_manager,
             storage=storage,
-            connectors=connectors
+            multi_tf_limiter=multi_tf_limiter,
+            notificator=get_notifier(),
+            connectors={ConnectorType.METATRADER5: mt5_connector}
         )
         
-        # 7. Closing Monitor (Feedback Loop)
-        logger.info("[INIT] Inicializando Closing Monitor...")
-        monitor = ClosingMonitor(
-            storage=storage,
-            connectors=connectors,
-            interval_seconds=60
-        )
-        logger.info("   Intervalo: 60 segundos | Estado: Activo")
+        # 7. Orchestrator Components - FASE DI (Regla 1)
+        logger.info("[INIT] Inicializando Componentes del Orquestador...")
         
-        # 8. EDGE Tuner (Auto-calibración)
-        logger.info("[INIT] Inicializando EDGE Tuner...")
-        edge_tuner = EdgeTuner(
-            storage=storage,
-            config_path="config/dynamic_params.json"
-        )
+        coherence_monitor = CoherenceMonitor(storage=storage)
+        expiration_manager = SignalExpirationManager(storage=storage)
+        regime_classifier = RegimeClassifier()
         
-        # 8b. Trade Closure Listener (Event-driven feedback loop)
-        logger.info("[INIT] Inicializando Trade Closure Listener...")
-        from core_brain.trade_closure_listener import TradeClosureListener
-        trade_listener = TradeClosureListener(
+        edge_tuner = EdgeTuner(storage=storage) 
+        
+        trade_closure_listener = TradeClosureListener(
             storage=storage,
             risk_manager=risk_manager,
-            edge_tuner=edge_tuner,
-            max_retries=3,
-            retry_backoff=0.5
+            edge_tuner=edge_tuner
         )
-        logger.info("   [OK] Trade Closure Listener: Event-driven reconciliation activo")
         
-        # 9. Main Orchestrator
-        logger.info("[INIT] Inicializando Main Orchestrator...")
+        position_manager = PositionManager(
+            storage=storage,
+            connector=mt5_connector,
+            regime_classifier=regime_classifier,
+            config=dynamic_params.get("position_management", {})
+        )
+        
+        # 8. Main Orchestrator (Unified DI)
+        logger.info("[INIT] Inicializando Main Orchestrator (DI/SSOT)...")
         orchestrator = MainOrchestrator(
             scanner=scanner,
             signal_factory=signal_factory,
             risk_manager=risk_manager,
-            executor=executor,
-            storage=storage
+            executor=order_executor,
+            storage=storage,
+            position_manager=position_manager,
+            trade_closure_listener=trade_closure_listener,
+            coherence_monitor=coherence_monitor,
+            expiration_manager=expiration_manager,
+            regime_classifier=regime_classifier
         )
         
         # === INICIAR MT5 SINCRÓNICAMENTE (MT5 library doesn't share state across threads) ===
         logger.info("[CONNECT] Conectando a MT5 (sincrónico en thread principal)...")
-        mt5_connector = None
-        if hasattr(executor, 'connectors') and ConnectorType.METATRADER5 in executor.connectors:
-            mt5_connector = executor.connectors[ConnectorType.METATRADER5]
+        if mt5_connector:
             # Connect synchronously in main thread (MT5 library is thread-specific)
             # This ensures mt5.initialize() happens in the SAME thread that will call execute_signal()
             connected = mt5_connector.connect_blocking()
@@ -308,8 +357,13 @@ async def main() -> None:
             logger.warning("[WARNING]  Scanner en espera (deshabilitado - activar desde UI para iniciar)")
         
         # Iniciar Closing Monitor en tarea asíncrona
-        logger.info("[INFO] Iniciando Closing Monitor...")
-        monitor_task = asyncio.create_task(monitor.start())
+        logger.info("[INFO] Inicializando Closing Monitor...")
+        closing_monitor = ClosingMonitor(
+            storage=storage,
+            connectors={ConnectorType.METATRADER5: mt5_connector},
+            interval_seconds=60
+        )
+        monitor_task = asyncio.create_task(closing_monitor.start())
         logger.info("[OK] Closing Monitor activo (Feedback Loop)")
         
         # Iniciar EDGE Monitor (inject MT5 connector & trade listener for reconciliation)
@@ -317,7 +371,7 @@ async def main() -> None:
         edge_monitor = EdgeMonitor(
             storage=storage,
             mt5_connector=mt5_connector,
-            trade_listener=trade_listener
+            trade_listener=trade_closure_listener
         )
         edge_monitor.start()
         logger.info("[OK] EDGE Monitor activo (Observabilidad + Reconciliación Automática)")
@@ -328,7 +382,7 @@ async def main() -> None:
         logger.info("[STOP] Presiona Ctrl+C para detener todo el ecosistema")
         
         # Crear tarea asíncrona del EDGE Tuner
-        tuner_task = asyncio.create_task(run_edge_tuner_loop(edge_tuner))
+        tuner_task = asyncio.create_task(run_edge_tuner_loop(edge_tuner, signal_factory))
         logger.info("[AUTO] EDGE Tuner: ajustes automáticos cada 1 hora")
         
         # Ejecutar loop principal
@@ -337,8 +391,8 @@ async def main() -> None:
     except KeyboardInterrupt:
         logger.info("\n[STOP]  Deteniendo sistema...")
         scanner.stop()
-        if 'monitor' in locals():
-            await monitor.stop()
+        if 'closing_monitor' in locals():
+            await closing_monitor.stop()
         # Cleanup
     except Exception as e:
         logger.error(f"[FATAL] Error crítico: {e}", exc_info=True)

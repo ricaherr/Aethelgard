@@ -4,17 +4,18 @@ Expone funciones para obtener análisis de régimen, tendencia, trifecta y estra
 """
 from typing import Dict, Any
 from data_vault.market_db import MarketMixin
+from data_vault.storage import StorageManager
 from core_brain.regime import RegimeClassifier
 from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
 from pathlib import Path
 import json
 
 class InstrumentAnalysisService:
-    def __init__(self, db_path: str = "data_vault/aethelgard.db", config_path: str = "config/config.json"):
+    def __init__(self, storage: StorageManager, db_path: str = "data_vault/aethelgard.db"):
         self.market_db = MarketMixin(db_path)
-        self.regime_classifier = RegimeClassifier()
-        self.trifecta = TrifectaAnalyzer(config_path=config_path)
-        self.config_path = config_path
+        self.regime_classifier = RegimeClassifier(storage=storage)
+        self.trifecta = TrifectaAnalyzer(storage=storage)
+        self.storage = storage
 
     def get_analysis(self, symbol: str) -> Dict[str, Any]:
         # 1. Último estado de mercado

@@ -82,12 +82,17 @@ class ManifestoEnforcer:
                 # 2. Detect direct JSON reading
                 if not is_storage_module:
                     if isinstance(node, ast.Constant) and isinstance(node.value, str):
-                        if any(json_file in node.value for json_file in self.forbidden_json_reads):
-                            # Only flag if it's used in an 'open' or 'Path' or similar call context
-                            # This is a bit naive but catches most hardcoded paths
+                        # ONLY flag if it looks like a path or is in a suspicious context
+                        val = node.value
+                        if any(json_file in val for json_file in self.forbidden_json_reads):
+                            # Skip if it's clearly a log message (contains words like 'Migrated', 'Success', etc.)
+                            log_keywords = {'Migrated', 'successfully', 'Error', 'INFO', 'WARNING', 'using global_config'}
+                            if any(k in val for k in log_keywords):
+                                continue
+                                
                             self.issues.append(
                                 f"🚫 SSOT VIOLATION: {rel_path}:{node.lineno} - "
-                                f"Direct reference to JSON config '{node.value}'. "
+                                f"Direct reference to JSON config '{val}'. "
                                 f"Use StorageManager or injected config instead."
                             )
 

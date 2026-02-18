@@ -254,8 +254,9 @@ def create_app() -> FastAPI:
     )
 
     # Servicio de análisis profundo de instrumentos
+    # Servicio de análisis profundo de instrumentos
     from core_brain.analysis_service import InstrumentAnalysisService
-    instrument_analysis_service = InstrumentAnalysisService()
+    instrument_analysis_service = InstrumentAnalysisService(storage=storage)
 
     @app.get("/api/instrument/{symbol}/analysis")
     async def instrument_analysis(symbol: str) -> Dict[str, Any]:

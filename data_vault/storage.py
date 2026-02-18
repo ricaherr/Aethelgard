@@ -34,6 +34,9 @@ class StorageManager(
         
         # Initialize database tables
         self._initialize_db()
+        
+        # Bootstrapping (Migración desde JSON si es DB nueva) - REGLA 14 (SSOT)
+        self._bootstrap_from_json()
 
     def _initialize_db(self) -> None:
         """Initialize database tables if they don't exist"""
@@ -324,6 +327,48 @@ class StorageManager(
             conn.commit()
         finally:
             self._close_conn(conn)
+
+    def _bootstrap_from_json(self) -> None:
+        """
+        Migra configuraciones heredadas desde JSON a la base de datos (SSOT).
+        Este es el ÚNICO lugar centralizado donde se permite leer config/*.json.
+        """
+        from pathlib import Path
+        import json
+        
+        try:
+            # 1. Migrar dynamic_params.json
+            dynamic_params_file = Path("config/dynamic_params.json")
+            if dynamic_params_file.exists():
+                current_params = self.get_dynamic_params()
+                if not current_params:
+                    with open(dynamic_params_file, "r") as f:
+                        data = json.load(f)
+                        self.update_dynamic_params(data)
+                        logger.info("Bootstrap: dynamic_params.json migrated to DB")
+
+            # 2. Migrar config.json (global_config)
+            config_file = Path("config/config.json")
+            if config_file.exists():
+                state = self.get_system_state()
+                if "global_config" not in state:
+                    with open(config_file, "r") as f:
+                        data = json.load(f)
+                        self.update_system_state({"global_config": data})
+                        logger.info("Bootstrap: config.json migrated to DB as global_config")
+                        
+            # 3. Migrar risk_settings.json
+            risk_file = Path("config/risk_settings.json")
+            if risk_file.exists():
+                current_risk = self.get_risk_settings()
+                if not current_risk:
+                    with open(risk_file, "r") as f:
+                        data = json.load(f)
+                        self.update_risk_settings(data)
+                        logger.info("Bootstrap: risk_settings.json migrated to DB")
+                        
+        except Exception as e:
+            logger.error(f"Error during bootstrap from JSON: {e}")
 
     def check_integrity(self) -> bool:
         """

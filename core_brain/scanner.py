@@ -77,18 +77,33 @@ class ScannerEngine:
     def __init__(
         self,
         assets: List[str],
-        data_provider: DataProvider,
-        config_path: str = "config/config.json",
+        data_provider: Any,
+        config_path: Optional[str] = None,
+        config_data: Optional[Dict] = None,
         regime_config_path: Optional[str] = None,
-        scan_mode: str = "STANDARD",  # Nuevo parámetro para el modo de escaneo
-        storage: Optional[Any] = None,  # Para hot-reload de módulos
+        scan_mode: str = "STANDARD",
+        storage: Optional[Any] = None,
     ):
         self.assets = list(assets) if assets else []
         self.provider = data_provider
         self.config_path = config_path
-        self.storage = storage  # Referencia para verificar toggles
-        cfg = _load_config(config_path)
-        sc = cfg.get("scanner", {})
+        self.storage = storage
+        
+        # SSOT: Prefer injected config_data over config_path
+        if config_data:
+            cfg = config_data
+        elif config_path:
+            cfg = _load_config(config_path)
+        elif storage:
+            # Try to get from storage if neither provided
+            cfg = storage.get_system_state().get("scanner_config", {})
+            if not cfg and config_path is None:
+                # Fallback to default file if absolutely necessary but log it
+                cfg = _load_config("config/config.json")
+        else:
+            cfg = _load_config("config/config.json")
+            
+        sc = cfg.get("scanner", cfg) # Support both full config or just scanner segment
 
         self.scan_mode = scan_mode.upper()
         
@@ -142,7 +157,8 @@ class ScannerEngine:
         for s in self.assets:
             for tf in self.active_timeframes:
                 key = f"{s}|{tf}"
-                self.classifiers[key] = RegimeClassifier(config_path=rp)
+                # Update: RegimeClassifier uses StorageManager for config (SSOT), not config_path
+                self.classifiers[key] = RegimeClassifier(storage=self.storage)
                 self.last_regime[key] = MarketRegime.NORMAL
                 self.last_scan_time[key] = 0.0
 
@@ -350,7 +366,7 @@ class ScannerEngine:
                             key = f"{symbol}|{tf}"
                             if key not in self.classifiers:
                                 logger.info(f"[RELOAD] [SCANNER] Creating classifier for new timeframe: {key}")
-                                self.classifiers[key] = RegimeClassifier(config_path=self.regime_config_path)
+                                self.classifiers[key] = RegimeClassifier(storage=self.storage)
                                 self.last_regime[key] = MarketRegime.NORMAL
                                 self.last_scan_time[key] = 0.0
                 

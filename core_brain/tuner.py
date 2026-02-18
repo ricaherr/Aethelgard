@@ -22,21 +22,19 @@ class ParameterTuner:
     para encontrar los umbrales óptimos de ADX y Volatilidad
     """
     
-    def __init__(self, storage: StorageManager, config_path: str = "config/dynamic_params.json"):
+    def __init__(self, storage: StorageManager):
         """
         Args:
             storage: Instancia de StorageManager para acceder a datos históricos
-            config_path: Ruta al archivo de configuración dinámica
         """
         self.storage = storage
-        self.config_path = Path(config_path)
-        self.config_path.parent.mkdir(parents=True, exist_ok=True)
     
     def _load_config(self) -> Dict:
-        """Carga la configuración actual desde el archivo JSON"""
-        if not self.config_path.exists():
-            # Valores por defecto si no existe el archivo
-            default_config = {
+        """Carga la configuración actual desde Storage (SSOT)"""
+        params = self.storage.get_dynamic_params()
+        if not params:
+            # Fallback a defaults si no hay nada en DB todavía
+            return {
                 "adx_trend_threshold": 25.0,
                 "adx_range_threshold": 20.0,
                 "adx_range_exit_threshold": 18.0,
@@ -48,26 +46,13 @@ class ParameterTuner:
                 "persistence_candles": 2,
                 "last_updated": None
             }
-            self._save_config(default_config)
-            return default_config
-        
-        try:
-            with open(self.config_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except Exception as e:
-            logger.error(f"Error cargando configuración: {e}")
-            raise
+        return params
     
     def _save_config(self, config: Dict) -> None:
-        """Guarda la configuración en el archivo JSON"""
+        """Guarda la configuración en Storage (SSOT)"""
         config["last_updated"] = datetime.now().isoformat()
-        try:
-            with open(self.config_path, 'w', encoding='utf-8') as f:
-                json.dump(config, f, indent=2, ensure_ascii=False)
-            logger.info(f"Configuración guardada en {self.config_path}")
-        except Exception as e:
-            logger.error(f"Error guardando configuración: {e}")
-            raise
+        self.storage.update_dynamic_params(config)
+        logger.info("[OK] Configuración guardada en DB (dynamic_params)")
     
     def _calculate_false_positive_rate(self, 
                                       states: List[Dict],
@@ -294,30 +279,22 @@ class EdgeTuner:
     - Win rate cercano al target → Ajustes graduales (estabilidad)
     """
     
-    def __init__(self, storage: StorageManager, config_path: str = "config/dynamic_params.json"):
+    def __init__(self, storage: StorageManager):
         """
         Args:
             storage: StorageManager para acceder a resultados de trades
-            config_path: Ruta a dynamic_params.json
         """
         self.storage = storage
-        self.config_path = Path(config_path)
         self.logger = logging.getLogger(__name__)
     
     def _load_config(self) -> Dict:
-        """Carga configuración desde dynamic_params.json"""
-        try:
-            with open(self.config_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except FileNotFoundError:
-            self.logger.error(f"Config file not found: {self.config_path}")
-            raise
+        """Carga configuración desde Storage (SSOT)"""
+        return self.storage.get_dynamic_params()
     
     def _save_config(self, config: Dict) -> None:
-        """Guarda configuración actualizada"""
-        with open(self.config_path, 'w', encoding='utf-8') as f:
-            json.dump(config, f, indent=2, ensure_ascii=False)
-        self.logger.info(f"[OK] Configuración actualizada: {self.config_path}")
+        """Guarda configuración actualizada en Storage"""
+        self.storage.update_dynamic_params(config)
+        self.logger.info("[OK] Configuración dinámica actualizada en DB")
     
     def _calculate_stats(self, trades: List[Dict]) -> Dict:
         """

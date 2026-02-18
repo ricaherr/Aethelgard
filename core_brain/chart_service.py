@@ -6,8 +6,9 @@ import pandas as pd
 from typing import Dict, Any
 
 class ChartService:
-    def __init__(self):
-        self.provider_manager = DataProviderManager()
+    def __init__(self, storage=None):
+        # Allow optional storage injection, fallback to internal if None (for now) but recommend DI
+        self.provider_manager = DataProviderManager(storage=storage)
         self.data_provider = self.provider_manager.get_best_provider()
 
     def get_chart_data(self, symbol: str, timeframe: str = "M5", count: int = 500) -> Dict[str, Any]:

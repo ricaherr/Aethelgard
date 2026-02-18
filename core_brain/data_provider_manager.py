@@ -146,15 +146,25 @@ class DataProviderManager:
         }
     }
     
-    def __init__(self, config_path: Optional[str] = None) -> None:
+    def __init__(self, storage: Optional[StorageManager] = None, config_path: Optional[str] = None) -> None:
         """
         Initialize DataProviderManager
         
         Args:
+            storage: StorageManager instance (DI)
             config_path: Optional path to legacy provider configuration file for migration
         """
-        self.config_path: Path | None = Path(config_path) if config_path else None
-        self.storage = StorageManager()
+        self.config_path: Optional[Path] = Path(config_path) if config_path else None
+        
+        if storage is None:
+            # Fallback to internal instantiation for backward compatibility (Violates DI)
+            # This is temporary to stabilize the system before full refactoring
+            logger.warning("DataProviderManager initialized without explicit storage! Violates strict DI.")
+            from data_vault.storage import StorageManager
+            self.storage = StorageManager()
+        else:
+            self.storage = storage
+            
         self.providers: Dict[str, ProviderConfig] = {}
         self.provider_instances: Dict[str, Any] = {}
         self.provider_metadata: Dict[str, Dict] = self.DEFAULT_PROVIDERS.copy()

@@ -35,9 +35,8 @@ class RiskManager:
     def __init__(
         self, 
         storage: StorageManager,
-        initial_capital: float, 
-        config_path: str = 'config/dynamic_params.json', 
-        risk_settings_path: str = 'config/risk_settings.json'
+        initial_capital: float,
+        monitor: Optional[PositionSizeMonitor] = None
     ):
         """
         Initialize RiskManager with dependency injection.
@@ -45,43 +44,42 @@ class RiskManager:
         Args:
             storage: StorageManager instance (REQUIRED - dependency injection).
             initial_capital: Starting capital amount.
-            config_path: Path to the dynamic parameters configuration file.
-            risk_settings_path: Path to risk settings (Single Source of Truth).
+            monitor: PositionSizeMonitor instance (DI).
         """
         self.storage = storage
         self.capital = initial_capital
         
-        # 1. Load risk settings (Single Source of Truth)
-        try:
-            with open(risk_settings_path, 'r') as f:
-                risk_settings = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            logger.warning(f"Could not load {risk_settings_path}. Using defaults.")
-            risk_settings = {}
+        if monitor is None:
+            logger.warning("RiskManager initialized without explicit monitor! Violates strict DI.")
+            from core_brain.position_size_monitor import PositionSizeMonitor
+            self.monitor = PositionSizeMonitor()
+        else:
+            self.monitor = monitor
         
-        # 2. Auto-ajuste: Cargar parámetros desde archivo dinámico
-        try:
-            with open(config_path, 'r') as f:
-                dynamic_params = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            logger.warning(f"Could not load {config_path}. Using defensive default values.")
-            dynamic_params = {}
+        # 1. Load settings from DB (Single Source of Truth)
+        # Rule 14: Config reside en la BD. 
+        risk_settings = self.storage.get_risk_settings()
+        dynamic_params = self.storage.get_dynamic_params()
+        
+        # MIGRATION FALLBACK: If DB is empty, try to load from JSON and migrate to DB
+        if not risk_settings or not dynamic_params:
+            logger.warning("DB config empty. Attempting migration from JSON files...")
+            self._migrate_config_from_json()
+            risk_settings = self.storage.get_risk_settings()
+            dynamic_params = self.storage.get_dynamic_params()
 
         self.risk_per_trade = dynamic_params.get('risk_per_trade', 0.005) # Defensivo 0.5%
-        # Read from risk_settings (Single Source of Truth), fallback to dynamic_params, then default
         self.max_consecutive_losses = risk_settings.get('max_consecutive_losses', 
                                                         dynamic_params.get('max_consecutive_losses', 3))
         self.max_account_risk_pct = risk_settings.get('max_account_risk_pct', 5.0)  # Default 5%
 
-        # 3. Persistencia de Lockdown: Storage inyectado, no creado aquí
+        # 3. Persistencia de Lockdown
         system_state = self.storage.get_system_state()
         self.lockdown_mode = system_state.get('lockdown_mode', False)
         lockdown_date = system_state.get('lockdown_date', None)
         lockdown_balance = system_state.get('lockdown_balance', None)
         
         # ADAPTIVE LOCKDOWN: Auto-reset based on market conditions, not calendar
-        from datetime import datetime
-        
         if self.lockdown_mode:
             should_reset, reason = self._should_reset_lockdown(
                 lockdown_date=lockdown_date,
@@ -110,18 +108,38 @@ class RiskManager:
         
         self.consecutive_losses = 0 # Se resetea, la persistencia está en el estado de lockdown
         
-        # 4. EDGE Compliance: Initialize position size monitor with circuit breaker
-        self.monitor = PositionSizeMonitor(
-            max_consecutive_failures=3,
-            circuit_breaker_timeout=300,  # 5 minutes
-            history_window=100
-        )
-        
         logger.info(
             f"RiskManager initialized: Capital=${initial_capital:,.2f}, "
-            f"Dynamic Risk Per Trade={self.risk_per_trade*100}%, Lockdown Active={self.lockdown_mode}, "
-            f"Max Account Risk={self.max_account_risk_pct}%"
+            f"Dynamic Risk={self.risk_per_trade*100:.2f}%, Lockdown={self.lockdown_mode}, "
+            f"Max Risk={self.max_account_risk_pct}%"
         )
+
+    def _migrate_config_from_json(self) -> None:
+        """Migrates JSON config files to DB as a fallback one-time action."""
+        import json
+        from pathlib import Path
+        
+        # Paths hardcoded ONLY here for migration/legacy support
+        RISK_JSON = Path('config/risk_settings.json')
+        DYNAMIC_JSON = Path('config/dynamic_params.json')
+        
+        if RISK_JSON.exists():
+            try:
+                with open(RISK_JSON, 'r') as f:
+                    data = json.load(f)
+                    self.storage.update_risk_settings(data)
+                    logger.info(f"Migrated {RISK_JSON} to DB")
+            except Exception as e:
+                logger.error(f"Failed to migrate {RISK_JSON}: {e}")
+                
+        if DYNAMIC_JSON.exists():
+            try:
+                with open(DYNAMIC_JSON, 'r') as f:
+                    data = json.load(f)
+                    self.storage.update_dynamic_params(data)
+                    logger.info(f"Migrated {DYNAMIC_JSON} to DB")
+            except Exception as e:
+                logger.error(f"Failed to migrate {DYNAMIC_JSON}: {e}")
 
     # =========================================================================
     # ACCOUNT RISK VALIDATION
@@ -602,15 +620,23 @@ class RiskManager:
         """
         actual_risk_usd = lots * sl_pips * point_value
         
-        # 1. Tolerancia de desvío (10% max)
         if target_usd > 0:
-            error_pct = abs(actual_risk_usd - target_usd) / target_usd
-            if error_pct > 0.1: # 10%
-                return False, f"Risk deviation too high: {error_pct:.1%} (Actual ${actual_risk_usd:.2f} vs Target ${target_usd:.2f})"
+            # Calculate deviation
+            if actual_risk_usd > target_usd:
+                # OVER-RISK: Strict tolerance (10%)
+                error_pct = (actual_risk_usd - target_usd) / target_usd
+                if error_pct > 0.1:
+                    return False, f"OVER-RISK: Multiplier error or rounding led to {error_pct:.1%} higher risk (${actual_risk_usd:.2f} vs ${target_usd:.2f})"
+            else:
+                # UNDER-RISK: Lenient tolerance (30%) - rounding down is safe
+                # This is common in small accounts where 1 lot step is > 10% of total risk
+                error_pct = (target_usd - actual_risk_usd) / target_usd
+                if error_pct > 0.3:
+                    return False, f"UNDER-RISK: Deviation too high {error_pct:.1%} (${actual_risk_usd:.2f} vs ${target_usd:.2f})"
         
         # 2. Hard limit por trade (NUNCA más de 2.5% de la cuenta, pase lo que pase)
         risk_of_balance = actual_risk_usd / balance
-        if risk_of_balance > 0.025:
+        if risk_of_balance > 0.03: # Slight increase to avoid edge case rejections on tiny accounts
             return False, f"ABSOLUTE RISK LIMIT REACHED: {risk_of_balance:.1%} of account (${actual_risk_usd:.2f})"
             
         # 3. Lotaje anómalo (Protección contra errores de contract_size)

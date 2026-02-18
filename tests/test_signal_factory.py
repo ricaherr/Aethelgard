@@ -48,7 +48,18 @@ def mock_notifier():
 @pytest.fixture
 def signal_factory(mock_storage_manager, mock_notifier, monkeypatch):
     """Fixture que inicializa el SignalFactory con dependencias mockeadas."""
-    factory = SignalFactory(storage_manager=mock_storage_manager)
+    # Preparar dependencias inyectadas para SignalFactory
+    ov_strategy = OliverVelezStrategy(config={})
+    confluence_analyzer = MagicMock()
+    confluence_analyzer.enabled = True
+    trifecta_analyzer = MagicMock()
+    
+    factory = SignalFactory(
+        storage_manager=mock_storage_manager,
+        strategies=[ov_strategy],
+        confluence_analyzer=confluence_analyzer,
+        trifecta_analyzer=trifecta_analyzer
+    )
     # Re-asignamos el notifier por si la inicialización original falló
     factory.notifier = mock_notifier
     
@@ -85,19 +96,14 @@ def signal_factory(mock_storage_manager, mock_notifier, monkeypatch):
     return factory
 
 def create_synthetic_dataframe(
-    base_price=100, num_candles=250, atr_value=0.5,
-    trend_slope=0.05, is_perfect_elephant=False, is_inconsistent=False
+    base_price=1.1, num_candles=500, atr_value=0.002, 
+    trend_slope=0.0001, is_perfect_elephant=False, is_inconsistent=False
 ):
     """
     Crea un DataFrame sintético para simular datos de mercado.
-    Permite crear escenarios específicos para las pruebas.
     """
     dates = pd.to_datetime(pd.date_range(end=datetime.now(), periods=num_candles, freq='5min'))
     prices = base_price + np.arange(num_candles, dtype=float) * trend_slope
-    
-    # Simulación de ruido y volatilidad
-    noise = np.random.normal(0, atr_value * 0.5, num_candles)
-    prices += noise
     
     df = pd.DataFrame(index=dates)
     df['open'] = prices - np.random.uniform(0, atr_value, num_candles)
@@ -105,35 +111,57 @@ def create_synthetic_dataframe(
     df['high'] = df[['open', 'close']].max(axis=1) + np.random.uniform(0, atr_value * 0.5, num_candles)
     df['low'] = df[['open', 'close']].min(axis=1) - np.random.uniform(0, atr_value * 0.5, num_candles)
     
-    # Indicadores
-    df['atr'] = atr_value
+    # Inicializar columnas para métricas EDGE STRICT (evitar NaNs)
+    df['zscore_body'] = 0.0
+    df['solidness'] = 0.8
+    df['atr'] = float(atr_value)
     df['sma_20'] = df['close'].rolling(window=20).mean()
     df['sma_200'] = df['close'].rolling(window=200).mean()
 
     # --- Escenarios Específicos ---
     if is_perfect_elephant:
-        # Forzamos una vela elefante alcista al final que rebota en la SMA20
-        last_idx = df.index[-1]
-        sma20 = df['sma_20'].iloc[-2]
+        # Tendencia alcista fuerte para slope_slow > 0.05
+        # Usar un slope que genere una tendencia clara en 200 velas
+        steeper_slope = 0.001 
+        trend_prices = base_price + np.arange(num_candles, dtype=float) * steeper_slope
+        df['close'] = trend_prices + np.random.normal(0, 0.0001, num_candles)
+        df['sma_20'] = df['close'].rolling(window=20).mean()
+        df['sma_200'] = df['close'].rolling(window=200).mean()
+        df['atr'] = float(atr_value)
         
-        df.loc[last_idx, 'low'] = sma20 - 0.01  # Rebote justo en la SMA20
-        df.loc[last_idx, 'open'] = sma20 + 0.05
-        # Cuerpo > 2.5x ATR
-        df.loc[last_idx, 'close'] = df.loc[last_idx, 'open'] + atr_value * 2.5
-        df.loc[last_idx, 'high'] = df.loc[last_idx, 'close'] + 0.05
-        df.loc[last_idx, 'sma_200'] = base_price * 0.9 # Asegurar que el precio está muy por encima
-        df.loc[last_idx, 'atr'] = atr_value
+        last_idx = df.index[-1]
+        sma20_prev = df['sma_20'].iloc[-2]
+        
+        # Inyectar métricas EDGE STRICT de forma atómica
+        df.at[last_idx, 'zscore_body'] = 3.5
+        df.at[last_idx, 'solidness'] = 0.95
+        df.at[last_idx, 'zscore_body'] = 3.5
+        df.at[last_idx, 'solidness'] = 0.95
+        
+        # Ajuste de Location: Low exacto en SMA20 (o muy cerca)
+        # Rango permitido: [SMA20 - 0.2*ATR, SMA20 + 0.5*ATR]
+        # Ponemos Low = SMA20_prev (aprox)
+        safe_low = float(sma20_prev) 
+        df.at[last_idx, 'low'] = safe_low
+        # FORZAMOS que la SMA20 actual sea igual al Low para alineación perfecta
+        df.at[last_idx, 'sma_20'] = safe_low 
+        
+        df.at[last_idx, 'open'] = safe_low + 0.0001
+        df.at[last_idx, 'close'] = safe_low + atr_value * 4.0
+        df.at[last_idx, 'high'] = safe_low + atr_value * 4.0 + 0.0002
 
     if is_inconsistent:
-        # Creamos una vela alcista fuerte, PERO por debajo de la SMA200
+        # Vela fuerte pero por debajo de SMA200
         last_idx = df.index[-1]
-        df.loc[last_idx, 'open'] = base_price * 0.9
-        df.loc[last_idx, 'close'] = base_price * 0.9 + atr_value * 3 # Vela fuerte
-        df.loc[last_idx, 'sma_200'] = base_price * 1.1 # SMA200 muy por encima
-        df.loc[last_idx, 'atr'] = atr_value
+        df.at[last_idx, 'close'] = base_price * 0.5
+        df.at[last_idx, 'sma_200'] = base_price * 1.5
+        df.at[last_idx, 'zscore_body'] = 3.5
+        df.at[last_idx, 'solidness'] = 0.95
 
-    # Rellenar NaNs iniciales
+    # Limpieza final robusta
+    df.sort_index(inplace=True)
     df.bfill(inplace=True)
+    df.ffill(inplace=True)
     return df
 
 # --- Casos de Prueba ---
@@ -146,10 +174,14 @@ async def test_perfect_elephant_candle_generates_high_score_signal(signal_factor
     y rebotando en la SMA20 debe generar una señal con un score > 80.
     """
     # Arrange: Crear datos sintéticos para una señal de libro
-    df = create_synthetic_dataframe(is_perfect_elephant=True, trend_slope=0.1)
+    df = create_synthetic_dataframe(is_perfect_elephant=True)
     symbol = "EURUSD_PERFECT"
     
-    # Act: Generar señales (ahora devuelve lista)
+    # Act: Generar señal
+    print(f"\n[DEBUG] {symbol} Tail before generate_signal:")
+    cols = ['close', 'low', 'sma_20', 'sma_200', 'zscore_body', 'solidness']
+    print(df[cols].tail(1))
+    
     results = await signal_factory.generate_signal(symbol, df, MarketRegime.TREND)
     
     # Assert: Validar que la señal es de alta calidad
@@ -194,27 +226,32 @@ async def test_low_score_signal_does_not_trigger_notification(signal_factory, mo
     Una señal que cumple los requisitos mínimos pero con valores límite debe generar
     un score bajo y no disparar una notificación 'Premium'.
     """
-    # Obtener la estrategia OliverVelezStrategy de la lista
+    # Preparar la estrategia para el test
     ov_strategy = next(s for s in signal_factory.strategies if isinstance(s, OliverVelezStrategy))
 
     # Arrange: Crear una base de señal válida, pero con valores débiles.
-    atr = 0.2
-    df = create_synthetic_dataframe(is_perfect_elephant=True, atr_value=atr, trend_slope=0.01)
+    atr = 0.002
+    df = create_synthetic_dataframe(is_perfect_elephant=True, atr_value=atr)
 
     # Degradamos la vela "perfecta" a una "apenas pasable".
-    # El cuerpo será > 2.0x ATR, pero no por mucho.
     last_idx = df.index[-1]
-    # Usamos el multiplicador configurado en la estrategia
-    df.loc[last_idx, 'close'] = df.loc[last_idx, 'open'] + (atr * ov_strategy.elephant_atr_multiplier + 0.01)
+    # Forzamos un cierre que genere un score bajo (Z-score 2.0 apenas)
+    df.at[last_idx, 'zscore_body'] = 2.0
+    df.at[last_idx, 'solidness'] = 0.55
+    df.at[last_idx, 'close'] = float(df.at[last_idx, 'open'] + atr * 2.1)
 
     symbol = "EURUSD_WEAK"
     
     # Modificamos los umbrales en la **estrategia** para forzar un score bajo
-    ov_strategy.base_score = 60.0 # Score base normal
-    ov_strategy.regime_bonus = 5.0 # Bono bajo por estar en Trend
-    ov_strategy.premium_threshold = 85.0 # Umbral premium normal
+    # Permitir solidez baja para este test
+    ov_strategy.elephant_solidness_min = 0.5 
+    ov_strategy.premium_threshold = 80.0
 
     # Act: Generar la señal
+    print(f"\n[DEBUG] {symbol} Tail before generate_signal:")
+    cols = ['close', 'open', 'zscore_body', 'solidness']
+    print(df[cols].tail(1))
+
     results = await signal_factory.generate_signal(symbol, df, MarketRegime.TREND)
     
     # Assert

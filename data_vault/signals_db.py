@@ -228,7 +228,7 @@ class SignalsMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def has_recent_signal(self, symbol: str, signal_type: str, timeframe: Optional[str] = None, minutes: Optional[int] = None) -> bool:
+    def has_recent_signal(self, symbol: str, signal_type: str, timeframe: Optional[str] = None, minutes: Optional[int] = None, exclude_id: Optional[str] = None) -> bool:
         """Check if there's a recent signal for the given symbol and type within the deduplication window"""
         if minutes is None:
             minutes = calculate_deduplication_window(timeframe)
@@ -236,20 +236,30 @@ class SignalsMixin(BaseRepository):
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            # Only consider PENDING or EXECUTED signals as duplicates
+            
+            # Base query: Only consider PENDING or EXECUTED signals as duplicates
             # Exclude REJECTED, CLOSED, etc. (only get PENDING and EXECUTED)
-            cursor.execute("""
+            query = """
                 SELECT COUNT(*) FROM signals 
                 WHERE symbol = ? 
                 AND signal_type = ? 
                 AND timestamp >= datetime('now', 'localtime', '-' || ? || ' minutes')
                 AND (timeframe = ? OR ? IS NULL)
-                AND status IN ('PENDING', 'EXECUTED', 'EXPIRED')
-            """, (symbol, signal_type, minutes, timeframe, timeframe))
+                AND status IN ('PENDING', 'EXECUTED', 'EXPIRED', 'active')
+            """
+            params = [symbol, signal_type, minutes, timeframe, timeframe]
+            
+            # Support excluding the current signal ID (to avoid self-collision in Executor)
+            if exclude_id:
+                query += " AND id != ?"
+                params.append(exclude_id)
+                
+            cursor.execute(query, params)
             count = cursor.fetchone()[0]
-            # print(f"DEBUG DB: has_recent_signal({symbol}, {signal_type}) -> {count}")
+            
             if count > 0:
                 logger.info(f"DEBUG DB: has_recent_signal({symbol}, {signal_type}, {timeframe}) -> TRUE (Count: {count})")
+                
             return count > 0
         finally:
             self._close_conn(conn)

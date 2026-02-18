@@ -88,19 +88,18 @@ class MT5Connector:
             # Fallback defensivo: si psutil falla, mejor no arriesgarse a abrir MT5
             return False
 
-    def __init__(self, account_id: Optional[str] = None):
+    def __init__(self, storage: StorageManager, account_id: Optional[str] = None):
         """
         Initialize MT5 Connector
 
         Args:
+            storage: StorageManager instance (REQUIRED - DI)
             account_id: Optional account ID to use. If None, uses first enabled MT5 account from DB
-
-        ARCHITECTURE NOTE: Configuration comes from DATABASE ONLY (single source of truth)
         """
         if not MT5_AVAILABLE:
             raise ImportError("MetaTrader5 library not installed. Run: pip install MetaTrader5")
 
-        self.storage = StorageManager()
+        self.storage = storage
         self.account_id = account_id
         self.config = self._load_config_from_db()
         self.is_connected = False
@@ -758,31 +757,58 @@ class MT5Connector:
             # Prepare order request
             order_type = mt5.ORDER_TYPE_BUY if signal.signal_type == SignalType.BUY else mt5.ORDER_TYPE_SELL
             
-            # Get current price (now guaranteed to work because symbol is visible)
-            tick = mt5.symbol_info_tick(symbol)
-            if tick is None:
-                logger.error(f"Could not get tick for {symbol} (symbol visible but market may be closed)")
-                return {'success': False, 'error': f'Cannot get price for {symbol}'}
+            # Prepare and validate order request
+            request = self._prepare_order_request(signal, symbol_info, order_type)
+            if not request:
+                 return {'success': False, 'error': 'Failed to prepare order request'}
+
+            # Log request details for debugging
+            logger.info(f"[ORDER] Sending order to MT5:")
+            logger.info(f"   Symbol: {request['symbol']}")
+            logger.info(f"   Volume: {request['volume']} (type: {type(request['volume'])})")
+            logger.info(f"   Type: {'BUY' if request['type'] == mt5.ORDER_TYPE_BUY else 'SELL'})")
+            logger.info(f"   Price: {request['price']}")
+            logger.info(f"   SL: {request['sl']}")
+            logger.info(f"   TP: {request['tp']}")
+            logger.info(f"   Fill: {request['type_filling']}")
             
-            # Get symbol info for normalization
-            symbol_info = mt5.symbol_info(symbol)
+            # Execute order
+            result = mt5.order_send(request)
+            
+            return self._handle_order_result(result, signal, request)
+        
+        except Exception as e:
+            logger.error(f"Error executing signal: {e}")
+            return {'success': False, 'error': str(e)}
+
+    def _prepare_order_request(self, signal: Signal, symbol_info: Any, order_type: int) -> Optional[Dict]:
+        """Prepare order request dictionary"""
+        try:
+            # Get current price
+            tick = mt5.symbol_info_tick(symbol_info.name)
+            if tick is None:
+                logger.error(f"Could not get tick for {symbol_info.name}")
+                return None
             
             price = tick.ask if order_type == mt5.ORDER_TYPE_BUY else tick.bid
             
-            # Normalizar precio
-            price = normalize_price(price, symbol_info)
+            # Normalize price
+            from core_brain.market_utils import normalize_price as global_normalize
+            from core_brain.market_utils import normalize_volume as global_normalize_volume
             
-            # Get volume (use signal volume if available, else default 0.01 lot = micro lot)
+            price = global_normalize(price, symbol_info)
+            
+            # Get volume
             volume = getattr(signal, 'volume', 0.01)
-            volume = normalize_volume(volume, symbol_info)
+            volume = global_normalize_volume(volume, symbol_info)
             
-            # Normalizar SL y TP
-            sl = normalize_price(signal.stop_loss, symbol_info) if signal.stop_loss else 0.0
-            tp = normalize_price(signal.take_profit, symbol_info) if signal.take_profit else 0.0
+            # Normalize SL/TP
+            sl = global_normalize(signal.stop_loss, symbol_info) if signal.stop_loss else 0.0
+            tp = global_normalize(signal.take_profit, symbol_info) if signal.take_profit else 0.0
             
-            request = {
+            return {
                 "action": mt5.TRADE_ACTION_DEAL,
-                "symbol": symbol,
+                "symbol": symbol_info.name,
                 "volume": volume,
                 "type": order_type,
                 "price": price,
@@ -794,45 +820,34 @@ class MT5Connector:
                 "type_time": mt5.ORDER_TIME_GTC,
                 "type_filling": mt5.ORDER_FILLING_IOC,
             }
-            
-            # Log request details for debugging
-            logger.info(f"[ORDER] Sending order to MT5:")
-            logger.info(f"   Symbol: {request['symbol']}")
-            logger.info(f"   Volume: {request['volume']} (type: {type(request['volume'])})")
-            logger.info(f"   Type: {request['type']} ({'BUY' if request['type'] == mt5.ORDER_TYPE_BUY else 'SELL'})")
-            logger.info(f"   Price: {request['price']}")
-            logger.info(f"   SL: {request['sl']} | TP: {request['tp']}")
-            logger.info(f"   Filling: {request['type_filling']}")
-            
-            # Send order
-            result = mt5.order_send(request)
-            
-            if result is None:
-                error = mt5.last_error()
-                logger.error(f"Order send failed: {error}")
-                return {'success': False, 'error': str(error)}
-            
-            if result.retcode != mt5.TRADE_RETCODE_DONE:
-                logger.error(f"Order rejected: {result.retcode} - {result.comment}")
-                return {'success': False, 'error': f'{result.retcode}: {result.comment}'}
-            
-            logger.info(
-                f"✅ Order executed: {symbol} {signal.signal_type.value} "
-                f"@ {result.price} | Ticket: {result.order}"
-            )
-            
-            return {
-                'success': True,
-                'ticket': result.order,
-                'price': result.price,
-                'volume': volume,
-                'symbol': symbol,
-                'type': signal.signal_type.value
-            }
-        
         except Exception as e:
-            logger.error(f"Error executing signal: {e}")
-            return {'success': False, 'error': str(e)}
+            logger.error(f"Error preparing order request: {e}")
+            return None
+
+    def _handle_order_result(self, result: Any, signal: Signal, request: Dict) -> Dict:
+        """Handle MT5 order result"""
+        if result is None:
+            error = mt5.last_error()
+            logger.error(f"Order send failed: {error}")
+            return {'success': False, 'error': str(error)}
+        
+        if result.retcode != mt5.TRADE_RETCODE_DONE:
+            logger.error(f"Order rejected: {result.retcode} - {result.comment}")
+            return {'success': False, 'error': f'{result.retcode}: {result.comment}'}
+        
+        logger.info(
+            f"✅ Order executed: {request['symbol']} {signal.signal_type.value} "
+            f"@ {result.price} | Ticket: {result.order}"
+        )
+        
+        return {
+            'success': True,
+            'ticket': result.order,
+            'price': result.price,
+            'volume': request['volume'],
+            'symbol': request['symbol'],
+            'type': signal.signal_type.value
+        }
     
     def get_open_positions(self) -> Optional[List[Dict]]:
         """
@@ -1272,62 +1287,29 @@ class MT5Connector:
             # Get current price (ask for buy, bid for sell)
             current_price = symbol_info.ask if position.type == 0 else symbol_info.bid
             
-            # Calculate distance in points
-            point = getattr(symbol_info, 'point', 0.00001)
-            freeze_level = getattr(symbol_info, 'trade_stops_level', 0)
-            
-            sl_distance_points = abs(new_sl - current_price) / point
-            
-            # DEBUG: Always log validation check
-            logger.info(f"Freeze validation: SL={new_sl:.5f}, Current={current_price:.5f}, Distance={sl_distance_points:.1f} points, Freeze={freeze_level}")
-            
-            # Check freeze level violation
-            if freeze_level > 0 and sl_distance_points < freeze_level:
-                error_msg = f"SL too close to current price: {sl_distance_points:.1f} points < {freeze_level} freeze_level"
-                logger.warning(f"Position {ticket}: {error_msg}")
-                return {'success': False, 'error': error_msg}
-            
+            # Validate Freeze Level
+            if not self._validate_freeze_level(ticket, new_sl, current_price, symbol_info):
+                 return {'success': False, 'error': f'Freeze level violation for ticket {ticket}'}
+
             # Use currentTP if not specified
             if new_tp is None:
                 new_tp = position.tp
             
-            # Validate SL/TP relationship (MT5 rejects invalid combinations)
-            # For BUY: TP must be > SL, For SELL: TP must be < SL
-            if new_tp and new_tp > 0:
-                is_buy = (position.type == 0)
-                
-                print(f"[DEBUG] Validating SL/TP: is_buy={is_buy}, new_tp={new_tp:.5f}, new_sl={new_sl:.5f}")
-                
-                if is_buy and new_tp <= new_sl:
-                    logger.warning(f"Position {ticket} (BUY): TP {new_tp:.5f} <= SL {new_sl:.5f} - Removing TP to avoid rejection")
-                    print(f"[DEBUG] Removing TP because {new_tp} <= {new_sl}")
-                    new_tp = 0  # Remove TP
-                elif not is_buy and new_tp >= new_sl:
-                    logger.warning(f"Position {ticket} (SELL): TP {new_tp:.5f} >= SL {new_sl:.5f} - Removing TP to avoid rejection")
-                    print(f"[DEBUG] Removing TP because {new_tp} >= {new_sl}")
-                    new_tp = 0  # Remove TP
+            # Validate SL/TP Logic (No TP crossover)
+            new_tp = self._validate_sltp_logic(ticket, position.type == 0, new_sl, new_tp)
             
             # Prepare modification request
             comment = f"Aethelgard_{reason}" if reason else "Aethelgard_Modified"
             
-            # 🛡️ REDUNDANT NORMALIZATION: Guarantee no dirty floats reach MT5
-            from core_brain.market_utils import normalize_price as global_normalize
-            new_sl = global_normalize(new_sl, symbol_info)
-            if new_tp and new_tp > 0:
-                new_tp = global_normalize(new_tp, symbol_info)
-            
-            modify_request = {
+            request = {
                 "action": mt5.TRADE_ACTION_SLTP,
                 "symbol": position.symbol,
                 "position": ticket,
-                "sl": new_sl,
+                "sl": float(new_sl),
+                "tp": float(new_tp) if new_tp > 0 else 0.0,
                 "magic": self.magic_number,
                 "comment": comment,
             }
-            
-            # Add TP only if it's not zero (MT5 rejects tp=0 as invalid)
-            if new_tp and new_tp > 0:
-                modify_request["tp"] = new_tp
             
             # DEBUG: Log request being sent
             logger.info(f"Sending modify request: {modify_request}")
@@ -1361,6 +1343,49 @@ class MT5Connector:
             error_msg = str(e)
             logger.error(f"Error modifying position {ticket}: {error_msg}")
             return {'success': False, 'error': error_msg}
+
+    def _validate_freeze_level(self, ticket: int, new_sl: float, current_price: float, symbol_info: Any) -> bool:
+        """
+        Validate if SL modification respects freeze level.
+        Returns True if valid, False if violating freeze level.
+        """
+        try:
+            point = getattr(symbol_info, 'point', 0.00001)
+            freeze_level = getattr(symbol_info, 'trade_stops_level', 0)
+            
+            # Calculate distance in points
+            sl_distance_points = abs(new_sl - current_price) / point
+            
+            logger.info(f"Freeze validation: SL={new_sl:.5f}, Current={current_price:.5f}, "
+                        f"Distance={sl_distance_points:.1f} points, Freeze={freeze_level}")
+            
+            if freeze_level > 0 and sl_distance_points < freeze_level:
+                logger.warning(f"Position {ticket}: SL too close ({sl_distance_points:.1f} < {freeze_level})")
+                return False
+                
+            return True
+        except Exception as e:
+            logger.error(f"Error validating freeze level: {e}")
+            # Fail safe: allow attempt if validation fails internally
+            return True
+
+    def _validate_sltp_logic(self, ticket: int, is_buy: bool, new_sl: float, new_tp: Optional[float]) -> float:
+        """
+        Validate and correct SL/TP logic to avoid platform rejection.
+        Returns corrected TP (or 0.0 if removed).
+        """
+        if not new_tp or new_tp <= 0:
+            return 0.0
+            
+        # MT5 forbids TP crossing SL (instant loss)
+        if is_buy and new_tp <= new_sl:
+            logger.warning(f"Position {ticket} (BUY): TP {new_tp:.5f} <= SL {new_sl:.5f} - Removing TP")
+            return 0.0
+        elif not is_buy and new_tp >= new_sl:
+            logger.warning(f"Position {ticket} (SELL): TP {new_tp:.5f} >= SL {new_sl:.5f} - Removing TP")
+            return 0.0
+            
+        return new_tp
     
     def close_position(self, ticket: int, reason: str = "") -> Dict[str, Any]:
         """

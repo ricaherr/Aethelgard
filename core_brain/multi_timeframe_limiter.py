@@ -13,7 +13,7 @@ Usage:
     if not is_valid:
         reject_signal(reason)
 """
-from typing import Dict, Tuple, List, Any
+from typing import Dict, Tuple, List, Any, Optional
 import logging
 
 from models.signal import Signal
@@ -25,21 +25,23 @@ logger = logging.getLogger(__name__)
 class MultiTimeframeLimiter:
     """Validates multi-timeframe exposure limits per symbol"""
     
-    def __init__(self, storage, config: Dict):
+    def __init__(self, storage, config: Dict, mt5_connector: Optional[MT5Connector] = None):
         """
         Initialize MultiTimeframeLimiter.
         
         Args:
             storage: StorageManager instance (dependency injection)
             config: Full config dict with 'multi_timeframe_limits' section
+            mt5_connector: MT5Connector instance for real-time validation (DI)
         """
         self.storage = storage
         self.config = config.get('multi_timeframe_limits', {})
+        self.mt5_connector = mt5_connector
         self.enabled = self.config.get('enabled', True)
-        self.max_positions = self.config.get('max_positions_per_symbol', 3)
+        self.max_positions = self.config.get('max_positions_per_symbol', 1)
         self.max_volume = self.config.get('max_total_volume_per_symbol', 5.0)
         self.hedge_threshold = self.config.get('alert_hedge_threshold', 0.2)
-        self.allow_opposite = self.config.get('allow_opposite_signals', True)
+        self.allow_opposite = self.config.get('allow_opposite_signals', False)
     
     def validate_new_signal(self, signal: Signal) -> Tuple[bool, str]:
         """
@@ -106,19 +108,20 @@ class MultiTimeframeLimiter:
         Returns only positions that are confirmed open in MT5.
         """
         try:
-            # Import connector to check actual MT5 positions
-            
-            mt5 = MT5Connector()
-            if not mt5.connect():
+            if not self.mt5_connector or not self.mt5_connector.is_connected:
                 logger.warning(
-                    f"Could not connect to MT5 to verify positions for {symbol}. "
+                    f"Injected MT5 connector not available or not connected for {symbol}. "
                     "Falling back to DB-only check (may be inaccurate)."
                 )
                 return self._get_open_positions_from_db_only(symbol)
             
             # Get actual open positions from MT5
-            mt5_positions = mt5.get_open_positions()
+            mt5_positions = self.mt5_connector.get_open_positions()
             
+            if mt5_positions is None:
+                logger.warning(f"Failed to query MT5 positions for {symbol}")
+                return self._get_open_positions_from_db_only(symbol)
+
             # Filter by symbol
             open_for_symbol = [
                 pos for pos in mt5_positions 
@@ -141,25 +144,23 @@ class MultiTimeframeLimiter:
     
     def _get_open_positions_from_db_only(self, symbol: str) -> list:
         """
-        Fallback: Get EXECUTED signals from DB (may include closed positions).
-        
-        WARNING: This method is INACCURATE if positions were closed in MT5
-        but not updated in DB. Use only as fallback.
+        Fallback: Get actually open operations from DB.
+        Uses get_open_operations() which filters EXECUTED signals not yet closed.
         """
-        all_executed = self.storage.get_signals(status='EXECUTED', limit=1000)
+        open_ops = self.storage.get_open_operations()
         
-        # Filter by symbol and confirmed orders (have order_id/ticket)
-        open_positions = [
-            sig for sig in all_executed
-            if sig.get('symbol') == symbol and sig.get('order_id')
+        # Filter by symbol
+        open_for_symbol = [
+            op for op in open_ops
+            if op.get('symbol') == symbol
         ]
         
-        logger.warning(
-            f"[MultiTimeframeLimiter] Using DB-only check for {symbol}: "
-            f"{len(open_positions)} EXECUTED signals found (may include closed positions)"
+        logger.info(
+            f"[MultiTimeframeLimiter] Found {len(open_for_symbol)} open operations "
+            f"for {symbol} in DB"
         )
         
-        return open_positions
+        return open_for_symbol
     
     def _get_lot_size(self, position: dict) -> float:
         """Extract lot_size from position metadata, fallback to volume"""

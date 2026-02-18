@@ -41,11 +41,12 @@ class MT5DataProvider:
     ARCHITECTURE: Configuration from DATABASE only (broker_accounts table)
     """
 
-    def __init__(self, account_id: Optional[str] = None, login: Optional[int] = None, password: str = "", server: str = "", init_mt5: bool = True):
+    def __init__(self, storage: StorageManager, account_id: Optional[str] = None, login: Optional[int] = None, password: str = "", server: str = "", init_mt5: bool = True):
         """
         Initialize MT5 Data Provider
         
         Args:
+            storage: StorageManager instance (DI)
             account_id: Optional account ID to load from DB. Preferred method.
             login: Legacy parameter for compatibility. If None, loads from DB.
             password: Legacy parameter for compatibility. If empty, loads from DB.
@@ -53,7 +54,7 @@ class MT5DataProvider:
             init_mt5: Whether to initialize MT5 on construction
         """
         self._initialized = False
-        self.storage = StorageManager()
+        self.storage = storage
         self.account_id = account_id
         
         # Load from DB if account_id provided or no credentials given

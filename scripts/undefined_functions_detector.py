@@ -56,6 +56,9 @@ class UndefinedFunctionDetector:
         # Maps: class_name → set of method names
         self.class_methods: Dict[str, Set[str]] = defaultdict(set)
         
+        # Maps: class_name → list of base class names
+        self.class_bases: Dict[str, List[str]] = {}
+        
         # Maps: variable_name → class_name (for type inference)
         self.variable_types: Dict[str, str] = {}
         
@@ -150,6 +153,15 @@ class UndefinedFunctionDetector:
             if isinstance(node, ast.ClassDef):
                 class_name = node.name
                 
+                # Track base classes for inheritance resolution
+                bases = []
+                for base in node.bases:
+                    if isinstance(base, ast.Name):
+                        bases.append(base.id)
+                    elif isinstance(base, ast.Attribute):
+                        bases.append(base.attr)
+                self.class_bases[class_name] = bases
+                
                 for item in node.body:
                     if isinstance(item, ast.FunctionDef):
                         method_name = item.name
@@ -198,8 +210,8 @@ class UndefinedFunctionDetector:
                     if class_name and class_name in self.project_classes:
                         # Verificar si la clase está mapeada (existe en codebase)
                         if class_name in self.class_methods:
-                            # Check if method exists
-                            if method_name not in self.class_methods[class_name]:
+                            # Check if method exists (recursive inheritance check)
+                            if not self._method_exists(class_name, method_name):
                                 # UNDEFINED METHOD CALL DETECTED
                                 self.undefined_calls.append({
                                     'file': str(filepath.relative_to(self.workspace_root)),
@@ -209,6 +221,26 @@ class UndefinedFunctionDetector:
                                     'method': method_name,
                                     'severity': 'CRITICAL'
                                 })
+    
+    def _method_exists(self, class_name: str, method_name: str, visited: Set[str] = None) -> bool:
+        """Check if method exists in class or its bases (recursive)"""
+        if visited is None:
+            visited = set()
+            
+        if class_name in visited:
+            return False
+        visited.add(class_name)
+        
+        # Check in current class
+        if method_name in self.class_methods.get(class_name, set()):
+            return True
+            
+        # Check in bases
+        for base in self.class_bases.get(class_name, []):
+            if self._method_exists(base, method_name, visited):
+                return True
+                
+        return False
     
     def _infer_class_name(self, obj_node: ast.AST, local_vars: Dict[str, str]) -> Optional[str]:
         """

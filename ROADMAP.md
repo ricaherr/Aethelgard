@@ -1,3 +1,15 @@
+## 🎯 MILESTONE: Análisis & Evolución de Estrategias (2026-02-18)
+**Estado: ✅ completado**
+**Criterio: Auditar el sistema actual de estrategias, identificar señales existentes y proponer mejoras para escalabilidad universal.**
+
+### Logros Clave
+- [x] **Auditoría Técnica**: Análisis profundo de `SignalFactory`, `TechnicalAnalyzer` y estrategias `oliver_velez` / `trifecta`.
+- [x] **Catálogo de Señales**: Identificación de señales actuales (Elephant Candle, SMA20 Pullback, Fractal Alignment).
+- [x] **Mapa de Oportunidades**: Identificación de nuevos indicadores y patrones (RSI, MACD, Volume Profile, Price Action).
+- [x] **Propuesta de Mejora**: Diseño conceptual de un "Universal Strategy Engine" configurable por JSON/YAML.
+
+---
+
 ## 🎯 MILESTONE: Auditoría de Sistema (Implementación & Concepto) (2026-02-18)
 **Estado: 📋 EN PROCESO**
 **Criterio: Verificar la integridad técnica y conceptual del sistema, asegurando que la implementación sigue fielmente los principios de trading y arquitectura definidos.**
@@ -4719,7 +4731,7 @@ RegimeClassifier.reload_params (2 definiciones)
 - ✅ Documento `ARCHITECTURE_RULES.md` formaliza reglas obligatorias
 
 **Resultado:**
-- ✅ **19/19 Signal Deduplication Tests PASAN** (de 12/19)
+- [x] Fix signal deduplication tests (collision and risk tolerance issues)
 - ✅ **6/6 Signal Deduplication Unit Tests PASAN**
 - ✅ **128/155 tests totales PASAN** (82.6%)
 

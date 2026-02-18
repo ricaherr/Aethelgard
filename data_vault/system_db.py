@@ -49,6 +49,19 @@ class SystemMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
+    def get_active_timeframes(self) -> List[str]:
+        """Get list of active timeframes from system state"""
+        state = self.get_system_state()
+        tfs = state.get('active_timeframes', [])
+        if isinstance(tfs, str):
+            try:
+                return json.loads(tfs)
+            except json.JSONDecodeError:
+                return [t for t in tfs.split(',') if t.strip()]
+        if isinstance(tfs, list):
+            return tfs
+        return ['M1', 'M5', 'M15'] # Default fallback
+
     def save_tuning_adjustment(self, adjustment: Dict) -> None:
         """Save tuning adjustment to database"""
         conn = self._get_conn()
@@ -318,20 +331,56 @@ class SystemMixin(BaseRepository):
         """
         Obtiene la configuración de todos los proveedores.
         """
-        conn = self._get_conn()
         try:
+            conn = self._get_conn()
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM notification_settings")
-            rows = cursor.fetchall()
+            cursor.execute("SELECT provider, enabled, config_json FROM notification_settings")
+            results = cursor.fetchall()
+            conn.close()
+            
             settings = []
-            for row in rows:
-                item = dict(row)
-                if item.get('config'):
-                    try:
-                        item['config'] = json.loads(item['config'])
-                    except:
-                        pass
-                settings.append(item)
+            for row in results:
+                settings.append({
+                    "provider": row[0],
+                    "enabled": bool(row[1]),
+                    "config": json.loads(row[2])
+                })
             return settings
-        finally:
-            self._close_conn(conn)
+        except Exception as e:
+            logger.error(f"Error getting all notification settings: {e}")
+            return []
+
+    # =========================================================================
+    # CONFIGURATION SSOT (Regla 14)
+    # =========================================================================
+    
+    def get_risk_settings(self) -> Dict[str, Any]:
+        """
+        Obtiene la configuración de riesgo desde el estado del sistema.
+        Si no existe, retorna un diccionario vacío para que el manager use defaults.
+        """
+        state = self.get_system_state()
+        return state.get("risk_settings", {})
+
+    def update_risk_settings(self, settings: Dict[str, Any]) -> bool:
+        """
+        Actualiza la configuración de riesgo en el estado del sistema.
+        """
+        state = self.get_system_state()
+        state["risk_settings"] = settings
+        return self.update_system_state(state)
+
+    def get_dynamic_params(self) -> Dict[str, Any]:
+        """
+        Obtiene los parámetros dinámicos (Auto-tune) desde el estado del sistema.
+        """
+        state = self.get_system_state()
+        return state.get("dynamic_params", {})
+
+    def update_dynamic_params(self, params: Dict[str, Any]) -> bool:
+        """
+        Actualiza los parámetros dinámicos en el estado del sistema.
+        """
+        state = self.get_system_state()
+        state["dynamic_params"] = params
+        return self.update_system_state(state)

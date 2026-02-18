@@ -38,9 +38,8 @@ class EdgeMonitor(threading.Thread):
                 action_taken="Auto-test de EDGE",
                 learning="Canal de comunicación activo"
             )
-            print("[EDGE TEST] Evento de prueba insertado exitosamente")
         except Exception as e:
-            print(f"[EDGE TEST ERROR] Falló la inserción de prueba: {e}")
+            logger.error(f"[EDGE TEST ERROR] Falló la inserción de prueba: {e}")
             raise
         
         while self.running:

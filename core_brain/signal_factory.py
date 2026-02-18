@@ -48,52 +48,41 @@ class SignalFactory:
     def __init__(
         self,
         storage_manager: StorageManager,
-        config_path: str = "config/dynamic_params.json",
-        strategy_id: str = "deprecated", # Mantenido por compatibilidad
+        strategies: List[BaseStrategy],
+        confluence_analyzer: MultiTimeframeConfluenceAnalyzer,
+        trifecta_analyzer: TrifectaAnalyzer,
         mt5_connector: Optional[Any] = None,
     ):
         """
-        Inicializa la SignalFactory.
+        Inicializa la SignalFactory con inyección de dependencias estricta.
 
         Args:
             storage_manager: Instancia del gestor de persistencia.
-            config_path: Ruta a dynamic_params.json.
-            strategy_id: Deprecado. Las estrategias se cargan internamente.
+            strategies: Lista de estrategias inyectadas.
+            confluence_analyzer: Analizador de confluencia inyectado.
+            trifecta_analyzer: Analizador de trifecta inyectado.
             mt5_connector: Opcional MT5 connector para reconciliación.
         """
         self.storage_manager = storage_manager
         self.notifier: Optional[NotificationEngine] = get_notifier()
-        self.config_path = config_path
         self.mt5_connector = mt5_connector
         
-        # Cargar parámetros generales
-        self.config_data = self._load_parameters()
+        # Cargar parámetros generales desde DB (SSOT)
+        self.config_data = self.storage_manager.get_dynamic_params()
         
-        # Inicializar estrategias
-        self.strategies: List[BaseStrategy] = []
-        self._register_default_strategies()
+        # Estrategias inyectadas
+        self.strategies = strategies
         
-        # FASE 2.5: Initialize Multi-Timeframe Confluence Analyzer
-        confluence_config = self.config_data.get("confluence", {})
-        confluence_enabled = confluence_config.get("enabled", True)
-        self.confluence_analyzer = MultiTimeframeConfluenceAnalyzer(
-            config_path=config_path,
-            enabled=confluence_enabled
-        )
-        
-        # FASE 2.6: Initialize Oliver Velez Trifecta Optimizer (HYBRID mode)
-        # Passes config path for auto-enabling timeframes + degraded mode fallback
-        self.trifecta_analyzer = TrifectaAnalyzer(
-            config_path="config/config.json",
-            auto_enable_tfs=True  # Intentará auto-habilitar M1/M5/M15
-        )
+        # Analizadores inyectados
+        self.confluence_analyzer = confluence_analyzer
+        self.trifecta_analyzer = trifecta_analyzer
         
         if not self.notifier or not self.notifier.is_configured():
             logger.warning("NotificationEngine no está configurado o no tiene canales activos.")
 
         logger.info(
-            f"SignalFactory initialized with {len(self.strategies)} strategies. "
-            f"Confluence enabled: {confluence_enabled}"
+            f"SignalFactory initialized with {len(self.strategies)} injected strategies. "
+            f"Confluence enabled: {self.confluence_analyzer.enabled}"
         )
 
     def set_mt5_connector(self, mt5_connector: Any) -> None:
@@ -105,18 +94,8 @@ class SignalFactory:
             logger.debug("MT5 connector cleared from SignalFactory")
 
     def _load_parameters(self) -> Dict:
-        """Carga parámetros desde dynamic_params.json"""
-        try:
-            with open(self.config_path, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-            logger.info(f"Loaded configuration from {self.config_path}")
-            return config
-        except FileNotFoundError:
-            logger.warning(f"Config not found: {self.config_path}. Using defaults.")
-            return {}
-        except Exception as e:
-            logger.error(f"Error loading config: {e}. Using empty config.")
-            return {}
+        """Deprecado: Usar storage_manager.get_dynamic_params() directamente."""
+        return self.storage_manager.get_dynamic_params()
 
     def _register_default_strategies(self) -> None:
         """Registra las estrategias por defecto."""

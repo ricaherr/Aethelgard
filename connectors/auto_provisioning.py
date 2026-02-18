@@ -22,8 +22,8 @@ logger = logging.getLogger(__name__)
 class BrokerProvisioner:
     """Manages automatic provisioning of demo accounts across brokers"""
     
-    def __init__(self, storage: Optional[StorageManager] = None):
-        self.storage = storage or StorageManager()
+    def __init__(self, storage: StorageManager):
+        self.storage = storage
         self.credentials_dir = Path("config/demo_accounts")
         self.credentials_dir.mkdir(exist_ok=True)
     

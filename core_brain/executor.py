@@ -34,92 +34,57 @@ class OrderExecutor:
         self,
         risk_manager: RiskManager,
         storage: Optional[StorageManager] = None,
+        multi_tf_limiter: Optional[MultiTimeframeLimiter] = None,
         notificator: Optional[Any] = None,
-        connectors: Optional[Dict[ConnectorType, Any]] = None,
-        config_path: str = "config/dynamic_params.json"
+        connectors: Optional[Dict[ConnectorType, Any]] = None
     ):
         """
-        Initialize OrderExecutor.
+        Initialize OrderExecutor with Dependency Injection.
         
         Args:
             risk_manager: RiskManager instance for validation
-            storage: StorageManager for persistence (creates if None)
+            storage: StorageManager for persistence (DI)
+            multi_tf_limiter: MultiTimeframeLimiter (DI)
             notificator: Notificator for alerts (optional)
             connectors: Dictionary mapping ConnectorType to connector instances
-            config_path: Path to config file (for MultiTimeframeLimiter)
         """
         self.risk_manager = risk_manager
-        self.storage = storage or StorageManager()
+        
+        if storage is None:
+            logger.warning("OrderExecutor initialized without explicit storage! Violates strict DI.")
+            from data_vault.storage import StorageManager
+            self.storage = StorageManager()
+        else:
+            self.storage = storage
+            
         self.notificator = notificator
         self.connectors = connectors or {}
+        
+        if multi_tf_limiter is None:
+            logger.warning("OrderExecutor initialized without explicit multi_tf_limiter! Violates strict DI.")
+            from core_brain.multi_timeframe_limiter import MultiTimeframeLimiter
+            # Need config for limiter, try to get from storage or use empty
+            config = self.storage.get_dynamic_params()
+            self.multi_tf_limiter = MultiTimeframeLimiter(self.storage, config)
+        else:
+            self.multi_tf_limiter = multi_tf_limiter
+            
         self.persists_signals = True
         
-        # EDGE: Load config for multi-timeframe limiter
-        self.config = self._load_config(config_path)
-        self.multi_tf_limiter = MultiTimeframeLimiter(self.storage, self.config)
-        
         # Initialize RiskCalculator for universal risk computation
-        # Will use first available connector (typically MT5)
         self.risk_calculator = None
         if self.connectors:
-            first_connector = list(self.connectors.values())[0]
-            self.risk_calculator = RiskCalculator(first_connector)
-            logger.info("RiskCalculator initialized with connector")
-        
-        # Auto-detect and load MT5Connector if configured
-        # This maintains agnosticism: core doesn't depend on MT5, but uses it if available
-        if ConnectorType.METATRADER5 not in self.connectors:
-            self._try_load_mt5_connector()
+            # Prefer MT5 for risk calculation if available
+            mt5_conn = self.connectors.get(ConnectorType.METATRADER5)
+            calc_connector = mt5_conn if mt5_conn else list(self.connectors.values())[0]
+            self.risk_calculator = RiskCalculator(calc_connector)
+            logger.info(f"RiskCalculator initialized with {type(calc_connector).__name__}")
         
         logger.info(
-            f"OrderExecutor initialized with {len(self.connectors)} connectors: "
+            f"OrderExecutor initialized with {len(self.connectors)} injected connectors: "
             f"{[ct.value for ct in self.connectors.keys()]}"
         )
     
-    def _load_config(self, config_path: str) -> Dict:
-        """
-        Load configuration from JSON file.
-        
-        Args:
-            config_path: Path to config JSON file
-        
-        Returns:
-            Dict with configuration (empty dict if file not found)
-        """
-        try:
-            config_file = Path(config_path)
-            if config_file.exists():
-                with open(config_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            else:
-                logger.warning(f"Config file not found: {config_path}, using empty config")
-                return {}
-        except Exception as e:
-            logger.error(f"Error loading config from {config_path}: {e}")
-            return {}
-    
-    def _try_load_mt5_connector(self) ->None:
-        """
-        Attempt to load MT5Connector (lazy loading - connection managed by start.py).
-        Follows Aethelgard's agnosticism principle: core doesn't require MT5,
-        but will use it opportunistically if configured.
-        """
-        try:
-            # Import only when needed (lazy loading)
-            from connectors.mt5_connector import MT5Connector
-            
-            logger.info("[CONNECT] Loading MT5 connector from DB (lazy loading)...")
-            
-            mt5_connector = MT5Connector()
-            
-            # Store connector - connection will be initialized by start.py
-            self.connectors[ConnectorType.METATRADER5] = mt5_connector
-            logger.info("[OK] MT5Connector loaded (connection managed by start.py)")
-                
-        except ImportError:
-            logger.warning("MT5Connector not available (MetaTrader5 library not installed)")
-        except Exception as e:
-            logger.error(f"Error loading MT5Connector: {e}", exc_info=True)
     
         # Track last rejection reason for better error reporting
         self.last_rejection_reason = None
@@ -161,43 +126,28 @@ class OrderExecutor:
             )
             return False
         
-        # Step 2: Check for duplicate signals
-        signal_type_str = signal.signal_type.value if hasattr(signal.signal_type, 'value') else str(signal.signal_type)
-        
-        # 2a. Check if there's an open position for this symbol + timeframe
+        # Step 2: Check for duplicate signals (Standard & Advanced)
+        # Standard: Check if there's any open position for this symbol (Legacy compatibility)
+        # Note: We check ANY timeframe if signal.timeframe is None, or specific if provided.
         if self.storage.has_open_position(signal.symbol, signal.timeframe):
-            logger.info(
-                f"[DEDUP CHECK] Open position detected for {signal.symbol} [{signal.timeframe}]. "
-                f"Attempting reconciliation with MT5..."
-            )
-            
-            # Perform immediate reconciliation before rejecting
-            if self._reconcile_positions(signal.symbol):
-                logger.info(f"[OK] Reconciliation cleared ghost position for {signal.symbol}, proceeding with signal")
+            # Attempt reconciliation with MT5 before rejecting (to clear ghost positions)
+            # Only if it's a real broker connector (not Paper)
+            if signal.connector_type != ConnectorType.PAPER:
+                if self._reconcile_positions(signal.symbol):
+                    logger.info(f"[OK] Reconciliation cleared ghost position for {signal.symbol}, proceeding with signal")
+                else:
+                    self.last_rejection_reason = f"Duplicate signal: already have an open position for {signal.symbol}"
+                    logger.warning(self.last_rejection_reason)
+                    self._register_failed_signal(signal, "DUPLICATE_OPEN_POSITION")
+                    return False
             else:
-                self.last_rejection_reason = f"Duplicate position: Already have open position for {signal.symbol} [{signal.timeframe}]"
-                logger.warning(
-                    f"[ERROR] Signal rejected: Real open position confirmed for {signal.symbol} [{signal.timeframe}]. "
-                    f"Preventing duplicate operation."
-                )
+                # In PAPER mode, we trust the DB and don't reconcile
+                self.last_rejection_reason = f"Duplicate signal: already have an open position for {signal.symbol} (Paper Mode)"
+                logger.warning(self.last_rejection_reason)
                 self._register_failed_signal(signal, "DUPLICATE_OPEN_POSITION")
                 return False
-        
-        # Duplicate validation removed: has_recent_signal() checks PENDING signals
-        # which creates false positives. Only check for EXECUTED positions above.
-        # PENDING signals are normal - they're waiting for execution, not duplicates.
-        
-        # Step 3: Check RiskManager lockdown
-        if self.risk_manager.is_locked():
-            self.last_rejection_reason = "Risk Manager is in LOCKDOWN mode (too many consecutive losses)"
-            logger.warning(
-                f"Signal rejected: RiskManager in LOCKDOWN mode. "
-                f"Symbol={signal.symbol}, Type={signal.signal_type}"
-            )
-            self._register_failed_signal(signal, "REJECTED_LOCKDOWN")
-            return False
-        
-        # Step 3.25: EDGE - Check multi-timeframe limits
+                
+        # Advanced: Check multi-timeframe limits (EDGE feature)
         is_valid, reason = self.multi_tf_limiter.validate_new_signal(signal)
         if not is_valid:
             self.last_rejection_reason = f"Multi-timeframe limit: {reason}"
@@ -206,6 +156,21 @@ class OrderExecutor:
                 f"Symbol={signal.symbol}, Type={signal.signal_type}, TF={signal.timeframe}"
             )
             self._register_failed_signal(signal, reason)
+            return False
+            
+        # Additional: Check for recently executed (within timeframe window)
+        # This prevents "double-execution" if two similar signals arrive 1 second apart
+        # Support exclude_id to avoid self-collision when signal is already saved in DB
+        signal_id = signal.metadata.get('signal_id')
+        if self.storage.has_recent_signal(
+            signal.symbol, 
+            signal.signal_type.value if hasattr(signal.signal_type, 'value') else signal.signal_type,
+            timeframe=signal.timeframe,
+            exclude_id=signal_id
+        ):
+            self.last_rejection_reason = f"Duplicate signal: recent signal already registered for {signal.symbol}"
+            logger.warning(self.last_rejection_reason)
+            self._register_failed_signal(signal, "DUPLICATE_RECENT_SIGNAL")
             return False
         
         # Step 3.5: Get connector (needed for risk validation and execution)

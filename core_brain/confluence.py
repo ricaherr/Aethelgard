@@ -49,14 +49,14 @@ class MultiTimeframeConfluenceAnalyzer:
         "D1": 10.0
     }
     
-    def __init__(self, config_path: Optional[str] = None, enabled: bool = True):
+    def __init__(self, storage: StorageManager, enabled: bool = True):
         """
         Args:
-            config_path: Path to dynamic_params.json (for EDGE learning)
-            enabled: If False, bypass confluence analysis (for A/B testing)
+            storage: StorageManager instance (REQUIRED - DI).
+            enabled: If False, bypass confluence analysis.
         """
         self.enabled = enabled
-        self.config_path = Path(config_path) if config_path else Path("config/dynamic_params.json")
+        self.storage = storage
         self.weights = self._load_weights()
         
         logger.info(
@@ -66,29 +66,23 @@ class MultiTimeframeConfluenceAnalyzer:
     
     def _load_weights(self) -> Dict[str, float]:
         """
-        Load confluence weights from config (EdgeTuner updates these)
+        Load confluence weights from DB (Single Source of Truth)
         Falls back to defaults if not found
         """
-        if not self.config_path.exists():
-            logger.info("No config found, using default confluence weights")
-            return self.DEFAULT_WEIGHTS.copy()
-        
         try:
-            with open(self.config_path, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-            
-            confluence_config = config.get("confluence", {})
+            dynamic_params = self.storage.get_dynamic_params()
+            confluence_config = dynamic_params.get("confluence", {})
             
             if "weights" in confluence_config:
                 weights = confluence_config["weights"]
-                logger.info(f"Loaded EDGE-tuned confluence weights: {weights}")
+                logger.info(f"Loaded EDGE-tuned confluence weights from DB: {weights}")
                 return weights
             else:
-                logger.info("No EDGE weights found, using defaults")
+                logger.info("No EDGE weights found in DB, using defaults")
                 return self.DEFAULT_WEIGHTS.copy()
                 
         except Exception as e:
-            logger.warning(f"Error loading confluence config: {e}. Using defaults.")
+            logger.warning(f"Error loading confluence weights from DB: {e}. Using defaults.")
             return self.DEFAULT_WEIGHTS.copy()
     
     def update_weights(self, new_weights: Dict[str, float]) -> None:
@@ -105,30 +99,23 @@ class MultiTimeframeConfluenceAnalyzer:
         self._save_weights()
     
     def _save_weights(self) -> None:
-        """Save weights to dynamic_params.json"""
+        """Save weights to DB (SSOT)"""
         try:
-            # Load existing config
-            if self.config_path.exists():
-                with open(self.config_path, 'r', encoding='utf-8') as f:
-                    config = json.load(f)
-            else:
-                config = {}
+            dynamic_params = self.storage.get_dynamic_params()
             
             # Update confluence section
-            if "confluence" not in config:
-                config["confluence"] = {}
+            if "confluence" not in dynamic_params:
+                dynamic_params["confluence"] = {}
             
-            config["confluence"]["weights"] = self.weights
-            config["confluence"]["last_updated"] = str(pd.Timestamp.now())
+            dynamic_params["confluence"]["weights"] = self.weights
+            dynamic_params["confluence"]["last_updated"] = datetime.now().isoformat()
             
-            # Save
-            with open(self.config_path, 'w', encoding='utf-8') as f:
-                json.dump(config, f, indent=2, ensure_ascii=False)
-            
-            logger.info(f"Saved confluence weights to {self.config_path}")
+            # Save to DB
+            self.storage.update_dynamic_params(dynamic_params)
+            logger.info("Saved confluence weights to DB (SSOT)")
             
         except Exception as e:
-            logger.error(f"Error saving confluence weights: {e}")
+            logger.error(f"Error saving confluence weights to DB: {e}")
     
     def analyze_confluence(
         self, 

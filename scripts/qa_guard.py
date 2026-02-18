@@ -130,6 +130,10 @@ def check_runtime_imports(project_root: Path) -> List[str]:
                 rel_path = py_file.relative_to(project_root)
                 module_name = str(rel_path.with_suffix('')).replace(os.sep, '.')
                 
+                # Skip tests directory to avoid side-effects from test setup
+                if 'tests' in module_name.split('.'):
+                    continue
+
                 # Intentar importar el módulo
                 importlib.import_module(module_name)
             except Exception as e:

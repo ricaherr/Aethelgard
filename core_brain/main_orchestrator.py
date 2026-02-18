@@ -193,31 +193,47 @@ class MainOrchestrator:
         signal_factory: Any,
         risk_manager: Any,
         executor: Any,
-        storage: Optional[StorageManager] = None,
-        config_path: str = "config/config.json"
+        storage: StorageManager,
+        position_manager: Any,
+        trade_closure_listener: Any,
+        coherence_monitor: Any,
+        expiration_manager: Any,
+        regime_classifier: Any
     ):
         """
-        Initialize MainOrchestrator.
+        Initialize MainOrchestrator with strict Dependency Injection.
         
         Args:
             scanner: ScannerEngine instance
             signal_factory: SignalFactory instance
             risk_manager: RiskManager instance
             executor: OrderExecutor instance
-            storage: StorageManager instance (creates if None)
-            config_path: Path to configuration file
+            storage: StorageManager instance (REQUIRED - DI)
+            position_manager: PositionManager instance (REQUIRED - DI)
+            trade_closure_listener: TradeClosureListener instance (REQUIRED - DI)
+            coherence_monitor: CoherenceMonitor instance (REQUIRED - DI)
+            expiration_manager: SignalExpirationManager instance (REQUIRED - DI)
+            regime_classifier: RegimeClassifier instance (REQUIRED - DI)
         """
         self.scanner = scanner
         self.signal_factory = signal_factory
         self.risk_manager = risk_manager
         self.executor = executor
-        self.storage = storage or StorageManager()
+        self.storage = storage
         
-        # Load configuration
-        self.config = self._load_config(config_path)
+        # Managers inyectados (Regla 1)
+        self.position_manager = position_manager
+        self.trade_closure_listener = trade_closure_listener
+        self.coherence_monitor = coherence_monitor
+        self.expiration_manager = expiration_manager
+        self.regime_classifier = regime_classifier
+        
+        # Configuración desde DB (SSOT - Regla 14)
+        # MainOrchestrator usa config.json para intervalos de ciclo
+        # dynamic_params.json para el resto. Aquí asimilamos ambos vía SSOT.
+        self.config = self.storage.get_dynamic_params() # TODO: Asegurar que get_dynamic_params incluya orchestrator config
         
         # MODULE TOGGLES: Load global module enable/disable settings from DB
-        # This allows runtime control without restarting the system
         self.modules_enabled_global = self.storage.get_global_modules_enabled()
         
         # Log module states on startup
@@ -227,7 +243,6 @@ class MainOrchestrator:
         else:
             logger.info("[OK] Todos los módulos están HABILITADOS globalmente")
 
-
         # Session tracking - RECONSTRUCT FROM DB
         self.stats = SessionStats.from_storage(self.storage)
         # Current market regime (updated after each scan)
@@ -236,58 +251,26 @@ class MainOrchestrator:
         self._shutdown_requested = False
         # Active signals tracking (for adaptive heartbeat)
         self._active_signals: List[Signal] = []
-        # Coherence monitor
-        self.coherence_monitor = CoherenceMonitor(storage=self.storage)
-        # Signal expiration manager (EDGE: auto-expire old signals)
-        self.expiration_manager = SignalExpirationManager(storage=self.storage)
         
-        # FASE 2: Position Manager (active position management)
-        # Load dynamic_params.json for position_management config
-        dynamic_config = self._load_config("config/dynamic_params.json")
-        position_config = dynamic_config.get("position_management", {})
-        
-        # Instantiate PositionManager with dependencies
-        # Note: We'll get connector from executor.connectors
-        from models.signal import ConnectorType
-        connector = None
-        if hasattr(self.executor, 'connectors'):
-            # Try to get MT5 connector first (most common)
-            connector = self.executor.connectors.get(ConnectorType.METATRADER5)
-        
-        # Instantiate RegimeClassifier (needed by PositionManager)
-        self.regime_classifier = RegimeClassifier()
-        
-        # Create PositionManager
-        self.position_manager = PositionManager(
-            storage=self.storage,
-            connector=connector,
-            regime_classifier=self.regime_classifier,
-            config=position_config
+        # Loop intervals by regime (seconds)
+        orchestrator_config = self.config.get("orchestrator", {})
+        self.intervals = {
+            MarketRegime.TREND: orchestrator_config.get("loop_interval_trend", 5),
+            MarketRegime.RANGE: orchestrator_config.get("loop_interval_range", 30),
+            MarketRegime.VOLATILE: orchestrator_config.get("loop_interval_volatile", 15),
+            MarketRegime.SHOCK: orchestrator_config.get("loop_interval_shock", 60)
+        }
+        logger.info(
+            f"MainOrchestrator initialized with intervals: "
+            f"TREND={self.intervals[MarketRegime.TREND]}s, "
+            f"RANGE={self.intervals[MarketRegime.RANGE]}s, "
+            f"VOLATILE={self.intervals[MarketRegime.VOLATILE]}s, "
+            f"SHOCK={self.intervals[MarketRegime.SHOCK]}s"
         )
-        logger.info(f"Position Manager initialized with config: enabled={position_config.get('enabled', False)}")
-        
-        # FASE 2: EdgeTuner and TradeClosureListener (Feedback Loop)
-        # Initialize EdgeTuner for parameter optimization
-        self.edge_tuner = EdgeTuner(
-            storage=self.storage,
-            config_path="config/dynamic_params.json"
-        )
-        logger.info("EdgeTuner initialized for parameter optimization")
-        
-        # Initialize TradeClosureListener for automatic position tracking
-        self.trade_closure_listener = TradeClosureListener(
-            storage=self.storage,
-            risk_manager=self.risk_manager,
-            edge_tuner=self.edge_tuner,
-            max_retries=3,
-            retry_backoff=0.5
-        )
-        logger.info("TradeClosureListener initialized for position tracking")
         
         # Track last checked deal ticket to avoid reprocessing
         self._last_checked_deal_ticket = 0
         
-        # Loop intervals by regime (seconds)
         orchestrator_config = self.config.get("orchestrator", {})
         self.intervals = {
             MarketRegime.TREND: orchestrator_config.get("loop_interval_trend", 5),
@@ -888,7 +871,7 @@ async def main() -> None:
     storage = StorageManager()
     
     # Data Provider (Using Yahoo as default for live test)
-    provider_manager = DataProviderManager()
+    provider_manager = DataProviderManager(storage=storage)
     data_provider = provider_manager.get_best_provider()
     
     if not data_provider:
