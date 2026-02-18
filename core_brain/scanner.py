@@ -28,7 +28,7 @@ except ImportError:
     psutil = None
 
 
-def _load_config(config_path: str = "config/config.json") -> dict:
+def _load_config(config_path: str) -> dict:
     p = Path(config_path)
     if not p.exists():
         return {}
@@ -92,16 +92,17 @@ class ScannerEngine:
         # SSOT: Prefer injected config_data over config_path
         if config_data:
             cfg = config_data
+        elif storage:
+            # SSOT: Get from StorageManager (bootstrapped from config.json)
+            state = storage.get_system_state()
+            cfg = state.get("global_config", {})
+            if not cfg and config_path:
+                 cfg = _load_config(config_path)
         elif config_path:
             cfg = _load_config(config_path)
-        elif storage:
-            # Try to get from storage if neither provided
-            cfg = storage.get_system_state().get("scanner_config", {})
-            if not cfg and config_path is None:
-                # Fallback to default file if absolutely necessary but log it
-                cfg = _load_config("config/config.json")
         else:
-            cfg = _load_config("config/config.json")
+            # No config source
+            cfg = {}
             
         sc = cfg.get("scanner", cfg) # Support both full config or just scanner segment
 
@@ -335,16 +336,15 @@ class ScannerEngine:
         Permite que TrifectaAnalyzer auto-habilite timeframes y Scanner los detecte.
         """
         try:
-            import json
-            from pathlib import Path
-            
-            config_file = Path(self.config_path)
-            if not config_file.exists():
+            # SSOT: Reload via StorageManager if available
+            if self.storage:
+                config = self.storage.reload_global_config()
+            else:
+                # Fallback only if no storage (legacy)
+                # But ScannerEngine usually has storage now.
+                config = {}
                 return
-            
-            with open(config_file, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-            
+
             scanner_config = config.get("scanner", {})
             timeframes_config = scanner_config.get("timeframes", [])
             

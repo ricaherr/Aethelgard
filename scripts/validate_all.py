@@ -60,6 +60,12 @@ def main():
         f"cd {workspace} && python scripts/manifesto_enforcer.py",
         "Manifesto Enforcer (Reglas Arquitectónicas DI & SSOT)"
     )
+
+    # 4.8 Pattern Enforcer (Signature & Argument Safety)
+    results['Pattern Enforcer'] = run_command(
+        f"cd {workspace} && python scripts/enforce_patterns.py",
+        "Pattern Enforcer (AST Signature Validation)"
+    )
     
     # 5. Critical Tests (Deduplication + Risk)
     results['Tests'] = run_command(

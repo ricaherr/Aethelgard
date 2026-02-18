@@ -85,8 +85,8 @@ class ConnectionManager:
 
 # Instancias globales
 manager = ConnectionManager()
-regime_classifier = RegimeClassifier()
 storage = StorageManager()
+regime_classifier = RegimeClassifier(storage=storage)
 
 # MT5 Connector reference (lazy-loaded when needed)
 _mt5_connector_instance = None
@@ -180,18 +180,13 @@ def _get_balance_metadata() -> Dict[str, Any]:
 
 def _get_max_account_risk_pct() -> float:
     """
-    Load max_account_risk_pct from risk_settings.json (Single Source of Truth).
+    Load max_account_risk_pct from StorageManager (SSOT).
     
     Returns:
         float: Max account risk percentage (default 5.0%)
     """
-    try:
-        with open('config/risk_settings.json', 'r') as f:
-            risk_settings = json.load(f)
-        return risk_settings.get('max_account_risk_pct', 5.0)
-    except (FileNotFoundError, json.JSONDecodeError) as e:
-        logger.warning(f"Could not load max_account_risk_pct from config: {e}. Using default 5.0%")
-        return 5.0
+    settings = storage.get_risk_settings()
+    return settings.get('max_account_risk_pct', 5.0)
 
 # Estado para detectar cambios de régimen
 _last_regime_by_symbol: Dict[str, MarketRegime] = {}
@@ -211,38 +206,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await broadcast_thought("Cerebro Aethelgard inicializado. Sistema listo para operaciones.")
     
     # Migración/Semilla de configuración inicial
-    try:
-        await seed_config_to_db()
-    except Exception as e:
-        logger.error(f"Error en semilla de configuración: {e}")
+    # Ya manejada por StorageManager.__init__ (SSOT)
+    pass
         
     yield
     # Shutdown (opcional)
     logger.info("Servidor Aethelgard deteniéndose.")
 
-async def seed_config_to_db() -> None:
-    """Migra configuraciones de archivos JSON a la base de datos si no existen."""
-    config_dir = os.path.join(os.getcwd(), "config")
-    mapping = {
-        "trading": "dynamic_params.json",
-        "risk": "risk_settings.json",
-        "system": "config.json"
-    }
-    
-    current_state = storage.get_system_state()
-    
-    for category, filename in mapping.items():
-        db_key = f"config_{category}"
-        if db_key not in current_state:
-            file_path = os.path.join(config_dir, filename)
-            if os.path.exists(file_path):
-                try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                    storage.update_system_state({db_key: data})
-                    logger.info(f"✅ Configuración '{category}' migrada del archivo {filename} a la DB.")
-                except Exception as e:
-                    logger.error(f"❌ No se pudo migrar {filename}: {e}")
+    # Config loading handled by StorageManager on init
+    pass
 
 
 def create_app() -> FastAPI:
@@ -637,12 +609,12 @@ def create_app() -> FastAPI:
         """Retorna la biblioteca de estrategias (registradas + educativas)"""
         try:
             # Leer estrategias registradas desde modules.json
-            modules_path = os.path.join(os.getcwd(), "config", "modules.json")
-            registered_strategies = []
+            # Leer estrategias registradas desde StorageManager (SSOT)
+            modules = storage.get_modules_config()
             
-            if os.path.exists(modules_path):
-                with open(modules_path, "r", encoding="utf-8") as f:
-                    modules = json.load(f)
+            if modules:
+                # with open(modules_path, "r", encoding="utf-8") as f:
+                #     modules = json.load(f)
                 
                 for name, mod in modules.get("active_modules", {}).items():
                     if mod.get("type") == "strategy":
@@ -1154,20 +1126,11 @@ def create_app() -> FastAPI:
         config_data = state.get(db_key)
         
         if config_data is None:
-            # Intentar fallback a archivo si no está en DB
-            seed_mapping = {
-                "trading": "dynamic_params.json",
-                "risk": "risk_settings.json",
-                "system": "config.json"
-            }
-            filename = seed_mapping.get(category)
-            if filename:
-                file_path = os.path.join(os.getcwd(), "config", filename)
-                if os.path.exists(file_path):
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        config_data = json.load(f)
-                        # Auto-persistir para la próxima vez
-                        storage.update_system_state({db_key: config_data})
+            # Si no está en DB, retornamos vacío o error.
+            # No hay fallback a archivo aquí para respetar SSOT.
+            # El bootstrapping debió ocurrir al inicio.
+            logger.warning(f"Config '{category}' requested not found in DB.")
+            return {}
             
         if config_data is None and category == "notifications":
             # Fallback especial para notificaciones si se pide vía /config pero no existe

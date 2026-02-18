@@ -232,3 +232,15 @@ class RegimeClassifier:
             self.df = d[["timestamp", "open", "high", "low", "close"]].tail(self.max_history).reset_index(drop=True)
         self._confirmed_regime = None
         self._last_classify_len = 0
+            
+    def get_metrics(self) -> Dict[str, Any]:
+        """
+        Devuelve métricas actuales del régimen.
+        """
+        return {
+            "adx": self._get_latest_adx(),
+            "atr_pct": self._get_atr_pct(),
+            "volatility_shock": self._detect_volatility_shock(),
+            "sma_distance": self._calculate_sma_distance(),
+            "bias": self.get_bias()
+        }

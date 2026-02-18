@@ -367,6 +367,42 @@ class StorageManager(
                         self.update_risk_settings(data)
                         logger.info("Bootstrap: risk_settings.json migrated to DB")
                         
+            # 4. Migrar modules.json (Strategies & Modules)
+            modules_file = Path("config/modules.json")
+            if modules_file.exists():
+                current_modules = self.get_modules_config()
+                if not current_modules:
+                    with open(modules_file, "r") as f:
+                        data = json.load(f)
+                        self.save_modules_config(data)
+                        logger.info("Bootstrap: modules.json migrated to DB")
+                        
+        except Exception as e:
+            logger.error(f"Error during bootstrap from JSON: {e}")
+
+    def reload_global_config(self) -> Dict[str, Any]:
+        """
+        Reloads global configuration from file (config/config.json) to support hot-reloading.
+        Updates the system state with the fresh config.
+        
+        Returns:
+            Dict: The new configuration dictionary
+        """
+        try:
+            from pathlib import Path  # Local import to ensure availability
+            config_path = Path("config/config.json")
+            if config_path.exists():
+                with open(config_path, "r") as f:
+                    config = json.load(f)
+                
+                # Update DB/State
+                self.update_system_state({"global_config": config})
+                return config
+            return {}
+        except Exception as e:
+            logger.error(f"Error reloading global config: {e}")
+            return {}
+                        
         except Exception as e:
             logger.error(f"Error during bootstrap from JSON: {e}")
 

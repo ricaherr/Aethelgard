@@ -890,7 +890,7 @@ async def main() -> None:
     print(f"[SCAN] Scanning {len(enabled_assets)} enabled instruments: {enabled_assets[:10]}...")
     
     # Scanner (Only scans enabled instruments from configuration)
-    scanner = ScannerEngine(assets=enabled_assets, data_provider=data_provider)
+    scanner = ScannerEngine(assets=enabled_assets, data_provider=data_provider, storage=storage)
     
     # Signal Factory
     signal_factory = SignalFactory(storage_manager=storage)

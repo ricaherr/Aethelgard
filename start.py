@@ -277,7 +277,7 @@ async def main() -> None:
         
         coherence_monitor = CoherenceMonitor(storage=storage)
         expiration_manager = SignalExpirationManager(storage=storage)
-        regime_classifier = RegimeClassifier()
+        regime_classifier = RegimeClassifier(storage=storage)
         
         edge_tuner = EdgeTuner(storage=storage) 
         

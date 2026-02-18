@@ -108,6 +108,22 @@ class SystemMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
+    def get_modules_config(self) -> Dict[str, Any]:
+        """Get active modules configuration from system state (SSOT)."""
+        state = self.get_system_state()
+        config = state.get('modules_config', {})
+        if isinstance(config, str):
+            try:
+                return json.loads(config)
+            except json.JSONDecodeError:
+                logger.error("Failed to decode modules_config from DB")
+                return {}
+        return config if isinstance(config, dict) else {}
+
+    def save_modules_config(self, config: Dict[str, Any]) -> None:
+        """Save modules configuration to system state (SSOT)."""
+        self.update_system_state({'modules_config': config})
+
     def get_edge_learning_history(self, limit: int = 20) -> List[Dict]:
         """Get EDGE learning history"""
         query = "SELECT * FROM edge_learning ORDER BY timestamp DESC LIMIT ?"

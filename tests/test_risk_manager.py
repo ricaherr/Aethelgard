@@ -14,7 +14,10 @@ def mock_storage():
 
     # Simula el estado inicial del sistema leído desde la DB
 
+    # Simula el estado inicial del sistema leído desde la DB
     mock.get_system_state.return_value = {'lockdown_mode': False}
+    mock.get_risk_settings.return_value = {"max_account_risk_pct": 5.0}
+    mock.get_dynamic_params.return_value = {"risk_per_trade": 0.01}
 
     return mock
 
@@ -132,6 +135,9 @@ def test_lockdown_persistence_on_init():
         'lockdown_date': datetime.now().isoformat(),
         'lockdown_balance': 10000
     }
+    # Fix: Ensure other config methods return dicts, not Mocks that break format strings
+    mock_storage_in_lockdown.get_dynamic_params.return_value = {"risk_per_trade": 0.01}
+    mock_storage_in_lockdown.get_risk_settings.return_value = {"max_account_risk_pct": 5.0}
 
 
 
@@ -226,6 +232,8 @@ def test_can_take_new_trade_rejects_if_exceeds_max_account_risk():
     """
     # Setup: Mock storage con posiciones activas
     mock_storage = MagicMock()
+    mock_storage.get_risk_settings.return_value = {"max_account_risk_pct": 5.0}
+    mock_storage.get_dynamic_params.return_value = {"risk_per_trade": 0.01}
     
     # 3 posiciones activas con $150 de riesgo cada una
     mock_storage.get_active_positions.return_value = [
@@ -352,6 +360,8 @@ def test_can_take_new_trade_approves_if_within_limit():
     """
     # Setup: Mock storage con solo 2 posiciones activas
     mock_storage = MagicMock()
+    mock_storage.get_risk_settings.return_value = {"max_account_risk_pct": 5.0}
+    mock_storage.get_dynamic_params.return_value = {"risk_per_trade": 0.01}
     
     mock_storage.get_active_positions.return_value = [
         {
