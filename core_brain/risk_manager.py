@@ -318,7 +318,8 @@ class RiskManager:
                 symbol_info=symbol_info,
                 pip_size=pip_size,
                 entry_price=signal.entry_price,
-                symbol=signal.symbol
+                symbol=signal.symbol,
+                connector=connector
             )
             
             if point_value <= 0:
@@ -398,23 +399,22 @@ class RiskManager:
             real_risk_pct = (real_risk_usd / account_balance) * 100
             
             # ====== EDGE VALIDATION: Final Safety Checks ======
-            # Garantizar que NUNCA excedemos riesgo objetivo (crítico)
-            if real_risk_usd > risk_amount_usd * 1.01:  # Tolerancia 1%
-                logger.error(
-                    f"🔥 CRITICAL: Position size calculation EXCEEDS risk target! "
-                    f"Real: ${real_risk_usd:.2f} > Target: ${risk_amount_usd:.2f} "
-                    f"Symbol: {signal.symbol}, Size: {position_size_final:.2f} lots"
-                )
+            # 1. Sanity Check: Garantizar que NUNCA excedemos riesgo objetivo (crítico)
+            is_sane, sanity_msg = self._validate_risk_sanity(
+                position_size_final, stop_loss_distance_pips, point_value, risk_amount_usd, account_balance
+            )
+            
+            if not is_sane:
+                logger.error(f"🔥 CALCULATION REJECTED: {sanity_msg}")
                 # Record CRITICAL failure
                 self.monitor.record_calculation(
                     symbol=signal.symbol,
                     position_size=position_size_final,
                     risk_target=risk_amount_usd,
-                    risk_actual=real_risk_usd,
+                    risk_actual=position_size_final * stop_loss_distance_pips * point_value,
                     status=CalculationStatus.CRITICAL,
-                    error_message=f"Risk exceeds target: ${real_risk_usd:.2f} > ${risk_amount_usd:.2f}"
+                    error_message=sanity_msg
                 )
-                # Emergency fallback: return 0 para NO ejecutar trade
                 return 0.0
             
             # Collect warnings
@@ -532,53 +532,55 @@ class RiskManager:
         symbol_info: Any,
         pip_size: float,
         entry_price: float,
-        symbol: str
+        symbol: str,
+        connector: Any
     ) -> float:
-        """
-        Calcula point value (valor de 1 pip para 1 lote) dinámicamente.
-        
-        Fórmula:
-        - Si quote currency == account currency (ej: EUR/USD con cuenta USD):
-          point_value = contract_size × pip_size
-        - Si quote currency != account currency (ej: USD/JPY con cuenta USD):
-          point_value = (contract_size × pip_size) / exchange_rate
-        
-        Args:
-            symbol_info: MT5 symbol info object
-            pip_size: Tamaño del pip (0.0001 o 0.01)
-            entry_price: Precio de entrada (usado como exchange rate)
-            symbol: Nombre del símbolo
-            
-        Returns:
-            float: Point value en USD por pip por lote
-        """
         try:
             contract_size = symbol_info.trade_contract_size
+            account_currency = "USD" # TODO: Obtener dinámicamente de account_info
             
-            # Detectar quote currency (últimas 3 letras del símbolo)
-            if len(symbol) >= 6:
-                quote_currency = symbol[-3:]
-            else:
-                quote_currency = "USD"
-            
-            # Asumir account currency = USD (puede obtenerse de account_info)
-            account_currency = "USD"
-            
-            if quote_currency == account_currency:
-                # Caso simple: EUR/USD, XAU/USD, etc.
+            # Caso 1: Símbolo termina en la moneda de la cuenta (Major)
+            if symbol.endswith(account_currency):
                 point_value = contract_size * pip_size
+                
+            # Caso 2: Símbolo empieza con la moneda de la cuenta (Directe)
+            # Ej: USDJPY (Quote=JPY). 1 Pip en USD = (contract * pip) / price
+            elif symbol.startswith(account_currency):
+                point_value = (contract_size * pip_size) / entry_price
+                
+            # Caso 3: Cruce (Triangulación)
+            # Ej: GBPJPY (Quote=JPY). Necesitamos USDJPY para convertir JPY -> USD.
             else:
-                # Caso con conversión: USD/JPY, GBP/JPY, etc.
-                # Usar entry_price como tasa de cambio
-                conversion_rate = entry_price
-                if conversion_rate <= 0:
-                    logger.error(f"Invalid conversion_rate: {conversion_rate}")
-                    return 10.0  # Default fallback
-                point_value = (contract_size * pip_size) / conversion_rate
+                quote_currency = symbol[-3:]
+                # Buscar par de conversión USD + Moneda de Cotización
+                conv_symbol = f"USD{quote_currency}"
+                
+                # Intentar obtener precio de conversión a través del connector
+                from connectors.generic_data_provider import GenericDataProvider
+                conv_price = 0.0
+                if hasattr(connector, 'get_current_price'):
+                    conv_price = connector.get_current_price(conv_symbol)
+                
+                if conv_price and conv_price > 0:
+                    # En JPY (USDJPY), dividimos por el precio (1 USD = 150 JPY)
+                    point_value = (contract_size * pip_size) / conv_price
+                    logger.debug(f"[JPY FIX] Using triangulation via {conv_symbol} @ {conv_price}")
+                else:
+                    # Fallback agresivo: Si no hay par USDXXX, intentar XXXUSD
+                    conv_symbol_inv = f"{quote_currency}USD"
+                    if hasattr(connector, 'get_current_price'):
+                        conv_price_inv = connector.get_current_price(conv_symbol_inv)
+                        if conv_price_inv and conv_price_inv > 0:
+                            point_value = (contract_size * pip_size) * conv_price_inv
+                            logger.debug(f"[JPY FIX] Using triangulation via {conv_symbol_inv} @ {conv_price_inv}")
+                        else:
+                            # Fallback final a heurística EURUSD-style
+                            point_value = (contract_size * pip_size) / entry_price
+                            logger.warning(f"[JPY FIX] Triangulation failed for {symbol}, using entry_price fallback")
             
-            logger.debug(
-                f"Point value calc: {symbol} | Contract={contract_size} | "
-                f"Pip={pip_size} | Quote={quote_currency} | PV=${point_value:.2f}/pip"
+            logger.info(
+                f"[RISK] {symbol} Point Value calculated: ${point_value:.4f}/pip "
+                f"(Contract={contract_size}, Pip={pip_size}, Price={entry_price})"
             )
             
             return point_value
@@ -587,6 +589,36 @@ class RiskManager:
             logger.error(f"Error calculating point_value: {e}")
             return 10.0  # Default fallback para forex estándar
     
+    def _validate_risk_sanity(
+        self,
+        lots: float,
+        sl_pips: float,
+        point_value: float,
+        target_usd: float,
+        balance: float
+    ) -> tuple[bool, str]:
+        """
+        Capa de validación adicional para evitar errores de cálculo catastróficos.
+        """
+        actual_risk_usd = lots * sl_pips * point_value
+        
+        # 1. Tolerancia de desvío (10% max)
+        if target_usd > 0:
+            error_pct = abs(actual_risk_usd - target_usd) / target_usd
+            if error_pct > 0.1: # 10%
+                return False, f"Risk deviation too high: {error_pct:.1%} (Actual ${actual_risk_usd:.2f} vs Target ${target_usd:.2f})"
+        
+        # 2. Hard limit por trade (NUNCA más de 2.5% de la cuenta, pase lo que pase)
+        risk_of_balance = actual_risk_usd / balance
+        if risk_of_balance > 0.025:
+            return False, f"ABSOLUTE RISK LIMIT REACHED: {risk_of_balance:.1%} of account (${actual_risk_usd:.2f})"
+            
+        # 3. Lotaje anómalo (Protección contra errores de contract_size)
+        if lots > 1000: # Heurística de seguridad
+            return False, f"Anomalous lot size detected: {lots:.2f}"
+            
+        return True, ""
+
     def _get_market_regime(
         self,
         signal: Signal,

@@ -418,7 +418,8 @@ class EdgeTuner:
             "adx_threshold": config.get("adx_threshold", 25),
             "elephant_atr_multiplier": config.get("elephant_atr_multiplier", 0.3),
             "sma20_proximity_percent": config.get("sma20_proximity_percent", 1.5),
-            "min_signal_score": config.get("min_signal_score", 60)
+            "min_signal_score": config.get("min_signal_score", 60),
+            "risk_per_trade": config.get("risk_per_trade", 0.01)
         }
         
         # === DETERMINAR MODO DE AJUSTE ===
@@ -475,6 +476,17 @@ class EdgeTuner:
         # Min Score: más alto = más conservador
         base_score = 60
         new_params["min_signal_score"] = max(50, min(80, int(base_score * adjustment_factor)))
+
+        # Risk Per Trade: Dinámico EDGE
+        # Base 1.0%. Bajamos a 0.5% si factor > 1.2 (conservador/rachas). Subimos a 1.25% si factor < 0.8 (agresivo).
+        base_risk = 0.01 # 1.0%
+        if adjustment_factor >= 1.5: # MODO DEFENSIVO / LOW WR
+            new_params["risk_per_trade"] = 0.005 # 0.5%
+        elif adjustment_factor <= 0.7: # MODO AGRESIVO / HIGH WR
+            new_params["risk_per_trade"] = 0.0125 # 1.25%
+        else:
+            # Ajuste lineal suave hacia el target
+            new_params["risk_per_trade"] = max(0.005, min(0.0125, base_risk / adjustment_factor))
         
         # Actualizar configuración
         config.update(new_params)
@@ -495,5 +507,6 @@ class EdgeTuner:
         self.logger.info(f"   ADX: {old_params['adx_threshold']:.1f} -> {new_params['adx_threshold']:.1f}")
         self.logger.info(f"   ATR: {old_params['elephant_atr_multiplier']:.2f} -> {new_params['elephant_atr_multiplier']:.2f}")
         self.logger.info(f"   SMA20: {old_params['sma20_proximity_percent']:.1f}% -> {new_params['sma20_proximity_percent']:.1f}%")
+        self.logger.info(f"   RISK: {old_params['risk_per_trade']*100:.2f}% -> {new_params['risk_per_trade']*100:.2f}%")
         
         return adjustment_record

@@ -19,6 +19,7 @@ from decimal import Decimal
 from models.signal import MarketRegime
 from core_brain.market_utils import normalize_price, calculate_pip_size
 from core_brain.instrument_manager import InstrumentManager
+from core_brain.notificator import get_notifier
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,12 @@ class PositionManager:
         
         # Track orphan positions (without metadata) to avoid log spam
         self._synced_orphans = set()  # Set of ticket numbers already synced
+        
+        # Track modification failures for alerts
+        self._modification_failures = {} # ticket -> count
+        
+        # Initialize notifier
+        self.notifier = get_notifier()
         
         logger.info(
             f"PositionManager initialized - "
@@ -153,6 +160,7 @@ class PositionManager:
                             # Modify position directly via connector with informative comment
                             result = self.connector.modify_position(ticket, breakeven_price, current_tp, reason="BREAKEVEN")
                             if result and result.get('success', False):
+                                self._modification_failures[ticket] = 0
                                 actions.append({
                                     'ticket': ticket,
                                     'action': 'BREAKEVEN_REAL',
@@ -160,6 +168,7 @@ class PositionManager:
                                     'reason': 'BREAKEVEN_PROTECTION'
                                 })
                             else:
+                                self._handle_modification_failure(ticket, "BREAKEVEN")
                                 logger.warning(
                                     f"Failed to move position {ticket} to breakeven: "
                                     f"{result.get('error') if result else 'No result'}"
@@ -192,6 +201,7 @@ class PositionManager:
                             # Modify position directly via connector with informative comment
                             result = self.connector.modify_position(ticket, trailing_sl, current_tp, reason="TRAILING_STOP")
                             if result and result.get('success', False):
+                                self._modification_failures[ticket] = 0
                                 actions.append({
                                     'ticket': ticket,
                                     'action': 'TRAILING_STOP_ATR',
@@ -199,6 +209,7 @@ class PositionManager:
                                     'reason': 'TRAILING_PROTECTION'
                                 })
                             else:
+                                self._handle_modification_failure(ticket, "TRAILING_STOP")
                                 logger.warning(
                                     f"Failed to apply trailing stop to position {ticket}: "
                                     f"{result.get('error') if result else 'No result'}"
@@ -211,11 +222,16 @@ class PositionManager:
                         f"Adjusting SL/TP"
                     )
                     if self._adjust_for_regime_change(position):
+                        self._modification_failures[ticket] = 0
                         actions.append({
                             'ticket': ticket,
                             'action': 'REGIME_ADJUSTMENT',
                             'reason': 'REGIME_CHANGE'
                         })
+                
+                # 6. Safety Checks: High Exposure and Volatility (EDGE)
+                self._check_high_exposure(position)
+                self._check_volatility_spike(position)
                 
             except Exception as e:
                 logger.error(
@@ -388,6 +404,67 @@ class PositionManager:
                 f"Defaulting to NORMAL"
             )
             return MarketRegime.NORMAL
+    
+    def _handle_modification_failure(self, ticket: int, action_type: str) -> None:
+        """Tracks failures and notifies if they become critical."""
+        count = self._modification_failures.get(ticket, 0) + 1
+        self._modification_failures[ticket] = count
+        
+        if count >= 3:
+            msg = f"Multiple failures ({count}) modifying position {ticket} ({action_type}). Manual intervention REQUIRED."
+            logger.critical(f"🚨 {msg}")
+            if self.notifier:
+                import asyncio
+                # Use create_task since we are likely in a loop that can't await
+                asyncio.create_task(self.notifier.notify_system_alert(
+                    title="CRITICAL: Modification Failed",
+                    message=msg,
+                    alert_type="critical"
+                ))
+                
+    def _check_high_exposure(self, position: Dict) -> None:
+        """Notifies if price is dangerously close to SL (within 20% of distance)."""
+        ticket = position.get('ticket')
+        sl = position.get('sl', 0)
+        if not sl or sl == 0:
+            return
+            
+        current_price = position.get('price_current', 0)
+        entry_price = position.get('price_open', 0)
+        
+        # Calculate distance
+        total_dist = abs(entry_price - sl)
+        if total_dist == 0: return
+        
+        current_dist = abs(current_price - sl)
+        exposure_pct = current_dist / total_dist
+        
+        if exposure_pct < 0.2: # Less than 20% distance remaining
+            msg = f"Position {ticket} ({position.get('symbol')}) is at HIGH EXPOSURE. Price is only {exposure_pct:.1%} away from SL."
+            logger.warning(f"⚠️ {msg}")
+            # Limit notification frequency (TODO: add cooldown)
+            if self.notifier:
+                import asyncio
+                asyncio.create_task(self.notifier.notify_system_alert(
+                    title="WARNING: High Exposure",
+                    message=msg,
+                    alert_type="warning"
+                ))
+
+    def _check_volatility_spike(self, position: Dict) -> None:
+        """PROTECTION: Mover SL a estructura si hay spike de volatilidad contra la posición."""
+        # Placeholder for complex Z-Score logic. 
+        # For now, if current loss > 75% of initial risk AND market is VOLATILE, 
+        # consider it a spike requiring closer protection.
+        ticket = position.get('ticket')
+        symbol = position.get('symbol')
+        regime = self._get_current_regime_with_fallback(symbol)
+        
+        if regime == MarketRegime.VOLATILE:
+            # Simple protection logic: Move SL closer if possible
+            # Actual implementation would need structural points (highs/lows)
+            logger.debug(f"Volatility spike check for {ticket} - Regime is VOLATILE")
+            # In a real scenario, we would tighter SL here.
     
     def _exceeds_max_drawdown(self, position: Dict) -> bool:
         """

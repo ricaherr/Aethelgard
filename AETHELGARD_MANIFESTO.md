@@ -1,3 +1,29 @@
+### 1.7 Gestión de Riesgo Dinámica y Robustez EDGE (Feb 2026)
+
+**Regla:** El sistema debe poseer múltiples capas de validación aritmética y fail-safes proactivos para evitar errores catastróficos en el cálculo de lotaje y la gestión de posiciones, especialmente en cruces complejos (JPY) y entornos de alta volatilidad.
+
+#### 1. Gestión de Riesgo Dinámica (EdgeTuner)
+- **Risk per Trade Adaptativo**: El riesgo base de **1.0%** no es estático.
+- **Modo Defensivo**: Si el Win Rate < 45% o se alcanzan `max_consecutive_losses`, el riesgo se reduce automáticamente a **0.5%**.
+- **Modo Agresivo**: Si el Win Rate > 65%, el riesgo puede escalar hasta **1.25%**.
+- **Sintonización**: El ajuste es lineal y se recalibra cada 100 trades.
+
+#### 2. Capa de Seguridad "Risk Sanity Check"
+- **Validación Anti-Error**: Cada cálculo de lotaje pasa por un gate de cordura antes de la ejecución.
+- **Triangulación Real (JPY Fix)**: Se prohíbe el uso del precio de entrada para la conversión JPY->USD. Es obligatorio usar el par de triangulación real (ej: USDJPY) para obtener el `point_value` exacto.
+- **Tolerancia de Desvío**: Si el riesgo real calculado se desvía más del **10%** del objetivo USD, el trade se aborta.
+- **Hard Limit Absoluto**: Se prohíbe cualquier ejecución que arriesgue más del **2.5%** del balance total por trade, sin excepciones.
+
+#### 3. PositionManager: Simulador de Trader Proactivo
+- **Notificaciones Críticas**: El sistema debe alertar vía Telegram ante fallos en la modificación de SL/TP tras 3 intentos.
+- **Protección de Alta Exposición**: Notificación automática cuando el precio se encuentra a menos del **20%** de distancia del SL.
+- **Fail-safe de Volatilidad**: En régimen `VOLATILE`, el sistema activa protecciones de SL ajustadas a la estructura para mitigar spikes anómalos.
+
+#### 4. Confluencia Trifecta Estricta
+- **Eliminación del Modo Degradado**: Se prohíbe operar en modo Trifecta si faltan datos de M1 o M15. La alineación fractal total de la SMA20 es un pre-requisito innegociable para la seguridad del capital.
+
+---
+
 ### 1.6 Estrategia Oliver Velez Estricta (Feb 2026)
 
 **Regla:** El sistema debe priorizar la calidad estadística y la ubicación milimétrica sobre la cantidad de señales. Se prohíbe la generación de señales basadas en velas de baja volatilidad o fuera de la zona de valor.

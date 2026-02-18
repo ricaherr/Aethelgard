@@ -86,21 +86,19 @@ class TrifectaAnalyzer:
         if not self._validate_data(market_data):
             missing_tfs = [tf for tf in self.required_tfs if tf not in market_data]
             
-            # DEGRADED MODE: Allow signal to pass without Trifecta filtering
-            logger.warning(
-                f"⚠️ [{symbol}] TrifectaAnalyzer operating in DEGRADED MODE: "
-                f"Missing {missing_tfs}. Signal quality is REDUCED. "
-                f"Enable {missing_tfs} in config.json for full Trifecta filtering."
-            )
+            # REJECTION: No trades allowed without full Trifecta confluency
+            reason = f"Insufficient Data - Missing {missing_tfs}. Trifecta alignment not verified."
+            logger.warning(f"❌ [{symbol}] Signal rejected: {reason}")
             
             return {
-                "valid": True,  # ← Allow signal to pass
-                "direction": "UNKNOWN",  # No puede determinar dirección sin 3 TFs
-                "score": 50.0,  # Neutral score (ni bonifica ni penaliza)
+                "valid": False,
+                "direction": "UNKNOWN",
+                "score": 0.0,
+                "reason": reason,
                 "metadata": {
-                    "degraded_mode": True,
+                    "degraded_mode": False,
                     "missing_timeframes": missing_tfs,
-                    "reason": "Insufficient Data - Operating in fallback mode"
+                    "reason": reason
                 }
             }
 
