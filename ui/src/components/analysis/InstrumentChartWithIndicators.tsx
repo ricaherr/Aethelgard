@@ -58,7 +58,10 @@ const InstrumentChartWithIndicators: React.FC<InstrumentChartWithIndicatorsProps
         }
       })
       .catch(err => {
-        setError('No se pudo cargar la gráfica. Intenta nuevamente.');
+        const errorMsg = err.message === '404'
+          ? 'Instrumento no soportado por el broker actual.'
+          : 'No se pudo cargar la gráfica. Verifica la conexión.';
+        setError(errorMsg);
         console.error('[InstrumentChartWithIndicators] Error:', err);
       })
       .finally(() => setLoading(false));

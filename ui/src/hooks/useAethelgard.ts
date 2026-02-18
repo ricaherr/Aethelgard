@@ -27,14 +27,10 @@ export function useAethelgard() {
         const host = window.location.hostname === 'localhost' ? 'localhost:8000' : window.location.host;
         const wsUrl = `${protocol}//${host}/ws/GENERIC/dashboard_nextgen`;
 
-        console.log(`📡 Connecting to Aethelgard: ${wsUrl}`);
 
         ws.current = new WebSocket(wsUrl);
 
-        ws.current.onopen = () => {
-            console.log('✅ Connected to Aethelgard Brain');
-            setStatus(prev => ({ ...prev, connected: true }));
-        };
+        setStatus(prev => ({ ...prev, connected: true }));
 
         ws.current.onmessage = (event) => {
             try {
@@ -46,7 +42,6 @@ export function useAethelgard() {
         };
 
         ws.current.onclose = () => {
-            console.log('🔌 Disconnected from Brain. Retrying in 5s...');
             setStatus(prev => ({ ...prev, connected: false }));
             setTimeout(connect, 5000);
         };
@@ -93,7 +88,7 @@ export function useAethelgard() {
                 break;
 
             default:
-                console.log(`ℹ️ Received unknown event type: ${type}`);
+                break;
         }
     };
 

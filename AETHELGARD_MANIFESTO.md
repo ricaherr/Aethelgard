@@ -1,3 +1,17 @@
+### 1.8 Arquitectura de API y Single Source of Truth (SSOT) (Feb 2026)
+
+**Regla:** Los endpoints de la API deben ser la única interfaz de comunicación entre el UI y el Core, y deben consultar exclusivamente la **Base de Datos** para obtener el estado del sistema, evitando dependencias de objetos en memoria volátiles que se pierden en reinicios.
+
+#### 1. Consolidación de Endpoints
+- **Señales Unificadas**: El endpoint `/api/signals` centraliza toda la lógica de filtrado, paginación y enriquecimiento de datos de mercado (P&L en vivo, estado del broker).
+- **Auditoría Trace**: `/api/signal/{id}/trace` proporciona la trazabilidad completa del ciclo de vida de una señal desde su detección por el scanner hasta su cierre.
+
+#### 2. Modelo SSOT para Estado de Riesgo
+- **Persistence First**: El estado de riesgo (lockdown, balance de referencia, modo operativo) se lee y escribe directamente en la tabla `system_state`.
+- **Independencia del Orquestador**: El endpoint `/api/risk/status` ya no depende de la instancia activa del `MainOrchestrator`, permitiendo consultas de estado incluso si el motor de ejecución está detenido.
+
+---
+
 ### 1.7 Gestión de Riesgo Dinámica y Robustez EDGE (Feb 2026)
 
 **Regla:** El sistema debe poseer múltiples capas de validación aritmética y fail-safes proactivos para evitar errores catastróficos en el cálculo de lotaje y la gestión de posiciones, especialmente en cruces complejos (JPY) y entornos de alta volatilidad.

@@ -1,3 +1,16 @@
+## 🎯 MILESTONE: API Consolidation & UI Refinement (2026-02-17)
+**Estado: ✅ COMPLETADO**
+**Criterio: Resolver errores 404 en API, consolidar endpoints redundantes y limpiar logs de depuración en la UI para un entorno de producción.**
+
+### Logros Clave
+- [x] **Consolidación de API**: Eliminación de endpoints redundantes en `server.py` (`/api/signals` duplicado y `/api/signal/trace` mal formado).
+- [x] **Single Source of Truth (Risk)**: Migración de `/api/risk/status` a un modelo basado 100% en base de datos, eliminando dependencias de memoria volátiles (`orchestrator`).
+- [x] **Enriquecimiento de Señales**: Unificación de lógica de enriquecimiento (P&L, estado de trade real, disponibilidad de gráficas) en un único endpoint optimizado.
+- [x] **UI Production Cleanup**: Eliminación de todos los `console.log` de depuración en Portafolio, Análisis y WebSocket hooks.
+- [x] **Validación de Build**: Confirmación de build de producción (`npm run build`) exitosa.
+
+---
+
 ## 🎯 MILESTONE: Estrategia Oliver Velez Estricta (EDGE STRICT) (2026-02-17)
 **Estado: ✅ COMPLETADO**
 **Criterio: Redefinir la detección de Velas Elefante y ubicación en SMA20 para eliminar falsos positivos y asegurar rastro institucional (Z-Score).**

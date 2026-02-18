@@ -139,6 +139,14 @@ function PositionCard({ position, fullscreenTicket, onFullscreenToggle }: Positi
             <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-3">
                     <span className="text-base font-outfit font-bold text-white/90">{position.symbol}</span>
+
+                    {/* High Exposure Badge */}
+                    {position.initial_risk_usd > 100 && (
+                        <span className="text-[9px] px-2 py-0.5 rounded bg-red-500/20 text-red-500 border border-red-500/30 font-bold animate-pulse">
+                            HIGH EXPOSURE
+                        </span>
+                    )}
+
                     <span className={`text-[9px] px-2 py-0.5 rounded uppercase font-bold border ${assetBadge[position.asset_type] || assetBadge['forex']}`}>
                         {position.asset_type}
                     </span>
@@ -219,6 +227,16 @@ function PositionCard({ position, fullscreenTicket, onFullscreenToggle }: Positi
                     </div>
                 </div>
             </div>
+
+            {/* Modification Failures / Alerts */}
+            {(position as any).metadata?.modification_failures && (
+                <div className="mt-3 p-2 bg-red-900/10 border border-red-500/20 rounded-lg flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping" />
+                    <span className="text-[9px] text-red-400 font-bold uppercase tracking-widest">
+                        Error de Modificación: {(position as any).metadata.modification_failures}
+                    </span>
+                </div>
+            )}
 
             {/* Footer: SL/TP + TF + Strategy + Regime */}
             <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-[10px]">

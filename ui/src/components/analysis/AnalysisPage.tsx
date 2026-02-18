@@ -31,17 +31,27 @@ const AnalysisPage: React.FC = () => {
   const toast = useToast();
 
 
-  // Estado de filtros
-  const [activeFilters, setActiveFilters] = useState({
-    probability: [],
-    time: [],
-    regime: [],
-    strategy: [],
-    symbols: [],
-    timeframes: [],
-    category: [],
-    status: [],
-    limit: 100
+  // Estado de filtros con persistencia en localStorage como fallback rápido
+  const [activeFilters, setActiveFilters] = useState(() => {
+    const saved = localStorage.getItem('aethelgard_active_filters');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error('Error parsing saved filters:', e);
+      }
+    }
+    return {
+      probability: [],
+      time: [],
+      regime: [],
+      strategy: [],
+      symbols: [],
+      timeframes: [],
+      category: [],
+      status: [],
+      limit: 100
+    };
   });
 
   // View mode con persistencia en localStorage (dato NO sensible)
@@ -69,7 +79,7 @@ const AnalysisPage: React.FC = () => {
 
       // Restaurar filtros activos si existen, preservando defaults nuevos (como limit)
       if (prefs.active_filters) {
-        setActiveFilters(prev => ({
+        setActiveFilters((prev: any) => ({
           ...prev,
           ...prefs.active_filters,
           // Ensure limit exists if not in prefs
@@ -83,6 +93,9 @@ const AnalysisPage: React.FC = () => {
 
   const handleFiltersChange = async (newFilters: any) => {
     setActiveFilters(newFilters);
+
+    // Persistir en localStorage (inmediato)
+    localStorage.setItem('aethelgard_active_filters', JSON.stringify(newFilters));
 
     // Persistir filtros en DB
     try {
@@ -101,7 +114,6 @@ const AnalysisPage: React.FC = () => {
 
   const handleExecuteSignal = async (signalId: string) => {
     try {
-      console.log('Executing signal:', signalId);
 
       const response = await fetch('/api/signals/execute', {
         method: 'POST',
@@ -114,12 +126,10 @@ const AnalysisPage: React.FC = () => {
       const result = await response.json();
 
       if (result.success) {
-        console.log('Signal executed successfully:', result.message);
         toast.success(result.message);
 
         // Refresh feed to remove executed signal immediately
         if ((window as any).__signalFeedRefresh) {
-          console.log('Refreshing signal feed after execution...');
           (window as any).__signalFeedRefresh();
         }
       } else {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { MarketRegime } from './types/aethelgard';
 import {
     LayoutDashboard,
@@ -8,7 +8,8 @@ import {
     Bell,
     Search,
     Zap,
-    Briefcase
+    Briefcase,
+    ScanEye
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -33,6 +34,25 @@ function App() {
     // Real-time data from Cerebro Brain
     const { regime, signals, thoughts, status, metrics } = useAethelgard();
 
+    const [riskStatus, setRiskStatus] = useState<any>(null);
+
+    useEffect(() => {
+        const fetchRisk = async () => {
+            try {
+                const res = await fetch('/api/risk/status');
+                if (res.ok) {
+                    const data = await res.json();
+                    setRiskStatus(data);
+                }
+            } catch (err) {
+                console.error('Error fetching risk status:', err);
+            }
+        };
+        fetchRisk();
+        const interval = setInterval(fetchRisk, 20000); // 20s update
+        return () => clearInterval(interval);
+    }, []);
+
     return (
         <div className="min-h-screen w-full flex bg-[#050505] text-white/90 font-sans overflow-hidden">
             {/* Sidebar Navigation */}
@@ -49,6 +69,12 @@ function App() {
                         label="Trader"
                     />
                     <NavIcon
+                        icon={<Activity size={22} />}
+                        active={activeTab === 'analysis'}
+                        onClick={() => setActiveTab('analysis')}
+                        label="Análisis"
+                    />
+                    <NavIcon
                         icon={<Briefcase size={22} />}
                         active={activeTab === 'portfolio'}
                         onClick={() => setActiveTab('portfolio')}
@@ -61,16 +87,10 @@ function App() {
                         label="EDGE"
                     />
                     <NavIcon
-                        icon={<Activity size={22} />}
+                        icon={<ScanEye size={22} />}
                         active={activeTab === 'monitor'}
                         onClick={() => setIsDiagOpen(true)}
                         label="Monitor"
-                    />
-                    <NavIcon
-                        icon={<Search size={22} />}
-                        active={activeTab === 'analysis'}
-                        onClick={() => setActiveTab('analysis')}
-                        label="Análisis"
                     />
                 </div>
 
@@ -152,7 +172,11 @@ function App() {
                                         <StatBadge label="Total Alpha" value="24.8%" trend="+2.4%" />
                                         <StatBadge label="Active Trades" value="3" trend="Stable" />
                                         <StatBadge label="Edge Accuracy" value="68%" trend="+5%" />
-                                        <StatBadge label="Risk Factor" value="Low" trend="Safe" />
+                                        <StatBadge
+                                            label="Risk Factor"
+                                            value={riskStatus?.risk_mode || 'NORMAL'}
+                                            trend={riskStatus ? `${riskStatus.current_risk_pct.toFixed(2)}%` : 'Safe'}
+                                        />
                                     </div>
 
                                     {/* Main Opportunity Stream */}

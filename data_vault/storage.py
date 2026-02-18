@@ -274,6 +274,47 @@ class StorageManager(
         finally:
             self._close_conn(conn)
 
+    def get_tuning_history(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """
+        Obtiene el historial de ajustes de EdgeTuner.
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM tuning_adjustments 
+                ORDER BY timestamp DESC 
+                LIMIT ?
+            """, (limit,))
+            rows = cursor.fetchall()
+            history = []
+            for row in rows:
+                item = dict(row)
+                if item.get('adjustment_data'):
+                    try:
+                        item.update(json.loads(item['adjustment_data']))
+                    except:
+                        pass
+                history.append(item)
+            return history
+        finally:
+            self._close_conn(conn)
+
+    def save_tuning_adjustment(self, adjustment_data: Dict[str, Any]) -> None:
+        """
+        Guarda un nuevo ajuste de EdgeTuner en la DB.
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO tuning_adjustments (adjustment_data)
+                VALUES (?)
+            """, (json.dumps(adjustment_data),))
+            conn.commit()
+        finally:
+            self._close_conn(conn)
+
     def check_integrity(self) -> bool:
         """
         Verifica la integridad de la base de datos y repara esquemas si es necesario.
@@ -726,6 +767,32 @@ class StorageManager(
         finally:
             self._close_conn(conn)
     
+    def get_signal_pipeline_history(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        Get recent signal pipeline events.
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM signal_pipeline 
+                ORDER BY timestamp DESC 
+                LIMIT ?
+            """, (limit,))
+            rows = cursor.fetchall()
+            events = []
+            for row in rows:
+                event = dict(row)
+                if event.get('metadata'):
+                    try:
+                        event['metadata'] = json.loads(event['metadata'])
+                    except:
+                        pass
+                events.append(event)
+            return events
+        finally:
+            self._close_conn(conn)
+
     def get_signal_pipeline_trace(self, signal_id: str) -> List[Dict[str, Any]]:
         """
         Get complete pipeline trace for a signal.

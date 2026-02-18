@@ -18,6 +18,11 @@ interface Signal {
     status: string;
     has_trace: boolean;
     confluences?: string[];
+    live_status?: 'OPEN' | 'CLOSED';
+    pnl?: number;
+    exit_price?: number;
+    exit_reason?: string;
+    has_chart?: boolean;
 }
 
 interface SignalFeedProps {
@@ -63,7 +68,6 @@ export const SignalFeed: React.FC<SignalFeedProps> = ({
     const fetchSignals = async () => {
         try {
             setLoading(true);
-            console.log('[SignalFeed] Fetching with filters:', JSON.stringify(filters));
 
             // Construir query params
             const params = new URLSearchParams();
@@ -79,7 +83,6 @@ export const SignalFeed: React.FC<SignalFeedProps> = ({
                 else if (filters.time.includes('today')) minutes = 1440;
                 else if (filters.time.includes('week')) minutes = 10080;
                 else if (filters.time.includes('month')) minutes = 43200; // 30 days
-                console.log(`[SignalFeed] Time filter active: ${filters.time}, using minutes: ${minutes}`);
             }
             params.append('minutes', minutes.toString());
 
@@ -87,46 +90,39 @@ export const SignalFeed: React.FC<SignalFeedProps> = ({
             if (filters.symbols && Array.isArray(filters.symbols) && filters.symbols.length > 0) {
                 const symbolString = filters.symbols.join(',');
                 params.append('symbols', symbolString);
-                console.log(`[SignalFeed] Symbols filter active: ${symbolString}`);
             }
 
             // Timeframes filter -> timeframes param
             if (filters.timeframes && Array.isArray(filters.timeframes) && filters.timeframes.length > 0) {
                 const tfString = filters.timeframes.join(',');
                 params.append('timeframes', tfString);
-                console.log(`[SignalFeed] Timeframes filter active: ${tfString}`);
             }
 
             // Regime filter -> regimes param
             if (filters.regime && Array.isArray(filters.regime) && filters.regime.length > 0) {
                 const regimeString = filters.regime.join(',');
                 params.append('regimes', regimeString);
-                console.log(`[SignalFeed] Regime filter active: ${regimeString}`);
             }
 
             // Strategy filter -> strategies param
             if (filters.strategy && Array.isArray(filters.strategy) && filters.strategy.length > 0) {
                 const strategyString = filters.strategy.join(',');
                 params.append('strategies', strategyString);
-                console.log(`[SignalFeed] Strategy filter active: ${strategyString}`);
             }
 
             // Status filter -> status param
             if (filters.status && Array.isArray(filters.status) && filters.status.length > 0) {
                 const statusString = filters.status.join(',');
                 params.append('status', statusString);
-                console.log(`[SignalFeed] Status filter active: ${statusString}`);
             }
 
             const url = `/api/signals?${params.toString()}`;
-            console.log('[SignalFeed] Final Request URL:', url);
 
             const response = await fetch(url);
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
             const data = await response.json();
-            console.log('[SignalFeed] API Response data:', data);
 
             // BACKEND ya filtró, solo aplicar filtro de probabilidad en cliente
             let filtered = data.signals || [];
@@ -146,7 +142,6 @@ export const SignalFeed: React.FC<SignalFeedProps> = ({
 
             filtered.sort((a: Signal, b: Signal) => b.score - a.score);
 
-            console.log('Final signals:', filtered.length);
 
             setSignals(filtered);
             setLastUpdate(new Date());

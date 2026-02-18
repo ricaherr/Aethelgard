@@ -6,21 +6,8 @@ from types import SimpleNamespace
 from core_brain.market_utils import normalize_price, normalize_volume, calculate_pip_size
 from core_brain.instrument_manager import InstrumentManager
 
-# Import MockSymbolInfo from conftest or define locally for robustness
-try:
-    from tests.conftest import MockSymbolInfo
-except ImportError:
-    class MockSymbolInfo:
-        def __init__(self, **kwargs):
-            # Positional fallback logic not needed for these tests
-            # Just set what is provided
-            for k, v in kwargs.items():
-                setattr(self, k, v)
-            
-            # Default logic for volume/limits
-            if not hasattr(self, 'volume_min'): self.volume_min = 0.01
-            if not hasattr(self, 'volume_max'): self.volume_max = 100.0
-            if not hasattr(self, 'volume_step'): self.volume_step = 0.01
+# Use shared MockSymbolInfo from conftest
+from tests.conftest import MockSymbolInfo
 
 def test_normalize_price_with_broker_digits():
     # Case: Broker provides digits

@@ -18,6 +18,9 @@ interface SignalCardProps {
         status: string;
         has_trace: boolean;
         confluences?: string[];
+        live_status?: 'OPEN' | 'CLOSED';
+        pnl?: number;
+        has_chart?: boolean;
     };
     onExecute?: (signalId: string) => void;
     onViewChart?: (signal: any) => void;
@@ -141,6 +144,26 @@ export const SignalCard: React.FC<SignalCardProps> = ({
                     </div>
                 </div>
             )}
+            {/* Live Status Indicator (EdgeTuner Feedback) */}
+            {signal.live_status && (
+                <div className={`mb-3 p-2 rounded-lg flex justify-between items-center ${signal.live_status === 'OPEN'
+                    ? 'bg-blue-900/20 border border-blue-500/30'
+                    : 'bg-gray-700/50 border border-gray-600/30 opacity-80'
+                    }`}>
+                    <div className="flex items-center gap-2">
+                        <div className={`w-2 h-2 rounded-full ${signal.live_status === 'OPEN' ? 'bg-blue-400 animate-pulse' : 'bg-gray-500'}`} />
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-gray-300">
+                            {signal.live_status === 'OPEN' ? 'Operación en curso' : 'Trade Finalizado'}
+                        </span>
+                    </div>
+                    {signal.pnl !== undefined && (
+                        <span className={`text-sm font-mono font-bold ${signal.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            {signal.pnl >= 0 ? '+' : ''}{signal.pnl.toFixed(2)}
+                            <span className="text-[8px] ml-1 opacity-60">USD</span>
+                        </span>
+                    )}
+                </div>
+            )}
 
             {/* Actions */}
             <div className="flex gap-2">
@@ -166,8 +189,12 @@ export const SignalCard: React.FC<SignalCardProps> = ({
                 </button>
                 <button
                     onClick={() => onViewChart?.(signal)}
-                    className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-blue-400 rounded-lg transition-colors"
-                    title="Chart"
+                    disabled={signal.has_chart === false}
+                    className={`px-4 py-2 rounded-lg transition-colors ${signal.has_chart === false
+                        ? 'bg-gray-700 text-gray-600 cursor-not-allowed opacity-50'
+                        : 'bg-gray-700 hover:bg-gray-600 text-blue-400'
+                        }`}
+                    title={signal.has_chart === false ? "Gráfica no disponible para este símbolo" : "Ver Gráfica"}
                 >
                     <LineChart className="w-4 h-4" />
                 </button>

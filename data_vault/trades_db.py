@@ -67,6 +67,23 @@ class TradesMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
+    def get_trade_result_by_signal_id(self, signal_id: str) -> Optional[Dict]:
+        """Get a trade result by its signal ID"""
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM trade_results WHERE signal_id = ? LIMIT 1", (signal_id,))
+            row = cursor.fetchone()
+            if row:
+                res = dict(row)
+                # Normalize profit field
+                if 'profit' in res:
+                    res['profit_loss'] = res['profit']
+                return res
+            return None
+        finally:
+            self._close_conn(conn)
+
     def has_open_position(self, symbol: str, timeframe: Optional[str] = None) -> bool:
         """
         Check if there's an open position for the given symbol.

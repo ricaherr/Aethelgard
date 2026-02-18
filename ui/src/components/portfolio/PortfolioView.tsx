@@ -12,24 +12,17 @@ export function PortfolioView() {
 
     const fetchPortfolioData = async () => {
         try {
-            console.log('[Portfolio] Fetching positions...');
-            
+
             // Fetch positions
             const positionsRes = await fetch('/api/positions/open');
-            console.log('[Portfolio] Positions response status:', positionsRes.status);
             const positionsData = await positionsRes.json();
-            console.log('[Portfolio] Positions data:', positionsData);
             setPositions(positionsData.positions || []);
 
             // Fetch risk summary (includes real-time balance from MT5 if connected)
-            console.log('[Portfolio] Fetching risk summary...');
             const riskRes = await fetch('/api/risk/summary');
-            console.log('[Portfolio] Risk response status:', riskRes.status);
             const riskData = await riskRes.json();
-            console.log('[Portfolio] Risk data:', riskData);
             setRiskSummary(riskData);
 
-            console.log('[Portfolio] Data loaded successfully');
             setLoading(false);
         } catch (error) {
             console.error('[Portfolio] Error fetching portfolio data:', error);
@@ -39,10 +32,10 @@ export function PortfolioView() {
 
     useEffect(() => {
         fetchPortfolioData();
-        
+
         // Auto-refresh balance every 30s (balance updates from MT5 in real-time)
         const interval = setInterval(fetchPortfolioData, 30000);
-        
+
         return () => clearInterval(interval);
     }, []);
 
@@ -62,8 +55,8 @@ export function PortfolioView() {
             {/* Left Panel - Risk Summary (Collapsible) */}
             <div className={`${riskPanelCollapsed || fullscreenTicket !== null ? 'w-16' : 'w-80'} flex-shrink-0 transition-all duration-300`}>
                 {riskSummary && (
-                    <RiskSummary 
-                        summary={riskSummary} 
+                    <RiskSummary
+                        summary={riskSummary}
                         collapsed={riskPanelCollapsed || fullscreenTicket !== null}
                         onToggleCollapse={fullscreenTicket === null ? () => setRiskPanelCollapsed(!riskPanelCollapsed) : undefined}
                     />
@@ -72,8 +65,8 @@ export function PortfolioView() {
 
             {/* Right Panel - Active Positions */}
             <div className="flex-1">
-                <ActivePositions 
-                    positions={positions} 
+                <ActivePositions
+                    positions={positions}
                     fullscreenTicket={fullscreenTicket}
                     onFullscreenToggle={(ticket) => setFullscreenTicket(ticket)}
                 />

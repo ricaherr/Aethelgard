@@ -204,35 +204,42 @@ export function ConfigHub() {
                                         )}
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
-                                            {Object.entries(config).map(([key, value]) => {
-                                                if (key.startsWith('_')) return null; // Skip comments
-                                                if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-                                                    // Handle one level of nesting (e.g. confluence.weights)
-                                                    return (
-                                                        <div key={key} className="col-span-full border-t border-white/5 pt-6 mt-4">
-                                                            <h4 className="text-aethelgard-blue text-[10px] font-bold uppercase tracking-[0.3em] mb-4">{key} Cluster</h4>
-                                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                                                {Object.entries(value).map(([subKey, subValue]) => (
-                                                                    <ConfigInput
-                                                                        key={`${key}.${subKey}`}
-                                                                        label={subKey}
-                                                                        value={subValue}
-                                                                        onChange={(v) => handleInputChange(`${key}.${subKey}`, v)}
-                                                                    />
-                                                                ))}
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                }
-                                                return (
-                                                    <ConfigInput
-                                                        key={key}
-                                                        label={key}
-                                                        value={value}
-                                                        onChange={(v) => handleInputChange(key, v)}
-                                                    />
-                                                );
-                                            })}
+                                            {(() => {
+                                                const renderRecursive = (data: any, path: string = '') => {
+                                                    return Object.entries(data).map(([key, value]) => {
+                                                        if (key.startsWith('_')) return null; // Skip comments/metadata
+                                                        const fullKey = path ? `${path}.${key}` : key;
+
+                                                        if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+                                                            // Cluster for nested objects
+                                                            return (
+                                                                <div key={fullKey} className="col-span-full border-t border-white/5 pt-6 mt-4">
+                                                                    <div className="flex items-center gap-3 mb-4">
+                                                                        <div className="h-[1px] flex-1 bg-white/5"></div>
+                                                                        <h4 className="text-aethelgard-blue text-[10px] font-bold uppercase tracking-[0.3em] whitespace-nowrap">
+                                                                            {key.replace(/_/g, ' ')} Cluster
+                                                                        </h4>
+                                                                        <div className="h-[1px] flex-1 bg-white/5"></div>
+                                                                    </div>
+                                                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 px-4">
+                                                                        {renderRecursive(value, fullKey)}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        }
+
+                                                        return (
+                                                            <ConfigInput
+                                                                key={fullKey}
+                                                                label={key}
+                                                                value={value}
+                                                                onChange={(v) => handleInputChange(fullKey, v)}
+                                                            />
+                                                        );
+                                                    });
+                                                };
+                                                return renderRecursive(config);
+                                            })()}
                                         </div>
                                     </>
                                 )}

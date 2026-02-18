@@ -823,7 +823,7 @@ def create_app() -> FastAPI:
     ) -> Dict[str, Any]:
         """
         Get recent signals from database with optional filters
-        All filters are applied in BACKEND
+        Includes live trade status and P/L for executed signals.
         """
         try:
             logger.info(f"GET /api/signals: limit={limit}, minutes={minutes}, symbols={symbols}, status={status}")
@@ -836,13 +836,14 @@ def create_app() -> FastAPI:
                 timeframe=timeframes,
                 status=status
             )
-            logger.info(f"DB returned {len(all_signals)} signals (SQL filtered)")
             
-            # Apply remaining filters in BACKEND (Python side) for metadata-based fields
+            # Obtener estados de mercado para flag has_chart
+            market_state = storage.get_all_market_states() or {}
+            
+            # Filter results in memory for metadata-based fields
             filtered = all_signals
             
             # Regime filter
-            regime_filtered_count = len(filtered)
             if regimes and regimes.strip():
                 regime_list = [r.strip().upper() for r in regimes.split(',') if r.strip()]
                 if regime_list:
@@ -850,10 +851,8 @@ def create_app() -> FastAPI:
                         sig for sig in filtered 
                         if isinstance(sig.get('metadata'), dict) and sig.get('metadata', {}).get('regime', '').upper() in regime_list
                     ]
-                    regime_filtered_count = len(filtered)
             
             # Strategy filter
-            strategy_filtered_count = len(filtered)
             if strategies and strategies.strip():
                 strategy_list = [s.strip() for s in strategies.split(',') if s.strip()]
                 if strategy_list:
@@ -861,8 +860,6 @@ def create_app() -> FastAPI:
                         sig for sig in filtered 
                         if isinstance(sig.get('metadata'), dict) and sig.get('metadata', {}).get('strategy', '') in strategy_list
                     ]
-                    strategy_filtered_count = len(filtered)
-                    logger.info(f"After strategy filter: {len(filtered)} signals")
             
             # Limit results
             filtered = filtered[:limit]
@@ -880,9 +877,12 @@ def create_app() -> FastAPI:
             formatted_signals = []
             for signal in filtered:
                 sig_id = signal.get('id')
+                sig_symbol = signal.get('symbol')
+                sig_status = signal.get('status', 'PENDING')
+                
                 formatted = {
                     'id': sig_id,
-                    'symbol': signal.get('symbol'),
+                    'symbol': sig_symbol,
                     'direction': signal.get('direction') or signal.get('signal_type'),
                     'score': signal.get('score') or signal.get('confidence') or 0.75,
                     'timeframe': signal.get('timeframe'),
@@ -893,13 +893,25 @@ def create_app() -> FastAPI:
                     'r_r': signal.get('metadata', {}).get('r_r', 2.0) if isinstance(signal.get('metadata'), dict) else 2.0,
                     'regime': signal.get('metadata', {}).get('regime', 'UNKNOWN') if isinstance(signal.get('metadata'), dict) else 'UNKNOWN',
                     'timestamp': signal.get('timestamp'),
-                    'status': signal.get('status', 'PENDING'),
+                    'status': sig_status,
                     'has_trace': sig_id in has_trace_set,
+                    'has_chart': sig_symbol in market_state,
                     'confluences': signal.get('metadata', {}).get('confluences', []) if isinstance(signal.get('metadata'), dict) else []
                 }
+                
+                # Augmentar con info de trades si están EXECUTED
+                if sig_status == 'EXECUTED':
+                    # Buscar en trade_results
+                    result = storage.get_trade_result_by_signal_id(sig_id)
+                    if result:
+                        formatted['live_status'] = 'CLOSED'
+                        formatted['pnl'] = result.get('profit')
+                        formatted['exit_price'] = result.get('exit_price')
+                        formatted['exit_reason'] = result.get('exit_reason')
+                    else:
+                        formatted['live_status'] = 'OPEN'
+                
                 formatted_signals.append(formatted)
-            
-            logger.info(f"Returning {len(formatted_signals)} formatted signals")
             
             return {
                 "signals": formatted_signals, 
@@ -907,6 +919,7 @@ def create_app() -> FastAPI:
             }
             
         except Exception as e:
+            logger.error(f"Error in /api/signals: {e}")
             raise HTTPException(status_code=500, detail=str(e))
     
     @app.post("/api/signals/execute")
@@ -1033,18 +1046,103 @@ def create_app() -> FastAPI:
                 "signal_id": signal_id if 'signal_id' in locals() else None
             }
     
-    @app.get("/api/signals/debug")
-    async def debug_signals(limit: int = 10, minutes: int = 100000) -> Dict[str, Any]:
-        """Debug endpoint to see raw signals from storage"""
+    @app.get("/api/risk/status")
+    async def get_risk_status() -> Dict[str, Any]:
+        """
+        Obtiene el estado de riesgo en tiempo real y el modo de operación.
+        Se apoya puramente en la base de datos para máxima resiliencia.
+        """
         try:
-            signals = storage.get_recent_signals(minutes=minutes, limit=limit)
+            # 1. Obtener stats de EdgeTuner desde la DB
+            risk_mode = "NORMAL"
+            last_adjustment = None
+            
+            # Intentar obtener el último ajuste de la DB (SSOT)
+            adjustments = storage.get_tuning_history(limit=1)
+            if adjustments:
+                last_adjustment = adjustments[0]
+                factor = last_adjustment.get("adjustment_factor", 1.0)
+                if factor >= 1.5:
+                    risk_mode = "DEFENSIVE"
+                elif factor <= 0.7:
+                    risk_mode = "AGGRESSIVE"
+            
+            # 2. Resumen de riesgos (Single Source of Truth)
+            dynamic_params = {}
+            state = storage.get_system_state()
+            dynamic_params = state.get("config_trading", {})
+            
+            if not dynamic_params:
+                # Fallback to file if not in DB
+                file_path = os.path.join(os.getcwd(), "config", "dynamic_params.json")
+                if os.path.exists(file_path):
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        dynamic_params = json.load(f)
+
+            # 3. Sanity Check Status (Rechazos recientes)
+            rejections_today = 0
+            last_rejection_reason = None
+            
+            try:
+                pipeline_events = storage.get_signal_pipeline_history(limit=50)
+                today = datetime.now().date()
+                for event in pipeline_events:
+                    event_time = event.get('timestamp')
+                    if isinstance(event_time, str):
+                        event_time = datetime.fromisoformat(event_time.replace(' ', 'T')).date()
+                    
+                    if event_time == today and event.get('decision') == 'REJECTED':
+                        rejections_today += 1
+                        if not last_rejection_reason:
+                            last_rejection_reason = event.get('reason')
+            except Exception as e:
+                logger.warning(f"Error calculating sanity stats: {e}")
+
             return {
-                "raw_signals_count": len(signals),
-                "raw_signals": signals[:3] if signals else [],
-                "storage_db_path": storage.db_path
+                "risk_mode": risk_mode,
+                "current_risk_pct": dynamic_params.get("risk_per_trade", 0.01) * 100,
+                "last_adjustment": last_adjustment,
+                "sanity": {
+                    "rejections_today": rejections_today,
+                    "last_rejection_reason": last_rejection_reason,
+                    "status": "HEALTHY" if rejections_today < 5 else "CAUTIOUS"
+                },
+                "timestamp": datetime.now().isoformat()
             }
         except Exception as e:
-            return {"error": str(e), "traceback": str(e.__traceback__)}
+            logger.error(f"Error in /api/risk/status: {e}")
+            return {"status": "error", "message": str(e)}
+
+    @app.get("/api/instruments/available")
+    async def get_available_instruments() -> Dict[str, Any]:
+        """
+        Retorna la lista de símbolos que tienen datos de mercado recientes.
+        """
+        try:
+            # Símbolos configurados
+            config = storage.get_system_config()
+            configured_symbols = config.get("trading", {}).get("symbols", [])
+            
+            # Símbolos con estado de mercado (visto en los últimos 5 min)
+            market_state = storage.get_all_market_states() or {}
+            available_symbols = []
+            
+            for sym in configured_symbols:
+                has_data = sym in market_state
+                available_symbols.append({
+                    "symbol": sym,
+                    "has_chart": has_data,
+                    "last_update": market_state.get(sym, {}).get("timestamp") if has_data else None
+                })
+                
+            return {
+                "instruments": available_symbols,
+                "count": len(available_symbols),
+                "timestamp": datetime.now().isoformat()
+            }
+        except Exception as e:
+            logger.error(f"Error in /api/instruments/available: {e}")
+            return {"instruments": [], "error": str(e)}
 
 
     @app.get("/api/config/{category}")

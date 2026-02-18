@@ -122,3 +122,34 @@ class MarketMixin(BaseRepository):
             return []
         finally:
             self._close_conn(conn)
+
+    def get_all_market_states(self) -> Dict[str, Dict]:
+        """
+        Obtiene el último estado de mercado para cada símbolo.
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            # Usar ROW_NUMBER para obtener el más reciente por símbolo
+            cursor.execute("""
+                SELECT symbol, data, timestamp
+                FROM (
+                    SELECT symbol, data, timestamp,
+                           ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY timestamp DESC) as rn
+                    FROM market_state
+                )
+                WHERE rn = 1
+            """)
+            rows = cursor.fetchall()
+            states = {}
+            for row in rows:
+                try:
+                    states[row['symbol']] = {
+                        "data": json.loads(row['data']),
+                        "timestamp": row['timestamp']
+                    }
+                except:
+                    continue
+            return states
+        finally:
+            self._close_conn(conn)
