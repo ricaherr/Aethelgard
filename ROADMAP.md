@@ -1,3 +1,15 @@
+## 🎯 MILESTONE: Auditoría de Sistema (Implementación & Concepto) (2026-02-18)
+**Estado: 📋 EN PROCESO**
+**Criterio: Verificar la integridad técnica y conceptual del sistema, asegurando que la implementación sigue fielmente los principios de trading y arquitectura definidos.**
+
+### Plan de Trabajo
+- [x] Inicializar auditoría y revisión de Manifiesto.
+- [/] Auditoría técnica de `core_brain` (SSOT, Agnosticismo, Resiliencia).
+- [ ] Auditoría conceptual de Estrategias (Oliver Vélez, Trifecta, Risk).
+- [ ] Documentar hallazgos en `audit_findings.log` y resumen ejecutivo.
+
+---
+
 ## 🎯 MILESTONE: API Consolidation & UI Refinement (2026-02-17)
 **Estado: ✅ COMPLETADO**
 **Criterio: Resolver errores 404 en API, consolidar endpoints redundantes y limpiar logs de depuración en la UI para un entorno de producción.**

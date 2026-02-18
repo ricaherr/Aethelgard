@@ -55,6 +55,12 @@ def main():
         "UI QA Guard (TypeScript + Build Validation)"
     )
     
+    # 4.5 Manifesto Enforcer (DI + SSOT Rules)
+    results['Manifesto Enforcer'] = run_command(
+        f"cd {workspace} && python scripts/manifesto_enforcer.py",
+        "Manifesto Enforcer (Reglas Arquitectónicas DI & SSOT)"
+    )
+    
     # 5. Critical Tests (Deduplication + Risk)
     results['Tests'] = run_command(
         f"cd {workspace} && python -m pytest tests/test_signal_deduplication.py tests/test_dynamic_deduplication.py tests/test_risk_manager.py -q",
