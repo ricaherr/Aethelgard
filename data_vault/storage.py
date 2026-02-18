@@ -252,6 +252,16 @@ class StorageManager(
                 )
             """)
 
+            # 7. Notification Settings (Multi-channel)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS notification_settings (
+                    provider TEXT PRIMARY KEY,
+                    enabled BOOLEAN DEFAULT 0,
+                    config TEXT, -- JSON con credenciales encriptadas
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
             # Migrations / Fixes
             cursor.execute("PRAGMA table_info(data_providers)")
             columns = [row[1] for row in cursor.fetchall()]

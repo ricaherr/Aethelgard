@@ -270,3 +270,68 @@ class SystemMixin(BaseRepository):
         current_modules.update(modules_dict)
         self.update_system_state({"modules_enabled": current_modules})
         logger.info(f"[GLOBAL] Updated module states: {modules_dict}")
+
+    # ========== NOTIFICATION SETTINGS (Multi-channel) ==========
+    
+    def get_notification_settings(self, provider: str) -> Optional[Dict[str, Any]]:
+        """
+        Obtiene la configuración de un proveedor de notificaciones.
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM notification_settings WHERE provider = ?", (provider,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            
+            res = dict(row)
+            if res.get('config'):
+                try:
+                    res['config'] = json.loads(res['config'])
+                except:
+                    pass
+            return res
+        finally:
+            self._close_conn(conn)
+
+    def update_notification_settings(self, provider: str, enabled: bool, config: Dict[str, Any]) -> bool:
+        """
+        Actualiza o crea la configuración de un proveedor de notificaciones.
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO notification_settings (provider, enabled, config, updated_at)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            """, (provider, 1 if enabled else 0, json.dumps(config)))
+            conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Error updating notification settings for {provider}: {e}")
+            return False
+        finally:
+            self._close_conn(conn)
+
+    def get_all_notification_settings(self) -> List[Dict[str, Any]]:
+        """
+        Obtiene la configuración de todos los proveedores.
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM notification_settings")
+            rows = cursor.fetchall()
+            settings = []
+            for row in rows:
+                item = dict(row)
+                if item.get('config'):
+                    try:
+                        item['config'] = json.loads(item['config'])
+                    except:
+                        pass
+                settings.append(item)
+            return settings
+        finally:
+            self._close_conn(conn)

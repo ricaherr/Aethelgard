@@ -1,88 +1,61 @@
 """
-Sistema de Notificaciones de Telegram para Aethelgard
-Envía alertas cuando el régimen cambia o se detecta una señal de Oliver Vélez
-Soporta diferentes grupos según nivel de membresía (básico o premium)
+Unified Notification Engine for Aethelgard
+Manages multiple notification channels (Telegram, WhatsApp, Email) 
+with database persistence and modular providers.
 """
 import logging
-import asyncio
-from typing import Optional, Dict, List
+from typing import Optional, Dict, Any, List
 from datetime import datetime
-from enum import Enum
-import httpx
 
 from models.signal import MarketRegime, Signal
 from core_brain.module_manager import MembershipLevel
+from data_vault.storage import StorageManager
+
+from .notification_providers.telegram_provider import TelegramProvider
+from .notification_providers.email_provider import EmailProvider
+from .notification_providers.whatsapp_provider import WhatsAppProvider
 
 logger = logging.getLogger(__name__)
 
+class NotificationEngine:
+    """
+    Orchestrates notifications across multiple channels.
+    Acts as a bridge between the system and specific providers.
+    """
+    
+    def __init__(self, storage: Optional[StorageManager] = None):
+        self.storage = storage or StorageManager()
+        self.providers = {}
+        self._initialize_providers()
 
-class TelegramNotifier:
-    """
-    Servicio de notificaciones de Telegram que envía alertas a diferentes grupos
-    según el nivel de membresía del usuario
-    """
-    
-    def __init__(self, 
-                 bot_token: Optional[str] = None,
-                 basic_chat_id: Optional[str] = None,
-                 premium_chat_id: Optional[str] = None,
-                 enabled: bool = True):
+    def _initialize_providers(self) -> None:
         """
-        Inicializa el notificador de Telegram
-        
-        Args:
-            bot_token: Token del bot de Telegram (obtenido de @BotFather)
-            basic_chat_id: ID del chat/grupo para usuarios básicos
-            premium_chat_id: ID del chat/grupo para usuarios premium
-            enabled: Si las notificaciones están habilitadas
+        Loads providers from database configuration.
         """
-        self.bot_token = bot_token
-        self.basic_chat_id = basic_chat_id
-        self.premium_chat_id = premium_chat_id
-        self.enabled = enabled
-        self.api_url = f"https://api.telegram.org/bot{bot_token}" if bot_token else None
-        
-        # Verificar configuración
-        if enabled and not bot_token:
-            logger.warning("Telegram notifier habilitado pero no se proporcionó bot_token")
-        if enabled and not basic_chat_id and not premium_chat_id:
-            logger.warning("Telegram notifier habilitado pero no se proporcionaron chat_ids")
-    
-    async def _send_message(self, 
-                           chat_id: str, 
-                           message: str, 
-                           parse_mode: str = "HTML") -> bool:
-        """
-        Envía un mensaje a un chat de Telegram
-        
-        Args:
-            chat_id: ID del chat destino
-            message: Mensaje a enviar
-            parse_mode: Modo de parseo (HTML o Markdown)
-        
-        Returns:
-            True si se envió correctamente, False en caso contrario
-        """
-        if not self.enabled or not self.api_url or not chat_id:
-            return False
-        
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.post(
-                    f"{self.api_url}/sendMessage",
-                    json={
-                        "chat_id": chat_id,
-                        "text": message,
-                        "parse_mode": parse_mode
-                    }
-                )
-                response.raise_for_status()
-                logger.debug(f"Mensaje enviado a chat {chat_id}")
-                return True
+            settings = self.storage.get_all_notification_settings()
+            # Map of provider names to classes
+            provider_classes = {
+                'telegram': TelegramProvider,
+                'email': EmailProvider,
+                'whatsapp': WhatsAppProvider
+            }
+            
+            # If no settings in DB, try to create default telegram if possible (legacy support)
+            if not settings:
+                logger.debug("No notification settings found in DB. NotificationEngine waiting for configuration.")
+            
+            for setting in settings:
+                name = setting['provider']
+                if name in provider_classes:
+                    config = setting.get('config', {})
+                    config['enabled'] = setting.get('enabled', False)
+                    self.providers[name] = provider_classes[name](config)
+                    logger.info(f"Notification provider initialized: {name} (Enabled: {config['enabled']})")
+                    
         except Exception as e:
-            logger.error(f"Error enviando mensaje a Telegram: {e}")
-            return False
-    
+            logger.error(f"Error initializing notification providers: {e}")
+
     async def notify_regime_change(self,
                                   symbol: str,
                                   previous_regime: Optional[MarketRegime],
@@ -91,204 +64,84 @@ class TelegramNotifier:
                                   membership: MembershipLevel = MembershipLevel.BASIC,
                                   metrics: Optional[Dict] = None) -> None:
         """
-        Envía una alerta cuando el régimen de mercado cambia
-        
-        Args:
-            symbol: Símbolo del instrumento
-            previous_regime: Régimen anterior
-            new_regime: Nuevo régimen detectado
-            price: Precio actual
-            membership: Nivel de membresía del usuario
-            metrics: Métricas adicionales (ADX, volatilidad, etc.)
+        Broadcasts regime change alerts to all enabled channels.
         """
-        if not self.enabled:
-            return
-        
-        # Determinar chat_id según membresía
-        chat_id = self.premium_chat_id if membership == MembershipLevel.PREMIUM else self.basic_chat_id
-        
-        if not chat_id:
-            logger.warning(f"No hay chat_id configurado para membresía {membership.value}")
-            return
-        
-        # Construir mensaje
         previous_str = previous_regime.value if previous_regime else "N/A"
         emoji = self._get_regime_emoji(new_regime)
         
-        message = f"""
-{emoji} <b>Cambio de Régimen Detectado</b>
-
-📊 <b>Símbolo:</b> {symbol}
-💰 <b>Precio:</b> {price:.2f}
-🔄 <b>Cambio:</b> {previous_str} → {new_regime.value}
-
-⏰ <b>Hora:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-"""
+        title = f"{emoji} Cambio de Régimen Detectado"
+        body = f"📊 Símbolo: {symbol}\n💰 Precio: {price:.2f}\n🔄 Cambio: {previous_str} → {new_regime.value}"
         
-        # Añadir métricas para usuarios premium
         if membership == MembershipLevel.PREMIUM and metrics:
             adx = metrics.get('adx', 0)
             volatility = metrics.get('volatility', 0)
-            bias = metrics.get('bias', 'N/A')
-            
-            message += f"""
-📈 <b>Métricas Detalladas:</b>
-• ADX: {adx:.2f}
-• Volatilidad: {volatility:.4f}
-• Sesgo: {bias}
-"""
-        
-        await self._send_message(chat_id, message)
-    
+            body += f"\n📈 ADX: {adx:.2f}\n🔍 Vol: {volatility:.4f}"
+
+        await self._broadcast(title, body, membership=membership.value)
+
     async def notify_oliver_velez_signal(self,
                                         signal: Signal,
                                         membership: MembershipLevel = MembershipLevel.BASIC,
                                         strategy_details: Optional[Dict] = None) -> None:
         """
-        Envía una alerta cuando se detecta una señal de Oliver Vélez
-        
-        Args:
-            signal: Señal detectada
-            membership: Nivel de membresía del usuario
-            strategy_details: Detalles adicionales de la estrategia
+        Broadcasts trading signals to all enabled channels.
         """
-        if not self.enabled:
-            return
-        
-        # Determinar chat_id según membresía
-        chat_id = self.premium_chat_id if membership == MembershipLevel.PREMIUM else self.basic_chat_id
-        
-        if not chat_id:
-            logger.warning(f"No hay chat_id configurado para membresía {membership.value}")
-            return
-        
-        # Construir mensaje
         stype = signal.signal_type.value if hasattr(signal.signal_type, 'value') else str(signal.signal_type)
         signal_emoji = "🟢" if stype == "BUY" else "🔴"
         
-        regime = signal.regime
-        regime_emoji = self._get_regime_emoji(regime) if regime else "⚪"
+        title = f"{signal_emoji} Señal Oliver Vélez Detectada"
+        body = f"📊 Símbolo: {signal.symbol}\n📈 Tipo: {stype}\n💰 Precio: {signal.price:.5f}"
         
-        message = f"""
-{signal_emoji} <b>Señal Oliver Vélez Detectada</b>
+        if signal.stop_loss: body += f"\n🛑 SL: {signal.stop_loss:.5f}"
+        if signal.take_profit: body += f"\n🎯 TP: {signal.take_profit:.5f}"
 
-📊 <b>Símbolo:</b> {signal.symbol}
-📈 <b>Tipo:</b> {stype}
-💰 <b>Precio:</b> {signal.price:.5f}
-{regime_emoji} <b>Régimen:</b> {regime.value if regime else 'N/A'}
+        await self._broadcast(title, body, membership=membership.value)
 
-⏰ <b>Hora:</b> {signal.timestamp.strftime('%Y-%m-%d %H:%M:%S')}
-"""
-        
-        # Añadir stop loss y take profit si están disponibles
-        if signal.stop_loss or signal.take_profit:
-            message += f"\n🛡️ <b>Gestión de Riesgo:</b>\n"
-            if signal.stop_loss:
-                message += f"• Stop Loss: {signal.stop_loss:.2f}\n"
-            if signal.take_profit:
-                message += f"• Take Profit: {signal.take_profit:.2f}\n"
-        
-        # Añadir detalles de estrategia para usuarios premium
-        if membership == MembershipLevel.PREMIUM and strategy_details:
-            message += f"\n📋 <b>Detalles de Estrategia:</b>\n"
-            for key, value in strategy_details.items():
-                message += f"• {key}: {value}\n"
-        
-        await self._send_message(chat_id, message)
-    
     async def notify_system_alert(self,
                                  title: str,
                                  message: str,
                                  membership: MembershipLevel = MembershipLevel.PREMIUM,
                                  alert_type: str = "info") -> None:
         """
-        Envía una alerta del sistema (errores, modo seguridad, etc.)
-        
-        Args:
-            title: Título de la alerta
-            message: Mensaje de la alerta
-            membership: Nivel de membresía (por defecto premium para alertas críticas)
-            alert_type: Tipo de alerta (info, warning, error, critical)
+        Broadcasts system alerts to all enabled channels.
         """
-        if not self.enabled:
-            return
-        
-        chat_id = self.premium_chat_id if membership == MembershipLevel.PREMIUM else self.basic_chat_id
-        
-        if not chat_id:
-            return
-        
-        emoji = {
-            "info": "ℹ️",
-            "warning": "⚠️",
-            "error": "❌",
-            "critical": "🚨"
-        }.get(alert_type, "ℹ️")
-        
-        formatted_message = f"""
-{emoji} <b>{title}</b>
-
-{message}
-
-⏰ <b>Hora:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-"""
-        
-        await self._send_message(chat_id, formatted_message)
+        emoji = {"info": "ℹ️", "warning": "⚠️", "error": "❌", "critical": "🚨"}.get(alert_type, "ℹ️")
+        full_title = f"{emoji} {title}"
+        await self._broadcast(full_title, message, membership=membership.value)
 
     async def send_alert(self, message: str, title: str = "Aethelgard Alert") -> None:
-        """Alias para notify_system_alert usado por algunos componentes."""
+        """Legacy compatibility method."""
         await self.notify_system_alert(title=title, message=message, alert_type="warning")
-    
+
+    async def _broadcast(self, title: str, body: str, **kwargs: Any) -> None:
+        """
+        Sends the notification to all active providers.
+        """
+        for name, provider in self.providers.items():
+            if provider.enabled:
+                await provider.send_alert(title, body, **kwargs)
+
     def _get_regime_emoji(self, regime: MarketRegime) -> str:
-        """Retorna un emoji para cada tipo de régimen"""
-        emoji_map = {
-            MarketRegime.TREND: "📈",
-            MarketRegime.RANGE: "↔️",
-            MarketRegime.CRASH: "💥",
-            MarketRegime.NORMAL: "⚪"
-        }
+        emoji_map = {MarketRegime.TREND: "📈", MarketRegime.RANGE: "↔️", MarketRegime.CRASH: "💥"}
         return emoji_map.get(regime, "⚪")
-    
+
     def is_configured(self) -> bool:
-        """Verifica si el notificador está correctamente configurado"""
-        return bool(self.bot_token and (self.basic_chat_id or self.premium_chat_id))
-    
-    def set_enabled(self, enabled: bool) -> None:
-        """Habilita o deshabilita las notificaciones"""
-        self.enabled = enabled
-        logger.info(f"Notificaciones de Telegram {'habilitadas' if enabled else 'deshabilitadas'}")
+        return any(p.is_configured() for p in self.providers.values())
 
+# Global singleton management
+_engine_instance: Optional[NotificationEngine] = None
 
-# Instancia global del notificador
-_notifier_instance: Optional[TelegramNotifier] = None
+def get_notifier() -> Optional[NotificationEngine]:
+    global _engine_instance
+    if _engine_instance is None:
+        # We try to initialize with default storage
+        try:
+            _engine_instance = NotificationEngine()
+        except:
+            return None
+    return _engine_instance
 
-
-def get_notifier() -> Optional[TelegramNotifier]:
-    """Obtiene la instancia global del notificador"""
-    return _notifier_instance
-
-
-def initialize_notifier(bot_token: Optional[str] = None,
-                       basic_chat_id: Optional[str] = None,
-                       premium_chat_id: Optional[str] = None,
-                       enabled: bool = True) -> TelegramNotifier:
-    """
-    Inicializa el notificador global
-    
-    Args:
-        bot_token: Token del bot de Telegram
-        basic_chat_id: ID del chat para usuarios básicos
-        premium_chat_id: ID del chat para usuarios premium
-        enabled: Si las notificaciones están habilitadas
-    
-    Returns:
-        Instancia del notificador
-    """
-    global _notifier_instance
-    _notifier_instance = TelegramNotifier(
-        bot_token=bot_token,
-        basic_chat_id=basic_chat_id,
-        premium_chat_id=premium_chat_id,
-        enabled=enabled
-    )
-    return _notifier_instance
+def initialize_notifier(storage: Optional[StorageManager] = None) -> NotificationEngine:
+    global _engine_instance
+    _engine_instance = NotificationEngine(storage=storage)
+    return _engine_instance

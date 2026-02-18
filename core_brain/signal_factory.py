@@ -22,7 +22,7 @@ from models.signal import (
     Signal, MarketRegime, MembershipTier, ConnectorType
 )
 from data_vault.storage import StorageManager
-from core_brain.notificator import get_notifier, TelegramNotifier
+from core_brain.notificator import get_notifier, NotificationEngine
 from core_brain.module_manager import MembershipLevel
 from core_brain.confluence import MultiTimeframeConfluenceAnalyzer
 from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
@@ -62,7 +62,7 @@ class SignalFactory:
             mt5_connector: Opcional MT5 connector para reconciliación.
         """
         self.storage_manager = storage_manager
-        self.notifier: Optional[TelegramNotifier] = get_notifier()
+        self.notifier: Optional[NotificationEngine] = get_notifier()
         self.config_path = config_path
         self.mt5_connector = mt5_connector
         
@@ -89,7 +89,7 @@ class SignalFactory:
         )
         
         if not self.notifier or not self.notifier.is_configured():
-            logger.warning("Notificador de Telegram no está configurado. No se enviarán alertas.")
+            logger.warning("NotificationEngine no está configurado o no tiene canales activos.")
 
         logger.info(
             f"SignalFactory initialized with {len(self.strategies)} strategies. "

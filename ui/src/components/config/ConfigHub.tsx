@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Save, RefreshCw, AlertTriangle, Shield, Sliders, Settings, Bell, Power } from 'lucide-react';
 import { GlassPanel } from '../common/GlassPanel';
-import { TelegramSetup } from './TelegramSetup';
+import { NotificationManager } from './NotificationManager';
 import { ModulesControl } from './ModulesControl';
 import { AutoTradingControl } from './AutoTradingControl';
 
@@ -137,8 +137,8 @@ export function ConfigHub() {
                         active={activeCategory === 'notifications'}
                         onClick={() => setActiveCategory('notifications')}
                         icon={<Bell size={20} />}
-                        title="Telegram Alerts"
-                        description="Auto-Setup & Testing"
+                        title="Notification Hub"
+                        description="Multi-Channel Alerts"
                     />
                     <TabButton
                         active={activeCategory === 'modules'}
@@ -184,9 +184,9 @@ export function ConfigHub() {
                                     </div>
                                 )}
 
-                                {/* Special case: Telegram/Notifications */}
+                                {/* Special case: Notification Manager (Telegram, WhatsApp, Email) */}
                                 {!loading && activeCategory === 'notifications' && (
-                                    <TelegramSetup />
+                                    <NotificationManager />
                                 )}
 
                                 {/* Special case: System Modules */}

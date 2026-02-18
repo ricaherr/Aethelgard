@@ -107,6 +107,38 @@ def check_agnosticism(file_path: Path) -> List[str]:
         pass
     return issues
 
+def check_runtime_imports(project_root: Path) -> List[str]:
+    """Prueba dinámicamente si los módulos core pueden ser importados."""
+    import importlib
+    import sys
+    
+    issues = []
+    # Escaneamos core_brain y data_vault por ser el corazón del sistema
+    core_dirs = ['core_brain', 'data_vault', 'models']
+    
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+        
+    for d in core_dirs:
+        target_dir = project_root / d
+        if not target_dir.exists(): continue
+        
+        for py_file in target_dir.glob('**/*.py'):
+            if py_file.name == '__init__.py': continue
+            
+            try:
+                rel_path = py_file.relative_to(project_root)
+                module_name = str(rel_path.with_suffix('')).replace(os.sep, '.')
+                
+                # Intentar importar el módulo
+                importlib.import_module(module_name)
+            except Exception as e:
+                # Obtenemos la ruta relativa para el reporte
+                rel_file = py_file.relative_to(project_root)
+                issues.append(f"{rel_file}: {e}")
+                
+    return issues
+
 def main():
     project_root = Path(__file__).parent.parent
     files = find_python_files(project_root)
@@ -135,6 +167,13 @@ def main():
         for issue in hint_issues:
             print(f"❌ TYPE HINT: {rel_path} -> {issue}")
             all_passed = False 
+
+    # 4. Importaciones Dinámicas (Deep Check)
+    print("\n🧪 Verificando integridad de importaciones...")
+    import_issues = check_runtime_imports(project_root)
+    for issue in import_issues:
+        print(f"❌ IMPORT ERROR: {issue}")
+        all_passed = False
 
     print("\n" + "="*40)
     if all_passed:

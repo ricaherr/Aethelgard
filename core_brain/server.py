@@ -1168,6 +1168,29 @@ def create_app() -> FastAPI:
                         # Auto-persistir para la próxima vez
                         storage.update_system_state({db_key: config_data})
             
+        if config_data is None and category == "notifications":
+            # Fallback especial para notificaciones si se pide vía /config pero no existe
+            # Intentamos obtener la configuración de Telegram de la nueva tabla
+            from data_vault.system_db import SystemMixin
+            notif_db = SystemMixin()
+            telegram_settings = notif_db.get_notification_settings("telegram")
+            if telegram_settings:
+                # Asegurar que config_data sea un diccionario mutable
+                raw_config = telegram_settings.get("config", {})
+                if isinstance(raw_config, str):
+                    try: raw_config = json.loads(raw_config)
+                    except: raw_config = {}
+                
+                config_data = dict(raw_config)
+                
+                # Mapeo explícito para compatibilidad con el frontend
+                if "chat_id_basic" in config_data:
+                    config_data["basic_chat_id"] = config_data["chat_id_basic"]
+                if "chat_id_premium" in config_data:
+                    config_data["premium_chat_id"] = config_data["chat_id_premium"]
+                
+                config_data["enabled"] = bool(telegram_settings.get("enabled", False))
+            
         if config_data is None:
             raise HTTPException(status_code=404, detail=f"Categoría de configuración '{category}' no encontrada.")
             
@@ -1231,37 +1254,61 @@ def create_app() -> FastAPI:
     
     @app.post("/api/telegram/save")
     async def save_telegram_config(data: dict) -> Dict[str, Any]:
-        """Saves Telegram configuration to database and initializes notifier"""
+        """Saves Telegram configuration to specialized notification table"""
         bot_token = data.get("bot_token", "")
         chat_id = data.get("chat_id", "")
         enabled = data.get("enabled", True)
         
-        # Save to database
         telegram_config = {
             "bot_token": bot_token,
             "basic_chat_id": chat_id,
-            "premium_chat_id": chat_id,  # Same chat for now, can be different later
-            "enabled": enabled
+            "premium_chat_id": chat_id
         }
         
-        storage.update_system_state({"config_notifications": telegram_config})
+        # Guardar usando el nuevo SystemMixin
+        from data_vault.system_db import SystemMixin
+        notif_db = SystemMixin()
+        success = notif_db.update_notification_settings("telegram", enabled, telegram_config)
         
-        # Re-initialize notifier with new config
-        from core_brain.notificator import initialize_notifier
-        initialize_notifier(
-            bot_token=bot_token,
-            basic_chat_id=chat_id,
-            premium_chat_id=chat_id,
-            enabled=enabled
-        )
+        if success:
+            # Re-inicializar el motor de notificaciones
+            from core_brain.notificator import initialize_notifier
+            initialize_notifier(storage)
+            
+            await broadcast_thought("Notificaciones de Telegram configuradas correctamente.", module="CORE")
+            logger.info(f"✅ Telegram configurado: Chat ID {chat_id}")
+            
+            return {
+                "status": "success",
+                "message": "Configuración de Telegram guardada correctamente."
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Error al guardar la configuración en la base de datos.")
+
+    @app.get("/api/notifications/settings")
+    async def get_all_notification_settings() -> Dict[str, Any]:
+        """Retorna la configuración de todos los proveedores de notificaciones"""
+        from data_vault.system_db import SystemMixin
+        notif_db = SystemMixin()
+        settings = notif_db.get_all_notification_settings()
+        return {"status": "success", "settings": settings}
+
+    @app.post("/api/notifications/settings/{provider}")
+    async def update_notification_provider_settings(provider: str, data: dict) -> Dict[str, Any]:
+        """Actualiza la configuración de un proveedor específico"""
+        enabled = data.get("enabled", False)
+        config = data.get("config", {})
         
-        await broadcast_thought("Notificaciones de Telegram configuradas correctamente.", module="CORE")
-        logger.info(f"✅ Telegram configurado: Chat ID {chat_id}")
+        from data_vault.system_db import SystemMixin
+        notif_db = SystemMixin()
+        success = notif_db.update_notification_settings(provider, enabled, config)
         
-        return {
-            "status": "success",
-            "message": "Configuración guardada correctamente"
-        }
+        if success:
+            from core_brain.notificator import initialize_notifier
+            initialize_notifier(storage)
+            return {"status": "success", "message": f"Configuración de {provider} actualizada."}
+        else:
+            raise HTTPException(status_code=500, detail=f"Error al actualizar {provider}.")
     
     @app.get("/api/telegram/instructions")
     async def get_telegram_instructions() -> Dict[str, Any]:
