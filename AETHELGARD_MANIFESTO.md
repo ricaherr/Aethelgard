@@ -501,16 +501,18 @@ await orchestrator.run()  # Inicia el loop resiliente
 - **Características**: Filtrado Basic/Premium de señales y funciones
 - **Dependencias**: StorageManager
 
-##### `notificator.py` - Sistema de Notificaciones ✅ IMPLEMENTADO
-- **Función**: Gestiona notificaciones vía Telegram con auto-provisioning
+##### `notificator.py` - Motor de Notificaciones (NotificationEngine) ✅ MODULADO
+- **Función**: Orquestador multicanal que gestiona alertas vía Telegram, WhatsApp y Email.
 - **Características**: 
-  - Configuración desde BD (Single Source of Truth)
-  - Templates HTML con emojis contextuales
-  - Soporte multi-canal (Basic/Premium chat_ids)
-  - Retry logic con timeout de 10s
-  - Notificaciones de cambios de régimen, señales y alertas del sistema
-- **Dependencias**: StorageManager, httpx (async HTTP client)
-- **Auto-Provisioning**: `connectors/telegram_provisioner.py` + UI React wizard
+  - **Arquitectura de Proveedores**: Sistema basado en plugins/proveedores (Telegram, Twilio, SMTP).
+  - **Configuración SSOT**: Credenciales y estados cargados dinámicamente desde la tabla `notification_settings`.
+  - **Abstracción de Envío**: `Broadcast` inteligente que distribuye mensajes por todos los canales habilitados simultáneamente.
+  - **Templates unificados**: Emojis y formatos consistentes entre proveedores.
+  - **UI Unificada**: Sección **Notification Hub** en el ConfigHub para gestión centralizada.
+- **Estructura Interna**:
+  - `notification_providers/telegram_provider.py`: Implementación avanzada de Telegram.
+  - `notification_providers/email_provider.py` & `whatsapp_provider.py`: Proveedores escalables para SMTP y Twilio.
+- **Dependencias**: StorageManager (SystemMixin), httpx.
 
 ##### `trade_closure_listener.py` - Listener de Cierres de Trades
 - **Función**: Monitorea cierres de posiciones para feedback y aprendizaje
@@ -672,10 +674,13 @@ manager.configure_provider("alphavantage", api_key="YOUR_KEY_HERE")
 #### 5. **Utilities y Scripts**
 
 ##### Scripts de Validación (`scripts/`)
-- `architecture_audit.py`: Auditoría de arquitectura
-- `code_quality_analyzer.py`: Análisis de calidad de código
-- `qa_guard.py`: Guardia de calidad
-- `validate_all.py`: Validación completa
+- `architecture_audit.py`: Auditoría de arquitectura (bloqueo de `_get_conn` fuera de SSOT, métodos duplicados).
+- `code_quality_analyzer.py`: Análisis de calidad de código y complejidad ciclomática.
+- `qa_guard.py`: Guardia de calidad que integra:
+    - **Análisis Estático**: Sintaxis y Type Hints obligatorios.
+    - **Agnosticismo**: Verificación de aislamiento de APIs de brokers (MT5/NT).
+    - **Import Guard (Dinámico)**: Introspección dinámica para verificar la integridad de las dependencias y la resolución de nombres en tiempo real.
+- `validate_all.py`: Orquestador de la suite de validación completa (Gatekeeper de producción).
 
 ##### Tests (`tests/`)
 - Cobertura completa con pytest
