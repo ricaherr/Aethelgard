@@ -1,10 +1,11 @@
 from datetime import datetime, timezone
+from typing import Optional, Union
 try:
     from zoneinfo import ZoneInfo
 except ImportError:
     from pytz import timezone as ZoneInfo
 
-def to_utc(dt, source_tz=None) -> str:
+def to_utc(dt: Union[str, datetime], source_tz: Optional[str] = None) -> str:
     """
     Convierte un datetime o string a UTC ISO 8601 (YYYY-MM-DD HH:MM:SS.SSS) para almacenamiento.
     source_tz puede ser string (ej: 'Europe/Madrid') o None (asume UTC o naive local).

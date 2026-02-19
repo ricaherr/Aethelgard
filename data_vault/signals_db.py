@@ -85,7 +85,16 @@ class SignalsMixin(BaseRepository):
             if timestamp:
                 # Normaliza a UTC ISO 8601
                 dt_utc = to_utc(timestamp)
-                timestamp_value = dt_utc.replace(microsecond=0).strftime('%Y-%m-%d %H:%M:%S')
+                if isinstance(dt_utc, str):
+                    # Si to_utc retorna string, parsear a datetime
+                    from datetime import datetime
+                    try:
+                        dt_utc_obj = datetime.strptime(dt_utc, '%Y-%m-%d %H:%M:%S.%f')
+                    except Exception:
+                        dt_utc_obj = datetime.strptime(dt_utc, '%Y-%m-%d %H:%M:%S')
+                else:
+                    dt_utc_obj = dt_utc
+                timestamp_value = dt_utc_obj.replace(microsecond=0).strftime('%Y-%m-%d %H:%M:%S')
             
             base_columns = ['id', 'symbol', 'signal_type', 'confidence', 'metadata', 'connector_type', 'timeframe', 'price', 'direction']
             base_values = [

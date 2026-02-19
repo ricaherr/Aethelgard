@@ -1,4 +1,3 @@
-def to_utc(dt, source_tz=None) -> str:
 from utils.time_utils import to_utc
 """
 Market Utils - Utilidades Globales para Mercados y Símbolos

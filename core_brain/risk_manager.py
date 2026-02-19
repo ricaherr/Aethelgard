@@ -875,7 +875,22 @@ class RiskManager:
             return True, "No lockdown date found (stale lockdown)"
         
         try:
-            lockdown_time = to_utc(lockdown_date)
+            from utils.time_utils import to_utc
+            from datetime import datetime, timezone
+            if lockdown_date:
+                if isinstance(lockdown_date, datetime):
+                    if lockdown_date.tzinfo is None:
+                        lockdown_time = lockdown_date.replace(tzinfo=timezone.utc)
+                    else:
+                        lockdown_time = lockdown_date.astimezone(timezone.utc)
+                else:
+                    dt_str = to_utc(lockdown_date)
+                    try:
+                        lockdown_time = datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S.%f').replace(tzinfo=timezone.utc)
+                    except Exception:
+                        lockdown_time = datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
+            else:
+                lockdown_time = None
         except (ValueError, TypeError):
             return True, "Invalid lockdown date format"
         
