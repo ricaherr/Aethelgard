@@ -816,8 +816,9 @@ class RiskManager:
     def _activate_lockdown(self) -> None:
         """Activa y persiste el modo lockdown con fecha y balance."""
         if not self.lockdown_mode:
-            from datetime import datetime
-            now = datetime.now().isoformat()
+            from datetime import datetime, timezone
+            from core_brain.market_utils import to_utc
+            now = datetime.now(timezone.utc).isoformat()
             
             self.lockdown_mode = True
             self.storage.update_system_state({
@@ -866,14 +867,15 @@ class RiskManager:
         Returns:
             tuple[bool, str]: (should_reset, reason)
         """
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta, timezone
+        from core_brain.market_utils import to_utc
         
         # Safety: If no lockdown_date, assume it's old and reset
         if not lockdown_date:
             return True, "No lockdown date found (stale lockdown)"
         
         try:
-            lockdown_time = datetime.fromisoformat(lockdown_date)
+            lockdown_time = to_utc(lockdown_date)
         except (ValueError, TypeError):
             return True, "Invalid lockdown date format"
         
@@ -900,8 +902,8 @@ class RiskManager:
             if last_trade_time:
                 # There were trades after lockdown - check if system rested since then
                 try:
-                    last_trade = datetime.fromisoformat(last_trade_time)
-                    hours_since_trade = (datetime.now() - last_trade).total_seconds() / 3600
+                    last_trade = to_utc(last_trade_time)
+                    hours_since_trade = (datetime.now(timezone.utc) - last_trade).total_seconds() / 3600
                     
                     if hours_since_trade >= 24:
                         return True, f"System rested {hours_since_trade:.1f}h without trading"
@@ -909,7 +911,7 @@ class RiskManager:
                     pass
             else:
                 # No trades since lockdown - check time since lockdown
-                hours_since_lockdown = (datetime.now() - lockdown_time).total_seconds() / 3600
+                hours_since_lockdown = (datetime.now(timezone.utc) - lockdown_time).total_seconds() / 3600
                 
                 if hours_since_lockdown >= 24:
                     return True, f"System rested {hours_since_lockdown:.1f}h since lockdown"
@@ -919,7 +921,7 @@ class RiskManager:
             # Don't reset on error - be conservative
         
         # Lockdown persists
-        hours_since_lockdown = (datetime.now() - lockdown_time).total_seconds() / 3600
+        hours_since_lockdown = (datetime.now(timezone.utc) - lockdown_time).total_seconds() / 3600
         return False, f"Lockdown active for {hours_since_lockdown:.1f}h - waiting for recovery or 24h rest"
             
     def _get_volatility_multiplier(self, regime: MarketRegime) -> float:

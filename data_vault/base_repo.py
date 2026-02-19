@@ -4,13 +4,14 @@ import os
 import logging
 import time
 from typing import Optional, List, Dict, Any, Callable
-from datetime import datetime
+from datetime import datetime, timezone
+from core_brain.market_utils import to_utc
 
 logger = logging.getLogger(__name__)
 
-# Register datetime adapter to avoid deprecation warnings in Python 3.12+
-sqlite3.register_adapter(datetime, lambda dt: dt.isoformat())
-sqlite3.register_converter("timestamp", lambda s: datetime.fromisoformat(s.decode()))
+# Register datetime adapter/converter to always use UTC ISO 8601
+sqlite3.register_adapter(datetime, lambda dt: dt.astimezone(timezone.utc).isoformat())
+sqlite3.register_converter("timestamp", lambda s: to_utc(s.decode()))
 
 class BaseRepository:
     """

@@ -2,7 +2,8 @@ import json
 import logging
 import sqlite3
 from typing import Dict, List, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
+from core_brain.market_utils import to_utc
 from .base_repo import BaseRepository
 
 logger = logging.getLogger(__name__)
@@ -19,7 +20,7 @@ class SystemMixin(BaseRepository):
                     cursor.execute("""
                         INSERT OR REPLACE INTO system_state (key, value, updated_at)
                         VALUES (?, ?, ?)
-                    """, (key, json.dumps(value), datetime.now()))
+                    """, (key, json.dumps(value), datetime.now(timezone.utc)))
                 except sqlite3.OperationalError:
                     cursor.execute("""
                         INSERT OR REPLACE INTO system_state (key, value)
@@ -206,7 +207,7 @@ class SystemMixin(BaseRepository):
 
     def update_module_heartbeat(self, module_name: str) -> None:
         """Update last activity timestamp for a module"""
-        self.update_system_state({f"heartbeat_{module_name}": datetime.now().isoformat()})
+        self.update_system_state({f"heartbeat_{module_name}": datetime.now(timezone.utc).isoformat()})
 
     def get_module_heartbeats(self) -> Dict[str, str]:
         """Get last activity timestamps for all modules"""

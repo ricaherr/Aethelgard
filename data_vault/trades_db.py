@@ -167,7 +167,7 @@ class TradesMixin(BaseRepository):
             cursor.execute("""
                 SELECT COALESCE(SUM(profit), 0) 
                 FROM trade_results 
-                WHERE created_at >= datetime('now', '-{} days')
+                WHERE created_at >= datetime('now', '-{} days', 'utc')
             """.format(days))
             result = cursor.fetchone()[0]
             return float(result) if result else 0.0
@@ -184,7 +184,7 @@ class TradesMixin(BaseRepository):
                     COUNT(CASE WHEN profit > 0 THEN 1 END) as wins,
                     COUNT(CASE WHEN profit < 0 THEN 1 END) as losses
                 FROM trade_results 
-                WHERE created_at >= datetime('now', '-{} days')
+                WHERE created_at >= datetime('now', '-{} days', 'utc')
             """.format(days))
             row = row = cursor.fetchone()
             wins = row[0] if row[0] else 0
@@ -202,7 +202,7 @@ class TradesMixin(BaseRepository):
             cursor.execute("""
                 SELECT symbol, SUM(profit) as total_profit
                 FROM trade_results 
-                WHERE created_at >= datetime('now', '-{} days')
+                WHERE created_at >= datetime('now', '-{} days', 'utc')
                 GROUP BY symbol
                 ORDER BY total_profit DESC
             """.format(days))

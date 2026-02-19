@@ -3,7 +3,7 @@ import uuid
 import logging
 import sqlite3
 from typing import Dict, List, Optional, Union, overload
-from datetime import datetime
+from datetime import datetime, timezone
 from .base_repo import BaseRepository
 from utils.encryption import get_encryptor
 
@@ -178,8 +178,8 @@ class AccountsMixin(BaseRepository):
                 account_data.get('server'),
                 account_data.get('account_type', account_data.get('type', 'demo')),
                 account_data.get('enabled', True),
-                datetime.now(),
-                datetime.now()
+                datetime.now(timezone.utc),
+                datetime.now(timezone.utc)
             ))
             conn.commit()
         finally:
@@ -372,7 +372,7 @@ class AccountsMixin(BaseRepository):
                 update_values.append(enabled)
             
             update_fields.append("updated_at = ?")
-            update_values.append(datetime.now())
+            update_values.append(datetime.now(timezone.utc))
             update_values.append(account_id)
             
             if update_fields:

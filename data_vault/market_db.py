@@ -101,7 +101,7 @@ class MarketMixin(BaseRepository):
                             ORDER BY timestamp DESC
                         ) as rn
                     FROM market_state
-                    WHERE timestamp > datetime('now', '-24 hours')
+                    WHERE timestamp > datetime('now', '-24 hours', 'utc')
                 )
                 SELECT symbol, data, timestamp
                 FROM LatestStates

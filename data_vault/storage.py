@@ -4,7 +4,6 @@ import sqlite3
 import json
 from typing import Optional, Dict
 
-# Base and Mixins
 from .base_repo import BaseRepository
 from .signals_db import SignalsMixin, calculate_deduplication_window
 from .trades_db import TradesMixin
@@ -55,7 +54,7 @@ class StorageManager(
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS edge_learning (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    timestamp TEXT,
                     detection TEXT NOT NULL,
                     action_taken TEXT NOT NULL,
                     learning TEXT NOT NULL,

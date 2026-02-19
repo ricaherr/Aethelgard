@@ -12,7 +12,8 @@ Manages open positions with:
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from core_brain.market_utils import to_utc
 from typing import Dict, List, Optional, Any
 from decimal import Decimal
 
@@ -243,7 +244,7 @@ class PositionManager:
         summary = {
             'monitored': len(open_positions),
             'actions': actions,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': datetime.now(timezone.utc).isoformat()
         }
         
         logger.info(
@@ -332,11 +333,11 @@ class PositionManager:
         # Format entry time
         if open_time:
             if isinstance(open_time, (int, float)):
-                entry_time_str = datetime.fromtimestamp(open_time).isoformat()
+                entry_time_str = datetime.fromtimestamp(open_time, tz=timezone.utc).isoformat()
             else:
                 entry_time_str = open_time
         else:
-            entry_time_str = datetime.now().isoformat()
+            entry_time_str = datetime.now(timezone.utc).isoformat()
         
         # Get current regime (fallback to NEUTRAL if unavailable)
         current_regime = self._get_current_regime_with_fallback(symbol)
@@ -556,7 +557,7 @@ class PositionManager:
         
         # Parse entry time
         try:
-            entry_time = datetime.fromisoformat(entry_time_str)
+            entry_time = to_utc(entry_time_str)
         except (ValueError, TypeError) as e:
             logger.error(
                 f"Invalid entry_time format for position {ticket}: {entry_time_str} - {e}"
@@ -573,7 +574,7 @@ class PositionManager:
         )
         
         # Check if position is stale
-        age = datetime.now() - entry_time
+        age = datetime.now(timezone.utc) - entry_time
         max_age = timedelta(hours=threshold_hours)
         
         if age > max_age:
@@ -748,7 +749,7 @@ class PositionManager:
                 self.storage.update_position_metadata(ticket, {
                     'emergency_close': True,
                     'emergency_reason': reason,
-                    'closed_at': datetime.now().isoformat()
+                    'closed_at': datetime.now(timezone.utc).isoformat()
                 })
                 
                 return True
@@ -790,7 +791,7 @@ class PositionManager:
                 # Update metadata
                 self.storage.update_position_metadata(ticket, {
                     'stale_exit': True,
-                    'closed_at': datetime.now().isoformat()
+                    'closed_at': datetime.now(timezone.utc).isoformat()
                 })
                 
                 return True
@@ -839,7 +840,7 @@ class PositionManager:
         old_metadata = self.storage.get_position_metadata(ticket)
         
         new_metadata = {
-            'last_modification_timestamp': datetime.now().isoformat(),
+            'last_modification_timestamp': datetime.now(timezone.utc).isoformat(),
             'sl_modifications_count': old_metadata.get('sl_modifications_count', 0) + 1,
             'modification_reason': reason,
             'new_sl': new_sl,
@@ -1062,8 +1063,8 @@ class PositionManager:
         last_mod_str = metadata.get('last_modification_timestamp')
         if last_mod_str:
             try:
-                last_mod = datetime.fromisoformat(last_mod_str)
-                time_since_last = (datetime.now() - last_mod).total_seconds()
+                last_mod = to_utc(last_mod_str)
+                time_since_last = (datetime.now(timezone.utc) - last_mod).total_seconds()
                 
                 if time_since_last < self.cooldown_seconds:
                     logger.debug(

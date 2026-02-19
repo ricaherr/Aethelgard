@@ -50,7 +50,8 @@ class ParameterTuner:
     
     def _save_config(self, config: Dict) -> None:
         """Guarda la configuración en Storage (SSOT)"""
-        config["last_updated"] = datetime.now().isoformat()
+        from datetime import timezone
+        config["last_updated"] = datetime.now(timezone.utc).isoformat()
         self.storage.update_dynamic_params(config)
         logger.info("[OK] Configuración guardada en DB (dynamic_params)")
     
@@ -245,7 +246,7 @@ class ParameterTuner:
             "shock_lookback": current_config.get("shock_lookback", 5),
             "min_volatility_atr_period": current_config.get("min_volatility_atr_period", 50),
             "persistence_candles": current_config.get("persistence_candles", 2),
-            "last_updated": datetime.now().isoformat()
+            "last_updated": datetime.now(timezone.utc).isoformat()
         }
         
         # Guardar nueva configuración

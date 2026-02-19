@@ -3,6 +3,7 @@ import uuid
 import logging
 import sqlite3
 from datetime import date, datetime, timezone
+from core_brain.market_utils import to_utc
 from enum import Enum
 from typing import Dict, List, Optional, Any, Union
 from .base_repo import BaseRepository
@@ -80,17 +81,11 @@ class SignalsMixin(BaseRepository):
         def _save(conn: sqlite3.Connection, signal_id: str) -> None:
             cursor = conn.cursor()
             timestamp = getattr(signal, 'timestamp', None)
+            timestamp_value = None
             if timestamp:
-                if isinstance(timestamp, datetime):
-                    if timestamp.tzinfo is not None:
-                        timestamp_utc = timestamp.astimezone(timezone.utc)
-                        timestamp_value = timestamp_utc.strftime('%Y-%m-%d %H:%M:%S')
-                    else:
-                        timestamp_value = timestamp.strftime('%Y-%m-%d %H:%M:%S')
-                else:
-                    timestamp_value = str(timestamp)
-            else:
-                timestamp_value = None
+                # Normaliza a UTC ISO 8601
+                dt_utc = to_utc(timestamp)
+                timestamp_value = dt_utc.replace(microsecond=0).strftime('%Y-%m-%d %H:%M:%S')
             
             base_columns = ['id', 'symbol', 'signal_type', 'confidence', 'metadata', 'connector_type', 'timeframe', 'price', 'direction']
             base_values = [
@@ -206,11 +201,14 @@ class SignalsMixin(BaseRepository):
                 else:
                     current_metadata = dict(metadata_update)
 
+                # Normalizar updated_at
+                now = datetime.now(timezone.utc).replace(microsecond=0)
+                now_str = now.strftime('%Y-%m-%d %H:%M:%S')
                 cursor.execute("""
                     UPDATE signals 
                     SET status = ?, metadata = ?, updated_at = ?
                     WHERE id = ?
-                """, (status, json.dumps(current_metadata), datetime.now(), signal_id))
+                """, (status, json.dumps(current_metadata), now_str, signal_id))
 
                 if 'ticket' in metadata_update:
                     cursor.execute("""
@@ -219,11 +217,13 @@ class SignalsMixin(BaseRepository):
                         WHERE id = ?
                     """, (str(metadata_update['ticket']), signal_id))
             else:
+                now = datetime.now(timezone.utc).replace(microsecond=0)
+                now_str = now.strftime('%Y-%m-%d %H:%M:%S')
                 cursor.execute("""
                     UPDATE signals 
                     SET status = ?, updated_at = ?
                     WHERE id = ?
-                """, (status, datetime.now(), signal_id))
+                """, (status, now_str, signal_id))
             conn.commit()
         finally:
             self._close_conn(conn)

@@ -49,7 +49,8 @@ class CoherenceMonitor:
         events: List[CoherenceEvent] = []
         recent_signals = self.storage.get_recent_signals(minutes=self.lookback_minutes)
 
-        now = datetime.now()
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
         for sig in recent_signals:
             signal_id = sig.get("id")
             symbol = sig.get("symbol") or "UNKNOWN"
