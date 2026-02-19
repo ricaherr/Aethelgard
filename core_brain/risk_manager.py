@@ -817,7 +817,7 @@ class RiskManager:
         """Activa y persiste el modo lockdown con fecha y balance."""
         if not self.lockdown_mode:
             from datetime import datetime, timezone
-            from core_brain.market_utils import to_utc
+            from utils.time_utils import to_utc
             now = datetime.now(timezone.utc).isoformat()
             
             self.lockdown_mode = True
@@ -868,7 +868,7 @@ class RiskManager:
             tuple[bool, str]: (should_reset, reason)
         """
         from datetime import datetime, timedelta, timezone
-        from core_brain.market_utils import to_utc
+        from utils.time_utils import to_utc
         
         # Safety: If no lockdown_date, assume it's old and reset
         if not lockdown_date:

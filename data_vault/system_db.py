@@ -3,7 +3,7 @@ import logging
 import sqlite3
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
-from core_brain.market_utils import to_utc
+from utils.time_utils import to_utc
 from .base_repo import BaseRepository
 
 logger = logging.getLogger(__name__)

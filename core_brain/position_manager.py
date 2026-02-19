@@ -13,7 +13,7 @@ Manages open positions with:
 
 import logging
 from datetime import datetime, timedelta, timezone
-from core_brain.market_utils import to_utc
+from utils.time_utils import to_utc
 from typing import Dict, List, Optional, Any
 from decimal import Decimal
 

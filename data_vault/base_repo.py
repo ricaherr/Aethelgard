@@ -5,7 +5,7 @@ import logging
 import time
 from typing import Optional, List, Dict, Any, Callable
 from datetime import datetime, timezone
-from core_brain.market_utils import to_utc
+from utils.time_utils import to_utc
 
 logger = logging.getLogger(__name__)
 

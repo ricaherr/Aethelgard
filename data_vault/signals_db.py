@@ -3,7 +3,7 @@ import uuid
 import logging
 import sqlite3
 from datetime import date, datetime, timezone
-from core_brain.market_utils import to_utc
+from utils.time_utils import to_utc
 from enum import Enum
 from typing import Dict, List, Optional, Any, Union
 from .base_repo import BaseRepository
