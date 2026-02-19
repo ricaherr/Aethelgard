@@ -362,7 +362,24 @@ class SignalFactory:
                     tasks.append(self.generate_signal(symbol, df, regime, timeframe, trace_id))
 
             if not tasks:
-                logger.warning("DEBUG: No tasks created (missing data in scan_results?)")
+                # Diagnóstico detallado: ¿por qué no se crearon tasks?
+                empty_keys = []
+                for key, data in scan_results.items():
+                    regime = data.get("regime")
+                    df = data.get("df")
+                    symbol = data.get("symbol")
+                    timeframe = data.get("timeframe")
+                    if not regime:
+                        empty_keys.append(f"{key}: regime=None")
+                    elif df is None:
+                        empty_keys.append(f"{key}: df=None")
+                    elif not symbol:
+                        empty_keys.append(f"{key}: symbol=None")
+                logger.warning(
+                    "No tasks created: ningún instrumento elegible para señal. "
+                    f"scan_results keys: {list(scan_results.keys())}. "
+                    f"Problemas detectados: {empty_keys if empty_keys else 'Todos los datos faltan o vacíos.'}"
+                )
                 return []
 
             # results es una lista de listas de señales: [[s1, s2], [], [s3]]

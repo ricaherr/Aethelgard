@@ -701,13 +701,15 @@ class MT5Connector:
         tf = (signal.timeframe or 'M5').upper()
         signal_type = signal.signal_type.value[:4]  # BUY or SELL (4 chars max)
         strategy = (signal.strategy_id or 'RSI')[:8]  # Max 8 chars for strategy
-        
-        comment = f"AE_{tf}_{signal_type}_{strategy}"
-        
-        # Truncate if exceeds MT5 limit
+        signal_id = signal.metadata.get('signal_id') if hasattr(signal, 'metadata') else None
+        # Embebe signal_id en el comentario si existe
+        if signal_id:
+            comment = f"Aethelgard_signal_{signal_id}_{tf}_{signal_type}_{strategy}"
+        else:
+            comment = f"AE_{tf}_{signal_type}_{strategy}"
+        # Trunca si excede el límite MT5
         if len(comment) > 31:
             comment = comment[:31]
-        
         return comment
     
     def execute_signal(self, signal: Signal) -> Dict:
@@ -1411,7 +1413,15 @@ class MT5Connector:
             position = positions[0]
             
             # Prepare close request
-            comment = f"Aethelgard_Close_{reason}" if reason else "Aethelgard_Close"
+            # Buscar signal_id en metadata de posición
+            signal_id = None
+            if hasattr(position, 'comment') and position.comment:
+                # Si el comentario original tiene signal_id, extraerlo
+                import re
+                match = re.search(r'signal_(\w+)', position.comment)
+                if match:
+                    signal_id = match.group(1)
+            comment = f"Aethelgard_Close_signal_{signal_id}_{reason}" if signal_id else (f"Aethelgard_Close_{reason}" if reason else "Aethelgard_Close")
             close_request = {
                 "action": mt5.TRADE_ACTION_DEAL,
                 "symbol": position.symbol,

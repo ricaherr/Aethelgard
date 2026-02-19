@@ -259,6 +259,9 @@ class MT5Bridge:
         """
         try:
             # Preparar la orden
+            signal_id = signal_data.get('signal_id') if signal_data else None
+            strategy_id = signal_data.get('strategy_id', 'unknown') if signal_data else 'unknown'
+            comment = f"Aethelgard_signal_{signal_id}_{strategy_id}" if signal_id else f"Aethelgard_{strategy_id}"
             request = {
                 "action": mt5.TRADE_ACTION_DEAL,  # type: ignore
                 "symbol": symbol,
@@ -269,7 +272,7 @@ class MT5Bridge:
                 "tp": take_profit if take_profit else 0.0,
                 "deviation": 20,
                 "magic": self.magic_number,
-                "comment": f"Aethelgard_{signal_data.get('strategy_id', 'unknown') if signal_data else 'unknown'}",
+                "comment": comment,
                 "type_time": mt5.ORDER_TIME_GTC,  # type: ignore
                 "type_filling": mt5.ORDER_FILLING_IOC,  # type: ignore
             }
@@ -342,6 +345,9 @@ class MT5Bridge:
         """
         try:
             # Preparar la orden
+            signal_id = signal_data.get('signal_id') if signal_data else None
+            strategy_id = signal_data.get('strategy_id', 'unknown') if signal_data else 'unknown'
+            comment = f"Aethelgard_signal_{signal_id}_{strategy_id}" if signal_id else f"Aethelgard_{strategy_id}"
             request = {
                 "action": mt5.TRADE_ACTION_DEAL,  # type: ignore
                 "symbol": symbol,
@@ -352,7 +358,7 @@ class MT5Bridge:
                 "tp": take_profit if take_profit else 0.0,
                 "deviation": 20,
                 "magic": self.magic_number,
-                "comment": f"Aethelgard_{signal_data.get('strategy_id', 'unknown') if signal_data else 'unknown'}",
+                "comment": comment,
                 "type_time": mt5.ORDER_TIME_GTC,  # type: ignore
                 "type_filling": mt5.ORDER_FILLING_IOC,  # type: ignore
             }
@@ -426,6 +432,14 @@ class MT5Bridge:
                     continue
                 
                 # Preparar orden de cierre
+                # Extraer signal_id del comentario original si existe
+                signal_id = None
+                if hasattr(position, 'comment') and position.comment:
+                    import re
+                    match = re.search(r'signal_(\w+)', position.comment)
+                    if match:
+                        signal_id = match.group(1)
+                comment = f"Aethelgard_Close_signal_{signal_id}" if signal_id else "Aethelgard_Close"
                 close_request = {
                     "action": mt5.TRADE_ACTION_DEAL,  # type: ignore
                     "symbol": position.symbol,
@@ -435,7 +449,7 @@ class MT5Bridge:
                     "price": mt5.symbol_info_tick(position.symbol).bid if position.type == mt5.ORDER_TYPE_BUY else mt5.symbol_info_tick(position.symbol).ask,  # type: ignore
                     "deviation": 20,
                     "magic": self.magic_number,
-                    "comment": "Aethelgard_Close",
+                    "comment": comment,
                     "type_time": mt5.ORDER_TIME_GTC,  # type: ignore
                     "type_filling": mt5.ORDER_FILLING_IOC,  # type: ignore
                 }

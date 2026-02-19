@@ -76,33 +76,50 @@ class ClosingMonitor:
             for connector_name, connector in self.connectors.items():
                 try:
                     closed_positions = connector.get_closed_positions()
-                    
-                    # Match closed positions with executed signals
                     for position in closed_positions:
+                        # 1. Intentar por signal_id explícito
                         signal_id = position.get('signal_id')
-                        
+                        if signal_id:
+                            logger.debug(f"[MATCH] signal_id directo encontrado: {signal_id}")
+                        # 2. Fallback: ticket
                         if not signal_id:
-                            # Try to match by ticket number from metadata
                             ticket = position.get('ticket')
-                            matching_signal = self._find_signal_by_ticket(
-                                executed_signals, 
-                                ticket
-                            )
+                            matching_signal = self._find_signal_by_ticket(executed_signals, ticket)
                             if matching_signal:
                                 signal_id = matching_signal['id']
-                        
-                        if signal_id:
-                            # Update trade result
-                            self._update_trade_result(
-                                signal_id=signal_id,
-                                exit_price=position.get('exit_price'),
-                                profit=position.get('profit'),
-                                exit_reason=position.get('exit_reason', 'CLOSED'),
-                                close_time=position.get('close_time'),
-                                symbol=position.get('symbol')
-                            )
-                            updates_count += 1
-                
+                                logger.debug(f"[MATCH] por ticket: {ticket} → signal_id={signal_id}")
+                        # 3. Fallback: order_id
+                        if not signal_id:
+                            order_id = position.get('order_id')
+                            for signal in executed_signals:
+                                metadata = signal.get('metadata', {})
+                                if metadata.get('order_id') == order_id:
+                                    signal_id = signal['id']
+                                    logger.debug(f"[MATCH] por order_id: {order_id} → signal_id={signal_id}")
+                                    break
+                        # 4. Fallback: buscar en comentario
+                        if not signal_id:
+                            comment = position.get('comment') or position.get('metadata', {}).get('comment')
+                            if comment:
+                                import re
+                                match = re.search(r'signal_(\w+)', comment)
+                                if match:
+                                    signal_id = match.group(1)
+                                    logger.debug(f"[MATCH] por comentario: {comment} → signal_id={signal_id}")
+                        # 5. Log si no se encontró
+                        if not signal_id:
+                            logger.warning(f"[NO MATCH] No se pudo asociar posición cerrada: {position}")
+                            continue
+                        # Actualizar resultado
+                        self._update_trade_result(
+                            signal_id=signal_id,
+                            exit_price=position.get('exit_price'),
+                            profit=position.get('profit'),
+                            exit_reason=position.get('exit_reason', 'CLOSED'),
+                            close_time=position.get('close_time'),
+                            symbol=position.get('symbol')
+                        )
+                        updates_count += 1
                 except Exception as e:
                     logger.error(f"Error checking {connector_name}: {e}")
             

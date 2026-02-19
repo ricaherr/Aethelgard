@@ -79,7 +79,8 @@ class SignalExpirationManager:
         if not pending_signals:
             return stats
         
-        now = datetime.now()
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
         
         for signal in pending_signals:
             timeframe = signal.get('timeframe', 'H1')  # Default H1 if missing
@@ -92,11 +93,19 @@ class SignalExpirationManager:
                 continue
             
             try:
-                # Handle both ISO format and SQLite datetime format
-                if 'T' in timestamp_str:
+                # Normalizar a UTC
+                from core_brain.market_utils import to_utc
+                from datetime import timezone
+                if 'T' in timestamp_str or '.' in timestamp_str:
+                    # ISO 8601 extendido
                     signal_time = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                    if signal_time.tzinfo is None:
+                        signal_time = signal_time.replace(tzinfo=timezone.utc)
+                    else:
+                        signal_time = signal_time.astimezone(timezone.utc)
                 else:
                     signal_time = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S')
+                    signal_time = signal_time.replace(tzinfo=timezone.utc)
             except (ValueError, TypeError) as e:
                 logger.warning(f"Failed to parse timestamp {timestamp_str}: {e}")
                 continue
