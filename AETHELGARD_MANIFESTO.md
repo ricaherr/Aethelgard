@@ -1,3 +1,24 @@
+### 1.10 Arquitectura Dual y Conexión Unificada (Feb 2026)
+
+**Regla:** El sistema debe operar bajo un modelo de separación de responsabilidades a nivel de infraestructura, distinguiendo entre la **Capa de Observación** (Data Providers) y la **Capa de Ejecución** (Broker Accounts), pero unificando la conectividad pesada (MT5) para optimizar recursos.
+
+#### 1. Capas Proactiva vs Ejecutora
+- **Capa de Observación (Observatory)**: Representada por `data_providers`. Es el "ojo" del sistema. Su misión es el escaneo ininterrumpido. Debe estar configurada para usar el proveedor con mayor calidad de datos (ej: IC Markets).
+- **Capa de Ejecución (Executioner)**: Representada por `broker_accounts`. Es el brazo ejecutor que maneja capital y órdenes.
+- **Independencia**: El sistema debe ser capaz de mantener el análisis (Scanner) activo incluso si las cuentas de ejecución están desconectadas o en modo `Lockdown`.
+
+#### 2. Conexión Unificada (Unified Connector)
+- **Shared Session**: Para conectores que requieren terminales locales (MT5), el sistema debe reutilizar la instancia de conexión para ambas capas si el broker coincide.
+- **Inyección de Dependencias**: El conector de ejecución se inyecta en el `DataProviderManager` durante el arranque para evitar la apertura de múltiples terminales redundantes.
+- **Aislamiento**: Si los brokers son distintos, el sistema gestionará sesiones paralelas de forma transparente.
+
+#### 3. Roadmap de Desacoplamiento (Cloud Strategy)
+Para permitir despliegues 100% en la nube (Linux/No-GUI), se establece el siguiente camino:
+- **Fase Current (Híbrido)**: Uso de terminales locales controladas vía CLI con inyección de sesión.
+- **Fase Pro (SaaS/Cloud)**: Migración a conectores basados en **MetaApi.cloud** o **REST/WebSockets** directos, eliminando la dependencia de `terminal64.exe`.
+- **Fase Enterprise (FIX API)**: Conexión institucional directa para ejecución de baja latencia.
+
+---
 
 ### 1.9 Migración Total a SSOT (Feb 2026)
 

@@ -7,7 +7,8 @@ import logging
 import threading
 import time
 from enum import Enum
-from typing import Optional, Dict, List, Any, TYPE_CHECKING
+import pandas as pd
+from typing import Optional, Dict, List, Any, Union, TYPE_CHECKING
 from datetime import datetime, timedelta
 
 if TYPE_CHECKING:
@@ -28,6 +29,22 @@ from models.broker_event import BrokerTradeClosedEvent, TradeResult, BrokerEvent
 from core_brain.market_utils import normalize_price, normalize_volume
 
 logger = logging.getLogger(__name__)
+
+# MT5 Timeframe Map for Data Provider compatibility
+if MT5_AVAILABLE and mt5:
+    TIMEFRAME_MAP = {
+        "M1": getattr(mt5, "TIMEFRAME_M1", 1),
+        "M5": getattr(mt5, "TIMEFRAME_M5", 5),
+        "M15": getattr(mt5, "TIMEFRAME_M15", 15),
+        "M30": getattr(mt5, "TIMEFRAME_M30", 30),
+        "H1": getattr(mt5, "TIMEFRAME_H1", 16385),
+        "H4": getattr(mt5, "TIMEFRAME_H4", 16388),
+        "D1": getattr(mt5, "TIMEFRAME_D1", 16408),
+        "W1": getattr(mt5, "TIMEFRAME_W1", 32769),
+        "MN1": getattr(mt5, "TIMEFRAME_MN1", 49153),
+    }
+else:
+    TIMEFRAME_MAP = {}
 
 
 class ConnectionState(Enum):
@@ -133,6 +150,9 @@ class MT5Connector:
                 logger.warning("No MT5 accounts found in database. MT5 connector disabled.")
                 return {'enabled': False}
             
+            # Sort accounts by updated_at DESC (prefer most recently modified = likely active)
+            mt5_accounts.sort(key=lambda x: x.get('updated_at', ''), reverse=True)
+            
             # Select account (by ID or first enabled)
             account = None
             if self.account_id:
@@ -141,7 +161,10 @@ class MT5Connector:
                     logger.error(f"MT5 account {self.account_id} not found in database")
                     return {'enabled': False}
             else:
-                account = mt5_accounts[0]  # Use first enabled account
+                account = mt5_accounts[0]  # Use first enabled account (now sorted)
+                if len(mt5_accounts) > 1:
+                    logger.info(f"Multiple enabled MT5 accounts found. Selected most recent: {account.get('account_name')} ({account.get('account_number')})")
+                    logger.debug(f"Candidates: {[a.get('account_name') for a in mt5_accounts]}")
             
             # Store account ID for later use
             self.account_id = account['account_id']
@@ -329,6 +352,34 @@ class MT5Connector:
         logger.info("[VERBOSE] [OK] Credentials validated")
         return True
 
+    def _check_shared_session(self, target_login: Union[int, str], target_server: str) -> bool:
+        """
+        Check if current terminal session already matches target account.
+        
+        Args:
+            target_login: Account number to check
+            target_server: Broker server name
+            
+        Returns:
+            True if already connected to target account
+        """
+        if not MT5_AVAILABLE or not mt5:
+            return False
+            
+        try:
+            account_info = mt5.account_info()
+            if account_info:
+                current_login = int(account_info.login)
+                current_server = str(account_info.server).strip()
+                
+                if current_login == int(target_login) and current_server == str(target_server).strip():
+                    logger.info(f"[SHARED] Reusing existing terminal session for account {current_login}")
+                    return True
+            return False
+        except Exception as e:
+            logger.debug(f"[SHARED] Could not verify existing session: {e}")
+            return False
+
     def _perform_mt5_login(self) -> bool:
         """Perform MT5 login with credentials"""
         logger.info("[VERBOSE] _perform_mt5_login() started")
@@ -337,6 +388,16 @@ class MT5Connector:
         password = self.config.get('password')
         server = self.config.get('server')
         
+        if not login or not password or not server:
+            logger.error(f"[ERROR] Missing credentials in config: login={login}, server={server}")
+            return False
+
+        # SHARED SESSION OPTIMIZATION
+        # If terminal is already on the correct account, we skip login to avoid reset
+        if self._check_shared_session(login, server):
+            logger.info("[SHARED] [OK] Skipping explicit login as session is already active")
+            return True
+
         logger.info(f"[VERBOSE] Login parameters: login={login} (type={type(login).__name__}), server='{server}'")
         logger.info(f"[VERBOSE] Calling mt5.login(login={int(login)}, password=[HIDDEN], server='{str(server).strip()}')...")
         
@@ -352,17 +413,8 @@ class MT5Connector:
             error = mt5.last_error()
             logger.error(f"[VERBOSE] [ERROR] mt5.login() FAILED: {error}")
             logger.error(f"[VERBOSE] Attempted login={int(login)}, server='{str(server).strip()}'")
-            
-            # Additional diagnostic info
-            try:
-                terminal_info = mt5.terminal_info()
-                if terminal_info:
-                    logger.error(f"[VERBOSE] Terminal state: connected={terminal_info.connected}, trade_allowed={terminal_info.trade_allowed}")
-            except Exception as e:
-                logger.error(f"[VERBOSE] Could not get terminal info: {e}")
-            
             return False
-        
+            
         logger.info("[VERBOSE] [OK] mt5.login() SUCCESS")
         return True
 
@@ -689,6 +741,84 @@ class MT5Connector:
             self.is_connected = False
             logger.info("MT5 disconnected")
     
+    # --- DATA PROVIDER INTERFACE IMPLEMENTATION ---
+    
+    def is_local(self) -> bool:
+        """Indicates that this connector is running locally (fast access)"""
+        return True
+
+    def is_available(self) -> bool:
+        """Check if connector is connected and ready"""
+        return self.is_connected
+
+    def fetch_ohlc(self, symbol: str, timeframe: str = "M5", count: int = 500) -> Optional[Any]:
+        """
+        Fetch OHLC data from MT5 (DataProvider Protocol)
+        
+        Args:
+            symbol: Symbol name
+            timeframe: Timeframe string (M1, M5, H1, etc.)
+            count: Number of bars
+            
+        Returns:
+            pandas DataFrame with [time, open, high, low, close, volume]
+        """
+        if not self.is_connected:
+            return None
+            
+        try:
+            # Normalize symbol
+            mt5_symbol = self.normalize_symbol(symbol)
+            
+            # Map timeframe
+            mt5_tf = self._map_timeframe_to_mt5(timeframe)
+            if mt5_tf is None:
+                logger.error(f"Invalid timeframe mapping for: {timeframe}")
+                return None
+                
+            # Copy rates
+            rates = mt5.copy_rates_from_pos(mt5_symbol, mt5_tf, 0, count)
+            
+            if rates is None or len(rates) == 0:
+                # Try explicit connection check if data fails
+                if not mt5.symbol_select(mt5_symbol, True):
+                    logger.warning(f"Symbol {mt5_symbol} not found in Market Watch")
+                return None
+                
+            # Convert to DataFrame
+            import pandas as pd
+            df = pd.DataFrame(rates)
+            df['time'] = pd.to_datetime(df['time'], unit='s')
+            
+            # Rename columns to standard format
+            # MT5 returns: time, open, high, low, close, tick_volume, spread, real_volume
+            # We need: time, open, high, low, close, volume
+            df.rename(columns={
+                'tick_volume': 'volume', 
+                'real_volume': 'vol_real'
+            }, inplace=True)
+            
+            return df[['time', 'open', 'high', 'low', 'close', 'volume']]
+            
+        except Exception as e:
+            logger.error(f"Error fetching OHLC from MT5 for {symbol}: {e}")
+            return None
+
+    def _map_timeframe_to_mt5(self, timeframe: str) -> Optional[int]:
+        """Map string timeframe to MT5 constant"""
+        mapping = {
+            "M1": mt5.TIMEFRAME_M1,
+            "M5": mt5.TIMEFRAME_M5,
+            "M15": mt5.TIMEFRAME_M15,
+            "M30": mt5.TIMEFRAME_M30,
+            "H1": mt5.TIMEFRAME_H1,
+            "H4": mt5.TIMEFRAME_H4,
+            "D1": mt5.TIMEFRAME_D1,
+            "W1": mt5.TIMEFRAME_W1,
+            "MN1": mt5.TIMEFRAME_MN1
+        }
+        return mapping.get(timeframe.upper())
+
     def _build_trade_comment(self, signal: Signal) -> str:
         """
         Build MT5 comment with timeframe and strategy info.
@@ -1451,6 +1581,51 @@ class MT5Connector:
             logger.error(f"Error closing position: {error_msg}")
             return {'success': False, 'error': error_msg}
 
+
+    # --- Data Provider Interface (Unified Connection) ---
+
+    def _resolve_timeframe(self, timeframe: str) -> int:
+        """Helper to map string TFs to MT5 constants"""
+        t = (timeframe or "M5").upper()
+        if t not in TIMEFRAME_MAP:
+            logger.warning(f"Unknown timeframe '{timeframe}', falling back to M5")
+            t = "M5"
+        return TIMEFRAME_MAP[t]
+
+    def fetch_ohlc(
+        self,
+        symbol: str,
+        timeframe: str = "M5",
+        count: int = 500,
+    ) -> Optional[pd.DataFrame]:
+        """
+        Fetches OHLC data from MT5.
+        SATISFIES DataProviderManager expectations for 'mt5' provider.
+        """
+        if not self.is_connected:
+            # We don't call start() here because it's non-blocking.
+            # We assume orchestration in start.py handles the connection.
+            logger.error(f"MT5 not connected. Cannot fetch OHLC for {symbol}")
+            return None
+
+        try:
+            mt5_tf = self._resolve_timeframe(timeframe)
+            rates = mt5.copy_rates_from_pos(symbol, mt5_tf, 0, count)
+            
+            if rates is None or len(rates) == 0:
+                logger.debug(f"copy_rates_from_pos({symbol}, {timeframe}) returned None/Empty")
+                return None
+
+            df = pd.DataFrame(rates)
+            # Ensure required columns exist
+            if not df.empty:
+                df = df[["time", "open", "high", "low", "close"]].copy()
+                return df
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error in fetch_ohlc for {symbol}: {e}")
+            return None
 
 # Singleton instance for easy import
 _mt5_connector_instance = None

@@ -141,9 +141,9 @@ def main() -> None:
     
     total_killed = 0
     
-    # Step 1: Intentar cerrar MT5 de forma limpia
-    print("🔌 Cerrando conexiones MT5...")
-    close_mt5_connections()
+    # Step 1: Intentar cerrar MT5 de forma limpia (ELIMINADO - Causa apertura de terminales inactivas)
+    # print("🔌 Cerrando conexiones MT5...")
+    # close_mt5_connections()
     
     # Step 2: Matar procesos por puerto (FastAPI + React UI)
     print("\n🔴 Matando procesos por puerto...")

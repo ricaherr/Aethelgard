@@ -505,7 +505,7 @@ def create_app() -> FastAPI:
 
     # Endpoint de datos de gráfica
     from core_brain.chart_service import ChartService
-    chart_service = ChartService()
+    chart_service = ChartService(storage=storage)
 
     @app.get("/api/chart/{symbol}/{timeframe}")
     async def chart_data(symbol: str, timeframe: str = "M5", count: int = 500) -> Dict[str, Any]:

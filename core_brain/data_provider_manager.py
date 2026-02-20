@@ -10,7 +10,7 @@ import logging
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Protocol
+from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
 
 from data_vault.storage import StorageManager
 
@@ -47,6 +47,7 @@ class ProviderStatus:
     credentials_configured: bool = False
 
 
+@runtime_checkable
 class DataProvider(Protocol):
     """Protocol for data providers"""
     
@@ -81,7 +82,7 @@ class DataProviderManager:
             "name": "yahoo",
             "enabled": True,
             "requires_auth": False,
-            "priority": 100,  # Highest priority (free, no auth)
+            "priority": 50,  # Lower priority (fallback) 
             "free_tier": True,
             "module": "connectors.generic_data_provider",
             "class": "GenericDataProvider",
@@ -137,7 +138,7 @@ class DataProviderManager:
             "name": "mt5",
             "enabled": False,
             "requires_auth": True,
-            "priority": 95,
+            "priority": 100, # Highest priority
             "free_tier": True,
             "module": "connectors.mt5_data_provider",
             "class": "MT5DataProvider",
@@ -168,8 +169,27 @@ class DataProviderManager:
         self.provider_instances: Dict[str, Any] = {}
         self.provider_metadata: Dict[str, Dict] = self.DEFAULT_PROVIDERS.copy()
         
+        # Cache of initialized provider instances
+        self._instances: Dict[str, Any] = {}
+        
         self._load_configuration()
-    
+
+    def register_provider_instance(self, name: str, instance: Any) -> None:
+        """
+        Manually register an already initialized provider instance.
+        Useful for dependency injection (e.g., sharing MT5 connector).
+        
+        Args:
+            name: Provider name (e.g., 'mt5')
+            instance: Initialized provider instance
+        """
+        self.provider_instances[name.lower()] = instance
+        # Ensure provider is marked as enabled in memory if injected
+        if name.lower() in self.providers:
+            self.providers[name.lower()].enabled = True
+            
+        logger.info(f"Registered external provider instance for: {name}")
+
     def _load_configuration(self) -> None:
         """Load provider configuration from DB with fallback to JSON migration"""
         try:
@@ -473,6 +493,10 @@ class DataProviderManager:
                 kwargs['api_secret'] = config.api_secret
             kwargs.update(config.additional_config)
             
+            # Inject storage if available (Critical for MT5DataProvider and others)
+            if self.storage and 'storage' not in kwargs:
+                kwargs['storage'] = self.storage
+            
             instance = provider_class(**kwargs)
             
             # Cache instance only if successfully initialized
@@ -498,7 +522,18 @@ class DataProviderManager:
             
             # Check if credentials configured if required
             config: ProviderConfig = self.providers[name]
-            if config.requires_auth and not config.api_key:
+            
+            # Special check for MT5 or other complex providers
+            has_creds = bool(config.api_key)
+            if name == "mt5":
+                login = config.additional_config.get("login")
+                server = config.additional_config.get("server")
+                has_creds = bool(login and server)
+            
+            # If instance is already injected/cached, we assume it's valid regardless of config
+            is_injected = name in self.provider_instances
+            
+            if config.requires_auth and not has_creds and not is_injected:
                 logger.debug(f"Skipping {name}: credentials not configured")
                 continue
             
@@ -583,6 +618,32 @@ class DataProviderManager:
         # If no is_available method, just check if instance exists
         return True
     
+    def is_local(self) -> bool:
+        """
+        Check if the best available provider is local (fast access).
+        Used by ScannerEngine to optimize sleep intervals.
+        """
+        provider = self.get_best_provider()
+        if provider and hasattr(provider, 'is_local'):
+            return provider.is_local()
+        return False
+    
+    def is_available(self) -> bool:
+        """
+        Check if data service is available (at least one provider working).
+        Satisfies DataProvider protocol.
+        """
+        # Quick check: do we have any active provider capable of fetching data?
+        best = self.get_best_provider()
+        if not best:
+             return False
+        
+        # If best provider has is_available, use it
+        if hasattr(best, 'is_available'):
+             return best.is_available()
+             
+        return True
+
     def get_free_providers(self) -> List[Dict]:
         """Get list of providers that don't require authentication"""
         free = []

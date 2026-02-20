@@ -7,6 +7,7 @@ import logging
 import threading
 from typing import Optional
 import pandas as pd
+import time
 
 try:
     import yfinance as yf
@@ -74,13 +75,18 @@ class GenericDataProvider:
         "MN1": "1mo",
     }
     
-    def __init__(self) -> None:
+    def __init__(self, **kwargs) -> None:
         """Inicializa el proveedor de datos genérico"""
         if yf is None:
             raise ImportError(
                 "yfinance no está instalado. "
                 "Instala con: pip install yfinance"
             )
+        
+        # Store storage if passed (optional, for future use)
+        self.storage = kwargs.get('storage')
+        self.last_request_time = 0  # Initialize rate limiter
+        self.min_interval = 2.0     # Default rate limit (2 seconds)
         
         logger.info("GenericDataProvider inicializado (Yahoo Finance)")
     
@@ -154,27 +160,41 @@ class GenericDataProvider:
         else:
             return "5y"
     
-    def fetch_ohlc(
-        self,
-        symbol: str,
-        timeframe: str = "M5",
-        count: int = 500,
-    ) -> Optional[pd.DataFrame]:
+    def _enforce_rate_limit(self) -> None:
+        """Asegura que no se exceda el límite de peticiones (2s entre llamadas)"""
+        now = time.time()
+        elapsed = now - self.last_request_time
+        if elapsed < self.min_interval:
+            sleep_time = self.min_interval - elapsed
+            # Solo loguear si el sleep es significativo (>0.5s)
+            if sleep_time > 0.5:
+                # logger.debug(f"[RATE-LIMIT] Sleeping {sleep_time:.2f}s before next Yahoo request")
+                pass
+            time.sleep(sleep_time)
+        self.last_request_time = time.time()
+
+    def fetch_ohlc(self, symbol: str, timeframe: str = "M5", count: int = 500) -> Optional[Any]:
         """
-        Obtiene datos OHLC de Yahoo Finance
+        Obtiene OHLCV de Yahoo Finance con Rate Limiting.
         
         Args:
-            symbol: Símbolo del instrumento
-            timeframe: Timeframe (M1, M5, M15, H1, H4, D1, W1, MN1)
-            count: Número de velas a obtener
-        
+            symbol: Símbolo (ej. "EURUSD")
+            timeframe: Timeframe (ej. "M5")
+            count: Número de velas
+            
         Returns:
-            DataFrame con columnas: time, open, high, low, close, volume
-            None si hay error
+            DataFrame con [time, open, high, low, close, volume] o None
         """
+        # Apply Rate Limit before Request
+        self._enforce_rate_limit()
+        
         try:
-            # Mapear símbolo y timeframe
-            yf_symbol = self._map_symbol(symbol)
+            # Mapear símbolo (EURUSD -> EURUSD=X)
+            if symbol in self.SYMBOL_MAPPING:
+                yf_symbol = self.SYMBOL_MAPPING[symbol]
+            else:
+                yf_symbol = self._map_symbol(symbol)
+            
             yf_interval = self._map_timeframe(timeframe)
             period = self._calculate_period(timeframe, count)
             

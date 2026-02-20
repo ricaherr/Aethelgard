@@ -127,12 +127,28 @@ class ScannerEngine:
         
         # Load active timeframes from configuration
         timeframes_config = sc.get("timeframes", [])
-        if timeframes_config:
-            self.active_timeframes = [tf["timeframe"] for tf in timeframes_config if tf.get("enabled", True)]
-        else:
-            # Fallback to legacy single timeframe
-            self.active_timeframes = [self.mt5_timeframe]
+
+        # Determine max_workers based on CPU count and multiplier
+        cpu_count = psutil.cpu_count(logical=True) if psutil else 1
+        self._max_workers = max(1, int(cpu_count * selected_mode["max_workers_multiplier"]))
         
+        # Check if data provider is local (MT5) or remote
+        self.is_local_provider = isinstance(self.provider, DataProvider) and self.provider.is_local()
+        if self.is_local_provider:
+            logger.info("[SCANNER] Proveedor LOCAL detectado (MT5). Modo ultra-rápido activado.")
+            self.base_sleep = 0.5  # 500ms para local
+            self.sleep_trend = 0.5
+        else:
+            logger.info("[SCANNER] Proveedor REMOTO detectado. Aplicando latencia de seguridad.")
+            self.base_sleep = max(2.0, self.base_sleep) # Mínimo 2s para remoto
+            
+        # Initialize active_timeframes from config
+        self.active_timeframes = [tf["timeframe"] for tf in timeframes_config if tf.get("enabled", True)]
+        if not self.active_timeframes:
+            # Fallback to legacy mt5_timeframe if no timeframes are configured
+            self.active_timeframes = [self.mt5_timeframe]
+            logger.warning(f"No active timeframes configured. Falling back to legacy mt5_timeframe: {self.mt5_timeframe}")
+            
         logger.info(f"Active timeframes for scanning: {self.active_timeframes}")
         rp = regime_config_path or sc.get("config_path", None)
 
@@ -142,87 +158,113 @@ class ScannerEngine:
         self.last_regime: Dict[str, MarketRegime] = {}
         self.last_scan_time: Dict[str, float] = {}
         self.last_dataframes: Dict[str, Any] = {}  # Almacenar últimos DataFrames
+        
+        # CIRCUIT BREAKER: Rastrear fallos consecutivos por símbolo
+        self.consecutive_failures: Dict[str, int] = {}
+        self.circuit_breaker_cooldowns: Dict[str, float] = {} # Timestamp until when it's paused
+        
         self._lock = threading.Lock()
         self._running = False
         
-        # Calcular max_workers basado en el modo de escaneo y el número de activos
-        # Limitar workers iniciales para evitar saturación de CPU durante arranque
-        base_workers = min(8, (len(self.assets) or 1) + 4)  # Máximo 8 workers iniciales
-        self._max_workers = int(base_workers * selected_mode["max_workers_multiplier"])
-        
-        logger.info("ScannerEngine inicializado en modo %s con CPU límite %.1f%% y %d workers.", self.scan_mode, self.cpu_limit_pct, self._max_workers)
-
-        # Initialize classifiers for each (symbol, timeframe) combination
-        for s in self.assets:
+        # Inicializar clasificadores para todos los activos y timeframes
+        for symbol in self.assets:
             for tf in self.active_timeframes:
-                key = f"{s}|{tf}"
-                # Update: RegimeClassifier uses StorageManager for config (SSOT), not config_path
+                key = f"{symbol}|{tf}"
                 self.classifiers[key] = RegimeClassifier(storage=self.storage)
                 self.last_regime[key] = MarketRegime.NORMAL
                 self.last_scan_time[key] = 0.0
 
-    def _sleep_for_regime(self, regime: MarketRegime) -> float:
-        if regime == MarketRegime.TREND:
-            return self.sleep_trend
-        if regime == MarketRegime.CRASH:
-            return self.sleep_crash
-        if regime == MarketRegime.RANGE:
-            return self.sleep_range
-        return self.sleep_neutral
-
-    def _symbols_to_scan(self) -> List[Tuple[str, str]]:
-        """Priorización: TREND/CRASH cada 1s, RANGE/NORMAL cada 5–10s.
-        
-        Returns:
-            List of (symbol, timeframe) tuples ready to scan
-        """
-        now = time.monotonic()
-        out = []
-        with self._lock:
-            for s in self.assets:
-                for tf in self.active_timeframes:
-                    key = f"{s}|{tf}"
-                    last = self.last_scan_time.get(key, 0.0)
-                    regime = self.last_regime.get(key, MarketRegime.NORMAL)
-                    interval = self._sleep_for_regime(regime)
-                    if now - last >= interval:
-                        out.append((s, tf))
-        return out
-
     def _scan_one(self, symbol: str, timeframe: str) -> Optional[Tuple[str, str, MarketRegime, Dict, Any]]:
-        """Ejecuta RegimeClassifier para un símbolo y timeframe específico.
+        """Escanea un único activo en un hilo."""
+        key = f"{symbol}|{timeframe}"
         
-        Args:
-            symbol: Trading symbol
-            timeframe: Timeframe to scan (e.g., "M5", "H1")
-            
-        Returns:
-            Tuple of (symbol, timeframe, regime, metrics, dataframe) or None
-        """
+        # CIRCUIT BREAKER: Verificar si el activo está en cooldown
+        if key in self.circuit_breaker_cooldowns and time.monotonic() < self.circuit_breaker_cooldowns[key]:
+            logger.debug(f"[{key}] En cooldown por Circuit Breaker. Saltando escaneo.")
+            return None
+
         try:
+            # Obtener datos del proveedor (usando protocolo DataProvider: fetch_ohlc)
             df = self.provider.fetch_ohlc(
                 symbol,
                 timeframe=timeframe,
-                count=self.mt5_bars_count,
-                only_system=True
+                count=self.mt5_bars_count
             )
-            if df is None or (hasattr(df, "empty") and df.empty):
-                logger.debug("Sin datos OHLC para %s en %s", symbol, timeframe)
+            if df is None or df.empty:
+                logger.warning("No se pudieron obtener datos para %s [%s]", symbol, timeframe)
+                self._handle_scan_failure(key)
                 return None
 
-            key = f"{symbol}|{timeframe}"
-            cl = self.classifiers[key]
-            cl.load_ohlc(df)
-            regime = cl.classify()
-            metrics = cl.get_metrics()
-            return (symbol, timeframe, regime, metrics, df)
+            # Clasificar régimen
+            classifier = self.classifiers[key]
+            classifier.load_ohlc(df)
+            regime = classifier.classify()
+            metrics = classifier.get_metrics()
+            
+            # Resetear fallos consecutivos si el escaneo fue exitoso
+            self.consecutive_failures.pop(key, None)
+            self.circuit_breaker_cooldowns.pop(key, None)
+
+            return symbol, timeframe, regime, metrics, df
         except Exception as e:
-            logger.warning("Error escaneando %s [%s]: %s", symbol, timeframe, e)
+            logger.error("Error escaneando %s [%s]: %s", symbol, timeframe, e)
+            self._handle_scan_failure(key)
             return None
 
+    def _handle_scan_failure(self, key: str) -> None:
+        """Maneja el fallo de escaneo actualizando el Circuit Breaker y registrando el evento."""
+        current_failures = self.consecutive_failures.get(key, 0) + 1
+        self.consecutive_failures[key] = current_failures
+        
+        symbol, timeframe = key.split("|")
+        
+        # Log del evento persistente (Data Drift)
+        if self.storage:
+            try:
+                self.storage.save_coherence_event({
+                    'symbol': symbol,
+                    'timeframe': timeframe,
+                    'stage': 'SCANNER',
+                    'status': 'FAIL',
+                    'incoherence_type': 'DATA_DRIFT',
+                    'reason': f'Consecutive failures: {current_failures}',
+                    'details': f'Failed to fetch OHLC for {key}',
+                    'connector_type': 'mt5' if self.is_local_provider else 'generic'
+                })
+            except Exception as e:
+                logger.error(f"Error logging scan failure to DB: {e}")
+
+        if current_failures >= 3:
+            # 60 segundos de cooldown
+            cooldown_time = time.monotonic() + 60 
+            self.circuit_breaker_cooldowns[key] = cooldown_time
+            logger.warning(f"[{key}] Circuit Breaker activado: {current_failures} fallos consecutivos. En cooldown por 60s.")
+
     def _run_cycle(self) -> None:
-        to_scan = self._symbols_to_scan()
+        """Ejecuta un ciclo completo de escaneo para todos los activos."""
+        to_scan = []
+        now = time.monotonic()
+
+        with self._lock:
+            for symbol in self.assets:
+                for tf in self.active_timeframes:
+                    key = f"{symbol}|{tf}"
+                    last_scan_time = self.last_scan_time.get(key, 0.0)
+                    regime = self.last_regime.get(key, MarketRegime.NORMAL)
+
+                    # Priorización de escaneo
+                    if regime in [MarketRegime.TREND, MarketRegime.CRASH]:
+                        if now - last_scan_time >= self.sleep_trend:
+                            to_scan.append((symbol, tf))
+                    elif regime in [MarketRegime.RANGE, MarketRegime.NORMAL]:
+                        if now - last_scan_time >= self.sleep_range:
+                            to_scan.append((symbol, tf))
+                    else: # Default o inicial
+                        if now - last_scan_time >= self.base_sleep:
+                            to_scan.append((symbol, tf))
+
         if not to_scan:
+            # logger.debug("No hay activos para escanear en este ciclo.")
             return
 
         with ThreadPoolExecutor(max_workers=self._max_workers) as ex:

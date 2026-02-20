@@ -33,7 +33,7 @@ def main():
     
     # 1. Architecture Audit
     results['Architecture'] = run_command(
-        f"cd {workspace} && python scripts/architecture_audit.py",
+        f"cd {workspace} && python scripts/utilities/architecture_audit.py",
         "Architecture Audit (Duplicados + Context Manager)"
     )
     

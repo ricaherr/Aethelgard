@@ -218,10 +218,27 @@ async def main() -> None:
         logger.info(f"   Capital: ${risk_manager.capital:,.2f}")
         logger.info(f"   Riesgo por trade (SST): {risk_manager.risk_per_trade:.1%}")
         
-        # 3. Data Provider & Scanner (Regla 2 - Agnóstico)
+        # 3. Connectors & Data Provider (Unificación de Conexión)
+        # ----------------------------------------------------------------
+        
+        # A) Inicializar MT5 Connector (Instancia Única)
+        logger.info("[INIT] Inicializando MT5 Connector (Instancia Única)...")
+        mt5_connector = None
+        try:
+            mt5_connector = MT5Connector(storage=storage)
+        except Exception as e:
+            logger.warning(f"[FAIL] Error inicializando MT5 Connector: {e}. El sistema continuará sin MT5 (Modo Limitado).")
+        
+        # B) Inicializar Data Provider Manager
         logger.info("[INIT] Inicializando Data Provider Manager (DI)...")
         provider_manager = DataProviderManager(storage=storage)
         
+        # C) Inyección de Dependencia: Registrar instancia de MT5 en el manager
+        if mt5_connector:
+            provider_manager.register_provider_instance("mt5", mt5_connector)
+            logger.info("[DI] Instancia de MT5 inyectada en DataProviderManager")
+        
+        # D) Inicializar Scanner Engine (usando el provider_manager configurado)
         logger.info("[INIT] Inicializando Scanner Engine...")
         scanner = ScannerEngine(
             assets=symbols,
@@ -230,10 +247,6 @@ async def main() -> None:
             scan_mode="STANDARD",
             storage=storage
         )
-        
-        # 4. Connectors (Regla 3 - Agnóstico)
-        logger.info("[INIT] Inicializando MT5 Connector (DI)...")
-        mt5_connector = MT5Connector(storage=storage)
         
         # 5. Signal Factory - FASE DI (Regla 1)
         logger.info("[INIT] Inicializando Signal Factory (DI)...")
@@ -272,29 +285,45 @@ async def main() -> None:
             mt5_connector=mt5_connector
         )
         
+        # Construir diccionario de conectores seguros (evitar None)
+        active_connectors = {}
+        if mt5_connector:
+            active_connectors[ConnectorType.METATRADER5] = mt5_connector
+            
         order_executor = OrderExecutor(
             risk_manager=risk_manager,
             storage=storage,
             multi_tf_limiter=multi_tf_limiter,
             notificator=get_notifier(),
-            connectors={ConnectorType.METATRADER5: mt5_connector}
+            connectors=active_connectors
         )
         
-        # 7. Orchestrator Components - FASE DI (Regla 1)
-        logger.info("[INIT] Inicializando Componentes del Orquestador...")
-        
+        # 7. Coherence Monitor (DI)
+        logger.info("[INIT] Inicializando Coherence Monitor...")
         coherence_monitor = CoherenceMonitor(storage=storage)
+        
+        # 7.1 Signal Expiration Manager (DI)
+        logger.info("[INIT] Inicializando Signal Expiration Manager...")
         expiration_manager = SignalExpirationManager(storage=storage)
+        
+        # 7.2 Regime Classifier (DI)
+        logger.info("[INIT] Inicializando Regime Classifier...")
         regime_classifier = RegimeClassifier(storage=storage)
         
+        # 7.3 Edge Tuner (DI)
+        logger.info("[INIT] Inicializando Edge Tuner...")
         edge_tuner = EdgeTuner(storage=storage) 
         
+        # 7.4 Trade Closure Listener (DI)
+        logger.info("[INIT] Inicializando Trade Closure Listener...")
         trade_closure_listener = TradeClosureListener(
             storage=storage,
             risk_manager=risk_manager,
             edge_tuner=edge_tuner
         )
         
+        # 7.5 Position Manager (DI)
+        logger.info("[INIT] Inicializando Position Manager...")
         position_manager = PositionManager(
             storage=storage,
             connector=mt5_connector,

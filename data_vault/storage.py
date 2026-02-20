@@ -1134,6 +1134,43 @@ class StorageManager(
         return profiles.get(profile_type, profiles['active_trader'])
 
 
+    def save_coherence_event(self, event_data: Dict[str, Any]) -> bool:
+        """
+        Guarda un evento de coherencia en la base de datos.
+        Utilizado para trazabilidad de fallos de datos (Data Drift), 
+        desajustes de señales y errores de ejecución.
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO coherence_events (
+                    signal_id, symbol, timeframe, strategy, 
+                    stage, status, incoherence_type, reason, 
+                    details, connector_type, timestamp
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                event_data.get('signal_id'),
+                event_data.get('symbol'),
+                event_data.get('timeframe'),
+                event_data.get('strategy'),
+                event_data.get('stage', 'SCANNER'),
+                event_data.get('status', 'FAIL'),
+                event_data.get('incoherence_type', 'DATA_DRIFT'),
+                event_data.get('reason', 'Unknown'),
+                event_data.get('details'),
+                event_data.get('connector_type'),
+                datetime.now().isoformat()
+            ))
+            conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Error guardando evento de coherencia: {e}")
+            return False
+        finally:
+            self._close_conn(conn)
+
+
     def close(self) -> None:
         """Close persistent connection if it exists"""
         if self._persistent_conn is not None:
