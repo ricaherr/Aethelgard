@@ -153,11 +153,27 @@ class TestDynamicDeduplicationWindow:
         """Executor should use signal's timeframe for deduplication."""
         from core_brain.executor import OrderExecutor
         from core_brain.risk_manager import RiskManager
+        from core_brain.instrument_manager import InstrumentManager
         from unittest.mock import Mock
         
         from data_vault.storage import StorageManager
+        INSTRUMENTS_CONFIG_EXAMPLE = {
+            "FOREX": {
+                "majors": {"instruments": ["EURUSD", "GBPUSD", "USDJPY"], "enabled": True, "min_score": 70.0},
+                "minors": {"instruments": ["EURGBP", "EURJPY", "GBPJPY"], "enabled": True, "min_score": 75.0},
+                "exotics": {"instruments": ["USDTRY", "USDZAR", "USDMXN"], "enabled": False, "min_score": 90.0},
+            },
+            "CRYPTO": {
+                "tier1": {"instruments": ["BTCUSDT", "ETHUSDT"], "enabled": True, "min_score": 75.0},
+                "altcoins": {"instruments": ["ADAUSDT", "DOGEUSDT"], "enabled": False, "min_score": 85.0},
+            }
+        }
         storage = StorageManager(db_path=':memory:')
-        risk_manager = RiskManager(storage=storage, initial_capital=10000)
+        state = storage.get_system_state()
+        state["instruments_config"] = INSTRUMENTS_CONFIG_EXAMPLE
+        storage.update_system_state(state)
+        instrument_manager = InstrumentManager(storage=storage)
+        risk_manager = RiskManager(storage=storage, initial_capital=10000, instrument_manager=instrument_manager)
         risk_manager.storage = storage  # Inject storage for persistence
         executor = OrderExecutor(
             risk_manager=risk_manager,

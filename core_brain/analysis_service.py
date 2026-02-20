@@ -60,12 +60,8 @@ class InstrumentAnalysisService:
         }
 
     def _get_applicable_strategies(self, regime: str) -> list[dict]:
-        # Lee config/modules.json y filtra estrategias por régimen
-        modules_path = Path("config/modules.json")
-        if not modules_path.exists():
-            return []
-        with open(modules_path, "r", encoding="utf-8") as f:
-            modules = json.load(f)
+        # Obtiene módulos desde StorageManager (SSOT)
+        modules = self.storage.get_modules_config()
         result = []
         for name, mod in modules.get("active_modules", {}).items():
             if not mod.get("enabled", False):

@@ -5,8 +5,10 @@ import { GlassPanel } from '../common/GlassPanel';
 import { NotificationManager } from './NotificationManager';
 import { ModulesControl } from './ModulesControl';
 import { AutoTradingControl } from './AutoTradingControl';
+import { InstrumentsEditor } from './InstrumentsEditor';
+import { BackupSettings } from './BackupSettings';
 
-type ConfigCategory = 'trading' | 'risk' | 'system' | 'notifications' | 'modules';
+type ConfigCategory = 'trading' | 'risk' | 'system' | 'notifications' | 'modules' | 'instruments' | 'backups';
 
 export function ConfigHub() {
     const [activeCategory, setActiveCategory] = useState<ConfigCategory>('trading');
@@ -15,15 +17,16 @@ export function ConfigHub() {
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [message, setMessage] = useState<string | null>(null);
+    const specialCategories: ConfigCategory[] = ['modules', 'notifications', 'instruments', 'backups'];
+    const usesGenericSave = !specialCategories.includes(activeCategory);
 
     const fetchConfig = async (category: ConfigCategory) => {
         // Special categories don't need backend config
-        if (category === 'modules' || category === 'notifications') {
+        if (specialCategories.includes(category)) {
             setLoading(false);
             setConfig(null);
             return;
         }
-
         setLoading(true);
         setError(null);
         try {
@@ -97,15 +100,17 @@ export function ConfigHub() {
                     >
                         <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
                     </button>
-                    <button
-                        onClick={handleSave}
-                        disabled={saving || loading || !config}
-                        className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold font-outfit transition-all shadow-lg ${saving ? 'bg-white/20 text-white/40 cursor-not-allowed' : 'bg-aethelgard-green text-dark hover:scale-105 active:scale-95 shadow-aethelgard-green/20'
-                            }`}
-                    >
-                        <Save size={18} />
-                        {saving ? 'Saving...' : 'Commit Changes'}
-                    </button>
+                    {usesGenericSave && (
+                        <button
+                            onClick={handleSave}
+                            disabled={saving || loading || !config}
+                            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold font-outfit transition-all shadow-lg ${saving ? 'bg-white/20 text-white/40 cursor-not-allowed' : 'bg-aethelgard-green text-dark hover:scale-105 active:scale-95 shadow-aethelgard-green/20'
+                                }`}
+                        >
+                            <Save size={18} />
+                            {saving ? 'Saving...' : 'Commit Changes'}
+                        </button>
+                    )}
                 </div>
             </header>
 
@@ -132,6 +137,20 @@ export function ConfigHub() {
                         icon={<Settings size={20} />}
                         title="System Core"
                         description="Paths & CPU Scalability"
+                    />
+                    <TabButton
+                        active={activeCategory === 'instruments'}
+                        onClick={() => setActiveCategory('instruments')}
+                        icon={<Sliders size={20} />}
+                        title="Instruments"
+                        description="Gestión de instrumentos"
+                    />
+                    <TabButton
+                        active={activeCategory === 'backups'}
+                        onClick={() => setActiveCategory('backups')}
+                        icon={<Shield size={20} />}
+                        title="Backups"
+                        description="DB recovery policy"
                     />
                     <TabButton
                         active={activeCategory === 'notifications'}
@@ -194,7 +213,17 @@ export function ConfigHub() {
                                     <ModulesControl />
                                 )}
 
-                                {!loading && config && activeCategory !== 'notifications' && activeCategory !== 'modules' && (
+                                {/* Special case: Instruments Editor */}
+                                {!loading && activeCategory === 'instruments' && (
+                                    <InstrumentsEditor />
+                                )}
+
+                                {/* Special case: Backup Settings */}
+                                {!loading && activeCategory === 'backups' && (
+                                    <BackupSettings />
+                                )}
+
+                                {!loading && config && activeCategory !== 'notifications' && activeCategory !== 'modules' && activeCategory !== 'backups' && (
                                     <>
                                         {/* Auto-Trading Control (only in trading category) */}
                                         {activeCategory === 'trading' && (

@@ -9,8 +9,20 @@ from unittest.mock import Mock, AsyncMock
 from data_vault.storage import StorageManager
 from core_brain.executor import OrderExecutor
 from core_brain.risk_manager import RiskManager
-from models.signal import Signal, SignalType, ConnectorType
+from core_brain.instrument_manager import InstrumentManager
+from models.signal import Signal, ConnectorType, SignalType
 
+INSTRUMENTS_CONFIG_EXAMPLE = {
+    "FOREX": {
+        "majors": {"instruments": ["EURUSD", "GBPUSD", "USDJPY"], "enabled": True, "min_score": 70.0},
+        "minors": {"instruments": ["EURGBP", "EURJPY", "GBPJPY"], "enabled": True, "min_score": 75.0},
+        "exotics": {"instruments": ["USDTRY", "USDZAR", "USDMXN"], "enabled": False, "min_score": 90.0},
+    },
+    "CRYPTO": {
+        "tier1": {"instruments": ["BTCUSDT", "ETHUSDT"], "enabled": True, "min_score": 75.0},
+        "altcoins": {"instruments": ["ADAUSDT", "DOGEUSDT"], "enabled": False, "min_score": 85.0},
+    }
+}
 
 class TestSignalDeduplication:
     """Test cases for signal deduplication logic"""
@@ -22,18 +34,24 @@ class TestSignalDeduplication:
         return StorageManager(db_path=str(db_path))
     
     @pytest.fixture
-    def risk_manager(self):
+    def instrument_manager(self, storage):
+        state = storage.get_system_state()
+        state["instruments_config"] = INSTRUMENTS_CONFIG_EXAMPLE
+        storage.update_system_state(state)
+        return InstrumentManager(storage=storage)
+
+    @pytest.fixture
+    def risk_manager(self, storage, instrument_manager):
         """Create risk manager"""
-        from data_vault.storage import StorageManager
-        storage = StorageManager(db_path=':memory:')
-        return RiskManager(storage=storage, initial_capital=10000.0)
+        return RiskManager(storage=storage, initial_capital=10000.0, instrument_manager=instrument_manager)
     
     @pytest.fixture
-    def executor(self, risk_manager, storage):
-        """Create executor with paper connector"""
+    def executor(self, risk_manager, storage, instrument_manager):
+        """Create executor with paper connector (DI InstrumentManager real)"""
         from connectors.paper_connector import PaperConnector
-        
-        connectors = {ConnectorType.PAPER: PaperConnector()}
+
+        paper_connector = PaperConnector(instrument_manager=instrument_manager)
+        connectors = {ConnectorType.PAPER: paper_connector}
         return OrderExecutor(
             risk_manager=risk_manager,
             storage=storage,

@@ -5,7 +5,20 @@ import json
 # Asumimos que RiskManager está en core_brain.risk_manager
 # Esta importación funcionará cuando se ejecute con pytest desde la raíz del proyecto
 from core_brain.risk_manager import RiskManager
+from core_brain.instrument_manager import InstrumentManager
 from models.signal import MarketRegime, Signal, SignalType, ConnectorType
+
+INSTRUMENTS_CONFIG_EXAMPLE = {
+    "FOREX": {
+        "majors": {"instruments": ["EURUSD", "GBPUSD", "USDJPY"], "enabled": True, "min_score": 70.0},
+        "minors": {"instruments": ["EURGBP", "EURJPY", "GBPJPY"], "enabled": True, "min_score": 75.0},
+        "exotics": {"instruments": ["USDTRY", "USDZAR", "USDMXN"], "enabled": False, "min_score": 90.0},
+    },
+    "CRYPTO": {
+        "tier1": {"instruments": ["BTCUSDT", "ETHUSDT"], "enabled": True, "min_score": 75.0},
+        "altcoins": {"instruments": ["ADAUSDT", "DOGEUSDT"], "enabled": False, "min_score": 85.0},
+    }
+}
 
 @pytest.fixture
 def mock_storage():
@@ -41,7 +54,18 @@ def mock_dynamic_params():
 
 
 
-def test_agnostic_position_sizing(mock_dynamic_params, mock_storage):
+@pytest.fixture
+def instrument_manager():
+    from data_vault.storage import StorageManager
+    storage = StorageManager(db_path=':memory:')
+    state = storage.get_system_state()
+    state["instruments_config"] = INSTRUMENTS_CONFIG_EXAMPLE
+    storage.update_system_state(state)
+    return InstrumentManager(storage=storage)
+
+
+
+def test_agnostic_position_sizing(mock_dynamic_params, instrument_manager):
 
 
 
@@ -61,10 +85,12 @@ def test_agnostic_position_sizing(mock_dynamic_params, mock_storage):
 
 
 
-    with patch('builtins.open', mock_open(read_data=mock_dynamic_params)):
-        from data_vault.storage import StorageManager
-        storage = StorageManager(db_path=':memory:')
-        rm = RiskManager(storage=storage, initial_capital=10000)
+    from data_vault.storage import StorageManager
+    storage = StorageManager(db_path=':memory:')
+    storage.update_dynamic_params(json.loads(mock_dynamic_params))
+    rm = RiskManager(storage=storage, initial_capital=10000, instrument_manager=instrument_manager)
+
+
 
     account_balance = 10000
 
@@ -118,7 +144,7 @@ def test_agnostic_position_sizing(mock_dynamic_params, mock_storage):
 
 
 
-def test_lockdown_persistence_on_init():
+def test_lockdown_persistence_on_init(instrument_manager):
 
     """
 
@@ -149,7 +175,7 @@ def test_lockdown_persistence_on_init():
 
         with patch('core_brain.risk_manager.StorageManager', return_value=mock_storage_in_lockdown):
 
-            rm = RiskManager(storage=mock_storage_in_lockdown, initial_capital=10000)
+            rm = RiskManager(storage=mock_storage_in_lockdown, initial_capital=10000, instrument_manager=instrument_manager)
 
 
 
@@ -161,7 +187,7 @@ def test_lockdown_persistence_on_init():
 
 
 
-def test_defensive_posture_with_none_regime(mock_dynamic_params):
+def test_defensive_posture_with_none_regime(mock_dynamic_params, instrument_manager):
 
     """
 
@@ -173,7 +199,7 @@ def test_defensive_posture_with_none_regime(mock_dynamic_params):
 
     with patch('builtins.open', mock_open(read_data=mock_dynamic_params)):
 
-        from data_vault.storage import StorageManager; storage = StorageManager(db_path=':memory:'); rm = RiskManager(storage=storage, initial_capital=10000)
+        from data_vault.storage import StorageManager; storage = StorageManager(db_path=':memory:'); rm = RiskManager(storage=storage, initial_capital=10000, instrument_manager=instrument_manager)
 
     
 
@@ -195,7 +221,7 @@ def test_defensive_posture_with_none_regime(mock_dynamic_params):
 
 
 
-def test_risk_auto_adjustment_from_params(mock_dynamic_params):
+def test_risk_auto_adjustment_from_params(mock_dynamic_params, instrument_manager):
 
     """
 
@@ -205,9 +231,10 @@ def test_risk_auto_adjustment_from_params(mock_dynamic_params):
 
     """
 
-    with patch('builtins.open', mock_open(read_data=mock_dynamic_params)):
-
-        from data_vault.storage import StorageManager; storage = StorageManager(db_path=':memory:'); rm = RiskManager(storage=storage, initial_capital=10000)
+    from data_vault.storage import StorageManager
+    storage = StorageManager(db_path=':memory:')
+    storage.update_dynamic_params(json.loads(mock_dynamic_params))
+    rm = RiskManager(storage=storage, initial_capital=10000, instrument_manager=instrument_manager)
 
     
 
@@ -216,7 +243,7 @@ def test_risk_auto_adjustment_from_params(mock_dynamic_params):
     assert rm.risk_per_trade == 0.02
 
 
-def test_can_take_new_trade_rejects_if_exceeds_max_account_risk():
+def test_can_take_new_trade_rejects_if_exceeds_max_account_risk(instrument_manager):
     """
     Verifica que RiskManager.can_take_new_trade() rechaza una señal
     cuando el riesgo total de cuenta excedería el límite configurado.
@@ -333,7 +360,7 @@ def test_can_take_new_trade_rejects_if_exceeds_max_account_risk():
         
         mock_file.side_effect = side_effect
         
-        rm = RiskManager(storage=mock_storage, initial_capital=10000)
+        rm = RiskManager(storage=mock_storage, initial_capital=10000, instrument_manager=instrument_manager)
         
         # Execute: Verificar si puede tomar nueva operación
         can_trade, reason = rm.can_take_new_trade(test_signal, mock_connector)
@@ -344,7 +371,7 @@ def test_can_take_new_trade_rejects_if_exceeds_max_account_risk():
     assert "5.0%" in reason or "5%" in reason, f"Razón debe mencionar límite 5%, recibido: {reason}"
 
 
-def test_can_take_new_trade_approves_if_within_limit():
+def test_can_take_new_trade_approves_if_within_limit(instrument_manager):
     """
     Verifica que RiskManager.can_take_new_trade() APRUEBA una señal
     cuando el riesgo total de cuenta se mantiene dentro del límite.
@@ -439,11 +466,10 @@ def test_can_take_new_trade_approves_if_within_limit():
         
         mock_file.side_effect = side_effect
         
-        rm = RiskManager(storage=mock_storage, initial_capital=10000)
+        rm = RiskManager(storage=mock_storage, initial_capital=10000, instrument_manager=instrument_manager)
         can_trade, reason = rm.can_take_new_trade(test_signal, mock_connector)
     
     # Assert: Debe aprobar porque está dentro del límite
     assert can_trade is True, "RiskManager debe aprobar señal dentro del límite de riesgo"
     assert reason == "", f"Razón debe estar vacía cuando se aprueba, recibido: {reason}"
-
 

@@ -2,7 +2,7 @@ import json
 import uuid
 import logging
 import sqlite3
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 from utils.time_utils import to_utc
 from enum import Enum
 from typing import Dict, List, Optional, Any, Union
@@ -48,6 +48,22 @@ def calculate_deduplication_window(timeframe: Optional[str]) -> int:
 
 class SignalsMixin(BaseRepository):
     """Mixin for Signal-related database operations."""
+
+    @staticmethod
+    def _local_date_bounds_utc(date_filter: date) -> tuple[str, str]:
+        """
+        Build UTC bounds (inclusive/exclusive) for a local calendar date.
+        This keeps date-based queries coherent while timestamps are stored in UTC.
+        """
+        local_tz = datetime.now().astimezone().tzinfo or timezone.utc
+        start_local = datetime.combine(date_filter, datetime.min.time(), tzinfo=local_tz)
+        end_local = start_local + timedelta(days=1)
+        start_utc = start_local.astimezone(timezone.utc).replace(microsecond=0)
+        end_utc = end_local.astimezone(timezone.utc).replace(microsecond=0)
+        return (
+            start_utc.strftime('%Y-%m-%d %H:%M:%S'),
+            end_utc.strftime('%Y-%m-%d %H:%M:%S')
+        )
 
     def _get_signal_type_value(self, signal: Any) -> str:
         """Extract signal type value, handling both string and Enum types"""
@@ -179,11 +195,20 @@ class SignalsMixin(BaseRepository):
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            query = "SELECT * FROM signals WHERE DATE(timestamp) = ?"
-            params = [target_date.isoformat()]
+            start_utc, end_utc = self._local_date_bounds_utc(target_date)
+            query = """
+                SELECT * FROM signals
+                WHERE (
+                    (datetime(timestamp) >= datetime(?) AND datetime(timestamp) < datetime(?))
+                    OR DATE(timestamp) = ?
+                    OR json_extract(metadata, '$.date') = ?
+                )
+            """
+            target_date_str = target_date.isoformat()
+            params = [start_utc, end_utc, target_date_str, target_date_str]
             if status:
-                query += " AND status = ?"
-                params.append(status)
+                query += " AND UPPER(status) = ?"
+                params.append(status.upper())
             query += " ORDER BY timestamp DESC"
             cursor.execute(query, params)
             rows = cursor.fetchall()
@@ -252,9 +277,9 @@ class SignalsMixin(BaseRepository):
                 SELECT COUNT(*) FROM signals 
                 WHERE symbol = ? 
                 AND signal_type = ? 
-                AND timestamp >= datetime('now', 'localtime', '-' || ? || ' minutes')
+                AND datetime(timestamp) >= datetime('now', '-' || ? || ' minutes')
                 AND (timeframe = ? OR ? IS NULL)
-                AND status IN ('PENDING', 'EXECUTED', 'EXPIRED', 'active')
+                AND UPPER(status) IN ('PENDING', 'EXECUTED', 'EXPIRED', 'ACTIVE')
             """
             params = [symbol, signal_type, minutes, timeframe, timeframe]
             
@@ -353,11 +378,17 @@ class SignalsMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             if date_filter:
+                start_utc, end_utc = self._local_date_bounds_utc(date_filter)
+                target_date_str = date_filter.isoformat()
                 cursor.execute("""
                     SELECT COUNT(*) FROM signals 
-                    WHERE LOWER(status) = 'executed' 
-                    AND DATE(timestamp) = ?
-                """, (date_filter.isoformat(),))
+                    WHERE LOWER(status) = 'executed'
+                    AND (
+                        (datetime(timestamp) >= datetime(?) AND datetime(timestamp) < datetime(?))
+                        OR DATE(timestamp) = ?
+                        OR json_extract(metadata, '$.date') = ?
+                    )
+                """, (start_utc, end_utc, target_date_str, target_date_str))
             else:
                 cursor.execute("""
                     SELECT COUNT(*) FROM signals 

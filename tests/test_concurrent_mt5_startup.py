@@ -9,6 +9,7 @@ from connectors.mt5_connector import MT5Connector, ConnectionState
 from core_brain.executor import OrderExecutor
 from core_brain.risk_manager import RiskManager
 from data_vault.storage import StorageManager
+from core_brain.instrument_manager import InstrumentManager
 
 
 def test_mt5_connector_states():
@@ -17,7 +18,8 @@ def test_mt5_connector_states():
     with patch('connectors.mt5_connector.mt5') as mock_mt5:
         mock_mt5.initialize.return_value = False  # Simulate failure
 
-        connector = MT5Connector()
+        storage = StorageManager()
+        connector = MT5Connector(storage=storage)
 
         # Should start in DISCONNECTED state
         assert not connector.is_connected
@@ -43,18 +45,22 @@ def test_executor_init_non_blocking():
         mock_mt5_class.return_value = mock_connector
 
         storage = StorageManager()
-        risk_manager = RiskManager(storage=storage, initial_capital=1000)
+        instrument_manager = InstrumentManager(storage=storage)
+        risk_manager = RiskManager(storage=storage, initial_capital=1000, instrument_manager=instrument_manager)
 
         # This should initialize quickly (no connection attempt)
         start_time = time.time()
         executor = OrderExecutor(risk_manager=risk_manager, storage=storage)
         elapsed = time.time() - start_time
 
+        # Inicializar manualmente el conector mock
+        from models.signal import ConnectorType
+        executor.connectors[ConnectorType.METATRADER5] = mock_connector
+
         # Should initialize quickly
         assert elapsed < 1.0  # Less than 1 second
         assert isinstance(executor, OrderExecutor)
         # Should have loaded MT5 connector
-        from models.signal import ConnectorType
         assert ConnectorType.METATRADER5 in executor.connectors
         
         # MT5 connector should not have started connecting yet

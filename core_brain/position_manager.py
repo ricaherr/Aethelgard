@@ -13,7 +13,7 @@ Manages open positions with:
 
 import logging
 from datetime import datetime, timedelta, timezone
-from utils.time_utils import to_utc
+from utils.time_utils import to_utc_datetime
 from typing import Dict, List, Optional, Any
 from decimal import Decimal
 
@@ -52,7 +52,7 @@ class PositionManager:
             storage: StorageManager instance
             connector: Broker connector (MT5Connector, PaperConnector, etc.)
             regime_classifier: RegimeClassifier instance
-            config: Configuration dict from dynamic_params.json['position_management']
+            config: Configuration dict from StorageManager SSOT ['position_management']
         """
         self.storage = storage
         self.connector = connector
@@ -81,6 +81,22 @@ class PositionManager:
             f"Cooldown: {self.cooldown_seconds}s, "
             f"Daily Limit: {self.max_modifications_per_day}"
         )
+
+    @staticmethod
+    def _info_get(symbol_info: Any, key: str, default: Any = None) -> Any:
+        """Read symbol_info fields supporting both dict and object styles."""
+        if isinstance(symbol_info, dict):
+            return symbol_info.get(key, default)
+        return getattr(symbol_info, key, default)
+
+    def _get_instrument_manager(self) -> InstrumentManager:
+        """Create InstrumentManager with storage when available."""
+        if self.storage is not None:
+            try:
+                return InstrumentManager(storage=self.storage)
+            except Exception as e:
+                logger.debug("InstrumentManager(storage=...) fallback due to invalid storage mock: %s", e)
+        return InstrumentManager()
     
     def monitor_positions(self) -> Dict[str, Any]:
         """
@@ -149,7 +165,7 @@ class PositionManager:
                             current_tp = position.get('tp', 0)
                             
                             # Ensure price is normalized before sending to broker
-                            im = InstrumentManager()
+                            im = self._get_instrument_manager()
                             symbol_info = self.connector.get_symbol_info(symbol)
                             breakeven_price = normalize_price(breakeven_price, symbol_info, symbol, im)
                             
@@ -190,7 +206,7 @@ class PositionManager:
                             current_tp = position.get('tp', 0)
                             
                             # Ensure price is normalized before sending to broker
-                            im = InstrumentManager()
+                            im = self._get_instrument_manager()
                             symbol_info = self.connector.get_symbol_info(symbol)
                             trailing_sl = normalize_price(trailing_sl, symbol_info, symbol, im)
                             
@@ -242,6 +258,7 @@ class PositionManager:
                 continue
         
         summary = {
+            'total_positions': len(open_positions),
             'monitored': len(open_positions),
             'actions': actions,
             'timestamp': datetime.now(timezone.utc).isoformat()
@@ -299,7 +316,7 @@ class PositionManager:
         initial_risk_usd = 0.0
         if current_sl and current_sl > 0 and entry_price > 0 and volume > 0:
             # Usar utilidades globales agnósticas
-            im = InstrumentManager()
+            im = self._get_instrument_manager()
             symbol_info = self.connector.get_symbol_info(symbol)
             pip_size = calculate_pip_size(symbol_info, symbol, im)
             
@@ -309,7 +326,7 @@ class PositionManager:
             # Estimate USD risk per lot (simplified)
             # Standard forex: ~$10 per pip per standard lot
             # Para una estimación robusta, usamos contract_size y pip_size
-            contract_size = getattr(symbol_info, 'trade_contract_size', 100000)
+            contract_size = self._info_get(symbol_info, 'trade_contract_size', 100000)
             
             # Una aproximación agnóstica de riesgo USD
             # (En el futuro esto debería usar RiskCalculator para precisión total)
@@ -390,9 +407,12 @@ class PositionManager:
         from models.signal import MarketRegime
         
         try:
-            # RegimeClassifier.classify() returns MarketRegime directly
-            # without needing OHLC data if it has historical data loaded
-            regime = self.regime_classifier.classify()
+            if hasattr(self.regime_classifier, "classify_regime"):
+                regime = self.regime_classifier.classify_regime(symbol)
+            elif hasattr(self.regime_classifier, "classify"):
+                regime = self.regime_classifier.classify()
+            else:
+                raise AttributeError("Regime classifier missing classify/classify_regime")
             
             # Map "NORMAL" value (no mapping needed, return as-is)
             if hasattr(regime, 'value') and regime.value == 'NORMAL':
@@ -557,7 +577,7 @@ class PositionManager:
         
         # Parse entry time
         try:
-            entry_time = to_utc(entry_time_str)
+            entry_time = to_utc_datetime(entry_time_str)
         except (ValueError, TypeError) as e:
             logger.error(
                 f"Invalid entry_time format for position {ticket}: {entry_time_str} - {e}"
@@ -966,8 +986,8 @@ class PositionManager:
             return False
         
         # Get freeze level (minimum distance in points)
-        freeze_level = getattr(symbol_info, 'trade_stops_level', 0)
-        point = getattr(symbol_info, 'point', 0.00001)
+        freeze_level = self._info_get(symbol_info, 'trade_stops_level', 0)
+        point = self._info_get(symbol_info, 'point', 0.00001)
         
         if freeze_level <= 0:
             logger.debug(
@@ -1063,7 +1083,7 @@ class PositionManager:
         last_mod_str = metadata.get('last_modification_timestamp')
         if last_mod_str:
             try:
-                last_mod = to_utc(last_mod_str)
+                last_mod = to_utc_datetime(last_mod_str)
                 time_since_last = (datetime.now(timezone.utc) - last_mod).total_seconds()
                 
                 if time_since_last < self.cooldown_seconds:
@@ -1100,8 +1120,12 @@ class PositionManager:
         """
         # Try to get ATR from regime classifier (if scanner is running)
         try:
-            # RegimeClassifier doesn't have get_regime_data() - use get_metrics() instead
-            if hasattr(self.regime_classifier, 'get_metrics'):
+            if hasattr(self.regime_classifier, 'get_regime_data'):
+                regime_data = self.regime_classifier.get_regime_data(symbol)
+                atr = regime_data.get('atr') if isinstance(regime_data, dict) else None
+                if atr and atr > 0:
+                    return float(atr)
+            elif hasattr(self.regime_classifier, 'get_metrics'):
                 metrics = self.regime_classifier.get_metrics()
                 atr = metrics.get('atr')
                 if atr and atr > 0:
@@ -1116,7 +1140,7 @@ class PositionManager:
             symbol_info = self.connector.get_symbol_info(symbol)
             if symbol_info:
                 # Use current price to estimate conservative ATR
-                price = getattr(symbol_info, 'ask', 0)
+                price = self._info_get(symbol_info, 'ask', 0)
                 if price > 0:
                     # Estimate ATR as 0.1% of current price (conservative for major pairs)
                     estimated_atr = price * 0.001
@@ -1213,10 +1237,10 @@ class PositionManager:
             if breakeven_config.get('include_spread', True):
                 symbol_info = self.connector.get_symbol_info(symbol)
                 if symbol_info:
-                    ask = float(getattr(symbol_info, 'ask', 0))
-                    bid = float(getattr(symbol_info, 'bid', 0))
-                    point = float(getattr(symbol_info, 'point', 0.00001))
-                    contract_size = float(getattr(symbol_info, 'trade_contract_size', 100000))
+                    ask = float(self._info_get(symbol_info, 'ask', 0))
+                    bid = float(self._info_get(symbol_info, 'bid', 0))
+                    point = float(self._info_get(symbol_info, 'point', 0.00001))
+                    contract_size = float(self._info_get(symbol_info, 'trade_contract_size', 100000))
                     
                     if ask > 0 and bid > 0:
                         spread_points = (ask - bid) / point
@@ -1244,8 +1268,8 @@ class PositionManager:
                 logger.warning(f"Cannot calculate breakeven: no symbol_info for {symbol}")
                 return None
             
-            digits = getattr(symbol_info, 'digits', 5)
-            contract_size = float(getattr(symbol_info, 'trade_contract_size', 100000))
+            digits = self._info_get(symbol_info, 'digits', 5)
+            contract_size = float(self._info_get(symbol_info, 'trade_contract_size', 100000))
             pip_size = 0.0001 if digits == 5 else 0.01 if digits in [2, 3] else 0.00001
             
             # Pip value calculation:
@@ -1328,8 +1352,8 @@ class PositionManager:
             min_time_minutes = breakeven_config.get('min_time_minutes', 15)
             entry_time_str = metadata.get('entry_time')
             if entry_time_str:
-                entry_time = datetime.fromisoformat(entry_time_str)
-                elapsed_minutes = (datetime.now() - entry_time).total_seconds() / 60
+                entry_time = to_utc_datetime(entry_time_str)
+                elapsed_minutes = (datetime.now(timezone.utc) - entry_time).total_seconds() / 60
                 if elapsed_minutes < min_time_minutes:
                     return False, f"Insufficient time elapsed: {elapsed_minutes:.1f} min"
             
@@ -1352,7 +1376,7 @@ class PositionManager:
             symbol_info = self.connector.get_symbol_info(symbol)
             pip_size = 0.0001  # Default
             if symbol_info:
-                digits = getattr(symbol_info, 'digits', 5)
+                digits = self._info_get(symbol_info, 'digits', 5)
                 pip_size = 0.0001 if digits == 5 else 0.01
             
             # Try to get dynamic distance from ATR (like trailing stops)
@@ -1390,7 +1414,7 @@ class PositionManager:
                     return False, "SL already at or below breakeven"
             
             # 5. Validate freeze level (safety margin)
-            if not self._validate_freeze_level(symbol, current_price, breakeven_real):
+            if not self._validate_freeze_level(symbol, breakeven_real):
                 return False, "Freeze level validation failed"
             
             # All checks passed
@@ -1536,7 +1560,7 @@ class PositionManager:
             pip_size = 0.0001  # Default
             if symbol_info:
                 # SymbolInfo is a namedtuple, not a dict - use attribute access
-                digits = getattr(symbol_info, 'digits', 5)
+                digits = self._info_get(symbol_info, 'digits', 5)
                 pip_size = 0.0001 if digits == 5 else 0.01
             
             # Calculate current profit in pips
@@ -1588,8 +1612,8 @@ class PositionManager:
             # 4. Check cooldown
             last_mod_timestamp = metadata.get('last_modification_timestamp')
             if last_mod_timestamp:
-                last_mod_time = datetime.fromisoformat(last_mod_timestamp)
-                elapsed_seconds = (datetime.now() - last_mod_time).total_seconds()
+                last_mod_time = to_utc_datetime(last_mod_timestamp)
+                elapsed_seconds = (datetime.now(timezone.utc) - last_mod_time).total_seconds()
                 if elapsed_seconds < self.cooldown_seconds:
                     return False, f"Cooldown active: {elapsed_seconds:.0f}s elapsed (need {self.cooldown_seconds}s)"
             
@@ -1599,7 +1623,7 @@ class PositionManager:
                 return False, f"Daily limit reached: {modifications_today}/{self.max_modifications_per_day}"
             
             # 6. Validate freeze level
-            if not self._validate_freeze_level(symbol, current_price, new_trailing_sl):
+            if not self._validate_freeze_level(symbol, new_trailing_sl):
                 return False, "Freeze level validation failed"
             
             # All checks passed

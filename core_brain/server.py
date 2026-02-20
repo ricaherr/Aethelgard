@@ -1,3 +1,13 @@
+# --- Función auxiliar DRY para actualizar categoría de instrumentos ---
+def update_instrument_category(market: str, category: str, data: dict, storage: StorageManager) -> None:
+    """Actualiza solo una categoría de instrumentos en la configuración (SSOT)"""
+    state = storage.get_system_state()
+    instruments_config = state.get("instruments_config")
+    if not instruments_config or market not in instruments_config or category not in instruments_config[market]:
+        raise HTTPException(status_code=404, detail="Categoría no encontrada en la configuración actual")
+    instruments_config[market][category].update(data)
+    storage.update_system_state({"instruments_config": instruments_config})
+
 """
 Servidor FastAPI con WebSockets para Aethelgard
 Gestiona múltiples conexiones simultáneas y diferencia entre conectores
@@ -188,6 +198,66 @@ def _get_max_account_risk_pct() -> float:
     settings = storage.get_risk_settings()
     return settings.get('max_account_risk_pct', 5.0)
 
+
+def _get_backup_settings_from_db() -> Dict[str, Any]:
+    """
+    Get normalized DB backup settings from dynamic_params.
+    Default policy: backups/, daily, retention 15 days.
+    """
+    defaults = {
+        "enabled": True,
+        "backup_dir": "backups",
+        "interval_days": 1,
+        "retention_days": 15
+    }
+
+    params = storage.get_dynamic_params()
+    backup_cfg = params.get("database_backup", {}) if isinstance(params, dict) else {}
+    if not isinstance(backup_cfg, dict):
+        backup_cfg = {}
+
+    interval_days = backup_cfg.get("interval_days")
+    if interval_days is None:
+        interval_minutes = int(backup_cfg.get("interval_minutes", defaults["interval_days"] * 1440))
+        interval_days = max(1, int((interval_minutes + 1439) // 1440))
+
+    retention_days = backup_cfg.get("retention_days")
+    if retention_days is None:
+        retention_days = int(backup_cfg.get("retention_count", defaults["retention_days"]))
+
+    return {
+        "enabled": bool(backup_cfg.get("enabled", defaults["enabled"])),
+        "backup_dir": str(backup_cfg.get("backup_dir", defaults["backup_dir"])),
+        "interval_days": max(1, int(interval_days)),
+        "retention_days": max(1, int(retention_days))
+    }
+
+
+def _save_backup_settings_to_db(settings: Dict[str, Any]) -> Dict[str, Any]:
+    """Persist backup settings to dynamic_params.database_backup."""
+    normalized = {
+        "enabled": bool(settings.get("enabled", True)),
+        "backup_dir": str(settings.get("backup_dir", "backups")).strip() or "backups",
+        "interval_days": max(1, int(settings.get("interval_days", 1))),
+        "retention_days": max(1, int(settings.get("retention_days", 15)))
+    }
+
+    params = storage.get_dynamic_params()
+    if not isinstance(params, dict):
+        params = {}
+
+    params["database_backup"] = {
+        "enabled": normalized["enabled"],
+        "backup_dir": normalized["backup_dir"],
+        "interval_days": normalized["interval_days"],
+        "retention_days": normalized["retention_days"],
+        "interval_minutes": normalized["interval_days"] * 1440,
+        "retention_count": normalized["retention_days"]
+    }
+
+    storage.update_dynamic_params(params)
+    return normalized
+
 # Estado para detectar cambios de régimen
 _last_regime_by_symbol: Dict[str, MarketRegime] = {}
 
@@ -205,8 +275,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     asyncio.create_task(heartbeat_loop())
     await broadcast_thought("Cerebro Aethelgard inicializado. Sistema listo para operaciones.")
     
-    # Migración/Semilla de configuración inicial
-    # Ya manejada por StorageManager.__init__ (SSOT)
+    # Migración/Semilla de configuración inicial:
+    # Debe ejecutarse explícitamente vía script/manual one-shot (no automática en runtime).
     pass
         
     yield
@@ -562,32 +632,42 @@ def create_app() -> FastAPI:
     
 
     @app.get("/api/instruments")
-    async def get_instruments() -> Dict[str, Any]:
-        """Retorna la lista de instrumentos activos agrupados por mercado/categoría"""
-        config_path = os.path.join(os.getcwd(), "config", "instruments.json")
+    async def get_instruments(all: bool = False) -> Dict[str, Any]:
+        """Retorna la lista de instrumentos agrupados por mercado/categoría desde la DB (SSOT).
+        Si 'all' es True, incluye categorías e instrumentos inactivos (para Settings).
+        """
         try:
-            with open(config_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
+            state = storage.get_system_state()
+            instruments_config = state.get("instruments_config")
+            if instruments_config is None:
+                raise ValueError("instruments_config no encontrado en DB. Inicialice la configuración desde la UI/API.")
             result = {}
-            for market, categories in data.items():
+            for market, categories in instruments_config.items():
                 if market.startswith("_"):
                     continue
                 result[market] = {}
                 for cat, cat_data in categories.items():
-                    if not cat_data.get("enabled", False):
+                    # Si all=False, solo mostrar categorías activas
+                    if not all and not cat_data.get("enabled", False):
                         continue
                     instruments = cat_data.get("instruments", [])
-                    if instruments:
+                    # Si all=False, solo mostrar instrumentos activos
+                    if not all:
+                        actives = cat_data.get("actives", {})
+                        instruments = [sym for sym in instruments if actives.get(sym, True)]
+                    if instruments or all:
                         result[market][cat] = {
                             "description": cat_data.get("description", ""),
                             "instruments": instruments,
                             "priority": cat_data.get("priority", 0),
                             "min_score": cat_data.get("min_score", None),
-                            "risk_multiplier": cat_data.get("risk_multiplier", None)
+                            "risk_multiplier": cat_data.get("risk_multiplier", None),
+                            "enabled": cat_data.get("enabled", False),
+                            "actives": cat_data.get("actives", {})
                         }
             return {"markets": result}
         except Exception as e:
-            logger.error(f"Error loading instruments.json: {e}")
+            logger.error(f"Error loading instruments config from DB: {e}")
             # Fallback: lista mínima hardcodeada
             return {
                 "markets": {
@@ -601,13 +681,32 @@ def create_app() -> FastAPI:
                         }
                     }
                 },
-                "error": f"No se pudo cargar instruments.json: {str(e)}"
+                "error": f"No se pudo cargar instruments_config de la DB: {str(e)}"
             }
+
+    @app.post("/api/instruments")
+    async def update_instruments(payload: dict) -> Dict[str, Any]:
+        """Actualiza SOLO una categoría de instrumentos (más eficiente, DRY)"""
+        try:
+            market = payload.get("market")
+            category = payload.get("category")
+            data = payload.get("data")
+            if not (market and category and isinstance(data, dict)):
+                raise HTTPException(status_code=400, detail="Faltan campos obligatorios: market, category, data")
+            update_instrument_category(market, category, data, storage)
+            await broadcast_thought(f"Categoría {market}/{category} actualizada por el usuario.", module="CORE")
+            return {"status": "success", "message": f"Categoría {market}/{category} actualizada correctamente."}
+        except Exception as e:
+            logger.error(f"Error guardando categoría de instrumentos: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    # ...existing code...
 
     @app.get("/api/strategies/library")
     async def get_strategies_library() -> Dict[str, Any]:
         """Retorna la biblioteca de estrategias (registradas + educativas)"""
         try:
+            registered_strategies = []
             # Leer estrategias registradas desde modules.json
             # Leer estrategias registradas desde StorageManager (SSOT)
             modules = storage.get_modules_config()
@@ -1026,7 +1125,7 @@ def create_app() -> FastAPI:
         Se apoya puramente en la base de datos para máxima resiliencia.
         """
         try:
-            # 1. Obtener stats de EdgeTuner desde la DB
+            # 1. Obtener stats de EdgeTuner desde la DB (SSOT)
             risk_mode = "NORMAL"
             last_adjustment = None
             
@@ -1046,11 +1145,8 @@ def create_app() -> FastAPI:
             dynamic_params = state.get("config_trading", {})
             
             if not dynamic_params:
-                # Fallback to file if not in DB
-                file_path = os.path.join(os.getcwd(), "config", "dynamic_params.json")
-                if os.path.exists(file_path):
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        dynamic_params = json.load(f)
+                # Fallback deshabilitado: StorageManager es la única fuente de verdad
+                logger.warning("[SSOT] dynamic_params no encontrado en DB. Inicialice la configuración desde la UI/API.")
 
             # 3. Sanity Check Status (Rechazos recientes)
             rejections_today = 0
@@ -1128,7 +1224,7 @@ def create_app() -> FastAPI:
         if config_data is None:
             # Si no está en DB, retornamos vacío o error.
             # No hay fallback a archivo aquí para respetar SSOT.
-            # El bootstrapping debió ocurrir al inicio.
+            # Si se requiere migración legacy, debe ejecutarse manualmente.
             logger.warning(f"Config '{category}' requested not found in DB.")
             return {}
             
@@ -1159,6 +1255,27 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail=f"Categoría de configuración '{category}' no encontrada.")
             
         return {"category": category, "data": config_data}
+
+    @app.get("/api/backup/settings")
+    async def get_backup_settings() -> Dict[str, Any]:
+        """Get DB backup scheduler settings (DB-first)."""
+        try:
+            settings = _get_backup_settings_from_db()
+            return {"status": "success", "settings": settings}
+        except Exception as e:
+            logger.error(f"Error loading backup settings: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/api/backup/settings")
+    async def update_backup_settings(data: dict) -> Dict[str, Any]:
+        """Update DB backup scheduler settings (DB-first)."""
+        try:
+            settings = _save_backup_settings_to_db(data or {})
+            await broadcast_thought("Configuración de backups actualizada.", module="CORE")
+            return {"status": "success", "settings": settings}
+        except Exception as e:
+            logger.error(f"Error updating backup settings: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
 
     @app.post("/api/config/{category}")
     async def update_config(category: str, new_data: dict) -> Dict[str, Any]:

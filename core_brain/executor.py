@@ -52,7 +52,6 @@ class OrderExecutor:
         
         if storage is None:
             logger.warning("OrderExecutor initialized without explicit storage! Violates strict DI.")
-            from data_vault.storage import StorageManager
             self.storage = StorageManager()
         else:
             self.storage = storage
@@ -64,7 +63,9 @@ class OrderExecutor:
             logger.warning("OrderExecutor initialized without explicit multi_tf_limiter! Violates strict DI.")
             from core_brain.multi_timeframe_limiter import MultiTimeframeLimiter
             # Need config for limiter, try to get from storage or use empty
-            config = self.storage.get_dynamic_params()
+            config = self.storage.get_dynamic_params() if hasattr(self.storage, "get_dynamic_params") else {}
+            if not isinstance(config, dict):
+                config = {}
             self.multi_tf_limiter = MultiTimeframeLimiter(self.storage, config)
         else:
             self.multi_tf_limiter = multi_tf_limiter
@@ -125,6 +126,13 @@ class OrderExecutor:
                 reason='Invalid signal data'
             )
             return False
+
+        # Step 1.5: Legacy lockdown check (backward compatibility with existing tests)
+        if hasattr(self.risk_manager, "is_locked") and self.risk_manager.is_locked():
+            self.last_rejection_reason = "RiskManager lockdown active"
+            logger.warning("Signal rejected by lockdown mode")
+            self._register_failed_signal(signal, "REJECTED_LOCKDOWN")
+            return False
         
         # Step 2: Check for duplicate signals (Standard & Advanced)
         # Standard: Check if there's any open position for this symbol (Legacy compatibility)
@@ -183,7 +191,15 @@ class OrderExecutor:
             return False
         
         # Step 3.75: Check total account risk
-        can_trade, risk_reason = self.risk_manager.can_take_new_trade(signal, connector)
+        can_trade = True
+        risk_reason = "OK"
+        if hasattr(self.risk_manager, "can_take_new_trade"):
+            risk_result = self.risk_manager.can_take_new_trade(signal, connector)
+            if isinstance(risk_result, tuple) and len(risk_result) >= 2:
+                can_trade, risk_reason = bool(risk_result[0]), str(risk_result[1])
+            elif isinstance(risk_result, bool):
+                can_trade = risk_result
+                risk_reason = "" if risk_result else "RiskManager rejected trade"
         if not can_trade:
             self.last_rejection_reason = f"Risk limit exceeded: {risk_reason}"
             logger.warning(
@@ -495,12 +511,20 @@ class OrderExecutor:
             
             # Calculate initial risk using RiskCalculator (universal, multi-asset)
             if self.risk_calculator:
-                initial_risk_usd = self.risk_calculator.calculate_initial_risk_usd(
-                    symbol=signal.symbol,
-                    entry_price=entry_price,
-                    stop_loss=sl,
-                    volume=volume
-                )
+                try:
+                    initial_risk_usd = self.risk_calculator.calculate_initial_risk_usd(
+                        symbol=signal.symbol,
+                        entry_price=entry_price,
+                        stop_loss=sl,
+                        volume=volume
+                    )
+                except Exception as calc_error:
+                    logger.warning(
+                        "[METADATA] RiskCalculator failed (%s). Using fallback risk estimation.",
+                        calc_error
+                    )
+                    pips_risked = abs(float(entry_price) - float(sl))
+                    initial_risk_usd = pips_risked * float(volume) * 10.0
             else:
                 # Fallback if RiskCalculator not available (shouldn't happen in production)
                 logger.warning("[METADATA] RiskCalculator not available, using fallback")

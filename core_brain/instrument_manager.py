@@ -56,52 +56,81 @@ class InstrumentManager:
     - Fallback conservador para símbolos desconocidos
     """
     
-    def __init__(self, config_path: str = "config/instruments.json"):
+    def __init__(
+        self,
+        storage: Optional[object] = None,
+        config: Optional[dict] = None,
+        config_path: Optional[str] = None
+    ):
         """
         Initialize InstrumentManager.
         
         Args:
-            config_path: Path to instruments.json configuration file
+            storage: Optional StorageManager instance (SSOT)
+            config: Optional config dict for testing/mocks
+            config_path: Deprecated. JSON loading is disallowed (SSOT).
         """
-        self.config_path = Path(config_path)
-        self.config: Dict = {}
+        self.storage = storage
+
+        if config is not None:
+            self.config = config
+        elif self.storage is not None:
+            self.config = self._load_config_from_storage()
+        elif config_path:
+            cfg_path = Path(config_path)
+            if not cfg_path.exists():
+                logger.warning(
+                    "InstrumentManager config_path does not exist. Using conservative fallback defaults."
+                )
+                self.config = self._get_conservative_fallback_config()
+            else:
+                logger.warning("InstrumentManager config_path is deprecated and ignored (SSOT DB-only).")
+                self.config = self._get_default_config()
+        else:
+            logger.warning("InstrumentManager initialized without storage/config. Using safe defaults.")
+            self.config = self._get_default_config()
         self.symbol_cache: Dict[str, InstrumentConfig] = {}
-        
-        self._load_config()
+        self._build_symbol_cache()
         logger.info(
-            f"InstrumentManager initialized with {len(self.symbol_cache)} pre-cached symbols"
+            f"InstrumentManager initialized with {len(self.symbol_cache)} pre-cached symbols (SSOT)"
         )
     
-    def _load_config(self) -> None:
-        """Load instruments configuration from JSON file."""
-        if not self.config_path.exists():
-            logger.warning(
-                f"Instruments config not found: {self.config_path}. "
-                f"Using conservative defaults."
-            )
-            self.config = self._get_default_config()
-            return
-        
+    def _load_config_from_storage(self) -> dict:
+        """Load instruments configuration from StorageManager (DB)."""
         try:
-            with open(self.config_path, 'r', encoding='utf-8') as f:
-                self.config = json.load(f)
-            
-            # Build cache for all configured instruments
-            self._build_symbol_cache()
-            
-            logger.info(f"Loaded instruments config from {self.config_path}")
-            
+            state = self.storage.get_system_state()
+            if not isinstance(state, dict):
+                logger.warning("Invalid system_state format from storage. Using defaults.")
+                return self._get_default_config()
+            config = state.get("instruments_config")
+            if config is None:
+                logger.warning("instruments_config not found in DB. Using defaults.")
+                return self._get_default_config()
+            if isinstance(config, str):
+                config = json.loads(config)
+            if not isinstance(config, dict):
+                logger.warning("Invalid instruments_config format in DB. Using defaults.")
+                return self._get_default_config()
+            return config
         except Exception as e:
-            logger.error(f"Error loading instruments config: {e}. Using defaults.")
-            self.config = self._get_default_config()
-    
+            logger.error(f"Error loading instruments config from DB: {e}. Using defaults.")
+            return self._get_default_config()
+
     def _build_symbol_cache(self) -> None:
         """Build cache of symbol -> InstrumentConfig mappings."""
+        if not isinstance(self.config, dict):
+            logger.warning("Instrument config is not a dict. Resetting to defaults.")
+            self.config = self._get_default_config()
+
         for market, categories in self.config.items():
             if market.startswith("_"):  # Skip metadata keys
                 continue
+            if not isinstance(categories, dict):
+                continue
             
             for subcategory, settings in categories.items():
+                if not isinstance(settings, dict):
+                    continue
                 instruments = settings.get("instruments", [])
                 
                 cfg = InstrumentConfig(
@@ -120,7 +149,83 @@ class InstrumentManager:
                     self.symbol_cache[symbol.upper()] = cfg
     
     def _get_default_config(self) -> Dict:
-        """Return conservative default configuration."""
+        """Return built-in baseline instrument configuration."""
+        return {
+            "FOREX": {
+                "majors": {
+                    "enabled": True,
+                    "instruments": ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD"],
+                    "min_score": 70.0,
+                    "risk_multiplier": 1.0,
+                    "max_spread_pips": 2.0,
+                    "priority": 1
+                },
+                "minors": {
+                    "enabled": True,
+                    "instruments": ["EURGBP", "EURJPY", "GBPJPY", "EURAUD", "EURNZD", "GBPAUD", "AUDNZD", "AUDJPY"],
+                    "min_score": 75.0,
+                    "risk_multiplier": 0.9,
+                    "max_spread_pips": 4.0,
+                    "priority": 2
+                },
+                "exotics": {
+                    "enabled": False,
+                    "instruments": ["USDTRY", "USDZAR", "USDMXN", "USDRUB", "EURTRY", "GBPTRY", "USDBRL", "USDCLP"],
+                    "min_score": 90.0,
+                    "risk_multiplier": 0.5,
+                    "max_spread_pips": 30.0,
+                    "priority": 3
+                }
+            },
+            "CRYPTO": {
+                "tier1": {
+                    "enabled": True,
+                    "instruments": ["BTCUSDT", "ETHUSDT", "BNBUSDT"],
+                    "min_score": 75.0,
+                    "risk_multiplier": 0.8,
+                    "max_spread_bps": 10,
+                    "priority": 1
+                },
+                "altcoins": {
+                    "enabled": False,
+                    "instruments": ["ADAUSDT", "DOGEUSDT", "SHIBUSDT", "XRPUSDT", "SOLUSDT", "DOTUSDT", "MATICUSDT"],
+                    "min_score": 85.0,
+                    "risk_multiplier": 0.5,
+                    "max_spread_bps": 50,
+                    "priority": 2
+                }
+            },
+            "METALS": {
+                "spot": {
+                    "enabled": True,
+                    "instruments": ["XAUUSD", "XAGUSD"],
+                    "min_score": 75.0,
+                    "risk_multiplier": 0.8,
+                    "priority": 1
+                }
+            },
+            "INDEXES": {
+                "majors": {
+                    "enabled": True,
+                    "instruments": ["US30", "NAS100", "SPX500"],
+                    "min_score": 75.0,
+                    "risk_multiplier": 0.8,
+                    "priority": 1
+                }
+            },
+            "_global_settings": {
+                "default_min_score": 80.0,
+                "default_risk_multiplier": 0.8,
+                "fallback_behavior": "conservative",
+                "unknown_instrument_action": "reject"
+            }
+        }
+
+    def _get_conservative_fallback_config(self) -> Dict:
+        """
+        Conservative fallback used when a legacy config path is explicitly provided
+        but not available.
+        """
         return {
             "_global_settings": {
                 "default_min_score": 80.0,

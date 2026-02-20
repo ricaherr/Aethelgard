@@ -160,7 +160,6 @@ class DataProviderManager:
             # Fallback to internal instantiation for backward compatibility (Violates DI)
             # This is temporary to stabilize the system before full refactoring
             logger.warning("DataProviderManager initialized without explicit storage! Violates strict DI.")
-            from data_vault.storage import StorageManager
             self.storage = StorageManager()
         else:
             self.storage = storage

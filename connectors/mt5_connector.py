@@ -88,18 +88,18 @@ class MT5Connector:
             # Fallback defensivo: si psutil falla, mejor no arriesgarse a abrir MT5
             return False
 
-    def __init__(self, storage: StorageManager, account_id: Optional[str] = None):
+    def __init__(self, storage: Optional[StorageManager] = None, account_id: Optional[str] = None):
         """
         Initialize MT5 Connector
 
         Args:
-            storage: StorageManager instance (REQUIRED - DI)
+            storage: Optional StorageManager instance
             account_id: Optional account ID to use. If None, uses first enabled MT5 account from DB
         """
         if not MT5_AVAILABLE:
             raise ImportError("MetaTrader5 library not installed. Run: pip install MetaTrader5")
 
-        self.storage = storage
+        self.storage = storage or StorageManager()
         self.account_id = account_id
         self.config = self._load_config_from_db()
         self.is_connected = False

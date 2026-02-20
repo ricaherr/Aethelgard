@@ -49,7 +49,10 @@ def mock_notifier():
 def signal_factory(mock_storage_manager, mock_notifier, monkeypatch):
     """Fixture que inicializa el SignalFactory con dependencias mockeadas."""
     # Preparar dependencias inyectadas para SignalFactory
-    ov_strategy = OliverVelezStrategy(config={})
+    from core_brain.instrument_manager import InstrumentManager
+    from unittest.mock import MagicMock
+    instrument_manager = MagicMock(spec=InstrumentManager)
+    ov_strategy = OliverVelezStrategy(config={}, instrument_manager=instrument_manager)
     confluence_analyzer = MagicMock()
     confluence_analyzer.enabled = True
     trifecta_analyzer = MagicMock()

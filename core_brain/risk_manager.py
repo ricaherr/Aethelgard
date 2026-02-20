@@ -6,7 +6,6 @@ Aligned with Aethelgard's principles of Autonomy and Resilience.
 CONSOLIDATION: Single Source of Truth for position size calculation.
 EDGE COMPLIANCE: Integrated monitoring with circuit breaker protection.
 """
-import json
 import logging
 from typing import Optional, Dict, Any
 
@@ -21,34 +20,54 @@ from core_brain.instrument_manager import InstrumentManager
 
 logger = logging.getLogger(__name__)
 
+def _resolve_storage(storage: Optional[StorageManager]) -> StorageManager:
+    """Resolve storage dependency with legacy fallback."""
+    if storage is not None:
+        return storage
+    logger.warning("RiskManager initialized without explicit storage! Falling back to default storage.")
+    return StorageManager()
+
+def _resolve_instrument_manager(
+    instrument_manager: Optional['InstrumentManager'],
+    storage: StorageManager
+) -> 'InstrumentManager':
+    """Resolve instrument manager dependency with legacy fallback."""
+    if instrument_manager is not None:
+        return instrument_manager
+    logger.warning("RiskManager initialized without explicit InstrumentManager! Using fallback instance.")
+    return InstrumentManager(storage=storage)
+
 class RiskManager:
     """
     Manages trading risk by being adaptive, persistent, resilient, and agnostic.
     
     Features:
-    - Auto-Adjusting Risk: Loads risk parameters from dynamic_params.json, allowing a Tuner to modify them.
+    - Auto-Adjusting Risk: Loads risk parameters from StorageManager (SSOT), allowing a Tuner to modify them.
     - Lockdown Persistence: Saves and restores lockdown state from the database.
     - Data Resilience: Handles None market regimes defensively.
     - Agnostic Sizing: Calculates position size based on explicit point/pip value.
     """
     
     def __init__(
-        self, 
-        storage: StorageManager,
-        initial_capital: float,
-        monitor: Optional[PositionSizeMonitor] = None
+        self,
+        storage: Optional[StorageManager] = None,
+        initial_capital: float = 10000.0,
+        instrument_manager: Optional['InstrumentManager'] = None,
+        monitor: Optional['PositionSizeMonitor'] = None,
+        config_path: Optional[str] = None,
+        risk_settings_path: Optional[str] = None
     ):
         """
         Initialize RiskManager with dependency injection.
         
         Args:
-            storage: StorageManager instance (REQUIRED - dependency injection).
+            storage: StorageManager instance.
             initial_capital: Starting capital amount.
             monitor: PositionSizeMonitor instance (DI).
         """
-        self.storage = storage
+        self.storage = _resolve_storage(storage)
         self.capital = initial_capital
-        
+        self.instrument_manager = _resolve_instrument_manager(instrument_manager, self.storage)
         if monitor is None:
             logger.warning("RiskManager initialized without explicit monitor! Violates strict DI.")
             from core_brain.position_size_monitor import PositionSizeMonitor
@@ -60,13 +79,21 @@ class RiskManager:
         # Rule 14: Config reside en la BD. 
         risk_settings = self.storage.get_risk_settings()
         dynamic_params = self.storage.get_dynamic_params()
+        if not isinstance(risk_settings, dict):
+            risk_settings = {}
+        if not isinstance(dynamic_params, dict):
+            dynamic_params = {}
+
+        if config_path or risk_settings_path:
+            logger.warning(
+                "RiskManager legacy file paths are deprecated and ignored (SSOT DB-first)."
+            )
         
-        # MIGRATION FALLBACK: If DB is empty, try to load from JSON and migrate to DB
+        # MIGRATION FALLBACK: Si la config no está en DB, advertir y forzar inicialización vacía
         if not risk_settings or not dynamic_params:
-            logger.warning("DB config empty. Attempting migration from JSON files...")
-            self._migrate_config_from_json()
-            risk_settings = self.storage.get_risk_settings()
-            dynamic_params = self.storage.get_dynamic_params()
+            logger.warning("[SSOT] Configuración de riesgo/dinámica no encontrada en DB. Inicialice desde la UI/API.")
+            risk_settings = risk_settings or {}
+            dynamic_params = dynamic_params or {}
 
         self.risk_per_trade = dynamic_params.get('risk_per_trade', 0.005) # Defensivo 0.5%
         self.max_consecutive_losses = risk_settings.get('max_consecutive_losses', 
@@ -116,30 +143,8 @@ class RiskManager:
 
     def _migrate_config_from_json(self) -> None:
         """Migrates JSON config files to DB as a fallback one-time action."""
-        import json
-        from pathlib import Path
-        
-        # Paths hardcoded ONLY here for migration/legacy support
-        RISK_JSON = Path('config/risk_settings.json')
-        DYNAMIC_JSON = Path('config/dynamic_params.json')
-        
-        if RISK_JSON.exists():
-            try:
-                with open(RISK_JSON, 'r') as f:
-                    data = json.load(f)
-                    self.storage.update_risk_settings(data)
-                    logger.info(f"Migrated {RISK_JSON} to DB")
-            except Exception as e:
-                logger.error(f"Failed to migrate {RISK_JSON}: {e}")
-                
-        if DYNAMIC_JSON.exists():
-            try:
-                with open(DYNAMIC_JSON, 'r') as f:
-                    data = json.load(f)
-                    self.storage.update_dynamic_params(data)
-                    logger.info(f"Migrated {DYNAMIC_JSON} to DB")
-            except Exception as e:
-                logger.error(f"Failed to migrate {DYNAMIC_JSON}: {e}")
+        # Fallback deshabilitado: StorageManager es la única fuente de verdad
+        logger.warning("[SSOT] Fallback de migración desde JSON deshabilitado. Configuración debe inicializarse desde la UI/API.")
 
     # =========================================================================
     # ACCOUNT RISK VALIDATION
@@ -537,13 +542,7 @@ class RiskManager:
         Usa la utilidad global agnóstica de mercado.
         """
         symbol_info = self._get_symbol_info(connector, symbol) if connector else None
-        
-        # Obtener InstrumentManager (asumiendo que está disponible o se puede instanciar)
-        # En una arquitectura real, esto se inyectaría. Por ahora creamos uno local si es necesario
-        # o usamos una instancia global si existe.
-        im = InstrumentManager()
-        
-        return calculate_pip_size(symbol_info, symbol, im)
+        return calculate_pip_size(symbol_info, symbol, self.instrument_manager)
     
     def _calculate_point_value(
         self,

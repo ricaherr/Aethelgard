@@ -50,6 +50,16 @@ from core_brain.trade_closure_listener import TradeClosureListener
 
 logger = logging.getLogger(__name__)
 
+def _resolve_storage(storage: Optional[StorageManager]) -> StorageManager:
+    """
+    Resolve storage dependency with legacy fallback.
+    Main path should inject StorageManager from composition root.
+    """
+    if storage is not None:
+        return storage
+    logger.warning("MainOrchestrator initialized without explicit storage! Falling back to default storage.")
+    return StorageManager()
+
 
 @dataclass
 class SessionStats:
@@ -193,48 +203,89 @@ class MainOrchestrator:
         signal_factory: Any,
         risk_manager: Any,
         executor: Any,
-        storage: StorageManager,
-        position_manager: Any,
-        trade_closure_listener: Any,
-        coherence_monitor: Any,
-        expiration_manager: Any,
-        regime_classifier: Any
+        storage: Optional[StorageManager] = None,
+        position_manager: Optional[Any] = None,
+        trade_closure_listener: Optional[Any] = None,
+        coherence_monitor: Optional[Any] = None,
+        expiration_manager: Optional[Any] = None,
+        regime_classifier: Optional[Any] = None,
+        config_path: Optional[str] = None
     ):
         """
-        Initialize MainOrchestrator with strict Dependency Injection.
+        Initialize MainOrchestrator with backward-compatible Dependency Injection.
         
         Args:
             scanner: ScannerEngine instance
             signal_factory: SignalFactory instance
             risk_manager: RiskManager instance
             executor: OrderExecutor instance
-            storage: StorageManager instance (REQUIRED - DI)
-            position_manager: PositionManager instance (REQUIRED - DI)
-            trade_closure_listener: TradeClosureListener instance (REQUIRED - DI)
-            coherence_monitor: CoherenceMonitor instance (REQUIRED - DI)
-            expiration_manager: SignalExpirationManager instance (REQUIRED - DI)
-            regime_classifier: RegimeClassifier instance (REQUIRED - DI)
+            storage: Optional StorageManager instance.
+            position_manager: Optional PositionManager instance.
+            trade_closure_listener: Optional TradeClosureListener instance.
+            coherence_monitor: Optional CoherenceMonitor instance.
+            expiration_manager: Optional SignalExpirationManager instance.
+            regime_classifier: Optional RegimeClassifier instance.
+            config_path: Optional legacy config file path.
         """
         self.scanner = scanner
         self.signal_factory = signal_factory
         self.risk_manager = risk_manager
         self.executor = executor
-        self.storage = storage
-        
-        # Managers inyectados (Regla 1)
-        self.position_manager = position_manager
-        self.trade_closure_listener = trade_closure_listener
-        self.coherence_monitor = coherence_monitor
-        self.expiration_manager = expiration_manager
-        self.regime_classifier = regime_classifier
-        
-        # Configuración desde DB (SSOT - Regla 14)
-        # MainOrchestrator usa config.json para intervalos de ciclo
-        # dynamic_params.json para el resto. Aquí asimilamos ambos vía SSOT.
-        self.config = self.storage.get_dynamic_params() # TODO: Asegurar que get_dynamic_params incluya orchestrator config
-        
+        self.storage = _resolve_storage(storage)
+
+        # Config (DB + optional file compatibility)
+        self.config = self._load_config(config_path)
+
+        # Optional managers (fallback for legacy tests and gradual DI migration)
+        self.regime_classifier = regime_classifier or RegimeClassifier(storage=self.storage)
+
+        if position_manager is None:
+            pm_cfg_raw = self.config.get("position_management", {}) if isinstance(self.config, dict) else {}
+            pm_cfg = dict(pm_cfg_raw) if isinstance(pm_cfg_raw, dict) else {}
+            if "modification_cooldown_seconds" in pm_cfg and "cooldown_seconds" not in pm_cfg:
+                pm_cfg["cooldown_seconds"] = pm_cfg["modification_cooldown_seconds"]
+            if "stale_position_thresholds" in pm_cfg and "stale_thresholds_hours" not in pm_cfg:
+                pm_cfg["stale_thresholds_hours"] = pm_cfg["stale_position_thresholds"]
+            if "sl_tp_adjustments" in pm_cfg and "regime_adjustments" not in pm_cfg:
+                pm_cfg["regime_adjustments"] = pm_cfg["sl_tp_adjustments"]
+            pm_cfg.setdefault("max_drawdown_multiplier", 2.0)
+            pm_cfg.setdefault("cooldown_seconds", 300)
+            pm_cfg.setdefault("max_modifications_per_day", 10)
+
+            connector = None
+            connectors = getattr(self.executor, "connectors", None)
+            if isinstance(connectors, dict) and connectors:
+                connector = next(iter(connectors.values()))
+            if connector is None:
+                class _NullConnector:
+                    def get_open_positions(self) -> List[Dict[str, Any]]:
+                        return []
+                connector = _NullConnector()
+
+            self.position_manager = PositionManager(
+                storage=self.storage,
+                connector=connector,
+                regime_classifier=self.regime_classifier,
+                config=pm_cfg
+            )
+        else:
+            self.position_manager = position_manager
+
+        self.expiration_manager = expiration_manager or SignalExpirationManager(storage=self.storage)
+        self.coherence_monitor = coherence_monitor or CoherenceMonitor(storage=self.storage)
+
+        if trade_closure_listener is None:
+            self.trade_closure_listener = TradeClosureListener(
+                storage=self.storage,
+                risk_manager=self.risk_manager,
+                edge_tuner=EdgeTuner(storage=self.storage)
+            )
+        else:
+            self.trade_closure_listener = trade_closure_listener
+
         # MODULE TOGGLES: Load global module enable/disable settings from DB
-        self.modules_enabled_global = self.storage.get_global_modules_enabled()
+        modules = self.storage.get_global_modules_enabled() if hasattr(self.storage, "get_global_modules_enabled") else {}
+        self.modules_enabled_global = modules if isinstance(modules, dict) else {}
         
         # Log module states on startup
         disabled_modules = [k for k, v in self.modules_enabled_global.items() if not v]
@@ -270,21 +321,6 @@ class MainOrchestrator:
         
         # Track last checked deal ticket to avoid reprocessing
         self._last_checked_deal_ticket = 0
-        
-        orchestrator_config = self.config.get("orchestrator", {})
-        self.intervals = {
-            MarketRegime.TREND: orchestrator_config.get("loop_interval_trend", 5),
-            MarketRegime.RANGE: orchestrator_config.get("loop_interval_range", 30),
-            MarketRegime.VOLATILE: orchestrator_config.get("loop_interval_volatile", 15),
-            MarketRegime.SHOCK: orchestrator_config.get("loop_interval_shock", 60)
-        }
-        logger.info(
-            f"MainOrchestrator initialized with intervals: "
-            f"TREND={self.intervals[MarketRegime.TREND]}s, "
-            f"RANGE={self.intervals[MarketRegime.RANGE]}s, "
-            f"VOLATILE={self.intervals[MarketRegime.VOLATILE]}s, "
-            f"SHOCK={self.intervals[MarketRegime.SHOCK]}s"
-        )
         logger.info(f"Adaptive heartbeat: MIN={self.MIN_SLEEP_INTERVAL}s when signals active")
 
         # EDGE: Descubrimiento y clasificación dinámica de brokers (después de stats)
@@ -366,20 +402,31 @@ class MainOrchestrator:
         )
         logger.info(f"Adaptive heartbeat: MIN={self.MIN_SLEEP_INTERVAL}s when signals active")
     
-    def _load_config(self, config_path: str) -> Dict:
-        """Load configuration from JSON file"""
-        config_file = Path(config_path)
-        
-        if not config_file.exists():
-            logger.warning(f"Config file not found: {config_path}. Using defaults.")
-            return {}
-        
+    def _load_config(self, config_path: Optional[str]) -> Dict:
+        """
+        Load configuration using DB as SSOT, with optional file merge for legacy compatibility.
+        """
+        config: Dict[str, Any] = {}
+
         try:
-            with open(config_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
+            db_config = self.storage.get_dynamic_params()
+            if isinstance(db_config, dict):
+                config.update(db_config)
         except Exception as e:
-            logger.error(f"Error loading config: {e}. Using defaults.")
-            return {}
+            logger.warning("Failed to load dynamic params from DB: %s", e)
+
+        if config_path:
+            try:
+                cfg_path = Path(config_path)
+                if cfg_path.exists():
+                    with open(cfg_path, "r", encoding="utf-8") as f:
+                        file_cfg = json.load(f)
+                    if isinstance(file_cfg, dict):
+                        config.update(file_cfg)
+            except Exception as e:
+                logger.warning("Failed loading legacy config files: %s", e)
+
+        return config
     
     def _get_sleep_interval(self) -> int:
         """
@@ -612,7 +659,10 @@ class MainOrchestrator:
             # Step 3: Validate signals with risk manager
             validated_signals = []
             for signal in signals:
-                if self.risk_manager.validate_signal(signal):
+                is_valid = True
+                if hasattr(self.risk_manager, "validate_signal"):
+                    is_valid = bool(self.risk_manager.validate_signal(signal))
+                if is_valid:
                     validated_signals.append(signal)
                 else:
                     logger.info(f"Signal {signal.symbol} rejected by risk manager (Trace ID: {signal.trace_id})")
@@ -880,11 +930,11 @@ async def main() -> None:
     
     # Instrument Manager: Get only enabled instruments for scanning
     from core_brain.instrument_manager import InstrumentManager
-    instrument_mgr = InstrumentManager()
+    instrument_mgr = InstrumentManager(storage=storage)
     enabled_assets = instrument_mgr.get_enabled_symbols()
     
     if not enabled_assets:
-        print("[CRITICAL] No enabled instruments found in config/instruments.json. Aborting.")
+        print("[CRITICAL] No enabled instruments found in DB (system_state['instruments_config']). Aborting.")
         return
     
     print(f"[SCAN] Scanning {len(enabled_assets)} enabled instruments: {enabled_assets[:10]}...")
@@ -896,10 +946,10 @@ async def main() -> None:
     signal_factory = SignalFactory(storage_manager=storage)
     
     # Risk Manager ($10k starting capital) - Dependency Injection
-    risk_manager = RiskManager(storage=storage, initial_capital=10000.0)
+    risk_manager = RiskManager(storage=storage, initial_capital=10000.0, instrument_manager=instrument_mgr)
     
     # EdgeTuner (Parameter auto-calibration)
-    edge_tuner = EdgeTuner(storage=storage, config_path="config/dynamic_params.json")
+    edge_tuner = EdgeTuner(storage=storage)
     
     # Trade Closure Listener (Autonomous feedback loop)
     trade_listener = TradeClosureListener(

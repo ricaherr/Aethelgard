@@ -62,7 +62,14 @@ class CoherenceMonitor:
             # Parse timestamp
             ts = None
             try:
-                ts = datetime.fromisoformat(timestamp) if timestamp else None
+                if timestamp:
+                    ts = datetime.fromisoformat(timestamp)
+                    # Si ts es naive, convertir a UTC
+                    if ts.tzinfo is None:
+                        from datetime import timezone
+                        ts = ts.replace(tzinfo=timezone.utc)
+                else:
+                    ts = None
             except Exception:
                 ts = None
 

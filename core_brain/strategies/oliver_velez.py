@@ -22,35 +22,28 @@ class OliverVelezStrategy(BaseStrategy):
     4. Score dinámico por instrumento (majors: 70, exotics: 90)
     """
 
-    def __init__(self, config: Dict):
+    def __init__(self, config: Dict, instrument_manager):
         super().__init__(config)
-        
         # Parámetros EDGE STRICT (Innegociables)
         self.elephant_zscore_threshold = config.get("elephant_zscore_threshold", 2.0)
         self.elephant_solidness_min = config.get("elephant_solidness_min", 0.8)
         self.sma20_proximity_atr_max = config.get("sma20_proximity_atr_max", 0.5)
         self.min_signal_score = config.get("min_signal_score", 85)
-        
         # Parámetros de estrategia (fijos)
         self.sma_long_p = config.get("sma_long_period", 200)
         self.sma_short_p = config.get("sma_short_period", 20)
-        
         # Parámetros de scoring (hardcoded o config)
         self.base_score = 60.0
         self.regime_bonus = 20.0
         self.proximity_bonus_weight = 10.0
         self.candle_bonus_weight = 10.0
-        
         # Umbrales
         self.premium_threshold = 85.0
         self.elite_threshold = 95.0
-        
         # Auto-detectar conector disponible (agnosticismo)
         self.connector_type = self._detect_available_connector()
-        
-        # Instrument Manager para validación dinámica de scores
-        self.instrument_manager = InstrumentManager()
-        
+        # Instrument Manager por DI
+        self.instrument_manager = instrument_manager
         logger.info(
             f"[{self.strategy_id}] Initialized with InstrumentManager. "
             f"Enabled symbols: {len(self.instrument_manager.get_enabled_symbols())}"
@@ -201,18 +194,33 @@ class OliverVelezStrategy(BaseStrategy):
             
             # Validación de score contra umbral dinámico por instrumento
             validation = self.instrument_manager.validate_symbol(symbol, score)
+            if not isinstance(validation, dict):
+                validation = {
+                    "valid": True,
+                    "category": "UNKNOWN",
+                    "subcategory": "UNKNOWN",
+                    "min_score_required": 0.0,
+                    "rejection_reason": None
+                }
+            min_required = validation.get("min_score_required", 0.0)
+            try:
+                min_required = float(min_required)
+            except Exception:
+                min_required = 0.0
+            category = validation.get("category", "UNKNOWN")
+            subcategory = validation.get("subcategory", "UNKNOWN")
             
             if not validation["valid"]:
                 logger.info(
                     f"[{symbol}] Setup técnicamente válido pero RECHAZADO: "
                     f"{validation['rejection_reason']}. "
-                    f"Score: {score:.1f}, Categoría: {validation['category']}/{validation['subcategory']}"
+                    f"Score: {score:.1f}, Categoría: {category}/{subcategory}"
                 )
                 return None
             
             logger.info(
-                f"[{symbol}] Setup APROBADO ({signal_type}). Score: {score:.1f} >= {validation['min_score_required']:.1f} "
-                f"({validation['category']}/{validation['subcategory']})"
+                f"[{symbol}] Setup APROBADO ({signal_type}). Score: {score:.1f} >= {min_required:.1f} "
+                f"({category}/{subcategory})"
             )
             
             # --- Construcción de Señal ---

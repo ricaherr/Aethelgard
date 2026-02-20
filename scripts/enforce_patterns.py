@@ -135,7 +135,7 @@ def main():
     root_dir = Path(__file__).parent.parent
     files = find_python_files(root_dir)
     
-    print(f"🕵️  Aethelgard Pattern Enforcer (AST) | Scanning {len(files)} files...")
+    print(f"[PATTERN] Aethelgard Pattern Enforcer (AST) | Scanning {len(files)} files...")
     
     all_issues = []
     for f in files:
@@ -146,7 +146,7 @@ def main():
     if all_issues:
         print(f"\n[FAIL] Found {len(all_issues)} violations:")
         for issue in all_issues:
-            print(f"  ❌ {issue}")
+            print(f"  [FAIL] {issue}")
         sys.exit(1)
     else:
         print("\n[OK] All patterns valid. SSOT enforced.")

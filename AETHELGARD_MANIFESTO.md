@@ -1,4 +1,34 @@
+
+### 1.9 Migración Total a SSOT (Feb 2026)
+
+**Regla:** Toda la configuración del sistema (instrumentos, parámetros dinámicos, riesgos, módulos, settings generales) debe residir exclusivamente en la base de datos, accedida vía StorageManager. Queda prohibida la lectura directa de archivos JSON para cualquier módulo de negocio, endpoint o test.
+
+**Implementación:**
+- Refactor de todos los módulos para eliminar `open`/`json.load` y depender solo de StorageManager.
+- Actualización de endpoints, lógica de negocio y tests para operar 100% vía DB.
+- Validación completa con QA_GUARD, validate_all.py y tests críticos.
+- Actualización de docstrings y comentarios para reflejar la nueva arquitectura SSOT.
+
+**Resultado:**
+- Sistema 100% centralizado, sin dependencias de archivos de configuración dispersos.
+- Trazabilidad y recuperación ante fallos simplificadas.
+- Documentación y código alineados con la arquitectura SSOT.
+
+---
+
 ### 1.8 Arquitectura de API y Single Source of Truth (SSOT) (Feb 2026)
+
+---
+
+#### 1.8.1 Robustez en Edición de Instrumentos (Feb 2026)
+
+- **Regla:** Al editar instrumentos desde la UI (Settings), nunca se elimina un símbolo del array `instruments` al activar/inactivar; solo se modifica el objeto `actives`.
+- **Motivación:** Evitar pérdida accidental de instrumentos por errores de UI o mutaciones inesperadas.
+- **Implementación:**
+  - La UI refuerza que siempre se envía el array completo de instrumentos al backend, aunque todos estén inactivos.
+  - Al guardar, se eliminan duplicados y se agregan símbolos presentes en `actives` pero ausentes en `instruments`.
+  - El backend actualiza la categoría con el array recibido, sin filtrar ni eliminar símbolos.
+- **Resultado:** Settings siempre muestra todos los instrumentos (activos e inactivos) y nunca se pierden tras guardar cambios.
 
 **Regla:** Los endpoints de la API deben ser la única interfaz de comunicación entre el UI y el Core, y deben consultar exclusivamente la **Base de Datos** para obtener el estado del sistema, evitando dependencias de objetos en memoria volátiles que se pierden en reinicios.
 
@@ -6095,6 +6125,19 @@ Este documento debe actualizarse cuando:
 **Mantenedor**: Equipo de desarrollo Aethelgard  
 **Revisión**: Mensual o tras cambios significativos  
 **Tools**: `scripts/architecture_audit.py`, `scripts/qa_guard.py`
+
+---
+
+## Actualización Operativa (2026-02-20)
+
+1. Se elimina el auto-bootstrap de configuración JSON en runtime.
+2. Toda migración JSON→DB queda restringida a ejecución manual one-shot.
+3. Se establece política estándar de respaldo DB:
+   - Directorio por defecto: `backups`
+   - Frecuencia por defecto: diaria (`interval_days=1`)
+   - Retención por defecto: 15 días (`retention_days=15`)
+4. La configuración de backup debe gestionarse desde la UI (Settings) y persistirse en DB (`dynamic_params.database_backup`).
+5. Queda prohibido reintroducir dependencias de archivos JSON para configuración operativa en módulos de negocio.
 
 ---
 

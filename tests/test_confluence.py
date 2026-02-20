@@ -1,3 +1,6 @@
+from data_vault.storage import StorageManager
+from core_brain.instrument_manager import InstrumentManager
+from core_brain.instrument_manager import InstrumentManager
 """
 Test Suite for Multi-Timeframe Confluence Analyzer
 Validates that signals are reinforced or penalized based on multi-timeframe alignment
@@ -24,7 +27,8 @@ class TestMultiTimeframeConfluence:
         
         Expected: Score increases due to perfect alignment
         """
-        analyzer = MultiTimeframeConfluenceAnalyzer()
+        storage = StorageManager()
+        analyzer = MultiTimeframeConfluenceAnalyzer(storage=storage)
         
         # Create primary signal (M5 timeframe)
         signal = Signal(
@@ -68,7 +72,8 @@ class TestMultiTimeframeConfluence:
         
         Expected: Score decreases or signal blocked
         """
-        analyzer = MultiTimeframeConfluenceAnalyzer()
+        storage = StorageManager()
+        analyzer = MultiTimeframeConfluenceAnalyzer(storage=storage)
         
         signal = Signal(
             symbol="EURUSD=X",
@@ -110,7 +115,8 @@ class TestMultiTimeframeConfluence:
         
         Expected: Score stays mostly unchanged
         """
-        analyzer = MultiTimeframeConfluenceAnalyzer()
+        storage = StorageManager()
+        analyzer = MultiTimeframeConfluenceAnalyzer(storage=storage)
         
         signal = Signal(
             symbol="EURUSD=X",
@@ -149,7 +155,8 @@ class TestMultiTimeframeConfluence:
         
         Expected: H4/D1 bullish dominates over M15 bearish
         """
-        analyzer = MultiTimeframeConfluenceAnalyzer()
+        storage = StorageManager()
+        analyzer = MultiTimeframeConfluenceAnalyzer(storage=storage)
         
         signal = Signal(
             symbol="EURUSD=X",
@@ -187,7 +194,8 @@ class TestMultiTimeframeConfluence:
         - original_score: Score before confluence
         - adjusted_score: Score after confluence
         """
-        analyzer = MultiTimeframeConfluenceAnalyzer()
+        storage = StorageManager()
+        analyzer = MultiTimeframeConfluenceAnalyzer(storage=storage)
         
         signal = Signal(
             symbol="EURUSD=X",
@@ -230,15 +238,14 @@ class TestConfluenceEdgeLearning:
         Weights should be loaded from dynamic_params.json
         EdgeTuner will optimize these based on win_rate
         """
-        analyzer = MultiTimeframeConfluenceAnalyzer(config_path="config/dynamic_params.json")
-        
+        storage = StorageManager()
+        analyzer = MultiTimeframeConfluenceAnalyzer(storage=storage)
         # Should have loaded weights (or defaults)
         assert hasattr(analyzer, 'weights')
         assert "M15" in analyzer.weights
         assert "H1" in analyzer.weights
         assert "H4" in analyzer.weights
         assert "D1" in analyzer.weights
-        
         # Weights should sum to reasonable range (not >100%)
         total_weight = sum(analyzer.weights.values())
         assert 0 < total_weight <= 100
@@ -250,8 +257,8 @@ class TestConfluenceEdgeLearning:
         
         This enables the system to LEARN optimal weighting
         """
-        analyzer = MultiTimeframeConfluenceAnalyzer()
-        
+        storage = StorageManager()
+        analyzer = MultiTimeframeConfluenceAnalyzer(storage=storage)
         # Simulate EdgeTuner updating weights
         new_weights = {
             "M15": 12.0,  # Learned: M15 less important
@@ -259,9 +266,7 @@ class TestConfluenceEdgeLearning:
             "H4": 18.0,
             "D1": 15.0
         }
-        
         analyzer.update_weights(new_weights)
-        
         # Verify weights were updated
         assert analyzer.weights["M15"] == 12.0
         assert analyzer.weights["H1"] == 25.0
@@ -273,8 +278,8 @@ class TestConfluenceEdgeLearning:
         This allows A/B testing: some signals use confluence, others don't
         EdgeTuner can compare performance
         """
-        analyzer = MultiTimeframeConfluenceAnalyzer(enabled=False)
-        
+        storage = StorageManager()
+        analyzer = MultiTimeframeConfluenceAnalyzer(storage=storage, enabled=False)
         signal = Signal(
             symbol="EURUSD=X",
             signal_type=SignalType.BUY,
@@ -286,13 +291,10 @@ class TestConfluenceEdgeLearning:
             timeframe="M5",
             metadata={"score": 75.0}
         )
-        
         timeframe_regimes = {
             "D1": MarketRegime.CRASH  # Should penalize, but disabled
         }
-        
         adjusted_signal = analyzer.analyze_confluence(signal, timeframe_regimes)
-        
         # Should return IDENTICAL signal (no changes)
         assert adjusted_signal.confidence == 0.75
         assert "confluence_bonus" not in adjusted_signal.metadata

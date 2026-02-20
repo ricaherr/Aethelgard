@@ -92,7 +92,7 @@ def main():
     
     if total_failures == 0:
         print("\n" + "="*80)
-        print("🎉 ALL VALIDATIONS PASSED - READY FOR DEPLOYMENT")
+        print("[SUCCESS] ALL VALIDATIONS PASSED - READY FOR DEPLOYMENT")
         print("="*80)
         return 0
     else:

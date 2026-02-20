@@ -1,6 +1,6 @@
 """
 Gestor de Módulos Activos para Aethelgard
-Verifica qué estrategias tienen permiso para ejecutarse según config/modules.json
+Verifica qué estrategias tienen permiso para ejecutarse según configuración centralizada en StorageManager (SSOT)
 """
 import json
 import logging
@@ -22,31 +22,19 @@ class ModuleManager:
     Gestiona qué módulos/estrategias están activos y tienen permiso para ejecutarse
     """
     
-    def __init__(self, config_path: str = "config/modules.json"):
+    def __init__(self, storage):
         """
-        Inicializa el gestor de módulos
-        
+        Inicializa el gestor de módulos usando StorageManager como SSOT
         Args:
-            config_path: Ruta al archivo de configuración de módulos
+            storage: StorageManager instance
         """
-        self.config_path = Path(config_path)
-        self.config: Dict = {}
-        self._load_config()
+        self.storage = storage
+        self.config: Dict = self.storage.get_modules_config()
     
-    def _load_config(self) -> None:
-        """Carga la configuración desde el archivo JSON"""
-        if not self.config_path.exists():
-            logger.warning(f"Archivo de configuración no encontrado: {self.config_path}. Usando valores por defecto.")
-            self._create_default_config()
-            return
-        
-        try:
-            with open(self.config_path, 'r', encoding='utf-8') as f:
-                self.config = json.load(f)
-            logger.info(f"Configuración de módulos cargada desde {self.config_path}")
-        except Exception as e:
-            logger.error(f"Error cargando configuración de módulos: {e}")
-            self._create_default_config()
+    def reload_config(self) -> None:
+        """Recarga la configuración desde StorageManager (SSOT)"""
+        self.config = self.storage.get_modules_config()
+        logger.info("Configuración de módulos recargada desde StorageManager (SSOT)")
     
     def _create_default_config(self) -> None:
         """Crea una configuración por defecto si no existe el archivo"""
@@ -197,20 +185,11 @@ class ModuleManager:
         self._save_config()
         logger.info(f"Módulo {module_name} deshabilitado")
     
-    def _save_config(self) -> None:
-        """Guarda la configuración en el archivo JSON"""
-        try:
-            self.config_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.config_path, 'w', encoding='utf-8') as f:
-                json.dump(self.config, f, indent=2, ensure_ascii=False)
-            logger.debug(f"Configuración guardada en {self.config_path}")
-        except Exception as e:
-            logger.error(f"Error guardando configuración: {e}")
+    def save_config(self) -> None:
+        """Guarda la configuración en StorageManager (SSOT)"""
+        self.storage.save_modules_config(self.config)
+        logger.debug("Configuración de módulos guardada en StorageManager (SSOT)")
     
-    def reload_config(self) -> None:
-        """Recarga la configuración desde el archivo"""
-        self._load_config()
-        logger.info("Configuración de módulos recargada")
     
     def get_module_info(self, module_name: str) -> Optional[Dict]:
         """Obtiene información sobre un módulo específico"""

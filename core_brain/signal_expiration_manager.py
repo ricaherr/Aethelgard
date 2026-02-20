@@ -93,19 +93,19 @@ class SignalExpirationManager:
                 continue
             
             try:
-                # Normalizar a UTC
-                from core_brain.market_utils import to_utc
                 from datetime import timezone
-                if 'T' in timestamp_str or '.' in timestamp_str:
-                    # ISO 8601 extendido
-                    signal_time = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
-                    if signal_time.tzinfo is None:
-                        signal_time = signal_time.replace(tzinfo=timezone.utc)
-                    else:
-                        signal_time = signal_time.astimezone(timezone.utc)
+                if isinstance(timestamp_str, datetime):
+                    signal_time = timestamp_str
                 else:
-                    signal_time = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S')
-                    signal_time = signal_time.replace(tzinfo=timezone.utc)
+                    ts = str(timestamp_str).replace("Z", "+00:00")
+                    signal_time = datetime.fromisoformat(ts)
+
+                # Legacy naive timestamps: interpret as local timezone before UTC conversion
+                if signal_time.tzinfo is None:
+                    local_tz = datetime.now().astimezone().tzinfo or timezone.utc
+                    signal_time = signal_time.replace(tzinfo=local_tz)
+
+                signal_time = signal_time.astimezone(timezone.utc)
             except (ValueError, TypeError) as e:
                 logger.warning(f"Failed to parse timestamp {timestamp_str}: {e}")
                 continue

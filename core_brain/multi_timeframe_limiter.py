@@ -38,10 +38,10 @@ class MultiTimeframeLimiter:
         self.config = config.get('multi_timeframe_limits', {})
         self.mt5_connector = mt5_connector
         self.enabled = self.config.get('enabled', True)
-        self.max_positions = self.config.get('max_positions_per_symbol', 1)
+        self.max_positions = self.config.get('max_positions_per_symbol', 3)
         self.max_volume = self.config.get('max_total_volume_per_symbol', 5.0)
         self.hedge_threshold = self.config.get('alert_hedge_threshold', 0.2)
-        self.allow_opposite = self.config.get('allow_opposite_signals', False)
+        self.allow_opposite = self.config.get('allow_opposite_signals', True)
     
     def validate_new_signal(self, signal: Signal) -> Tuple[bool, str]:
         """
@@ -147,7 +147,19 @@ class MultiTimeframeLimiter:
         Fallback: Get actually open operations from DB.
         Uses get_open_operations() which filters EXECUTED signals not yet closed.
         """
-        open_ops = self.storage.get_open_operations()
+        get_open_ops = getattr(self.storage, "get_open_operations", None)
+        if not callable(get_open_ops):
+            return []
+
+        open_ops = get_open_ops()
+        if open_ops is None:
+            return []
+        if not isinstance(open_ops, list):
+            try:
+                open_ops = list(open_ops)
+            except Exception:
+                logger.warning("Storage returned non-iterable open operations for %s", symbol)
+                return []
         
         # Filter by symbol
         open_for_symbol = [
@@ -166,6 +178,12 @@ class MultiTimeframeLimiter:
         """Extract lot_size from position metadata, fallback to volume"""
         # Try metadata first (set by executor)
         metadata = position.get('metadata', {})
+        if isinstance(metadata, str):
+            try:
+                import json
+                metadata = json.loads(metadata)
+            except Exception:
+                metadata = {}
         lot_size = metadata.get('lot_size')
         
         if lot_size is not None:
@@ -176,12 +194,12 @@ class MultiTimeframeLimiter:
     
     def _get_signal_type(self, position: dict) -> str:
         """Extract signal_type from position"""
-        signal_type = position.get('signal_type')
-        
+        signal_type = position.get('signal_type') or position.get('direction')
+
         # Handle both string and SignalType enum
         if hasattr(signal_type, 'value'):
             return signal_type.value
-        
+
         return str(signal_type)
     
     def _check_hedge_alert(self, symbol: str, open_positions: List[Dict[str, Any]], new_signal: Signal) -> None:

@@ -6,10 +6,10 @@ Agnóstico de plataforma: recibe un DataProvider inyectado (ej. MT5).
 """
 from __future__ import annotations
 
-import json
 import logging
 import threading
 import time
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -26,18 +26,6 @@ try:
     import psutil
 except ImportError:
     psutil = None
-
-
-def _load_config(config_path: str) -> dict:
-    p = Path(config_path)
-    if not p.exists():
-        return {}
-    try:
-        with open(p, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception as e:
-        logger.warning("No se pudo cargar %s: %s. Usando defaults.", config_path, e)
-        return {}
 
 
 class CPUMonitor:
@@ -89,20 +77,30 @@ class ScannerEngine:
         self.config_path = config_path
         self.storage = storage
         
-        # SSOT: Prefer injected config_data over config_path
+        # SSOT: Prefer injected config_data, then storage, then legacy config file path.
         if config_data:
             cfg = config_data
         elif storage:
             # SSOT: Get from StorageManager (bootstrapped from config.json)
             state = storage.get_system_state()
-            cfg = state.get("global_config", {})
-            if not cfg and config_path:
-                 cfg = _load_config(config_path)
+            cfg = state.get("global_config", {}) if isinstance(state, dict) else {}
         elif config_path:
-            cfg = _load_config(config_path)
+            cfg = {}
+            try:
+                cfg_file = Path(config_path)
+                if cfg_file.exists():
+                    with open(cfg_file, "r", encoding="utf-8") as f:
+                        loaded = json.load(f)
+                    if isinstance(loaded, dict):
+                        cfg = loaded
+            except Exception as e:
+                logger.warning("Failed loading scanner config from config_path: %s", e)
         else:
             # No config source
             cfg = {}
+
+        if config_path and not storage and not config_data:
+            logger.warning("ScannerEngine config_path is legacy compatibility mode.")
             
         sc = cfg.get("scanner", cfg) # Support both full config or just scanner segment
 
@@ -136,7 +134,7 @@ class ScannerEngine:
             self.active_timeframes = [self.mt5_timeframe]
         
         logger.info(f"Active timeframes for scanning: {self.active_timeframes}")
-        rp = regime_config_path or sc.get("config_path", "config/dynamic_params.json")
+        rp = regime_config_path or sc.get("config_path", None)
 
         self.cpu_monitor = CPUMonitor(cpu_limit_pct=self.cpu_limit_pct)
         # Multi-timeframe support: key = "symbol|timeframe"
@@ -329,20 +327,18 @@ class ScannerEngine:
     
     def _reload_timeframes_if_changed(self) -> None:
         """
-        Hot-reload de timeframes desde config.json.
+        Hot-reload de timeframes desde StorageManager (SSOT).
         Detecta cambios y actualiza self.active_timeframes sin reiniciar el hilo.
-        
         Coherente con sistema de module toggles (scanner enabled/disabled).
         Permite que TrifectaAnalyzer auto-habilite timeframes y Scanner los detecte.
         """
         try:
+            config = {}
             # SSOT: Reload via StorageManager if available
             if self.storage:
-                config = self.storage.reload_global_config()
+                state = self.storage.get_system_state()
+                config = state.get("global_config", {}) or {}
             else:
-                # Fallback only if no storage (legacy)
-                # But ScannerEngine usually has storage now.
-                config = {}
                 return
 
             scanner_config = config.get("scanner", {})

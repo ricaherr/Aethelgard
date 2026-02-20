@@ -12,8 +12,9 @@ class PaperConnector:
     Simulates execution of signals without real broker interaction.
     """
     
-    def __init__(self) -> None:
-        logger.info("PaperConnector initialized")
+    def __init__(self, instrument_manager=None) -> None:
+        self.instrument_manager = instrument_manager
+        logger.info("PaperConnector initialized (DI InstrumentManager: %s)", bool(instrument_manager))
         
     def connect(self) -> bool:
         """Simulate connection"""
@@ -57,17 +58,13 @@ class PaperConnector:
     def get_symbol_info(self, symbol: str) -> Any:
         """
         Return simulated symbol info for paper trading.
-        Creates a minimal SymbolInfo-like object with required attributes.
-        Uses InstrumentManager for agnostic fallback precision.
+        Uses injected InstrumentManager for precision/config (SSOT).
         """
         from types import SimpleNamespace
-        from core_brain.instrument_manager import InstrumentManager
-        
-        im = InstrumentManager()
-        digits = im.get_default_precision(symbol)
+        if not self.instrument_manager:
+            raise RuntimeError("PaperConnector requiere InstrumentManager inyectado para get_symbol_info (SSOT)")
+        digits = self.instrument_manager.get_default_precision(symbol)
         point = 1.0 / (10**digits)
-        
-        # Simular symbol_info con atributos básicos dinámicos
         return SimpleNamespace(
             digits=digits,
             point=point,

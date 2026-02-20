@@ -1,3 +1,88 @@
+
+## 🎯 MILESTONE: SSOT Configuración Total (2026-02-19)
+**Estado: ✅ COMPLETADO**
+**Criterio: Eliminar dependencia de TODOS los archivos JSON de configuración (instruments.json, dynamic_params.json, risk_settings.json, modules.json, config.json), centralizando toda la configuración en la base de datos (StorageManager, SSOT), con refactor completo de módulos, endpoints, tests y documentación.**
+
+### Logros Clave
+- [x] Migración de instruments.json, dynamic_params.json, risk_settings.json, modules.json y config.json a la base de datos (SSOT)
+- [x] Refactor de todos los módulos backend para leer configuración solo desde StorageManager
+- [x] Eliminación total de lecturas directas de JSON (open/json.load)
+- [x] Actualización de endpoints y lógica de negocio para operar 100% vía DB
+- [x] Refactor de tests y mocks para usar StorageManager
+- [x] Validación completa: QA_GUARD, validate_all.py, tests críticos e integración
+- [x] Actualización de docstrings y comentarios para reflejar SSOT
+- [x] Documentación de la migración en ROADMAP y MANIFESTO
+
+### Lessons learned
+- La migración progresiva, validando cada paso con QA_GUARD y validate_all.py, previno errores de integración y permitió detectar dependencias ocultas.
+- La actualización de docstrings y comentarios es clave para evitar deuda técnica y confusión futura.
+- El enfoque SSOT simplifica la trazabilidad y la recuperación ante fallos.
+
+### Notas de Implementación
+- Todos los módulos, endpoints y tests ahora dependen exclusivamente de la base de datos vía StorageManager.
+- La UI y la API solo exponen y editan configuración persistente en DB.
+- Se eliminaron todos los accesos directos a archivos JSON de configuración.
+
+> Siguiente: Mejorar resiliencia con versionado de configuración y rollback automático (ver propuestas en chat).
+
+### Logros Clave
+- [x] **Migración endpoint GET /api/instruments**: Ahora lee la configuración de instrumentos desde la base de datos (SSOT), eliminando lectura directa de JSON.
+- [x] **Nuevo endpoint POST /api/instruments**: Permite editar la configuración de instrumentos desde la UI, guardando en DB.
+
+
+### Plan de Trabajo
+
+- [x] Refactor backend para SSOT (GET/POST instruments)
+- [x] Limpieza de duplicados en server.py (create_app)
+- [x] Validación POST /api/instruments tras refactor
+- [x] Agregar sección de edición de instrumentos en la UI (Settings)
+  - Mostrar estructura Mercado → Categoría → Lista de instrumentos
+  - Permitir agregar, editar y eliminar mercados, categorías y símbolos
+  - Editar atributos: descripción, prioridad, min_score, risk_multiplier, enabled
+  - Validar duplicados y campos obligatorios
+  - Botón “Guardar cambios” (POST /api/instruments)
+  - Confirmación visual de guardado exitoso/error
+- [x] Validar integración end-to-end (UI ↔ API ↔ DB)
+- [x] Documentar cierre y lessons learned
+
+#### Lessons learned
+- DRY: Mantener una sola definición de create_app evita errores de registro de endpoints y 405.
+- Validar endpoints tras refactor es crítico antes de avanzar a la UI.
+
+### Notas de Implementación
+- La UI debe cargar datos vía GET /api/instruments y guardar cambios vía POST /api/instruments.
+- El backend ya no depende de instruments.json, toda la edición es en caliente y persistente.
+- El diseño UX sugerido: árbol colapsable, inputs inline, botones “+” para agregar, switches para habilitar.
+
+> Siguiente: Implementar y validar la edición UI, luego migrar dynamic_params.json, risk_settings.json y modules.json a DB siguiendo el mismo patrón.
+## 🚨 MILESTONE: Estabilización Operativa y Gate de Release (2026-02-18)
+**Estado: 🚧 EN PROGRESO**
+**Criterio: Corregir incoherencias críticas entre documentación, contratos de runtime y estado real de calidad antes de habilitar despliegue real-money.**
+
+### Estado Vigente (snapshot real)
+- Fecha de corte: **2026-02-18**
+- Suite completa observada: **201 passed, 81 failed, 7 errors (289 total)**
+- Documento de referencia: `docs/MANIFESTO_INCONSISTENCIAS_2026-02-18.md`
+
+### Plan de Remediación Prioritario
+- [ ] **P0 MT5**: Corregir bug de modificación SL/TP en `connectors/mt5_connector.py` (`request` vs `modify_request`).
+- [ ] **P1 Runtime Scanner**: Desacoplar API de scanner de import frágil y leer estado runtime real / fallback DB.
+- [ ] **P1 Contratos Públicos**: Congelar firmas de constructores y mantener compatibilidad legacy (`config_path`/`risk_settings_path`) sin romper SSOT.
+- [ ] **P1 Entrypoints**: Alinear `main_orchestrator.py`, `server.py` y `start.py` con los contratos vigentes.
+- [ ] **P2 Trifecta Política/Tests**: Alinear tests con política estricta actual (sin degraded mode válido).
+
+### Gate de Release (bloqueante)
+- Desde este milestone, **NO se permite despliegue real-money** si no pasan simultáneamente:
+1. `python scripts/validate_all.py`
+2. `pytest` suite completa en verde
+3. smoke operativo controlado (paper/live supervisado)
+
+### Nota de Higiene Documental
+- Las secciones históricas que muestran “100% validado” se consideran **snapshot histórico** de su fecha.
+- El estado vigente del sistema debe publicarse siempre con fecha absoluta y pass-rate real.
+
+---
+
 ## 🎯 MILESTONE: Análisis & Evolución de Estrategias (2026-02-18)
 **Estado: ✅ completado**
 **Criterio: Auditar el sistema actual de estrategias, identificar señales existentes y proponer mejoras para escalabilidad universal.**
@@ -1157,14 +1242,18 @@ Executor.execute_signal()
        stopLoss={position.sl}
        takeProfit={position.tp}
        isBuy={isBuy}
-   />
    ```
 
-3. **PositionMetadata Interface** (aethelgard.ts):
-   - Campo `type?: 'BUY' | 'SELL'` agregado
+  ### ✅ SSOT/DI Instruments.json & Cadena InstrumentManager
+  - [x] **Migración instruments.json a StorageManager/DB (SSOT)**: Eliminada lectura directa de JSON, InstrumentManager y toda la lógica de instrumentos ahora usan StorageManager como única fuente de verdad.
+  - [x] **Refactor InstrumentManager**: Carga config desde DB, sin fallback a JSON, y permite DI de storage/config para tests.
+  - [x] **Refactor main_orchestrator.py**: Inyecta StorageManager e InstrumentManager en todos los módulos dependientes.
+  - [x] **Refactor RiskManager**: Ahora requiere InstrumentManager por DI, sin instanciación interna.
+  - [x] **Refactor tests (deduplicación, risk, dynamic)**: Todos los tests usan DB en memoria y DI real de InstrumentManager.
+  - [x] **Refactor PaperConnector**: Ahora exige InstrumentManager por DI y nunca lo instancia internamente (cumple SSOT/DI).
+  - [x] **Validación completa**: Todos los tests críticos de deduplicación y RiskManager pasan 100% con la nueva arquitectura.
 
-**Datos Simulados** (random walk):
-- 100 velas alrededor de `entryPrice`
+  > Estado: Cadena de instrumentos 100% SSOT/DI. Siguiente paso: migrar dynamic_params.json, risk_settings.json y modules.json a DB/StorageManager y eliminar referencias directas en los módulos marcados por Manifesto Enforcer.
 - Variación: ±0.2% por vela
 - EMA: fórmula estándar `EMA = (Close - EMA_prev) * 2/(period+1) + EMA_prev`
 
@@ -5161,5 +5250,18 @@ Tests: ✅ 165 PASANDO
 ---
 
 *Fuente de verdad: [AETHELGARD_MANIFESTO.md](AETHELGARD_MANIFESTO.md).*
+
+---
+
+## 🔒 Actualización Arquitectónica (2026-02-20)
+
+- ✅ **Auto-bootstrap desactivado en runtime**: `StorageManager` ya no ejecuta migración JSON→DB automáticamente al iniciar.
+- ✅ **Migración legacy controlada**: la migración quedó disponible solo como proceso manual one-shot (`scripts/migrations/run_legacy_json_bootstrap_once.py`).
+- ✅ **Backups DB configurables desde Settings**:
+  - Carpeta por defecto: `backups`
+  - Intervalo por defecto: `1` día
+  - Retención por defecto: `15` días
+  - Persistencia en `dynamic_params.database_backup` (SSOT en DB).
+
 
 

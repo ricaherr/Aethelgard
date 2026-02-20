@@ -35,6 +35,7 @@ from core_brain.monitor import ClosingMonitor
 from core_brain.tuner import EdgeTuner
 from core_brain.edge_monitor import EdgeMonitor
 from data_vault.storage import StorageManager
+from data_vault.backup_manager import DatabaseBackupManager
 from connectors.paper_connector import PaperConnector
 from connectors.mt5_connector import MT5Connector
 from models.signal import ConnectorType
@@ -116,9 +117,13 @@ async def main() -> None:
         # 1. Storage Manager (SSOT - Regla 14)
         logger.info("[INIT] Inicializando Storage Manager...")
         storage = StorageManager()
+
+        # 1.1 DB Backup Manager (periodic, configurable via dynamic_params.database_backup)
+        backup_manager = DatabaseBackupManager(storage=storage, poll_seconds=30)
+        backup_manager.start()
         
-        # 1.5. Configuración SSOT (Regla 14) 
-        # Cargar configuraciones (StorageManager ya manejó la migración inicial en su __init__)
+        # 1.5. Configuración SSOT (Regla 14)
+        # Cargar configuraciones directamente desde DB (sin auto-bootstrap JSON en runtime)
         system_state = storage.get_system_state()
         global_config = system_state.get("global_config", {})
         dynamic_params = storage.get_dynamic_params()
@@ -202,9 +207,12 @@ async def main() -> None:
             circuit_breaker_timeout=300
         )
         
+        from core_brain.instrument_manager import InstrumentManager
+        instrument_manager = InstrumentManager(storage=storage)
         risk_manager = RiskManager(
             storage=storage,
             initial_capital=10000.0, # TODO: Leer de la DB o inyectar
+            instrument_manager=instrument_manager,
             monitor=risk_monitor
         )
         logger.info(f"   Capital: ${risk_manager.capital:,.2f}")
@@ -233,7 +241,7 @@ async def main() -> None:
         from core_brain.confluence import MultiTimeframeConfluenceAnalyzer
         from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
         
-        ov_strategy = OliverVelezStrategy(dynamic_params)
+        ov_strategy = OliverVelezStrategy(dynamic_params, instrument_manager)
         
         confluence_config = dynamic_params.get("confluence", {})
         confluence_analyzer = MultiTimeframeConfluenceAnalyzer(
@@ -393,11 +401,15 @@ async def main() -> None:
         scanner.stop()
         if 'closing_monitor' in locals():
             await closing_monitor.stop()
+        if 'backup_manager' in locals():
+            backup_manager.stop()
         # Cleanup
     except Exception as e:
         logger.error(f"[FATAL] Error crítico: {e}", exc_info=True)
         raise
     finally:
+        if 'backup_manager' in locals():
+            backup_manager.stop()
         if server_process and server_process.poll() is None:
             server_process.terminate()
         logger.info("[STOP] Sistema detenido completamente.")

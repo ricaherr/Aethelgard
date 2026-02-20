@@ -280,21 +280,42 @@ class EdgeTuner:
     - Win rate cercano al target → Ajustes graduales (estabilidad)
     """
     
-    def __init__(self, storage: StorageManager):
+    def __init__(self, storage: StorageManager, config_path: Optional[str] = None):
         """
         Args:
             storage: StorageManager para acceder a resultados de trades
         """
         self.storage = storage
+        self.config_path = Path(config_path) if config_path else None
         self.logger = logging.getLogger(__name__)
     
     def _load_config(self) -> Dict:
         """Carga configuración desde Storage (SSOT)"""
-        return self.storage.get_dynamic_params()
+        # Legacy compatibility for tests that still use JSON config files
+        if self.config_path and self.config_path.exists():
+            try:
+                with open(self.config_path, "r", encoding="utf-8") as f:
+                    loaded = json.load(f)
+                if isinstance(loaded, dict):
+                    return loaded
+            except Exception as e:
+                self.logger.warning("Failed to load tuner config from %s: %s", self.config_path, e)
+
+        config = self.storage.get_dynamic_params()
+        if isinstance(config, dict) and config:
+            return config
+
+        return {}
     
     def _save_config(self, config: Dict) -> None:
         """Guarda configuración actualizada en Storage"""
         self.storage.update_dynamic_params(config)
+        if self.config_path:
+            try:
+                with open(self.config_path, "w", encoding="utf-8") as f:
+                    json.dump(config, f, indent=2)
+            except Exception as e:
+                self.logger.warning("Failed to persist tuner config to %s: %s", self.config_path, e)
         self.logger.info("[OK] Configuración dinámica actualizada en DB")
     
     def _calculate_stats(self, trades: List[Dict]) -> Dict:

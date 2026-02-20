@@ -2,7 +2,10 @@ import logging
 import os
 import sqlite3
 import json
-from typing import Optional, Dict
+import shutil
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Optional, Dict, List, Any
 
 from .base_repo import BaseRepository
 from .signals_db import SignalsMixin, calculate_deduplication_window
@@ -12,6 +15,8 @@ from .market_db import MarketMixin
 from .system_db import SystemMixin
 
 logger = logging.getLogger(__name__)
+
+JSON_BOOTSTRAP_DONE_KEY = "_json_bootstrap_done_v1"
 
 class StorageManager(
     SignalsMixin,
@@ -33,9 +38,6 @@ class StorageManager(
         
         # Initialize database tables
         self._initialize_db()
-        
-        # Bootstrapping (Migración desde JSON si es DB nueva) - REGLA 14 (SSOT)
-        self._bootstrap_from_json()
 
     def _initialize_db(self) -> None:
         """Initialize database tables if they don't exist"""
@@ -329,81 +331,155 @@ class StorageManager(
 
     def _bootstrap_from_json(self) -> None:
         """
-        Migra configuraciones heredadas desde JSON a la base de datos (SSOT).
-        Este es el ÚNICO lugar centralizado donde se permite leer config/*.json.
+        One-shot bootstrap: migrates legacy JSON config to DB only once.
+        This is temporary and centralized to keep business modules JSON-free.
         """
-        from pathlib import Path
-        import json
-        
         try:
-            # 1. Migrar dynamic_params.json
-            dynamic_params_file = Path("config/dynamic_params.json")
-            if dynamic_params_file.exists():
-                current_params = self.get_dynamic_params()
-                if not current_params:
-                    with open(dynamic_params_file, "r") as f:
-                        data = json.load(f)
-                        self.update_dynamic_params(data)
-                        logger.info("Bootstrap: dynamic_params.json migrated to DB")
+            state = self.get_system_state()
+            if state.get(JSON_BOOTSTRAP_DONE_KEY):
+                return
 
-            # 2. Migrar config.json (global_config)
-            config_file = Path("config/config.json")
-            if config_file.exists():
-                state = self.get_system_state()
-                if "global_config" not in state:
-                    with open(config_file, "r") as f:
-                        data = json.load(f)
-                        self.update_system_state({"global_config": data})
-                        logger.info("Bootstrap: config.json migrated to DB as global_config")
-                        
-            # 3. Migrar risk_settings.json
-            risk_file = Path("config/risk_settings.json")
-            if risk_file.exists():
-                current_risk = self.get_risk_settings()
-                if not current_risk:
-                    with open(risk_file, "r") as f:
-                        data = json.load(f)
-                        self.update_risk_settings(data)
-                        logger.info("Bootstrap: risk_settings.json migrated to DB")
-                        
-            # 4. Migrar modules.json (Strategies & Modules)
-            modules_file = Path("config/modules.json")
-            if modules_file.exists():
-                current_modules = self.get_modules_config()
-                if not current_modules:
-                    with open(modules_file, "r") as f:
-                        data = json.load(f)
-                        self.save_modules_config(data)
-                        logger.info("Bootstrap: modules.json migrated to DB")
-                        
+            migrated: List[str] = []
+
+            def _load_json(path: Path) -> Optional[Dict[str, Any]]:
+                if not path.exists():
+                    return None
+                with open(path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+
+            dynamic_data = _load_json(Path("config/dynamic_params.json"))
+            if dynamic_data and not self.get_dynamic_params():
+                self.update_dynamic_params(dynamic_data)
+                migrated.append("dynamic_params")
+
+            global_cfg = _load_json(Path("config/config.json"))
+            current_state = self.get_system_state()
+            if global_cfg and "global_config" not in current_state:
+                self.update_system_state({"global_config": global_cfg})
+                migrated.append("global_config")
+
+            risk_cfg = _load_json(Path("config/risk_settings.json"))
+            if risk_cfg and not self.get_risk_settings():
+                self.update_risk_settings(risk_cfg)
+                migrated.append("risk_settings")
+
+            modules_cfg = _load_json(Path("config/modules.json"))
+            if modules_cfg and not self.get_modules_config():
+                self.save_modules_config(modules_cfg)
+                migrated.append("modules_config")
+
+            instruments_cfg = _load_json(Path("config/instruments.json"))
+            current_state = self.get_system_state()
+            if instruments_cfg and "instruments_config" not in current_state:
+                self.update_system_state({"instruments_config": instruments_cfg})
+                migrated.append("instruments_config")
+
+            marker_payload = {
+                "done": True,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "migrated_sections": migrated
+            }
+            self.update_system_state({JSON_BOOTSTRAP_DONE_KEY: marker_payload})
+
+            if migrated:
+                logger.warning("JSON bootstrap executed (one-shot). Migrated: %s", ", ".join(migrated))
+            else:
+                logger.info("JSON bootstrap marked as completed (nothing to migrate).")
         except Exception as e:
-            logger.error(f"Error during bootstrap from JSON: {e}")
+            logger.error(f"Error during one-shot JSON bootstrap: {e}")
+
+    def run_legacy_json_bootstrap_once(self) -> None:
+        """
+        Manual one-shot migration entrypoint.
+        Kept for controlled migrations only (never automatic at runtime).
+        """
+        self._bootstrap_from_json()
 
     def reload_global_config(self) -> Dict[str, Any]:
         """
-        Reloads global configuration from file (config/config.json) to support hot-reloading.
-        Updates the system state with the fresh config.
-        
-        Returns:
-            Dict: The new configuration dictionary
+        DB-first reload: returns current global_config from system_state.
         """
         try:
-            from pathlib import Path  # Local import to ensure availability
-            config_path = Path("config/config.json")
-            if config_path.exists():
-                with open(config_path, "r") as f:
-                    config = json.load(f)
-                
-                # Update DB/State
-                self.update_system_state({"global_config": config})
-                return config
-            return {}
+            state = self.get_system_state()
+            cfg = state.get("global_config", {})
+            return cfg if isinstance(cfg, dict) else {}
         except Exception as e:
             logger.error(f"Error reloading global config: {e}")
             return {}
-                        
+
+    # ========== DATABASE BACKUP ==========
+
+    def create_db_backup(
+        self,
+        backup_dir: Optional[str] = None,
+        retention_count: int = 24
+    ) -> Optional[str]:
+        """
+        Create a point-in-time SQLite backup file.
+        Returns backup path or None on failure.
+        """
+        if self.db_path == ":memory:":
+            logger.warning("Skipping DB backup for in-memory database.")
+            return None
+
+        backup_root = Path(backup_dir or "backups")
+        backup_root.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
+        backup_path = backup_root / f"aethelgard_{stamp}.db"
+
+        def _backup(conn: sqlite3.Connection) -> None:
+            dest = sqlite3.connect(str(backup_path))
+            try:
+                conn.backup(dest)
+            finally:
+                dest.close()
+
+        try:
+            self._execute_serialized(_backup)
+            self.prune_old_backups(str(backup_root), retention_count=retention_count)
+            logger.info("Database backup created: %s", backup_path)
+            return str(backup_path)
         except Exception as e:
-            logger.error(f"Error during bootstrap from JSON: {e}")
+            logger.error("Failed to create DB backup: %s", e)
+            return None
+
+    def list_db_backups(self, backup_dir: Optional[str] = None) -> List[str]:
+        """List backup files sorted by newest first."""
+        backup_root = Path(backup_dir or "backups")
+        if not backup_root.exists():
+            return []
+        backups = sorted(backup_root.glob("aethelgard_*.db"), key=lambda p: p.stat().st_mtime, reverse=True)
+        return [str(p) for p in backups]
+
+    def prune_old_backups(self, backup_dir: Optional[str] = None, retention_count: int = 24) -> None:
+        """Keep only the most recent N backups."""
+        backups = self.list_db_backups(backup_dir)
+        for old_path in backups[max(1, retention_count):]:
+            try:
+                Path(old_path).unlink(missing_ok=True)
+            except Exception as e:
+                logger.warning("Failed pruning old backup %s: %s", old_path, e)
+
+    def restore_db_backup(self, backup_path: str) -> bool:
+        """
+        Restore DB from backup file.
+        Note: should be used while system is stopped.
+        """
+        if self.db_path == ":memory:":
+            logger.error("Cannot restore backup into in-memory database.")
+            return False
+        source = Path(backup_path)
+        if not source.exists():
+            logger.error("Backup file not found: %s", backup_path)
+            return False
+        try:
+            with self._db_lock:
+                shutil.copy2(source, self.db_path)
+            logger.warning("Database restored from backup: %s", backup_path)
+            return True
+        except Exception as e:
+            logger.error("Failed restoring DB backup: %s", e)
+            return False
 
     def check_integrity(self) -> bool:
         """
