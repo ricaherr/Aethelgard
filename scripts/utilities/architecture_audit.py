@@ -32,13 +32,23 @@ class CodeAudit:
     
     def _analyze_file(self, filepath: Path):
         """Analyze single Python file for duplicates and issues"""
-        with open(filepath, 'r', encoding='utf-8') as f:
-            content = f.read()
+        try:
+            # Intentar leer con utf-8 y errores reemplazados
+            with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
+                content = f.read()
+        except Exception as e:
+            print(f"  [WARN]  Error de decodificación en {filepath}: {e}")
+            return
         
         try:
+            # Forzar el contenido a ser un string limpio de caracteres problemáticos
+            content = content.encode('utf-8', errors='replace').decode('utf-8')
             tree = ast.parse(content)
         except SyntaxError as e:
             print(f"  [ERROR] Syntax error en {filepath}: {e}")
+            return
+        except Exception as e:
+            print(f"  [ERROR] Error procesando AST en {filepath}: {e}")
             return
         
         # Extract class and function definitions

@@ -1686,26 +1686,59 @@ def create_app() -> FastAPI:
         Forza la ejecución del script de validación global validate_all.py
         Diseñado para dispararse desde el botón "Run Full Integrity Audit" de la UI.
         """
-        async def audit_task():
-            await broadcast_thought("Iniciando auditoría de integridad MANUAL solicitada por el usuario...", module="HEALTH")
+        async def audit_task() -> None:
+            await broadcast_thought("Desplegando hilos de auditoría paralela... Iniciando escaneo de vectores de integridad.", module="HEALTH")
+            
+            # Mapas de lenguaje sofisticado por etapa
+            sophisticated_lexicon = {
+                "Architecture": "Analizando topología de arquitectura y coherencia de módulos...",
+                "QA Guard": "Verificando integridad sintáctica y estándares de calidad QA...",
+                "Code Quality": "Escaneando densidad de complejidad y patrones de duplicidad...",
+                "UI Quality": "Validando ecosistema React y consistencia de tipos en interfaz...",
+                "Manifesto": "Enforzando leyes del Manifesto (DI & SSOT)...",
+                "Patterns": "Escrutando firmas de métodos y protocolos de seguridad AST...",
+                "Core Tests": "Ejecutando suite crítica de deduplicación y gestión de riesgo...",
+                "Integration": "Validando puentes de integración y persistencia en Data Vault...",
+                "Connectivity": "Auditando latencia y fidelidad del uplink con el Broker...",
+                "System DB": "Verificando integridad estructural de la base de Datos..."
+            }
+
             try:
-                # Ejecutar validate_all.py
                 process = await asyncio.create_subprocess_exec(
                     "python", "scripts/validate_all.py",
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                     cwd=os.getcwd()
                 )
-                stdout, stderr = await process.communicate()
+                
+                # Leer stdout línea a línea para interceptar STAGE_START y STAGE_END
+                while True:
+                    line = await process.stdout.readline()
+                    if not line:
+                        break
+                    
+                    decoded_line = line.decode().strip()
+                    if decoded_line.startswith("STAGE_START:"):
+                        stage = decoded_line.split(":")[1]
+                        msg = sophisticated_lexicon.get(stage, f"Iniciando fase: {stage}...")
+                        await broadcast_thought(msg, level="info", module="HEALTH")
+                    
+                    elif decoded_line.startswith("STAGE_END:"):
+                        parts = decoded_line.split(":")
+                        stage, status, duration = parts[1], parts[2], parts[3]
+                        if status != "OK":
+                            await broadcast_thought(f"Inconsistencia detectada en vector {stage} despues de {duration}s.", level="warning", module="HEALTH")
+                
+                await process.wait()
                 
                 if process.returncode == 0:
-                    await broadcast_thought("Auditoría manual completada: 100% OK. Integridad garantizada.", level="success", module="HEALTH")
+                    await broadcast_thought("Auditoría de alto rendimiento completada: Matriz de integridad 100% estable.", level="success", module="HEALTH")
                 else:
-                    await broadcast_thought("Auditoría manual finalizada con algunas alertas. Revisar logs.", level="warning", module="HEALTH")
-                    logger.warning(f"[AUDIT] Validation failures: {stderr.decode()}")
+                    await broadcast_thought("Auditoría finalizada con vectores comprometidos. Revisar consola técnica para detalles.", level="warning", module="HEALTH")
+            
             except Exception as e:
-                logger.error(f"[AUDIT] Error ejecutando auditoría manual: {e}")
-                await broadcast_thought(f"Error técnico durante la auditoría: {str(e)}", level="error", module="HEALTH")
+                logger.error(f"[AUDIT] Error en flujo de auditoría evolucionada: {e}")
+                await broadcast_thought(f"Falla crítica en motor de auditoría: {str(e)}", level="error", module="HEALTH")
 
         # Iniciar auditoría en background y retornar inmediatamente
         asyncio.create_task(audit_task())

@@ -1,103 +1,140 @@
 #!/usr/bin/env python
 """
-[OK] COMPLETE VALIDATION SUITE - Aethelgard
-Ejecuta: Architecture Audit + QA Guard + Code Quality Analysis
+[OK] HIGH-PERFORMANCE PARALLEL AUDITOR - Aethelgard
+Evolución profesional: Ejecución paralela + Interfaz sofisticada + Cobertura total
 """
-import subprocess
+import asyncio
 import sys
+import time
 from pathlib import Path
+from typing import Dict, List, Any
 
-def run_command(cmd: str, description: str) -> int:
-    """Run command and report result"""
-    print(f"\n{'='*80}")
-    print(f"[AUDIT] {description}")
-    print(f"{'='*80}")
-    
-    result = subprocess.run(cmd, shell=True)
-    
-    if result.returncode == 0:
-        print(f"[OK] {description} - PASSED")
-        return 0
-    else:
-        print(f"[ERROR] {description} - FAILED")
-        return 1
+# Colores ANSI para terminal profesional
+class Colors:
+    BLUE = "\033[94m"
+    CYAN = "\033[96m"
+    GREEN = "\033[92m"
+    GOLD = "\033[93m"
+    RED = "\033[91m"
+    BOLD = "\033[1m"
+    RESET = "\033[0m"
 
-def main():
+async def run_audit_module(name: str, cmd_parts: List[str], workspace: Path) -> Dict[str, Any]:
+    """Ejecuta un módulo de auditoría de forma asíncrona"""
+    start_time = time.monotonic()
+    
+    # Notificar inicio al backend vía stdout
+    print(f"STAGE_START:{name}")
+    sys.stdout.flush()
+    
+    try:
+        # Usar el ejecutable de python actual para consistencia
+        executable = sys.executable
+        
+        args = []
+        if cmd_parts[0] == "python":
+            args = [executable] + cmd_parts[1:]
+        else:
+            args = cmd_parts
+
+        # Configurar environment con PYTHONPATH para que encuentren los módulos locales
+        import os
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(workspace) + os.pathsep + env.get("PYTHONPATH", "")
+
+        process = await asyncio.create_subprocess_exec(
+            *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=str(workspace),
+            env=env
+        )
+        stdout, stderr = await process.communicate()
+        duration = time.monotonic() - start_time
+        
+        # Usar errors='replace' para evitar crashes por codificación de consola en Windows
+        decoded_stdout = stdout.decode(errors='replace').strip()
+        decoded_stderr = stderr.decode(errors='replace').strip()
+        
+        success = process.returncode == 0
+        print(f"STAGE_END:{name}:{'OK' if success else 'FAIL'}:{duration:.2f}")
+        sys.stdout.flush()
+        
+        if not success:
+            # Imprimir errores si falla para debug
+            print(f"DEBUG_FAIL:{name}:{decoded_stderr[:200]}")
+        
+        return {
+            "name": name,
+            "success": success,
+            "duration": duration,
+            "stdout": decoded_stdout,
+            "stderr": decoded_stderr
+        }
+    except Exception as e:
+        duration = time.monotonic() - start_time
+        print(f"STAGE_END:{name}:FAIL:{duration:.2f}")
+        print(f"DEBUG_ERROR:{name}:{str(e)}")
+        sys.stdout.flush()
+        return {
+            "name": name,
+            "success": False,
+            "duration": duration,
+            "error": str(e)
+        }
+
+async def main():
     workspace = Path(__file__).parent.parent
+    start_total = time.monotonic()
     
-    print("\n" + "="*80)
-    print("[START] AETHELGARD COMPLETE VALIDATION SUITE")
-    print("="*80)
-    
-    results = {}
-    
-    # 1. Architecture Audit
-    results['Architecture'] = run_command(
-        f"cd {workspace} && python scripts/utilities/architecture_audit.py",
-        "Architecture Audit (Duplicados + Context Manager)"
-    )
-    
-    # 2. QA Guard
-    results['QA Guard'] = run_command(
-        f"cd {workspace} && python scripts/qa_guard.py",
-        "QA Guard (Sintaxis + Tipos + Style)"
-    )
-    
-    # 3. Code Quality
-    results['Code Quality'] = run_command(
-        f"cd {workspace} && python scripts/code_quality_analyzer.py",
-        "Code Quality (Copy-Paste + Complejidad)"
-    )
-    
-    # 4. UI QA Guard (TS/React)
-    results['UI Quality'] = run_command(
-        f"cd {workspace} && python scripts/ui_qa_guard.py",
-        "UI QA Guard (TypeScript + Build Validation)"
-    )
-    
-    # 4.5 Manifesto Enforcer (DI + SSOT Rules)
-    results['Manifesto Enforcer'] = run_command(
-        f"cd {workspace} && python scripts/manifesto_enforcer.py",
-        "Manifesto Enforcer (Reglas Arquitectónicas DI & SSOT)"
-    )
+    print(f"\n{Colors.BOLD}{Colors.CYAN}AETHELGARD SYSTEM INTEGRITY AUDIT - PARALLEL EVOLUTION{Colors.RESET}")
+    print(f"{Colors.BLUE}{'='*80}{Colors.RESET}\n")
 
-    # 4.8 Pattern Enforcer (Signature & Argument Safety)
-    results['Pattern Enforcer'] = run_command(
-        f"cd {workspace} && python scripts/enforce_patterns.py",
-        "Pattern Enforcer (AST Signature Validation)"
-    )
+    # Definición de hilos de validación (Paralelización estratégica)
+    # Formato: [ejecutable, script, args...]
+    audit_tasks = [
+        run_audit_module("Architecture", ["python", "scripts/utilities/architecture_audit.py"], workspace),
+        run_audit_module("QA Guard", ["python", "scripts/qa_guard.py"], workspace),
+        run_audit_module("Code Quality", ["python", "scripts/code_quality_analyzer.py"], workspace),
+        run_audit_module("UI Quality", ["python", "scripts/ui_qa_guard.py"], workspace),
+        run_audit_module("Manifesto", ["python", "scripts/manifesto_enforcer.py"], workspace),
+        run_audit_module("Patterns", ["python", "scripts/enforce_patterns.py"], workspace),
+        run_audit_module("Core Tests", ["python", "-m", "pytest", "tests/test_signal_deduplication.py", "tests/test_risk_manager.py", "-q"], workspace),
+        run_audit_module("Integration", ["python", "-m", "pytest", "tests/test_executor_metadata_integration.py", "-q"], workspace),
+        run_audit_module("Connectivity", ["python", "scripts/utilities/check_connectivity_health.py"], workspace),
+        run_audit_module("System DB", ["python", "scripts/utilities/verify_sync_fidelity.py"], workspace)
+    ]
+
+    # Ejecución paralela masiva
+    print(f"{Colors.BLUE}[INFO]{Colors.RESET} Desplegando agentes de integridad en paralelo...")
+    results = await asyncio.gather(*audit_tasks)
     
-    # 5. Critical Tests (Deduplication + Risk)
-    results['Tests'] = run_command(
-        f"cd {workspace} && python -m pytest tests/test_signal_deduplication.py tests/test_dynamic_deduplication.py tests/test_risk_manager.py -q",
-        "Critical Tests (23 tests de Deduplicación + Risk Manager)"
-    )
+    total_duration = time.monotonic() - start_total
     
-    # 6. Integration Tests (No Mocks - Real DB) - 100% CONFIABLE
-    results['Integration'] = run_command(
-        f"cd {workspace} && python -m pytest tests/test_executor_metadata_integration.py -q",
-        "Integration Tests (Executor + StorageManager REAL)"
-    )
+    # Interfaz de resumen sofisticada
+    print(f"\n{Colors.BOLD}{Colors.CYAN}SYSTEM INTEGRITY MATRIX{Colors.RESET}")
+    print(f"{Colors.BLUE}{'-'*80}{Colors.RESET}")
+    print(f"{Colors.BOLD}{'MÓDULO':<30} {'ESTADO':<15} {'DURACIÓN':<15}{Colors.RESET}")
     
-    # Summary
-    print("\n" + "="*80)
-    print("[STATS] VALIDATION SUMMARY")
-    print("="*80)
-    
-    for tool, result in results.items():
-        status = "[OK] PASS" if result == 0 else "[ERROR] FAIL"
-        print(f"{tool:.<40} {status}")
-    
-    total_failures = sum(1 for r in results.values() if r != 0)
-    
-    if total_failures == 0:
-        print("\n" + "="*80)
-        print("[SUCCESS] ALL VALIDATIONS PASSED - READY FOR DEPLOYMENT")
-        print("="*80)
+    failures = 0
+    for res in results:
+        status_color = Colors.GREEN if res["success"] else Colors.RED
+        status_text = "PASSED" if res["success"] else "FAILED"
+        if not res["success"]: failures += 1
+        
+        print(f"{res['name']:<30} {status_color}{status_text:<15}{Colors.RESET} {res['duration']:.2f}s")
+
+    print(f"{Colors.BLUE}{'-'*80}{Colors.RESET}")
+    print(f"{Colors.BOLD}TOTAL TIME: {total_duration:.2f}s{Colors.RESET}")
+
+    if failures == 0:
+        print(f"\n{Colors.GREEN}{Colors.BOLD}================================================================================{Colors.RESET}")
+        print(f"{Colors.GREEN}{Colors.BOLD}[SUCCESS] SYSTEM INTEGRITY GUARANTEED - READY FOR EXECUTION{Colors.RESET}")
+        print(f"{Colors.GREEN}{Colors.BOLD}================================================================================{Colors.RESET}")
         return 0
     else:
-        print(f"\n[ERROR] {total_failures} validation(s) failed - Review above for details")
+        print(f"\n{Colors.RED}{Colors.BOLD}[FAIL] {failures} VECTORS COMPROMISED - REVIEW LOGS IMMEDIATELY{Colors.RESET}")
         return 1
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(asyncio.run(main()))

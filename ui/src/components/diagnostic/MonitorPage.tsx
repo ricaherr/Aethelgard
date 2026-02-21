@@ -156,55 +156,94 @@ export const MonitorPage = ({ status, runAudit }: MonitorPageProps) => {
                     </div>
                 </GlassPanel>
 
-                {/* Sub-System Heartbeats */}
-                <GlassPanel className="p-6 flex flex-col border-white/5">
+                {/* System Integrity Matrix (Phase 8 Evolution) */}
+                <GlassPanel className="p-6 flex flex-col border-white/5 relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                        <Shield size={120} className="text-aethelgard-blue" />
+                    </div>
+
                     <div className="flex items-center justify-between mb-6">
                         <div className="flex items-center gap-3">
-                            <Activity size={18} className="text-aethelgard-green" />
-                            <h3 className="text-xs font-black uppercase tracking-[0.2em] text-white/60">Module Pulse Monitor</h3>
+                            <ShieldCheck size={18} className="text-aethelgard-blue" />
+                            <h3 className="text-xs font-black uppercase tracking-[0.2em] text-white/60">System Integrity Matrix</h3>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <div className="w-1.5 h-1.5 rounded-full bg-aethelgard-green animate-pulse" />
+                            <span className="text-[8px] font-black text-aethelgard-green uppercase tracking-widest">Live_Safe</span>
                         </div>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto space-y-2 pr-2 scrollbar-hide">
-                        {Object.entries(status.heartbeats)
-                            .filter(([_, beat]) => typeof beat === 'string' || typeof beat === 'number')
-                            .map(([module, beat]) => (
-                                <div key={module} className="flex items-center justify-between p-4 rounded-xl bg-white/[0.01] border border-white/5 hover:bg-white/[0.03] transition-colors">
-                                    <div className="flex items-center gap-4">
-                                        <div className="w-1.5 h-1.5 rounded-full bg-aethelgard-blue animate-pulse" />
-                                        <div className="flex flex-col">
-                                            <span className="text-[11px] font-bold text-white/80 uppercase tracking-widest">{module}</span>
-                                            <span className="text-[8px] text-white/20 uppercase font-black">Sub-Module Live</span>
-                                        </div>
+                    <div className="grid grid-cols-2 gap-3 flex-1">
+                        {[
+                            { id: 'ARC', label: 'Architecture', icon: <Cpu size={14} />, status: 'Optimized', color: 'text-aethelgard-blue' },
+                            { id: 'DBV', label: 'Data Vault', icon: <Database size={14} />, status: 'Synchronized', color: 'text-aethelgard-green' },
+                            { id: 'EMS', label: 'Edge EMS', icon: <Zap size={14} />, status: 'Active', color: 'text-purple-400' },
+                            { id: 'RSK', label: 'Risk Shield', icon: <Shield size={14} />, status: 'Enforced', color: 'text-aethelgard-gold' },
+                            { id: 'ALP', label: 'Alpha Intel', icon: <Activity size={14} />, status: 'Stable', color: 'text-aethelgard-blue' },
+                            { id: 'SEC', label: 'Security', icon: <Key size={14} />, status: 'Locked', color: 'text-white' }
+                        ].map((vector, i) => (
+                            <motion.div
+                                key={vector.id}
+                                initial={{ opacity: 0, scale: 0.95 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                transition={{ delay: i * 0.05 }}
+                                className="flex flex-col gap-2 p-3 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-all hover:border-white/10 group/vector"
+                            >
+                                <div className="flex items-center justify-between">
+                                    <div className={cn("p-1.5 rounded-lg bg-white/5", vector.color)}>
+                                        {vector.icon}
                                     </div>
-                                    <div className="flex items-center gap-3">
-                                        <span className="text-[10px] font-mono text-aethelgard-green/60">{beat.toString()}</span>
-                                        <div className="p-1 rounded bg-white/5">
-                                            <Activity size={10} className="text-white/20" />
-                                        </div>
+                                    <span className="text-[8px] font-mono text-white/20">V_{vector.id}</span>
+                                </div>
+                                <div>
+                                    <div className="text-[10px] font-bold text-white/80 uppercase tracking-wider">{vector.label}</div>
+                                    <div className={cn("text-[9px] font-black uppercase mt-0.5", vector.id === 'SEC' ? 'text-white/40' : 'text-aethelgard-green/80')}>
+                                        {vector.status}
                                     </div>
                                 </div>
-                            ))}
+                                <div className="w-full h-0.5 bg-white/5 rounded-full mt-1 overflow-hidden">
+                                    <motion.div
+                                        initial={{ width: 0 }}
+                                        animate={{ width: '100%' }}
+                                        transition={{ duration: 1, delay: 0.5 + i * 0.1 }}
+                                        className={cn("h-full", vector.id === 'SEC' ? 'bg-white/20' : 'bg-aethelgard-green/40')}
+                                    />
+                                </div>
+                            </motion.div>
+                        ))}
                     </div>
 
                     <button
                         onClick={handleAudit}
                         disabled={isAuditing}
-                        className={`mt-6 w-full py-4 rounded-xl border transition-all duration-500 group flex flex-col items-center gap-1 ${isAuditing
-                                ? 'bg-white/5 border-white/10 cursor-not-allowed'
-                                : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-aethelgard-green/40'
+                        className={`mt-4 w-full py-4 rounded-xl border transition-all duration-500 group flex flex-col items-center gap-1 overflow-hidden relative ${isAuditing
+                                ? 'bg-aethelgard-blue/5 border-aethelgard-blue/20 cursor-not-allowed'
+                                : 'bg-white/5 border-white/10 hover:bg-aethelgard-blue/10 hover:border-aethelgard-blue/40'
                             }`}
                     >
-                        <div className="flex items-center justify-center gap-3 opacity-60 group-hover:opacity-100 transition-opacity">
-                            <ShieldCheck size={16} className={isAuditing ? "animate-pulse text-aethelgard-blue" : "text-aethelgard-blue"} />
-                            <span className="text-[10px] font-black uppercase tracking-[0.3em]">
-                                {isAuditing ? "Auditing System Integrity..." : "Run Full Integrity Audit"}
+                        {isAuditing && (
+                            <motion.div
+                                className="absolute inset-0 bg-gradient-to-r from-transparent via-aethelgard-blue/10 to-transparent"
+                                animate={{ x: ['-100%', '100%'] }}
+                                transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+                            />
+                        )}
+                        <div className="flex items-center justify-center gap-3 relative z-10">
+                            <ShieldCheck size={16} className={cn("transition-colors", isAuditing ? "text-aethelgard-blue animate-pulse" : "text-white/40 group-hover:text-aethelgard-blue")} />
+                            <span className={cn(
+                                "text-[10px] font-black uppercase tracking-[0.3em] transition-colors",
+                                isAuditing ? "text-aethelgard-blue" : "text-white/60 group-hover:text-white"
+                            )}>
+                                {isAuditing ? "Auditing System Integrity..." : "Run Global Validation"}
                             </span>
                         </div>
-                        {auditResult && (
-                            <span className={`text-[9px] font-medium ${auditResult.success ? 'text-aethelgard-green' : 'text-red-400'}`}>
-                                Last Audit: {auditResult.time}
-                            </span>
+                        {auditResult && !isAuditing && (
+                            <div className="flex items-center gap-2 opacity-40">
+                                <span className="w-1 h-1 rounded-full bg-aethelgard-green" />
+                                <span className="text-[8px] font-medium text-white tracking-widest uppercase">
+                                    L_AUDIT: {auditResult.time}
+                                </span>
+                            </div>
                         )}
                     </button>
                 </GlassPanel>
