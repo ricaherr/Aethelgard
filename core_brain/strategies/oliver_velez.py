@@ -212,15 +212,14 @@ class OliverVelezStrategy(BaseStrategy):
             
             if not validation["valid"]:
                 logger.info(
-                    f"[{symbol}] Setup técnicamente válido pero RECHAZADO: "
-                    f"{validation['rejection_reason']}. "
-                    f"Score: {score:.1f}, Categoría: {category}/{subcategory}"
+                    f"[STRATEGY] {symbol} | {category}/{subcategory} | RECHAZADO: "
+                    f"{validation['rejection_reason']} (Score: {score:.1f})"
                 )
                 return None
             
             logger.info(
-                f"[{symbol}] Setup APROBADO ({signal_type}). Score: {score:.1f} >= {min_required:.1f} "
-                f"({category}/{subcategory})"
+                f"[STRATEGY] {symbol} | {category}/{subcategory} | APROBADO: {signal_type.value} "
+                f"(Score: {score:.1f} >= {min_required:.1f})"
             )
             
             # --- Construcción de Señal ---

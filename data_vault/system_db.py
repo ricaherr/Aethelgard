@@ -375,7 +375,7 @@ class SystemMixin(BaseRepository):
         try:
             conn = self._get_conn()
             cursor = conn.cursor()
-            cursor.execute("SELECT provider, enabled, config_json FROM notification_settings")
+            cursor.execute("SELECT provider, enabled, config FROM notification_settings")
             results = cursor.fetchall()
             conn.close()
             
@@ -384,12 +384,116 @@ class SystemMixin(BaseRepository):
                 settings.append({
                     "provider": row[0],
                     "enabled": bool(row[1]),
-                    "config": json.loads(row[2])
+                    "config": json.loads(row[2]) if row[2] else {}
                 })
             return settings
         except Exception as e:
             logger.error(f"Error getting all notification settings: {e}")
             return []
+
+    # ========== INTERNAL NOTIFICATIONS (Persistent) ==========
+    
+    def save_notification(self, notification: Dict[str, Any]) -> bool:
+        """
+        Guarda una notificación en la base de datos.
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO notifications 
+                (id, user_id, category, priority, title, message, details, actions, read, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                notification.get('id'),
+                notification.get('user_id', 'default'),
+                notification.get('category'),
+                notification.get('priority', 'medium'),
+                notification.get('title'),
+                notification.get('message'),
+                json.dumps(notification.get('details', {})),
+                json.dumps(notification.get('actions', [])),
+                1 if notification.get('read', False) else 0,
+                notification.get('timestamp', datetime.now().isoformat())
+            ))
+            conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Error saving notification: {e}")
+            return False
+        finally:
+            self._close_conn(conn)
+
+    def get_user_notifications(self, user_id: str = 'default', unread_only: bool = False, limit: int = 50) -> List[Dict[str, Any]]:
+        """
+        Recupera notificaciones de un usuario desde la base de datos.
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            query = "SELECT * FROM notifications WHERE user_id = ?"
+            params = [user_id]
+            
+            if unread_only:
+                query += " AND read = 0"
+            
+            query += " ORDER BY timestamp DESC LIMIT ?"
+            params.append(limit)
+            
+            cursor.execute(query, tuple(params))
+            rows = cursor.fetchall()
+            
+            notifications = []
+            for row in rows:
+                notif = dict(row)
+                if notif.get('details'):
+                    try: notif['details'] = json.loads(notif['details'])
+                    except: pass
+                if notif.get('actions'):
+                    try: notif['actions'] = json.loads(notif['actions'])
+                    except: pass
+                notifications.append(notif)
+            return notifications
+        except Exception as e:
+            logger.error(f"Error getting notifications for {user_id}: {e}")
+            return []
+        finally:
+            self._close_conn(conn)
+
+    def mark_notification_read(self, notification_id: str) -> bool:
+        """
+        Marca una notificación específica como leída.
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE notifications SET read = 1 WHERE id = ?", (notification_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"Error marking notification {notification_id} as read: {e}")
+            return False
+        finally:
+            self._close_conn(conn)
+
+    def delete_old_notifications(self, hours: int = 48) -> int:
+        """
+        Elimina notificaciones más antiguas de N horas para mantener la DB limpia.
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                DELETE FROM notifications 
+                WHERE timestamp < datetime('now', '-' || ? || ' hours')
+            """, (hours,))
+            conn.commit()
+            return cursor.rowcount
+        except Exception as e:
+            logger.error(f"Error deleting old notifications: {e}")
+            return 0
+        finally:
+            self._close_conn(conn)
 
     # =========================================================================
     # CONFIGURATION SSOT (Regla 14)

@@ -22,6 +22,7 @@ from models.signal import (
     Signal, MarketRegime, MembershipTier, ConnectorType
 )
 from data_vault.storage import StorageManager
+from core_brain.notification_service import NotificationService, NotificationCategory
 from core_brain.notificator import get_notifier, NotificationEngine
 from core_brain.module_manager import MembershipLevel
 from core_brain.confluence import MultiTimeframeConfluenceAnalyzer
@@ -51,6 +52,7 @@ class SignalFactory:
         strategies: List[BaseStrategy],
         confluence_analyzer: MultiTimeframeConfluenceAnalyzer,
         trifecta_analyzer: TrifectaAnalyzer,
+        notification_service: Optional[NotificationService] = None,
         mt5_connector: Optional[Any] = None,
     ):
         """
@@ -65,6 +67,7 @@ class SignalFactory:
         """
         self.storage_manager = storage_manager
         self.notifier: Optional[NotificationEngine] = get_notifier()
+        self.internal_notifier = notification_service
         self.mt5_connector = mt5_connector
         
         # Cargar parámetros generales desde DB (SSOT)
@@ -328,6 +331,21 @@ class SignalFactory:
                         # Fallback para otras estrategias (provisional)
                         # asyncio.create_task(self.notifier.notify_generic_signal(signal))
                         pass
+                
+                # 3. Notificación Interna (Persistente)
+                if self.internal_notifier:
+                    self.internal_notifier.create_notification(
+                        category=NotificationCategory.SIGNAL,
+                        context={
+                            "signal_id": signal_id,
+                            "symbol": signal.symbol,
+                            "type": signal.signal_type.value if hasattr(signal.signal_type, 'value') else str(signal.signal_type),
+                            "price": signal.entry_price,
+                            "score": signal.metadata.get('score', 0),
+                            "timeframe": signal.timeframe or "UNKNOWN",
+                            "strategy": signal.metadata.get('strategy_id', "UNKNOWN")
+                        }
+                    )
 
         except Exception as e:
             logger.error(f"Error processing valid signal for {signal.symbol}: {e}")

@@ -282,7 +282,25 @@ class StorageManager(
                 )
             """)
 
-            # 8. Connector Control (Satellite Link)
+            # 8. Notifications Table (Persistent internal alerts)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS notifications (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT DEFAULT 'default',
+                    category TEXT NOT NULL,
+                    priority TEXT DEFAULT 'medium',
+                    title TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    details TEXT, -- JSON
+                    actions TEXT, -- JSON
+                    read BOOLEAN DEFAULT 0,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications (user_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications (read)")
+
+            # 9. Connector Control (Satellite Link)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS connector_settings (
                     provider_id TEXT PRIMARY KEY,

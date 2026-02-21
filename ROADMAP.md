@@ -105,15 +105,18 @@
 
 ---
 
-## 🎯 MILESTONE: Auditoría de Sistema (Implementación & Concepto) (2026-02-18)
-**Estado: 📋 EN PROCESO**
-**Criterio: Verificar la integridad técnica y conceptual del sistema, asegurando que la implementación sigue fielmente los principios de trading y arquitectura definidos.**
+## 🎯 MILESTONE: Debugging Notificaciones & Persistencia (2026-02-21)
+**Estado: ✅ COMPLETADO**
+**Criterio: Resolver el fallo de persistencia en Telegram corregiendo el error de esquema SQL e implementar un sistema de notificaciones internas persistente integrado en el Core Brain.**
 
 ### Plan de Trabajo
-- [x] Inicializar auditoría y revisión de Manifiesto.
-- [/] Auditoría técnica de `core_brain` (SSOT, Agnosticismo, Resiliencia).
-- [ ] Auditoría conceptual de Estrategias (Oliver Vélez, Trifecta, Risk).
-- [ ] Documentar hallazgos en `audit_findings.log` y resumen ejecutivo.
+- [x] Diagnóstico de fallo en `system_db.py` (columna `config_json`).
+- [x] Identificación de carencia de persistencia en `NotificationService`.
+- [x] Corregir esquema SQL en `get_all_notification_settings`.
+- [x] Implementar tabla `notifications` y persistencia en `NotificationService`.
+- [x] Integrar alertas internas en `SignalFactory` y `Executor`.
+- [x] Mitigar corrupción de logs por `yfinance`.
+- [x] Validar persistencia de Telegram tras reinicio.
 
 ---
 

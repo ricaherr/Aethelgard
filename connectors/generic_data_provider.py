@@ -15,6 +15,10 @@ except ImportError:
     yf = None
 
 logger = logging.getLogger(__name__)
+
+# Silenciar logs ruidosos de yfinance que corrompen la consola
+logging.getLogger('yfinance').setLevel(logging.CRITICAL)
+
 YFINANCE_LOCK = threading.Lock()
 
 
@@ -51,14 +55,17 @@ class GenericDataProvider:
         "US30": "^DJI",    # Dow Jones (alias)
         
         # Commodities
-        "GOLD": "GC=F",    # Gold Futures
-        "SILVER": "SI=F",  # Silver Futures
+        "GOLD": "XAUUSD=X",  # Gold Spot
+        "XAUUSD": "XAUUSD=X",
+        "SILVER": "XAGUSD=X", # Silver Spot
+        "XAGUSD": "XAGUSD=X",
         "OIL": "CL=F",     # Crude Oil
         "BRENT": "BZ=F",   # Brent Oil
         
         # Crypto
         "BTCUSD": "BTC-USD",
         "ETHUSD": "ETH-USD",
+        "SOLUSD": "SOL-USD",
     }
     
     # Mapeo de timeframes Aethelgard -> Yahoo Finance

@@ -199,7 +199,12 @@ async def main() -> None:
                     # Continuar ejecutándose a pesar del error
                     await asyncio.sleep(60)  # Esperar 1 minuto antes de reintentar
 
-        # 2. Risk Manager (Regla 1 - DI)
+        # 2. Notification Service (Internal persistency)
+        logger.info("[INIT] Inicializando Notification Service...")
+        from core_brain.notification_service import NotificationService
+        notification_service = NotificationService(storage)
+
+        # 3. Risk Manager (Regla 1 - DI)
         logger.info("[INIT]  Inicializando Risk Manager...")
         from core_brain.position_size_monitor import PositionSizeMonitor
         risk_monitor = PositionSizeMonitor(
@@ -273,6 +278,7 @@ async def main() -> None:
             strategies=[ov_strategy],
             confluence_analyzer=confluence_analyzer,
             trifecta_analyzer=trifecta_analyzer,
+            notification_service=notification_service,
             mt5_connector=mt5_connector
         )
         
@@ -295,6 +301,7 @@ async def main() -> None:
             storage=storage,
             multi_tf_limiter=multi_tf_limiter,
             notificator=get_notifier(),
+            notification_service=notification_service,
             connectors=active_connectors
         )
         

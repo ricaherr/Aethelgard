@@ -15,6 +15,7 @@ from core_brain.risk_manager import RiskManager
 from core_brain.risk_calculator import RiskCalculator
 from core_brain.multi_timeframe_limiter import MultiTimeframeLimiter
 from data_vault.storage import StorageManager
+from core_brain.notification_service import NotificationService, NotificationCategory
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,7 @@ class OrderExecutor:
         storage: Optional[StorageManager] = None,
         multi_tf_limiter: Optional[MultiTimeframeLimiter] = None,
         notificator: Optional[Any] = None,
+        notification_service: Optional[NotificationService] = None,
         connectors: Optional[Dict[ConnectorType, Any]] = None
     ):
         """
@@ -61,6 +63,7 @@ class OrderExecutor:
             self.storage = storage
             
         self.notificator = notificator
+        self.internal_notifier = notification_service
         self.connectors = connectors or {}
         
         if multi_tf_limiter is None:
@@ -129,6 +132,12 @@ class OrderExecutor:
                 decision='REJECTED',
                 reason='Invalid signal data'
             )
+            
+            if self.internal_notifier:
+                self.internal_notifier.create_notification(
+                    category=NotificationCategory.EXECUTION,
+                    context={"symbol": signal.symbol, "status": "REJECTED", "reason": "Invalid data"}
+                )
             return False
 
         # Step 1.5: Legacy lockdown check (backward compatibility with existing tests)
@@ -136,6 +145,12 @@ class OrderExecutor:
             self.last_rejection_reason = "RiskManager lockdown active"
             logger.warning("Signal rejected by lockdown mode")
             self._register_failed_signal(signal, "REJECTED_LOCKDOWN")
+            
+            if self.internal_notifier:
+                self.internal_notifier.create_notification(
+                    category=NotificationCategory.RISK,
+                    context={"symbol": signal.symbol, "event_type": "lockdown", "message": "Signal rejected by lockdown mode"}
+                )
             return False
         
         # Step 2: Check for duplicate signals (Standard & Advanced)
@@ -206,12 +221,17 @@ class OrderExecutor:
                 risk_reason = "" if risk_result else "RiskManager rejected trade"
         
         if not can_trade:
-            self.last_rejection_reason = f"Risk limit exceeded: {risk_reason}"
             logger.warning(
                 f"Signal rejected: {risk_reason}. "
                 f"Symbol={signal.symbol}, Type={signal.signal_type}"
             )
             self._register_failed_signal(signal, "EXCEEDED_ACCOUNT_RISK")
+            
+            if self.internal_notifier:
+                self.internal_notifier.create_notification(
+                    category=NotificationCategory.RISK,
+                    context={"symbol": signal.symbol, "event_type": "risk_limit", "message": f"Risk limit exceeded: {risk_reason}"}
+                )
             return False
 
         # Step 3.8: Closed-Loop Sync Gatekeeper (Source Fidelity)
@@ -343,6 +363,18 @@ class OrderExecutor:
                 # FASE 2.3: Save position metadata for PositionManager
                 self._save_position_metadata(signal, result, ticket)
                 
+                if self.internal_notifier:
+                    self.internal_notifier.create_notification(
+                        category=NotificationCategory.EXECUTION,
+                        context={
+                            "symbol": signal.symbol,
+                            "type": signal.signal_type.value if hasattr(signal.signal_type, 'value') else str(signal.signal_type),
+                            "ticket": ticket,
+                            "status": "SUCCESS",
+                            "price": result.get('price', signal.entry_price)
+                        }
+                    )
+                
                 return True
             else:
                 error_msg = result.get('error', 'Unknown error')
@@ -352,6 +384,12 @@ class OrderExecutor:
                     signal.metadata['execution_observation'] = f"Execution failed: {error_msg}"
                 # Marcar como REJECTED (consolidamos FAILED en REJECTED)
                 self._register_failed_signal(signal, f"Execution failed: {error_msg}")
+                
+                if self.internal_notifier:
+                    self.internal_notifier.create_notification(
+                        category=NotificationCategory.EXECUTION,
+                        context={"symbol": signal.symbol, "status": "FAILED", "reason": error_msg}
+                    )
                 return False
                 
         except ConnectionError as e:

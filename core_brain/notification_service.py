@@ -43,7 +43,6 @@ class NotificationService:
             storage_manager: Instancia de StorageManager para acceder a preferencias
         """
         self.storage = storage_manager
-        self.notifications = []  # Buffer en memoria
         logger.info("NotificationService initialized")
     
     def create_notification(
@@ -77,9 +76,10 @@ class NotificationService:
         notification = self._generate_notification(category, context, prefs)
         
         if notification:
-            # Agregar a buffer
-            self.notifications.append(notification)
-            logger.info(f"Notification created: {category.value} - {notification['title']}")
+            # Persistir en base de datos
+            notification['user_id'] = user_id
+            self.storage.save_notification(notification)
+            logger.info(f"Notification created and persisted: {category.value} - {notification['title']}")
         
         return notification
     
@@ -426,30 +426,16 @@ class NotificationService:
         }
     
     def get_unread_notifications(self, user_id: str = 'default') -> List[Dict[str, Any]]:
-        """Retorna notificaciones no leídas del usuario."""
-        return [n for n in self.notifications if not n.get('read', False)]
+        """Retorna notificaciones no leídas del usuario desde la DB."""
+        return self.storage.get_user_notifications(user_id, unread_only=True)
     
     def mark_as_read(self, notification_id: str) -> bool:
-        """Marca una notificación como leída."""
-        for notification in self.notifications:
-            if notification['id'] == notification_id:
-                notification['read'] = True
-                return True
-        return False
+        """Marca una notificación como leída en la DB."""
+        return self.storage.mark_notification_read(notification_id)
     
     def clear_old_notifications(self, hours: int = 24) -> int:
-        """Elimina notificaciones antiguas del buffer."""
-        from datetime import timedelta
-        cutoff = datetime.now() - timedelta(hours=hours)
-        
-        initial_count = len(self.notifications)
-        self.notifications = [
-            n for n in self.notifications
-            if datetime.fromisoformat(n['timestamp']) > cutoff
-        ]
-        
-        removed = initial_count - len(self.notifications)
+        """Elimina notificaciones antiguas de la DB."""
+        removed = self.storage.delete_old_notifications(hours)
         if removed > 0:
-            logger.info(f"Cleared {removed} old notifications")
-        
+            logger.info(f"Cleared {removed} old notifications from DB")
         return removed
