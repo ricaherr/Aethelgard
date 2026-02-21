@@ -115,6 +115,20 @@ export function useAethelgard() {
         }
     };
 
+    const runRepair = async (stage: string) => {
+        try {
+            const response = await fetch('/api/system/audit/repair', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ stage })
+            });
+            return response.ok;
+        } catch (error) {
+            console.error(`Error repairing stage ${stage}:`, error);
+            return false;
+        }
+    };
+
     const getTuningLogs = async (limit: number = 50) => {
         try {
             const response = await fetch(`/api/edge/tuning-logs?limit=${limit}`);
@@ -134,6 +148,7 @@ export function useAethelgard() {
         metrics,
         sendCommand,
         runAudit,
+        runRepair,
         getTuningLogs
     };
 }

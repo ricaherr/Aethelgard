@@ -22,3 +22,14 @@ Aethelgard sigue el estándar de **Semantic Versioning 2.0.0** (SemVer) para gar
 
 ### 📅 Control de Documentación
 Cada cambio en el código debe acompañarse de una actualización en el **[SYSTEM_LEDGER.md](SYSTEM_LEDGER.md)** vinculando la versión técnica con los cambios realizados.
+
+---
+
+### 📜 Historial Reciente de Versiones
+
+| Versión | Fecha | Descripción |
+| :--- | :--- | :--- |
+| **2.4.0** | 2026-02-21 | Audit Matrix L3 & Auto-Repair Bridge Foundation. |
+| **2.3.1** | 2026-02-21 | Cerebro Console Revitalization & Full-Page Monitor. |
+| **2.2.0** | 2026-02-20 | Connectivity Orchestrator & Multi-Broker Support. |
+| **2.1.0** | 2026-02-18 | Shadow Protocol & Virtual Execution Engine. |

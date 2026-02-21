@@ -101,6 +101,7 @@ export interface CerebroThought {
     level: 'info' | 'debug' | 'warning' | 'error' | 'success';
     message: string;
     module: string;
+    metadata?: Record<string, any>;
 }
 
 export interface TuningLog {

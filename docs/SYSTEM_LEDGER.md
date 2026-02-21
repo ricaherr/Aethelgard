@@ -35,6 +35,8 @@ render_diffs(file:///c:/Users/Jose Herrera/Documents/Proyectos/Aethelgard/ROADMA
     - Transformación del "Monitor" de un Drawer a una página primaria (`MonitorPage.tsx`).
     - Corrección del error de renderizado #31 de React mediante filtrado de heartbeats.
     - Aumento de verbosidad en `MainOrchestrator` para flujos en tiempo real.
-- **Auditoría Documental**
-    - Consolidación de `docs/` y centralización del Manifiesto.
-    - Implementación de `DIAGNOSTICS_SUMMARY.md` pragmático.
+- **Monitor de Integridad & Diagnóstico L3**
+    - Implementación de `AuditLiveMonitor.tsx` con captura de excepciones en tiempo real.
+    - Soporte para metadatos `DEBUG_FAIL` en el backend para reportes detallados.
+    - Creación del puente para Auto-Gestión (EDGE) L1 (Endpoint `/api/system/audit/repair`).
+    - Inactivación preventiva del protocolo de reparación hasta validación de efectividad técnica.

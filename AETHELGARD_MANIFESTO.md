@@ -1,9 +1,9 @@
 # AETHELGARD MANIFESTO
 ## Misión, Visión y Principios Filosóficos
 
-**Versión**: 1.1
+**Versión**: 1.2
 **Última Actualización**: Febrero 2026
-**Estado del Proyecto**: Fase 2 - Implementación de Estrategias Modulares
+**Estado del Proyecto**: Fase 2 - Auditoría de Integridad & Auto-Gestión L1
 
 ---
 
@@ -31,6 +31,13 @@ Crear un cerebro centralizado que:
 - Active estrategias modulares según el contexto.
 - Aprenda de sus resultados para mejorar continuamente.
 - Proteja el capital mediante una guardia de riesgo inquebrantable.
+
+---
+
+## 🏗️ MILESTONE: Auditoría, Limpieza & Cerebro Console (2026-02-21)
+**Estado: ✅ COMPLETADO**
+**Resumen**: Refactorización profunda de documentación (`docs/`), revitalización de la Cerebro Console (UI/UX), implementación de Monitor a pantalla completa y corrección de errores de renderizado críticos (Error #31).
+- **Monitor de Integridad & Diagnóstico L3**: Captura de errores profundos y puente de Auto-Gestión (EDGE) desactivable.
 
 ---
 

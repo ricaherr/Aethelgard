@@ -4,7 +4,6 @@
 El objetivo es que Aethelgard no parezca una aplicación web común, sino una **Terminal de Inteligencia Institucional**.
 
 ---
-
 ### 🏛️ Auditoría de Diseño Actual
 - **Puntos Fuertes**: Uso de `GlassPanel`, tipografía `Outfit`, animaciones de `framer-motion` y paleta `Aethelgard Green`.
 - **Áreas de Mejora**:
@@ -29,6 +28,10 @@ El objetivo es que Aethelgard no parezca una aplicación web común, sino una **
     - `/fix_logs`
     - `/clear_stale_signals`
     - `/approve_risk_limit`
+
+#### 4. Diagnostic Interactive Matrix (NEW)
+- Los fallos de integridad deben ser inspeccionables. El usuario debe poder ver el "Traceback" o error específico al interactuar con un vector `COMPROMISED`.
+- Implementar un "Repair Protocol Bridge" que sea visualmente distinto de las operaciones normales, indicando que el sistema está intentando auto-curarse.
 
 ---
 

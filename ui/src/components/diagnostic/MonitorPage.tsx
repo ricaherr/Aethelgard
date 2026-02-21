@@ -1,28 +1,32 @@
 import { Activity, Database, Shield, HardDrive, Satellite, Wifi, Key, Terminal, Cpu, SignalHigh, ShieldCheck, Zap, AlertTriangle, CheckCircle2, Search, ArrowRight, Info, Server, LineChart } from 'lucide-react';
-import { SystemStatus } from '../../types/aethelgard';
+import { SystemStatus, SatelliteStatus } from '../../types/aethelgard';
 import { motion } from 'framer-motion';
 import { GlassPanel } from '../common/GlassPanel';
 import { cn } from '../../utils/cn';
 import { useState } from 'react';
+import { CerebroThought } from '../../types/aethelgard';
+import { AuditLiveMonitor } from './AuditLiveMonitor';
 
 interface MonitorPageProps {
     status: SystemStatus;
+    thoughts: CerebroThought[];
     runAudit?: () => Promise<boolean>;
+    runRepair: (stage: string) => Promise<boolean>;
 }
 
-export const MonitorPage = ({ status, runAudit }: MonitorPageProps) => {
+export const MonitorPage = ({ status, thoughts, runAudit, runRepair }: MonitorPageProps) => {
     const [isAuditing, setIsAuditing] = useState(false);
     const [auditResult, setAuditResult] = useState<{ success: boolean, time: string } | null>(null);
+    const [isLiveMonitorOpen, setIsLiveMonitorOpen] = useState(false);
 
     const handleAudit = async () => {
         if (!runAudit || isAuditing) return;
 
         setIsAuditing(true);
+        setIsLiveMonitorOpen(true);
         const success = await runAudit();
         setIsAuditing(false);
         setAuditResult({ success, time: new Date().toLocaleTimeString() });
-
-        // El resultado real se verá en la consola como pensamientos del sistema
     };
     const cpuLoad = status.cpu_load ?? 0;
 
@@ -112,41 +116,44 @@ export const MonitorPage = ({ status, runAudit }: MonitorPageProps) => {
                     </div>
 
                     <div className="flex-1 overflow-y-auto space-y-3 pr-2 scrollbar-hide">
-                        {status.satellites && Object.entries(status.satellites).map(([id, sat]) => (
-                            <div key={id} className="flex flex-col gap-2 p-4 rounded-xl bg-white/[0.02] border border-white/5 hover:border-white/10 transition-all cursor-crosshair group/sat">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className={cn(
-                                            "w-2 h-2 rounded-full",
-                                            sat.status === 'ONLINE' ? 'bg-aethelgard-green shadow-[0_0_8px_rgba(0,255,65,0.4)]' :
-                                                sat.status === 'OFFLINE' ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]' : 'bg-white/10'
-                                        )} />
-                                        <span className="text-[11px] font-black text-white/90 uppercase tracking-tighter">{id}</span>
-                                    </div>
-                                    <div className="flex items-center gap-4">
-                                        <div className="flex items-center gap-1.5 opacity-40 group-hover/sat:opacity-100 transition-opacity">
-                                            <Wifi size={12} />
-                                            <span className="text-[10px] font-mono">{sat.latency.toFixed(0)}ms</span>
+                        {status.satellites && Object.entries(status.satellites).map(([id, sat]: [string, any]) => {
+                            const satellite = sat as SatelliteStatus;
+                            return (
+                                <div key={id} className="flex flex-col gap-2 p-4 rounded-xl bg-white/[0.02] border border-white/5 hover:border-white/10 transition-all cursor-crosshair group/sat">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className={cn(
+                                                "w-2 h-2 rounded-full",
+                                                satellite.status === 'ONLINE' ? 'bg-aethelgard-green shadow-[0_0_8px_rgba(0,255,65,0.4)]' :
+                                                    satellite.status === 'OFFLINE' ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]' : 'bg-white/10'
+                                            )} />
+                                            <span className="text-[11px] font-black text-white/90 uppercase tracking-tighter">{id}</span>
                                         </div>
-                                        <span className={cn(
-                                            "text-[9px] font-black uppercase",
-                                            sat.status === 'ONLINE' ? 'text-aethelgard-green' : 'text-red-500'
-                                        )}>
-                                            {sat.status}
-                                        </span>
+                                        <div className="flex items-center gap-4">
+                                            <div className="flex items-center gap-1.5 opacity-40 group-hover/sat:opacity-100 transition-opacity">
+                                                <Wifi size={12} />
+                                                <span className="text-[10px] font-mono">{(satellite.latency || 0).toFixed(0)}ms</span>
+                                            </div>
+                                            <span className={cn(
+                                                "text-[9px] font-black uppercase",
+                                                satellite.status === 'ONLINE' ? 'text-aethelgard-green' : 'text-red-500'
+                                            )}>
+                                                {satellite.status}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-4 mt-1 opacity-40">
+                                        <div className="flex gap-2">
+                                            <span className={cn("text-[8px] font-black uppercase px-1 rounded-sm", satellite.supports_data ? 'text-aethelgard-blue bg-aethelgard-blue/20' : 'text-white/10 bg-white/5')}>Market_Data</span>
+                                            <span className={cn("text-[8px] font-black uppercase px-1 rounded-sm", satellite.supports_exec ? 'text-purple-400 bg-purple-400/20' : 'text-white/10 bg-white/5')}>Execution</span>
+                                        </div>
+                                        {satellite.last_error && (
+                                            <span className="text-[8px] font-mono text-red-400 truncate max-w-[150px]">{satellite.last_error}</span>
+                                        )}
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-4 mt-1 opacity-40">
-                                    <div className="flex gap-2">
-                                        <span className={cn("text-[8px] font-black uppercase px-1 rounded-sm", sat.supports_data ? 'text-aethelgard-blue bg-aethelgard-blue/20' : 'text-white/10 bg-white/5')}>Market_Data</span>
-                                        <span className={cn("text-[8px] font-black uppercase px-1 rounded-sm", sat.supports_exec ? 'text-purple-400 bg-purple-400/20' : 'text-white/10 bg-white/5')}>Execution</span>
-                                    </div>
-                                    {sat.last_error && (
-                                        <span className="text-[8px] font-mono text-red-400 truncate max-w-[150px]">{sat.last_error}</span>
-                                    )}
-                                </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                         {(!status.satellites || Object.keys(status.satellites).length === 0) && (
                             <div className="h-full flex flex-col items-center justify-center opacity-20 py-10">
                                 <Satellite size={32} />
@@ -217,8 +224,8 @@ export const MonitorPage = ({ status, runAudit }: MonitorPageProps) => {
                         onClick={handleAudit}
                         disabled={isAuditing}
                         className={`mt-4 w-full py-4 rounded-xl border transition-all duration-500 group flex flex-col items-center gap-1 overflow-hidden relative ${isAuditing
-                                ? 'bg-aethelgard-blue/5 border-aethelgard-blue/20 cursor-not-allowed'
-                                : 'bg-white/5 border-white/10 hover:bg-aethelgard-blue/10 hover:border-aethelgard-blue/40'
+                            ? 'bg-aethelgard-blue/5 border-aethelgard-blue/20 cursor-not-allowed'
+                            : 'bg-white/5 border-white/10 hover:bg-aethelgard-blue/10 hover:border-aethelgard-blue/40'
                             }`}
                     >
                         {isAuditing && (
@@ -248,6 +255,13 @@ export const MonitorPage = ({ status, runAudit }: MonitorPageProps) => {
                     </button>
                 </GlassPanel>
             </div>
+
+            <AuditLiveMonitor
+                isOpen={isLiveMonitorOpen}
+                onClose={() => setIsLiveMonitorOpen(false)}
+                thoughts={thoughts}
+                runRepair={runRepair}
+            />
         </motion.div>
     );
 }

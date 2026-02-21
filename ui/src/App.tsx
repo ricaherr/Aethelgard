@@ -35,7 +35,7 @@ function App() {
     const [isDiagOpen, setIsDiagOpen] = useState(false);
 
     // Real-time data from Cerebro Brain
-    const { regime, signals, thoughts, status, metrics, sendCommand, runAudit } = useAethelgard();
+    const { regime, signals, thoughts, status, metrics, sendCommand, runAudit, runRepair } = useAethelgard();
 
     const [riskStatus, setRiskStatus] = useState<any>(null);
 
@@ -264,7 +264,7 @@ function App() {
                                 exit={{ opacity: 0, scale: 1.02 }}
                                 className="h-full"
                             >
-                                <MonitorPage status={status} runAudit={runAudit} />
+                                <MonitorPage status={status} thoughts={thoughts} runAudit={runAudit} runRepair={runRepair} />
                             </motion.div>
                         )}
                     </AnimatePresence>
