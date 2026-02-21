@@ -111,6 +111,15 @@ export function useAethelgard() {
         thoughts,
         status,
         metrics,
-        sendCommand
+        sendCommand,
+        runAudit: async () => {
+            try {
+                const response = await fetch('/api/system/audit', { method: 'POST' });
+                return response.ok;
+            } catch (error) {
+                console.error("Error triggering audit:", error);
+                return false;
+            }
+        }
     };
 }

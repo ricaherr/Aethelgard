@@ -1,14 +1,29 @@
-import { Activity, Database, Shield, HardDrive, Satellite, Wifi, Key, Terminal, Cpu, SignalHigh } from 'lucide-react';
+import { Activity, Database, Shield, HardDrive, Satellite, Wifi, Key, Terminal, Cpu, SignalHigh, ShieldCheck, Zap, AlertTriangle, CheckCircle2, Search, ArrowRight, Info, Server, LineChart } from 'lucide-react';
 import { SystemStatus } from '../../types/aethelgard';
 import { motion } from 'framer-motion';
 import { GlassPanel } from '../common/GlassPanel';
 import { cn } from '../../utils/cn';
+import { useState } from 'react';
 
 interface MonitorPageProps {
     status: SystemStatus;
+    runAudit?: () => Promise<boolean>;
 }
 
-export function MonitorPage({ status }: MonitorPageProps) {
+export const MonitorPage = ({ status, runAudit }: MonitorPageProps) => {
+    const [isAuditing, setIsAuditing] = useState(false);
+    const [auditResult, setAuditResult] = useState<{ success: boolean, time: string } | null>(null);
+
+    const handleAudit = async () => {
+        if (!runAudit || isAuditing) return;
+
+        setIsAuditing(true);
+        const success = await runAudit();
+        setIsAuditing(false);
+        setAuditResult({ success, time: new Date().toLocaleTimeString() });
+
+        // El resultado real se verá en la consola como pensamientos del sistema
+    };
     const cpuLoad = status.cpu_load ?? 0;
 
     return (
@@ -172,11 +187,25 @@ export function MonitorPage({ status }: MonitorPageProps) {
                             ))}
                     </div>
 
-                    <button className="mt-6 w-full py-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-aethelgard-green/40 transition-all duration-500 group">
+                    <button
+                        onClick={handleAudit}
+                        disabled={isAuditing}
+                        className={`mt-6 w-full py-4 rounded-xl border transition-all duration-500 group flex flex-col items-center gap-1 ${isAuditing
+                                ? 'bg-white/5 border-white/10 cursor-not-allowed'
+                                : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-aethelgard-green/40'
+                            }`}
+                    >
                         <div className="flex items-center justify-center gap-3 opacity-60 group-hover:opacity-100 transition-opacity">
-                            <HardDrive size={16} />
-                            <span className="text-[10px] font-black uppercase tracking-[0.3em]">Run Full Integrity Audit</span>
+                            <ShieldCheck size={16} className={isAuditing ? "animate-pulse text-aethelgard-blue" : "text-aethelgard-blue"} />
+                            <span className="text-[10px] font-black uppercase tracking-[0.3em]">
+                                {isAuditing ? "Auditing System Integrity..." : "Run Full Integrity Audit"}
+                            </span>
                         </div>
+                        {auditResult && (
+                            <span className={`text-[9px] font-medium ${auditResult.success ? 'text-aethelgard-green' : 'text-red-400'}`}>
+                                Last Audit: {auditResult.time}
+                            </span>
+                        )}
                     </button>
                 </GlassPanel>
             </div>

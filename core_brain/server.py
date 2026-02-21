@@ -1680,6 +1680,37 @@ def create_app() -> FastAPI:
             logger.error(f"Error toggling module: {e}")
             raise HTTPException(status_code=500, detail=str(e))
 
+    @app.post("/api/system/audit")
+    async def run_integrity_audit() -> Dict[str, Any]:
+        """
+        Forza la ejecución del script de validación global validate_all.py
+        Diseñado para dispararse desde el botón "Run Full Integrity Audit" de la UI.
+        """
+        async def audit_task():
+            await broadcast_thought("Iniciando auditoría de integridad MANUAL solicitada por el usuario...", module="HEALTH")
+            try:
+                # Ejecutar validate_all.py
+                process = await asyncio.create_subprocess_exec(
+                    "python", "scripts/validate_all.py",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=os.getcwd()
+                )
+                stdout, stderr = await process.communicate()
+                
+                if process.returncode == 0:
+                    await broadcast_thought("Auditoría manual completada: 100% OK. Integridad garantizada.", level="success", module="HEALTH")
+                else:
+                    await broadcast_thought("Auditoría manual finalizada con algunas alertas. Revisar logs.", level="warning", module="HEALTH")
+                    logger.warning(f"[AUDIT] Validation failures: {stderr.decode()}")
+            except Exception as e:
+                logger.error(f"[AUDIT] Error ejecutando auditoría manual: {e}")
+                await broadcast_thought(f"Error técnico durante la auditoría: {str(e)}", level="error", module="HEALTH")
+
+        # Iniciar auditoría en background y retornar inmediatamente
+        asyncio.create_task(audit_task())
+        return {"status": "audit_started", "message": "Auditoría de integridad iniciada en segundo plano."}
+
     # Montar archivos estáticos de la nueva UI si existen
     ui_dist_path = os.path.join(os.getcwd(), "ui", "dist")
     if os.path.exists(ui_dist_path):
