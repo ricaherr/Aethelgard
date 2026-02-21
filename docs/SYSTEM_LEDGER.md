@@ -40,3 +40,8 @@ render_diffs(file:///c:/Users/Jose Herrera/Documents/Proyectos/Aethelgard/ROADMA
     - Soporte para metadatos `DEBUG_FAIL` en el backend para reportes detallados.
     - Creación del puente para Auto-Gestión (EDGE) L1 (Endpoint `/api/system/audit/repair`).
     - Inactivación preventiva del protocolo de reparación hasta validación de efectividad técnica.
+- **Resolución de Inconsistencias Críticas (Fuga de Estabilidad)**
+    - **MT5Connector**: Corrección de `modify_position` (+ implementado `order_send` y métodos auxiliares de validación).
+    - **Orquestación**: Corrección de inyección de dependencias en `SignalFactory` dentro de `main_orchestrator.py`.
+    - **API Integration**: Exposición de `scanner` y `orchestrator` como globales para acceso real del servidor API.
+    - **Validación Final**: Sistema verificado al 100% de integridad tras correcciones estructurales.

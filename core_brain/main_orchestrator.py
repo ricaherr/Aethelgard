@@ -61,6 +61,10 @@ def _resolve_storage(storage: Optional[StorageManager]) -> StorageManager:
     return StorageManager()
 
 
+# Global references for API/Control
+scanner = None
+orchestrator = None
+
 @dataclass
 class SessionStats:
     """
@@ -968,10 +972,29 @@ async def main() -> None:
     print(f"[SCAN] Scanning {len(enabled_assets)} enabled instruments: {enabled_assets[:10]}...")
     
     # Scanner (Only scans enabled instruments from configuration)
-    scanner = ScannerEngine(assets=enabled_assets, data_provider=data_provider, storage=storage)
+    _scanner = ScannerEngine(assets=enabled_assets, data_provider=data_provider, storage=storage)
     
-    # Signal Factory
-    signal_factory = SignalFactory(storage_manager=storage)
+    # --- Strategies & Analyzers (DI) ---
+    from core_brain.confluence import MultiTimeframeConfluenceAnalyzer
+    from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
+    from core_brain.strategies.oliver_velez import OliverVelezStrategy
+    
+    dynamic_params = storage.get_dynamic_params()
+    
+    confluence_analyzer = MultiTimeframeConfluenceAnalyzer(storage=storage)
+    trifecta_analyzer = TrifectaAnalyzer(storage=storage)
+    
+    # Initialize Strategies
+    ov_strategy = OliverVelezStrategy(config=dynamic_params, instrument_manager=instrument_mgr)
+    strategies = [ov_strategy]
+
+    # 2. Component Initialization (Signal Factory)
+    signal_factory = SignalFactory(
+        storage_manager=storage,
+        strategies=strategies,
+        confluence_analyzer=confluence_analyzer,
+        trifecta_analyzer=trifecta_analyzer
+    )
     
     # Risk Manager ($10k starting capital) - Dependency Injection
     risk_manager = RiskManager(storage=storage, initial_capital=10000.0, instrument_manager=instrument_mgr)
@@ -994,8 +1017,8 @@ async def main() -> None:
     executor = OrderExecutor(risk_manager=risk_manager, storage=storage, notificator=notifier)
     
     # 3. Create Orchestrator
-    orchestrator = MainOrchestrator(
-        scanner=scanner,
+    _orchestrator = MainOrchestrator(
+        scanner=_scanner,
         signal_factory=signal_factory,
         risk_manager=risk_manager,
         executor=executor,
@@ -1005,11 +1028,16 @@ async def main() -> None:
     # 4. Start Scanner background thread (if needed by your architecture)
     # The ScannerEngine.run() usually runs in its own thread
     import threading
-    scanner_thread = threading.Thread(target=scanner.run, daemon=True)
+    scanner_thread = threading.Thread(target=_scanner.run, daemon=True)
     scanner_thread.start()
     
     # 5. Run the main loop
     print("🚀 System LIVE. Starting event loop...")
+    
+    global scanner, orchestrator
+    scanner = _scanner
+    orchestrator = _orchestrator
+    
     await orchestrator.run()
 
 

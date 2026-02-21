@@ -1406,20 +1406,20 @@ class MT5Connector(BaseConnector):
             # 4. Prepare and Send Request
             request = self._prepare_modify_request(ticket, position.symbol, new_sl, final_tp, reason)
             
-            # DEBUG: Log request being sent
+            # Execute modification
+            result = mt5.order_send(request)
             
             # DEBUG: Log full MT5 response
             logger.info(f"MT5 modify response for {ticket}: {result}")
-            logger.info(f"  retcode: {result.retcode if result else 'None'}")
-            logger.info(f"  comment: {result.comment if result else 'None'}")
+            if result:
+                logger.info(f"  retcode: {result.retcode}")
+                logger.info(f"  comment: {result.comment}")
             
             if result and result.retcode == mt5.TRADE_RETCODE_DONE:
-                logger.info(f"✅ Position {ticket} modified - SL: {new_sl:.5f}, TP: {new_tp:.5f} - {reason}")
+                logger.info(f"✅ Position {ticket} modified - SL: {new_sl:.5f}, TP: {final_tp:.5f} - {reason}")
                 return {'success': True}
             else:
                 error_msg = result.comment if result else 'Unknown error'
-                # Retcodes 10025 (NO_CHANGES) and 10016 (INVALID_STOPS) are expected broker responses
-                # Don't pollute logs with ERROR, use DEBUG instead
                 if result and result.retcode in [10025, 10016]:
                     logger.debug(f"MT5 rejected modification for {ticket}: {error_msg} (retcode {result.retcode})")
                 else:
@@ -1430,6 +1430,42 @@ class MT5Connector(BaseConnector):
             error_msg = str(e)
             logger.error(f"Error modifying position {ticket}: {error_msg}")
             return {'success': False, 'error': error_msg}
+
+    def _get_mt5_position(self, ticket: int) -> Optional[Any]:
+        """Fetch a specific position from MT5 by ticket."""
+        if not MT5_AVAILABLE: return None
+        positions = mt5.positions_get(ticket=ticket)
+        return positions[0] if positions and len(positions) > 0 else None
+
+    def _validate_modification_params(self, position: Any, new_sl: float, new_tp: Optional[float]) -> Dict[str, Any]:
+        """Verify if new SL/TP are valid and respect platform constraints."""
+        if not MT5_AVAILABLE: return {'success': False, 'error': 'MT5 not available'}
+        symbol_info = mt5.symbol_info(position.symbol)
+        if not symbol_info:
+            return {'success': False, 'error': f'Symbol {position.symbol} info not found'}
+        
+        tick = mt5.symbol_info_tick(position.symbol)
+        if not tick:
+            return {'success': False, 'error': f'Tick for {position.symbol} not found'}
+        
+        current_price = tick.bid if position.type == mt5.ORDER_TYPE_BUY else tick.ask
+        
+        if not self._validate_freeze_level(position.ticket, new_sl, current_price, symbol_info):
+            return {'success': False, 'error': 'Stop Loss violates freeze level'}
+            
+        final_tp = self._validate_sltp_logic(position.ticket, position.type == mt5.ORDER_TYPE_BUY, new_sl, new_tp)
+        return {'success': True, 'tp': final_tp}
+
+    def _prepare_modify_request(self, ticket: int, symbol: str, sl: float, tp: float, reason: str = "") -> Dict[str, Any]:
+        """Prepare the request dictionary for mt5.order_send."""
+        return {
+            "action": mt5.TRADE_ACTION_SLTP,
+            "symbol": symbol,
+            "position": ticket,
+            "sl": normalize_price(sl, mt5.symbol_info(symbol)) if sl > 0 else 0.0,
+            "tp": normalize_price(tp, mt5.symbol_info(symbol)) if tp > 0 else 0.0,
+            "comment": f"AE_MOD_{reason}"[:31],
+        }
 
     def _validate_freeze_level(self, ticket: int, new_sl: float, current_price: float, symbol_info: Any) -> bool:
         """
