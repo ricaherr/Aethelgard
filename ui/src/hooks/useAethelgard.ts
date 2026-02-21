@@ -105,6 +105,27 @@ export function useAethelgard() {
         }
     };
 
+    const runAudit = async () => {
+        try {
+            const response = await fetch('/api/system/audit', { method: 'POST' });
+            return response.ok;
+        } catch (error) {
+            console.error("Error triggering audit:", error);
+            return false;
+        }
+    };
+
+    const getTuningLogs = async (limit: number = 50) => {
+        try {
+            const response = await fetch(`/api/edge/tuning-logs?limit=${limit}`);
+            const data = await response.json();
+            return data.history || [];
+        } catch (error) {
+            console.error("Error fetching tuning logs:", error);
+            return [];
+        }
+    };
+
     return {
         regime,
         signals,
@@ -112,14 +133,7 @@ export function useAethelgard() {
         status,
         metrics,
         sendCommand,
-        runAudit: async () => {
-            try {
-                const response = await fetch('/api/system/audit', { method: 'POST' });
-                return response.ok;
-            } catch (error) {
-                console.error("Error triggering audit:", error);
-                return false;
-            }
-        }
+        runAudit,
+        getTuningLogs
     };
 }

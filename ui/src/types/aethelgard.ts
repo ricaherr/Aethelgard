@@ -103,3 +103,18 @@ export interface CerebroThought {
     module: string;
 }
 
+export interface TuningLog {
+    id: number;
+    timestamp: string;
+    trigger: string;
+    adjustment_factor: number;
+    old_params: Record<string, number>;
+    new_params: Record<string, number>;
+    stats: {
+        total_trades: number;
+        win_rate: number;
+        consecutive_losses: number;
+        [key: string]: any;
+    };
+}
+

@@ -1742,7 +1742,20 @@ def create_app() -> FastAPI:
 
         # Iniciar auditoría en background y retornar inmediatamente
         asyncio.create_task(audit_task())
-        return {"status": "audit_started", "message": "Auditoría de integridad iniciada en segundo plano."}
+        
+        return {"status": "success", "message": "Global integrity audit started in background."}
+
+    @app.get("/api/edge/tuning-logs")
+    async def get_tuning_logs(limit: int = 50):
+        """
+        Retorna el historial de ajustes del EdgeTuner (Neuro-evolución).
+        """
+        try:
+            history = storage.get_tuning_history(limit=limit)
+            return {"status": "success", "history": history}
+        except Exception as e:
+            logger.error(f"Error recuperando historial de tuning: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
 
     # Montar archivos estáticos de la nueva UI si existen
     ui_dist_path = os.path.join(os.getcwd(), "ui", "dist")

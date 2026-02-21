@@ -11,7 +11,10 @@ import {
 } from 'lucide-react';
 import { GlassPanel } from '../common/GlassPanel';
 import { cn } from '../../utils/cn';
-import { MarketRegime, EdgeMetrics } from '../../types/aethelgard';
+import { MarketRegime, EdgeMetrics, TuningLog } from '../../types/aethelgard';
+import { useAethelgard } from '../../hooks/useAethelgard';
+import { useState } from 'react';
+import { NeuralHistoryPanel } from './NeuralHistoryPanel';
 
 interface EdgeHubProps {
     metrics: EdgeMetrics;
@@ -19,6 +22,16 @@ interface EdgeHubProps {
 }
 
 export function EdgeHub({ metrics, regime }: EdgeHubProps) {
+    const { getTuningLogs } = useAethelgard();
+    const [isLogsOpen, setIsLogsOpen] = useState(false);
+    const [tuningLogs, setTuningLogs] = useState<TuningLog[]>([]);
+
+    const handleOpenLogs = async () => {
+        const logs = await getTuningLogs(50);
+        setTuningLogs(logs);
+        setIsLogsOpen(true);
+    };
+
     return (
         <div className="flex flex-col gap-8 animate-in fade-in duration-500">
             {/* Header section with Intelligence Profile */}
@@ -124,13 +137,22 @@ export function EdgeHub({ metrics, regime }: EdgeHubProps) {
                             />
                         </div>
 
-                        <button className="w-full py-3 rounded-xl bg-white/5 border border-white/10 text-[10px] font-bold uppercase tracking-widest text-white/60 hover:bg-white/10 hover:text-white transition-colors mt-auto">
+                        <button
+                            onClick={handleOpenLogs}
+                            className="w-full py-3 rounded-xl bg-white/5 border border-white/10 text-[10px] font-bold uppercase tracking-widest text-white/60 hover:bg-white/10 hover:text-white transition-all active:scale-[0.98] mt-auto"
+                        >
                             View Detailed Learning Logs
                         </button>
                     </GlassPanel>
                 </div>
 
             </div>
+
+            <NeuralHistoryPanel
+                isOpen={isLogsOpen}
+                onClose={() => setIsLogsOpen(false)}
+                logs={tuningLogs}
+            />
         </div>
     );
 }
