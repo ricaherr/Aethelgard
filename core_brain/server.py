@@ -553,6 +553,9 @@ def create_app() -> FastAPI:
         
         await manager.connect(websocket, client_id, connector_type)
         
+        # Enviar pensamiento de bienvenida para activar la consola en la UI
+        await broadcast_thought(f"Enlace establecido con {client_id}. Sincronizando flujos cerebrales...", module="CORE")
+        
         try:
             while True:
                 # Recibir mensaje del cliente
@@ -1703,10 +1706,17 @@ async def heartbeat_loop() -> None:
                 "details": "Data & Execution synchronized via MT5 (Omnichain SSOT)"
             }
             
+            # Obtener uso de CPU (resiliencia multi-proceso)
+            cpu_load = 0.0
+            from core_brain.scanner import CPUMonitor
+            monitor = CPUMonitor()
+            cpu_load = monitor.get_cpu_percent()
+            
             metrics = {
                 "core": "ACTIVE",
                 "storage": "STABLE",
                 "notificator": "CONFIGURED",
+                "cpu_load": cpu_load,
                 "satellites": orchestrator.get_status_report(),
                 "sync_fidelity": sync_fidelity,
                 "timestamp": datetime.now().isoformat()

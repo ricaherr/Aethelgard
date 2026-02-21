@@ -1,24 +1,26 @@
 # AETHELGARD: DIAGNOSTICS SUMMARY
 
-## 🏥 Estado de Salud del Sistema
-Resumen consolidado de auditorías y diagnósticos técnicos.
+## 🟢 System Pulse: OPTIMAL
+**Last Global Validation**: 2026-02-21 | **Result**: 100% PASS
 
 ---
 
-### 🛡️ Última Validación Global
-- **Fecha**: 2026-02-21
-- **Resultado**: ✅ EXITOSO
-- **Script**: `scripts/validate_all.py`
+### ✅ What's Working
+- **Build & Infra**: Production build stable. FastAPI/WS links 1:1.
+- **Diagnostics**: Full-Page Monitor active. React Error #31 resolved.
+- **Observability**: Cerebro Console verbosity increased.
+- **Shadow Portfolio**: Virtual signal synchronization stable.
 
 ---
 
-### 🚧 Auditoría de Clutter (Limpieza)
-- **Log Rotation Required**: El archivo `logs/production.log` ha alcanzado **448 MB**. Se recomienda implementar una política de rotación (RotatingFileHandler) o purga mensual.
-- **Historic Purge**: Se han eliminado más de 10,000 líneas de logs redundantes de los documentos raíz (`MANIFESTO`, `ROADMAP`) para mejorar la legibilidad y el rendimiento de las herramientas de IA.
+### ⚠️ Critical Attention Points
+1. **Connectivity**: Periodically check `Capability Flags` in the Monitor for broker-specific limitations.
+2. **SSOT Rule**: Monitor new modules to prevent importing broker libraries outside of `connectors/`.
+3. **Log Retention**: Verify `logs/main.log` rotation remains under 15 days to avoid disk bloat.
+4. **Shadow Drift**: Periodic check on `Profit Factor > 1.5` for Shadow signals before going Live.
 
 ---
 
-### 🔍 Puntos de Atención
-1. **Conectividad**: Validar periódicamente los `Capability Flags` en el Config Hub.
-2. **SSOT**: Asegurar que ningún nuevo módulo importe librerías de brokers fuera de `connectors/`.
-3. **Shadow Drift**: Monitorear el `Shadow Engine` ante cambios bruscos de régimen para recalibrar el Jurado.
+### 🛠️ Next Adjustments
+- [ ] Migrate Roadmap history to `docs/SYSTEM_LEDGER.md`.
+- [ ] Finalize Domain documentation consolidation.

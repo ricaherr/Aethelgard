@@ -28,6 +28,7 @@ import { PortfolioView } from './components/portfolio/PortfolioView';
 import { GlassPanel } from './components/common/GlassPanel';
 import { AnalysisPage } from './components/analysis';
 import { SatelliteLink } from './components/satellite/SatelliteLink';
+import { MonitorPage } from './components/diagnostic/MonitorPage';
 
 function App() {
     const [activeTab, setActiveTab] = useState('trader');
@@ -97,7 +98,7 @@ function App() {
                     <NavIcon
                         icon={<ScanEye size={22} />}
                         active={activeTab === 'monitor'}
-                        onClick={() => setIsDiagOpen(true)}
+                        onClick={() => setActiveTab('monitor')}
                         label="Monitor"
                     />
                 </div>
@@ -170,7 +171,11 @@ function App() {
                                 {/* Left Column: Context & Intelligence */}
                                 <div className="col-span-12 xl:col-span-4 flex flex-col gap-6">
                                     <MarketStatus regime={regime} metrics={metrics} />
-                                    <CerebroConsole thoughts={thoughts} />
+                                    <CerebroConsole
+                                        thoughts={thoughts}
+                                        status={status}
+                                        onExpand={() => setActiveTab('monitor')}
+                                    />
                                 </div>
 
                                 {/* Right Column: Signal Execution Hub */}
@@ -249,6 +254,17 @@ function App() {
                                 className="h-full"
                             >
                                 <SatelliteLink />
+                            </motion.div>
+                        )}
+                        {activeTab === 'monitor' && (
+                            <motion.div
+                                key="monitor-view"
+                                initial={{ opacity: 0, scale: 0.98 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0, scale: 1.02 }}
+                                className="h-full"
+                            >
+                                <MonitorPage status={status} />
                             </motion.div>
                         )}
                     </AnimatePresence>

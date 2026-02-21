@@ -52,11 +52,22 @@ from core_brain.trade_closure_listener import TradeClosureListener
 from core_brain.position_manager import PositionManager
 
 # Configurar logging
+from logging.handlers import TimedRotatingFileHandler
+
+# Asegurar carpeta de logs
+Path("logs").mkdir(exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('logs/production.log'),
+        TimedRotatingFileHandler(
+            filename='logs/main.log',
+            when='midnight',
+            interval=1,
+            backupCount=15,
+            encoding='utf-8'
+        ),
         logging.StreamHandler()
     ]
 )
@@ -340,6 +351,7 @@ async def main() -> None:
         
         # 8. Main Orchestrator (Unified DI)
         logger.info("[INIT] Inicializando Main Orchestrator (DI/SSOT)...")
+        from core_brain.server import broadcast_thought
         orchestrator = MainOrchestrator(
             scanner=scanner,
             signal_factory=signal_factory,
@@ -350,8 +362,16 @@ async def main() -> None:
             trade_closure_listener=trade_closure_listener,
             coherence_monitor=coherence_monitor,
             expiration_manager=expiration_manager,
-            regime_classifier=regime_classifier
+            regime_classifier=regime_classifier,
+            thought_callback=broadcast_thought
         )
+        
+        # 9. Autonomous Health Service (EDGE Autonomy)
+        logger.info("[INIT] Inicializando Servicio de Salud Autónomo...")
+        from core_brain.health_service import AutonomousHealthService
+        health_service = AutonomousHealthService(storage=storage)
+        health_task = asyncio.create_task(health_service.start())
+        logger.info("[OK] Salud Autónoma activa")
         
         # === INICIAR MT5 SINCRÓNICAMENTE (MT5 library doesn't share state across threads) ===
         logger.info("[CONNECT] Conectando a MT5 (sincrónico en thread principal)...")

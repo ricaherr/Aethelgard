@@ -77,6 +77,7 @@ export interface SystemStatus {
     connected: boolean;
     lastUpdate: string;
     heartbeats: Record<string, string>;
+    cpu_load?: number;
     satellites?: Record<string, SatelliteStatus>;
     sync_fidelity?: {
         score: number;
@@ -97,7 +98,7 @@ export interface EdgeMetrics {
 export interface CerebroThought {
     id: string;
     timestamp: string;
-    level: 'info' | 'debug' | 'warning' | 'error';
+    level: 'info' | 'debug' | 'warning' | 'error' | 'success';
     message: string;
     module: string;
 }

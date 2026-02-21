@@ -19,7 +19,17 @@ Capa de cimientos, servidores y Single Source of Truth (SSOT).
 
 ---
 
-### 🏥 Salud y Diagnóstico
-- **System Health Monitor**: Vigía de latencia, CPU y recursos.
-- **QA Guard**: Auditoría estática de calidad y aislamiento de código.
-- **Manual Overrides**: Control de satélites y talle de emergencia.
+### 🏥 Salud y Mantenimiento (Protocolo EDGE Autónomo)
+Aethelgard ha evolucionado de un mantenimiento manual PAS a una gestión **EDGE Autónoma** para garantizar operatividad 24/7 sin intervención humana.
+
+#### 🤖 Autonomous Health Service
+Un servicio centinela (`core_brain/health_service.py`) supervisa la integridad del sistema:
+- **Auto-Auditoría**: Ejecuta validaciones de salud cada hora.
+- **Vigía de Recursos**: Monitorea el tamaño de logs y uso de CPU.
+- **Propuestas de Gestión**: Detecta problemas y los reporta vía "Thoughts" en la UI, preparando el camino para la auto-reparación autorizada.
+
+#### 📂 Gestión de Logs (Linux Style)
+Para evitar archivos masivos que degraden el rendimiento:
+- **Base Name**: `logs/main.log`.
+- **Rotación Diaria**: Se crea un nuevo archivo cada medianoche (format: `main.log.YYYY-MM-DD`).
+- **Retención Estricta**: Mantiene solo los últimos 15 días de logs para optimizar el espacio en disco.

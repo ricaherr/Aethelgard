@@ -159,15 +159,17 @@ export function DiagnosticDrawer({ isOpen, onClose, status }: DiagnosticDrawerPr
                             <section>
                                 <h3 className="text-[10px] font-bold text-white/60 uppercase tracking-[0.2em] mb-4">Sub-System Health</h3>
                                 <div className="space-y-3">
-                                    {Object.entries(status.heartbeats).map(([module, beat]) => (
-                                        <div key={module} className="flex items-center justify-between p-3 rounded-lg bg-white/[0.02] border border-white/5 hover:border-white/10 transition-colors">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-1.5 h-1.5 rounded-full bg-aethelgard-blue shadow-[0_0_8px_rgba(0,210,255,0.4)]" />
-                                                <span className="text-xs font-medium text-white/80">{module}</span>
+                                    {Object.entries(status.heartbeats)
+                                        .filter(([_, beat]) => typeof beat === 'string' || typeof beat === 'number' || typeof beat === 'boolean')
+                                        .map(([module, beat]) => (
+                                            <div key={module} className="flex items-center justify-between p-3 rounded-lg bg-white/[0.02] border border-white/5 hover:border-white/10 transition-colors">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-1.5 h-1.5 rounded-full bg-aethelgard-blue shadow-[0_0_8px_rgba(0,210,255,0.4)]" />
+                                                    <span className="text-xs font-medium text-white/80">{module}</span>
+                                                </div>
+                                                <span className="text-[10px] font-mono text-white/50">{beat.toString()} ago</span>
                                             </div>
-                                            <span className="text-[10px] font-mono text-white/50">{beat} ago</span>
-                                        </div>
-                                    ))}
+                                        ))}
                                     {Object.keys(status.heartbeats).length === 0 && (
                                         <p className="text-center text-white/50 text-xs py-4 italic">No module metadata available</p>
                                     )}

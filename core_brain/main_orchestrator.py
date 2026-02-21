@@ -209,11 +209,13 @@ class MainOrchestrator:
         coherence_monitor: Optional[Any] = None,
         expiration_manager: Optional[Any] = None,
         regime_classifier: Optional[Any] = None,
+        thought_callback: Optional[Any] = None,
         config_path: Optional[str] = None
     ):
         """
         Initialize MainOrchestrator with backward-compatible Dependency Injection.
         """
+        self.thought_callback = thought_callback
         # 1. Base dependencies and config
         self._init_core_dependencies(scanner, signal_factory, risk_manager, executor, storage, config_path)
         
@@ -590,8 +592,16 @@ class MainOrchestrator:
             # Check if we need to reset stats for new day
             self.stats.reset_if_new_day()
             
+            # Step 0: Initial heartbeat update and feedback
+            self.storage.update_module_heartbeat("orchestrator")
+            if self.thought_callback:
+                await self.thought_callback("Iniciando ciclo de monitoreo autónomo...", module="CORE")
+            
             # EDGE: Expire old PENDING signals based on timeframe window
             # This prevents stale signals from accumulating in database
+            if self.thought_callback:
+                await self.thought_callback("Verificando caducidad de señales no ejecutadas...", module="ALPHA")
+                
             expiration_stats = self.expiration_manager.expire_old_signals()
             logger.info(f"[EXPIRATION] Processed {expiration_stats.get('total_checked', 0)} signals, "
                        f"expired {expiration_stats['total_expired']}")
@@ -600,8 +610,12 @@ class MainOrchestrator:
             
             # MODULE TOGGLE: Position Manager
             if not self.modules_enabled_global.get("position_manager", True):
+                if self.thought_callback:
+                    await self.thought_callback("Position Manager deshabilitado.", level="warning", module="MGMT")
                 logger.debug("[TOGGLE] position_manager deshabilitado globalmente - saltado")
             elif self.position_manager:
+                if self.thought_callback:
+                    await self.thought_callback("Evaluando salud de posiciones abiertas...", module="MGMT")
                 position_stats = self.position_manager.monitor_positions()
                 if position_stats['actions']:
                     logger.info(
@@ -618,6 +632,9 @@ class MainOrchestrator:
                 return
             
             # Step 1: Get current market regimes from scanner WITH DataFrames
+            if self.thought_callback:
+                await self.thought_callback("Escaneando mercados en busca de anomalías...", module="SCANNER")
+            
             logger.debug("Getting market regimes with data from scanner...")
             
             # Scanner trabaja de forma sincrónica en background
@@ -649,12 +666,17 @@ class MainOrchestrator:
             
             if not signals:
                 logger.debug("No signals generated")
+                if self.thought_callback:
+                    await self.thought_callback("Silencio en el mercado. No se detectan setups institucionales.", module="ALPHA")
                 # Clear active signals if none generated
                 self._active_signals.clear()
                 self.stats.cycles_completed += 1
                 return
             
             # Signal processing continues (unreachable code bug fixed)
+            if self.thought_callback:
+                await self.thought_callback(f"Setup detectado: {len(signals)} señales en pipeline alpha.", module="ALPHA")
+            
             logger.info(f"Generated {len(signals)} signals")
             self.stats.signals_processed += len(signals)
             self.stats.signals_generated += len(signals)
@@ -720,6 +742,8 @@ class MainOrchestrator:
                     success = await self.executor.execute_signal(signal)
                     
                     if success:
+                        if self.thought_callback:
+                            await self.thought_callback(f"ORDEN EJECUTADA: {signal.symbol} via {signal.connector}", level="success", module="EXEC")
                         if not getattr(self.executor, "persists_signals", False):
                             signal_id = self.storage.save_signal(signal)
                             logger.info(
@@ -732,6 +756,7 @@ class MainOrchestrator:
                 except Exception as e:
                     logger.error(f"Error executing signal {signal.symbol}: {e}")
                     self.stats.errors_count += 1
+            
             
             self.storage.update_module_heartbeat("executor")
             

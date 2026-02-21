@@ -76,6 +76,7 @@ export function useAethelgard() {
                     ...prev,
                     lastUpdate: new Date().toISOString(),
                     heartbeats: { ...prev.heartbeats, ...payload },
+                    cpu_load: payload.cpu_load,
                     satellites: payload.satellites || prev.satellites
                 }));
                 break;
