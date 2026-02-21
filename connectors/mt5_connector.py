@@ -133,6 +133,7 @@ class MT5Connector(BaseConnector):
         
         # Available symbols cache (auto-discovery)
         self.available_symbols = set()
+        self.last_error = None
 
         logger.info(f"[INSTANCE {id(self)}] MT5Connector initialized from database. Config enabled: {self.config.get('enabled', False)}, Account: {self.config.get('login', 'N/A')}")
     
@@ -413,10 +414,12 @@ class MT5Connector(BaseConnector):
         
         if not authorized:
             error = mt5.last_error()
+            self.last_error = f"Auth failed: {error}"
             logger.error(f"[VERBOSE] [ERROR] mt5.login() FAILED: {error}")
             logger.error(f"[VERBOSE] Attempted login={int(login)}, server='{str(server).strip()}'")
             return False
             
+        self.last_error = None
         logger.info("[VERBOSE] [OK] mt5.login() SUCCESS")
         return True
 
@@ -1597,6 +1600,11 @@ class MT5Connector(BaseConnector):
             return (time.perf_counter() - start) * 1000.0
         except Exception:
             return 0.0
+
+    @property
+    def provider_id(self) -> str:
+        """Unique identifier for the provider."""
+        return "mt5"
 
 # Singleton instance for easy import
 _mt5_connector_instance = None

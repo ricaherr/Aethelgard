@@ -161,3 +161,6 @@ dist/
 package-lock.json
 ui/dist/
 ui/node_modules/
+
+# Backups
+backups/

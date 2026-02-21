@@ -15,6 +15,7 @@ class ConnectivityOrchestrator:
     """
     Central orchestrator to manage Aethelgard connectors.
     Handles dynamic loading, registration, and health monitoring.
+    Uses Database as Single Source of Truth (SSOT).
     """
     _instance = None
 
@@ -28,6 +29,7 @@ class ConnectivityOrchestrator:
             self.connectors: Dict[str, BaseConnector] = {}
             self.failure_counts: Dict[str, int] = {}
             self.manual_states: Dict[str, bool] = {} # True=Enabled, False=Disabled
+            self.supports_info: Dict[str, Dict[str, bool]] = {} # data/exec flags
             self.storage = storage
             self.initialized = True
             logger.info("ConnectivityOrchestrator initialized.")
@@ -36,6 +38,7 @@ class ConnectivityOrchestrator:
         """Inject storage manager if not provided at init."""
         self.storage = storage
         self._load_persistent_states()
+        self.load_connectors_from_db()
 
     def _load_persistent_states(self) -> None:
         """Load connector states from DB."""
@@ -50,23 +53,87 @@ class ConnectivityOrchestrator:
         self.failure_counts[pid] = 0
         logger.info(f"Connector registered: {pid}")
 
-    def load_connectors(self, directory: str = "connectors") -> None:
+    def load_connectors_from_db(self) -> None:
         """
-        Dynamically load all connectors from the specified directory.
-        Looks for classes inheriting from BaseConnector.
+        Instantiate connectors based on DB enabled providers and accounts.
+        FOLLOWS SSOT RULE.
         """
-        # Note: This is a simplified version, implementation details depend on file naming
-        # For now, we assume explicit registration or specific naming convention
-        logger.info(f"Scanning for connectors in {directory}...")
-        # Implementation logic for dynamic import would go here
-        pass
+        if not self.storage:
+            return
+
+        logger.info("Loading connectors from Database (SSOT)...")
+        
+        # 1. Load Data Providers
+        try:
+            providers = self.storage.get_data_providers()
+            for p in providers:
+                if not p.get('enabled', False): continue
+                
+                pid = p['name']
+                # Avoid re-loading if already active
+                if pid in self.connectors: continue
+
+                # Logic to instantiate correct provider class
+                if pid == 'yahoo':
+                    from connectors.yahoo_connector import YahooConnector
+                    try:
+                        conn = YahooConnector(storage=self.storage)
+                        self.register_connector(conn)
+                        self.supports_info[pid] = {
+                            "data": bool(p.get('supports_data', 0)),
+                            "exec": bool(p.get('supports_exec', 0))
+                        }
+                    except Exception as e:
+                        logger.error(f"Failed to load Yahoo connector: {e}")
+                elif pid == 'mt5' and pid not in self.connectors:
+                    from connectors.mt5_connector import MT5Connector
+                    try:
+                        conn = MT5Connector(storage=self.storage)
+                        self.register_connector(conn)
+                        self.supports_info[pid] = {
+                            "data": bool(p.get('supports_data', 0)),
+                            "exec": bool(p.get('supports_exec', 0))
+                        }
+                    except Exception as e:
+                        logger.error(f"Failed to load MT5 connector: {e}")
+
+        except Exception as e:
+            logger.error(f"Error loading providers from DB: {e}")
+
+        # 2. Load Broker Accounts
+        try:
+            accounts = self.storage.get_broker_accounts(enabled_only=True)
+            for acc in accounts:
+                pid = acc['broker_id']
+                if pid in self.connectors: continue
+                
+                # If it uses MT5, we might already have it or need a specific account instance
+                if acc['platform_id'] == 'mt5':
+                    from connectors.mt5_connector import MT5Connector
+                    try:
+                        conn = MT5Connector(storage=self.storage, account_id=acc['account_id'])
+                        self.register_connector(conn)
+                        self.supports_info[pid] = {
+                            "data": bool(acc.get('supports_data', 0)),
+                            "exec": bool(acc.get('supports_exec', 0))
+                        }
+                    except Exception as e:
+                        logger.error(f"Failed to load broker connector {pid}: {e}")
+        except Exception as e:
+            logger.error(f"Error loading accounts from DB: {e}")
 
     def get_connector(self, provider_id: str) -> Optional[BaseConnector]:
         """Retrieve a registered connector by its ID."""
         connector = self.connectors.get(provider_id)
         if not connector:
-            logger.warning(f"Connector not found: {provider_id}")
-            return None
+            # Try lazy load if storage is available
+            if self.storage:
+                self.load_connectors_from_db()
+                connector = self.connectors.get(provider_id)
+            
+            if not connector:
+                logger.warning(f"Connector not found: {provider_id}")
+                return None
         
         # Check manual state
         if not self.manual_states.get(provider_id, True):
@@ -89,9 +156,6 @@ class ConnectivityOrchestrator:
         connector = self.connectors.get(provider_id)
         if connector:
             logger.info(f"[USER ACTION] Enabling connector {provider_id}...")
-            # We don't automatically connect here, let the system do it on next retry if needed
-            # or we could force a connect() attempt if the connector supports it.
-            # Reset failures for a fresh start
             self.failure_counts[provider_id] = 0
 
     def disable_connector(self, provider_id: str) -> None:
@@ -107,7 +171,7 @@ class ConnectivityOrchestrator:
                 connector.disconnect()
             except Exception as e:
                 logger.error(f"Error disconnecting {provider_id}: {e}")
-            self.failure_counts[provider_id] = 0 # Reset health count while disabled
+            self.failure_counts[provider_id] = 0 
 
     def report_failure(self, provider_id: str) -> None:
         """Increment failure count for a provider."""
@@ -126,6 +190,10 @@ class ConnectivityOrchestrator:
     def get_status_report(self) -> Dict[str, Dict[str, Any]]:
         """Return connectivity status for UI consumption."""
         report = {}
+        # Ensure we have latest info
+        if self.storage:
+            self.load_connectors_from_db()
+
         for pid, connector in self.connectors.items():
             is_manual_enabled = self.manual_states.get(pid, True)
             
@@ -135,26 +203,39 @@ class ConnectivityOrchestrator:
             elif self.failure_counts.get(pid, 0) >= 3:
                 status = "OFFLINE"
 
+            supports = self.supports_info.get(pid, {"data": True, "exec": True})
+
             report[pid] = {
                 "status": status,
                 "failures": self.failure_counts.get(pid, 0),
                 "is_available": connector.is_available() if is_manual_enabled else False,
                 "is_manual_enabled": is_manual_enabled,
-                "latency": connector.get_latency() if is_manual_enabled else 0.0
+                "latency": connector.get_latency() if is_manual_enabled else 0.0,
+                "supports_data": supports.get("data", False),
+                "supports_exec": supports.get("exec", False),
+                "last_error": getattr(connector, 'last_error', None)
             }
         return report
+
     def get_priority_provider(self, market_type: MarketType) -> Optional[BaseConnector]:
         """
-        Returns the primary connector that provides both Data and Execution for a market.
-        Currently, for DECENTRALIZED markets (Forex/Crypto), MT5 is the priority.
-        For CENTRALIZED, it might vary.
+        Returns the primary connector that provides Data and is healthy.
+        Prefers connectors with supports_data=True from DB.
         """
-        # Logic to determine priority provider based on availability and market type
-        if market_type == MarketType.DECENTRALIZED:
-            return self.get_connector("MT5")
+        # Ensure latest sync
+        self.load_connectors_from_db()
+
+        # 1. Look for providers with supports_data = True
+        for pid, supports in self.supports_info.items():
+            if supports.get("data", False):
+                conn = self.get_connector(pid)
+                if conn and conn.is_available():
+                    return conn
         
-        # Fallback to first available connector if not specified
-        if self.connectors:
-            return next(iter(self.connectors.values()))
+        # 2. Fallback to any available connector
+        for pid in self.connectors:
+            conn = self.get_connector(pid)
+            if conn and conn.is_available():
+                return conn
             
         return None

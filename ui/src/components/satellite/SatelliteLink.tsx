@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Satellite, ShieldCheck, Activity, Power, PowerOff, Wifi, Terminal, Zap, Globe, Gauge } from 'lucide-react';
+import { Satellite, ShieldCheck, Activity, Power, PowerOff, Wifi, Terminal, Zap, Globe, Gauge, Database, Cpu, ArrowRight } from 'lucide-react';
 import { GlassPanel } from '../common/GlassPanel';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAethelgard } from '../../hooks/useAethelgard';
@@ -15,7 +15,6 @@ export function SatelliteLink() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ provider_id: id, enabled: !currentlyEnabled })
             });
-            // Status will be updated via WebSocket heartbeat
         } catch (err) {
             console.error('Error toggling provider:', err);
         }
@@ -68,6 +67,36 @@ export function SatelliteLink() {
                 </div>
             </div>
 
+            {/* CONNECTIVITY FLOW MAP */}
+            <div className="p-6 rounded-2xl bg-white/[0.02] border border-white/5 space-y-6">
+                <div className="flex items-center justify-between">
+                    <h3 className="text-[10px] font-black text-white/40 uppercase tracking-[0.3em]">Connectivity Map & Flow</h3>
+                    <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-1.5">
+                            <div className="w-2 h-2 rounded-full bg-aethelgard-blue shadow-[0_0_5px_rgba(0,210,255,0.5)]" />
+                            <span className="text-[9px] font-mono text-white/40">DATA</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                            <div className="w-2 h-2 rounded-full bg-purple-500 shadow-[0_0_5px_rgba(168,85,247,0.5)]" />
+                            <span className="text-[9px] font-mono text-white/40">EXECUTION</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="relative flex items-center justify-around py-8">
+                    {/* Background Link Lines */}
+                    <div className="absolute inset-0 flex items-center justify-center -z-10">
+                        <div className="w-[80%] h-px bg-white/10" />
+                    </div>
+
+                    <FlowStage icon={<Database size={24} />} label="Providers" sub="Data Source" color="text-aethelgard-blue" />
+                    <ArrowRight className="text-white/20 animate-pulse" size={20} />
+                    <FlowStage icon={<ShieldCheck size={28} />} label="Aethelgard" sub="Core Brain" color="text-white" highlight />
+                    <ArrowRight className="text-white/20 animate-pulse" size={20} />
+                    <FlowStage icon={<Cpu size={24} />} label="Execution" sub="MT5 / API" color="text-purple-400" />
+                </div>
+            </div>
+
             {/* TELEMETRY GRID */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-4">
                 {Object.keys(providers).length === 0 ? (
@@ -104,6 +133,23 @@ export function SatelliteLink() {
             </div>
         </div>
     );
+}
+
+function FlowStage({ icon, label, sub, color, highlight = false }: { icon: any, label: string, sub: string, color: string, highlight?: boolean }) {
+    return (
+        <div className="flex flex-col items-center space-y-3">
+            <motion.div
+                whileHover={{ scale: 1.1 }}
+                className={`p-4 rounded-2xl bg-black border ${highlight ? 'border-aethelgard-green/40 shadow-[0_0_20px_rgba(46,213,115,0.2)]' : 'border-white/10'} ${color}`}
+            >
+                {icon}
+            </motion.div>
+            <div className="text-center">
+                <p className={`text-xs font-black uppercase tracking-widest ${highlight ? 'text-white' : 'text-white/60'}`}>{label}</p>
+                <p className="text-[9px] font-mono text-white/20 uppercase tracking-tighter">{sub}</p>
+            </div>
+        </div>
+    )
 }
 
 function SatelliteNode({ id, status, onToggle }: { id: string, status: any, onToggle: () => void }) {
@@ -153,16 +199,28 @@ function SatelliteNode({ id, status, onToggle }: { id: string, status: any, onTo
                         </div>
                     </div>
 
-                    <button
-                        onClick={onToggle}
-                        className={`p-3 rounded-xl transition-all duration-500 border ${!isManualDisabled
-                            ? 'bg-aethelgard-blue/20 border-aethelgard-blue/30 text-aethelgard-blue hover:bg-aethelgard-blue/40 hover:scale-110 shadow-[0_0_15px_rgba(0,210,255,0.2)]'
-                            : 'bg-white/5 border-white/10 text-white/20 hover:bg-white/10 hover:text-white/80'
-                            }`}
-                        title={!isManualDisabled ? "SILENCE SATELLITE" : "RESTORE CONNECTION"}
-                    >
-                        {!isManualDisabled ? <Power size={20} /> : <PowerOff size={20} />}
-                    </button>
+                    <div className="flex items-center gap-2">
+                        {/* CAPABILITY BADGES */}
+                        <div className="flex flex-col gap-1 items-end mr-2">
+                            {status.supports_data && (
+                                <span className="px-1.5 py-0.5 rounded-[4px] bg-aethelgard-blue/10 text-aethelgard-blue text-[8px] font-black border border-aethelgard-blue/20">DATA</span>
+                            )}
+                            {status.supports_exec && (
+                                <span className="px-1.5 py-0.5 rounded-[4px] bg-purple-500/10 text-purple-400 text-[8px] font-black border border-purple-500/20">EXEC</span>
+                            )}
+                        </div>
+
+                        <button
+                            onClick={onToggle}
+                            className={`p-3 rounded-xl transition-all duration-500 border ${!isManualDisabled
+                                ? 'bg-aethelgard-blue/20 border-aethelgard-blue/30 text-aethelgard-blue hover:bg-aethelgard-blue/40 hover:scale-110 shadow-[0_0_15px_rgba(0,210,255,0.2)]'
+                                : 'bg-white/5 border-white/10 text-white/20 hover:bg-white/10 hover:text-white/80'
+                                }`}
+                            title={!isManualDisabled ? "SILENCE SATELLITE" : "RESTORE CONNECTION"}
+                        >
+                            {!isManualDisabled ? <Power size={20} /> : <PowerOff size={20} />}
+                        </button>
+                    </div>
                 </div>
 
                 {/* LATENCY TELEMETRY */}
@@ -178,14 +236,14 @@ function SatelliteNode({ id, status, onToggle }: { id: string, status: any, onTo
                     </div>
                     <div className="h-1.5 bg-white/5 rounded-full overflow-hidden flex gap-0.5">
                         {[...Array(20)].map((_, i) => {
-                            const intensity = (i + 1) * 20; // 0 to 400ms scale
+                            const intensity = (i + 1) * 20;
                             const isActive = status.latency >= intensity - 20;
                             return (
                                 <div
                                     key={i}
                                     className={`h-full flex-1 transition-all duration-700 ${isActive
-                                            ? (intensity > 200 ? 'bg-red-500' : (intensity > 100 ? 'bg-orange-400' : 'bg-aethelgard-blue'))
-                                            : 'bg-white/5'
+                                        ? (intensity > 200 ? 'bg-red-500' : (intensity > 100 ? 'bg-orange-400' : 'bg-aethelgard-blue'))
+                                        : 'bg-white/5'
                                         }`}
                                 />
                             );
@@ -205,9 +263,9 @@ function SatelliteNode({ id, status, onToggle }: { id: string, status: any, onTo
                         </div>
                     </div>
                     <div className="space-y-0.5">
-                        <span className="text-[8px] font-black text-white/20 uppercase tracking-[0.3em]">Signal Quality</span>
+                        <span className="text-[8px] font-black text-white/20 uppercase tracking-[0.3em]">Sync Fidelity</span>
                         <div className="flex items-center gap-2">
-                            <Zap size={12} className="text-white/20" />
+                            <ShieldCheck size={12} className="text-white/20" />
                             <span className="text-sm font-mono font-bold text-white/60">
                                 {isManualDisabled ? '00.0%' : (isOffline ? '00.0%' : (isHighLatency ? '82.4%' : '99.9%'))}
                             </span>

@@ -1,3 +1,25 @@
+### 1.13 Mantenimiento y Auditoría de Conectores (Feb 2026)
+
+**Regla:** El sistema debe poseer un mecanismo de auditoría técnica que valide las capacidades de cada conector y la integridad de sus credenciales, operando bajo un modelo de Single Source of Truth (SSOT).
+
+#### 1. Atributos de Capacidad (Capability Flags)
+- **Persistencia**: Cada proveedor en `data_providers` y cuenta en `broker_accounts` debe definir explícitamente sus capacidades mediante los flags:
+  - `supports_data`: Capacidad para suministrar feeds de OHLC/Ticks.
+  - `supports_exec`: Capacidad para ejecutar órdenes de mercado.
+- **Auditoría de Orquestación**: El `ConnectivityOrchestrator` debe priorizar proveedores basándose en estos flags, prohibiendo intentos de ejecución en conectores solo de datos (ej: Yahoo Finance).
+
+#### 2. Diagnóstico de Salud (Red Key Alert)
+- **Detección de Auth**: Los conectores deben capturar y reportar errores de autenticación específicos (`Auth failed`).
+- **Visualización Proactiva**:
+  - La UI debe mostrar el icono de **Llave Roja (Red Key)** ante fallos de credenciales.
+  - El `ConnectivityOrchestrator` debe incluir el campo `last_error` en su reporte de estado para trazabilidad inmediata.
+- **Status Pulse**: Implementación de scripts de diagnóstico (`check_connectivity_health.py`) para validación rápida fuera de la UI.
+
+#### 3. Desacoplamiento de Yahoo (Universal Data Layer)
+- **YahooConnector**: Se establece un wrapper agnóstico para Yahoo Finance que cumple con la interfaz `BaseConnector`, permitiendo su integración nativa en el orquestador como proveedor de datos "always-on".
+
+---
+
 ### 1.12 Ley de Fidelidad de Fuente (Source Fidelity) - Feb 2026
 
 **Regla:** En mercados descentralizados (Forex, Crypto), la fuente del análisis (Scanner/Data Provider) y el destino de ejecución (Broker Account) deben ser idénticos. Se prohíbe taxativamente ejecutar una señal en un broker "B" si los datos de análisis provinieron de un broker "A".

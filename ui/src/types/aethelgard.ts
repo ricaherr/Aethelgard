@@ -68,6 +68,9 @@ export interface SatelliteStatus {
     status: 'ONLINE' | 'OFFLINE' | 'MANUAL_DISABLED';
     latency: number;
     failures: number;
+    supports_data?: boolean;
+    supports_exec?: boolean;
+    last_error?: string | null;
 }
 
 export interface SystemStatus {

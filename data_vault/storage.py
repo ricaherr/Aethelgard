@@ -167,6 +167,8 @@ class StorageManager(
                     account_type TEXT DEFAULT 'demo',
                     credentials_path TEXT,
                     enabled BOOLEAN DEFAULT 1,
+                    supports_data BOOLEAN DEFAULT 0,
+                    supports_exec BOOLEAN DEFAULT 0,
                     last_connection TEXT,
                     balance REAL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -206,6 +208,8 @@ class StorageManager(
                     type TEXT NOT NULL,
                     config TEXT,
                     enabled BOOLEAN DEFAULT 1,
+                    supports_data BOOLEAN DEFAULT 0,
+                    supports_exec BOOLEAN DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
@@ -289,9 +293,20 @@ class StorageManager(
 
             # Migrations / Fixes
             cursor.execute("PRAGMA table_info(data_providers)")
-            columns = [row[1] for row in cursor.fetchall()]
-            if 'type' not in columns:
+            dp_columns = [row[1] for row in cursor.fetchall()]
+            if 'type' not in dp_columns:
                 cursor.execute("ALTER TABLE data_providers ADD COLUMN type TEXT DEFAULT 'api'")
+            if 'supports_data' not in dp_columns:
+                cursor.execute("ALTER TABLE data_providers ADD COLUMN supports_data BOOLEAN DEFAULT 0")
+            if 'supports_exec' not in dp_columns:
+                cursor.execute("ALTER TABLE data_providers ADD COLUMN supports_exec BOOLEAN DEFAULT 0")
+
+            cursor.execute("PRAGMA table_info(broker_accounts)")
+            ba_columns = [row[1] for row in cursor.fetchall()]
+            if 'supports_data' not in ba_columns:
+                cursor.execute("ALTER TABLE broker_accounts ADD COLUMN supports_data BOOLEAN DEFAULT 0")
+            if 'supports_exec' not in ba_columns:
+                cursor.execute("ALTER TABLE broker_accounts ADD COLUMN supports_exec BOOLEAN DEFAULT 0")
 
             # Enable WAL mode for performance
             cursor.execute("PRAGMA journal_mode=WAL;")

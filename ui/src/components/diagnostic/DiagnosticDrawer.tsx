@@ -1,4 +1,4 @@
-import { X, Activity, Database, Shield, HardDrive, Satellite, Wifi } from 'lucide-react';
+import { X, Activity, Database, Shield, HardDrive, Satellite, Wifi, Key, FileText } from 'lucide-react';
 import { SystemStatus } from '../../types/aethelgard';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -62,7 +62,7 @@ export function DiagnosticDrawer({ isOpen, onClose, status }: DiagnosticDrawerPr
                                 </div>
                             </section>
 
-                            {/* Satellite Telemetry (NEW) */}
+                            {/* Satellite Telemetry (ENHANCED) */}
                             <section>
                                 <h3 className="text-[10px] font-bold text-white/60 uppercase tracking-[0.2em] mb-4">Satellite Telemetry</h3>
                                 <div className="space-y-3">
@@ -70,35 +70,56 @@ export function DiagnosticDrawer({ isOpen, onClose, status }: DiagnosticDrawerPr
                                         const isManualDisabled = sat.status === 'MANUAL_DISABLED';
                                         const isHighLatency = sat.latency > 200;
                                         const isOffline = sat.status === 'OFFLINE';
+                                        const hasAuthError = !!sat.last_error;
 
-                                        let statusColor = 'bg-aethelgard-blue shadow-[0_0_8px_rgba(0,210,255,0.4)]'; // CYAN
+                                        let statusColor = 'bg-aethelgard-blue shadow-[0_0_8px_rgba(0,210,255,0.4)]';
                                         let textColor = 'text-aethelgard-blue';
 
                                         if (isManualDisabled) {
-                                            statusColor = 'bg-white/10'; // DARK GREY
+                                            statusColor = 'bg-white/10';
                                             textColor = 'text-white/30';
                                         } else if (isOffline) {
-                                            statusColor = 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]'; // RED
+                                            statusColor = 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]';
                                             textColor = 'text-red-500';
                                         } else if (isHighLatency) {
-                                            statusColor = 'bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.4)]'; // ORANGE
+                                            statusColor = 'bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.4)]';
                                             textColor = 'text-orange-400';
                                         }
 
                                         return (
-                                            <div key={id} className="flex items-center justify-between p-3 rounded-lg bg-white/[0.02] border border-white/5">
-                                                <div className="flex items-center gap-3">
-                                                    <div className={`w-1.5 h-1.5 rounded-full ${statusColor}`} />
-                                                    <span className="text-xs font-bold text-white/90 uppercase tracking-tighter">{id}</span>
-                                                </div>
-                                                <div className="flex items-center gap-4">
-                                                    <div className="flex items-center gap-1.5">
-                                                        <Wifi size={10} className="text-white/20" />
-                                                        <span className="text-[10px] font-mono text-white/60">{sat.latency.toFixed(0)}ms</span>
+                                            <div key={id} className="flex flex-col gap-2 p-3 rounded-lg bg-white/[0.02] border border-white/5">
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className={`w-1.5 h-1.5 rounded-full ${statusColor}`} />
+                                                        <span className="text-xs font-bold text-white/90 uppercase tracking-tighter">{id}</span>
+                                                        {hasAuthError && (
+                                                            <div className="flex items-center gap-1.5 px-1.5 py-0.5 rounded bg-red-500/10 border border-red-500/20 shadow-[0_0_10px_rgba(239,68,68,0.1)]">
+                                                                <Key size={10} className="text-red-500" />
+                                                                <span className="text-[8px] font-black text-red-500 uppercase">AUTH ERROR</span>
+                                                            </div>
+                                                        )}
                                                     </div>
-                                                    <span className={`text-[9px] font-bold uppercase ${textColor}`}>
-                                                        {sat.status.replace('_', ' ')}
-                                                    </span>
+                                                    <div className="flex items-center gap-4">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <Wifi size={10} className="text-white/20" />
+                                                            <span className="text-[10px] font-mono text-white/60">{sat.latency.toFixed(0)}ms</span>
+                                                        </div>
+                                                        <span className={`text-[9px] font-bold uppercase ${textColor}`}>
+                                                            {sat.status.replace('_', ' ')}
+                                                        </span>
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex items-center justify-between pt-2 border-t border-white/[0.03]">
+                                                    <div className="flex gap-2">
+                                                        <span className={`text-[8px] font-black uppercase px-1 rounded-sm ${sat.supports_data ? 'text-aethelgard-blue bg-aethelgard-blue/10' : 'text-white/10 bg-white/5'}`}>Data</span>
+                                                        <span className={`text-[8px] font-black uppercase px-1 rounded-sm ${sat.supports_exec ? 'text-purple-400 bg-purple-400/10' : 'text-white/10 bg-white/5'}`}>Exec</span>
+                                                    </div>
+                                                    {sat.last_error && (
+                                                        <span className="text-[8px] font-mono text-red-400/60 truncate max-w-[150px] italic">
+                                                            {sat.last_error}
+                                                        </span>
+                                                    )}
                                                 </div>
                                             </div>
                                         );
@@ -109,14 +130,14 @@ export function DiagnosticDrawer({ isOpen, onClose, status }: DiagnosticDrawerPr
                                 </div>
                             </section>
 
-                            {/* Sync Fidelity (NEW) */}
+                            {/* Sync Fidelity */}
                             <section>
                                 <h3 className="text-[10px] font-bold text-white/60 uppercase tracking-[0.2em] mb-4">Closed-Loop Sync</h3>
                                 <div className="glass p-4 rounded-xl border-white/5 space-y-4">
                                     <div className="flex justify-between items-center">
                                         <div className="flex items-center gap-2">
                                             <div className={`w-2 h-2 rounded-full ${status.sync_fidelity?.status === 'OPTIMAL' ? 'bg-aethelgard-green' :
-                                                    status.sync_fidelity?.status === 'DEGRADED' ? 'bg-orange-500' : 'bg-red-500'
+                                                status.sync_fidelity?.status === 'DEGRADED' ? 'bg-orange-500' : 'bg-red-500'
                                                 }`} />
                                             <span className="text-sm font-bold text-white/90">Source Fidelity</span>
                                         </div>
@@ -134,6 +155,7 @@ export function DiagnosticDrawer({ isOpen, onClose, status }: DiagnosticDrawerPr
                                     </div>
                                 </div>
                             </section>
+
                             <section>
                                 <h3 className="text-[10px] font-bold text-white/60 uppercase tracking-[0.2em] mb-4">Sub-System Health</h3>
                                 <div className="space-y-3">
@@ -155,7 +177,7 @@ export function DiagnosticDrawer({ isOpen, onClose, status }: DiagnosticDrawerPr
                             {/* Security & Vault */}
                             <section>
                                 <h3 className="text-[10px] font-bold text-white/60 uppercase tracking-[0.2em] mb-4">Data Vault & Encryption</h3>
-                                <div className="glass p-4 rounded-xl border-white/5 space-y-4">
+                                <div className="glass p-4 rounded-xl border-white/5 space-y-4" title="Audit: StorageManager + ConnectivityOrchestrator Verify Encryption">
                                     <div className="flex items-center gap-3">
                                         <Shield size={16} className="text-aethelgard-gold/60" />
                                         <div>
