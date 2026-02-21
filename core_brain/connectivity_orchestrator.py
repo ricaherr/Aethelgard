@@ -1,10 +1,15 @@
 import os
 import importlib
 import logging
+from enum import Enum
 from typing import Dict, Optional, Type, Any, List
 from connectors.base_connector import BaseConnector
 
 logger = logging.getLogger(__name__)
+
+class MarketType(Enum):
+    CENTRALIZED = "CENTRALIZED"   # Futures, Stocks
+    DECENTRALIZED = "DECENTRALIZED" # Forex, Crypto
 
 class ConnectivityOrchestrator:
     """
@@ -138,3 +143,18 @@ class ConnectivityOrchestrator:
                 "latency": connector.get_latency() if is_manual_enabled else 0.0
             }
         return report
+    def get_priority_provider(self, market_type: MarketType) -> Optional[BaseConnector]:
+        """
+        Returns the primary connector that provides both Data and Execution for a market.
+        Currently, for DECENTRALIZED markets (Forex/Crypto), MT5 is the priority.
+        For CENTRALIZED, it might vary.
+        """
+        # Logic to determine priority provider based on availability and market type
+        if market_type == MarketType.DECENTRALIZED:
+            return self.get_connector("MT5")
+        
+        # Fallback to first available connector if not specified
+        if self.connectors:
+            return next(iter(self.connectors.values()))
+            
+        return None

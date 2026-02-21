@@ -29,8 +29,10 @@ graph TD
 
 ## 6. 🛡️ Ley de Agnosticismo (Omnichain Law)
 El **Core Brain** es sagrado y debe permanecer puro. Queda terminantemente **PROHIBIDO** importar librerías de terceros vinculadas a brokers específicos (ej. `MetaTrader5`, `OANDA`, `ccxt`) dentro de cualquier módulo que no resida en la carpeta `connectors/`.
-- El cerebro solo conoce la `BaseConnector` Interface.
-- Los datos fluyen a través de contratos, no de implementaciones.
+
+## 9. 🔒 Ley de Fidelidad de Fuente (Source Fidelity Law)
+En mercados descentralizados (Forex, Crypto), la fuente de análisis y la fuente de ejecución son una unidad indivisible para garantizar la veracidad del sistema.
+- **Regla**: Si el mercado es `DECENTRALIZED`, el `OrderExecutor` rechazará cualquier señal cuya `provider_source` no coincida exactamente con el conector de ejecución activo.
 
 ## 7. 🏗️ Estructura de 3 Capas
 Para asegurar la escalabilidad "Aethelgard Omnichain", el flujo de conectividad se divide en:

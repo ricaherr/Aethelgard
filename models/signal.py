@@ -70,6 +70,7 @@ class Signal(BaseModel):
     market_type: Optional[str] = "FOREX"    # FOREX, CRYPTO, STOCKS, FUTURES
     platform: Optional[str] = None          # MT5, NT8, BINANCE, PAPER, etc.
     order_id: Optional[str] = None          # ID de orden del broker (si ejecutada)
+    provider_source: Optional[str] = None   # ID del proveedor de datos (ej: MT5, YAHOO)
     
     # Metadata adicional
     metadata: Dict[str, Any] = Field(default_factory=dict)

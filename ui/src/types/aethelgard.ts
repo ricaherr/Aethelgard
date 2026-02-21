@@ -75,6 +75,11 @@ export interface SystemStatus {
     lastUpdate: string;
     heartbeats: Record<string, string>;
     satellites?: Record<string, SatelliteStatus>;
+    sync_fidelity?: {
+        score: number;
+        status: 'OPTIMAL' | 'DEGRADED' | 'OUT_OF_SYNC';
+        details: string;
+    };
 }
 
 export interface EdgeMetrics {

@@ -29,7 +29,7 @@ class EdgeMonitor(threading.Thread):
         
     def run(self) -> None:
         """Loop principal del monitor"""
-        logger.info("[EDGE] EDGE Monitor started - checking for inconsistencies every 60s")
+        logger.info("[EDGE] Monitor started - checking for inconsistencies every 60s")
         
         # PRUEBA DE AUTOINYECCIÓN
         try:
@@ -56,19 +56,13 @@ class EdgeMonitor(threading.Thread):
     def stop(self) -> None:
         """Detener el monitor"""
         self.running = False
-        logger.info("🧠 EDGE Monitor stopped")
+        logger.info("[EDGE] Monitor stopped")
     
     def _get_mt5_connector(self) -> Optional[Any]:
-        """Get MT5 connector instance (reuse injected or lazy-load)"""
+        """Get MT5 connector instance (must be injected)"""
         if self.mt5_connector is None:
-            # Lazy loading as fallback (NOT RECOMMENDED - use DI instead)
-            try:
-                from connectors.mt5_connector import MT5Connector
-                logger.warning("⚠️  EdgeMonitor creating NEW MT5Connector (should use injected instance)")
-                self.mt5_connector = MT5Connector()
-            except ImportError:
-                logger.warning("MT5 connector not available")
-                return None
+            logger.warning("[EDGE] MT5 connector not available (not injected)")
+            return None
         return self.mt5_connector
     
     def _check_mt5_external_operations(self) -> None:
@@ -91,7 +85,7 @@ class EdgeMonitor(threading.Thread):
             if self.trade_listener:
                 mt5.reconcile_closed_trades(self.trade_listener, hours_back=24)
             else:
-                logger.warning("⚠️  TradeClosureListener no disponible - Reconciliación omitida")
+                logger.warning("[EDGE] TradeClosureListener not available - reconciliation skipped")
             
             # PASO 2: Obtener posiciones ABIERTAS de MT5 (ya sincronizadas)
             mt5_positions = mt5.get_open_positions()
@@ -156,7 +150,7 @@ class EdgeMonitor(threading.Thread):
             details=details
         )
         
-        logger.warning(f"🚨 {detection}")
+        logger.warning(f"[EDGE] {detection}")
     
     def _check_inconsistencies(self) -> None:
         """Verificar inconsistencias entre módulos"""
@@ -272,7 +266,7 @@ class EdgeMonitor(threading.Thread):
             details=details
         )
         
-        logger.warning(f"🚨 Signal inconsistency: {detection}")
+        logger.warning(f"[EDGE] Signal inconsistency: {detection}")
     
     def _count_recent_signals(self) -> int:
         """Contar señales generadas en los últimos 60s"""
@@ -359,4 +353,4 @@ class EdgeMonitor(threading.Thread):
                 logger.warning(f"Emerging pattern detected: 100% veto rate for {symbol}")
         
         if detection:
-            logger.warning(f"🚨 EDGE Inconsistency detected: {detection}")
+            logger.warning(f"[EDGE] Inconsistency detected: {detection}")

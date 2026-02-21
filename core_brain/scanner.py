@@ -158,6 +158,7 @@ class ScannerEngine:
         self.last_regime: Dict[str, MarketRegime] = {}
         self.last_scan_time: Dict[str, float] = {}
         self.last_dataframes: Dict[str, Any] = {}
+        self.last_providers: Dict[str, str] = {}
         self.consecutive_failures: Dict[str, int] = {}
         self.circuit_breaker_cooldowns: Dict[str, float] = {}
         self._lock = threading.Lock()
@@ -195,7 +196,12 @@ class ScannerEngine:
 
             # Clasificar régimen
             classifier = self.classifiers[key]
-            classifier.load_ohlc(df)
+            provider_id = getattr(self.provider, "provider_name", "UNKNOWN")
+            if hasattr(self.provider, "get_best_provider"):
+                instance = self.provider.get_best_provider()
+                if instance:
+                    provider_id = getattr(instance, "name", provider_id)
+
             regime = classifier.classify()
             metrics = classifier.get_metrics()
             
@@ -203,7 +209,7 @@ class ScannerEngine:
             self.consecutive_failures.pop(key, None)
             self.circuit_breaker_cooldowns.pop(key, None)
 
-            return symbol, timeframe, regime, metrics, df
+            return symbol, timeframe, regime, metrics, df, provider_id
         except Exception as e:
             logger.error("Error escaneando %s [%s]: %s", symbol, timeframe, e)
             self._handle_scan_failure(key)
@@ -279,9 +285,9 @@ class ScannerEngine:
                         to_scan.append((symbol, tf))
         return to_scan
 
-    def _process_scan_result(self, res: Tuple[str, str, MarketRegime, Dict, Any]) -> None:
+    def _process_scan_result(self, res: Tuple[str, str, MarketRegime, Dict, Any, str]) -> None:
         """Processes and persists the result of a single asset scan."""
-        symbol, timeframe, regime, metrics, df = res
+        symbol, timeframe, regime, metrics, df, provider_id = res
         key = f"{symbol}|{timeframe}"
         now = time.monotonic()
 
@@ -289,6 +295,7 @@ class ScannerEngine:
             self.last_regime[key] = regime
             self.last_scan_time[key] = now
             self.last_dataframes[key] = df
+            self.last_providers[key] = provider_id
         
         # Persistence for cross-process (Heatmap)
         if self.storage:
@@ -450,7 +457,8 @@ class ScannerEngine:
                     "regime": self.last_regime[key],
                     "df": self.last_dataframes.get(key),
                     "symbol": symbol,
-                    "timeframe": timeframe
+                    "timeframe": timeframe,
+                    "provider_source": self.last_providers.get(key, "UNKNOWN")
                 }
             return results
 

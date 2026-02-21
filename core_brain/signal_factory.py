@@ -108,7 +108,8 @@ class SignalFactory:
             logger.error(f"Failed to register OliverVelezStrategy: {e}", exc_info=True)
 
     async def generate_signal(
-        self, symbol: str, df: pd.DataFrame, regime: MarketRegime, timeframe: Optional[str] = None, trace_id: Optional[str] = None
+        self, symbol: str, df: pd.DataFrame, regime: MarketRegime, timeframe: Optional[str] = None, 
+        trace_id: Optional[str] = None, provider_source: Optional[str] = None
     ) -> List[Signal]:
         """
         Analiza un símbolo con TODAS las estrategias registradas.
@@ -137,6 +138,10 @@ class SignalFactory:
                     # Set trace_id for pipeline tracking
                     if trace_id:
                         signal.trace_id = trace_id
+                    
+                    # Set provider_source for Closed-Loop Sync
+                    if provider_source:
+                        signal.provider_source = provider_source
                     
                     # Validar que no sea duplicado antes de procesar
                     if self._is_duplicate_signal(signal):
@@ -357,9 +362,11 @@ class SignalFactory:
                 timeframe = data.get("timeframe")  # Extraer timeframe del dict
                 
                 if regime and df is not None and symbol:
-                    # Pass both symbol and timeframe to strategies
-                    # Strategies will use timeframe for signal metadata
-                    tasks.append(self.generate_signal(symbol, df, regime, timeframe, trace_id))
+                    # Pass symbol, df, regime, timeframe, trace_id, AND provider_source
+                    provider_source = data.get("provider_source", "UNKNOWN")
+                    tasks.append(self.generate_signal(
+                        symbol, df, regime, timeframe, trace_id, provider_source
+                    ))
 
             if not tasks:
                 # Diagnóstico detallado: ¿por qué no se crearon tasks?

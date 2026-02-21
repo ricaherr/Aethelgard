@@ -77,7 +77,7 @@ def launch_server() -> None:
         # Verificar si la UI está compilada
         ui_dist = os.path.join(os.getcwd(), "ui", "dist")
         if not os.path.exists(ui_dist):
-            logger.warning("[WARNING]  UI Next-Gen no compilada. Ejecutando build rápido...")
+            logger.warning("[WARN] UI Next-Gen no compilada. Ejecutando build rápido...")
             try:
                 subprocess.run(["npm", "run", "build"], cwd=os.path.join(os.getcwd(), "ui"), shell=True, check=True)
                 logger.info("[OK] UI compilada correctamente.")
@@ -131,38 +131,38 @@ async def main() -> None:
         # Símbolos a monitorear - FOREX MAJORS + MINORS + EXOTICS
         symbols = [
             # === MAJORS (6 pares - 85% del volumen forex) ===
-            "EURUSD=X",  # Euro/USD
-            "GBPUSD=X",  # Libra/USD
-            "USDJPY=X",  # USD/Yen
-            "AUDUSD=X",  # Dólar australiano/USD
-            "USDCAD=X",  # USD/Dólar canadiense
-            "USDCHF=X",  # USD/Franco suizo
+            "EURUSD",  # Euro/USD
+            "GBPUSD",  # Libra/USD
+            "USDJPY",  # USD/Yen
+            "AUDUSD",  # Dólar australiano/USD
+            "USDCAD",  # USD/Dólar canadiense
+            "USDCHF",  # USD/Franco suizo
             
             # === MINORS (6 pares - cruces sin USD) ===
-            "EURGBP=X",  # Euro/Libra
-            "EURJPY=X",  # Euro/Yen
-            "GBPJPY=X",  # Libra/Yen
-            "EURCHF=X",  # Euro/Franco suizo
-            "EURAUD=X",  # Euro/Dólar australiano
-            "GBPAUD=X",  # Libra/Dólar australiano
+            "EURGBP",  # Euro/Libra
+            "EURJPY",  # Euro/Yen
+            "GBPJPY",  # Libra/Yen
+            "EURCHF",  # Euro/Franco suizo
+            "EURAUD",  # Euro/Dólar australiano
+            "GBPAUD",  # Libra/Dólar australiano
             
             # === COMMODITY CURRENCIES (4 pares) ===
-            "NZDUSD=X",  # Dólar neozelandés/USD
-            "AUDJPY=X",  # Dólar australiano/Yen
-            "CADJPY=X",  # Dólar canadiense/Yen
-            "NZDJPY=X",  # Dólar neozelandés/Yen
+            "NZDUSD",  # Dólar neozelandés/USD
+            "AUDJPY",  # Dólar australiano/Yen
+            "CADJPY",  # Dólar canadiense/Yen
+            "NZDJPY",  # Dólar neozelandés/Yen
             
             # === EXOTICS (6 pares - alta volatilidad) ===
-            "USDMXN=X",  # USD/Peso mexicano
-            "USDZAR=X",  # USD/Rand sudafricano
-            "USDTRY=X",  # USD/Lira turca
-            "USDBRL=X",  # USD/Real brasileño
-            "USDRUB=X",  # USD/Rublo ruso
-            "USDCNH=X",  # USD/Yuan chino offshore
+            "USDMXN",  # USD/Peso mexicano
+            "USDZAR",  # USD/Rand sudafricano
+            "USDTRY",  # USD/Lira turca
+            "USDBRL",  # USD/Real brasileño
+            "USDRUB",  # USD/Rublo ruso
+            "USDCNH",  # USD/Yuan chino offshore
             
             # === SCANDINAVIAN (2 pares) ===
-            "USDSEK=X",  # USD/Corona sueca
-            "USDNOK=X",  # USD/Corona noruega
+            "USDSEK",  # USD/Corona sueca
+            "USDNOK",  # USD/Corona noruega
         ]
         logger.info(f"   Símbolos: {len(symbols)} pares forex")
         logger.info(f"   - Majors: 6 | Minors: 6 | Commodities: 4 | Exotics: 6 | Scandinavian: 2")
@@ -365,7 +365,7 @@ async def main() -> None:
                     })
                     logger.info(f"   Balance cacheado: ${account_balance:,.2f} (MT5_LIVE)")
                 except Exception as e:
-                    logger.warning(f"[WARNING]  No se pudo cachear balance de MT5: {e}")
+                    logger.warning(f"[WARN] No se pudo cachear balance de MT5: {e}")
             else:
                 logger.error("[ERROR] MT5 connection failed!")
             

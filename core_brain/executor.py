@@ -204,6 +204,7 @@ class OrderExecutor:
             elif isinstance(risk_result, bool):
                 can_trade = risk_result
                 risk_reason = "" if risk_result else "RiskManager rejected trade"
+        
         if not can_trade:
             self.last_rejection_reason = f"Risk limit exceeded: {risk_reason}"
             logger.warning(
@@ -212,6 +213,35 @@ class OrderExecutor:
             )
             self._register_failed_signal(signal, "EXCEEDED_ACCOUNT_RISK")
             return False
+
+        # Step 3.8: Closed-Loop Sync Gatekeeper (Source Fidelity)
+        # For DECENTRALIZED markets (Forex/Crypto), provider_source must match connector
+        market_type_str = (signal.market_type or "FOREX").upper()
+        if market_type_str in ["FOREX", "CRYPTO"]:
+            from core_brain.connectivity_orchestrator import ConnectivityOrchestrator
+            orch = ConnectivityOrchestrator()
+            prov_id = getattr(connector, 'provider_id', signal.connector_type.value)
+            
+            # If signal source is known and differs from current executor provider, REJECT TRADE
+            if signal.provider_source and signal.provider_source != "UNKNOWN":
+                # Note: Normalize comparison if needed (e.g., MT5 vs mt5)
+                if signal.provider_source.upper() != prov_id.upper():
+                    rejection_msg = (
+                        f"DESINCRONIZACIÓN DE FUENTE: Señal de {signal.provider_source} "
+                        f"no apta para ejecución en {prov_id} (Mercado Descentralizado)"
+                    )
+                    self.last_rejection_reason = rejection_msg
+                    logger.critical(f"> [INTEGRITY CHECK] {rejection_msg}")
+                    # Log to Edge's Thought Stream (Learning)
+                    if hasattr(self.storage, "save_edge_learning"):
+                        self.storage.save_edge_learning(
+                            detection="Desincronización de fuente en mercado descentralizado",
+                            action_taken="TRADE_REJECTED",
+                            learning="Blindaje de veracidad: Datos y Ejecución deben ser indivisibles en Forex/Crypto",
+                            details=f"Source: {signal.provider_source}, Executor: {prov_id}"
+                        )
+                    self._register_failed_signal(signal, "SOURCE_SYNC_FAILURE")
+                    return False
         
         # Step 4: Calculate position size
         position_size = self._calculate_position_size(signal)

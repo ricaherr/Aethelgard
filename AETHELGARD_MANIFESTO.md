@@ -1,3 +1,19 @@
+### 1.12 Ley de Fidelidad de Fuente (Source Fidelity) - Feb 2026
+
+**Regla:** En mercados descentralizados (Forex, Crypto), la fuente del análisis (Scanner/Data Provider) y el destino de ejecución (Broker Account) deben ser idénticos. Se prohíbe taxativamente ejecutar una señal en un broker "B" si los datos de análisis provinieron de un broker "A".
+
+#### 1. Blindaje de Veracidad (Closed-Loop Sync)
+- **Problemática**: La discrepancia de precios entre brokers (spreads, liquidez, feeds de datos) en mercados descentralizados genera fallos en la ejecución de estrategias de precisión.
+- **Solución**: El `OrderExecutor` implementa un gatekeeper que verifica el `provider_source` de la señal contra el `provider_id` del conector de ejecución.
+- **Excepciones**: Esta regla solo aplica a mercados descentralizados (`DECENTRALIZED`). En mercados centralizados (`CENTRALIZED`) como Stocks o Futures, se permite el análisis cruzado ya que el feed de datos es universal.
+
+#### 2. Implementación Técnica
+- **Signal Stamping**: Cada señal generada por el `SignalFactory` incluye el ID del proveedor de datos que originó el análisis.
+- **Execution Veto**: Si hay desincronización en un mercado descentralizado, la señal se marca como `SOURCE_SYNC_FAILURE` y se aborta el trade.
+- **UI Metrics**: La UI muestra un indicador de `Sync Fidelity` para monitorear la coherencia del flujo de datos en tiempo real.
+
+---
+
 ### 1.11 Control Proactivo de Satélites (Feb 2026)
 
 **Regla:** El usuario debe tener control total y persistente sobre la activación de cada satélite (conector) de comunicación. Una desactivación manual debe forzar la desconexión del proveedor y vetar cualquier intento de ejecución.

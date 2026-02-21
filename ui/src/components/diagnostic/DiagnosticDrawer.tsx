@@ -109,7 +109,31 @@ export function DiagnosticDrawer({ isOpen, onClose, status }: DiagnosticDrawerPr
                                 </div>
                             </section>
 
-                            {/* Module Heartbeats */}
+                            {/* Sync Fidelity (NEW) */}
+                            <section>
+                                <h3 className="text-[10px] font-bold text-white/60 uppercase tracking-[0.2em] mb-4">Closed-Loop Sync</h3>
+                                <div className="glass p-4 rounded-xl border-white/5 space-y-4">
+                                    <div className="flex justify-between items-center">
+                                        <div className="flex items-center gap-2">
+                                            <div className={`w-2 h-2 rounded-full ${status.sync_fidelity?.status === 'OPTIMAL' ? 'bg-aethelgard-green' :
+                                                    status.sync_fidelity?.status === 'DEGRADED' ? 'bg-orange-500' : 'bg-red-500'
+                                                }`} />
+                                            <span className="text-sm font-bold text-white/90">Source Fidelity</span>
+                                        </div>
+                                        <span className="text-[10px] font-mono text-white/40">{(status.sync_fidelity?.score || 1.0) * 100}%</span>
+                                    </div>
+                                    <p className="text-[10px] text-white/50 leading-relaxed italic">
+                                        {status.sync_fidelity?.details || "Garantiza que la fuente de análisis y ejecución sean idénticas en mercados descentralizados."}
+                                    </p>
+                                    <div className="pt-2 flex items-center gap-2">
+                                        <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded border ${status.sync_fidelity?.status === 'OPTIMAL' ? 'border-aethelgard-green/30 text-aethelgard-green' : 'border-red-500/30 text-red-500'
+                                            }`}>
+                                            {status.sync_fidelity?.status || 'OPTIMAL'}
+                                        </span>
+                                        <span className="text-[8px] font-bold text-white/20 uppercase">Omnichain Laws Applied</span>
+                                    </div>
+                                </div>
+                            </section>
                             <section>
                                 <h3 className="text-[10px] font-bold text-white/60 uppercase tracking-[0.2em] mb-4">Sub-System Health</h3>
                                 <div className="space-y-3">
