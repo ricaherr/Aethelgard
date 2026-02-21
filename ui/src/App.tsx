@@ -9,7 +9,8 @@ import {
     Search,
     Zap,
     Briefcase,
-    ScanEye
+    ScanEye,
+    Satellite
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -26,6 +27,7 @@ import { ConfigHub } from './components/config/ConfigHub';
 import { PortfolioView } from './components/portfolio/PortfolioView';
 import { GlassPanel } from './components/common/GlassPanel';
 import { AnalysisPage } from './components/analysis';
+import { SatelliteLink } from './components/satellite/SatelliteLink';
 
 function App() {
     const [activeTab, setActiveTab] = useState('trader');
@@ -85,6 +87,12 @@ function App() {
                         active={activeTab === 'edge'}
                         onClick={() => setActiveTab('edge')}
                         label="EDGE"
+                    />
+                    <NavIcon
+                        icon={<Satellite size={22} />}
+                        active={activeTab === 'satellite'}
+                        onClick={() => setActiveTab('satellite')}
+                        label="Satellite Link"
                     />
                     <NavIcon
                         icon={<ScanEye size={22} />}
@@ -229,6 +237,18 @@ function App() {
                                 className="h-full"
                             >
                                 <ConfigHub />
+                            </motion.div>
+                        )}
+
+                        {activeTab === 'satellite' && (
+                            <motion.div
+                                key="satellite-view"
+                                initial={{ opacity: 0, scale: 0.95 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0, scale: 1.05 }}
+                                className="h-full"
+                            >
+                                <SatelliteLink />
                             </motion.div>
                         )}
                     </AnimatePresence>

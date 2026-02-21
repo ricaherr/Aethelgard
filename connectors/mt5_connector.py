@@ -55,7 +55,9 @@ class ConnectionState(Enum):
     FAILED = "failed"
 
 
-class MT5Connector:
+from connectors.base_connector import BaseConnector
+
+class MT5Connector(BaseConnector):
     """
     Production MT5 Connector for Aethelgard
 
@@ -842,76 +844,64 @@ class MT5Connector:
             comment = comment[:31]
         return comment
     
+    def execute_order(self, signal: Any) -> Dict[str, Any]:
+        """BaseConnector interface wrapper for execute_signal"""
+        return self.execute_signal(signal)
+
     def execute_signal(self, signal: Signal) -> Dict:
-        """
-        Execute a trading signal
-        
-        Args:
-            signal: Signal object to execute
-        
-        Returns:
-            Dict with execution result
-        """
-        logger.info(f"[INSTANCE {id(self)}] execute_signal() called for {signal.symbol}. is_connected={self.is_connected}, connection_state={self.connection_state}, available_symbols_count={len(self.available_symbols)}")
-        
-        if not self.is_connected:
-            logger.error(f"[INSTANCE {id(self)}] MT5 not connected (is_connected={self.is_connected}). Call connect() first.")
-            return {'success': False, 'error': 'Not connected'}
-        
-        if not self.is_demo:
-            logger.error("Safety check: will not execute on non-demo account")
-            return {'success': False, 'error': 'Not a demo account'}
-        
+        """Execute a trading signal using MT5."""
+        # 1. Environment Validation
+        env_result = self._validate_execution_environment()
+        if not env_result['success']:
+            return env_result
+
         try:
-            symbol = self.normalize_symbol(signal.symbol)
-            if symbol != signal.symbol:
-                logger.info(f"Normalized symbol for MT5: {signal.symbol} -> {symbol}")
-            
-            # AUTO-FILTER: Check if symbol is available in broker BEFORE attempting execution
-            # Only filter if available_symbols has been loaded (connection completed)
-            if len(self.available_symbols) > 0 and symbol not in self.available_symbols:
-                logger.debug(f"Symbol {symbol} not available in this broker (skipped silently)")
-                return {'success': False, 'error': f'Symbol {symbol} not available in broker'}
-            
-            # Ensure symbol is visible in Market Watch (CRITICAL for tick retrieval)
-            symbol_info = mt5.symbol_info(symbol)
-            if symbol_info is None:
-                logger.error(f"Symbol {symbol} does not exist in MT5")
-                return {'success': False, 'error': f'Symbol {symbol} not found in MT5'}
-            
-            if not symbol_info.visible:
-                logger.info(f"Making {symbol} visible in Market Watch...")
-                if not mt5.symbol_select(symbol, True):
-                    logger.error(f"Failed to make {symbol} visible in Market Watch")
-                    return {'success': False, 'error': f'Cannot enable {symbol} in Market Watch'}
-                logger.debug(f"{symbol} now visible in Market Watch")
-            
-            # Prepare order request
+            # 2. Symbol Normalization and Availability
+            symbol_info = self._get_execution_symbol_info(signal.symbol)
+            if not symbol_info:
+                return {'success': False, 'error': f'Symbol {signal.symbol} not available or invalid'}
+
+            # 3. Prepare and Send Order
             order_type = mt5.ORDER_TYPE_BUY if signal.signal_type == SignalType.BUY else mt5.ORDER_TYPE_SELL
-            
-            # Prepare and validate order request
             request = self._prepare_order_request(signal, symbol_info, order_type)
             if not request:
-                 return {'success': False, 'error': 'Failed to prepare order request'}
+                return {'success': False, 'error': 'Failed to prepare order request'}
 
-            # Log request details for debugging
-            logger.info(f"[ORDER] Sending order to MT5:")
-            logger.info(f"   Symbol: {request['symbol']}")
-            logger.info(f"   Volume: {request['volume']} (type: {type(request['volume'])})")
-            logger.info(f"   Type: {'BUY' if request['type'] == mt5.ORDER_TYPE_BUY else 'SELL'})")
-            logger.info(f"   Price: {request['price']}")
-            logger.info(f"   SL: {request['sl']}")
-            logger.info(f"   TP: {request['tp']}")
-            logger.info(f"   Fill: {request['type_filling']}")
-            
-            # Execute order
             result = mt5.order_send(request)
-            
             return self._handle_order_result(result, signal, request)
         
         except Exception as e:
             logger.error(f"Error executing signal: {e}")
             return {'success': False, 'error': str(e)}
+
+    def _validate_execution_environment(self) -> Dict:
+        """Checks connection and account safety."""
+        if not self.is_connected:
+            return {'success': False, 'error': 'Not connected'}
+        if not self.is_demo:
+            return {'success': False, 'error': 'Not a demo account'}
+        return {'success': True}
+
+    def _get_execution_symbol_info(self, raw_symbol: str) -> Optional[Any]:
+        """Normalizes symbol and ensures it's available and visible."""
+        symbol = self.normalize_symbol(raw_symbol)
+        
+        # Check broker level availability
+        if len(self.available_symbols) > 0 and symbol not in self.available_symbols:
+            logger.debug(f"Symbol {symbol} not available in this broker")
+            return None
+            
+        symbol_info = mt5.symbol_info(symbol)
+        if not symbol_info:
+            return None
+            
+        # Ensure Market Watch visibility
+        if not symbol_info.visible:
+            if not mt5.symbol_select(symbol, True):
+                return None
+            symbol_info = mt5.symbol_info(symbol)
+            
+        return symbol_info
 
     def _prepare_order_request(self, signal: Signal, symbol_info: Any, order_type: int) -> Optional[Dict]:
         """Prepare order request dictionary"""
@@ -981,6 +971,11 @@ class MT5Connector:
             'type': signal.signal_type.value
         }
     
+    def get_positions(self) -> List[Dict[str, Any]]:
+        """BaseConnector interface wrapper for get_open_positions"""
+        res = self.get_open_positions()
+        return res if res is not None else []
+
     def get_open_positions(self) -> Optional[List[Dict]]:
         """
         Get all currently open positions from MT5
@@ -1387,71 +1382,28 @@ class MT5Connector:
         )
     
     def modify_position(self, ticket: int, new_sl: float, new_tp: Optional[float] = None, reason: str = "") -> Dict[str, Any]:
-        """
-        Modify SL/TP of an existing position.
-        
-        Args:
-            ticket: Position ticket ID
-            new_sl: New stop loss price
-            new_tp: New take profit price (None = keep current)
-            reason: Reason for modification (added to comment)
-            
-        Returns:
-            dict: {'success': bool, 'error': str}
-        """
+        """Modify SL/TP of an existing position."""
         if not self.is_connected:
             return {'success': False, 'error': 'MT5 not connected'}
         
         try:
-            positions = mt5.positions_get(ticket=ticket)
+            # 1. Fetch position
+            position = self._get_mt5_position(ticket)
+            if not position:
+                return {'success': False, 'error': f'Position {ticket} not found'}
             
-            if not positions or len(positions) == 0:
-                logger.warning(f"Position {ticket} not found")
-                return {'success': False, 'error': 'Position not found'}
+            # 2. Validate modification parameters
+            validation = self._validate_modification_params(position, new_sl, new_tp)
+            if not validation['success']:
+                return validation
             
-            position = positions[0]
+            # 3. Use validated/adjusted TP
+            final_tp = validation['tp']
             
-            # Validate freeze_level before attempting modification
-            symbol_info = mt5.symbol_info(position.symbol)
-            if symbol_info is None:
-                return {'success': False, 'error': f'Symbol {position.symbol} not found'}
-            
-            # Get current price (ask for buy, bid for sell)
-            current_price = symbol_info.ask if position.type == 0 else symbol_info.bid
-            
-            # Validate Freeze Level
-            if not self._validate_freeze_level(ticket, new_sl, current_price, symbol_info):
-                 return {'success': False, 'error': f'Freeze level violation for ticket {ticket}'}
-
-            # Use currentTP if not specified
-            if new_tp is None:
-                new_tp = position.tp
-            
-            # Validate SL/TP Logic (No TP crossover)
-            new_tp = self._validate_sltp_logic(ticket, position.type == 0, new_sl, new_tp)
-            
-            # Prepare modification request
-            comment = f"Aethelgard_{reason}" if reason else "Aethelgard_Modified"
-            
-            request = {
-                "action": mt5.TRADE_ACTION_SLTP,
-                "symbol": position.symbol,
-                "position": ticket,
-                "sl": float(new_sl),
-                "tp": float(new_tp) if new_tp > 0 else 0.0,
-                "magic": self.magic_number,
-                "comment": comment,
-            }
+            # 4. Prepare and Send Request
+            request = self._prepare_modify_request(ticket, position.symbol, new_sl, final_tp, reason)
             
             # DEBUG: Log request being sent
-            logger.info(f"Sending modify request: {modify_request}")
-            
-            result = mt5.order_send(modify_request)
-            
-            # DEBUG: Check MT5 last_error() if result is None
-            if result is None:
-                mt5_error = mt5.last_error()
-                logger.error(f"MT5 order_send returned None! last_error(): {mt5_error}")
             
             # DEBUG: Log full MT5 response
             logger.info(f"MT5 modify response for {ticket}: {result}")
@@ -1592,6 +1544,10 @@ class MT5Connector:
             t = "M5"
         return TIMEFRAME_MAP[t]
 
+    def get_market_data(self, symbol: str, timeframe: str = "M5", count: int = 500) -> Optional[Any]:
+        """BaseConnector interface wrapper for fetch_ohlc"""
+        return self.fetch_ohlc(symbol, timeframe, count)
+
     def fetch_ohlc(
         self,
         symbol: str,
@@ -1626,6 +1582,21 @@ class MT5Connector:
         except Exception as e:
             logger.error(f"Error in fetch_ohlc for {symbol}: {e}")
             return None
+
+    def get_latency(self) -> float:
+        """Measure and return current latency to the provider in milliseconds."""
+        if not self.is_connected:
+            return 0.0
+            
+        try:
+            # En MT5, una forma de medir latencia es el ping del terminal si está disponible
+            # o simplemente el tiempo de respuesta de una operación vacía.
+            # Por ahora, usamos el tiempo de ida y vuelta de info_tick (operación ligera)
+            start = time.perf_counter()
+            mt5.symbol_info_tick("EURUSD")
+            return (time.perf_counter() - start) * 1000.0
+        except Exception:
+            return 0.0
 
 # Singleton instance for easy import
 _mt5_connector_instance = None

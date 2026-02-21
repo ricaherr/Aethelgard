@@ -1,3 +1,24 @@
+### 1.11 Control Proactivo de Satélites (Feb 2026)
+
+**Regla:** El usuario debe tener control total y persistente sobre la activación de cada satélite (conector) de comunicación. Una desactivación manual debe forzar la desconexión del proveedor y vetar cualquier intento de ejecución.
+
+#### 1. Persistencia de Estado (Manual Override)
+- **Single Source of Truth**: El estado de habilitación se almacena en la tabla `connector_settings`.
+- **Estados**:
+  - `ONLINE`: Conector habilitado y saludable.
+  - `OFFLINE`: Conector habilitado pero con fallos técnicos (3+ reintentos).
+  - `MANUAL_DISABLED`: Conector silenciado explícitamente por el usuario.
+- **Acción Inmediata**: Al desactivar un conector, el sistema debe invocar `disconnect()` de forma segura.
+
+#### 2. Protección en la Ejecución (Execution Guard)
+- **Veto de Executor**: El `OrderExecutor` debe consultar el `ConnectivityOrchestrator` antes de procesar cualquier señal.
+- **Error Específico**: Si un conector está en `MANUAL_DISABLED`, se lanza `ConnectorDisabledError` y se registra la señal como `REJECTED` con el motivo `CONNECTOR_MANUAL_DISABLED`.
+
+#### 3. Auditoría en Tiempo Real
+- **Flow of Consciousness**: Cada cambio de estado manual (Enable/Disable) debe emitirse como un "pensamiento" de EDGE hacia la UI mediante `broadcast_thought`.
+
+---
+
 ### 1.10 Arquitectura Dual y Conexión Unificada (Feb 2026)
 
 **Regla:** El sistema debe operar bajo un modelo de separación de responsabilidades a nivel de infraestructura, distinguiendo entre la **Capa de Observación** (Data Providers) y la **Capa de Ejecución** (Broker Accounts), pero unificando la conectividad pesada (MT5) para optimizar recursos.
@@ -23,6 +44,15 @@ Para permitir despliegues 100% en la nube (Linux/No-GUI), se establece el siguie
 ### 1.9 Migración Total a SSOT (Feb 2026)
 
 **Regla:** Toda la configuración del sistema (instrumentos, parámetros dinámicos, riesgos, módulos, settings generales) debe residir exclusivamente en la base de datos, accedida vía StorageManager. Queda prohibida la lectura directa de archivos JSON para cualquier módulo de negocio, endpoint o test.
+
+**Segmentación de la Verdad (SystemMixin):**
+Para evitar que la base de datos se convierta en un monolito inmanejable, se implementa la segmentación lógica mediante Mixins:
+- **`SystemMixin` (system_db.py)**: Responsable de la salud y mantenimiento del motor. Gestiona:
+  - Estados globales de módulos (Toggles).
+  - Parámetros dinámicos y ajustes de EdgeTuner.
+  - Latidos del sistema (Heartbeats) y eventos de aprendizaje.
+  - Mapeo de símbolos (SSOT Normalization).
+- **Propósito**: Mantener la lógica administrativa separada de la lógica de negocio (Trade/Signal), garantizando que el `StorageManager` escale sin perder el principio SSOT.
 
 **Implementación:**
 - Refactor de todos los módulos para eliminar `open`/`json.load` y depender solo de StorageManager.

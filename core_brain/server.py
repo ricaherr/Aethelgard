@@ -24,6 +24,7 @@ from pydantic import ValidationError
 
 from models.signal import Signal, ConnectorType, SignalResult, MarketRegime
 from core_brain.regime import RegimeClassifier
+from core_brain.connectivity_orchestrator import ConnectivityOrchestrator
 from data_vault.storage import StorageManager
 from core_brain.notificator import get_notifier
 from core_brain.module_manager import get_module_manager, MembershipLevel
@@ -299,6 +300,10 @@ def create_app() -> FastAPI:
     # Servicio de análisis profundo de instrumentos
     from core_brain.analysis_service import InstrumentAnalysisService
     instrument_analysis_service = InstrumentAnalysisService(storage=storage)
+
+    # Inicializar orquestador con storage (Inyección de Dependencias)
+    orchestrator = ConnectivityOrchestrator()
+    orchestrator.set_storage(storage)
 
     @app.get("/api/instrument/{symbol}/analysis")
     async def instrument_analysis(symbol: str) -> Dict[str, Any]:
@@ -1118,6 +1123,35 @@ def create_app() -> FastAPI:
                 "signal_id": signal_id if 'signal_id' in locals() else None
             }
     
+    @app.get("/api/satellite/status")
+    async def get_satellite_status() -> Any:
+        """
+        Returns the status of all registered connectors from ConnectivityOrchestrator.
+        """
+        orchestrator = ConnectivityOrchestrator()
+        return orchestrator.get_status_report()
+
+    @app.post("/api/satellite/toggle")
+    async def toggle_satellite(data: Dict[str, Any]) -> Any:
+        """
+        Manually enable or disable a satellite connector.
+        """
+        provider_id = data.get("provider_id")
+        enabled = data.get("enabled", True)
+        
+        if not provider_id:
+            raise HTTPException(status_code=400, detail="provider_id is required")
+        
+        orchestrator = ConnectivityOrchestrator()
+        if enabled:
+            orchestrator.enable_connector(provider_id)
+            broadcast_thought(f"[USER ACTION] Conector {provider_id} habilitado manualmente.", module="CONNECTIVITY")
+        else:
+            orchestrator.disable_connector(provider_id)
+            broadcast_thought(f"[USER ACTION] Conector {provider_id} deshabilitado manualmente. Conmutando a proveedor de respaldo si es necesario...", module="CONNECTIVITY")
+            
+        return {"success": True, "provider_id": provider_id, "enabled": enabled}
+
     @app.get("/api/risk/status")
     async def get_risk_status() -> Dict[str, Any]:
         """
@@ -1657,11 +1691,15 @@ async def heartbeat_loop() -> None:
     """Bucle infinito para enviar el pulso del sistema a la UI"""
     while True:
         try:
-            # Recopilar métricas de salud (simplificado por ahora)
+            # Recopilar métricas de salud (incluyendo satélites)
+            from core_brain.connectivity_orchestrator import ConnectivityOrchestrator
+            orchestrator = ConnectivityOrchestrator()
+            
             metrics = {
                 "core": "ACTIVE",
                 "storage": "STABLE",
                 "notificator": "CONFIGURED",
+                "satellites": orchestrator.get_status_report(),
                 "timestamp": datetime.now().isoformat()
             }
             

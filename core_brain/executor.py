@@ -18,6 +18,10 @@ from data_vault.storage import StorageManager
 
 logger = logging.getLogger(__name__)
 
+class ConnectorDisabledError(Exception):
+    """Raised when trying to execute via a manually disabled connector."""
+    pass
+
 
 class OrderExecutor:
     """
@@ -234,6 +238,18 @@ class OrderExecutor:
         # Step 5: Execute via connector
         # (connector already obtained in Step 3.5)
         try:
+            # MANUAL_DISABLED Check (Satellite Link Control)
+            from core_brain.connectivity_orchestrator import ConnectivityOrchestrator
+            orchestrator = ConnectivityOrchestrator()
+            status_report = orchestrator.get_status_report()
+            prov_id = getattr(connector, 'provider_id', signal.connector_type.value)
+            
+            if status_report.get(prov_id, {}).get("status") == "MANUAL_DISABLED":
+                error_msg = f"Connector {prov_id} is MANUAL_DISABLED. Execution aborted."
+                logger.warning(error_msg)
+                self._register_failed_signal(signal, "CONNECTOR_MANUAL_DISABLED")
+                raise ConnectorDisabledError(error_msg)
+
             # RACE CONDITION FIX: Wait for MT5 connection if background thread is still connecting
             if signal.connector_type == ConnectorType.METATRADER5 and hasattr(connector, 'is_connected'):
                 max_wait = 15  # seconds

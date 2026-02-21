@@ -1,5 +1,24 @@
 
+## 🎯 MILESTONE: Aethelgard Omnichain Architecture (2026-02-20)
+**Estado: ✅ COMPLETADO**
+**Criterio: Implementar una capa de abstracción universal (BaseProvider) que desacople al Core Brain de los brokers específicos, permitiendo la integración de cualquier fuente de datos o ejecución (OANDA, Binance, FIX, etc.) mediante conectores estandarizados, mapeo universal de símbolos y normalización de flujo de datos.**
+
+### Componentes del Plan Maestro
+1. **La Capa de Abstracción (BaseProvider)**: Interfaz base universal que todos los conectores deben implementar.
+2. **Universal Symbol Mapper**: Diccionario maestro para traducción de activos entre Aethelgard y proveedores.
+3. **Router de Decisiones**: Motor de reglas para evaluar estado, prioridad (Escaneo vs Ejecución) y soporte de activos.
+4. **Flujo de Datos Normalizado**: Estandarización de formatos (UTC ISO 8601, Float prices, Volume) para el Core Brain.
+
+### Fases de Implementación
+- [x] **Fase 1: Contratos y Abstracción**: Definir `BaseProvider` y refactorizar conectores existentes (`MT5Connector`, `GenericDataProvider`). [x]
+- [x] **Fase 2: Universal Mapper**: Implementar servicio de mapeo dinámico basado en DB. [x]
+- [x] **Fase 3: Smart Router**: Implementar el orquestador de conexiones y Control Proactivo. [x]
+- [x] **Fase 4: Normalización**: Asegurar que toda la data entrante pase por el filtro de normalización agnóstica. [x]
+
+---
+
 ## 🎯 MILESTONE: SSOT Configuración Total (2026-02-19)
+
 **Estado: ✅ COMPLETADO**
 **Criterio: Eliminar dependencia de TODOS los archivos JSON de configuración (instruments.json, dynamic_params.json, risk_settings.json, modules.json, config.json), centralizando toda la configuración en la base de datos (StorageManager, SSOT), con refactor completo de módulos, endpoints, tests y documentación.**
 

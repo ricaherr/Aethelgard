@@ -205,6 +205,30 @@ class SystemMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
+    def set_connector_enabled(self, provider_id: str, enabled: bool) -> None:
+        """Set manual enable/disable status for a connector (Satellite Link)"""
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO connector_settings (provider_id, enabled, last_manual_toggle)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+            """, (provider_id, 1 if enabled else 0))
+            conn.commit()
+        finally:
+            self._close_conn(conn)
+
+    def get_connector_settings(self) -> Dict[str, bool]:
+        """Get all connector manual settings"""
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT provider_id, enabled FROM connector_settings")
+            rows = cursor.fetchall()
+            return {row['provider_id']: bool(row['enabled']) for row in rows}
+        finally:
+            self._close_conn(conn)
+
     def update_module_heartbeat(self, module_name: str) -> None:
         """Update last activity timestamp for a module"""
         self.update_system_state({f"heartbeat_{module_name}": datetime.now(timezone.utc).isoformat()})
@@ -401,3 +425,54 @@ class SystemMixin(BaseRepository):
         state = self.get_system_state()
         state["dynamic_params"] = params
         return self.update_system_state(state)
+    # ========== SYMBOL MAPPINGS (SSOT) ==========
+
+    def save_symbol_mapping(self, internal_symbol: str, provider_id: str, provider_symbol: str, is_default: bool = False) -> None:
+        """Save a symbol mapping to the database (SSOT)."""
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO symbol_mappings (internal_symbol, provider_id, provider_symbol, is_default)
+                VALUES (?, ?, ?, ?)
+            """, (internal_symbol, provider_id, provider_symbol, 1 if is_default else 0))
+            conn.commit()
+            logger.debug(f"[SSOT] Saved mapping: {internal_symbol} -> {provider_symbol} ({provider_id})")
+        finally:
+            self._close_conn(conn)
+
+    def get_symbol_map(self, provider_id: Optional[str] = None) -> Dict[str, Dict[str, str]]:
+        """
+        Get symbol mappings from database.
+        
+        Args:
+            provider_id: If provided, filtered by this provider.
+            
+        Returns:
+            Nested dict: {internal_symbol: {provider_id: provider_symbol}}
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            if provider_id:
+                cursor.execute("""
+                    SELECT internal_symbol, provider_id, provider_symbol FROM symbol_mappings 
+                    WHERE provider_id = ?
+                """, (provider_id,))
+            else:
+                cursor.execute("SELECT internal_symbol, provider_id, provider_symbol FROM symbol_mappings")
+            
+            rows = cursor.fetchall()
+            mapping = {}
+            for row in rows:
+                internal = row['internal_symbol']
+                pid = row['provider_id']
+                psym = row['provider_symbol']
+                
+                if internal not in mapping:
+                    mapping[internal] = {}
+                mapping[internal][pid] = psym
+                
+            return mapping
+        finally:
+            self._close_conn(conn)

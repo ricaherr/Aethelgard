@@ -76,45 +76,51 @@ class ScannerEngine:
         self.provider = data_provider
         self.config_path = config_path
         self.storage = storage
+        self.scan_mode = scan_mode.upper()
         
-        # SSOT: Prefer injected config_data, then storage, then legacy config file path.
+        # 1. Resolve configuration (SSOT)
+        sc = self._load_engine_config(config_data, storage, config_path)
+        
+        # 2. Apply scan mode settings
+        self._apply_scan_mode_settings(sc)
+        
+        # 3. Initialize state and classifiers
+        self._init_engine_state()
+        self._init_classifiers()
+
+    def _load_engine_config(self, config_data: Optional[Dict], storage: Optional[Any], config_path: Optional[str]) -> Dict:
+        """Resolves configuration from multiple sources with SSOT priority."""
+        cfg = {}
         if config_data:
             cfg = config_data
         elif storage:
-            # SSOT: Get from StorageManager (bootstrapped from config.json)
             state = storage.get_system_state()
             cfg = state.get("global_config", {}) if isinstance(state, dict) else {}
         elif config_path:
-            cfg = {}
             try:
                 cfg_file = Path(config_path)
                 if cfg_file.exists():
                     with open(cfg_file, "r", encoding="utf-8") as f:
-                        loaded = json.load(f)
-                    if isinstance(loaded, dict):
-                        cfg = loaded
+                        cfg = json.load(f) or {}
             except Exception as e:
-                logger.warning("Failed loading scanner config from config_path: %s", e)
-        else:
-            # No config source
-            cfg = {}
-
+                logger.warning("Failed loading scanner config: %s", e)
+        
         if config_path and not storage and not config_data:
             logger.warning("ScannerEngine config_path is legacy compatibility mode.")
             
-        sc = cfg.get("scanner", cfg) # Support both full config or just scanner segment
+        return cfg.get("scanner", cfg)
 
-        self.scan_mode = scan_mode.upper()
-        
-        # Configuraciones predefinidas para los modos de escaneo
+    def _apply_scan_mode_settings(self, sc: Dict) -> None:
+        """Applies operational settings and scan mode multipliers."""
         mode_configs = {
             "ECO": {"cpu_limit_pct": 50.0, "max_workers_multiplier": 0.5, "base_sleep_multiplier": 2.0},
             "STANDARD": {"cpu_limit_pct": 80.0, "max_workers_multiplier": 1.0, "base_sleep_multiplier": 1.0},
-            "AGRESSIVE": {"cpu_limit_pct": 95.0, "max_workers_multiplier": 2.0, "base_sleep_multiplier": 0.5}, # Ajustado a 95% para AGRESSIVE
+            "AGRESSIVE": {"cpu_limit_pct": 95.0, "max_workers_multiplier": 2.0, "base_sleep_multiplier": 0.5},
         }
         
         selected_mode = mode_configs.get(self.scan_mode, mode_configs["STANDARD"])
         
+        # CPU and Sleep settings
         self.cpu_limit_pct = float(sc.get("cpu_limit_pct", selected_mode["cpu_limit_pct"]))
         self.sleep_trend = float(sc.get("sleep_trend_seconds", 1.0))
         self.sleep_range = float(sc.get("sleep_range_seconds", 10.0))
@@ -122,51 +128,43 @@ class ScannerEngine:
         self.sleep_crash = float(sc.get("sleep_crash_seconds", 1.0))
         self.base_sleep = float(sc.get("base_sleep_seconds", 1.0)) * selected_mode["base_sleep_multiplier"]
         self.max_sleep_multiplier = float(sc.get("max_sleep_multiplier", 5.0))
-        self.mt5_timeframe = str(sc.get("mt5_timeframe", "M5"))  # Deprecated, use timeframes array
+        
+        # Data settings
+        self.mt5_timeframe = str(sc.get("mt5_timeframe", "M5"))
         self.mt5_bars_count = int(sc.get("mt5_bars_count", 500))
         
-        # Load active timeframes from configuration
-        timeframes_config = sc.get("timeframes", [])
-
-        # Determine max_workers based on CPU count and multiplier
+        # Workers count
         cpu_count = psutil.cpu_count(logical=True) if psutil else 1
         self._max_workers = max(1, int(cpu_count * selected_mode["max_workers_multiplier"]))
         
-        # Check if data provider is local (MT5) or remote
+        # Provider type detection
         self.is_local_provider = isinstance(self.provider, DataProvider) and self.provider.is_local()
         if self.is_local_provider:
-            logger.info("[SCANNER] Proveedor LOCAL detectado (MT5). Modo ultra-rápido activado.")
-            self.base_sleep = 0.5  # 500ms para local
+            self.base_sleep = 0.5
             self.sleep_trend = 0.5
         else:
-            logger.info("[SCANNER] Proveedor REMOTO detectado. Aplicando latencia de seguridad.")
-            self.base_sleep = max(2.0, self.base_sleep) # Mínimo 2s para remoto
-            
-        # Initialize active_timeframes from config
+            self.base_sleep = max(2.0, self.base_sleep)
+
+        # Timeframes initialization
+        timeframes_config = sc.get("timeframes", [])
         self.active_timeframes = [tf["timeframe"] for tf in timeframes_config if tf.get("enabled", True)]
         if not self.active_timeframes:
-            # Fallback to legacy mt5_timeframe if no timeframes are configured
             self.active_timeframes = [self.mt5_timeframe]
-            logger.warning(f"No active timeframes configured. Falling back to legacy mt5_timeframe: {self.mt5_timeframe}")
-            
-        logger.info(f"Active timeframes for scanning: {self.active_timeframes}")
-        rp = regime_config_path or sc.get("config_path", None)
 
+    def _init_engine_state(self) -> None:
+        """Initializes internal tracking dictionaries and monitors."""
         self.cpu_monitor = CPUMonitor(cpu_limit_pct=self.cpu_limit_pct)
-        # Multi-timeframe support: key = "symbol|timeframe"
         self.classifiers: Dict[str, RegimeClassifier] = {}
         self.last_regime: Dict[str, MarketRegime] = {}
         self.last_scan_time: Dict[str, float] = {}
-        self.last_dataframes: Dict[str, Any] = {}  # Almacenar últimos DataFrames
-        
-        # CIRCUIT BREAKER: Rastrear fallos consecutivos por símbolo
+        self.last_dataframes: Dict[str, Any] = {}
         self.consecutive_failures: Dict[str, int] = {}
-        self.circuit_breaker_cooldowns: Dict[str, float] = {} # Timestamp until when it's paused
-        
+        self.circuit_breaker_cooldowns: Dict[str, float] = {}
         self._lock = threading.Lock()
         self._running = False
-        
-        # Inicializar clasificadores para todos los activos y timeframes
+
+    def _init_classifiers(self) -> None:
+        """Factory for RegimeClassifiers per asset/timeframe."""
         for symbol in self.assets:
             for tf in self.active_timeframes:
                 key = f"{symbol}|{tf}"
@@ -241,30 +239,10 @@ class ScannerEngine:
             logger.warning(f"[{key}] Circuit Breaker activado: {current_failures} fallos consecutivos. En cooldown por 60s.")
 
     def _run_cycle(self) -> None:
-        """Ejecuta un ciclo completo de escaneo para todos los activos."""
-        to_scan = []
-        now = time.monotonic()
-
-        with self._lock:
-            for symbol in self.assets:
-                for tf in self.active_timeframes:
-                    key = f"{symbol}|{tf}"
-                    last_scan_time = self.last_scan_time.get(key, 0.0)
-                    regime = self.last_regime.get(key, MarketRegime.NORMAL)
-
-                    # Priorización de escaneo
-                    if regime in [MarketRegime.TREND, MarketRegime.CRASH]:
-                        if now - last_scan_time >= self.sleep_trend:
-                            to_scan.append((symbol, tf))
-                    elif regime in [MarketRegime.RANGE, MarketRegime.NORMAL]:
-                        if now - last_scan_time >= self.sleep_range:
-                            to_scan.append((symbol, tf))
-                    else: # Default o inicial
-                        if now - last_scan_time >= self.base_sleep:
-                            to_scan.append((symbol, tf))
+        """Executes a full scan cycle for all active assets."""
+        to_scan = self._get_assets_to_scan()
 
         if not to_scan:
-            # logger.debug("No hay activos para escanear en este ciclo.")
             return
 
         with ThreadPoolExecutor(max_workers=self._max_workers) as ex:
@@ -272,41 +250,64 @@ class ScannerEngine:
             for fut in as_completed(futs):
                 try:
                     res = fut.result()
+                    if res:
+                        self._process_scan_result(res)
                 except Exception as e:
                     sym, tf = futs[fut]
-                    logger.warning("Excepción en hilo para %s [%s]: %s", sym, tf, e)
-                    continue
-                if res is None:
-                    continue
-                symbol, timeframe, regime, metrics, df = res
-                key = f"{symbol}|{timeframe}"
-                now = time.monotonic()
-                with self._lock:
-                    self.last_regime[key] = regime
-                    self.last_scan_time[key] = now
-                    self.last_dataframes[key] = df
-                
-                # PERSISTENCIA PARA CROSS-PROCESS (Heatmap Resilience)
-                if self.storage:
-                    try:
-                        state_data = {
-                            "symbol": symbol,
-                            "timeframe": timeframe,
-                            "regime": regime.value,
-                            "metrics": metrics,
-                            "timestamp": datetime.now().isoformat()
-                        }
-                        self.storage.log_market_state(state_data)
-                    except Exception as e:
-                        logger.error(f"Error persistiendo estado de mercado para {key}: {e}")
+                    logger.warning("Exception in scan thread for %s [%s]: %s", sym, tf, e)
 
-                logger.info(
-                    "Escáner %s [%s] -> %s (ADX=%.2f)",
-                    symbol,
-                    timeframe,
-                    regime.value,
-                    metrics.get("adx", 0) or 0,
-                )
+    def _get_assets_to_scan(self) -> List[Tuple[str, str]]:
+        """Identifies assets that need scanning based on their current regime and timing."""
+        to_scan = []
+        now = time.monotonic()
+
+        with self._lock:
+            for symbol in self.assets:
+                for tf in self.active_timeframes:
+                    key = f"{symbol}|{tf}"
+                    last_scan = self.last_scan_time.get(key, 0.0)
+                    regime = self.last_regime.get(key, MarketRegime.NORMAL)
+
+                    # Prioritization logic
+                    interval = self.base_sleep
+                    if regime in [MarketRegime.TREND, MarketRegime.CRASH]:
+                        interval = self.sleep_trend
+                    elif regime in [MarketRegime.RANGE, MarketRegime.NORMAL]:
+                        interval = self.sleep_range
+
+                    if now - last_scan >= interval:
+                        to_scan.append((symbol, tf))
+        return to_scan
+
+    def _process_scan_result(self, res: Tuple[str, str, MarketRegime, Dict, Any]) -> None:
+        """Processes and persists the result of a single asset scan."""
+        symbol, timeframe, regime, metrics, df = res
+        key = f"{symbol}|{timeframe}"
+        now = time.monotonic()
+
+        with self._lock:
+            self.last_regime[key] = regime
+            self.last_scan_time[key] = now
+            self.last_dataframes[key] = df
+        
+        # Persistence for cross-process (Heatmap)
+        if self.storage:
+            try:
+                state_data = {
+                    "symbol": symbol,
+                    "timeframe": timeframe,
+                    "regime": regime.value,
+                    "metrics": metrics,
+                    "timestamp": datetime.now().isoformat()
+                }
+                self.storage.log_market_state(state_data)
+            except Exception as e:
+                logger.error(f"Error persisting market state for {key}: {e}")
+
+        logger.info(
+            "Scanner %s [%s] -> %s (ADX=%.2f)",
+            symbol, timeframe, regime.value, metrics.get("adx", 0) or 0,
+        )
 
     def _adaptive_sleep(self) -> float:
         """Calcula sleep según CPU. Si CPU > límite, aumenta el tiempo entre escaneos."""

@@ -23,8 +23,26 @@ graph TD
     E -->|Veredicto: VIRTUAL| G[Virtual Recorder];
     F -->|Aprobado| H[Executor (Trace_ID)];
     F -->|Vetado| G;
-    H -->|Ejecución| I[Broker Connector];
+    H -->|Ejecución| I[Omnichain Router];
+    I -->|Normalización| J[Broker Connectors];
 ```
+
+## 6. 🛡️ Ley de Agnosticismo (Omnichain Law)
+El **Core Brain** es sagrado y debe permanecer puro. Queda terminantemente **PROHIBIDO** importar librerías de terceros vinculadas a brokers específicos (ej. `MetaTrader5`, `OANDA`, `ccxt`) dentro de cualquier módulo que no resida en la carpeta `connectors/`.
+- El cerebro solo conoce la `BaseConnector` Interface.
+- Los datos fluyen a través de contratos, no de implementaciones.
+
+## 7. 🏗️ Estructura de 3 Capas
+Para asegurar la escalabilidad "Aethelgard Omnichain", el flujo de conectividad se divide en:
+1.  **Capa de Estrategia (Brain)**: Define el "Qué" y el "Cuándo". No sabe dónde se ejecuta.
+2.  **Capa de Router (Orchestrator)**: Gestiona el "Dónde". Decide qué proveedor es óptimo para la orden actual.
+3.  **Capa de Provider (Connector)**: Traduce el "Cómo". Habla el idioma específico de cada broker.
+
+## 8. ⌚ Estándar Cronológico Universal
+Para evitar desajustes en backtesting y ejecución real entre proveedores de distintas zonas horarias:
+- Toda la data temporal en Aethelgard se procesa y almacena en **UTC ISO 8601** (`YYYY-MM-DDTHH:MM:SSZ`).
+- Los conectores son responsables de traducir el tiempo local del broker a UTC antes de entregar el dato al orquestador.
+
 
 ### Componentes Clave:
 1.  **ScannerEngine**: Proactivo, multihilo, vigila activos sin esperar ticks.

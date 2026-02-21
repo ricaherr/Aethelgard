@@ -64,10 +64,17 @@ export interface ModulesStatus {
     timestamp: string;
 }
 
+export interface SatelliteStatus {
+    status: 'ONLINE' | 'OFFLINE' | 'MANUAL_DISABLED';
+    latency: number;
+    failures: number;
+}
+
 export interface SystemStatus {
     connected: boolean;
     lastUpdate: string;
     heartbeats: Record<string, string>;
+    satellites?: Record<string, SatelliteStatus>;
 }
 
 export interface EdgeMetrics {

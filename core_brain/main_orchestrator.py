@@ -213,97 +213,109 @@ class MainOrchestrator:
     ):
         """
         Initialize MainOrchestrator with backward-compatible Dependency Injection.
-        
-        Args:
-            scanner: ScannerEngine instance
-            signal_factory: SignalFactory instance
-            risk_manager: RiskManager instance
-            executor: OrderExecutor instance
-            storage: Optional StorageManager instance.
-            position_manager: Optional PositionManager instance.
-            trade_closure_listener: Optional TradeClosureListener instance.
-            coherence_monitor: Optional CoherenceMonitor instance.
-            expiration_manager: Optional SignalExpirationManager instance.
-            regime_classifier: Optional RegimeClassifier instance.
-            config_path: Optional legacy config file path.
         """
-        self.scanner = scanner
-        self.signal_factory = signal_factory
-        self.risk_manager = risk_manager
-        self.executor = executor
-        self.storage = _resolve_storage(storage)
-
-        # Config (DB + optional file compatibility)
-        self.config = self._load_config(config_path)
-
-        # Optional managers (fallback for legacy tests and gradual DI migration)
+        # 1. Base dependencies and config
+        self._init_core_dependencies(scanner, signal_factory, risk_manager, executor, storage, config_path)
+        
+        # 2. Classifier and Position Management
         self.regime_classifier = regime_classifier or RegimeClassifier(storage=self.storage)
-
         if position_manager is None:
-            pm_cfg_raw = self.config.get("position_management", {}) if isinstance(self.config, dict) else {}
-            pm_cfg = dict(pm_cfg_raw) if isinstance(pm_cfg_raw, dict) else {}
-            if "modification_cooldown_seconds" in pm_cfg and "cooldown_seconds" not in pm_cfg:
-                pm_cfg["cooldown_seconds"] = pm_cfg["modification_cooldown_seconds"]
-            if "stale_position_thresholds" in pm_cfg and "stale_thresholds_hours" not in pm_cfg:
-                pm_cfg["stale_thresholds_hours"] = pm_cfg["stale_position_thresholds"]
-            if "sl_tp_adjustments" in pm_cfg and "regime_adjustments" not in pm_cfg:
-                pm_cfg["regime_adjustments"] = pm_cfg["sl_tp_adjustments"]
-            pm_cfg.setdefault("max_drawdown_multiplier", 2.0)
-            pm_cfg.setdefault("cooldown_seconds", 300)
-            pm_cfg.setdefault("max_modifications_per_day", 10)
-
-            connector = None
-            connectors = getattr(self.executor, "connectors", None)
-            if isinstance(connectors, dict) and connectors:
-                connector = next(iter(connectors.values()))
-            if connector is None:
-                class _NullConnector:
-                    def get_open_positions(self) -> List[Dict[str, Any]]:
-                        return []
-                connector = _NullConnector()
-
-            self.position_manager = PositionManager(
-                storage=self.storage,
-                connector=connector,
-                regime_classifier=self.regime_classifier,
-                config=pm_cfg
-            )
+            self._init_position_management()
         else:
             self.position_manager = position_manager
 
-        self.expiration_manager = expiration_manager or SignalExpirationManager(storage=self.storage)
-        self.coherence_monitor = coherence_monitor or CoherenceMonitor(storage=self.storage)
+        # 3. Ancillary Services (Expiration, Coherence, Listeners)
+        self._init_ancillary_services(expiration_manager, coherence_monitor, trade_closure_listener)
 
-        if trade_closure_listener is None:
+        # 4. System State and Session Tracking (SSOT)
+        self._init_system_state()
+        
+        # 5. Cycle intervals and Heartbeat
+        self._init_loop_intervals()
+
+        # 6. Broker Discovery and Status
+        self._init_broker_discovery()
+
+    def _init_core_dependencies(self, scanner: Any, factory: Any, risk: Any, executor: Any, storage: Optional[Any], config_path: Optional[str]) -> None:
+        """Initializes core engines and resolves storage/config."""
+        self.scanner = scanner
+        self.signal_factory = factory
+        self.risk_manager = risk
+        self.executor = executor
+        self.storage = _resolve_storage(storage)
+        self.config = self._load_config(config_path)
+
+    def _init_position_management(self) -> None:
+        """Initializes PositionManager with configuration mapping and connector resolution."""
+        pm_cfg_raw = self.config.get("position_management", {}) if isinstance(self.config, dict) else {}
+        pm_cfg = dict(pm_cfg_raw) if isinstance(pm_cfg_raw, dict) else {}
+        
+        # Map legacy keys
+        map_keys = {
+            "modification_cooldown_seconds": "cooldown_seconds",
+            "stale_position_thresholds": "stale_thresholds_hours",
+            "sl_tp_adjustments": "regime_adjustments"
+        }
+        for old, new in map_keys.items():
+            if old in pm_cfg and new not in pm_cfg:
+                pm_cfg[new] = pm_cfg[old]
+        
+        pm_cfg.setdefault("max_drawdown_multiplier", 2.0)
+        pm_cfg.setdefault("cooldown_seconds", 300)
+        pm_cfg.setdefault("max_modifications_per_day", 10)
+
+        # Resolve connector from executor
+        connector = None
+        connectors = getattr(self.executor, "connectors", None)
+        if isinstance(connectors, dict) and connectors:
+            connector = next(iter(connectors.values()))
+        
+        if connector is None:
+            class _NullConnector:
+                def get_open_positions(self) -> List[Dict[str, Any]]: return []
+            connector = _NullConnector()
+
+        self.position_manager = PositionManager(
+            storage=self.storage,
+            connector=connector,
+            regime_classifier=self.regime_classifier,
+            config=pm_cfg
+        )
+
+    def _init_ancillary_services(self, expiration: Optional[Any], coherence: Optional[Any], listener: Optional[Any]) -> None:
+        """Initializes secondary services for signal lifecycle and monitoring."""
+        self.expiration_manager = expiration or SignalExpirationManager(storage=self.storage)
+        self.coherence_monitor = coherence or CoherenceMonitor(storage=self.storage)
+
+        if listener is None:
             self.trade_closure_listener = TradeClosureListener(
                 storage=self.storage,
                 risk_manager=self.risk_manager,
                 edge_tuner=EdgeTuner(storage=self.storage)
             )
         else:
-            self.trade_closure_listener = trade_closure_listener
+            self.trade_closure_listener = listener
 
-        # MODULE TOGGLES: Load global module enable/disable settings from DB
+    def _init_system_state(self) -> None:
+        """Loads global module status and session statistics from SSOT."""
         modules = self.storage.get_global_modules_enabled() if hasattr(self.storage, "get_global_modules_enabled") else {}
         self.modules_enabled_global = modules if isinstance(modules, dict) else {}
         
-        # Log module states on startup
-        disabled_modules = [k for k, v in self.modules_enabled_global.items() if not v]
-        if disabled_modules:
-            logger.warning(f"[WARNING]  Módulos DESHABILITADOS globalmente: {', '.join(disabled_modules)}")
+        # Log module states
+        disabled = [k for k, v in self.modules_enabled_global.items() if not v]
+        if disabled:
+            logger.warning(f"[WARNING] Modules DISABLED globally: {', '.join(disabled)}")
         else:
             logger.info("[OK] Todos los módulos están HABILITADOS globalmente")
-
-        # Session tracking - RECONSTRUCT FROM DB
-        self.stats = SessionStats.from_storage(self.storage)
-        # Current market regime (updated after each scan)
-        self.current_regime: MarketRegime = MarketRegime.RANGE
-        # Shutdown flag
-        self._shutdown_requested = False
-        # Active signals tracking (for adaptive heartbeat)
-        self._active_signals: List[Signal] = []
         
-        # Loop intervals by regime (seconds)
+        self.stats = SessionStats.from_storage(self.storage)
+        self.current_regime = MarketRegime.RANGE
+        self._shutdown_requested = False
+        self._active_signals = []
+        self._last_checked_deal_ticket = 0
+
+    def _init_loop_intervals(self) -> None:
+        """Sets up the intervals for the main orchestrator loop based on regimes."""
         orchestrator_config = self.config.get("orchestrator", {})
         self.intervals = {
             MarketRegime.TREND: orchestrator_config.get("loop_interval_trend", 5),
@@ -311,19 +323,10 @@ class MainOrchestrator:
             MarketRegime.VOLATILE: orchestrator_config.get("loop_interval_volatile", 15),
             MarketRegime.SHOCK: orchestrator_config.get("loop_interval_shock", 60)
         }
-        logger.info(
-            f"MainOrchestrator initialized with intervals: "
-            f"TREND={self.intervals[MarketRegime.TREND]}s, "
-            f"RANGE={self.intervals[MarketRegime.RANGE]}s, "
-            f"VOLATILE={self.intervals[MarketRegime.VOLATILE]}s, "
-            f"SHOCK={self.intervals[MarketRegime.SHOCK]}s"
-        )
-        
-        # Track last checked deal ticket to avoid reprocessing
-        self._last_checked_deal_ticket = 0
-        logger.info(f"Adaptive heartbeat: MIN={self.MIN_SLEEP_INTERVAL}s when signals active")
+        logger.info(f"MainOrchestrator heartbeat: MIN={self.MIN_SLEEP_INTERVAL}s")
 
-        # EDGE: Descubrimiento y clasificación dinámica de brokers (después de stats)
+    def _init_broker_discovery(self) -> None:
+        """Discovers and classifies available brokers from storage."""
         self.brokers = self._discover_brokers()
         self.broker_status = self._classify_brokers(self.brokers)
 

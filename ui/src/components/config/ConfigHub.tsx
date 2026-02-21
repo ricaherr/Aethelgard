@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Save, RefreshCw, AlertTriangle, Shield, Sliders, Settings, Bell, Power } from 'lucide-react';
+import { Save, RefreshCw, AlertTriangle, Shield, Sliders, Settings, Bell, Power, Server } from 'lucide-react';
 import { GlassPanel } from '../common/GlassPanel';
 import { NotificationManager } from './NotificationManager';
 import { ModulesControl } from './ModulesControl';
 import { AutoTradingControl } from './AutoTradingControl';
 import { InstrumentsEditor } from './InstrumentsEditor';
 import { BackupSettings } from './BackupSettings';
+import { ConnectivityHub } from './ConnectivityHub';
 
-type ConfigCategory = 'trading' | 'risk' | 'system' | 'notifications' | 'modules' | 'instruments' | 'backups';
+type ConfigCategory = 'trading' | 'risk' | 'system' | 'notifications' | 'modules' | 'instruments' | 'backups' | 'connectivity';
 
 export function ConfigHub() {
     const [activeCategory, setActiveCategory] = useState<ConfigCategory>('trading');
@@ -17,7 +18,7 @@ export function ConfigHub() {
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [message, setMessage] = useState<string | null>(null);
-    const specialCategories: ConfigCategory[] = ['modules', 'notifications', 'instruments', 'backups'];
+    const specialCategories: ConfigCategory[] = ['modules', 'notifications', 'instruments', 'backups', 'connectivity'];
     const usesGenericSave = !specialCategories.includes(activeCategory);
 
     const fetchConfig = async (category: ConfigCategory) => {
@@ -166,6 +167,13 @@ export function ConfigHub() {
                         title="System Modules"
                         description="Feature Toggles"
                     />
+                    <TabButton
+                        active={activeCategory === 'connectivity'}
+                        onClick={() => setActiveCategory('connectivity')}
+                        icon={<Server size={20} />}
+                        title="Connectivity Hub"
+                        description="Satellite management"
+                    />
 
                     {error && (
                         <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex gap-3 animate-pulse">
@@ -223,7 +231,12 @@ export function ConfigHub() {
                                     <BackupSettings />
                                 )}
 
-                                {!loading && config && activeCategory !== 'notifications' && activeCategory !== 'modules' && activeCategory !== 'backups' && (
+                                {/* Special case: Connectivity Hub (NEW) */}
+                                {!loading && activeCategory === 'connectivity' && (
+                                    <ConnectivityHub />
+                                )}
+
+                                {!loading && config && activeCategory !== 'notifications' && activeCategory !== 'modules' && activeCategory !== 'backups' && activeCategory !== 'connectivity' && (
                                     <>
                                         {/* Auto-Trading Control (only in trading category) */}
                                         {activeCategory === 'trading' && (

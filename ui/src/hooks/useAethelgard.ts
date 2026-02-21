@@ -75,7 +75,8 @@ export function useAethelgard() {
                 setStatus(prev => ({
                     ...prev,
                     lastUpdate: new Date().toISOString(),
-                    heartbeats: { ...prev.heartbeats, ...payload }
+                    heartbeats: { ...prev.heartbeats, ...payload },
+                    satellites: payload.satellites || prev.satellites
                 }));
                 break;
 

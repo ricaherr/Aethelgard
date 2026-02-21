@@ -98,6 +98,18 @@ class StorageManager(
                 )
             """)
             
+            # 3. Symbol Normalization (SSOT)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS symbol_mappings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    internal_symbol TEXT NOT NULL,
+                    provider_id TEXT NOT NULL,
+                    provider_symbol TEXT NOT NULL,
+                    is_default INTEGER DEFAULT 0,
+                    UNIQUE(internal_symbol, provider_id)
+                )
+            """)
+            
             # Position History - Trazabilidad de gestión de operaciones
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS position_history (
@@ -266,6 +278,15 @@ class StorageManager(
                 )
             """)
 
+            # 8. Connector Control (Satellite Link)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS connector_settings (
+                    provider_id TEXT PRIMARY KEY,
+                    enabled BOOLEAN DEFAULT 1,
+                    last_manual_toggle TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
             # Migrations / Fixes
             cursor.execute("PRAGMA table_info(data_providers)")
             columns = [row[1] for row in cursor.fetchall()]
@@ -285,6 +306,9 @@ class StorageManager(
             
             conn.commit()
             logger.info("Database initialized with modular schemas and WAL mode.")
+            
+            # Seed symbol mappings from JSON if table is empty (SSOT Migration)
+            self._bootstrap_symbol_mappings()
         finally:
             self._close_conn(conn)
 
@@ -326,14 +350,45 @@ class StorageManager(
                 VALUES (?)
             """, (json.dumps(adjustment_data),))
             conn.commit()
+            
+        finally:
+            self._close_conn(conn)
+
+    def _bootstrap_symbol_mappings(self) -> None:
+        """Seed the symbol_mappings table from config/symbol_map.json (One-time migration)."""
+        mapping_path = os.path.join("config", "symbol_map.json")
+        if not os.path.exists(mapping_path):
+            return
+
+        # Check if table already has data
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM symbol_mappings")
+            if cursor.fetchone()[0] > 0:
+                return # Already seeded
+            
+            logger.info(f"[SSOT] Seeding symbol_mappings from {mapping_path}...")
+            with open(mapping_path, "r") as f:
+                data = json.load(f)
+            
+            mappings = data.get("internal_to_provider", {})
+            for internal, providers in mappings.items():
+                for provider_id, provider_symbol in providers.items():
+                    cursor.execute("""
+                        INSERT OR REPLACE INTO symbol_mappings (internal_symbol, provider_id, provider_symbol)
+                        VALUES (?, ?, ?)
+                    """, (internal, provider_id, provider_symbol))
+            
+            conn.commit()
+            logger.info("[SSOT] Symbol mappings successfully migrated to DB.")
+        except Exception as e:
+            logger.error(f"Error seeding symbol mappings: {e}")
         finally:
             self._close_conn(conn)
 
     def _bootstrap_from_json(self) -> None:
-        """
-        One-shot bootstrap: migrates legacy JSON config to DB only once.
-        This is temporary and centralized to keep business modules JSON-free.
-        """
+        """One-shot bootstrap: migrates legacy JSON config to DB only once."""
         try:
             state = self.get_system_state()
             if state.get(JSON_BOOTSTRAP_DONE_KEY):
@@ -341,38 +396,26 @@ class StorageManager(
 
             migrated: List[str] = []
 
-            def _load_json(path: Path) -> Optional[Dict[str, Any]]:
-                if not path.exists():
-                    return None
-                with open(path, "r", encoding="utf-8") as f:
-                    return json.load(f)
+            # (Path, Section_Existence_Check, Update_Func, Label)
+            migration_map = [
+                ("config/dynamic_params.json", lambda: not self.get_dynamic_params(), self.update_dynamic_params, "dynamic_params"),
+                ("config/config.json", lambda: "global_config" not in self.get_system_state(), lambda cfg: self.update_system_state({"global_config": cfg}), "global_config"),
+                ("config/risk_settings.json", lambda: not self.get_risk_settings(), self.update_risk_settings, "risk_settings"),
+                ("config/modules.json", lambda: not self.get_modules_config(), self.save_modules_config, "modules_config"),
+                ("config/instruments.json", lambda: "instruments_config" not in self.get_system_state(), lambda cfg: self.update_system_state({"instruments_config": cfg}), "instruments_config"),
+            ]
 
-            dynamic_data = _load_json(Path("config/dynamic_params.json"))
-            if dynamic_data and not self.get_dynamic_params():
-                self.update_dynamic_params(dynamic_data)
-                migrated.append("dynamic_params")
-
-            global_cfg = _load_json(Path("config/config.json"))
-            current_state = self.get_system_state()
-            if global_cfg and "global_config" not in current_state:
-                self.update_system_state({"global_config": global_cfg})
-                migrated.append("global_config")
-
-            risk_cfg = _load_json(Path("config/risk_settings.json"))
-            if risk_cfg and not self.get_risk_settings():
-                self.update_risk_settings(risk_cfg)
-                migrated.append("risk_settings")
-
-            modules_cfg = _load_json(Path("config/modules.json"))
-            if modules_cfg and not self.get_modules_config():
-                self.save_modules_config(modules_cfg)
-                migrated.append("modules_config")
-
-            instruments_cfg = _load_json(Path("config/instruments.json"))
-            current_state = self.get_system_state()
-            if instruments_cfg and "instruments_config" not in current_state:
-                self.update_system_state({"instruments_config": instruments_cfg})
-                migrated.append("instruments_config")
+            for path_str, check_empty, update_func, label in migration_map:
+                path = Path(path_str)
+                if path.exists() and check_empty():
+                    try:
+                        with open(path, "r", encoding="utf-8") as f:
+                            data = json.load(f)
+                        if data:
+                            update_func(data)
+                            migrated.append(label)
+                    except Exception as e:
+                        logger.error(f"Failed to migrate {label} from {path_str}: {e}")
 
             marker_payload = {
                 "done": True,
@@ -384,7 +427,7 @@ class StorageManager(
             if migrated:
                 logger.warning("JSON bootstrap executed (one-shot). Migrated: %s", ", ".join(migrated))
             else:
-                logger.info("JSON bootstrap marked as completed (nothing to migrate).")
+                logger.debug("JSON bootstrap completed (no pending migrations).")
         except Exception as e:
             logger.error(f"Error during one-shot JSON bootstrap: {e}")
 
