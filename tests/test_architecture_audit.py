@@ -1,7 +1,10 @@
 """Architecture audit regression tests."""
 from pathlib import Path
 
-from scripts.architecture_audit import CodeAudit
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts' / 'utilities'))
+from architecture_audit import CodeAudit
 
 
 def test_architecture_audit_clean():

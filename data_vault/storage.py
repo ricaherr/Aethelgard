@@ -309,6 +309,22 @@ class StorageManager(
                 )
             """)
 
+            # 10. Universal Trading: Normalización de activos (ASSET PROFILES)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS asset_profiles (
+                    symbol TEXT PRIMARY KEY,
+                    asset_class TEXT NOT NULL, -- FOREX, CRYPTO, METAL, STOCK
+                    tick_size REAL NOT NULL,
+                    lot_step REAL NOT NULL,
+                    contract_size REAL NOT NULL,
+                    currency TEXT NOT NULL,
+                    golden_hour_start TEXT, -- HH:MM
+                    golden_hour_end TEXT,   -- HH:MM
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
             # Migrations / Fixes
             cursor.execute("PRAGMA table_info(data_providers)")
             dp_columns = [row[1] for row in cursor.fetchall()]
@@ -339,6 +355,12 @@ class StorageManager(
             
             conn.commit()
             logger.info("Database initialized with modular schemas and WAL mode.")
+
+            # Universal Trading: Seed initial data
+            try:
+                self.seed_initial_assets()
+            except Exception as e:
+                logger.error(f"Error seeding initial assets: {e}")
             
             # Seed symbol mappings from JSON if table is empty (SSOT Migration)
             self._bootstrap_symbol_mappings()

@@ -1587,40 +1587,6 @@ class MT5Connector(BaseConnector):
         """BaseConnector interface wrapper for fetch_ohlc"""
         return self.fetch_ohlc(symbol, timeframe, count)
 
-    def fetch_ohlc(
-        self,
-        symbol: str,
-        timeframe: str = "M5",
-        count: int = 500,
-    ) -> Optional[pd.DataFrame]:
-        """
-        Fetches OHLC data from MT5.
-        SATISFIES DataProviderManager expectations for 'mt5' provider.
-        """
-        if not self.is_connected:
-            # We don't call start() here because it's non-blocking.
-            # We assume orchestration in start.py handles the connection.
-            logger.error(f"MT5 not connected. Cannot fetch OHLC for {symbol}")
-            return None
-
-        try:
-            mt5_tf = self._resolve_timeframe(timeframe)
-            rates = mt5.copy_rates_from_pos(symbol, mt5_tf, 0, count)
-            
-            if rates is None or len(rates) == 0:
-                logger.debug(f"copy_rates_from_pos({symbol}, {timeframe}) returned None/Empty")
-                return None
-
-            df = pd.DataFrame(rates)
-            # Ensure required columns exist
-            if not df.empty:
-                df = df[["time", "open", "high", "low", "close"]].copy()
-                return df
-            return None
-            
-        except Exception as e:
-            logger.error(f"Error in fetch_ohlc for {symbol}: {e}")
-            return None
 
     def get_latency(self) -> float:
         """Measure and return current latency to the provider in milliseconds."""

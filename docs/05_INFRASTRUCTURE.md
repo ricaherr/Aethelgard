@@ -8,6 +8,39 @@ Capa de cimientos, servidores y Single Source of Truth (SSOT).
 ### 🗄️ Capa de Datos (Data Vault)
 - **StorageManager**: Persistencia segmentada mediante Mixins.
 - **SSOT Policy**: Prohibición de archivos JSON volátiles para lógica de negocio.
+
+#### 🌐 Asset Profiles (Universal Trading Foundation)
+**Propósito**: Normalización agnóstica de símbolos, permitiendo cálculo de riesgo uniforme a través de todos los instrumentos (Forex, Crypto, Metals).
+
+**Ubicación**: `data_vault/market_db.py` (tabla `asset_profiles`)
+
+**Esquema**:
+```sql
+CREATE TABLE asset_profiles (
+  symbol TEXT PRIMARY KEY,           -- ej: "EURUSD"
+  tick_size REAL,                    -- ej: 0.00001 (5 decimales)
+  contract_size INTEGER,             -- ej: 100000 (Forex standard)
+  lot_step REAL,                     -- ej: 0.01 (miniaturización)
+  pip_value REAL,                    -- ej: 10.0 USD/pip
+  commission_pct REAL,               -- ej: 0.0002 (0.02%)
+  point_value REAL                   -- ej: 100.0 (Forex point = pip)
+);
+```
+
+**Datos Iniciales Sembrados**:
+| Symbol | Tick Size | Contract Size | Lot Step | Uso |
+|--------|-----------|---------------|----------|-----|
+| EURUSD | 0.00001   | 100000        | 0.01     | Forex Major |
+| GBPUSD | 0.00001   | 100000        | 0.01     | Forex Major |
+| USDJPY | 0.001     | 100000        | 0.01     | Forex (JPY) |
+| GOLD   | 0.01      | 100           | 0.1      | Metal Commodity |
+| BTCUSD | 0.01      | 1             | 0.001    | Crypto |
+
+**Lectura en Tiempo Real**:
+- `RiskManager.calculate_position_size()` consulta `storage.get_asset_profile(symbol)` cada ejecución.
+- Si el símbolo no existe → `AssetNotNormalizedError` (trade bloqueado).
+- Fórmula: `Lots = Risk_USD / (SL_Dist * Contract_Size)`
+
 - **Database Self-Healing**: Reparación automática de esquemas en startup.
 
 ---

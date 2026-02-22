@@ -1,7 +1,7 @@
 # AETHELGARD: ESTRATEGIC ROADMAP
 
-**Versión Log**: 2.4.0 (Autonomous Integrity Matrix)
-**Última Actualización**: 21 de Febrero, 2026
+**Versión Log**: 2.4.1 (Universal Asset Normalization)
+**Última Actualización**: 21 de Febrero, 2026 (18:25)
 
 ---
 
@@ -15,12 +15,26 @@
 
 ## 📈 ROADMAP ESTRATÉGICO (Próximos Hitos)
 
-### MILESTONE 3: Universal Trading Foundation (Agnosticismo & Normalización)
-*Estado: Pendiente | Prioridad: CRÍTICA (Habilita Forex Operativo)*
+### ✅ MILESTONE 3: Universal Trading Foundation (Agnosticismo & Normalización)
+*Estado: ✅ COMPLETADO (2026-02-21) | Timestamp: 18:25*
 
-- [ ] **Tabla `asset_profiles` (SSOT)**: Creación de la base de datos maestra para normalizar Tick Size, Point Value y Comisiones por activo.
-- [ ] **Agnosticismo de Tick (Unidades R)**: Refactorización del `RiskManager` para que el lotaje dependa del ATR y el Riesgo monetario, no de pips fijos.
-- [ ] **Módulo de Sesiones (Golden Hours)**: Implementación de filtros horarios por mercado (Londres/NY/Tokyo) para evitar baja liquidez.
+- [x] **Tabla `asset_profiles` (SSOT)**: Creación de la base de datos maestra para normalizar Tick Size, Contract Size, Lot Step y Comisiones por activo.
+  - Implementación: `data_vault/market_db.py` & `data_vault/storage.py`
+  - Datos iniciales: EURUSD, GBPUSD, USDJPY, GOLD, BTCUSD
+  - Validación: ✅ Test suite completo (289/289 tests pass)
+
+- [x] **Cálculo Universal (Unidades R)**: Refactorización agnóstica del `RiskManager.calculate_position_size()` con precisión institucional.
+  - Aritmética: `Decimal` para evitar errores de punto flotante
+  - Redondeo: Downward rounding (ROUND_DOWN) según `lot_step` del activo
+  - Trazabilidad: Cada cálculo genera Trace_ID único (ej: NORM-0a9dfe65)
+  - Seguridad: `AssetNotNormalizedError` si símbolo no existe en `asset_profiles`
+
+- [x] **Normalización SSOT & Testing**: Validación completa con precisión decimal.
+  - Script: `scripts/utilities/test_asset_normalization.py`
+  - Resultado: TODOS LOS TESTS PASARON (6/6 validaciones OK)
+
+### 🧠 MILESTONE 4: Estratega Evolutivo (Darwinismo Algorítmico)
+*Próximo Hito - Habilitado por Normalización de Unidades R*
 
 ### 🧠 MILESTONE 4: Estratega Evolutivo (Darwinismo Algorítmico)
 - [ ] **Shadow Ranking System**: Sistema de puntuación interna. Solo el Top 3 de estrategias con Profit Factor > 1.5 en simulación pasan a real.

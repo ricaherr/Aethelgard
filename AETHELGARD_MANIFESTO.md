@@ -1,9 +1,9 @@
 # AETHELGARD MANIFESTO
 ## Misión, Visión y Principios Filosóficos
 
-**Versión**: 1.2
+**Versión**: 1.3
 **Última Actualización**: Febrero 2026
-**Estado del Proyecto**: Fase 2 - Auditoría de Integridad & Auto-Gestión L1
+**Estado del Proyecto**: Fase 2 - Universal Asset Normalization (v2.4.1)
 
 ---
 
@@ -41,7 +41,34 @@ Crear un cerebro centralizado que:
 
 ---
 
+### 🌐 MILESTONE 3: Universal Trading Foundation (2026-02-21)
+**Estado: ✅ COMPLETADO**
+**Timestamp**: 18:25 | Versión: 2.5.0
+
+**Resumen**: Implementación del Módulo de Normalización de Activos. Agnosticismo total de instrumentos mediante `asset_profiles` y cálculos de precisión con la librería `decimal`. Este milestone habilita operación real agnóstica sin depender de pips abstractos.
+
+**Alcance Completado**:
+- [x] **Tabla `asset_profiles` (SSOT)**: Base de datos maestra con normalización centralizada.
+- [x] **Cálculo Universal (Unidades R)**: `RiskManager.calculate_position_size(symbol, risk_amount_usd, stop_loss_dist)` agnóstico.
+- [x] **Aritmética Institucional**: Decimal + Downward Rounding para precisión.
+- [x] **Test Suite Completa**: 289/289 tests pass (6/6 validaciones agnósticas).
+- [x] **Documentación Técnica**: Esquema DB, fórmulas, ejemplos en `docs/02_RISK_CONTROL.md` & `docs/05_INFRASTRUCTURE.md`.
+
+**Características Principales**:
+- **Riesgo Uniforme**: $USD constante independientemente de Forex/Crypto/Metals.
+- **Trazabilidad Completa**: Trace_ID único (NORM-XXXXXXXX) para auditoría.
+- **Seguridad Integrada**: `AssetNotNormalizedError` si símbolo no normalizado → Trade bloqueado.
+- **Escalabilidad**: Agregar nuevos símbolos solo requiere inserción en DB (sin código).
+
+**Habilita**:
+- ✅ Shadow Ranking (Milestone 4): Comparabilidad real de estrategias.
+- ✅ Multi-Asset Trading: Forex, Crypto, Metals con lógica idéntica.
+- ✅ Operación Institucional: Precisión decimal para auditoría regulatoria.
+
+---
+
 > [!IMPORTANT]
 > Los detalles técnicos, diagramas de arquitectura y el historial de implementación han sido modularizados en la carpeta `docs/`.
 > - Para detalles técnicos por dominio, ver `docs/01_ALPHA_ENGINE.md`, `docs/02_RISK_CONTROL.md`, etc.
 > - Para el historial completo de cambios, ver `docs/SYSTEM_LEDGER.md`.
+> - Para validación técnica, ejecutar: `python scripts/utilities/test_asset_normalization.py`

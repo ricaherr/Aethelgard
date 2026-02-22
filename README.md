@@ -1,10 +1,12 @@
 # AETHELGARD: AGNOSTIC ALGORITHMIC TRADING BRAIN
 
 ![Status](https://img.shields.io/badge/Status-ACTIVE-brightgreen)
-![Version](https://img.shields.io/badge/Version-1.13.0-blue)
+![Version](https://img.shields.io/badge/Version-2.5.0--UTF-blue)
 ![OS](https://img.shields.io/badge/OS-Windows-lightgrey)
 
 **Aethelgard** es un sistema autónomo, proactivo y agnóstico de trading multihilo, diseñado bajo estándares de alta disponibilidad e ingeniería financiera. Capacidad de auto-calibración y enfoque comercial (SaaS).
+
+**✨ Versión 2.5.0**: Universal Trading Foundation completado. Cálculo agnóstico de riesgo con precisión institucional (Decimal + ROUND_DOWN). Operación real habilitada para Forex, Crypto y Metals.
 
 ---
 

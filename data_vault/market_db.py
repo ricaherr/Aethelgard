@@ -153,3 +153,50 @@ class MarketMixin(BaseRepository):
             return states
         finally:
             self._close_conn(conn)
+
+    def get_asset_profile(self, symbol: str, trace_id: Optional[str] = None) -> Optional[Dict]:
+        """
+        Get asset profile for a symbol.
+        SSOT: Unified instrument normalization.
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM asset_profiles WHERE symbol = ?", (symbol,))
+            row = cursor.fetchone()
+            if row:
+                profile = dict(row)
+                if trace_id:
+                    logger.info(f"[{trace_id}] Profile retrieved for {symbol}")
+                return profile
+            return None
+        finally:
+            self._close_conn(conn)
+
+    def seed_initial_assets(self) -> None:
+        """Seed initial asset profiles if table is empty."""
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM asset_profiles")
+            if cursor.fetchone()[0] > 0:
+                return
+
+            initial_assets = [
+                ('EURUSD', 'FOREX', 0.00001, 0.01, 100000, 'USD', '08:00', '17:00'),
+                ('GBPUSD', 'FOREX', 0.00001, 0.01, 100000, 'USD', '08:00', '16:00'),
+                ('USDJPY', 'FOREX', 0.001, 0.01, 100000, 'JPY', '00:00', '09:00'),
+                ('GOLD',   'METAL', 0.01, 0.01, 100,    'USD', '08:00', '17:00'),
+                ('BTCUSD', 'CRYPTO', 0.01, 0.0001, 1,    'USD', '00:00', '23:59')
+            ]
+            
+            cursor.executemany("""
+                INSERT INTO asset_profiles 
+                (symbol, asset_class, tick_size, lot_step, contract_size, currency, golden_hour_start, golden_hour_end)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, initial_assets)
+            
+            conn.commit()
+            logger.info("Initial asset profiles seeded.")
+        finally:
+            self._close_conn(conn)

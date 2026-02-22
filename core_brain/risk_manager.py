@@ -7,7 +7,9 @@ CONSOLIDATION: Single Source of Truth for position size calculation.
 EDGE COMPLIANCE: Integrated monitoring with circuit breaker protection.
 """
 import logging
+import uuid
 from typing import Optional, Dict, Any
+from decimal import Decimal, ROUND_DOWN
 
 # Dependencies aligned with the project structure
 from data_vault.storage import StorageManager
@@ -19,6 +21,13 @@ from core_brain.market_utils import normalize_price, normalize_volume, calculate
 from core_brain.instrument_manager import InstrumentManager
 
 logger = logging.getLogger(__name__)
+
+class AssetNotNormalizedError(Exception):
+    """Exception raised when an asset is not found in asset_profiles."""
+    def __init__(self, symbol: str):
+        self.symbol = symbol
+        self.message = f"CRITICAL: Asset {symbol} is NOT normalized in asset_profiles. Trade aborted for safety."
+        super().__init__(self.message)
 
 def _resolve_storage(storage: Optional[StorageManager]) -> StorageManager:
     """Resolve storage dependency with legacy fallback."""
@@ -505,7 +514,80 @@ class RiskManager:
                 error_message=str(e)
             )
             return 0.0
-    
+
+    def calculate_position_size(
+        self,
+        symbol: str,
+        risk_amount_usd: float,
+        stop_loss_dist: float
+    ) -> float:
+        """
+        Calcula el lotaje exacto usando Universal Trading Foundation.
+        
+        Directrices de Seguridad (Aprobadas por Arquitecto Jefe):
+        1. Usa Decimal para evitar errores de coma flotante.
+        2. Redondeo estricto hacia abajo (ROUND_DOWN).
+        3. stop_loss_dist es precio bruto (ej: 0.0050).
+        
+        Args:
+            symbol: Símbolo del activo (ej: EURUSD)
+            risk_amount_usd: Riesgo monetario en USD (ej: 100.0)
+            stop_loss_dist: Distancia al SL en precio bruto (ej: 0.0050)
+            
+        Returns:
+            float: Lotaje final normalizado.
+            
+        Raises:
+            AssetNotNormalizedError: Si el símbolo no está en la DB.
+        """
+        trace_id = f"NORM-{uuid.uuid4().hex[:8]}"
+        logger.info(f"[{trace_id}] Starting Universal Risk Calculation for {symbol}")
+        
+        # a) Consulta datos de asset_profiles (SSOT)
+        profile = self.storage.get_asset_profile(symbol, trace_id=trace_id)
+        
+        if not profile:
+            logger.critical(f"[{trace_id}] {symbol} not found in asset_profiles!")
+            raise AssetNotNormalizedError(symbol)
+            
+        try:
+            # b) Cálculo de lotaje exacto usando Decimal
+            # Fórmula: Lots = Risk_USD / (SL_Dist * Contract_Size)
+            
+            d_risk = Decimal(str(risk_amount_usd))
+            d_sl_dist = Decimal(str(stop_loss_dist))
+            d_contract_size = Decimal(str(profile['contract_size']))
+            d_lot_step = Decimal(str(profile['lot_step']))
+            
+            if d_sl_dist <= 0:
+                logger.error(f"[{trace_id}] Invalid stop_loss_dist: {stop_loss_dist}")
+                return 0.0
+                
+            # Raw lot calculation
+            # Risk per Lot = SL_Dist * Contract_Size
+            
+            risk_per_lot = d_sl_dist * d_contract_size
+            raw_lots = d_risk / risk_per_lot
+            
+            # c) Redondeo hacia abajo según lot_step
+            # lots = floor(raw_lots / lot_step) * lot_step
+            
+            final_lots = (raw_lots / d_lot_step).to_integral_value(rounding=ROUND_DOWN) * d_lot_step
+            
+            result = float(final_lots)
+            
+            logger.info(
+                f"[{trace_id}] Result for {symbol}: {result} lots "
+                f"(Risk: ${risk_amount_usd}, SL_Dist: {stop_loss_dist}, "
+                f"Contract: {profile['contract_size']}, Step: {profile['lot_step']})"
+            )
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"[{trace_id}] Error in Universal Calculation for {symbol}: {e}", exc_info=True)
+            return 0.0
+
     # =========================================================================
     # HELPER METHODS - Private
     # =========================================================================
@@ -734,7 +816,7 @@ class RiskManager:
     # LEGACY METHOD - Deprecated, mantener por compatibilidad
     # =========================================================================
     
-    def calculate_position_size(
+    def calculate_position_size_deprecated(
         self,
         account_balance: float,
         stop_loss_distance: float,
