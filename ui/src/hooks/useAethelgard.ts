@@ -107,8 +107,14 @@ export function useAethelgard() {
 
     const runAudit = async () => {
         try {
-            const response = await fetch('/api/system/audit', { method: 'POST' });
-            return response.ok;
+            const response = await fetch('/api/system/audit', { 
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await response.json();
+            
+            // Retornar true si la auditoría tuvo éxito, false en caso contrario
+            return data.success === true;
         } catch (error) {
             console.error("Error triggering audit:", error);
             return false;

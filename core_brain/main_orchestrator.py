@@ -47,6 +47,7 @@ from core_brain.position_manager import PositionManager
 from core_brain.regime import RegimeClassifier
 from core_brain.tuner import EdgeTuner
 from core_brain.trade_closure_listener import TradeClosureListener
+from core_brain.strategy_ranker import StrategyRanker
 
 logger = logging.getLogger(__name__)
 
@@ -213,6 +214,7 @@ class MainOrchestrator:
         coherence_monitor: Optional[Any] = None,
         expiration_manager: Optional[Any] = None,
         regime_classifier: Optional[Any] = None,
+        strategy_ranker: Optional[StrategyRanker] = None,
         thought_callback: Optional[Any] = None,
         config_path: Optional[str] = None
     ):
@@ -221,7 +223,7 @@ class MainOrchestrator:
         """
         self.thought_callback = thought_callback
         # 1. Base dependencies and config
-        self._init_core_dependencies(scanner, signal_factory, risk_manager, executor, storage, config_path)
+        self._init_core_dependencies(scanner, signal_factory, risk_manager, executor, storage, config_path, strategy_ranker)
         
         # 2. Classifier and Position Management
         self.regime_classifier = regime_classifier or RegimeClassifier(storage=self.storage)
@@ -242,13 +244,14 @@ class MainOrchestrator:
         # 6. Broker Discovery and Status
         self._init_broker_discovery()
 
-    def _init_core_dependencies(self, scanner: Any, factory: Any, risk: Any, executor: Any, storage: Optional[Any], config_path: Optional[str]) -> None:
+    def _init_core_dependencies(self, scanner: Any, factory: Any, risk: Any, executor: Any, storage: Optional[Any], config_path: Optional[str], strategy_ranker: Optional[StrategyRanker] = None) -> None:
         """Initializes core engines and resolves storage/config."""
         self.scanner = scanner
         self.signal_factory = factory
         self.risk_manager = risk
         self.executor = executor
         self.storage = _resolve_storage(storage)
+        self.strategy_ranker = strategy_ranker or StrategyRanker(storage=self.storage)
         self.config = self._load_config(config_path)
 
     def _init_position_management(self) -> None:
@@ -743,6 +746,16 @@ class MainOrchestrator:
             for signal in validated_signals:
                 try:
                     logger.info(f"Executing signal: {signal.symbol} {signal.signal_type}")
+                    
+                    # Check if strategy is authorized for LIVE execution (Shadow Ranking)
+                    if not self._is_strategy_authorized_for_execution(signal):
+                        logger.warning(
+                            f"Signal for {signal.symbol} blocked: Strategy {getattr(signal, 'strategy', 'unknown')} "
+                            f"not authorized for LIVE execution (checking strategy_ranking table)"
+                        )
+                        self.stats.signals_vetoed += 1
+                        continue
+                    
                     success = await self.executor.execute_signal(signal)
                     
                     if success:
@@ -807,6 +820,60 @@ class MainOrchestrator:
         }
         
         self.storage.update_system_state({"session_stats": session_data})
+    
+    def _is_strategy_authorized_for_execution(self, signal: Signal) -> bool:
+        """
+        Check if a signal's strategy is authorized for LIVE execution.
+        
+        This implements the Shadow Ranking System:
+        - Only LIVE strategies execute real orders
+        - SHADOW strategies generate metrics but don't execute
+        - QUARANTINE strategies are blocked
+        
+        Args:
+            signal: Signal object with optional 'strategy' attribute
+            
+        Returns:
+            True if authorized for execution, False otherwise
+        """
+        strategy_id = getattr(signal, 'strategy', None)
+        
+        # If signal doesn't have strategy attribute, allow execution (legacy compatibility)
+        if not strategy_id:
+            return True
+        
+        try:
+            ranking = self.storage.get_strategy_ranking(strategy_id)
+            
+            if not ranking:
+                # Strategy not found in ranking table - allow execution for new strategies
+                logger.debug(f"Strategy {strategy_id} not in ranking table - allowing execution")
+                return True
+            
+            execution_mode = ranking.get('execution_mode', 'SHADOW')
+            
+            if execution_mode == 'LIVE':
+                return True
+            elif execution_mode == 'SHADOW':
+                # Log but don't execute - metrics will be tracked separately
+                logger.info(
+                    f"Strategy {strategy_id} in SHADOW mode - signal generated but not executed "
+                    f"(waiting for promotion criteria)"
+                )
+                return False
+            elif execution_mode == 'QUARANTINE':
+                logger.warning(
+                    f"Strategy {strategy_id} in QUARANTINE - signal blocked until risk metrics improve"
+                )
+                return False
+            else:
+                logger.warning(f"Unknown execution mode for strategy {strategy_id}: {execution_mode}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error checking strategy authorization for {strategy_id}: {e}")
+            # Conservative: block execution on error to avoid surprises
+            return False
     
     async def run(self) -> None:
         """

@@ -13,6 +13,7 @@ from .trades_db import TradesMixin
 from .accounts_db import AccountsMixin
 from .market_db import MarketMixin
 from .system_db import SystemMixin
+from .strategy_ranking_db import StrategyRankingMixin
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,8 @@ class StorageManager(
     TradesMixin,
     AccountsMixin,
     MarketMixin,
-    SystemMixin
+    SystemMixin,
+    StrategyRankingMixin
 ):
     """
     Centralized storage manager for Aethelgard.
@@ -324,6 +326,26 @@ class StorageManager(
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+
+            # 11. Strategy Ranking (Darwinismo Algorítmico)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS strategy_ranking (
+                    strategy_id TEXT PRIMARY KEY,
+                    profit_factor REAL DEFAULT 0.0,
+                    win_rate REAL DEFAULT 0.0,
+                    drawdown_max REAL DEFAULT 0.0,
+                    consecutive_losses INTEGER DEFAULT 0,
+                    execution_mode TEXT DEFAULT 'SHADOW',
+                    trace_id TEXT UNIQUE,
+                    last_update_utc TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    total_trades INTEGER DEFAULT 0,
+                    completed_last_50 INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_strategy_ranking_mode ON strategy_ranking (execution_mode)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_strategy_ranking_profit_factor ON strategy_ranking (profit_factor DESC)")
 
             # Migrations / Fixes
             cursor.execute("PRAGMA table_info(data_providers)")

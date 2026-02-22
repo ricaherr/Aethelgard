@@ -1,7 +1,7 @@
 # AETHELGARD: ESTRATEGIC ROADMAP
 
-**Versión Log**: 2.4.1 (Universal Asset Normalization)
-**Última Actualización**: 21 de Febrero, 2026 (18:25)
+**Versión Log**: 2.5.0 (Shadow Ranking & Darwinismo Algorítmico)
+**Última Actualización**: 21 de Febrero, 2026 (XX:XX)
 
 ---
 
@@ -33,15 +33,38 @@
   - Script: `scripts/utilities/test_asset_normalization.py`
   - Resultado: TODOS LOS TESTS PASARON (6/6 validaciones OK)
 
-### 🧠 MILESTONE 4: Estratega Evolutivo (Darwinismo Algorítmico)
-*Próximo Hito - Habilitado por Normalización de Unidades R*
+### ✅ MILESTONE 4: Estratega Evolutivo (Darwinismo Algorítmico)
+*Estado: ✅ COMPLETADO (2026-02-21) | Timestamp: Post-Asset Normalization*
 
-### 🧠 MILESTONE 4: Estratega Evolutivo (Darwinismo Algorítmico)
-- [ ] **Shadow Ranking System**: Sistema de puntuación interna. Solo el Top 3 de estrategias con Profit Factor > 1.5 en simulación pasan a real.
-- [ ] **Weighted Signal Composite (The Jury)**: El `SignalFactory` ahora promedia votos de múltiples estrategias según el Régimen de Mercado.
-- [ ] **Feedback Loop 2.0 (Edge Discovery)**: Análisis automático de "Lo que pudo ser" (Price action 20 velas después) para ajustar los pesos del Jurado.
+**Resumen**: Implementación del motor de Shadow Ranking System. El sistema ahora clasifica estrategias en 3 modos (SHADOW, LIVE, QUARANTINE) y ejecuta solo aquellas autorizadas en base a métricas de rentabilidad y riesgo.
+
+- [x] **Shadow Ranking System**: Sistema de evolución de estrategias con Trace_ID auditado.
+  - Tabla DB: `strategy_ranking` con campos: profit_factor, win_rate, drawdown_max, consecutive_losses, execution_mode
+  - Mixin: `StrategyRankingMixin` en `data_vault/strategy_ranking_db.py`
+  - Integración: `StorageManager` accede a rankings para auditoría persistente
+
+- [x] **Motor de Promoción/Degradación**: `StrategyRanker` en `core_brain/strategy_ranker.py`
+  - Promoción (SHADOW → LIVE): Profit Factor > 1.5 AND Win Rate > 50% en últimas 50 ops
+  - Degradación (LIVE → QUARANTINE): Drawdown >= 3% OR Consecutive Losses >= 5
+  - Recuperación (QUARANTINE → SHADOW): Métricas normalizadas tras N ciclos de mejora
+
+- [x] **Integración en Pipeline de Ejecución**: `MainOrchestrator._is_strategy_authorized_for_execution()`
+  - Antes de ejecutar cada orden, verifica `strategy_ranking.execution_mode`
+  - Solo LIVE strategies generan órdenes reales
+  - SHADOW strategies rastrean métricas sin ejecutar
+  - QUARANTINE strategies bloqueadas hasta recuperación
+
+- [x] **Auditoría y Trazabilidad**: Trace_ID único (RANK-XXXXXXXX) para cada transición de estado
+  - Logging persistente en `edge_learning` tabla
+  - Contexto completo de métricas en cada cambio de modo
+
+- [x] **Test Suite Completa**: 9/9 tests unitarios pasando
+  - `tests/test_strategy_ranker.py`: Promoción, degradación, recuperación, auditoría
+  - Coverage: Todos los caminos de lógica validados
 
 ### ⚡ MILESTONE 5: Alpha Institucional (Ineficiencias Pro)
+*Próximo Hito*
+
 - [ ] **Detección de FVG (Fair Value Gaps)**: Algoritmo de búsqueda de desequilibrios institucionales.
 - [ ] **Arbitraje de Volatilidad**: Detección de desconexión entre Volatilidad Implícita y Realizada.
 

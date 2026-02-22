@@ -223,10 +223,15 @@ export const MonitorPage = ({ status, thoughts, runAudit, runRepair }: MonitorPa
                     <button
                         onClick={handleAudit}
                         disabled={isAuditing}
-                        className={`mt-4 w-full py-4 rounded-xl border transition-all duration-500 group flex flex-col items-center gap-1 overflow-hidden relative ${isAuditing
-                            ? 'bg-aethelgard-blue/5 border-aethelgard-blue/20 cursor-not-allowed'
-                            : 'bg-white/5 border-white/10 hover:bg-aethelgard-blue/10 hover:border-aethelgard-blue/40'
-                            }`}
+                        className={`mt-4 w-full py-4 rounded-xl border transition-all duration-500 group flex flex-col items-center gap-1 overflow-hidden relative ${
+                            isAuditing
+                                ? 'bg-aethelgard-blue/5 border-aethelgard-blue/20 cursor-not-allowed'
+                                : auditResult
+                                    ? auditResult.success
+                                        ? 'bg-aethelgard-green/10 border-aethelgard-green/40 hover:bg-aethelgard-green/20'
+                                        : 'bg-red-500/10 border-red-500/40 hover:bg-red-500/20'
+                                    : 'bg-white/5 border-white/10 hover:bg-aethelgard-blue/10 hover:border-aethelgard-blue/40'
+                        }`}
                     >
                         {isAuditing && (
                             <motion.div
@@ -236,17 +241,32 @@ export const MonitorPage = ({ status, thoughts, runAudit, runRepair }: MonitorPa
                             />
                         )}
                         <div className="flex items-center justify-center gap-3 relative z-10">
-                            <ShieldCheck size={16} className={cn("transition-colors", isAuditing ? "text-aethelgard-blue animate-pulse" : "text-white/40 group-hover:text-aethelgard-blue")} />
+                            <ShieldCheck size={16} className={cn(
+                                "transition-colors",
+                                isAuditing
+                                    ? "text-aethelgard-blue animate-pulse"
+                                    : auditResult
+                                        ? auditResult.success
+                                            ? "text-aethelgard-green"
+                                            : "text-red-500"
+                                        : "text-white/40 group-hover:text-aethelgard-blue"
+                            )} />
                             <span className={cn(
                                 "text-[10px] font-black uppercase tracking-[0.3em] transition-colors",
-                                isAuditing ? "text-aethelgard-blue" : "text-white/60 group-hover:text-white"
+                                isAuditing
+                                    ? "text-aethelgard-blue"
+                                    : auditResult
+                                        ? auditResult.success
+                                            ? "text-aethelgard-green"
+                                            : "text-red-500"
+                                        : "text-white/60 group-hover:text-white"
                             )}>
-                                {isAuditing ? "Auditing System Integrity..." : "Run Global Validation"}
+                                {isAuditing ? "Auditing System Integrity..." : auditResult ? (auditResult.success ? "✅ Validation Complete" : "❌ Validation Failed") : "Run Global Validation"}
                             </span>
                         </div>
                         {auditResult && !isAuditing && (
-                            <div className="flex items-center gap-2 opacity-40">
-                                <span className="w-1 h-1 rounded-full bg-aethelgard-green" />
+                            <div className="flex items-center gap-2 opacity-60">
+                                <span className={cn("w-1 h-1 rounded-full", auditResult.success ? "bg-aethelgard-green" : "bg-red-500")} />
                                 <span className="text-[8px] font-medium text-white tracking-widest uppercase">
                                     L_AUDIT: {auditResult.time}
                                 </span>

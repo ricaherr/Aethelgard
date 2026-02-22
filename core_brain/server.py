@@ -16,7 +16,7 @@ import json
 import logging
 import asyncio
 from typing import Dict, Set, Any, AsyncGenerator, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -1687,81 +1687,136 @@ def create_app() -> FastAPI:
     @app.post("/api/system/audit")
     async def run_integrity_audit() -> Dict[str, Any]:
         """
-        Forza la ejecución del script de validación global validate_all.py
-        Diseñado para dispararse desde el botón "Run Full Integrity Audit" de la UI.
+        Ejecuta validación global con espera completa y retorna resultados.
+        Envía eventos en tiempo real vía broadcast_thought.
         """
-        async def audit_task() -> None:
-            await broadcast_thought("Desplegando hilos de auditoría paralela... Iniciando escaneo de vectores de integridad.", module="HEALTH")
+        # Mapas de lenguaje sofisticado por etapa
+        sophisticated_lexicon = {
+            "Architecture": "Analizando topología de arquitectura y coherencia de módulos...",
+            "QA Guard": "Verificando integridad sintáctica y estándares de calidad QA...",
+            "Code Quality": "Escaneando densidad de complejidad y patrones de duplicidad...",
+            "UI Quality": "Validando ecosistema React y consistencia de tipos en interfaz...",
+            "Manifesto": "Enforzando leyes del Manifesto (DI & SSOT)...",
+            "Patterns": "Escrutando firmas de métodos y protocolos de seguridad AST...",
+            "Core Tests": "Ejecutando suite crítica de deduplicación y gestión de riesgo...",
+            "Integration": "Validando puentes de integración y persistencia en Data Vault...",
+            "Connectivity": "Auditando latencia y fidelidad del uplink con el Broker...",
+            "System DB": "Verificando integridad estructural de la base de Datos..."
+        }
+
+        await broadcast_thought("Desplegando hilos de auditoría paralela... Iniciando escaneo de vectores de integridad.", module="HEALTH")
+        
+        validation_results = []
+        error_details = {}
+        total_time = 0.0
+        
+        try:
+            process = await asyncio.create_subprocess_exec(
+                "python", "scripts/validate_all.py",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=os.getcwd()
+            )
             
-            # Mapas de lenguaje sofisticado por etapa
-            sophisticated_lexicon = {
-                "Architecture": "Analizando topología de arquitectura y coherencia de módulos...",
-                "QA Guard": "Verificando integridad sintáctica y estándares de calidad QA...",
-                "Code Quality": "Escaneando densidad de complejidad y patrones de duplicidad...",
-                "UI Quality": "Validando ecosistema React y consistencia de tipos en interfaz...",
-                "Manifesto": "Enforzando leyes del Manifesto (DI & SSOT)...",
-                "Patterns": "Escrutando firmas de métodos y protocolos de seguridad AST...",
-                "Core Tests": "Ejecutando suite crítica de deduplicación y gestión de riesgo...",
-                "Integration": "Validando puentes de integración y persistencia en Data Vault...",
-                "Connectivity": "Auditando latencia y fidelidad del uplink con el Broker...",
-                "System DB": "Verificando integridad estructural de la base de Datos..."
-            }
-
-            try:
-                process = await asyncio.create_subprocess_exec(
-                    "python", "scripts/validate_all.py",
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    cwd=os.getcwd()
-                )
+            # Leer stdout línea a línea para interceptar STAGE_START, STAGE_END y DEBUG_FAIL
+            while True:
+                line = await process.stdout.readline()
+                if not line:
+                    break
                 
-                error_details = {}
+                decoded_line = line.decode().strip()
                 
-                # Leer stdout línea a línea para interceptar STAGE_START, STAGE_END y DEBUG_FAIL
-                while True:
-                    line = await process.stdout.readline()
-                    if not line:
-                        break
-                    
-                    decoded_line = line.decode().strip()
-                    if decoded_line.startswith("STAGE_START:"):
-                        stage = decoded_line.split(":")[1]
-                        msg = sophisticated_lexicon.get(stage, f"Iniciando fase: {stage}...")
-                        await broadcast_thought(msg, level="info", module="HEALTH", metadata={"stage": stage, "status": "STARTING"})
-                    
-                    elif decoded_line.startswith("DEBUG_FAIL:"):
-                        parts = decoded_line.split(":", 2)
-                        if len(parts) >= 3:
-                            stage, error = parts[1], parts[2]
-                            error_details[stage] = error
+                if decoded_line.startswith("STAGE_START:"):
+                    stage = decoded_line.split(":")[1]
+                    msg = sophisticated_lexicon.get(stage, f"Iniciando fase: {stage}...")
+                    await broadcast_thought(msg, level="info", module="HEALTH", metadata={"stage": stage, "status": "STARTING"})
+                
+                elif decoded_line.startswith("DEBUG_FAIL:"):
+                    parts = decoded_line.split(":", 2)
+                    if len(parts) >= 3:
+                        stage, error = parts[1], parts[2]
+                        error_details[stage] = error
 
-                    elif decoded_line.startswith("STAGE_END:"):
-                        parts = decoded_line.split(":")
-                        stage, status, duration = parts[1], parts[2], parts[3]
-                        if status == "OK":
-                            await broadcast_thought(f"Vector {stage} successfully validated ({duration}s).", level="success", module="HEALTH", metadata={"stage": stage, "status": "OK"})
+                elif decoded_line.startswith("STAGE_END:"):
+                    parts = decoded_line.split(":")
+                    if len(parts) >= 4:
+                        stage, result_status, duration = parts[1], parts[2], parts[3]
+                        try:
+                            duration_float = float(duration)
+                            total_time += duration_float
+                        except:
+                            duration_float = 0.0
+                        
+                        if result_status == "OK":
+                            color_indicator = "✅"
+                            await broadcast_thought(
+                                f"{color_indicator} Vector {stage} successfully validated ({duration}s).",
+                                level="success",
+                                module="HEALTH",
+                                metadata={"stage": stage, "status": "OK", "duration": duration}
+                            )
+                            validation_results.append({
+                                "stage": stage,
+                                "status": "PASSED",
+                                "duration": duration_float
+                            })
                         else:
+                            color_indicator = "❌"
                             error_msg = error_details.get(stage, "Inconsistencia de integridad no especificada.")
-                            await broadcast_thought(f"Vector {stage} compromised ({duration}s).", level="warning", module="HEALTH", metadata={
-                                "stage": stage, 
-                                "status": "FAIL",
+                            await broadcast_thought(
+                                f"{color_indicator} Vector {stage} compromised ({duration}s). Error: {error_msg}",
+                                level="warning",
+                                module="HEALTH",
+                                metadata={
+                                    "stage": stage,
+                                    "status": "FAIL",
+                                    "duration": duration,
+                                    "error": error_msg
+                                }
+                            )
+                            validation_results.append({
+                                "stage": stage,
+                                "status": "FAILED",
+                                "duration": duration_float,
                                 "error": error_msg
                             })
-                
-                await process.wait()
-                
-                if process.returncode == 0:
-                    await broadcast_thought("Auditoría de alto rendimiento completada: Matriz de integridad 100% estable.", level="success", module="HEALTH", metadata={"status": "FINISHED", "success": True})
-                else:
-                    await broadcast_thought("Auditoría finalizada con vectores comprometidos. Revisar consola técnica para detalles.", level="warning", module="HEALTH", metadata={"status": "FINISHED", "success": False})
             
-            except Exception as e:
-                logger.error(f"[AUDIT] Error en flujo de auditoría evolucionada: {e}")
-                await broadcast_thought(f"Falla crítica en motor de auditoría: {str(e)}", level="error", module="HEALTH")
-
-        # Iniciar auditoría en background y retornar inmediatamente
-        asyncio.create_task(audit_task())
-        return {"status": "started"}
+            # Esperar a que el proceso termine
+            await process.wait()
+            
+            # Compilar resultado final
+            passed_count = sum(1 for r in validation_results if r["status"] == "PASSED")
+            failed_count = sum(1 for r in validation_results if r["status"] == "FAILED")
+            total_count = len(validation_results)
+            success = process.returncode == 0
+            
+            if success:
+                final_msg = f"✅ Auditoría de alto rendimiento completada: Matriz de integridad 100% estable ({passed_count}/{total_count} vectores validados en {total_time:.2f}s)."
+                await broadcast_thought(final_msg, level="success", module="HEALTH", metadata={"status": "FINISHED", "success": True, "total_time": total_time})
+            else:
+                final_msg = f"⚠️ Auditoría finalizada con {failed_count} vectores comprometidos ({passed_count}/{total_count} validados en {total_time:.2f}s)."
+                await broadcast_thought(final_msg, level="warning", module="HEALTH", metadata={"status": "FINISHED", "success": False, "total_time": total_time})
+            
+            # Retornar resultados completos
+            return {
+                "success": success,
+                "passed": passed_count,
+                "failed": failed_count,
+                "total": total_count,
+                "duration": total_time,
+                "results": validation_results,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        
+        except Exception as e:
+            logger.error(f"[AUDIT] Error en flujo de auditoría evolucionada: {e}", exc_info=True)
+            error_msg = f"Falla crítica en motor de auditoría: {str(e)}"
+            await broadcast_thought(error_msg, level="error", module="HEALTH")
+            return {
+                "success": False,
+                "error": error_msg,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
 
     @app.post("/api/system/audit/repair")
     async def repair_integrity_vector(payload: Dict[str, Any]) -> Dict[str, Any]:
