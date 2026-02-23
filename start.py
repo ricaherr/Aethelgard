@@ -32,7 +32,7 @@ from core_brain.signal_factory import SignalFactory
 from core_brain.risk_manager import RiskManager
 from core_brain.executor import OrderExecutor
 from core_brain.monitor import ClosingMonitor
-from core_brain.tuner import EdgeTuner
+from core_brain.edge_tuner import EdgeTuner
 from core_brain.edge_monitor import EdgeMonitor
 from data_vault.storage import StorageManager
 from data_vault.backup_manager import DatabaseBackupManager

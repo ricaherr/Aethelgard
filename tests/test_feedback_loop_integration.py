@@ -23,7 +23,7 @@ from pathlib import Path
 
 from data_vault.storage import StorageManager
 from core_brain.risk_manager import RiskManager
-from core_brain.tuner import EdgeTuner
+from core_brain.edge_tuner import EdgeTuner
 from models.signal import Signal, SignalType, ConnectorType
 
 

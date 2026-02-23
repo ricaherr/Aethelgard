@@ -8,7 +8,7 @@ import os
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from core_brain.tuner import EdgeTuner
+from core_brain.edge_tuner import EdgeTuner
 from data_vault.storage import StorageManager
 
 

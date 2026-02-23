@@ -987,7 +987,7 @@ async def main() -> None:
     from core_brain.executor import OrderExecutor
     from core_brain.notificator import get_notifier
     from core_brain.trade_closure_listener import TradeClosureListener
-    from core_brain.tuner import EdgeTuner
+    from core_brain.edge_tuner import EdgeTuner
     
     print("=" * 50)
     print(">>> AETHELGARD ORCHESTRATOR STARTUP")

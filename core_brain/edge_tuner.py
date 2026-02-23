@@ -340,3 +340,136 @@ class EdgeTuner:
         logger.info(f"[EDGE_TUNER] Parameters adjusted via {trigger}. Adjustment factor: {adjustment_factor:.2f}")
         
         return adjustment_record
+
+    # --- ADX/Volatility Grid-Search Calibration (Absorbed from ParameterTuner) ---
+
+    def _calculate_false_positive_rate(
+        self,
+        states: List[Dict],
+        adx_trend_threshold: float,
+        adx_range_threshold: float,
+        volatility_threshold: Optional[float] = None,
+    ) -> float:
+        """
+        Calculates the false-positive rate for a given set of regime thresholds.
+
+        A false positive is defined as a regime change that reverts within the
+        following 5-10 candles.
+        """
+        if len(states) < 20:
+            return 1.0  # Assume worst case without enough data
+
+        false_positives = 0
+        total_changes = 0
+        sorted_states = sorted(states, key=lambda x: x.get("timestamp", ""))
+
+        for i in range(len(sorted_states) - 10):
+            current_regime = sorted_states[i].get("regime")
+            if i > 0:
+                previous_regime = sorted_states[i - 1].get("regime")
+                if current_regime != previous_regime:
+                    total_changes += 1
+                    future_states = sorted_states[i + 1 : min(i + 11, len(sorted_states))]
+                    if future_states:
+                        persistence = sum(
+                            1 for s in future_states if s.get("regime") == current_regime
+                        )
+                        if persistence < len(future_states) * 0.5:
+                            false_positives += 1
+
+        return false_positives / total_changes if total_changes > 0 else 0.0
+
+    def _optimize_adx_thresholds(self, states: List[Dict]) -> tuple:
+        """
+        Finds optimal ADX thresholds via grid search to minimise false positives.
+
+        Returns:
+            Tuple of (adx_trend_threshold, adx_range_threshold, adx_range_exit_threshold)
+        """
+        if len(states) < 100:
+            logger.warning("[EDGE_TUNER] Insufficient data for ADX optimisation; using defaults.")
+            return (25.0, 20.0, 18.0)
+
+        best_fpr = float("inf")
+        best_thresholds = (25.0, 20.0, 18.0)
+
+        for trend_thresh in np.arange(20.0, 35.0, 1.0):
+            for range_thresh in np.arange(15.0, 25.0, 1.0):
+                for exit_thresh in np.arange(15.0, 22.0, 1.0):
+                    if not (exit_thresh < range_thresh < trend_thresh):
+                        continue
+                    fpr = self._calculate_false_positive_rate(states, trend_thresh, range_thresh)
+                    if fpr < best_fpr:
+                        best_fpr = fpr
+                        best_thresholds = (float(trend_thresh), float(range_thresh), float(exit_thresh))
+
+        logger.info(
+            f"[EDGE_TUNER] ADX thresholds optimised: TREND={best_thresholds[0]}, "
+            f"RANGE={best_thresholds[1]}, EXIT={best_thresholds[2]} (FPR: {best_fpr:.2%})"
+        )
+        return best_thresholds
+
+    def _optimize_volatility_threshold(self, states: List[Dict]) -> float:
+        """
+        Optimises the volatility shock multiplier from historical CRASH regime data.
+        """
+        if len(states) < 100:
+            logger.warning("[EDGE_TUNER] Insufficient data for volatility optimisation; using default.")
+            return 5.0
+
+        crash_states = [s for s in states if s.get("regime") == MarketRegime.CRASH.value]
+        if len(crash_states) < 10:
+            return 5.0
+
+        crash_vols = [s.get("volatility", 0) for s in crash_states if s.get("volatility")]
+        all_vols = [s.get("volatility", 0) for s in states if s.get("volatility")]
+
+        if not crash_vols or not all_vols:
+            return 5.0
+
+        optimal = max(3.0, min(10.0, np.mean(crash_vols) / np.mean(all_vols)))
+        logger.info(f"[EDGE_TUNER] Volatility multiplier optimised: {optimal:.2f}")
+        return float(optimal)
+
+    def auto_calibrate(self, limit: int = 1000, symbol: Optional[str] = None) -> Dict:
+        """
+        Runs full ADX/Volatility grid-search calibration using historical market states.
+
+        This is a complementary calibration to adjust_parameters():
+        - adjust_parameters()  → reacts to live trade win-rate (operational feedback)
+        - auto_calibrate()     → optimises regime-detection thresholds from market history
+
+        Args:
+            limit:  Number of historical market state records to analyse.
+            symbol: Optional symbol filter.
+
+        Returns:
+            Dictionary with the newly optimised configuration.
+        """
+        logger.info(f"[EDGE_TUNER] Starting auto-calibration with {limit} records...")
+        current_config = self._load_config()
+
+        states = self.storage.get_market_states(limit=limit, symbol=symbol)
+        if len(states) < 100:
+            logger.warning(
+                f"[EDGE_TUNER] Only {len(states)} records available. "
+                "At least 100 are needed for reliable calibration."
+            )
+            return current_config
+
+        logger.info(f"[EDGE_TUNER] Analysing {len(states)} market states...")
+
+        trend_thresh, range_thresh, exit_thresh = self._optimize_adx_thresholds(states)
+        volatility_multiplier = self._optimize_volatility_threshold(states)
+
+        new_config = {
+            **current_config,
+            "adx_trend_threshold": trend_thresh,
+            "adx_range_threshold": range_thresh,
+            "adx_range_exit_threshold": exit_thresh,
+            "volatility_shock_multiplier": volatility_multiplier,
+        }
+
+        self._save_config(new_config)
+        logger.info("[EDGE_TUNER] Auto-calibration completed successfully.")
+        return new_config

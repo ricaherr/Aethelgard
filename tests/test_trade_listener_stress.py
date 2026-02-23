@@ -25,7 +25,7 @@ import os
 
 from data_vault.storage import StorageManager
 from core_brain.risk_manager import RiskManager
-from core_brain.tuner import EdgeTuner
+from core_brain.edge_tuner import EdgeTuner
 from core_brain.trade_closure_listener import TradeClosureListener
 from models.broker_event import BrokerTradeClosedEvent, BrokerEvent, BrokerEventType, TradeResult
 

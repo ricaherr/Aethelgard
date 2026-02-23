@@ -1595,7 +1595,7 @@ def create_app() -> FastAPI:
         """
         Retorna el historial unificado de aprendizaje y tunning.
         Combina:
-        1. Ajustes paramétricos (legacy/vía ParameterTuner).
+        1. Ajustes paramétricos (vía EdgeTuner.adjust_parameters).
         2. Aprendizaje autónomo (vía EdgeTuner - Delta Feedback).
         """
         try:

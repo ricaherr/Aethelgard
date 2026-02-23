@@ -81,7 +81,7 @@ class UndefinedFunctionDetector:
             'PositionManager',
             'TradeClosureListener',
             'ScannerEngine',
-            'ParameterTuner',
+            'EdgeTuner',
             'CoherenceMonitor',
             'PositionSizeMonitor',
             'SignalExpirationManager',
