@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { MarketRegime, Signal, CerebroThought, SystemStatus, EdgeMetrics } from '../types/aethelgard';
 
 export function useAethelgard() {
-    const [regime, setRegime] = useState<MarketRegime>('NEUTRAL');
+    const [regime, setRegime] = useState<MarketRegime>('NORMAL');
     const [signals, setSignals] = useState<Signal[]>([]);
     const [thoughts, setThoughts] = useState<CerebroThought[]>([]);
     const [status, setStatus] = useState<SystemStatus>({
@@ -107,12 +107,12 @@ export function useAethelgard() {
 
     const runAudit = async () => {
         try {
-            const response = await fetch('/api/system/audit', { 
+            const response = await fetch('/api/system/audit', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
             });
             const data = await response.json();
-            
+
             // Retornar true si la auditoría tuvo éxito, false en caso contrario
             return data.success === true;
         } catch (error) {

@@ -1,8 +1,9 @@
-import { ChevronRight, ArrowUpRight, ArrowDownRight, Info, Power, Settings } from 'lucide-react';
+import { ChevronRight, ArrowUpRight, ArrowDownRight, Info, Power, Settings, AlertCircle, CheckCircle2, PauseCircle } from 'lucide-react';
 import { Signal } from '../../types/aethelgard';
 import { GlassPanel } from '../common/GlassPanel';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useState } from 'react';
+import { cn } from '../../utils/cn';
 
 interface AlphaSignalsProps {
     signals: Signal[];
@@ -31,7 +32,7 @@ export function AlphaSignals({ signals }: AlphaSignalsProps) {
             <div className="flex items-center justify-between mb-6">
                 <div>
                     <h3 className="text-white/90 font-outfit font-bold tracking-tight text-lg">Opportunity Stream</h3>
-                    <p className="text-white/50 text-[10px] uppercase tracking-[0.2em] mt-1">Real-time Alpha Generation</p>
+                    <p className="text-white/50 text-[10px] uppercase tracking-[0.2em] mt-1">Real-time Alpha Generation (Darwinismo Algorítmico)</p>
                 </div>
                 <div className="flex gap-3">
                     <div className="flex items-center gap-1.5 px-3 py-1 rounded bg-white/5 border border-white/10">
@@ -88,6 +89,35 @@ function EmptyState({ scannerEnabled }: { scannerEnabled: boolean }) {
 
 function SignalItem({ signal }: { signal: Signal }) {
     const isBuy = signal.side === 'BUY';
+    const executionMode = signal.execution_mode || 'LIVE';
+    const rankingScore = signal.ranking_score || signal.score * 20; // Fallback a score si no existe ranking_score
+
+    // Mapeo de estilos para execution_mode
+    const executionModeConfig = {
+        'LIVE': {
+            bgColor: 'bg-aethelgard-green/20',
+            textColor: 'text-aethelgard-green',
+            borderColor: 'border-aethelgard-green/30',
+            icon: <CheckCircle2 size={12} />,
+            label: 'LIVE'
+        },
+        'SHADOW': {
+            bgColor: 'bg-yellow-500/20',
+            textColor: 'text-yellow-400',
+            borderColor: 'border-yellow-500/30',
+            icon: <PauseCircle size={12} />,
+            label: 'SHADOW'
+        },
+        'QUARANTINE': {
+            bgColor: 'bg-red-600/20',
+            textColor: 'text-red-400',
+            borderColor: 'border-red-600/30',
+            icon: <AlertCircle size={12} />,
+            label: 'QUARANTINE'
+        }
+    };
+
+    const modeConfig = executionModeConfig[executionMode as keyof typeof executionModeConfig] || executionModeConfig['LIVE'];
 
     return (
         <motion.div
@@ -95,9 +125,10 @@ function SignalItem({ signal }: { signal: Signal }) {
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, scale: 0.95 }}
             whileHover={{ scale: 1.005, backgroundColor: 'rgba(255,255,255,0.03)' }}
-            className="p-4 rounded-xl border border-white/5 bg-white/[0.01] flex items-center justify-between transition-all group"
+            className="p-4 rounded-xl border border-white/5 bg-white/[0.01] flex flex-col lg:flex-row items-start lg:items-center justify-between transition-all group gap-4 lg:gap-0"
         >
-            <div className="flex items-center gap-10">
+            {/* Left: Main Signal Info */}
+            <div className="flex items-center gap-8 flex-1">
                 <div className="w-24">
                     <div className="text-[9px] text-white/50 uppercase font-bold tracking-widest mb-1">Symbol</div>
                     <div className="text-base font-outfit font-bold text-white/90 tracking-tight">{signal.symbol}</div>
@@ -121,13 +152,48 @@ function SignalItem({ signal }: { signal: Signal }) {
                     <div className="flex items-center gap-2">
                         <span className="text-sm font-bold text-aethelgard-blue">{signal.score.toFixed(1)}</span>
                         <div className="flex-1 h-1 bg-white/5 rounded-full overflow-hidden">
-                            <div className="h-full bg-aethelgard-blue" style={{ width: `${signal.score * 10}%` }} />
+                            <div className="h-full bg-aethelgard-blue" style={{ width: `${Math.min(signal.score * 10, 100)}%` }} />
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div className="flex items-center gap-6">
+            {/* Right: Execution Mode + Ranking Score + Status */}
+            <div className="flex items-center gap-4 lg:gap-6 flex-wrap lg:flex-nowrap justify-end w-full lg:w-auto">
+                {/* Execution Mode Badge */}
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className={cn(
+                        'flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[9px] font-bold uppercase tracking-widest',
+                        modeConfig.bgColor,
+                        modeConfig.textColor,
+                        modeConfig.borderColor
+                    )}
+                    title={`Execution Mode: ${executionMode}`}
+                >
+                    {modeConfig.icon}
+                    <span>{modeConfig.label}</span>
+                </motion.div>
+
+                {/* Ranking Score */}
+                <motion.div
+                    initial={{ opacity: 0, x: 10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="hidden sm:flex items-center gap-2 px-2 py-1 rounded-lg bg-white/5 border border-white/10"
+                    title={`Ranking Score: Why this signal is ${executionMode}`}
+                >
+                    <span className="text-[9px] text-white/50 uppercase font-bold">Score:</span>
+                    <motion.span
+                        animate={{ scale: [1, 1.05, 1] }}
+                        transition={{ duration: 2, repeat: Infinity }}
+                        className="text-xs font-bold text-aethelgard-green"
+                    >
+                        {rankingScore.toFixed(0)}%
+                    </motion.span>
+                </motion.div>
+
+                {/* Status */}
                 <div className="text-right">
                     <div className="text-[9px] text-white/50 uppercase font-bold tracking-widest mb-1">Status</div>
                     <div className={`text-[10px] font-bold px-2 py-0.5 rounded ${signal.status === 'EXECUTED' ? 'bg-aethelgard-green/20 text-aethelgard-green' : 'bg-white/5 text-white/40'
@@ -135,6 +201,7 @@ function SignalItem({ signal }: { signal: Signal }) {
                         {signal.status}
                     </div>
                 </div>
+
                 <ChevronRight size={18} className="text-white/10 group-hover:text-aethelgard-green transition-colors" />
             </div>
         </motion.div>

@@ -10,9 +10,9 @@ interface RiskSummaryProps {
 
 export function RiskSummary({ summary, collapsed = false, onToggleCollapse }: RiskSummaryProps) {
     const riskLevel =
-        summary.risk_percentage > summary.max_allowed_risk_pct * 0.9 ? 'critical' :
-        summary.risk_percentage > summary.max_allowed_risk_pct * 0.7 ? 'warning' :
-        'safe';
+        (summary?.risk_percentage || 0) > (summary?.max_allowed_risk_pct || 5) * 0.9 ? 'critical' :
+            (summary?.risk_percentage || 0) > (summary?.max_allowed_risk_pct || 5) * 0.7 ? 'warning' :
+                'safe';
 
     const getRiskColor = () => {
         if (riskLevel === 'critical') return 'bg-red-500';
@@ -76,15 +76,15 @@ export function RiskSummary({ summary, collapsed = false, onToggleCollapse }: Ri
                     <Shield size={20} className="text-aethelgard-blue" />
                     <div className={`w-1.5 h-1.5 rounded-full ${getRiskColor()}`} />
                 </div>
-                
-                <div className="flex flex-col items-center gap-1" title={`Balance: $${summary.account_balance.toFixed(2)}`}>
+
+                <div className="flex flex-col items-center gap-1" title={`Balance: $${(summary?.account_balance || 0).toFixed(2)}`}>
                     <DollarSign size={18} className="text-green-400" />
                     <div className={`w-1.5 h-1.5 rounded-full ${balanceIndicator.dotColor}`} />
                 </div>
 
-                <div className="flex flex-col items-center gap-1" title={`Total Risk: $${summary.total_risk_usd.toFixed(2)}`}>
+                <div className="flex flex-col items-center gap-1" title={`Total Risk: $${(summary?.total_risk_usd || 0).toFixed(2)}`}>
                     <TrendingUp size={18} className={getRiskTextColor()} />
-                    <span className="text-[8px] text-white/40">{summary.risk_percentage.toFixed(0)}%</span>
+                    <span className="text-[8px] text-white/40">{(summary?.risk_percentage || 0).toFixed(0)}%</span>
                 </div>
 
                 {summary.warnings.length > 0 && (
@@ -121,13 +121,13 @@ export function RiskSummary({ summary, collapsed = false, onToggleCollapse }: Ri
                 <div className="flex justify-between text-xs mb-2">
                     <span className="text-white/50 uppercase tracking-widest font-bold text-[10px]">Total Account Risk</span>
                     <span className={`font-bold ${getRiskTextColor()}`}>
-                        {summary.risk_percentage.toFixed(1)}% / {summary.max_allowed_risk_pct}%
+                        {(summary?.risk_percentage || 0).toFixed(1)}% / {summary?.max_allowed_risk_pct || 0}%
                     </span>
                 </div>
                 <div className="h-2 bg-white/5 rounded-full overflow-hidden">
                     <div
                         className={`h-full transition-all duration-500 ${getRiskColor()}`}
-                        style={{ width: `${Math.min((summary.risk_percentage / summary.max_allowed_risk_pct) * 100, 100)}%` }}
+                        style={{ width: `${Math.min(((summary?.risk_percentage || 0) / (summary?.max_allowed_risk_pct || 1)) * 100, 100)}%` }}
                     />
                 </div>
             </div>
@@ -136,15 +136,15 @@ export function RiskSummary({ summary, collapsed = false, onToggleCollapse }: Ri
             <div className="mb-6 p-4 bg-white/[0.02] border border-white/10 rounded-lg">
                 <div className="text-[10px] text-white/50 uppercase font-bold tracking-widest mb-1">Total Risk Exposure</div>
                 <div className="text-2xl font-outfit font-bold text-orange-400">
-                    ${summary.total_risk_usd.toFixed(2)}
+                    ${(summary?.total_risk_usd || 0).toFixed(2)}
                 </div>
                 <div className="flex items-center justify-between mt-2">
                     <div className="text-xs text-white/40">
-                        of ${summary.account_balance.toFixed(2)} balance
+                        of ${(summary?.account_balance || 0).toFixed(2)} balance
                     </div>
                     {/* Balance source indicator */}
-                    <div 
-                        className="flex items-center gap-1.5 group cursor-help" 
+                    <div
+                        className="flex items-center gap-1.5 group cursor-help"
                         title={`${balanceIndicator.label} - Last update: ${new Date(summary.balance_metadata?.last_update || '').toLocaleTimeString()}`}
                     >
                         <div className={`w-1.5 h-1.5 rounded-full ${balanceIndicator.dotColor} animate-pulse`} />
@@ -163,17 +163,16 @@ export function RiskSummary({ summary, collapsed = false, onToggleCollapse }: Ri
                         data.count > 0 && (
                             <div key={type} className="flex items-center justify-between text-sm p-2 bg-white/[0.02] rounded">
                                 <div className="flex items-center gap-2">
-                                    <div className={`w-2 h-2 rounded-full ${
-                                        type === 'forex' ? 'bg-blue-400' :
-                                        type === 'metal' ? 'bg-yellow-400' :
-                                        type === 'crypto' ? 'bg-purple-400' :
-                                        'bg-gray-400'
-                                    }`} />
+                                    <div className={`w-2 h-2 rounded-full ${type === 'forex' ? 'bg-blue-400' :
+                                            type === 'metal' ? 'bg-yellow-400' :
+                                                type === 'crypto' ? 'bg-purple-400' :
+                                                    'bg-gray-400'
+                                        }`} />
                                     <span className="text-white/70 capitalize font-medium">{type}</span>
                                 </div>
                                 <div className="flex items-center gap-3">
                                     <span className="text-white/40 text-xs">{data.count} pos</span>
-                                    <span className="font-mono font-bold text-white/80">${data.risk.toFixed(0)}</span>
+                                    <span className="font-mono font-bold text-white/80">${(data.risk || 0).toFixed(0)}</span>
                                 </div>
                             </div>
                         )

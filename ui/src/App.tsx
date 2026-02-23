@@ -188,7 +188,7 @@ function App() {
                                         <StatBadge
                                             label="Risk Factor"
                                             value={riskStatus?.risk_mode || 'NORMAL'}
-                                            trend={riskStatus ? `${riskStatus.current_risk_pct.toFixed(2)}%` : 'Safe'}
+                                            trend={riskStatus?.current_risk_pct !== undefined ? `${riskStatus.current_risk_pct.toFixed(2)}%` : 'Safe'}
                                         />
                                     </div>
 

@@ -1,5 +1,6 @@
-export type MarketRegime = 'TREND' | 'RANGE' | 'CRASH' | 'NEUTRAL';
+export type MarketRegime = 'TREND' | 'RANGE' | 'VOLATILE' | 'SHOCK' | 'BULL' | 'BEAR' | 'CRASH' | 'NORMAL';
 export type AssetType = 'forex' | 'metal' | 'crypto' | 'index';
+export type ExecutionMode = 'LIVE' | 'SHADOW' | 'QUARANTINE';
 
 export interface Signal {
     id: string;
@@ -12,6 +13,8 @@ export interface Signal {
     magic_number: number;
     initial_risk_usd?: number;     // Risk preview (NEW)
     asset_type?: AssetType;         // Asset classification (NEW)
+    execution_mode?: ExecutionMode; // LIVE | SHADOW | QUARANTINE (Darwinismo Algorítmico)
+    ranking_score?: number;         // 0-100 score justifying signal quality/mode (Milestone 5)
 }
 
 // Position metadata with risk calculation (NEW)

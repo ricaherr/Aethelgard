@@ -159,7 +159,7 @@ def _get_account_balance() -> float:
         try:
             balance = mt5.get_account_balance()
             # Cache balance in system_state for future queries
-            storage.update_system_state({
+            storage().update_system_state({
                 "account_balance": balance,
                 "balance_source": "MT5_LIVE",
                 "balance_last_update": datetime.now().isoformat()
@@ -179,7 +179,7 @@ def _get_account_balance() -> float:
     
     # Final fallback (initial capital)
     logger.warning("Using default balance 10000.0 - MT5 not connected")
-    storage.update_system_state({
+    storage().update_system_state({
         "account_balance": 10000.0,
         "balance_source": "DEFAULT",
         "balance_last_update": datetime.now().isoformat()
@@ -194,7 +194,7 @@ def _get_balance_metadata() -> Dict[str, Any]:
         Dict with source ('MT5_LIVE' | 'CACHED' | 'DEFAULT') and last_update timestamp
     """
     try:
-        state = storage.get_system_state()
+        state = storage().get_system_state()
         return {
             "source": state.get("balance_source", "UNKNOWN"),
             "last_update": state.get("balance_last_update", datetime.now().isoformat()),
@@ -215,7 +215,7 @@ def _get_max_account_risk_pct() -> float:
     Returns:
         float: Max account risk percentage (default 5.0%)
     """
-    settings = storage.get_risk_settings()
+    settings = storage().get_risk_settings()
     return settings.get('max_account_risk_pct', 5.0)
 
 
@@ -231,7 +231,7 @@ def _get_backup_settings_from_db() -> Dict[str, Any]:
         "retention_days": 15
     }
 
-    params = storage.get_dynamic_params()
+    params = storage().get_dynamic_params()
     backup_cfg = params.get("database_backup", {}) if isinstance(params, dict) else {}
     if not isinstance(backup_cfg, dict):
         backup_cfg = {}
@@ -262,7 +262,7 @@ def _save_backup_settings_to_db(settings: Dict[str, Any]) -> Dict[str, Any]:
         "retention_days": max(1, int(settings.get("retention_days", 15)))
     }
 
-    params = storage.get_dynamic_params()
+    params = storage().get_dynamic_params()
     if not isinstance(params, dict):
         params = {}
 
@@ -275,7 +275,7 @@ def _save_backup_settings_to_db(settings: Dict[str, Any]) -> Dict[str, Any]:
         "retention_count": normalized["retention_days"]
     }
 
-    storage.update_dynamic_params(params)
+    storage().update_dynamic_params(params)
     return normalized
 
 # Estado para detectar cambios de régimen
@@ -322,11 +322,11 @@ def create_app() -> FastAPI:
     # Servicio de análisis profundo de instrumentos
     # Servicio de análisis profundo de instrumentos
     from core_brain.analysis_service import InstrumentAnalysisService
-    instrument_analysis_service = InstrumentAnalysisService(storage=storage)
+    instrument_analysis_service = InstrumentAnalysisService(storage=storage())
 
     # Inicializar orquestador con storage (Inyección de Dependencias)
     orchestrator = ConnectivityOrchestrator()
-    orchestrator.set_storage(storage)
+    orchestrator.set_storage(storage())
 
     @app.get("/api/instrument/{symbol}/analysis")
     async def instrument_analysis(symbol: str) -> Dict[str, Any]:
@@ -420,7 +420,7 @@ def create_app() -> FastAPI:
         # Intento 2: Fallback a Base de Datos (Cross-Process Resilience)
         if not cells:
             try:
-                db_states = storage.get_latest_heatmap_state()
+                db_states = storage().get_latest_heatmap_state()
                 if db_states:
                     # Deducir assets y timeframes de los datos
                     assets = sorted(list(set(s["symbol"] for s in db_states)))
@@ -450,7 +450,7 @@ def create_app() -> FastAPI:
             elif storage:
                 try:
                     # Verificar si la tabla existe y tiene algo
-                    count = storage.execute_query("SELECT COUNT(*) as c FROM market_state")[0]['c']
+                    count = storage().execute_query("SELECT COUNT(*) as c FROM market_state")[0]['c']
                     if count == 0:
                         diag = "Scanner en otro proceso pero base de datos vacía (Iniciando primera recolección)."
                     else:
@@ -464,7 +464,7 @@ def create_app() -> FastAPI:
         # 2. Integrar Señales Recientes (CONFLUENCIA)
         # Buscamos señales PENDING de la última hora
         try:
-            recent_signals = storage.get_recent_signals(minutes=60, status='PENDING')
+            recent_signals = storage().get_recent_signals(minutes=60, status='PENDING')
             # Indexar señales por clave para búsqueda rápida
             signals_lookup = {f"{s['symbol']}|{s['timeframe']}": s for s in recent_signals}
             
@@ -533,7 +533,7 @@ def create_app() -> FastAPI:
 
     # Endpoint de datos de gráfica
     from core_brain.chart_service import ChartService
-    chart_service = ChartService(storage=storage)
+    chart_service = ChartService(storage=storage())
 
     @app.get("/api/chart/{symbol}/{timeframe}")
     async def chart_data(symbol: str, timeframe: str = "M5", count: int = 500) -> Dict[str, Any]:
@@ -661,6 +661,37 @@ def create_app() -> FastAPI:
             "timestamp": datetime.now().isoformat()
         }
     
+    @app.get("/api/regime_configs")
+    async def get_regime_configs() -> Dict[str, Any]:
+        """Retorna los pesos y configuraciones dinámicas de cada régimen (regime_configs table).
+        Usado por UI para visualizar WeightedMetricsVisualizer (Darwinismo Algorítmico).
+        
+        Estructura respuesta:
+        {
+            "TREND": {"profit_factor": 0.4, "win_rate": 0.3, "drawdown_max": 0.2, "consecutive_losses": 0.1},
+            "RANGE": {"profit_factor": 0.25, "win_rate": 0.4, "drawdown_max": 0.2, "consecutive_losses": 0.15},
+            "VOLATILE": {"profit_factor": 0.2, "win_rate": 0.2, "drawdown_max": 0.4, "consecutive_losses": 0.2}
+        }
+        """
+        try:
+            # Obtener todos los regime_configs agrupados por régimen
+            all_configs = storage().get_all_regime_configs()
+            
+            # Transformar formato: all_configs es Dict[regime -> Dict[metric_name -> weight]]
+            regime_weights = {}
+            for regime, metrics_dict in all_configs.items():
+                regime_weights[regime] = {}
+                for metric_name, weight in metrics_dict.items():
+                    regime_weights[regime][metric_name] = float(weight)
+            
+            return {
+                "regime_weights": regime_weights,
+                "timestamp": datetime.now().isoformat(),
+                "description": "Dynamic regime-specific metric weights for strategy ranking (Darwinismo Algorítmico)"
+            }
+        except Exception as e:
+            logger.error(f"Error en get_regime_configs: {e}")
+            raise HTTPException(status_code=500, detail=f"Error fetching regime configs: {str(e)}")
 
     @app.get("/api/instruments")
     async def get_instruments(all: bool = False) -> Dict[str, Any]:
@@ -668,7 +699,7 @@ def create_app() -> FastAPI:
         Si 'all' es True, incluye categorías e instrumentos inactivos (para Settings).
         """
         try:
-            state = storage.get_system_state()
+            state = storage().get_system_state()
             instruments_config = state.get("instruments_config")
             if instruments_config is None:
                 raise ValueError("instruments_config no encontrado en DB. Inicialice la configuración desde la UI/API.")
@@ -724,7 +755,7 @@ def create_app() -> FastAPI:
             data = payload.get("data")
             if not (market and category and isinstance(data, dict)):
                 raise HTTPException(status_code=400, detail="Faltan campos obligatorios: market, category, data")
-            update_instrument_category(market, category, data, storage)
+            update_instrument_category(market, category, data, storage())
             await broadcast_thought(f"Categoría {market}/{category} actualizada por el usuario.", module="CORE")
             return {"status": "success", "message": f"Categoría {market}/{category} actualizada correctamente."}
         except Exception as e:
@@ -740,7 +771,7 @@ def create_app() -> FastAPI:
             registered_strategies = []
             # Leer estrategias registradas desde modules.json
             # Leer estrategias registradas desde StorageManager (SSOT)
-            modules = storage.get_modules_config()
+            modules = storage().get_modules_config()
             
             if modules:
                 # with open(modules_path, "r", encoding="utf-8") as f:
@@ -794,7 +825,7 @@ def create_app() -> FastAPI:
     async def get_signal_trace(signal_id: str) -> Dict[str, Any]:
         """Retorna la trazabilidad completa de una señal (pipeline tracking)"""
         try:
-            trace = storage.get_signal_pipeline_trace(signal_id)
+            trace = storage().get_signal_pipeline_trace(signal_id)
             
             if not trace:
                 raise HTTPException(
@@ -803,7 +834,7 @@ def create_app() -> FastAPI:
                 )
             
             # Obtener información básica de la señal
-            signals = storage.get_recent_signals(limit=1000)  # TODO: Optimizar con query directo
+            signals = storage().get_recent_signals(limit=1000)  # TODO: Optimizar con query directo
             signal_info = next((s for s in signals if s.get("id") == signal_id), None)
             
             return {
@@ -826,15 +857,15 @@ def create_app() -> FastAPI:
     
     # Inicializar NotificationService
     from core_brain.notification_service import NotificationService
-    notification_service = NotificationService(storage)
+    notification_service = NotificationService(storage())
     
     @app.get("/api/user/preferences")
     async def get_user_preferences(user_id: str = 'default') -> Dict[str, Any]:
         """Obtiene las preferencias del usuario"""
         try:
-            prefs = storage.get_user_preferences(user_id)
+            prefs = storage().get_user_preferences(user_id)
             if not prefs:
-                prefs = storage.get_default_profile('active_trader')
+                prefs = storage().get_default_profile('active_trader')
                 prefs['user_id'] = user_id
             # Wrap in preferences object for frontend compatibility
             return {"preferences": prefs}
@@ -850,7 +881,7 @@ def create_app() -> FastAPI:
             user_id = body.pop('user_id', 'default')
             preferences = body  # El resto del body son las preferences
             
-            success = storage.update_user_preferences(user_id, preferences)
+            success = storage().update_user_preferences(user_id, preferences)
             if success:
                 return {"success": True, "message": "Preferences updated successfully"}
             else:
@@ -863,11 +894,11 @@ def create_app() -> FastAPI:
     async def get_available_profiles() -> Dict[str, Any]:
         """Retorna los perfiles disponibles"""
         profiles = {
-            'explorer': storage.get_default_profile('explorer'),
-            'active_trader': storage.get_default_profile('active_trader'),
-            'analyst': storage.get_default_profile('analyst'),
-            'scalper': storage.get_default_profile('scalper'),
-            'custom': storage.get_default_profile('custom'),
+            'explorer': storage().get_default_profile('explorer'),
+            'active_trader': storage().get_default_profile('active_trader'),
+            'analyst': storage().get_default_profile('analyst'),
+            'scalper': storage().get_default_profile('scalper'),
+            'custom': storage().get_default_profile('custom'),
         }
         return {"profiles": profiles}
     
@@ -903,7 +934,7 @@ def create_app() -> FastAPI:
             user_id = body.get('user_id', 'default')
             enabled = body.get('enabled', False)
             
-            success = storage.update_user_preferences(user_id, {'auto_trading_enabled': enabled})
+            success = storage().update_user_preferences(user_id, {'auto_trading_enabled': enabled})
             if success:
                 status = "enabled" if enabled else "disabled"
                 logger.info(f"Auto-trading {status} for user {user_id}")
@@ -932,7 +963,7 @@ def create_app() -> FastAPI:
             logger.info(f"GET /api/signals: limit={limit}, minutes={minutes}, symbols={symbols}, status={status}")
             
             # Get signals from DB with SQL-level filtering
-            all_signals = storage.get_recent_signals(
+            all_signals = storage().get_recent_signals(
                 minutes=minutes, 
                 limit=limit,
                 symbol=symbols,
@@ -941,7 +972,7 @@ def create_app() -> FastAPI:
             )
             
             # Obtener estados de mercado para flag has_chart
-            market_state = storage.get_all_market_states() or {}
+            market_state = storage().get_all_market_states() or {}
             
             # Filter results in memory for metadata-based fields
             filtered = all_signals
@@ -973,7 +1004,7 @@ def create_app() -> FastAPI:
             if signal_ids:
                 placeholders = ','.join(['?'] * len(signal_ids))
                 trace_query = f"SELECT DISTINCT signal_id FROM signal_pipeline WHERE signal_id IN ({placeholders})"
-                trace_results = storage.execute_query(trace_query, tuple(signal_ids))
+                trace_results = storage().execute_query(trace_query, tuple(signal_ids))
                 has_trace_set = {r['signal_id'] for r in trace_results}
 
             # Format signals for frontend
@@ -1005,7 +1036,7 @@ def create_app() -> FastAPI:
                 # Augmentar con info de trades si están EXECUTED
                 if sig_status == 'EXECUTED':
                     # Buscar en trade_results
-                    result = storage.get_trade_result_by_signal_id(sig_id)
+                    result = storage().get_trade_result_by_signal_id(sig_id)
                     if result:
                         formatted['live_status'] = 'CLOSED'
                         formatted['pnl'] = result.get('profit')
@@ -1045,7 +1076,7 @@ def create_app() -> FastAPI:
             logger.info(f"Manual execution requested for signal: {signal_id}")
             
             # Get signal from database
-            signal_data = storage.get_signal_by_id(signal_id)
+            signal_data = storage().get_signal_by_id(signal_id)
             if not signal_data:
                 raise HTTPException(status_code=404, detail=f"Signal {signal_id} not found")
             
@@ -1096,10 +1127,10 @@ def create_app() -> FastAPI:
             # Create risk manager and executor
             # Get account balance for risk manager
             account_balance = _get_account_balance()
-            risk_manager = RiskManager(storage=storage, initial_capital=account_balance)
+            risk_manager = RiskManager(storage=storage(), initial_capital=account_balance)
             executor = OrderExecutor(
                 risk_manager=risk_manager,
-                storage=storage,
+                storage=storage(),
                 connectors={ConnectorType.METATRADER5: mt5_connector}
             )
             
@@ -1115,7 +1146,7 @@ def create_app() -> FastAPI:
             
             if success:
                 # Update signal status to EXECUTED
-                storage.update_signal_status(signal_id, 'EXECUTED', {
+                storage().update_signal_status(signal_id, 'EXECUTED', {
                     'executed_at': datetime.now().isoformat(),
                     'execution_method': 'manual'
                 })
@@ -1190,7 +1221,7 @@ def create_app() -> FastAPI:
             last_adjustment = None
             
             # Intentar obtener el último ajuste de la DB (SSOT)
-            adjustments = storage.get_tuning_history(limit=1)
+            adjustments = storage().get_tuning_history(limit=1)
             if adjustments:
                 last_adjustment = adjustments[0]
                 factor = last_adjustment.get("adjustment_factor", 1.0)
@@ -1201,7 +1232,7 @@ def create_app() -> FastAPI:
             
             # 2. Resumen de riesgos (Single Source of Truth)
             dynamic_params = {}
-            state = storage.get_system_state()
+            state = storage().get_system_state()
             dynamic_params = state.get("config_trading", {})
             
             if not dynamic_params:
@@ -1213,7 +1244,7 @@ def create_app() -> FastAPI:
             last_rejection_reason = None
             
             try:
-                pipeline_events = storage.get_signal_pipeline_history(limit=50)
+                pipeline_events = storage().get_signal_pipeline_history(limit=50)
                 today = datetime.now().date()
                 for event in pipeline_events:
                     event_time = event.get('timestamp')
@@ -1249,11 +1280,11 @@ def create_app() -> FastAPI:
         """
         try:
             # Símbolos configurados
-            config = storage.get_system_config()
+            config = storage().get_system_config()
             configured_symbols = config.get("trading", {}).get("symbols", [])
             
             # Símbolos con estado de mercado (visto en los últimos 5 min)
-            market_state = storage.get_all_market_states() or {}
+            market_state = storage().get_all_market_states() or {}
             available_symbols = []
             
             for sym in configured_symbols:
@@ -1278,7 +1309,7 @@ def create_app() -> FastAPI:
     async def get_config(category: str) -> Dict[str, Any]:
         """Obtiene una categoría de configuración de la DB"""
         db_key = f"config_{category}"
-        state = storage.get_system_state()
+        state = storage().get_system_state()
         config_data = state.get(db_key)
         
         if config_data is None:
@@ -1342,7 +1373,7 @@ def create_app() -> FastAPI:
         """Actualiza una categoría de configuración en la DB"""
         db_key = f"config_{category}"
         try:
-            storage.update_system_state({db_key: new_data})
+            storage().update_system_state({db_key: new_data})
             await broadcast_thought(f"Configuración '{category}' actualizada por el usuario.", module="CORE")
             return {"status": "success", "message": f"Configuración '{category}' guardada correctamente."}
         except Exception as e:
@@ -1414,7 +1445,7 @@ def create_app() -> FastAPI:
         if success:
             # Re-inicializar el motor de notificaciones
             from core_brain.notificator import initialize_notifier
-            initialize_notifier(storage)
+            initialize_notifier(storage())
             
             await broadcast_thought("Notificaciones de Telegram configuradas correctamente.", module="CORE")
             logger.info(f"✅ Telegram configurado: Chat ID {chat_id}")
@@ -1446,7 +1477,7 @@ def create_app() -> FastAPI:
         
         if success:
             from core_brain.notificator import initialize_notifier
-            initialize_notifier(storage)
+            initialize_notifier(storage())
             return {"status": "success", "message": f"Configuración de {provider} actualizada."}
         else:
             raise HTTPException(status_code=500, detail=f"Error al actualizar {provider}.")
@@ -1476,7 +1507,7 @@ def create_app() -> FastAPI:
                 # Update cached balance when we connect to MT5
                 try:
                     current_balance = mt5.get_account_balance()
-                    storage.update_system_state({
+                    storage().update_system_state({
                         "account_balance": current_balance,
                         "balance_source": "MT5_LIVE",
                         "balance_last_update": datetime.now().isoformat()
@@ -1547,7 +1578,7 @@ def create_app() -> FastAPI:
                         positions_list.append(position_data)
                         total_risk += risk
                     
-                    storage._close_conn(conn)
+                    storage()._close_conn(conn)
             
             return {
                 "positions": positions_list,
@@ -1628,7 +1659,7 @@ def create_app() -> FastAPI:
         Get current status of system modules (feature flags).
         """
         try:
-            modules_enabled = storage.get_global_modules_enabled()
+            modules_enabled = storage().get_global_modules_enabled()
             
             return {
                 "modules": modules_enabled,
@@ -1677,7 +1708,7 @@ def create_app() -> FastAPI:
                 )
             
             # Update in database
-            storage.set_global_module_enabled(module_name, enabled)
+            storage().set_global_module_enabled(module_name, enabled)
             
             # Broadcast update
             status = "enabled" if enabled else "disabled"
@@ -1888,7 +1919,7 @@ def create_app() -> FastAPI:
         Retorna el historial de ajustes del EdgeTuner (Neuro-evolución).
         """
         try:
-            history = storage.get_tuning_history(limit=limit)
+            history = storage().get_tuning_history(limit=limit)
             return {"status": "success", "history": history}
         except Exception as e:
             logger.error(f"Error recuperando historial de tuning: {e}")
@@ -2018,7 +2049,7 @@ async def process_signal(message: dict, client_id: str, connector_type: Connecto
             
             # Guardar estado de mercado
             try:
-                storage.log_market_state(state_data)
+                storage().log_market_state(state_data)
                 logger.info(
                     f"Cambio de régimen detectado: {signal.symbol} "
                     f"{previous_regime.value if previous_regime else 'N/A'} -> {regime.value}"
@@ -2047,7 +2078,7 @@ async def process_signal(message: dict, client_id: str, connector_type: Connecto
             _last_regime_by_symbol[signal.symbol] = regime
         
         # Guardar en base de datos
-        signal_id = storage.save_signal(signal)
+        signal_id = storage().save_signal(signal)
         
         logger.info(
             f"Señal procesada: {signal.symbol} {signal.signal_type.value} "
@@ -2116,10 +2147,11 @@ def get_app() -> FastAPI:
         _app_instance = create_app()
     return _app_instance
 
-# For backward compatibility with WSGI servers
-app = None  # Set to get_app() only when actually running server
+# CRITICAL: Initialize app for uvicorn at module level
+# This MUST be a FastAPI instance that Uvicorn can find and use
+app = get_app()
 
 if __name__ == "__main__":
     import uvicorn
-    app = get_app()
     uvicorn.run(app, host="0.0.0.0", port=8000)
+

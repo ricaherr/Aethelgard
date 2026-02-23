@@ -1327,7 +1327,7 @@ class StorageManager(
                 INSERT INTO coherence_events (
                     signal_id, symbol, timeframe, strategy, 
                     stage, status, incoherence_type, reason, 
-                    details, connector_type, timestamp
+                    details, connector_type, created_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 event_data.get('signal_id'),

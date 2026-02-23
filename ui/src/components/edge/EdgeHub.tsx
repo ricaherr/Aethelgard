@@ -15,6 +15,8 @@ import { MarketRegime, EdgeMetrics, TuningLog } from '../../types/aethelgard';
 import { useAethelgard } from '../../hooks/useAethelgard';
 import { useState } from 'react';
 import { NeuralHistoryPanel } from './NeuralHistoryPanel';
+import { RegimeBadge } from './RegimeBadge';
+import { WeightedMetricsVisualizer } from './WeightedMetricsVisualizer';
 
 interface EdgeHubProps {
     metrics: EdgeMetrics;
@@ -34,25 +36,34 @@ export function EdgeHub({ metrics, regime }: EdgeHubProps) {
 
     return (
         <div className="flex flex-col gap-8 animate-in fade-in duration-500">
-            {/* Header section with Intelligence Profile */}
+            {/* Enhanced Header: With RegimeBadge */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
                     <h2 className="text-2xl font-outfit font-bold text-white/95 flex items-center gap-3">
                         <BrainCircuit className="text-aethelgard-green" size={28} />
                         EDGE Intelligence Hub
                     </h2>
-                    <p className="text-white/60 text-sm mt-1">Autonomous monitoring and self-calibration engine active.</p>
+                    <p className="text-white/60 text-sm mt-1">Autonomous monitoring and self-calibration engine active (Darwinismo Algorítmico).</p>
                 </div>
 
-                <div className="flex items-center gap-3 px-4 py-2 bg-white/5 rounded-2xl border border-white/10">
-                    <div className="w-2 h-2 rounded-full bg-aethelgard-green animate-pulse" />
-                    <span className="text-xs font-bold text-white/80 tracking-widest uppercase">Self-Learning Mode: ON</span>
+                <div className="flex items-center gap-3 flex-col sm:flex-row">
+                    {/* RegimeBadge: Premium Visual Indicator */}
+                    <RegimeBadge 
+                        regime={regime} 
+                        size="large" 
+                        showLabel={true} 
+                        animated={true}
+                    />
+                    
+                    <div className="flex items-center gap-3 px-4 py-2 bg-white/5 rounded-2xl border border-white/10">
+                        <div className="w-2 h-2 rounded-full bg-aethelgard-green animate-pulse" />
+                        <span className="text-xs font-bold text-white/80 tracking-widest uppercase">Self-Learning: ON</span>
+                    </div>
                 </div>
             </div>
 
             {/* Main Intelligence Grid */}
             <div className="grid grid-cols-12 gap-6">
-
                 {/* Left: Autonomy Stats */}
                 <div className="col-span-12 lg:col-span-8 grid grid-cols-1 md:grid-cols-2 gap-6">
                     <GlassPanel className="p-6 flex flex-col gap-6" premium>
@@ -144,6 +155,14 @@ export function EdgeHub({ metrics, regime }: EdgeHubProps) {
                             View Detailed Learning Logs
                         </button>
                     </GlassPanel>
+                </div>
+
+                {/* WeightedMetricsVisualizer: Full Width - Darwinismo Algorítmico Visualization */}
+                <div className="col-span-12">
+                    <WeightedMetricsVisualizer 
+                        currentRegime={regime}
+                        height={350}
+                    />
                 </div>
 
             </div>

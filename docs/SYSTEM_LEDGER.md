@@ -174,3 +174,18 @@ render_diffs(file:///c:/Users/Jose Herrera/Documents/Proyectos/Aethelgard/ROADMA
 - ✅ Compilación TypeScript OK
 - ✅ Python syntax check OK
 - ✅ Flujo completo funcional
+
+---
+
+## 🗓️ MILESTONE: Auditoría, Limpieza & Cerebro Console (2026-02-21)
+- **Monitor de Integridad L3**: Diagnóstico profundo de fallos con captura de excepciones.
+- **Protocolo de Auto-Gestión L1**: Puente para reparaciones autónomas (Inactivado para validación).
+
+## 🗓️ MILESTONE 3: Universal Trading Foundation (Agnosticismo & Normalización)
+- **Tabla `asset_profiles` (SSOT)**: Creación de la base de datos maestra para normalizar Tick Size, Contract Size, Lot Step y Comisiones por activo.
+- **Cálculo Universal (Unidades R)**: Refactorización agnóstica del `RiskManager.calculate_position_size()` con precisión institucional.
+- **Normalización SSOT & Testing**: Validación completa con precisión decimal.
+
+## 🗓️ MILESTONE 4: Estratega Evolutivo (Darwinismo Algorítmico)
+- **Shadow Ranking System**: Sistema de evolución de estrategias con Trace_ID auditado.
+- **Motor de Promoción/Degradación**: `StrategyRanker` en `core_brain/strategy_ranker.py`.
