@@ -27,5 +27,10 @@ Monitoreo de exposición en tiempo real, reconciliación y aprendizaje EDGE.
 
 ---
 
+### 🧩 Selección de Métricas Basada en Contexto (EDGE Metrics)
+Aethelgard no utiliza un sistema de calificación estático. El StrategyRanker emplea un motor de ponderación dinámica que ajusta la importancia de métricas como el Sharpe Ratio, Sortino y Max Drawdown según el régimen de mercado detectado por el RegimeClassifier. Esto evita el sesgo de supervivencia y permite que las estrategias se especialicen en contextos específicos (Trend-Following vs Mean Reversion).
+
+---
+
 ### 📉 Performance Metrics
 El dashboard de Portfolio muestra el **Sharpe Ratio**, **Drawdown Histórico** y el **Win Rate** ajustado por régimen de mercado.
