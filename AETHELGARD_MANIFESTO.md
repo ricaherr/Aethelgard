@@ -72,3 +72,30 @@ Crear un cerebro centralizado que:
 > - Para detalles técnicos por dominio, ver `docs/01_ALPHA_ENGINE.md`, `docs/02_RISK_CONTROL.md`, etc.
 > - Para el historial completo de cambios, ver `docs/SYSTEM_LEDGER.md`.
 > - Para validación técnica, ejecutar: `python scripts/utilities/test_asset_normalization.py`
+
+---
+
+## 🛡️ MILESTONE 6.2: Edge Governance & Safety Governor (2026-02-23)
+**Estado: ✅ COMPLETADO**
+**Versión**: 2.5.6
+
+**Problema resuelto**: El EdgeTuner podría caer en overfitting al reaccionar de forma extrema a un único trade perdedor, llevando los pesos de las métricas a valores absurdos (0% o 90%).
+
+**Reglas de Gobernanza** (implementadas en `core_brain/edge_tuner.py`):
+- **Floor / Ceiling**: Ningún peso de métrica en `regime_configs` puede ser inferior al **10%** ni superior al **50%**.
+- **Smoothing**: Cada evento de aprendizaje (feedback) puede modificar un peso como **máximo un 2%**. Esto previene cambios bruscos por un solo trade.
+- Las dos reglas se aplican secuencialmente: `smoothing → boundary clamp`.
+- Toda intervención del Safety Governor queda registrada en logs con tag `[SAFETY_GOVERNOR]`.
+
+**Archivos clave**:
+- `core_brain/edge_tuner.py` → `apply_governance_limits()` + constantes `GOVERNANCE_*`
+- `tests/test_governance_limits.py` → Suite TDD (16/16 tests ✅)
+- `scripts/utilities/db_uniqueness_audit.py` → Auditor SSOT para DB única
+- `ui/src/components/edge/NeuralHistoryPanel.tsx` → Badge `Governor Active` (amarillo/ShieldAlert)
+
+**Auditoría DB (SSOT)**:
+- Única base de datos permitida: `data_vault/aethelgard.db`.
+- El módulo `DB Integrity` en `validate_all.py` lanza error si se detecta otra `.db` fuera de `backups/`.
+
+**Validación**: `python scripts/validate_all.py` → **11/11 PASSED**
+

@@ -22,8 +22,18 @@ class EdgeTuner:
     """
     Autonomous tuning system that adjusts signal parameters and metric weights
     based on real-world performance feedback.
-    """
     
+    Governance Rules (Milestone 6.2):
+    - No metric weight in regime_configs can be below 10% or above 50%.
+    - Weight changes are capped at 2% per learning event (smoothing) to prevent
+      erratic behavior from a single losing trade (anti-overfitting).
+    """
+
+    # --- Governance Constants (Safety Governor) ---
+    GOVERNANCE_MIN_WEIGHT = 0.10   # 10% floor
+    GOVERNANCE_MAX_WEIGHT = 0.50   # 50% ceiling
+    GOVERNANCE_MAX_SMOOTHING = 0.02  # Max 2% delta per learning event
+
     def __init__(self, storage: StorageManager, config_path: Optional[str] = None):
         """
         Args:
@@ -62,68 +72,119 @@ class EdgeTuner:
         
         adjustment_made = False
         learning_note = ""
-        
-        # Adjustment Logic:
-        # If delta is positive (won more than expected or won when score was low),
-        # it means the current weights might be underestimating the dominant metric.
-        # We increase the weight of the "dominant" metric for that regime.
-        
+        governance_note = ""
+
         if delta > 0.1:
-            adjustment_made = self._adjust_regime_weights(regime, delta, "positive")
+            adjustment_made, governance_note = self._adjust_regime_weights(regime, delta, "positive")
             learning_note = f"Positive drift detected (Delta: {delta:.4f}). Increasing dominant metric weight."
-        elif delta < -0.4: # Only adjust on significant disappointment to avoid noise
-            adjustment_made = self._adjust_regime_weights(regime, delta, "negative")
+        elif delta < -0.4:
+            adjustment_made, governance_note = self._adjust_regime_weights(regime, delta, "negative")
             learning_note = f"Negative drift detected (Delta: {delta:.4f}). Penalizing current configuration."
-            
+
         if adjustment_made:
-            # Log to edge_learning table
+            # Build action_taken: include SAFETY_GOVERNOR tag if governance was triggered
+            if governance_note:
+                action_taken = f"Weight adjusted [SAFETY_GOVERNOR: {governance_note}]"
+            else:
+                action_taken = f"Weight adjusted: {regime} regime recalibrated"
+
             self.storage.log_strategy_state_change(
                 strategy_id="SYSTEM_TUNER",
                 old_mode="ADAPTING",
                 new_mode="CALIBRATED",
                 trace_id=f"TUNE-{datetime.now().strftime('%Y%m%d%H%M')}",
-                reason=learning_note,
+                reason=action_taken,
                 metrics={"delta": delta, "regime": regime, "predicted_score": predicted_score, "is_win": is_win}
             )
-            
+
         return {
             "delta": delta,
             "adjustment_made": adjustment_made,
             "learning": learning_note
         }
 
-    def _adjust_regime_weights(self, regime: str, delta: float, drift_type: str) -> bool:
+    def apply_governance_limits(self, current_weight: float, proposed_weight: float) -> tuple[float, str]:
         """
-        Adjusts weights in regime_configs table.
+        Safety Governor: Enforces learning boundaries to prevent overfitting.
+
+        Applies two sequential constraints:
+        1. Smoothing: Caps the delta per event to GOVERNANCE_MAX_SMOOTHING (2%).
+        2. Boundaries: Clamps the final weight to [GOVERNANCE_MIN_WEIGHT, GOVERNANCE_MAX_WEIGHT].
+
+        Args:
+            current_weight: The metric's weight before this learning event.
+            proposed_weight: The raw weight calculated by the learning algorithm.
+
+        Returns:
+            Tuple of (governed_weight: float, clamp_reason: str).
+            clamp_reason is empty string if no governance was triggered.
+        """
+        governed = proposed_weight
+        clamp_reason = []
+
+        # Step 1: Smoothing — cap the magnitude of the change per event
+        delta = proposed_weight - current_weight
+        if abs(delta) > self.GOVERNANCE_MAX_SMOOTHING:
+            governed = current_weight + (self.GOVERNANCE_MAX_SMOOTHING * (1 if delta > 0 else -1))
+            clamp_reason.append(
+                f"SMOOTHING LIMIT: raw_delta={delta:.4f} capped to {self.GOVERNANCE_MAX_SMOOTHING:.2f}"
+            )
+
+        # Step 2: Boundaries — enforce hard floor and ceiling
+        if governed < self.GOVERNANCE_MIN_WEIGHT:
+            clamp_reason.append(f"GOVERNANCE LIMIT [FLOOR]: {governed:.4f} -> {self.GOVERNANCE_MIN_WEIGHT:.4f}")
+            governed = self.GOVERNANCE_MIN_WEIGHT
+        elif governed > self.GOVERNANCE_MAX_WEIGHT:
+            clamp_reason.append(f"GOVERNANCE LIMIT [CEILING]: {governed:.4f} -> {self.GOVERNANCE_MAX_WEIGHT:.4f}")
+            governed = self.GOVERNANCE_MAX_WEIGHT
+
+        reason_str = " | ".join(clamp_reason)
+        if reason_str:
+            logger.info(f"[SAFETY_GOVERNOR] {reason_str} (current={current_weight:.4f})")
+
+        return governed, reason_str
+
+    def _adjust_regime_weights(self, regime: str, delta: float, drift_type: str) -> tuple[bool, str]:
+        """
+        Adjusts weights in regime_configs table, enforcing governance limits.
+
+        Returns:
+            Tuple of (adjustment_made: bool, governance_note: str).
+            governance_note contains the [SAFETY_GOVERNOR] reason if any limit was triggered.
         """
         try:
             configs = self.storage.get_regime_weights(regime)
             if not configs:
-                return False
-                
-            # Identificar la métrica con mayor peso (dominante)
-            # En una implementación real, esto podría ser más sofisticado (basado en la métrica que más influyó en el score)
+                return False, ""
+
+            # Identify the dominant metric (highest current weight)
             dominant_metric = max(configs.items(), key=lambda x: float(x[1]))[0]
-            
+
             current_weight = float(configs[dominant_metric])
-            
-            # Ajuste ligero (0.01 a 0.05 dependiendo del delta)
+
+            # Calculate raw proposed adjustment (0.01–0.05 based on delta magnitude)
             adjustment = min(0.05, max(0.01, abs(delta) * 0.1))
-            
+
             if drift_type == "positive":
-                new_weight = min(0.9, current_weight + adjustment)
+                raw_proposed = current_weight + adjustment
             else:
-                new_weight = max(0.1, current_weight - adjustment)
-            
-            if new_weight != current_weight:
+                raw_proposed = current_weight - adjustment
+
+            # Apply governance: smoothing + boundary enforcement
+            new_weight, governance_note = self.apply_governance_limits(current_weight, raw_proposed)
+
+            if abs(new_weight - current_weight) > 1e-6:
                 self.storage.update_regime_weight(regime, dominant_metric, f"{new_weight:.4f}")
-                logger.info(f"[EDGE_TUNER] Adjusted {regime}/{dominant_metric}: {current_weight} -> {new_weight:.4f}")
-                return True
-                
-            return False
+                logger.info(
+                    f"[EDGE_TUNER] Adjusted {regime}/{dominant_metric}: "
+                    f"{current_weight:.4f} -> {new_weight:.4f} (drift={drift_type})"
+                )
+                return True, governance_note
+
+            return False, governance_note
         except Exception as e:
             logger.error(f"Error adjusting regime weights: {e}")
-            return False
+            return False, ""
 
     # --- Legacy Parameter Adjustment Logic (Refactored from tuner.py) ---
 

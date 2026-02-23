@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, BrainCircuit, Activity, TrendingUp, AlertTriangle, ChevronRight } from 'lucide-react';
+import { X, BrainCircuit, Activity, TrendingUp, AlertTriangle, ChevronRight, ShieldAlert } from 'lucide-react';
 import { TuningLog } from '../../types/aethelgard';
 import { GlassPanel } from '../common/GlassPanel';
 
@@ -95,11 +95,17 @@ function NeuralEventCard({ log }: { log: TuningLog }) {
     const isWinDelta = isEdge && (log.delta || 0) > 0.05;
     const isLossDelta = isEdge && (log.delta || 0) < -0.1;
 
+    // Detect Safety Governor activation from backend log text
+    const governanceKeywords = ['governance', 'limit', 'smoothing limit', 'floor', 'ceiling'];
+    const isGovernanceClamp = isEdge && governanceKeywords.some(
+        kw => log.action_taken?.toLowerCase().includes(kw)
+    );
+
     return (
         <div className="relative pl-8 border-l border-white/5">
             {/* Timeline Dot */}
             <div className={`absolute left-[-5px] top-0 w-2.5 h-2.5 rounded-full shadow-[0_0_8px] ${isEdge ? (isWinDelta ? 'bg-aethelgard-green shadow-aethelgard-green/40' : isLossDelta ? 'bg-red-500 shadow-red-500/40' : 'bg-blue-400 shadow-blue-400/40') :
-                    (isAggressive ? 'bg-orange-500 shadow-orange-500/40' : isConservative ? 'bg-aethelgard-green shadow-aethelgard-green/40' : 'bg-blue-500 shadow-blue-500/40')
+                (isAggressive ? 'bg-orange-500 shadow-orange-500/40' : isConservative ? 'bg-aethelgard-green shadow-aethelgard-green/40' : 'bg-blue-500 shadow-blue-500/40')
                 }`} />
 
             <div className="flex flex-col gap-4">
@@ -108,12 +114,19 @@ function NeuralEventCard({ log }: { log: TuningLog }) {
                         {formatDate(log.timestamp)}
                     </span>
                     <div className={`px-2 py-1 rounded text-[9px] font-bold uppercase tracking-wider ${isEdge ? 'bg-white/5 text-white/60 border border-white/10' :
-                            (isAggressive ? 'bg-orange-500/10 text-orange-500 border border-orange-500/20' :
-                                isConservative ? 'bg-aethelgard-green/10 text-aethelgard-green border border-aethelgard-green/20' :
-                                    'bg-blue-500/10 text-blue-500 border border-blue-500/20')
+                        (isAggressive ? 'bg-orange-500/10 text-orange-500 border border-orange-500/20' :
+                            isConservative ? 'bg-aethelgard-green/10 text-aethelgard-green border border-aethelgard-green/20' :
+                                'bg-blue-500/10 text-blue-500 border border-blue-500/20')
                         }`}>
                         {isEdge ? 'Edge Feedback' : (isAggressive ? 'Aggressive Shift' : isConservative ? 'Strategic Tightening' : 'Balance Adjust')}
                     </div>
+                    {/* Governance Limit Badge */}
+                    {isGovernanceClamp && (
+                        <div className="flex items-center gap-1 px-2 py-1 rounded bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 text-[9px] font-bold uppercase tracking-wider">
+                            <ShieldAlert size={10} />
+                            Governor Active
+                        </div>
+                    )}
                 </div>
 
                 <GlassPanel className="p-5 border-white/5 hover:border-white/10 transition-all group overflow-hidden">
