@@ -290,3 +290,51 @@ render_diffs(file:///c:/Users/Jose Herrera/Documents/Proyectos/Aethelgard/ROADMA
 - ✅ `validate_all.py`: 10/10 Matrix PASSED.
 - ✅ Unit Tests for EdgeTuner logic OK.
 - ✅ Prueba de fuego: Integración con MT5 y persistencia validada.
+
+#### 🖥️ MILESTONE 6.1: Neural History Visualization
+**Timestamp**: 2026-02-23 04:45
+**Estado Final**: ✅ COMPLETADO
+
+**Implementación**:
+1. **Endpoint Unificado** — `/api/edge/history` combina historial de `ParameterTuner` (PARAMETRIC_TUNING) y `EdgeTuner` (AUTONOMOUS_LEARNING) en respuesta ordenada por timestamp.
+2. **NeuralHistoryPanel** — Componente React con cards diferenciadas por tipo de evento, visualización de delta, régimen y score predicho.
+3. **Hook** — `useAethelgard.ts` consume `/api/edge/history` y expone los eventos al panel.
+
+**Archivos Modificados**:
+- `core_brain/server.py`: Endpoint `/api/edge/history`
+- `ui/src/components/edge/NeuralHistoryPanel.tsx`: Componente visual de historial
+- `ui/src/hooks/useAethelgard.ts`: Integración del hook
+
+**Validación**:
+- ✅ UI Build OK.
+- ✅ `validate_all.py`: 10/10 PASSED.
+
+#### 🛡️ MILESTONE 6.2: Edge Governance & Safety Governor
+**Timestamp**: 2026-02-23 05:30
+**Estado Final**: ✅ COMPLETADO
+
+**Implementación**:
+1. **Safety Governor** (`core_brain/edge_tuner.py`):
+   - `apply_governance_limits(current, proposed) -> (float, str)`: dos capas secuenciales — smoothing (±2%/evento) → boundary clamp ([10%, 50%]).
+   - `_adjust_regime_weights()` retorna `(bool, str)` propagando la razón de gobernanza.
+   - `process_trade_feedback()` construye `action_taken` con tag `[SAFETY_GOVERNOR]` cuando el governor interviene — activa el badge en la UI.
+2. **DB Uniqueness Audit** (`scripts/utilities/db_uniqueness_audit.py`):
+   - Verifica que solo `data_vault/aethelgard.db` exista. Excluye `backups/`, `venv/`, `.git/`.
+   - Módulo #11 integrado en `validate_all.py`.
+3. **UI Badge** (`ui/src/components/edge/NeuralHistoryPanel.tsx`):
+   - Badge **⚡ Governor Active** (amarillo, `ShieldAlert`) en eventos AUTONOMOUS_LEARNING cuando `action_taken` contiene `[SAFETY_GOVERNOR]`.
+4. **TDD** (`tests/test_governance_limits.py`): 16/16 tests.
+5. **Docs** (`docs/01_ALPHA_ENGINE.md`): Sección completa de EdgeTuner y Safety Governor.
+
+**Constantes de Gobernanza**:
+| Constante | Valor | Descripción |
+|---|---|---|
+| `GOVERNANCE_MIN_WEIGHT` | 0.10 | Floor por métrica |
+| `GOVERNANCE_MAX_WEIGHT` | 0.50 | Ceiling por métrica |
+| `GOVERNANCE_MAX_SMOOTHING` | 0.02 | Max Δ por evento |
+
+**Validación**:
+- ✅ `validate_all.py`: **11/11 PASSED** (nuevo módulo DB Integrity).
+- ✅ Tests governance: 16/16.
+- ✅ UI Build OK. Badge conectado correctamente al backend.
+
