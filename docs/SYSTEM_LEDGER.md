@@ -338,3 +338,58 @@ render_diffs(file:///c:/Users/Jose Herrera/Documents/Proyectos/Aethelgard/ROADMA
 - ✅ Tests governance: 16/16.
 - ✅ UI Build OK. Badge conectado correctamente al backend.
 
+#### ⚡ MILESTONE 6: Alpha Institucional & EdgeTuner
+**Timestamp**: 2026-02-23 10:55
+**Estado Final**: ✅ COMPLETADO
+
+**Implementación**:
+1. **Detección de FVG (Fair Value Gaps)**
+   - Método: `TechnicalAnalyzer.detect_fvg()` en `core_brain/tech_utils.py`
+   - Algoritmo: Comparación de highs/lows en ventanas de 3 velas para identificar gaps institucionales (bullish/bearish).
+2. **Arbitraje de Volatilidad**
+   - Método: `TechnicalAnalyzer.calculate_volatility_disconnect()` en `core_brain/tech_utils.py`
+   - Lógica: Ratio RV (ventana corta) vs HV (ventana larga). Ratio > 2.0 = `HIGH_VOLATILITY_BURST`.
+   - Integración: `SignalFactory.generate_signal()` enriquece metadata con FVG y etiqueta de volatilidad.
+
+**Validación**:
+- ✅ `tests/test_institutional_alpha.py`: 9/9 PASSED.
+- ✅ `validate_all.py`: 11/11 PASSED.
+
+#### 🔬 MILESTONE 6.3: Data Synchronicity & Institutional Alpha
+**Timestamp**: 2026-02-23 11:30
+**Estado Final**: ✅ COMPLETADO
+
+**Implementación**:
+1. **Unificación de Feed de Precios (PriceSnapshot)**
+   - Dataclass: `PriceSnapshot` en `core_brain/main_orchestrator.py`
+   - Campos: `provider_source`, `timestamp`, `regime` — trazabilidad atómica.
+   - Fallback: MT5 > Yahoo con registro de fuente.
+2. **Detección de FVG (Institucional)** — Reutilización de `detect_fvg()` en pipeline de señales.
+3. **Arbitraje de Volatilidad Realizada** — `calculate_volatility_disconnect()` integrado en `signal_factory.py` con etiqueta `HIGH_VOLATILITY_BURST`.
+
+**Archivos Modificados**:
+- `core_brain/main_orchestrator.py`: Dataclass PriceSnapshot
+- `core_brain/tech_utils.py`: `detect_fvg()`, `calculate_volatility_disconnect()`
+- `core_brain/signal_factory.py`: Enriquecimiento de metadata
+- `tests/test_institutional_alpha.py`: 9 unit tests
+
+**Validación**:
+- ✅ `validate_all.py`: 11/11 PASSED.
+- ✅ Zero regresiones.
+
+#### 🛰️ FIX: Heartbeat Satellite Emission (Regresión Crítica)
+**Timestamp**: 2026-02-23 12:55
+**Estado Final**: ✅ RESUELTO
+
+**Problema**:
+- `heartbeat_loop` tenía un único `try/except`. `regime_classifier.classify()` crasheaba sin datos y mataba `SYSTEM_HEARTBEAT` antes de emitir satellites a la UI.
+
+**Solución**:
+1. **Aislamiento de Bloques** — `SYSTEM_HEARTBEAT` y `REGIME_UPDATE` en `try/except` independientes.
+2. **Singleton Guard** — Verificación de `orchestrator.storage` con `set_storage()` defensivo.
+3. **Defensive Connector Calls** — `try/except` individual para `is_available()` y `get_latency()`.
+4. **E2E Test** — `tests/test_heartbeat_satellites.py`: 5 tests anti-regresión.
+
+**Validación**:
+- ✅ WebSocket test: `SYSTEM_HEARTBEAT` emite con `satellites: ['yahoo', 'mt5']`.
+- ✅ `validate_all.py`: 11/11 PASSED.

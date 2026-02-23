@@ -288,6 +288,112 @@ class TechnicalAnalyzer:
             return "SIDEWAYS"
 
     @staticmethod
+    def detect_fvg(df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Detects Fair Value Gaps (FVG) — institutional imbalances in price action.
+        
+        Bullish FVG: High of candle [i-2] < Low of candle [i] (gap up)
+        Bearish FVG: Low of candle [i-2] > High of candle [i] (gap down)
+        
+        These gaps represent zones where price moved so fast that
+        the market left behind an unfilled region — a sign of institutional flow.
+        
+        Args:
+            df: DataFrame with OHLC data (must have 'high' and 'low' columns)
+            
+        Returns:
+            DataFrame with columns: fvg_bullish, fvg_bearish, fvg_gap_size
+        """
+        result = pd.DataFrame(index=df.index)
+        result['fvg_bullish'] = False
+        result['fvg_bearish'] = False
+        result['fvg_gap_size'] = 0.0
+        
+        if len(df) < 3:
+            return result
+        
+        # Bullish FVG: High[i-2] < Low[i] — gap between candle 1's high and candle 3's low
+        high_shifted_2 = df['high'].shift(2)
+        low_current = df['low']
+        bullish_mask = high_shifted_2 < low_current
+        result.loc[bullish_mask, 'fvg_bullish'] = True
+        result.loc[bullish_mask, 'fvg_gap_size'] = low_current[bullish_mask] - high_shifted_2[bullish_mask]
+        
+        # Bearish FVG: Low[i-2] > High[i] — gap between candle 1's low and candle 3's high
+        low_shifted_2 = df['low'].shift(2)
+        high_current = df['high']
+        bearish_mask = low_shifted_2 > high_current
+        result.loc[bearish_mask, 'fvg_bearish'] = True
+        result.loc[bearish_mask, 'fvg_gap_size'] = low_shifted_2[bearish_mask] - high_current[bearish_mask]
+        
+        fvg_count = result['fvg_bullish'].sum() + result['fvg_bearish'].sum()
+        if fvg_count > 0:
+            logger.debug(f"[FVG] Detected {fvg_count} Fair Value Gaps in {len(df)} candles")
+        
+        return result
+
+    @staticmethod
+    def calculate_volatility_disconnect(
+        df: pd.DataFrame, 
+        rv_window: int = 20, 
+        hv_window: int = 100
+    ) -> dict:
+        """
+        Calculates the Volatility Disconnect: Realized Volatility vs Historical Volatility.
+        
+        If RV > 2× HV, the market is experiencing an abnormal volatility burst,
+        which may indicate institutional activity or a regime shift.
+        
+        Args:
+            df: DataFrame with OHLC data
+            rv_window: Window for Realized Volatility (default: 20 candles)
+            hv_window: Window for Historical Volatility (default: 100 periods)
+            
+        Returns:
+            Dict with:
+                - rv: Realized Volatility (last 20 candles)
+                - hv: Historical Volatility (last 100 periods)
+                - disconnect_ratio: rv / hv (> 2.0 = burst)
+                - is_burst: True if disconnect_ratio > 2.0
+        """
+        if len(df) < hv_window + 1:
+            return {
+                "rv": 0.0,
+                "hv": 0.0,
+                "disconnect_ratio": 0.0,
+                "is_burst": False
+            }
+        
+        # Realized Volatility: StdDev of log-returns over rv_window
+        rv_series = TechnicalAnalyzer.calculate_volatility(df, window=rv_window)
+        rv = float(rv_series.iloc[-1]) if not rv_series.empty else 0.0
+        
+        # Historical Volatility: StdDev of log-returns over hv_window
+        hv_series = TechnicalAnalyzer.calculate_volatility(df, window=hv_window)
+        hv = float(hv_series.iloc[-1]) if not hv_series.empty else 0.0
+        
+        # Disconnect ratio (avoid division by zero)
+        if hv > 0:
+            disconnect_ratio = rv / hv
+        else:
+            disconnect_ratio = 0.0
+        
+        is_burst = disconnect_ratio > 2.0
+        
+        if is_burst:
+            logger.info(
+                f"[VOLATILITY] HIGH_VOLATILITY_BURST detected: "
+                f"RV={rv:.6f}, HV={hv:.6f}, Ratio={disconnect_ratio:.2f}x"
+            )
+        
+        return {
+            "rv": round(rv, 8),
+            "hv": round(hv, 8),
+            "disconnect_ratio": round(disconnect_ratio, 4),
+            "is_burst": is_burst
+        }
+
+    @staticmethod
     def enrich_dataframe(df: pd.DataFrame, config: dict) -> pd.DataFrame:
         """
         Enriquece el DataFrame con indicadores comunes usados en Aethelgard.
@@ -309,3 +415,4 @@ class TechnicalAnalyzer:
         df['adx'] = TechnicalAnalyzer.calculate_adx(df, config.get('adx_period', 14))
         
         return df
+

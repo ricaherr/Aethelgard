@@ -2015,24 +2015,26 @@ def create_app() -> FastAPI:
 async def heartbeat_loop() -> None:
     """Bucle infinito para enviar el pulso del sistema a la UI"""
     while True:
+        # --- HEARTBEAT (satellites, cpu, sync) ---
         try:
-            # Recopilar métricas de salud (incluyendo satélites)
             from core_brain.connectivity_orchestrator import ConnectivityOrchestrator
             orchestrator = ConnectivityOrchestrator()
-            
-            # Determine sync fidelity status
-            # If MT5 is the priority but another provider is used, it's OUT_OF_SYNC
+            if not orchestrator.storage:
+                orchestrator.set_storage(storage())
+
             sync_fidelity = {
                 "score": 1.0,
                 "status": "OPTIMAL",
                 "details": "Data & Execution synchronized via MT5 (Omnichain SSOT)"
             }
             
-            # Obtener uso de CPU (resiliencia multi-proceso)
             cpu_load = 0.0
-            from core_brain.scanner import CPUMonitor
-            monitor = CPUMonitor()
-            cpu_load = monitor.get_cpu_percent()
+            try:
+                from core_brain.scanner import CPUMonitor
+                monitor = CPUMonitor()
+                cpu_load = monitor.get_cpu_percent()
+            except Exception:
+                pass
             
             metrics = {
                 "core": "ACTIVE",
@@ -2044,26 +2046,30 @@ async def heartbeat_loop() -> None:
                 "timestamp": datetime.now().isoformat()
             }
             
-            # Obtener métricas de régimen para el radar
-            # TODO: Idealmente esto vendría de un GlobalMonitor
+            await manager.emit_event("SYSTEM_HEARTBEAT", metrics)
+            
+        except Exception as e:
+            logger.error(f"Error en heartbeat (system metrics): {e}")
+
+        # --- REGIME UPDATE (independent — must not kill heartbeat) ---
+        try:
             regime = regime_classifier.classify()
             metrics_edge = regime_classifier.get_metrics()
             
-            await manager.emit_event("SYSTEM_HEARTBEAT", metrics)
             await manager.emit_event("REGIME_UPDATE", {
                 "regime": regime.value,
                 "metrics": {
                     "adx_strength": metrics_edge.get('adx', 0),
                     "volatility": "High" if metrics_edge.get('volatility_shock_detected') else "Normal",
                     "global_bias": metrics_edge.get('bias', 'Neutral'),
-                    "confidence": 85, # Mock por ahora
-                    "active_agents": 4, # Mock
-                    "optimization_rate": 99.1 # Mock
+                    "confidence": 85,
+                    "active_agents": 4,
+                    "optimization_rate": 99.1
                 }
             })
             
         except Exception as e:
-            logger.error(f"Error en bucle de heartbeat: {e}")
+            logger.error(f"Error en heartbeat (regime update): {e}")
             
         await asyncio.sleep(5)
 

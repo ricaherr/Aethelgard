@@ -205,12 +205,23 @@ class ConnectivityOrchestrator:
 
             supports = self.supports_info.get(pid, {"data": True, "exec": True})
 
+            # Defensive: connector methods may throw (e.g., MT5 not installed)
+            try:
+                is_available = connector.is_available() if is_manual_enabled else False
+            except Exception:
+                is_available = False
+
+            try:
+                latency = connector.get_latency() if is_manual_enabled else 0.0
+            except Exception:
+                latency = 0.0
+
             report[pid] = {
                 "status": status,
                 "failures": self.failure_counts.get(pid, 0),
-                "is_available": connector.is_available() if is_manual_enabled else False,
+                "is_available": is_available,
                 "is_manual_enabled": is_manual_enabled,
-                "latency": connector.get_latency() if is_manual_enabled else 0.0,
+                "latency": latency,
                 "supports_data": supports.get("data", False),
                 "supports_exec": supports.get("exec", False),
                 "last_error": getattr(connector, 'last_error', None)

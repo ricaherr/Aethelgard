@@ -62,6 +62,26 @@ def _resolve_storage(storage: Optional[StorageManager]) -> StorageManager:
     return StorageManager()
 
 
+@dataclass
+class PriceSnapshot:
+    """Atomic snapshot of price data with provider traceability.
+    
+    Ensures every decision in the pipeline knows:
+    - WHAT data was used (df)
+    - WHERE it came from (provider_source)
+    - WHEN it was captured (timestamp)
+    
+    Rule: If MT5 is connected, MT5 is the SSOT for live prices.
+    Yahoo is strictly a historical fallback.
+    """
+    symbol: str
+    timeframe: str
+    df: Any  # pd.DataFrame
+    provider_source: str
+    timestamp: datetime = field(default_factory=datetime.now)
+    regime: Optional[Any] = None  # MarketRegime
+
+
 # Global references for API/Control
 scanner = None
 orchestrator = None
@@ -654,6 +674,24 @@ class MainOrchestrator:
             
             # Update pipeline stats: scans
             self.stats.scans_total += len(scan_results_with_data)
+            
+            # MILESTONE 6.3: Build PriceSnapshots for atomic traceability
+            # Each scan result is wrapped with its provider_source for audit trail
+            price_snapshots: Dict[str, PriceSnapshot] = {}
+            for key, data in scan_results_with_data.items():
+                provider = data.get("provider_source", "UNKNOWN")
+                price_snapshots[key] = PriceSnapshot(
+                    symbol=data.get("symbol", key.split("|")[0]),
+                    timeframe=data.get("timeframe", key.split("|")[-1] if "|" in key else "M5"),
+                    df=data.get("df"),
+                    provider_source=provider,
+                    regime=data.get("regime")
+                )
+                # Inject provider_source into scan_results_with_data for downstream consumers
+                data["provider_source"] = provider
+            
+            logger.info(f"[PRICE_SNAPSHOT] Built {len(price_snapshots)} atomic snapshots. "
+                       f"Providers: {set(s.provider_source for s in price_snapshots.values())}")
             
             # Extraer solo regímenes para actualizar estado
             scan_results = {sym: data["regime"] for sym, data in scan_results_with_data.items()}

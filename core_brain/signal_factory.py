@@ -27,6 +27,7 @@ from core_brain.notificator import get_notifier, NotificationEngine
 from core_brain.module_manager import MembershipLevel
 from core_brain.confluence import MultiTimeframeConfluenceAnalyzer
 from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
+from core_brain.tech_utils import TechnicalAnalyzer
 
 # Import strategies
 from core_brain.strategies.base_strategy import BaseStrategy
@@ -156,6 +157,31 @@ class SignalFactory:
                     
                     # Procesar señal válida
                     await self._process_valid_signal(signal)
+                    
+                    # MILESTONE 6.3: Volatility Disconnect tagging
+                    try:
+                        vol_disconnect = TechnicalAnalyzer.calculate_volatility_disconnect(df)
+                        signal.metadata["volatility_disconnect"] = vol_disconnect
+                        if vol_disconnect["is_burst"]:
+                            signal.metadata["volatility_tag"] = "HIGH_VOLATILITY_BURST"
+                            logger.info(
+                                f"[{symbol}] HIGH_VOLATILITY_BURST tagged: "
+                                f"RV/HV ratio={vol_disconnect['disconnect_ratio']:.2f}x"
+                            )
+                    except Exception as vol_err:
+                        logger.debug(f"[{symbol}] Volatility disconnect skipped: {vol_err}")
+                    
+                    # MILESTONE 6.3: FVG Detection enrichment
+                    try:
+                        fvg_result = TechnicalAnalyzer.detect_fvg(df)
+                        if not fvg_result.empty:
+                            last_fvg = fvg_result.iloc[-1]
+                            signal.metadata["fvg_bullish"] = bool(last_fvg.get("fvg_bullish", False))
+                            signal.metadata["fvg_bearish"] = bool(last_fvg.get("fvg_bearish", False))
+                            signal.metadata["fvg_gap_size"] = float(last_fvg.get("fvg_gap_size", 0.0))
+                    except Exception as fvg_err:
+                        logger.debug(f"[{symbol}] FVG detection skipped: {fvg_err}")
+                    
                     generated_signals.append(signal)
             
             except Exception as e:
