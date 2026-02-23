@@ -71,7 +71,13 @@ export function AuditLiveMonitor({ isOpen, onClose, thoughts, runRepair }: Audit
             const isSuccess = !!finishedThought.metadata?.success;
             setIsFinished(true);
             setIsAuditSuccess(isSuccess);
-            setAutoCloseTimer(isSuccess ? 15 : 30); // More time to read if failed
+
+            // Milestone 5.6: Auto-close in 20s if success, persistent if fail
+            if (isSuccess) {
+                setAutoCloseTimer(20);
+            } else {
+                setAutoCloseTimer(null);
+            }
         }
     }, [thoughts, isOpen, isFinished]);
 

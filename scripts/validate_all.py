@@ -9,6 +9,9 @@ import time
 from pathlib import Path
 from typing import Dict, List, Any
 
+import re
+from typing import Dict, List, Any, Tuple
+
 # Colores ANSI para terminal profesional
 class Colors:
     BLUE = "\033[94m"
@@ -18,6 +21,38 @@ class Colors:
     RED = "\033[91m"
     BOLD = "\033[1m"
     RESET = "\033[0m"
+
+def extract_error_detail(stdout: str, stderr: str) -> str:
+    """Extrae el detalle técnico más relevante del error (Fichero, Línea, Mensaje)"""
+    combined = stderr + "\n" + stdout
+    
+    # 1. Buscar Tracebacks de Python
+    # Patrón: File "path", line line_num, in ...\n ...\n ErrorType: ErrorMessage
+    python_traceback = re.search(r'File "(.+?)", line (\d+), in .+?\n(.+?)\n(\w+:.+)', combined, re.DOTALL)
+    if python_traceback:
+        file, line, context, error = python_traceback.groups()
+        return f"{error.strip()} at {Path(file).name}:{line}"
+
+    # 2. Buscar errores de TypeScript/React
+    # Patrón: path/file.tsx:10:15 - error TS1234: Message
+    ts_error = re.search(r'(.+?\.tsx?):(\d+):(\d+) - error .+?: (.+)', combined)
+    if ts_error:
+        file, line, col, msg = ts_error.groups()
+        return f"{msg.strip()} at {Path(file).name}:{line}"
+
+    # 3. Fallback: buscar la línea que contenga "Error" o "Exception" o "FAIL"
+    for line in combined.split('\n'):
+        if any(keyword in line.upper() for keyword in ["ERROR", "EXCEPTION", "FAIL", "FATAL"]):
+            # Limpiar ruidos típicos de logs (timestamps, niveles)
+            clean_line = re.sub(r'\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d+ - \w+ - ', '', line)
+            return clean_line.strip()[:100]
+
+    # 4. Segundo Fallback: primera línea que no sea INFO o WARNING
+    for line in stderr.split('\n'):
+        if line.strip() and " - INFO - " not in line and " - WARNING - " not in line:
+            return line.strip()[:100]
+
+    return "Consistencia de integridad comprometida (Ver logs detallados)."
 
 async def run_audit_module(name: str, cmd_parts: List[str], workspace: Path) -> Dict[str, Any]:
     """Ejecuta un módulo de auditoría de forma asíncrona"""
@@ -57,20 +92,25 @@ async def run_audit_module(name: str, cmd_parts: List[str], workspace: Path) -> 
         decoded_stderr = stderr.decode(errors='replace').strip()
         
         success = process.returncode == 0
-        print(f"STAGE_END:{name}:{'OK' if success else 'FAIL'}:{duration:.2f}")
-        sys.stdout.flush()
         
         if not success:
-            # Imprimir errores COMPLETOS si falla para debugging
-            print(f"\n{'='*80}")
-            print(f"[ERROR] EN: {name}")
-            print(f"{'='*80}")
+            error_detail = extract_error_detail(decoded_stdout, decoded_stderr)
+            # Notificar detalle específico para el backend y la UI
+            print(f"DEBUG_FAIL:{name}:{error_detail}")
+            
+            # Imprimir errores COMPLETOS si falla para debugging en terminal
+            print(f"\n{Colors.RED}{'='*80}{Colors.RESET}")
+            print(f"{Colors.BOLD}{Colors.RED}[FAIL] {name}: {error_detail}{Colors.RESET}")
+            print(f"{Colors.RED}{'='*80}{Colors.RESET}")
             if decoded_stderr:
-                print(f"STDERR:\n{decoded_stderr}")
+                print(f"{Colors.BOLD}STDERR:{Colors.RESET}\n{decoded_stderr}")
             if decoded_stdout:
-                print(f"STDOUT:\n{decoded_stdout}")
-            print(f"{'='*80}\n")
+                print(f"{Colors.BOLD}STDOUT:{Colors.RESET}\n{decoded_stdout}")
+            print(f"{Colors.RED}{'='*80}{Colors.RESET}\n")
             sys.stdout.flush()
+
+        print(f"STAGE_END:{name}:{'OK' if success else 'FAIL'}:{duration:.2f}")
+        sys.stdout.flush()
         
         return {
             "name": name,
@@ -81,8 +121,8 @@ async def run_audit_module(name: str, cmd_parts: List[str], workspace: Path) -> 
         }
     except Exception as e:
         duration = time.monotonic() - start_time
+        print(f"DEBUG_FAIL:{name}:{str(e)}")
         print(f"STAGE_END:{name}:FAIL:{duration:.2f}")
-        print(f"DEBUG_ERROR:{name}:{str(e)}")
         sys.stdout.flush()
         return {
             "name": name,
@@ -104,7 +144,7 @@ async def main():
         run_audit_module("Architecture", ["python", "scripts/utilities/architecture_audit.py"], workspace),
         run_audit_module("QA Guard", ["python", "scripts/qa_guard.py"], workspace),
         run_audit_module("Code Quality", ["python", "scripts/code_quality_analyzer.py"], workspace),
-        run_audit_module("UI Quality", ["python", "scripts/ui_qa_guard.py"], workspace),
+        run_audit_module("UI Quality", ["python", "scripts/utilities/ui_health_check.py"], workspace),
         run_audit_module("Manifesto", ["python", "scripts/manifesto_enforcer.py"], workspace),
         run_audit_module("Patterns", ["python", "scripts/enforce_patterns.py"], workspace),
         run_audit_module("Core Tests", ["python", "-m", "pytest", "tests/test_signal_deduplication.py", "tests/test_risk_manager.py", "-q"], workspace),
@@ -122,7 +162,7 @@ async def main():
     # Interfaz de resumen sofisticada
     print(f"\n{Colors.BOLD}{Colors.CYAN}SYSTEM INTEGRITY MATRIX{Colors.RESET}")
     print(f"{Colors.BLUE}{'-'*80}{Colors.RESET}")
-    print(f"{Colors.BOLD}{'MÓDULO':<30} {'ESTADO':<15} {'DURACIÓN':<15}{Colors.RESET}")
+    print(f"{Colors.BOLD}{'MODULO':<30} {'ESTADO':<15} {'DURACION':<15}{Colors.RESET}")
     
     failures = 0
     for res in results:

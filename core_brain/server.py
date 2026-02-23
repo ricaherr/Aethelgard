@@ -1764,7 +1764,7 @@ def create_app() -> FastAPI:
             process = await asyncio.create_subprocess_exec(
                 "python", "scripts/validate_all.py",
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
                 cwd=os.getcwd()
             )
             
@@ -1774,7 +1774,7 @@ def create_app() -> FastAPI:
                 if not line:
                     break
                 
-                decoded_line = line.decode().strip()
+                decoded_line = line.decode(errors='replace').strip()
                 
                 if decoded_line.startswith("STAGE_START:"):
                     stage = decoded_line.split(":")[1]
@@ -1831,14 +1831,18 @@ def create_app() -> FastAPI:
                                 "error": error_msg
                             })
             
-            # Esperar a que el proceso termine
             await process.wait()
-            
-            # Compilar resultado final
+            # Success logic: Must have return code 0 AND no failed stages detected in stdout
             passed_count = sum(1 for r in validation_results if r["status"] == "PASSED")
             failed_count = sum(1 for r in validation_results if r["status"] == "FAILED")
             total_count = len(validation_results)
-            success = process.returncode == 0
+            
+            # Final determination: We trust the process return code first, but verify stage count
+            success = (process.returncode == 0) and (failed_count == 0) and (total_count > 0)
+            
+            # Debug Return Code
+            if process.returncode != 0:
+                logger.warning(f"[AUDIT] Validation process exited with non-zero code: {process.returncode} (Failed count: {failed_count})")
             
             if success:
                 final_msg = f"✅ Auditoría de alto rendimiento completada: Matriz de integridad 100% estable ({passed_count}/{total_count} vectores validados en {total_time:.2f}s)."
