@@ -1,11 +1,13 @@
 """
 Strategy Ranker - Darwinismo Algorítmico (Shadow Ranking System)
 Manages strategy evolution: SHADOW -> LIVE -> QUARANTINE and recovery cycles.
+Includes regime-aware metric weighting for dynamic EDGE selection.
 """
 import logging
 import uuid
 from typing import Optional, Dict, Any
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from data_vault.storage import StorageManager
 
@@ -40,6 +42,17 @@ class StrategyRanker:
     
     Recovery Logic (QUARANTINE -> SHADOW):
     - All degradation triggers must clear for re-evaluation
+    
+    Weighted Scoring by Regime:
+    - Introduced: Dynamic metric weighting based on market regime (TREND, RANGE, VOLATILE)
+    - Enables EDGE selection: High DD + High Sharpe strategies are rewarded in VOLATILE regimes
+    - Math: Score = Σ (Metric_n × Weight_n) where metrics normalized to [0, 1]
+    - Weights sourced from regime_configs table (SSOT principle)
+    
+    Example Weighting:
+    - TREND: WR=25%, Sharpe=35%, PF=30%, DD=10% → favors consistent wins
+    - RANGE: WR=40%, Sharpe=25%, PF=25%, DD=10% → prioritizes consistency
+    - VOLATILE: WR=20%, Sharpe=50%, PF=20%, DD=10% → rewards risk-adjusted returns
     """
     
     # Thresholds for transitions
@@ -342,6 +355,106 @@ class StrategyRanker:
         )
         
         return trace_id
+    
+    def calculate_weighted_score(self, strategy_id: str, current_regime: str) -> Decimal:
+        """
+        Calculate weighted score for a strategy based on current market regime.
+        
+        Formula: Score = Σ (Metric_n × Weight_n)
+        
+        where:
+        - Metrics are normalized to [0, 1] range
+        - Weights vary by regime (from regime_configs table)
+        - Drawdown is inverted (higher is worse, so we use 1 - normalized_dd)
+        
+        Args:
+            strategy_id: Strategy identifier
+            current_regime: Market regime (TREND, RANGE, VOLATILE)
+            
+        Returns:
+            Decimal score (0-1 range, 4+ decimal places precision)
+        """
+        # Fetch strategy ranking metrics
+        ranking = self.storage.get_strategy_ranking(strategy_id)
+        if not ranking:
+            logger.warning(f"Strategy {strategy_id} not found for weighted ranking")
+            return Decimal('0.0')
+        
+        try:
+            # Get regime weights from DB
+            weights_dict = self.storage.get_regime_weights(current_regime)
+            if not weights_dict:
+                logger.warning(f"No regime weights found for regime: {current_regime}")
+                return Decimal('0.0')
+            
+            # Convert weights to Decimal
+            weights = {k: Decimal(str(v)) for k, v in weights_dict.items()}
+            
+            # Normalize metrics
+            normalized = self._normalize_metrics(ranking)
+            
+            # Calculate weighted sum: Σ (Metric_n × Weight_n)
+            score = Decimal('0.0')
+            for metric_name, weight in weights.items():
+                metric_value = normalized.get(metric_name, Decimal('0.0'))
+                contribution = metric_value * weight
+                score += contribution
+                logger.debug(
+                    f"Metric {metric_name}: {metric_value:.4f} × {weight:.4f} = {contribution:.4f}"
+                )
+            
+            # Ensure score is in [0, 1] range
+            score = max(Decimal('0.0'), min(score, Decimal('1.0')))
+            
+            logger.info(
+                f"Strategy {strategy_id} weighted score in {current_regime}: {score:.4f}"
+            )
+            return score
+            
+        except Exception as e:
+            logger.error(f"Error calculating weighted score for {strategy_id}: {e}")
+            return Decimal('0.0')
+    
+    def _normalize_metrics(self, ranking: Dict[str, Any]) -> Dict[str, Decimal]:
+        """
+        Normalize metric values to [0, 1] range for scoring.
+        
+        Normalization rules:
+        - win_rate: Already [0, 1], just ensure bounds
+        - profit_factor: Normalize by dividing by max expected (~3.0) and capping at 1.0
+        - sharpe_ratio: Normalize by dividing by max expected (5.0, rarely exceeded) and capping at 1.0
+        - drawdown_max: Invert (1 - dd/100) to penalize higher drawdown
+        
+        Args:
+            ranking: Dictionary of raw metrics from DB
+            
+        Returns:
+            Dictionary of normalized metrics [0, 1]
+        """
+        normalized = {}
+        
+        # Win Rate: already 0-1
+        win_rate = Decimal(str(ranking.get('win_rate', 0.0)))
+        normalized['win_rate'] = max(Decimal('0.0'), min(win_rate, Decimal('1.0')))
+        
+        # Profit Factor: normalize by typical max (3.0)
+        pf = Decimal(str(ranking.get('profit_factor', 0.0)))
+        pf_max = Decimal('3.0')
+        normalized['profit_factor'] = min(pf / pf_max, Decimal('1.0'))
+        
+        # Sharpe Ratio: normalize by reasonable max (5.0)
+        # Rationale: Sharpe > 5.0 is extremely rare; treat as outlier
+        sharpe = Decimal(str(ranking.get('sharpe_ratio', 0.0)))
+        sharpe_max = Decimal('5.0')
+        normalized['sharpe_ratio'] = min(sharpe / sharpe_max, Decimal('1.0'))
+        
+        # Drawdown: invert (higher DD is worse, so 1 - normalized_DD)
+        dd = Decimal(str(ranking.get('drawdown_max', 0.0)))
+        dd_normalized = Decimal('1.0') - (dd / Decimal('100.0'))
+        normalized['drawdown_max'] = max(Decimal('0.0'), dd_normalized)
+        
+        logger.debug(f"Normalized metrics: {normalized}")
+        return normalized
     
     def batch_evaluate(self, strategy_ids: list) -> Dict[str, Dict[str, Any]]:
         """

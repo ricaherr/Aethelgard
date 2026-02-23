@@ -148,7 +148,7 @@ def main():
     files = find_python_files(project_root)
     
     all_passed = True
-    print(f"🚀 Aethelgard QA Guard | Analizando {len(files)} archivos...\n")
+    print(f"[QA Guard] Aethelgard QA Guard | Analizando {len(files)} archivos...\n")
 
     for f in files:
         rel_path = f.relative_to(project_root)
@@ -156,35 +156,35 @@ def main():
         # 1. Sintaxis (Crítico)
         syn_ok, syn_err = check_syntax(f)
         if not syn_ok:
-            print(f"❌ SINTAXIS: {rel_path} -> {syn_err}")
+            print(f"[SYNTAX ERROR] {rel_path} -> {syn_err}")
             all_passed = False
             continue # Si no compila, no seguimos con este archivo
 
         # 2. Agnosticismo (Crítico)
         ag_issues = check_agnosticism(f)
         for issue in ag_issues:
-            print(f"🚫 ESTRUCTURA: {rel_path} -> {issue}")
+            print(f"[STRUCTURE ERROR] {rel_path} -> {issue}")
             all_passed = False
 
         # 3. Type Hints (Obligatorio)
         hint_issues = check_type_hints(f)
         for issue in hint_issues:
-            print(f"❌ TYPE HINT: {rel_path} -> {issue}")
+            print(f"[TYPE HINT ERROR] {rel_path} -> {issue}")
             all_passed = False 
 
     # 4. Importaciones Dinámicas (Deep Check)
-    print("\n🧪 Verificando integridad de importaciones...")
+    print("\n[CHECKING] Verificando integridad de importaciones...")
     import_issues = check_runtime_imports(project_root)
     for issue in import_issues:
-        print(f"❌ IMPORT ERROR: {issue}")
+        print(f"[IMPORT ERROR] {issue}")
         all_passed = False
 
     print("\n" + "="*40)
     if all_passed:
-        print("✅ PROYECTO LIMPIO: Listo para producción.")
+        print("[OK] PROYECTO LIMPIO: Listo para produccion.")
         sys.exit(0)
     else:
-        print("❌ FALLÓ: Revisa los errores arriba antes de continuar.")
+        print("[FAIL] FALLO: Revisa los errores arriba antes de continuar.")
         sys.exit(1)
 
 if __name__ == "__main__":

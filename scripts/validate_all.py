@@ -61,8 +61,16 @@ async def run_audit_module(name: str, cmd_parts: List[str], workspace: Path) -> 
         sys.stdout.flush()
         
         if not success:
-            # Imprimir errores si falla para debug
-            print(f"DEBUG_FAIL:{name}:{decoded_stderr[:200]}")
+            # Imprimir errores COMPLETOS si falla para debugging
+            print(f"\n{'='*80}")
+            print(f"[ERROR] EN: {name}")
+            print(f"{'='*80}")
+            if decoded_stderr:
+                print(f"STDERR:\n{decoded_stderr}")
+            if decoded_stdout:
+                print(f"STDOUT:\n{decoded_stdout}")
+            print(f"{'='*80}\n")
+            sys.stdout.flush()
         
         return {
             "name": name,

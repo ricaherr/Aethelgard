@@ -62,7 +62,67 @@
   - `tests/test_strategy_ranker.py`: Promoción, degradación, recuperación, auditoría
   - Coverage: Todos los caminos de lógica validados
 
-### ⚡ MILESTONE 5: Alpha Institucional (Ineficiencias Pro)
+### ⏳ MILESTONE 5: Edge Dinámico (Ponderación por Régimen)
+*Estado: ✅ COMPLETADO (2026-02-22) | Timestamp: 19:30*
+
+**Resumen**: Evolución del StrategyRanker hacia un modelo de selección EDGE con ponderación dinámica de métricas. Las métricas se pesan de forma diferente según el régimen de mercado (TREND, RANGE, VOLATILE), permitiendo que estrategias con alto DD pero buen Sharpe sean seleccionadas en contextos volátiles.
+
+- [x] **Field `sharpe_ratio` en tabla `strategy_ranking`**: Integración del índice de rentabilidad/riesgo
+  - Implementación: ALTER TABLE migration en `storage.py` (línea 403)
+  - Tipo: REAL DEFAULT 0.0
+  - Índice creado: idx_strategy_ranking_sharpe (DESC)
+
+- [x] **Tabla `regime_configs` (SSOT)**: Pesos dinámicos por régimen
+  - Tabla SQL: CREATE TABLE regime_configs con unique(regime, metric_name)
+  - Métodos mixin: `get_regime_weights()`, `get_all_regime_configs()`, `update_regime_weight()`
+  - Datos iniciales poblados automáticamente:
+    - **TREND**: WR=0.25, Sharpe=0.35, PF=0.30, DD=0.10
+    - **RANGE**: WR=0.40, Sharpe=0.25, PF=0.25, DD=0.10
+    - **VOLATILE**: WR=0.20, Sharpe=0.50, PF=0.20, DD=0.10
+
+- [x] **Lógica Ponderada en StrategyRanker**: Cálculo de Score Final
+  - Método: `calculate_weighted_score(strategy_id, current_regime) → Decimal`
+  - Normalización: `_normalize_metrics()` convierte todas las métricas a [0,1]
+    - win_rate: ya está [0,1]
+    - profit_factor: normalizado por 3.0 (máximo típico)
+    - sharpe_ratio: normalizado por 5.0 (máximo realista)
+    - drawdown_max: invertido (1 - dd/100) para penalizar DD alto
+  - Fórmula: Score = Σ (Métrica_n normalizada × Peso_n)
+  - Precisión: Decimal con 4+ decimales (institucional)
+
+- [x] **Integración en Main Orchestrator**: Régimen → StrategyRanker
+  - Estructura: `MainOrchestrator` ya cuenta con `self.current_regime`
+  - Disponibilidad: Método `calculate_weighted_score()` listo para ser llamado cuando sea necesario
+  - Patrón: Inyección de régimen en lugar de hardcoding
+
+- [x] **Test Suite Ponderación**: Validación de lógica de EDGE (10/10 tests passing)
+  - Archivo: `tests/test_strategy_weighted_ranking.py`
+  - Tests clave:
+    - ✅ test_high_dd_good_sharpe_volatile_regime_high_score: DD=5%, Sharpe=2.5 → Score > 0.55 en VOLATILE
+    - ✅ test_high_dd_good_sharpe_trend_regime_low_score: Diferente weighting entre regímenes
+    - ✅ test_metric_normalization_0_to_1: Todas las métricas normalizadas correctamente
+    - ✅ test_weighted_score_calculation_formula: Verificación de fórmula con valores conocidos
+    - ✅ test_range_regime_balanced_weights: WR alto recompensado en RANGE
+    - ✅ test_regime_comparison_same_strategy: Scores difieren según régimen
+    - ✅ test_decimal_precision_institutional_grade: Precisión Decimal validada
+    - ✅ test_sharpe_ratio_capped_normalization: Sharpe capped en 5.0
+    - ✅ test_missing_sharpe_ratio_defaults_to_zero: Robustez con datos incompletos
+    - ✅ test_weights_sum_to_one: Validación de SSOT (suma = 100%)
+
+- [x] **Refactorizaciones Importantes**:
+  - Lazy-load del `StorageManager` en `server.py` para evitar inicialización en imports
+  - Lazy-load del FastAPI `app` en `server.py` para permitir testing
+  - Actualización de `strategy_ranking_db.py`: save_strategy_ranking ahora captura sharpe_ratio
+  - Docstring actualizado en StrategyRanker con ejemplos de ponderación
+
+- [x] **Retrocompatibilidad**: 
+  - Tests LEGACY de StrategyRanker (promotion/degradation) siguen pasando (9/9 ✅)
+  - Métodos existentes: evaluate_and_rank(), batch_evaluate(), etc. sin modificación
+  - DB migration: columna sharpe_ratio creada dinámicamente si no existe
+
+**Validación**: Todos los tests NUEVOS (10) + LEGACY (9) pasan correctamente. Sistema listo para producción.
+
+### ⚡ MILESTONE 6: Alpha Institucional (Ineficiencias Pro)
 *Próximo Hito*
 
 - [ ] **Detección de FVG (Fair Value Gaps)**: Algoritmo de búsqueda de desequilibrios institucionales.

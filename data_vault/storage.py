@@ -334,6 +334,7 @@ class StorageManager(
                     profit_factor REAL DEFAULT 0.0,
                     win_rate REAL DEFAULT 0.0,
                     drawdown_max REAL DEFAULT 0.0,
+                    sharpe_ratio REAL DEFAULT 0.0,
                     consecutive_losses INTEGER DEFAULT 0,
                     execution_mode TEXT DEFAULT 'SHADOW',
                     trace_id TEXT UNIQUE,
@@ -347,7 +348,64 @@ class StorageManager(
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_strategy_ranking_mode ON strategy_ranking (execution_mode)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_strategy_ranking_profit_factor ON strategy_ranking (profit_factor DESC)")
 
+            # 12. Regime Configurations (Metric Weighting by Market Regime)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS regime_configs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    regime TEXT NOT NULL,
+                    metric_name TEXT NOT NULL,
+                    weight TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(regime, metric_name)
+                )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_regime_configs_regime ON regime_configs (regime)")
+            
+            # Initialize regime_configs with default weights (SSOT)
+            # TREND: Profit Factor & Win Rate prioritized (consistency in directional moves)
+            # RANGE: Win Rate highest (consistency pays off in ranging markets)
+            # VOLATILE: Sharpe Ratio highest (risk-adjusted returns matter most in turbulence)
+            regime_data = [
+                ('TREND', 'win_rate', '0.25'),
+                ('TREND', 'sharpe_ratio', '0.35'),
+                ('TREND', 'profit_factor', '0.30'),
+                ('TREND', 'drawdown_max', '0.10'),
+                
+                ('RANGE', 'win_rate', '0.40'),
+                ('RANGE', 'sharpe_ratio', '0.25'),
+                ('RANGE', 'profit_factor', '0.25'),
+                ('RANGE', 'drawdown_max', '0.10'),
+                
+                ('VOLATILE', 'win_rate', '0.20'),
+                ('VOLATILE', 'sharpe_ratio', '0.50'),
+                ('VOLATILE', 'profit_factor', '0.20'),
+                ('VOLATILE', 'drawdown_max', '0.10'),
+            ]
+            
+            for regime, metric, weight in regime_data:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO regime_configs (regime, metric_name, weight)
+                    VALUES (?, ?, ?)
+                """, (regime, metric, weight))
+            
+            # CRITICAL: Commit after regime_data INSERTs before doing more SELECTs
+            conn.commit()
+
             # Migrations / Fixes
+            # Migrate strategy_ranking table: add sharpe_ratio if missing
+            cursor.execute("PRAGMA table_info(strategy_ranking)")
+            sr_columns = [row[1] for row in cursor.fetchall()]
+            if 'sharpe_ratio' not in sr_columns:
+                cursor.execute("ALTER TABLE strategy_ranking ADD COLUMN sharpe_ratio REAL DEFAULT 0.0")
+                logger.info("✅ Migration: Added sharpe_ratio to strategy_ranking table")
+            
+            # Create index on sharpe_ratio after column exists
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_strategy_ranking_sharpe ON strategy_ranking (sharpe_ratio DESC)")
+            
+            # Commit migration before querying other tables
+            conn.commit()
+            
             cursor.execute("PRAGMA table_info(data_providers)")
             dp_columns = [row[1] for row in cursor.fetchall()]
             if 'type' not in dp_columns:
@@ -357,6 +415,8 @@ class StorageManager(
             if 'supports_exec' not in dp_columns:
                 cursor.execute("ALTER TABLE data_providers ADD COLUMN supports_exec BOOLEAN DEFAULT 0")
 
+            conn.commit()
+            
             cursor.execute("PRAGMA table_info(broker_accounts)")
             ba_columns = [row[1] for row in cursor.fetchall()]
             if 'supports_data' not in ba_columns:

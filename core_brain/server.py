@@ -96,8 +96,27 @@ class ConnectionManager:
 
 # Instancias globales
 manager = ConnectionManager()
-storage = StorageManager()
-regime_classifier = RegimeClassifier(storage=storage)
+_storage_instance = None  # Lazy-loaded storage
+regime_classifier = None  # Lazy-loaded regime classifier
+
+def _get_storage() -> 'StorageManager':
+    """Lazy-load StorageManager to avoid import-time initialization."""
+    global _storage_instance
+    if _storage_instance is None:
+        _storage_instance = StorageManager()
+    return _storage_instance
+
+def _get_regime_classifier() -> 'RegimeClassifier':
+    """Lazy-load RegimeClassifier."""
+    global regime_classifier
+    if regime_classifier is None:
+        regime_classifier = RegimeClassifier(storage=_get_storage())
+    return regime_classifier
+
+# Backward compatibility: expose storage at module level
+def storage() -> 'StorageManager':
+    """Access StorageManager instance."""
+    return _get_storage()
 
 # MT5 Connector reference (lazy-loaded when needed)
 _mt5_connector_instance = None
@@ -2087,9 +2106,20 @@ async def process_signal(message: dict, client_id: str, connector_type: Connecto
         raise
 
 
-# Crear instancia de la app
-app = create_app()
+# Lazy-load app to avoid initialization during module imports
+_app_instance = None
+
+def get_app() -> FastAPI:
+    """Lazy-load FastAPI app."""
+    global _app_instance
+    if _app_instance is None:
+        _app_instance = create_app()
+    return _app_instance
+
+# For backward compatibility with WSGI servers
+app = None  # Set to get_app() only when actually running server
 
 if __name__ == "__main__":
     import uvicorn
+    app = get_app()
     uvicorn.run(app, host="0.0.0.0", port=8000)

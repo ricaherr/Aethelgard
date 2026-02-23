@@ -24,14 +24,15 @@ class StrategyRankingMixin(BaseRepository):
             cursor.execute("""
                 INSERT OR REPLACE INTO strategy_ranking (
                     strategy_id, profit_factor, win_rate, drawdown_max,
-                    consecutive_losses, execution_mode, trace_id,
+                    sharpe_ratio, consecutive_losses, execution_mode, trace_id,
                     last_update_utc, total_trades, completed_last_50
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 strategy_id,
                 ranking_data.get('profit_factor', 0.0),
                 ranking_data.get('win_rate', 0.0),
                 ranking_data.get('drawdown_max', 0.0),
+                ranking_data.get('sharpe_ratio', 0.0),
                 ranking_data.get('consecutive_losses', 0),
                 ranking_data.get('execution_mode', 'SHADOW'),
                 trace_id,
@@ -180,5 +181,78 @@ class StrategyRankingMixin(BaseRepository):
             """, (f'%{strategy_id}%', limit))
             rows = cursor.fetchall()
             return [dict(row) for row in rows]
+        finally:
+            self._close_conn(conn)
+    def get_regime_weights(self, regime: str) -> Dict[str, str]:
+        """
+        Get metric weights for a specific regime from regime_configs table.
+        
+        Args:
+            regime: Market regime (TREND, RANGE, VOLATILE)
+            
+        Returns:
+            Dictionary mapping metric_name -> weight (as string for Decimal conversion)
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT metric_name, weight FROM regime_configs 
+                WHERE regime = ?
+                ORDER BY metric_name
+            """, (regime,))
+            rows = cursor.fetchall()
+            return {row[0]: row[1] for row in rows}
+        finally:
+            self._close_conn(conn)
+
+    def get_all_regime_configs(self) -> Dict[str, Dict[str, str]]:
+        """
+        Get all regime configurations as nested dict.
+        
+        Returns:
+            Dict[regime → Dict[metric_name → weight]]
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT regime, metric_name, weight FROM regime_configs
+                ORDER BY regime, metric_name
+            """)
+            rows = cursor.fetchall()
+            
+            result = {}
+            for regime, metric_name, weight in rows:
+                if regime not in result:
+                    result[regime] = {}
+                result[regime][metric_name] = weight
+            
+            return result
+        finally:
+            self._close_conn(conn)
+
+    def update_regime_weight(self, regime: str, metric_name: str, weight: str) -> None:
+        """
+        Update a specific metric weight for a regime.
+        
+        Args:
+            regime: Market regime
+            metric_name: Metric to update
+            weight: New weight value (as string for Decimal)
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO regime_configs 
+                (regime, metric_name, weight, updated_at)
+                VALUES (?, ?, ?, ?)
+            """, (regime, metric_name, weight, datetime.now(timezone.utc)))
+            conn.commit()
+            logger.info(f"Updated regime_config: {regime}/{metric_name} = {weight}")
+        except Exception as e:
+            logger.error(f"Error updating regime weight: {e}")
+            raise
         finally:
             self._close_conn(conn)
