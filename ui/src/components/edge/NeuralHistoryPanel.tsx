@@ -89,14 +89,17 @@ export function NeuralHistoryPanel({ isOpen, onClose, logs }: NeuralHistoryPanel
 }
 
 function NeuralEventCard({ log }: { log: TuningLog }) {
-    const isAggressive = log.adjustment_factor < 0.8;
-    const isConservative = log.adjustment_factor > 1.2;
+    const isEdge = log.type === 'AUTONOMOUS_LEARNING';
+    const isAggressive = !isEdge && (log.adjustment_factor || 1) < 0.8;
+    const isConservative = !isEdge && (log.adjustment_factor || 1) > 1.2;
+    const isWinDelta = isEdge && (log.delta || 0) > 0.05;
+    const isLossDelta = isEdge && (log.delta || 0) < -0.1;
 
     return (
         <div className="relative pl-8 border-l border-white/5">
             {/* Timeline Dot */}
-            <div className={`absolute left-[-5px] top-0 w-2.5 h-2.5 rounded-full shadow-[0_0_8px] ${isAggressive ? 'bg-orange-500 shadow-orange-500/40' :
-                isConservative ? 'bg-aethelgard-green shadow-aethelgard-green/40' : 'bg-blue-500 shadow-blue-500/40'
+            <div className={`absolute left-[-5px] top-0 w-2.5 h-2.5 rounded-full shadow-[0_0_8px] ${isEdge ? (isWinDelta ? 'bg-aethelgard-green shadow-aethelgard-green/40' : isLossDelta ? 'bg-red-500 shadow-red-500/40' : 'bg-blue-400 shadow-blue-400/40') :
+                    (isAggressive ? 'bg-orange-500 shadow-orange-500/40' : isConservative ? 'bg-aethelgard-green shadow-aethelgard-green/40' : 'bg-blue-500 shadow-blue-500/40')
                 }`} />
 
             <div className="flex flex-col gap-4">
@@ -104,52 +107,83 @@ function NeuralEventCard({ log }: { log: TuningLog }) {
                     <span className="text-[10px] font-mono text-white/40 uppercase tracking-widest leading-none">
                         {formatDate(log.timestamp)}
                     </span>
-                    <div className={`px-2 py-1 rounded text-[9px] font-bold uppercase tracking-wider ${isAggressive ? 'bg-orange-500/10 text-orange-500 border border-orange-500/20' :
-                        isConservative ? 'bg-aethelgard-green/10 text-aethelgard-green border border-aethelgard-green/20' :
-                            'bg-blue-500/10 text-blue-500 border border-blue-500/20'
+                    <div className={`px-2 py-1 rounded text-[9px] font-bold uppercase tracking-wider ${isEdge ? 'bg-white/5 text-white/60 border border-white/10' :
+                            (isAggressive ? 'bg-orange-500/10 text-orange-500 border border-orange-500/20' :
+                                isConservative ? 'bg-aethelgard-green/10 text-aethelgard-green border border-aethelgard-green/20' :
+                                    'bg-blue-500/10 text-blue-500 border border-blue-500/20')
                         }`}>
-                        {isAggressive ? 'Aggressive Shift' : isConservative ? 'Strategic Tightening' : 'Balance Adjust'}
+                        {isEdge ? 'Edge Feedback' : (isAggressive ? 'Aggressive Shift' : isConservative ? 'Strategic Tightening' : 'Balance Adjust')}
                     </div>
                 </div>
 
                 <GlassPanel className="p-5 border-white/5 hover:border-white/10 transition-all group overflow-hidden">
                     <div className="flex flex-col gap-4">
                         <div className="flex items-start justify-between gap-4">
-                            <div>
+                            <div className="flex-1">
                                 <h4 className="text-sm font-bold text-white/90 mb-1 flex items-center gap-2">
-                                    {log.trigger === 'consecutive_losses' && <AlertTriangle size={14} className="text-orange-500" />}
-                                    {log.trigger === 'high_win_rate' && <TrendingUp size={14} className="text-aethelgard-green" />}
-                                    {log.trigger.replace(/_/g, ' ').toUpperCase()}
+                                    {isEdge ? <Activity size={14} className="text-blue-400" /> :
+                                        (log.trigger === 'consecutive_losses' ? <AlertTriangle size={14} className="text-orange-500" /> : <TrendingUp size={14} className="text-aethelgard-green" />)}
+                                    {isEdge ? (log.regime || 'MARKET') : log.trigger.replace(/_/g, ' ').toUpperCase()}
                                 </h4>
-                                <p className="text-[11px] text-white/40">
-                                    System detected anomaly in performance vectors. Initiating self-correction.
+                                <p className="text-[11px] text-white/40 leading-relaxed">
+                                    {isEdge ? log.learning : "System detected anomaly in performance vectors. Initiating self-correction."}
                                 </p>
                             </div>
-                            <div className="text-right">
-                                <span className="text-xs font-mono text-white/60 block">Factor</span>
-                                <span className="text-lg font-outfit font-black text-white">{log.adjustment_factor.toFixed(2)}x</span>
-                            </div>
+
+                            {!isEdge && log.adjustment_factor && (
+                                <div className="text-right">
+                                    <span className="text-xs font-mono text-white/60 block">Factor</span>
+                                    <span className="text-lg font-outfit font-black text-white">{log.adjustment_factor.toFixed(2)}x</span>
+                                </div>
+                            )}
+
+                            {isEdge && (
+                                <div className="text-right">
+                                    <span className="text-xs font-mono text-white/60 block">Delta</span>
+                                    <span className={`text-lg font-outfit font-black ${isWinDelta ? 'text-aethelgard-green' : isLossDelta ? 'text-red-500' : 'text-white'}`}>
+                                        {(log.delta || 0) > 0 ? '+' : ''}{(log.delta || 0).toFixed(3)}
+                                    </span>
+                                </div>
+                            )}
                         </div>
 
-                        {/* Parameter Dels */}
-                        <div className="grid grid-cols-2 gap-3 mt-2">
-                            <ParamBlock label="ADX Threshold" oldV={log.old_params.adx_threshold} newV={log.new_params.adx_threshold} />
-                            <ParamBlock label="Elephant Mult" oldV={log.old_params.elephant_atr_multiplier} newV={log.new_params.elephant_atr_multiplier} precision={2} />
-                            <ParamBlock label="Min Score" oldV={log.old_params.min_signal_score} newV={log.new_params.min_signal_score} />
-                            <ParamBlock label="Risk %" oldV={log.old_params.risk_per_trade * 100} newV={log.new_params.risk_per_trade * 100} precision={2} suffix="%" />
-                        </div>
+                        {/* Event Data Blocks */}
+                        {isEdge ? (
+                            <div className="grid grid-cols-1 gap-3 mt-2">
+                                <div className="p-3 rounded-lg bg-white/[0.02] border border-white/5 flex flex-col gap-2">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-[9px] text-white/40 font-bold uppercase">Detection</span>
+                                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${log.adjustment_made ? 'bg-aethelgard-green/20 text-aethelgard-green' : 'bg-white/5 text-white/40'}`}>
+                                            {log.adjustment_made ? 'ADJUSTMENT MADE' : 'STABLE'}
+                                        </span>
+                                    </div>
+                                    <div className="text-xs font-mono text-white/80 border-l-2 border-aethelgard-green/30 pl-3 py-1 bg-aethelgard-green/[0.03]">
+                                        {log.action_taken}
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-2 gap-3 mt-2">
+                                <ParamBlock label="ADX Threshold" oldV={log.old_params?.adx_threshold ?? 0} newV={log.new_params?.adx_threshold ?? 0} />
+                                <ParamBlock label="Elephant Mult" oldV={log.old_params?.elephant_atr_multiplier ?? 0} newV={log.new_params?.elephant_atr_multiplier ?? 0} precision={2} />
+                                <ParamBlock label="Min Score" oldV={log.old_params?.min_signal_score ?? 0} newV={log.new_params?.min_signal_score ?? 0} />
+                                <ParamBlock label="Risk %" oldV={(log.old_params?.risk_per_trade ?? 0) * 100} newV={(log.new_params?.risk_per_trade ?? 0) * 100} precision={2} suffix="%" />
+                            </div>
+                        )}
 
-                        {/* Context Stats */}
-                        <div className="flex items-center gap-6 pt-4 border-t border-white/5">
-                            <div className="flex flex-col">
-                                <span className="text-[9px] text-white/30 uppercase font-black">Success Rate</span>
-                                <span className="text-xs font-mono text-white/80">{(log.stats.win_rate * 100).toFixed(1)}%</span>
+                        {/* Context Stats (for legacy logs) */}
+                        {!isEdge && log.stats && (
+                            <div className="flex items-center gap-6 pt-4 border-t border-white/5">
+                                <div className="flex flex-col">
+                                    <span className="text-[9px] text-white/30 uppercase font-black">Success Rate</span>
+                                    <span className="text-xs font-mono text-white/80">{(log.stats.win_rate * 100).toFixed(1)}%</span>
+                                </div>
+                                <div className="flex flex-col">
+                                    <span className="text-[9px] text-white/30 uppercase font-black">Trade Count</span>
+                                    <span className="text-xs font-mono text-white/80">{log.stats.total_trades}</span>
+                                </div>
                             </div>
-                            <div className="flex flex-col">
-                                <span className="text-[9px] text-white/30 uppercase font-black">Trade Count</span>
-                                <span className="text-xs font-mono text-white/80">{log.stats.total_trades}</span>
-                            </div>
-                        </div>
+                        )}
                     </div>
                 </GlassPanel>
             </div>

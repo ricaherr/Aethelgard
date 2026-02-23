@@ -1590,6 +1590,79 @@ def create_app() -> FastAPI:
             logger.error(f"Error getting open positions: {e}")
             return {"positions": [], "total_risk_usd": 0.0, "count": 0}
     
+    @app.get("/api/edge/history")
+    async def get_edge_history(limit: int = 50) -> Dict[str, Any]:
+        """
+        Retorna el historial unificado de aprendizaje y tunning.
+        Combina:
+        1. Ajustes paramétricos (legacy/vía ParameterTuner).
+        2. Aprendizaje autónomo (vía EdgeTuner - Delta Feedback).
+        """
+        try:
+            # 1. Obtener historial de tuning (legacy)
+            tuning_history = storage().get_tuning_history(limit=limit)
+            
+            # 2. Obtener historial de aprendizaje autónomo (Edge)
+            edge_history = storage().get_edge_learning_history(limit=limit)
+            
+            # 3. Formatear y unificar
+            unified_events = []
+            
+            # Formatear Tuning logs (Legacy format)
+            for log in tuning_history:
+                # adjustment_data puede llegar como string o como dict
+                ad = log['adjustment_data']
+                if isinstance(ad, str):
+                    try:
+                        ad = json.loads(ad)
+                    except Exception:
+                        ad = {}
+                unified_events.append({
+                    "id": f"tuning_{log['id']}",
+                    "timestamp": log['timestamp'],
+                    "type": "PARAMETRIC_TUNING",
+                    "trigger": ad.get('trigger', 'periodic'),
+                    "adjustment_factor": ad.get('adjustment_factor', 1.0),
+                    "old_params": ad.get('old_params', {}),
+                    "new_params": ad.get('new_params', {}),
+                    "stats": ad.get('stats', {}),
+                    "details": "Adjustment of technical thresholds for volatility/trend."
+                })
+            
+            # Formatear Edge logs (New Autonomous learning)
+            for log in edge_history:
+                details_json = {}
+                if log.get('details'):
+                    try:
+                        details_json = json.loads(log['details'])
+                    except:
+                        pass
+                
+                unified_events.append({
+                    "id": f"edge_{log['id']}",
+                    "timestamp": log['timestamp'],
+                    "type": "AUTONOMOUS_LEARNING",
+                    "trigger": "TRADE_FEEDBACK",
+                    "detection": log.get('detection'),
+                    "action_taken": log.get('action_taken'),
+                    "learning": log.get('learning'),
+                    "delta": details_json.get('delta', 0.0),
+                    "regime": details_json.get('regime', 'UNKNOWN'),
+                    "adjustment_made": details_json.get('adjustment_made', False),
+                    "details": log.get('learning')
+                })
+            
+            # Ordenar por timestamp descendente
+            unified_events.sort(key=lambda x: x['timestamp'], reverse=True)
+            
+            return {
+                "history": unified_events[:limit],
+                "count": len(unified_events)
+            }
+        except Exception as e:
+            logger.error(f"Error fetching edge history: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
     @app.get("/api/risk/summary")
     async def get_risk_summary() -> Dict[str, Any]:
         """

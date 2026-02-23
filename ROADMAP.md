@@ -8,9 +8,11 @@
 ## 📈 ROADMAP ESTRATÉGICO (Próximos Hitos)
 
 
-### ⚡ MILESTONE 6: Alpha Institucional (Ineficiencias Pro)
-*Próximo Hito (después de 5.6)*
+### ⚡ MILESTONE 5: Infraestructura SSOT & Resiliencia
+- [x] **Milestone 5.8: Unificación SSOT**: Consolidación de bases de datos fragmentadas en `aethelgard.db`. ✅
 
+### ⚡ MILESTONE 6: Alpha Institucional & EdgeTuner
+- [x] **Milestone 6.0: Awakening of EdgeTuner**: Implementación de feedback loop autónomo ($\Delta$). ✅
 - [ ] **Detección de FVG (Fair Value Gaps)**: Algoritmo de búsqueda de desequilibrios institucionales.
 - [ ] **Arbitraje de Volatilidad**: Detección de desconexión entre Volatilidad Implícita y Realizada.
 

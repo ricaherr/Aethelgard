@@ -255,3 +255,38 @@ render_diffs(file:///c:/Users/Jose Herrera/Documents/Proyectos/Aethelgard/ROADMA
 **Validación**:
 - ✅ `validate_all.py`: 100% Integrity Guaranteed.
 - ✅ Latencia promedio: 5ms.
+#### 🛡️ MILESTONE 5.8: Unificación de SSOT (Base de Datos Única)
+**Timestamp**: 2026-02-22 23:15  
+**Estado Final**: ✅ COMPLETADO
+
+**Implementación**:
+1. **Consolidación de Bases de Datos**
+   - Script: `scripts/utilities/cleanup_db.py`
+   - Acción: Migración de tablas críticas (`asset_profiles`, `strategy_ranking`, `signals`, `trade_results`, `regime_configs`) desde bases de datos fragmentadas (`aethelgard_ssot.db`, `trading.db`) hacia el SSOT oficial `data_vault/aethelgard.db`.
+   - Limpieza: Eliminación automática de archivos `.db` huérfanos y vacíos.
+2. **Infraestructura de Datos**
+   - Aseguramiento de que todos los repositorios de datos (`SignalsMixin`, `TradesMixin`, etc.) apunten exclusivamente a `aethelgard.db`.
+
+**Validación**:
+- ✅ `validate_all.py`: Modulo `System DB` PASSED.
+- ✅ Integridad de datos post-unificación confirmada.
+
+#### 🧠 MILESTONE 6.0: Awakening of EdgeTuner (Autonomous Learning)
+**Timestamp**: 2026-02-22 23:25  
+**Estado Final**: ✅ COMPLETADO
+
+**Implementación**:
+1. **Refactorización de EdgeTuner**
+   - Archivo: `core_brain/edge_tuner.py` (Extraído de `tuner.py`).
+   - Arquitectura: Separación de la lógica de optimización de parámetros técnicos (`ParameterTuner`) de la lógica de aprendizaje autónomo (`EdgeTuner`).
+2. **Feedback Loop (Delta Reality)**
+   - Algoritmo: $\Delta = Resultado\_Real - Score\_Predicho$.
+   - Lógica: Ajuste dinámico de pesos en `regime_configs`. Si $\Delta > 0.1$, incrementa el peso de la métrica dominante; si $\Delta < -0.4$, penaliza la configuración actual por drift negativo.
+   - Auditoría: Registro persistente en la tabla `edge_learning`.
+3. **Integración de Ciclo Cerrado**
+   - Conexión: El `TradeClosureListener` ahora dispara el feedback loop tras cada cierre de operación confirmado, cerrando el círculo de aprendizaje.
+
+**Validación**:
+- ✅ `validate_all.py`: 10/10 Matrix PASSED.
+- ✅ Unit Tests for EdgeTuner logic OK.
+- ✅ Prueba de fuego: Integración con MT5 y persistencia validada.

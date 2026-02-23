@@ -45,7 +45,7 @@ from core_brain.coherence_monitor import CoherenceMonitor
 from core_brain.signal_expiration_manager import SignalExpirationManager
 from core_brain.position_manager import PositionManager
 from core_brain.regime import RegimeClassifier
-from core_brain.tuner import EdgeTuner
+from core_brain.edge_tuner import EdgeTuner
 from core_brain.trade_closure_listener import TradeClosureListener
 from core_brain.strategy_ranker import StrategyRanker
 

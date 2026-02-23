@@ -107,18 +107,30 @@ export interface CerebroThought {
     metadata?: Record<string, any>;
 }
 
+export type EdgeEventType = 'PARAMETRIC_TUNING' | 'AUTONOMOUS_LEARNING';
+
 export interface TuningLog {
-    id: number;
+    id: string | number;
     timestamp: string;
+    type: EdgeEventType;
     trigger: string;
-    adjustment_factor: number;
-    old_params: Record<string, number>;
-    new_params: Record<string, number>;
-    stats: {
+    // Parametric Fields
+    adjustment_factor?: number;
+    old_params?: Record<string, number>;
+    new_params?: Record<string, number>;
+    stats?: {
         total_trades: number;
         win_rate: number;
         consecutive_losses: number;
         [key: string]: any;
     };
+    // Autonomous Learning Fields
+    detection?: string;
+    action_taken?: string;
+    learning?: string;
+    delta?: number;
+    regime?: string;
+    adjustment_made?: boolean;
+    details?: string;
 }
 

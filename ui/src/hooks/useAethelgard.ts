@@ -137,7 +137,7 @@ export function useAethelgard() {
 
     const getTuningLogs = async (limit: number = 50) => {
         try {
-            const response = await fetch(`/api/edge/tuning-logs?limit=${limit}`);
+            const response = await fetch(`/api/edge/history?limit=${limit}`);
             const data = await response.json();
             return data.history || [];
         } catch (error) {

@@ -18,7 +18,7 @@ import time
 
 from data_vault.storage import StorageManager
 from core_brain.risk_manager import RiskManager
-from core_brain.tuner import EdgeTuner
+from core_brain.edge_tuner import EdgeTuner
 from models.broker_event import BrokerTradeClosedEvent, BrokerEvent, BrokerEventType
 
 logger = logging.getLogger(__name__)
@@ -170,8 +170,11 @@ class TradeClosureListener:
                 f"consecutive_losses={self.risk_manager.consecutive_losses}"
             )
         
-        # === STEP 4: Trigger Tuner (periodic, not on every trade) ===
-        # Only tune every 5 trades or on consecutive losses trigger
+        # === STEP 4: Traceability & Autonomous Learning (EDGE) ===
+        # Trigger weight adjustment based on prediction error (Delta)
+        await self._process_edge_feedback(trade_event)
+        
+        # Original parameter tuning (Legacy, periodic or on stress)
         if self.trades_saved % 5 == 0 or self.risk_manager.consecutive_losses >= 3:
             await self._trigger_tuner(trade_event)
         
@@ -244,6 +247,45 @@ class TradeClosureListener:
         
         return False
     
+    async def _process_edge_feedback(self, trade: BrokerTradeClosedEvent) -> None:
+        """
+        Fetch original signal info and trigger EdgeTuner feedback loop.
+        Calculates Delta = Actual Result - Predicted Score.
+        """
+        try:
+            if not trade.signal_id:
+                return
+            
+            signal = self.storage.get_signal_by_id(trade.signal_id)
+            if not signal:
+                logger.debug(f"Signal {trade.signal_id} not found for feedback loop")
+                return
+            
+            # Prediction inputs
+            confidence = signal.get('confidence', 0.0)
+            metadata = signal.get('metadata', {})
+            regime = metadata.get('regime', 'UNKNOWN')
+            
+            # Prepare result data
+            trade_result = {
+                "is_win": trade.is_win(),
+                "profit_loss": trade.profit_loss,
+                "ticket": trade.ticket
+            }
+            
+            # Trigger learning feedback
+            result = self.edge_tuner.process_trade_feedback(
+                trade_result=trade_result,
+                predicted_score=confidence,
+                regime=regime
+            )
+            
+            if result.get('adjustment_made'):
+                logger.info(f"[TUNER] [ADAPTIVE] Learning Adjustment: {result['learning']}")
+                
+        except Exception as e:
+            logger.error(f"Error in edge feedback processing: {e}", exc_info=True)
+
     async def _trigger_tuner(self, trade: BrokerTradeClosedEvent) -> bool:
         """
         Trigger EdgeTuner parameter adjustment.
