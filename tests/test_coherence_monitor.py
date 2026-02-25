@@ -3,7 +3,7 @@ Tests for CoherenceMonitor end-to-end consistency checks.
 """
 
 from datetime import datetime, timedelta, timezone
-from core_brain.market_utils import to_utc
+from utils.time_utils import to_utc
 
 from core_brain.coherence_monitor import CoherenceMonitor
 from data_vault.storage import StorageManager

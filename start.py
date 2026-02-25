@@ -57,6 +57,28 @@ from logging.handlers import TimedRotatingFileHandler
 # Asegurar carpeta de logs
 Path("logs").mkdir(exist_ok=True)
 
+
+def _rotate_stale_log(log_path: str = "logs/main.log") -> None:
+    """
+    Startup checkpoint: rotate log file if it belongs to a previous day.
+
+    TimedRotatingFileHandler only rotates at midnight while the system
+    is running. If the system is restarted days later, the old log would
+    be appended to instead of rotated. This function closes that gap.
+    """
+    log_file = Path(log_path)
+    if not log_file.exists() or log_file.stat().st_size == 0:
+        return
+    last_modified = datetime.fromtimestamp(log_file.stat().st_mtime)
+    if last_modified.date() < datetime.now().date():
+        suffix = last_modified.strftime("%Y-%m-%d")
+        rotated = log_file.with_name(f"{log_file.name}.{suffix}")
+        if not rotated.exists():
+            log_file.rename(rotated)
+
+
+_rotate_stale_log()
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',

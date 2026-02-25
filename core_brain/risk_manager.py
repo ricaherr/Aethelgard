@@ -17,7 +17,7 @@ from models.signal import Signal, ConnectorType, MarketRegime
 from core_brain.position_size_monitor import PositionSizeMonitor, CalculationStatus
 from core_brain.risk_calculator import RiskCalculator
 from core_brain.multi_timeframe_limiter import MultiTimeframeLimiter
-from core_brain.market_utils import normalize_price, normalize_volume, calculate_pip_size
+from utils.market_ops import normalize_price, normalize_volume, calculate_pip_size
 from core_brain.instrument_manager import InstrumentManager
 
 logger = logging.getLogger(__name__)

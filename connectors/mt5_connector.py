@@ -26,7 +26,7 @@ except ImportError:
 from models.signal import Signal, SignalType
 from data_vault.storage import StorageManager
 from models.broker_event import BrokerTradeClosedEvent, TradeResult, BrokerEvent
-from core_brain.market_utils import normalize_price, normalize_volume
+from utils.market_ops import normalize_price, normalize_volume
 
 logger = logging.getLogger(__name__)
 
@@ -918,8 +918,8 @@ class MT5Connector(BaseConnector):
             price = tick.ask if order_type == mt5.ORDER_TYPE_BUY else tick.bid
             
             # Normalize price
-            from core_brain.market_utils import normalize_price as global_normalize
-            from core_brain.market_utils import normalize_volume as global_normalize_volume
+            from utils.market_ops import normalize_price as global_normalize
+            from utils.market_ops import normalize_volume as global_normalize_volume
             
             price = global_normalize(price, symbol_info)
             

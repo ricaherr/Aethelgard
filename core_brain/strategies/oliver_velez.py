@@ -229,7 +229,7 @@ class OliverVelezStrategy(BaseStrategy):
             # 1. Definir Buffer (1 Pip dinámico para seguridad)
             # Usar 0.0001 (5d) o 0.01 (3d) según símbolo
             buffer_pips = 1.0
-            from core_brain.market_utils import calculate_pip_size
+            from utils.market_ops import calculate_pip_size
             pip_size = calculate_pip_size(None, symbol, self.instrument_manager)
             buffer = buffer_pips * pip_size
 

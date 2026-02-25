@@ -18,7 +18,7 @@ from typing import Dict, List, Optional, Any
 from decimal import Decimal
 
 from models.signal import MarketRegime
-from core_brain.market_utils import normalize_price, calculate_pip_size
+from utils.market_ops import normalize_price, calculate_pip_size
 from core_brain.instrument_manager import InstrumentManager
 from core_brain.notificator import get_notifier
 

@@ -3,7 +3,7 @@ Tests for Market Utilities and Agnostic Rounding Logic.
 """
 import pytest
 from types import SimpleNamespace
-from core_brain.market_utils import normalize_price, normalize_volume, calculate_pip_size
+from utils.market_ops import normalize_price, normalize_volume, calculate_pip_size
 from core_brain.instrument_manager import InstrumentManager
 
 # Use shared MockSymbolInfo from conftest

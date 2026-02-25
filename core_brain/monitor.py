@@ -8,7 +8,7 @@ import logging
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 from data_vault.storage import StorageManager
-from core_brain.market_utils import calculate_pip_size
+from utils.market_ops import calculate_pip_size
 from core_brain.instrument_manager import InstrumentManager
 
 logger = logging.getLogger(__name__)
