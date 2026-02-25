@@ -171,64 +171,8 @@ def _get_max_account_risk_pct() -> float:
     return settings.get('max_account_risk_pct', 5.0)
 
 
-def _get_backup_settings_from_db() -> Dict[str, Any]:
-    """
-    Get normalized DB backup settings from dynamic_params.
-    Default policy: backups/, daily, retention 15 days.
-    """
-    defaults = {
-        "enabled": True,
-        "backup_dir": "backups",
-        "interval_days": 1,
-        "retention_days": 15
-    }
+# Backup settings utility functions have been migrated to core_brain/api/routers/system.py
 
-    params = storage().get_dynamic_params()
-    backup_cfg = params.get("database_backup", {}) if isinstance(params, dict) else {}
-    if not isinstance(backup_cfg, dict):
-        backup_cfg = {}
-
-    interval_days = backup_cfg.get("interval_days")
-    if interval_days is None:
-        interval_minutes = int(backup_cfg.get("interval_minutes", defaults["interval_days"] * 1440))
-        interval_days = max(1, int((interval_minutes + 1439) // 1440))
-
-    retention_days = backup_cfg.get("retention_days")
-    if retention_days is None:
-        retention_days = int(backup_cfg.get("retention_count", defaults["retention_days"]))
-
-    return {
-        "enabled": bool(backup_cfg.get("enabled", defaults["enabled"])),
-        "backup_dir": str(backup_cfg.get("backup_dir", defaults["backup_dir"])),
-        "interval_days": max(1, int(interval_days)),
-        "retention_days": max(1, int(retention_days))
-    }
-
-
-def _save_backup_settings_to_db(settings: Dict[str, Any]) -> Dict[str, Any]:
-    """Persist backup settings to dynamic_params.database_backup."""
-    normalized = {
-        "enabled": bool(settings.get("enabled", True)),
-        "backup_dir": str(settings.get("backup_dir", "backups")).strip() or "backups",
-        "interval_days": max(1, int(settings.get("interval_days", 1))),
-        "retention_days": max(1, int(settings.get("retention_days", 15)))
-    }
-
-    params = storage().get_dynamic_params()
-    if not isinstance(params, dict):
-        params = {}
-
-    params["database_backup"] = {
-        "enabled": normalized["enabled"],
-        "backup_dir": normalized["backup_dir"],
-        "interval_days": normalized["interval_days"],
-        "retention_days": normalized["retention_days"],
-        "interval_minutes": normalized["interval_days"] * 1440,
-        "retention_count": normalized["retention_days"]
-    }
-
-    storage().update_dynamic_params(params)
-    return normalized
 
 # Estado para detectar cambios de régimen
 _last_regime_by_symbol: Dict[str, MarketRegime] = {}
@@ -277,21 +221,7 @@ def create_app() -> FastAPI:
     orchestrator = ConnectivityOrchestrator()
     orchestrator.set_storage(storage())
 
-    @app.get("/api/system/status")
-    async def system_status() -> Dict[str, Any]:
-        """Endpoint de estado del sistema"""
-        return {
-            "name": "Aethelgard",
-            "version": "1.0.0",
-            "status": "running",
-            "active_connections": len(manager.active_connections),
-            "timestamp": datetime.now().isoformat()
-        }
-    
-    @app.get("/health")
-    async def health() -> Dict[str, Any]:
-        """Health check endpoint"""
-        return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+    # System endpoints have been migrated to core_brain/api/routers/system.py
     
     @app.websocket("/ws/{connector}/{client_id}")
     async def websocket_endpoint(websocket: WebSocket, connector: str, client_id: str) -> None:
@@ -526,28 +456,7 @@ def create_app() -> FastAPI:
         }
         return {"profiles": profiles}
     
-    @app.get("/api/notifications/unread")
-    async def get_unread_notifications(user_id: str = 'default') -> Dict[str, Any]:
-        """Obtiene notificaciones no leídas"""
-        try:
-            notifications = notification_service.get_unread_notifications(user_id)
-            return {"notifications": notifications, "count": len(notifications)}
-        except Exception as e:
-            logger.error(f"Error getting notifications: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
-    
-    @app.post("/api/notifications/{notification_id}/mark-read")
-    async def mark_notification_read(notification_id: str) -> Dict[str, Any]:
-        """Marca notificación como leída"""
-        try:
-            success = notification_service.mark_as_read(notification_id)
-            if success:
-                return {"success": True}
-            else:
-                raise HTTPException(status_code=404, detail="Notification not found")
-        except Exception as e:
-            logger.error(f"Error marking notification as read: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+    # Notification endpoints have been migrated to core_brain/api/routers/notifications.py
     
     # Trading endpoints have been migrated to core_brain/api/routers/trading.py
     # These endpoints are now served via:
@@ -676,188 +585,10 @@ def create_app() -> FastAPI:
             logger.error(f"Error in /api/instruments/available: {e}")
             return {"instruments": [], "error": str(e)}
 
+    # System and Notification endpoints have been migrated to modular routers
+    # (core_brain/api/routers/system.py and core_brain/api/routers/notifications.py)
 
-    @app.get("/api/config/{category}")
-    async def get_config(category: str) -> Dict[str, Any]:
-        """Obtiene una categoría de configuración de la DB"""
-        db_key = f"config_{category}"
-        state = storage().get_system_state()
-        config_data = state.get(db_key)
-        
-        if config_data is None:
-            # Si no está en DB, retornamos vacío o error.
-            # No hay fallback a archivo aquí para respetar SSOT.
-            # Si se requiere migración legacy, debe ejecutarse manualmente.
-            logger.warning(f"Config '{category}' requested not found in DB.")
-            return {}
-            
-        if config_data is None and category == "notifications":
-            # Fallback especial para notificaciones si se pide vía /config pero no existe
-            # Intentamos obtener la configuración de Telegram de la nueva tabla
-            from data_vault.system_db import SystemMixin
-            notif_db = SystemMixin()
-            telegram_settings = notif_db.get_notification_settings("telegram")
-            if telegram_settings:
-                # Asegurar que config_data sea un diccionario mutable
-                raw_config = telegram_settings.get("config", {})
-                if isinstance(raw_config, str):
-                    try: raw_config = json.loads(raw_config)
-                    except: raw_config = {}
-                
-                config_data = dict(raw_config)
-                
-                # Mapeo explícito para compatibilidad con el frontend
-                if "chat_id_basic" in config_data:
-                    config_data["basic_chat_id"] = config_data["chat_id_basic"]
-                if "chat_id_premium" in config_data:
-                    config_data["premium_chat_id"] = config_data["chat_id_premium"]
-                
-                config_data["enabled"] = bool(telegram_settings.get("enabled", False))
-            
-        if config_data is None:
-            raise HTTPException(status_code=404, detail=f"Categoría de configuración '{category}' no encontrada.")
-            
-        return {"category": category, "data": config_data}
 
-    @app.get("/api/backup/settings")
-    async def get_backup_settings() -> Dict[str, Any]:
-        """Get DB backup scheduler settings (DB-first)."""
-        try:
-            settings = _get_backup_settings_from_db()
-            return {"status": "success", "settings": settings}
-        except Exception as e:
-            logger.error(f"Error loading backup settings: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
-
-    @app.post("/api/backup/settings")
-    async def update_backup_settings(data: dict) -> Dict[str, Any]:
-        """Update DB backup scheduler settings (DB-first)."""
-        try:
-            settings = _save_backup_settings_to_db(data or {})
-            await broadcast_thought("Configuración de backups actualizada.", module="CORE")
-            return {"status": "success", "settings": settings}
-        except Exception as e:
-            logger.error(f"Error updating backup settings: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
-
-    @app.post("/api/config/{category}")
-    async def update_config(category: str, new_data: dict) -> Dict[str, Any]:
-        """Actualiza una categoría de configuración en la DB"""
-        db_key = f"config_{category}"
-        try:
-            storage().update_system_state({db_key: new_data})
-            await broadcast_thought(f"Configuración '{category}' actualizada por el usuario.", module="CORE")
-            return {"status": "success", "message": f"Configuración '{category}' guardada correctamente."}
-        except Exception as e:
-            logger.error(f"Error guardando configuración {category}: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
-    
-    # === TELEGRAM ENDPOINTS ===
-    from connectors.telegram_provisioner import TelegramProvisioner
-    telegram_provisioner = TelegramProvisioner()
-    
-    @app.post("/api/telegram/validate")
-    async def validate_telegram_token(data: dict) -> Dict[str, Any]:
-        """Validates Telegram bot token"""
-        bot_token = data.get("bot_token", "")
-        is_valid, result = await telegram_provisioner.validate_bot_token(bot_token)
-        
-        if is_valid:
-            return {"status": "success", "bot_info": result}
-        else:
-            return {"status": "error", "error": result.get("error")}
-    
-    @app.post("/api/telegram/get-chat-id")
-    async def get_telegram_chat_id(data: dict) -> Dict[str, Any]:
-        """Auto-detects user's chat_id from bot updates"""
-        bot_token = data.get("bot_token", "")
-        success, result = await telegram_provisioner.get_chat_id_from_updates(bot_token)
-        
-        if success:
-            return {"status": "success", "chat_info": result}
-        else:
-            if result.get("error") == "no_messages":
-                return {
-                    "status": "waiting",
-                    "message": result.get("hint")
-                }
-            return {"status": "error", "error": result.get("error")}
-    
-    @app.post("/api/telegram/test")
-    async def test_telegram_message(data: dict) -> Dict[str, Any]:
-        """Sends test message to verify configuration"""
-        bot_token = data.get("bot_token", "")
-        chat_id = data.get("chat_id", "")
-        
-        success, result = await telegram_provisioner.send_test_message(bot_token, chat_id)
-        
-        if success:
-            return {"status": "success", "message_id": result.get("message_id")}
-        else:
-            return {"status": "error", "error": result.get("error")}
-    
-    @app.post("/api/telegram/save")
-    async def save_telegram_config(data: dict) -> Dict[str, Any]:
-        """Saves Telegram configuration to specialized notification table"""
-        bot_token = data.get("bot_token", "")
-        chat_id = data.get("chat_id", "")
-        enabled = data.get("enabled", True)
-        
-        telegram_config = {
-            "bot_token": bot_token,
-            "basic_chat_id": chat_id,
-            "premium_chat_id": chat_id
-        }
-        
-        # Guardar usando el nuevo SystemMixin
-        from data_vault.system_db import SystemMixin
-        notif_db = SystemMixin()
-        success = notif_db.update_notification_settings("telegram", enabled, telegram_config)
-        
-        if success:
-            # Re-inicializar el motor de notificaciones
-            from core_brain.notificator import initialize_notifier
-            initialize_notifier(storage())
-            
-            await broadcast_thought("Notificaciones de Telegram configuradas correctamente.", module="CORE")
-            logger.info(f"✅ Telegram configurado: Chat ID {chat_id}")
-            
-            return {
-                "status": "success",
-                "message": "Configuración de Telegram guardada correctamente."
-            }
-        else:
-            raise HTTPException(status_code=500, detail="Error al guardar la configuración en la base de datos.")
-
-    @app.get("/api/notifications/settings")
-    async def get_all_notification_settings() -> Dict[str, Any]:
-        """Retorna la configuración de todos los proveedores de notificaciones"""
-        from data_vault.system_db import SystemMixin
-        notif_db = SystemMixin()
-        settings = notif_db.get_all_notification_settings()
-        return {"status": "success", "settings": settings}
-
-    @app.post("/api/notifications/settings/{provider}")
-    async def update_notification_provider_settings(provider: str, data: dict) -> Dict[str, Any]:
-        """Actualiza la configuración de un proveedor específico"""
-        enabled = data.get("enabled", False)
-        config = data.get("config", {})
-        
-        from data_vault.system_db import SystemMixin
-        notif_db = SystemMixin()
-        success = notif_db.update_notification_settings(provider, enabled, config)
-        
-        if success:
-            from core_brain.notificator import initialize_notifier
-            initialize_notifier(storage())
-            return {"status": "success", "message": f"Configuración de {provider} actualizada."}
-        else:
-            raise HTTPException(status_code=500, detail=f"Error al actualizar {provider}.")
-    
-    @app.get("/api/telegram/instructions")
-    async def get_telegram_instructions() -> Dict[str, Any]:
-        """Returns setup instructions in Spanish"""
-        return telegram_provisioner.get_setup_instructions()
     
     # === PORTFOLIO & RISK ENDPOINTS ===
     
@@ -1179,212 +910,24 @@ def create_app() -> FastAPI:
             logger.error(f"Error toggling module: {e}")
             raise HTTPException(status_code=500, detail=str(e))
 
-    @app.post("/api/system/audit")
-    async def run_integrity_audit() -> Dict[str, Any]:
-        """
-        Ejecuta validación global con espera completa y retorna resultados.
-        Envía eventos en tiempo real vía broadcast_thought.
-        """
-        # Mapas de lenguaje sofisticado por etapa
-        sophisticated_lexicon = {
-            "Architecture": "Analizando topología de arquitectura y coherencia de módulos...",
-            "QA Guard": "Verificando integridad sintáctica y estándares de calidad QA...",
-            "Code Quality": "Escaneando densidad de complejidad y patrones de duplicidad...",
-            "UI Quality": "Validando ecosistema React y consistencia de tipos en interfaz...",
-            "Manifesto": "Enforzando leyes del Manifesto (DI & SSOT)...",
-            "Patterns": "Escrutando firmas de métodos y protocolos de seguridad AST...",
-            "Core Tests": "Ejecutando suite crítica de deduplicación y gestión de riesgo...",
-            "Integration": "Validando puentes de integración y persistencia en Data Vault...",
-            "Connectivity": "Auditando latencia y fidelidad del uplink con el Broker...",
-            "System DB": "Verificando integridad estructural de la base de Datos..."
-        }
+    # System audit and tuning endpoints have been migrated to core_brain/api/routers/system.py
 
-        await broadcast_thought("Desplegando hilos de auditoría paralela... Iniciando escaneo de vectores de integridad.", module="HEALTH")
-        
-        validation_results = []
-        error_details = {}
-        total_time = 0.0
-        
-        try:
-            process = await asyncio.create_subprocess_exec(
-                "python", "scripts/validate_all.py",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-                cwd=os.getcwd()
-            )
-            
-            # Leer stdout línea a línea para interceptar STAGE_START, STAGE_END y DEBUG_FAIL
-            while True:
-                line = await process.stdout.readline()
-                if not line:
-                    break
-                
-                decoded_line = line.decode(errors='replace').strip()
-                
-                if decoded_line.startswith("STAGE_START:"):
-                    stage = decoded_line.split(":")[1]
-                    msg = sophisticated_lexicon.get(stage, f"Iniciando fase: {stage}...")
-                    await broadcast_thought(msg, level="info", module="HEALTH", metadata={"stage": stage, "status": "STARTING"})
-                
-                elif decoded_line.startswith("DEBUG_FAIL:"):
-                    parts = decoded_line.split(":", 2)
-                    if len(parts) >= 3:
-                        stage, error = parts[1], parts[2]
-                        error_details[stage] = error
-
-                elif decoded_line.startswith("STAGE_END:"):
-                    parts = decoded_line.split(":")
-                    if len(parts) >= 4:
-                        stage, result_status, duration = parts[1], parts[2], parts[3]
-                        try:
-                            duration_float = float(duration)
-                            total_time += duration_float
-                        except:
-                            duration_float = 0.0
-                        
-                        if result_status == "OK":
-                            color_indicator = "✅"
-                            await broadcast_thought(
-                                f"{color_indicator} Vector {stage} successfully validated ({duration}s).",
-                                level="success",
-                                module="HEALTH",
-                                metadata={"stage": stage, "status": "OK", "duration": duration}
-                            )
-                            validation_results.append({
-                                "stage": stage,
-                                "status": "PASSED",
-                                "duration": duration_float
-                            })
-                        else:
-                            color_indicator = "❌"
-                            error_msg = error_details.get(stage, "Inconsistencia de integridad no especificada.")
-                            await broadcast_thought(
-                                f"{color_indicator} Vector {stage} compromised ({duration}s). Error: {error_msg}",
-                                level="warning",
-                                module="HEALTH",
-                                metadata={
-                                    "stage": stage,
-                                    "status": "FAIL",
-                                    "duration": duration,
-                                    "error": error_msg
-                                }
-                            )
-                            validation_results.append({
-                                "stage": stage,
-                                "status": "FAILED",
-                                "duration": duration_float,
-                                "error": error_msg
-                            })
-            
-            await process.wait()
-            # Success logic: Must have return code 0 AND no failed stages detected in stdout
-            passed_count = sum(1 for r in validation_results if r["status"] == "PASSED")
-            failed_count = sum(1 for r in validation_results if r["status"] == "FAILED")
-            total_count = len(validation_results)
-            
-            # Final determination: We trust the process return code first, but verify stage count
-            success = (process.returncode == 0) and (failed_count == 0) and (total_count > 0)
-            
-            # Debug Return Code
-            if process.returncode != 0:
-                logger.warning(f"[AUDIT] Validation process exited with non-zero code: {process.returncode} (Failed count: {failed_count})")
-            
-            if success:
-                final_msg = f"✅ Auditoría de alto rendimiento completada: Matriz de integridad 100% estable ({passed_count}/{total_count} vectores validados en {total_time:.2f}s)."
-                await broadcast_thought(final_msg, level="success", module="HEALTH", metadata={"status": "FINISHED", "success": True, "total_time": total_time})
-            else:
-                final_msg = f"⚠️ Auditoría finalizada con {failed_count} vectores comprometidos ({passed_count}/{total_count} validados en {total_time:.2f}s)."
-                await broadcast_thought(final_msg, level="warning", module="HEALTH", metadata={"status": "FINISHED", "success": False, "total_time": total_time})
-            
-            # Retornar resultados completos
-            return {
-                "success": success,
-                "passed": passed_count,
-                "failed": failed_count,
-                "total": total_count,
-                "duration": total_time,
-                "results": validation_results,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }
-        
-        except Exception as e:
-            logger.error(f"[AUDIT] Error en flujo de auditoría evolucionada: {e}", exc_info=True)
-            error_msg = f"Falla crítica en motor de auditoría: {str(e)}"
-            await broadcast_thought(error_msg, level="error", module="HEALTH")
-            return {
-                "success": False,
-                "error": error_msg,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }
-
-    @app.post("/api/system/audit/repair")
-    async def repair_integrity_vector(payload: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Intenta una reparación automática (Auto-Gestion EDGE) para un vector fallido.
-        """
-        stage = payload.get("stage")
-        if not stage:
-            raise HTTPException(status_code=400, detail="Stage name is required")
-
-        await broadcast_thought(f"Iniciando protocolo de Auto-Gestión EDGE para vector: {stage}...", level="info", module="EDGE")
-        
-        try:
-            success = False
-            if stage == "Connectivity":
-                # Intentar reconectar si hay un orchestrator (buscando en el server global)
-                # Para el MVP, simulamos y damos éxito si el broker está configurado
-                await asyncio.sleep(2)
-                success = True
-                await broadcast_thought(f"Protocolo de reconexión exitoso en vector {stage}. Fidelidad restaurada.", level="success", module="EDGE")
-            
-            elif stage == "System DB":
-                # Intentar forzar una sincronización o validación de hashes
-                await asyncio.sleep(2)
-                success = True
-                await broadcast_thought(f"Regeneración de índices y validación de hash completada en {stage}.", level="success", module="EDGE")
-
-            elif stage in ["QA Guard", "Code Quality", "Manifesto"]:
-                # Estos fallos suelen requerir intervención humana (código), 
-                # pero podemos intentar una limpieza de caché o re-escanear.
-                await asyncio.sleep(1)
-                success = False # No podemos arreglar código automáticamente aún
-                await broadcast_thought(f"El vector {stage} requiere intervención estructural. Auto-Gestión insuficiente.", level="warning", module="EDGE")
-
-            else:
-                await asyncio.sleep(1)
-                success = True # Simulamos éxito para otros vectores menores
-                await broadcast_thought(f"Módulo {stage} resincronizado preventivamente.", level="info", module="EDGE")
-
-            return {"success": success, "stage": stage}
-
-        except Exception as e:
-            logger.error(f"[REPAIR] Error en protocolo de reparación: {e}")
-            await broadcast_thought(f"Falla en protocolo de Auto-Gestión para {stage}: {str(e)}", level="error", module="EDGE")
-            return {"success": False, "error": str(e)}
-
-    @app.get("/api/edge/tuning-logs")
-    async def get_tuning_logs(limit: int = 50) -> Dict[str, Any]:
-        """
-        Retorna el historial de ajustes del EdgeTuner (Neuro-evolución).
-        """
-        try:
-            history = storage().get_tuning_history(limit=limit)
-            return {"status": "success", "history": history}
-        except Exception as e:
-            logger.error(f"Error recuperando historial de tuning: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
-
-    # ============ Micro-ETI 2: Include modular routers ============
+    # ============ Micro-ETI 2 & 2.3: Include modular routers ============
     from core_brain.api.routers.trading import router as trading_router
     from core_brain.api.routers.risk import router as risk_router
     from core_brain.api.routers.market import router as market_router
+    from core_brain.api.routers.system import router as system_router
+    from core_brain.api.routers.notifications import router as notifications_router
     
-    # Mount modular routers (Trading, Risk, Market)
+    # Mount modular routers (Trading, Risk, Market, System, Notifications)
     app.include_router(trading_router, prefix="/api")
     app.include_router(risk_router, prefix="/api")
     app.include_router(market_router, prefix="/api")
+    app.include_router(system_router, prefix="/api")
+    app.include_router(notifications_router, prefix="/api")
     logger.info("✅ Micro-ETI 2.1: Routers de Trading y Riesgo montados exitosamente.")
     logger.info("✅ Micro-ETI 2.2: Router de Market Data montado exitosamente.")
+    logger.info("✅ Micro-ETI 2.3: Routers de Sistema y Notificaciones montados exitosamente.")
 
     # Montar archivos estáticos de la nueva UI si existen
     ui_dist_path = os.path.join(os.getcwd(), "ui", "dist")

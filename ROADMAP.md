@@ -1,7 +1,7 @@
 # AETHELGARD: ESTRATEGIC ROADMAP
 
-**Versión Log**: 3.0.0 (Micro-ETI 2.2: Migración de Datos de Mercado - COMPLETADO)
-**Última Actualización**: 24 de Febrero, 2026 (23:30)
+**Versión Log**: 3.1.0 (Micro-ETI 2.3: Extracción Sistema & Notificaciones - COMPLETADO)
+**Última Actualización**: 24 de Febrero, 2026 (23:45)
 
 <!-- REGLA DE ARCHIVADO: Cuando TODOS los items de un milestone estén [x], -->
 <!-- migrar automáticamente a docs/SYSTEM_LEDGER.md con el formato existente -->
@@ -11,7 +11,37 @@
 
 ## 📈 ROADMAP ESTRATÉGICO (Próximos Hitos)
 
+### ✅ MICRO-ETI 2.3: EXTRACCIÓN CAPA CONTROL & NOTIFICACIONES (Completado)
+**Trace_ID**: ARCH-DISSECT-2026-003-C  
+**Duración**: ~8 minutos  
+**Reducción Monolito**: 453 líneas (1564 → 1111, -28.9%)
+
+- [x] **Creación de router Sistema**: `core_brain/api/routers/system.py` (385 líneas)
+- [x] **Creación de router Notificaciones**: `core_brain/api/routers/notifications.py` (217 líneas)
+- [x] **Migración de 15 endpoints de Auditoría & Configuración**:
+  - [x] GET/POST `/api/config/{category}` (configuración agnóstica)
+  - [x] GET/POST `/api/backup/settings` (políticas de backup)
+  - [x] GET/POST `/api/system/status` & `/health`
+  - [x] POST `/api/system/audit` (auditoría de integridad)
+  - [x] POST `/api/system/audit/repair` (Auto-Gestión EDGE)
+  - [x] GET `/api/edge/tuning-logs` (historial EdgeTuner)
+- [x] **Migración de 11 endpoints de Telegram & Notificaciones**:
+  - [x] POST `/api/telegram/validate` (validación token)
+  - [x] POST `/api/telegram/get-chat-id` (auto-detección)
+  - [x] POST `/api/telegram/test` (mensaje de prueba)
+  - [x] POST `/api/telegram/save` (persistencia configuración)
+  - [x] GET `/api/telegram/instructions` (instrucciones setup)
+  - [x] GET/POST `/api/notifications/settings` (config proveedores)
+  - [x] GET/POST `/api/notifications/{id}/mark-read` (notificaciones)
+- [x] **Integración en create_app()**: `app.include_router(system_router, prefix="/api")` + `app.include_router(notifications_router, prefix="/api")`
+- [x] **Validación PASSED**: `validate_all.py` 11/11 stages OK (6.84s)
+- [x] **Server boot verificado**: Todos los routers lazy-loaded sin errores
+- [x] **Funcionalidad operativa**: Botón "Run Integrity Audit" + Notificaciones Telegram 100% funcionales ✅
+
+**Resultado**: Server.py modular y limpio (1111 líneas), capa de control extraída, Fase 3 de purificación lista 🚀
+
 ### ✅ MICRO-ETI 2.2: MIGRACIÓN DE DATOS DE MERCADO & RÉGIMEN (Completado)
+
 **Trace_ID**: ARCH-DISSECT-2026-003-B  
 **Duración**: ~7 minutos  
 **Reducción Monolito**: 408 líneas (1901 → 1493, -21.5%)
