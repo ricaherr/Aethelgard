@@ -1,13 +1,3 @@
-# --- Función auxiliar DRY para actualizar categoría de instrumentos ---
-def update_instrument_category(market: str, category: str, data: dict, storage: StorageManager) -> None:
-    """Actualiza solo una categoría de instrumentos en la configuración (SSOT)"""
-    state = storage.get_system_state()
-    instruments_config = state.get("instruments_config")
-    if not instruments_config or market not in instruments_config or category not in instruments_config[market]:
-        raise HTTPException(status_code=404, detail="Categoría no encontrada en la configuración actual")
-    instruments_config[market][category].update(data)
-    storage.update_system_state({"instruments_config": instruments_config})
-
 """
 Servidor FastAPI con WebSockets para Aethelgard
 Gestiona múltiples conexiones simultáneas y diferencia entre conectores
@@ -283,230 +273,9 @@ def create_app() -> FastAPI:
         lifespan=lifespan
     )
 
-    # Servicio de análisis profundo de instrumentos
-    # Servicio de análisis profundo de instrumentos
-    from core_brain.analysis_service import InstrumentAnalysisService
-    instrument_analysis_service = InstrumentAnalysisService(storage=storage())
-
     # Inicializar orquestador con storage (Inyección de Dependencias)
     orchestrator = ConnectivityOrchestrator()
     orchestrator.set_storage(storage())
-
-    @app.get("/api/instrument/{symbol}/analysis")
-    async def instrument_analysis(symbol: str) -> Dict[str, Any]:
-        """Retorna análisis completo de un instrumento (régimen, tendencia, trifecta, estrategias)"""
-        try:
-            result = instrument_analysis_service.get_analysis(symbol)
-            return result
-        except Exception as e:
-            logger.error(f"Error en instrument_analysis: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
-
-    # Endpoint de estado del escáner
-    import sys
-    from pathlib import Path
-    sys.path.append(str(Path(__file__).parent))
-    try:
-        from core_brain.main_orchestrator import scanner
-    except ImportError:
-        scanner = None
-
-    @app.get("/api/scanner/status")
-    async def scanner_status() -> Dict[str, Any]:
-        """Retorna el estado actual del escáner (CPU, activos, régimen, última scan). Nunca falla."""
-        fallback = {
-            "assets": [],
-            "last_regime": {},
-            "last_scan_time": {},
-            "cpu_percent": 0.0,
-            "cpu_limit_pct": 80.0,
-            "running": False,
-            "error": None
-        }
-        if scanner is None:
-            fallback["error"] = "ScannerEngine no está inicializado"
-            return fallback
-        try:
-            status = scanner.get_status()
-            status["error"] = None
-            return status
-        except Exception as e:
-            logger.error(f"Error en scanner_status: {e}")
-            fallback["error"] = str(e)
-            return fallback
-
-    @app.get("/api/analysis/heatmap")
-    async def get_heatmap_data() -> Dict[str, Any]:
-        """
-        Retorna la matriz de calor (Heatmap) AGNOSTICA de símbolos x timeframes.
-        Recopila regímenes, métricas técnicas y señales activas.
-        Implementa principios de RESILIENCIA y AUTOGESTIÓN con CROSS-PROCESS fallback.
-        """
-        # RECOPILACIÓN DE DATOS REILIENTE
-        cells = []
-        assets = []
-        timeframes = []
-        now_mono = time.monotonic()
-        now_ts = time.time()
-
-        # Intento 1: Obtener datos del scanner local (si está en el mismo proceso)
-        if scanner is not None:
-            try:
-                with scanner._lock:
-                    assets = list(scanner.assets)
-                    timeframes = list(scanner.active_timeframes)
-                    regimes = dict(scanner.last_regime)
-                    last_scans = dict(scanner.last_scan_time)
-                    
-                    for symbol in assets:
-                        for tf in timeframes:
-                            key = f"{symbol}|{tf}"
-                            cl = scanner.classifiers.get(key)
-                            
-                            last_scan_val = last_scans.get(key, 0)
-                            cell = {
-                                "symbol": symbol,
-                                "timeframe": tf,
-                                "regime": regimes.get(key, MarketRegime.NORMAL).value,
-                                "last_scan": last_scan_val,
-                                "is_stale": (now_mono - last_scan_val) > 300 if last_scan_val > 0 else True,
-                                "metrics": {},
-                                "signal": None,
-                                "source": "memory"
-                            }
-                            if cl:
-                                try: cell["metrics"] = cl.get_metrics()
-                                except Exception: pass
-                            cells.append(cell)
-            except Exception as e:
-                logger.warning(f"Error leyendo scanner local: {e}")
-
-        # Intento 2: Fallback a Base de Datos (Cross-Process Resilience)
-        if not cells:
-            try:
-                db_states = storage().get_latest_heatmap_state()
-                if db_states:
-                    # Deducir assets y timeframes de los datos
-                    assets = sorted(list(set(s["symbol"] for s in db_states)))
-                    timeframes = sorted(list(set(s["timeframe"] for s in db_states)))
-                    
-                    for s in db_states:
-                        ts_str = s.get("timestamp")
-                        last_scan_ts = datetime.fromisoformat(ts_str).timestamp() if ts_str else 0
-                        cells.append({
-                            "symbol": s["symbol"],
-                            "timeframe": s["timeframe"],
-                            "regime": s["regime"],
-                            "last_scan": last_scan_ts,
-                            "is_stale": (now_ts - last_scan_ts) > 600 if last_scan_ts > 0 else True,
-                            "metrics": s.get("metrics", {}),
-                            "signal": None,
-                            "source": "database"
-                        })
-            except Exception as e:
-                logger.error(f"Error en fallback de base de datos para heatmap: {e}")
-
-        if not cells:
-            # DIAGNÓSTICO INTELIGENTE (Auto-gestión)
-            diag = "Scanner offline."
-            if scanner is not None:
-                diag = "Scanner local activo pero sin datos (Verificar conexión a MT5/DataProv)."
-            elif storage:
-                try:
-                    # Verificar si la tabla existe y tiene algo
-                    count = storage().execute_query("SELECT COUNT(*) as c FROM market_state")[0]['c']
-                    if count == 0:
-                        diag = "Scanner en otro proceso pero base de datos vacía (Iniciando primera recolección)."
-                    else:
-                        diag = "Scanner en otro proceso pero datos en DB son demasiado antiguos (>24h)."
-                except Exception as e:
-                    diag = f"Error de acceso a datos: {str(e)}"
-            
-            logger.warning(f"Heatmap 503 Diagnostic: {diag}")
-            raise HTTPException(status_code=503, detail=f"Análisis no disponible: {diag}")
-
-        # 2. Integrar Señales Recientes (CONFLUENCIA)
-        # Buscamos señales PENDING de la última hora
-        try:
-            recent_signals = storage().get_recent_signals(minutes=60, status='PENDING')
-            # Indexar señales por clave para búsqueda rápida
-            signals_lookup = {f"{s['symbol']}|{s['timeframe']}": s for s in recent_signals}
-            
-            for cell in cells:
-                key = f"{cell['symbol']}|{cell['timeframe']}"
-                sig = signals_lookup.get(key)
-                if sig:
-                    cell["signal"] = {
-                        "id": sig["id"],
-                        "type": sig["signal_type"],
-                        "score": sig["score"]
-                    }
-        except Exception as e:
-            logger.warning(f"Error agregando señales al heatmap: {e}")
-
-        # 3. Cálculo de Confluencia Fractal (INTELIGENCIA)
-        # Si un símbolo tiene el mismo sesgo (bias) en 3+ timeframes, marcar confluencia
-        for symbol in assets:
-            symbol_cells = [c for c in cells if c["symbol"] == symbol]
-            biases = [c["metrics"].get("bias") for c in symbol_cells if c["metrics"].get("bias")]
-            
-            if len(biases) >= 2: # Al menos 2 para considerar confluencia mínima
-                # Contar sesgo dominante
-                bullish_count = biases.count("BULLISH")
-                bearish_count = biases.count("BEARISH")
-                
-                confluence = None
-                if bullish_count >= 2: confluence = "BULLISH"
-                if bearish_count >= 2: confluence = "BEARISH"
-                
-                if confluence:
-                    for cell in symbol_cells:
-                        cell["confluence"] = confluence
-                        cell["confluence_strength"] = max(bullish_count, bearish_count)
-
-        return {
-            "symbols": assets,
-            "timeframes": timeframes,
-            "cells": cells,
-            "timestamp": datetime.now().isoformat()
-        }
-
-    # Endpoint de historial de régimen
-    from data_vault.market_db import MarketMixin
-    market_db = MarketMixin()
-
-    @app.get("/api/regime/{symbol}/history")
-    async def regime_history(symbol: str, limit: int = 100) -> Dict[str, Any]:
-        """Retorna el historial de cambios de régimen para un símbolo"""
-        try:
-            history = market_db.get_market_state_history(symbol, limit=limit)
-            formatted = [
-                {
-                    "regime": h["data"].get("regime"),
-                    "start": h["data"].get("timestamp"),
-                    "adx": h["data"].get("adx"),
-                    "volatility": h["data"].get("volatility"),
-                    "strength": h["data"].get("trend_strength"),
-                }
-                for h in history
-            ]
-            return {"symbol": symbol, "history": formatted}
-        except Exception as e:
-            logger.error(f"Error en regime_history: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
-
-    # Endpoint de datos de gráfica
-    from core_brain.chart_service import ChartService
-    chart_service = ChartService(storage=storage())
-
-    @app.get("/api/chart/{symbol}/{timeframe}")
-    async def chart_data(symbol: str, timeframe: str = "M5", count: int = 500) -> Dict[str, Any]:
-        """Retorna datos de OHLC + indicadores para un símbolo y timeframe"""
-        try:
-            return chart_service.get_chart_data(symbol, timeframe, count)
-        except Exception as e:
-            logger.error(f"Error en chart_data: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
 
     @app.get("/api/system/status")
     async def system_status() -> Dict[str, Any]:
@@ -615,116 +384,7 @@ def create_app() -> FastAPI:
             logger.error(f"Error procesando señal HTTP: {e}")
             raise HTTPException(status_code=400, detail=str(e))
     
-    @app.get("/api/regime/{symbol}")
-    async def get_regime(symbol: str) -> Dict[str, Any]:
-        """Obtiene el régimen de mercado actual para un símbolo"""
-        regime = regime_classifier.classify()
-        return {
-            "symbol": symbol,
-            "regime": regime.value,
-            "timestamp": datetime.now().isoformat()
-        }
-    
-    @app.get("/api/regime_configs")
-    async def get_regime_configs() -> Dict[str, Any]:
-        """Retorna los pesos y configuraciones dinámicas de cada régimen (regime_configs table).
-        Usado por UI para visualizar WeightedMetricsVisualizer (Darwinismo Algorítmico).
-        
-        Estructura respuesta:
-        {
-            "TREND": {"profit_factor": 0.4, "win_rate": 0.3, "drawdown_max": 0.2, "consecutive_losses": 0.1},
-            "RANGE": {"profit_factor": 0.25, "win_rate": 0.4, "drawdown_max": 0.2, "consecutive_losses": 0.15},
-            "VOLATILE": {"profit_factor": 0.2, "win_rate": 0.2, "drawdown_max": 0.4, "consecutive_losses": 0.2}
-        }
-        """
-        try:
-            # Obtener todos los regime_configs agrupados por régimen
-            all_configs = storage().get_all_regime_configs()
-            
-            # Transformar formato: all_configs es Dict[regime -> Dict[metric_name -> weight]]
-            regime_weights = {}
-            for regime, metrics_dict in all_configs.items():
-                regime_weights[regime] = {}
-                for metric_name, weight in metrics_dict.items():
-                    regime_weights[regime][metric_name] = float(weight)
-            
-            return {
-                "regime_weights": regime_weights,
-                "timestamp": datetime.now().isoformat(),
-                "description": "Dynamic regime-specific metric weights for strategy ranking (Darwinismo Algorítmico)"
-            }
-        except Exception as e:
-            logger.error(f"Error en get_regime_configs: {e}")
-            raise HTTPException(status_code=500, detail=f"Error fetching regime configs: {str(e)}")
 
-    @app.get("/api/instruments")
-    async def get_instruments(all: bool = False) -> Dict[str, Any]:
-        """Retorna la lista de instrumentos agrupados por mercado/categoría desde la DB (SSOT).
-        Si 'all' es True, incluye categorías e instrumentos inactivos (para Settings).
-        """
-        try:
-            state = storage().get_system_state()
-            instruments_config = state.get("instruments_config")
-            if instruments_config is None:
-                raise ValueError("instruments_config no encontrado en DB. Inicialice la configuración desde la UI/API.")
-            result = {}
-            for market, categories in instruments_config.items():
-                if market.startswith("_"):
-                    continue
-                result[market] = {}
-                for cat, cat_data in categories.items():
-                    # Si all=False, solo mostrar categorías activas
-                    if not all and not cat_data.get("enabled", False):
-                        continue
-                    instruments = cat_data.get("instruments", [])
-                    # Si all=False, solo mostrar instrumentos activos
-                    if not all:
-                        actives = cat_data.get("actives", {})
-                        instruments = [sym for sym in instruments if actives.get(sym, True)]
-                    if instruments or all:
-                        result[market][cat] = {
-                            "description": cat_data.get("description", ""),
-                            "instruments": instruments,
-                            "priority": cat_data.get("priority", 0),
-                            "min_score": cat_data.get("min_score", None),
-                            "risk_multiplier": cat_data.get("risk_multiplier", None),
-                            "enabled": cat_data.get("enabled", False),
-                            "actives": cat_data.get("actives", {})
-                        }
-            return {"markets": result}
-        except Exception as e:
-            logger.error(f"Error loading instruments config from DB: {e}")
-            # Fallback: lista mínima hardcodeada
-            return {
-                "markets": {
-                    "FOREX": {
-                        "majors": {
-                            "description": "Fallback: Pares principales",
-                            "instruments": ["EURUSD", "GBPUSD", "USDJPY"],
-                            "priority": 1,
-                            "min_score": 70,
-                            "risk_multiplier": 1.0
-                        }
-                    }
-                },
-                "error": f"No se pudo cargar instruments_config de la DB: {str(e)}"
-            }
-
-    @app.post("/api/instruments")
-    async def update_instruments(payload: dict) -> Dict[str, Any]:
-        """Actualiza SOLO una categoría de instrumentos (más eficiente, DRY)"""
-        try:
-            market = payload.get("market")
-            category = payload.get("category")
-            data = payload.get("data")
-            if not (market and category and isinstance(data, dict)):
-                raise HTTPException(status_code=400, detail="Faltan campos obligatorios: market, category, data")
-            update_instrument_category(market, category, data, storage())
-            await broadcast_thought(f"Categoría {market}/{category} actualizada por el usuario.", module="CORE")
-            return {"status": "success", "message": f"Categoría {market}/{category} actualizada correctamente."}
-        except Exception as e:
-            logger.error(f"Error guardando categoría de instrumentos: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
 
     # ...existing code...
 
@@ -1714,14 +1374,17 @@ def create_app() -> FastAPI:
             logger.error(f"Error recuperando historial de tuning: {e}")
             raise HTTPException(status_code=500, detail=str(e))
 
-    # ============ Micro-ETI 2.1: Include modular routers ============
+    # ============ Micro-ETI 2: Include modular routers ============
     from core_brain.api.routers.trading import router as trading_router
     from core_brain.api.routers.risk import router as risk_router
+    from core_brain.api.routers.market import router as market_router
     
-    # Mount Operations (Trading & Risk) routers
+    # Mount modular routers (Trading, Risk, Market)
     app.include_router(trading_router, prefix="/api")
     app.include_router(risk_router, prefix="/api")
+    app.include_router(market_router, prefix="/api")
     logger.info("✅ Micro-ETI 2.1: Routers de Trading y Riesgo montados exitosamente.")
+    logger.info("✅ Micro-ETI 2.2: Router de Market Data montado exitosamente.")
 
     # Montar archivos estáticos de la nueva UI si existen
     ui_dist_path = os.path.join(os.getcwd(), "ui", "dist")

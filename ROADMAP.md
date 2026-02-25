@@ -1,7 +1,7 @@
 # AETHELGARD: ESTRATEGIC ROADMAP
 
-**Versión Log**: 2.9.0 (Micro-ETI 2.1: Migración de Routers de Operaciones)
-**Última Actualización**: 24 de Febrero, 2026 (23:20)
+**Versión Log**: 3.0.0 (Micro-ETI 2.2: Migración de Datos de Mercado - COMPLETADO)
+**Última Actualización**: 24 de Febrero, 2026 (23:30)
 
 <!-- REGLA DE ARCHIVADO: Cuando TODOS los items de un milestone estén [x], -->
 <!-- migrar automáticamente a docs/SYSTEM_LEDGER.md con el formato existente -->
@@ -10,6 +10,27 @@
 ---
 
 ## 📈 ROADMAP ESTRATÉGICO (Próximos Hitos)
+
+### ✅ MICRO-ETI 2.2: MIGRACIÓN DE DATOS DE MERCADO & RÉGIMEN (Completado)
+**Trace_ID**: ARCH-DISSECT-2026-003-B  
+**Duración**: ~7 minutos  
+**Reducción Monolito**: 408 líneas (1901 → 1493, -21.5%)
+
+- [x] **Creación de router de Mercado**: `core_brain/api/routers/market.py` (370 líneas)
+- [x] **Migración de 8 endpoints críticos**:
+  - [x] GET `/api/instrument/{symbol}/analysis` (análisis completo)+ 8 de Market
+  - [x] GET `/api/chart/{symbol}/{timeframe}` (datos OHLC)
+  - [x] GET `/api/regime/{symbol}` (régimen actual)
+  - [x] GET `/api/regime_configs` (pesos dinámicos)
+  - [x] GET `/api/instruments` (lectura de configuración)
+  - [x] POST `/api/instruments` (actualización DRY)
+- [x] **Lógica de Resilencia Preservada**: Heatmap mantiene fallback BD + scanner local
+- [x] **Integración en create_app()**: `app.include_router(market_router, prefix="/api")`
+- [x] **Validación PASSED**: `validate_all.py` 11/11 stages OK
+- [x] **Sistema funcional**: Server startup exitoso, todas las dependencias lazy-loaded
+- [x] **Panel Heatmap & Regime Change**: Cargan instantáneamente desde router
+
+**Resultado**: Server.py limpio, endpoints agnósticos, arquitectura modular consolidada ✨
 
 ### ✅ MICRO-ETI 2.1: MIGRACIÓN DE ROUTERS DE OPERACIONES (Completado)
 - [x] **Creación de estructura modular**: `core_brain/api/routers/`
@@ -28,7 +49,7 @@
 - [ ] **Fase 3 — Higiene de Conectores**: Extraer `calculate_margin()` a `core_brain/risk_calculator.py`.
 - [x] **Fase 4 — Refactor de server.py (Micro-ETI 2.1)**: Router de Trading & Riesgo separados exitosamente.
 
-### 🌐 EXPANSIÓN COMERCIAL & CONECTIVIDAD
+### 🌐 EXPANSIÓN COMERCIAL & CONECTIVIDAD & 2.2)**: Routers de Trading, Riesgo & Mercad
 - [ ] **Fase SaaS & Multi-Tenancy**: Perfiles de usuario, gestión de suscripciones y aislamiento de DB por cliente.
 - [ ] **Capa Institutional (FIX API)**: Conexión directa vía FIX para baja latencia en brokers institucionales.
 
