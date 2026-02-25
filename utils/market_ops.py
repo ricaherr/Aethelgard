@@ -160,3 +160,44 @@ def calculate_pip_size(
     if symbol and 'JPY' in symbol.upper():
         return 0.01
     return 0.0001
+
+
+def classify_asset_type(symbol: str) -> str:
+    """
+    Classify a trading symbol into its asset type.
+
+    Args:
+        symbol: Trading symbol (e.g., "EURUSD", "XAUUSD", "BTCUSD", "US30").
+
+    Returns:
+        str: One of "forex", "metal", "crypto", "index".
+    """
+    if not symbol:
+        return "forex"
+
+    s = symbol.upper()
+
+    if s.startswith("XAU") or s.startswith("XAG"):
+        return "metal"
+    if s.startswith("BTC") or s.startswith("ETH"):
+        return "crypto"
+    if any(idx in s for idx in ["US30", "NAS100", "SPX500", "DJ30"]):
+        return "index"
+
+    return "forex"
+
+
+def calculate_r_multiple(current_profit: float, initial_risk: float) -> float:
+    """
+    Calculate R-multiple (profit expressed as multiples of initial risk).
+
+    Args:
+        current_profit: Current P/L in USD.
+        initial_risk: Initial risk in USD at entry.
+
+    Returns:
+        float: R-multiple rounded to 2 decimals. 0.0 if no risk data.
+    """
+    if initial_risk <= 0:
+        return 0.0
+    return round(current_profit / initial_risk, 2)

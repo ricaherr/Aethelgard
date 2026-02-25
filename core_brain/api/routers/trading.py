@@ -1,6 +1,7 @@
 """
 Router de Trading - Endpoints de gestión de señales y posiciones.
 Micro-ETI 2.1: Oleada 2 de migración de operaciones.
+Micro-ETI 3.1: Refactored to delegate business logic to TradingService.
 """
 import logging
 import json
@@ -22,10 +23,10 @@ def _get_storage() -> StorageManager:
     return get_storage_from_server()
 
 
-def _get_mt5_connector() -> Optional[Any]:
-    """Lazy-load MT5 connector for position queries."""
-    from core_brain.server import _get_mt5_connector as get_mt5_from_server
-    return get_mt5_from_server()
+def _get_trading_service() -> 'TradingService':
+    """Lazy-load TradingService singleton."""
+    from core_brain.server import _get_trading_service as get_ts_from_server
+    return get_ts_from_server()
 
 
 async def _broadcast_thought(message: str, module: str = "TRADING", level: str = "info", metadata: Optional[Dict[str, Any]] = None) -> None:
@@ -168,6 +169,7 @@ async def execute_signal_manual(data: dict) -> Dict[str, Any]:
         logger.info(f"Manual execution requested for signal: {signal_id}")
         
         storage = _get_storage()
+        trading_service = _get_trading_service()
         
         # Get signal from database
         signal_data = storage.get_signal_by_id(signal_id)
@@ -206,8 +208,8 @@ async def execute_signal_manual(data: dict) -> Dict[str, Any]:
         from core_brain.executor import OrderExecutor
         from core_brain.risk_manager import RiskManager
         
-        # Get MT5 connector
-        mt5_connector = _get_mt5_connector()
+        # Get MT5 connector via TradingService
+        mt5_connector = trading_service.get_mt5_connector()
         if not mt5_connector:
             return {
                 "success": False,
@@ -216,9 +218,7 @@ async def execute_signal_manual(data: dict) -> Dict[str, Any]:
             }
         
         # Create risk manager and executor
-        # Get account balance for risk manager
-        from core_brain.server import _get_account_balance
-        account_balance = _get_account_balance()
+        account_balance = trading_service.get_account_balance()
         risk_manager = RiskManager(storage=storage, initial_capital=account_balance)
         executor = OrderExecutor(
             risk_manager=risk_manager,
@@ -278,98 +278,11 @@ async def get_open_positions() -> Dict[str, Any]:
     """
     Get open positions with risk metadata.
     Returns positions with initial_risk_usd, r_multiple, asset_type.
+    Delegates to TradingService (Micro-ETI 3.1).
     """
     try:
-        storage = _get_storage()
-        
-        positions_list = []
-        total_risk = 0.0
-        
-        mt5 = _get_mt5_connector()
-        if mt5:
-            if mt5.connect():
-                # Update cached balance when we connect to MT5
-                try:
-                    current_balance = mt5.get_account_balance()
-                    storage.update_system_state({
-                        "account_balance": current_balance,
-                        "balance_source": "MT5_LIVE",
-                        "balance_last_update": datetime.now().isoformat()
-                    })
-                except Exception as e:
-                    logger.debug(f"Could not update cached balance: {e}")
-                
-                # Get open positions from MT5
-                mt5_positions = mt5.get_open_positions()
-                
-                if mt5_positions:
-                    conn = storage._get_conn()
-                    
-                    for mt5_pos in mt5_positions:
-                        ticket = mt5_pos['ticket']
-                        
-                        # Get metadata from DB
-                        cursor = conn.execute("""
-                            SELECT initial_risk_usd, entry_regime, entry_time, timeframe, strategy
-                            FROM position_metadata
-                            WHERE ticket = ?
-                        """, (ticket,))
-                        
-                        row = cursor.fetchone()
-                        if row:
-                            risk, regime, entry_time, timeframe, strategy = row
-                        else:
-                            # No metadata - calculate on the fly
-                            risk = 0.0
-                            regime = "NEUTRAL"
-                            entry_time = mt5_pos.get('time', '')
-                            timeframe = None
-                            strategy = None
-                        
-                        symbol = mt5_pos['symbol']
-                        
-                        # Classify asset type based on symbol
-                        asset_type = "forex"
-                        if symbol.startswith("XAU") or symbol.startswith("XAG"):
-                            asset_type = "metal"
-                        elif symbol.startswith("BTC") or symbol.startswith("ETH"):
-                            asset_type = "crypto"
-                        elif any(idx in symbol for idx in ["US30", "NAS100", "SPX500", "DJ30"]):
-                            asset_type = "index"
-                        
-                        current_profit = mt5_pos.get('profit', 0.0)
-                        
-                        # Calculate R-multiple
-                        r_multiple = (current_profit / risk) if risk > 0 else 0.0
-                        
-                        position_data = {
-                            "ticket": ticket,
-                            "symbol": symbol,
-                            "entry_price": mt5_pos.get('price_open', 0.0),
-                            "sl": mt5_pos.get('sl', 0.0),
-                            "tp": mt5_pos.get('tp', 0.0),
-                            "volume": mt5_pos.get('volume', 0.0),
-                            "profit_usd": current_profit,
-                            "initial_risk_usd": risk,
-                            "r_multiple": round(r_multiple, 2),
-                            "entry_regime": regime or "NEUTRAL",
-                            "entry_time": str(entry_time),
-                            "asset_type": asset_type,
-                            "timeframe": timeframe,
-                            "strategy": strategy
-                        }
-                        
-                        positions_list.append(position_data)
-                        total_risk += risk
-                    
-                    storage._close_conn(conn)
-        
-        return {
-            "positions": positions_list,
-            "total_risk_usd": round(total_risk, 2),
-            "count": len(positions_list)
-        }
-        
+        trading_service = _get_trading_service()
+        return await trading_service.get_open_positions()
     except Exception as e:
         logger.error(f"Error getting open positions: {e}")
         return {"positions": [], "total_risk_usd": 0.0, "count": 0}

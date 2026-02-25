@@ -1,6 +1,7 @@
 """
 Router de Riesgo - Endpoints de gestión de riesgo y monitoreo.
 Micro-ETI 2.1: Oleada 2 de migración de operaciones.
+Micro-ETI 3.1: Refactored to delegate business logic to TradingService.
 """
 import logging
 import json
@@ -22,28 +23,10 @@ def _get_storage() -> StorageManager:
     return get_storage_from_server()
 
 
-def _get_mt5_connector() -> Optional[Any]:
-    """Lazy-load MT5 connector for balance queries."""
-    from core_brain.server import _get_mt5_connector as get_mt5_from_server
-    return get_mt5_from_server()
-
-
-def _get_account_balance() -> float:
-    """Get real account balance from MT5 or cached value."""
-    from core_brain.server import _get_account_balance as get_balance_from_server
-    return get_balance_from_server()
-
-
-def _get_balance_metadata() -> Dict[str, Any]:
-    """Get balance metadata (source, last update timestamp)."""
-    from core_brain.server import _get_balance_metadata as get_metadata_from_server
-    return get_metadata_from_server()
-
-
-def _get_max_account_risk_pct() -> float:
-    """Load max_account_risk_pct from StorageManager (SSOT)."""
-    from core_brain.server import _get_max_account_risk_pct as get_max_from_server
-    return get_max_from_server()
+def _get_trading_service() -> 'TradingService':
+    """Lazy-load TradingService singleton."""
+    from core_brain.server import _get_trading_service as get_ts_from_server
+    return get_ts_from_server()
 
 
 async def _broadcast_thought(message: str, module: str = "RISK", level: str = "info", metadata: Optional[Dict[str, Any]] = None) -> None:
@@ -125,24 +108,23 @@ async def get_risk_summary() -> Dict[str, Any]:
     Get account risk summary with distribution by asset type.
     Uses real MT5 balance if connected, otherwise cached or default value.
     Includes metadata about balance source (MT5_LIVE, CACHED, DEFAULT).
+    Delegates to TradingService (Micro-ETI 3.1).
     """
     try:
-        storage = _get_storage()
+        trading_service = _get_trading_service()
         
-        # Get open positions
-        # We call the trading router endpoint indirectly
-        from core_brain.api.routers.trading import get_open_positions
-        positions_response = await get_open_positions()
+        # Get open positions via TradingService
+        positions_response = await trading_service.get_open_positions()
         positions = positions_response.get("positions", [])
         total_risk = positions_response.get("total_risk_usd", 0.0)
         
-        # Get REAL account balance from MT5 (or cached/default)
-        account_balance = _get_account_balance()
-        balance_metadata = _get_balance_metadata()
+        # Get REAL account balance from TradingService
+        account_balance = trading_service.get_account_balance()
+        balance_metadata = trading_service.get_balance_metadata()
         
         # Calculate risk percentage
         risk_percentage = (total_risk / account_balance * 100) if account_balance > 0 else 0.0
-        max_allowed_risk = _get_max_account_risk_pct()  # Load from risk_settings.json
+        max_allowed_risk = trading_service.get_max_account_risk_pct()
         
         # Distribution by asset type
         by_asset = {}

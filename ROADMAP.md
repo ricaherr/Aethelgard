@@ -1,7 +1,7 @@
 # AETHELGARD: ESTRATEGIC ROADMAP
 
-**Versión Log**: 3.1.0 (Micro-ETI 2.3: Extracción Sistema & Notificaciones - COMPLETADO)
-**Última Actualización**: 24 de Febrero, 2026 (23:45)
+**Versión Log**: 3.2.0 (Micro-ETI 3.1: Trading Service Extraction - COMPLETADO)
+**Última Actualización**: 25 de Febrero, 2026 (00:00)
 
 <!-- REGLA DE ARCHIVADO: Cuando TODOS los items de un milestone estén [x], -->
 <!-- migrar automáticamente a docs/SYSTEM_LEDGER.md con el formato existente -->
@@ -10,6 +10,25 @@
 ---
 
 ## 📈 ROADMAP ESTRATÉGICO (Próximos Hitos)
+
+### ✅ MICRO-ETI 3.1: TRADING SERVICE EXTRACTION (Completado)
+**Trace_ID**: ARCH-PURIFY-2026-001-A  
+**Duración**: ~15 minutos  
+**Reducción Monolito**: 835 líneas (1107 → 272, -75.4%)
+
+- [x] **Creación de TradingService**: `core_brain/services/trading_service.py` (407 líneas)
+  - [x] `process_signal()` migrado desde server.py
+  - [x] `get_open_positions()` con StorageManager.get_position_metadata() (sin raw SQL)
+  - [x] Balance helpers: `get_account_balance()`, `get_balance_metadata()`, `get_max_account_risk_pct()`
+  - [x] MT5 connector lazy-loading
+- [x] **Utilities centralizadas**: `classify_asset_type()` y `calculate_r_multiple()` en `utils/market_ops.py`
+- [x] **Refactor trading.py**: Delegación a TradingService, eliminación de raw SQL
+- [x] **Refactor risk.py**: Delegación a TradingService, eliminación de 6 helper wrappers
+- [x] **Purge server.py**: Eliminados ~15 endpoints duplicados, helpers de balance, process_signal
+- [x] **Validación PASSED**: `validate_all.py` 11/11 stages OK (5.99s)
+- [x] **Server boot verificado**: MT5 conectado, scanner operativo, shutdown limpio
+
+**Resultado**: Server.py minimal (272 líneas), lógica de trading 100% encapsulada en TradingService 🚀
 
 ### ✅ MICRO-ETI 2.3: EXTRACCIÓN CAPA CONTROL & NOTIFICACIONES (Completado)
 **Trace_ID**: ARCH-DISSECT-2026-003-C  
