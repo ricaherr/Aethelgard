@@ -16,6 +16,7 @@
 **Inicio**: 25 de Febrero, 2026  
 **Objetivo**: Evolucionar el sistema de un solo usuario a una arquitectura multi-tenant con autenticación JWT y aislamiento de datos por tenant.
 
+- [x] **Manifesto Transformation**: Restructuración del `AETHELGARD_MANIFESTO.md` hacia una Constitución Estratégica.
 - [ ] **JWT Middleware**: Implementación de middleware de autenticación JWT para FastAPI.
 - [ ] **User Management**: Creación de tabla `users` y `UserRepo` para gestión de identidad.
 - [ ] **Tenant Isolation**: Desarrollo de `TenantDBFactory` para aislamiento de bases de datos por cliente.
