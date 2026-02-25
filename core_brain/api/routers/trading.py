@@ -385,3 +385,52 @@ async def toggle_auto_trading(request: Request) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error toggling auto-trading: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/strategies/library")
+async def get_strategies_library() -> Dict[str, Any]:
+    """Returns the strategy library: registered strategies from DB + educational catalog."""
+    try:
+        storage = _get_storage()
+        rankings = storage.get_all_strategy_rankings()
+
+        registered = [
+            {
+                "id": r.get("strategy_id"),
+                "name": r.get("strategy_id", "").replace("_", " ").title(),
+                "mode": r.get("execution_mode", "SHADOW"),
+                "profit_factor": r.get("profit_factor", 0.0),
+                "win_rate": r.get("win_rate", 0.0),
+                "sharpe_ratio": r.get("sharpe_ratio", 0.0),
+                "total_trades": r.get("total_trades", 0),
+                "drawdown_max": r.get("drawdown_max", 0.0),
+            }
+            for r in rankings
+        ]
+
+        # Educational catalog (static reference data)
+        educational = [
+            {
+                "id": "trifecta",
+                "name": "Trifecta Alignment",
+                "description": "Multi-timeframe confluence using EMA alignment, market structure, and regime confirmation.",
+                "category": "Confluence",
+            },
+            {
+                "id": "oliver_velez",
+                "name": "Oliver Velez Elephant Bar",
+                "description": "Momentum entry on high-volume expansion candles with strict risk management.",
+                "category": "Price Action",
+            },
+            {
+                "id": "fvg",
+                "name": "Fair Value Gap (FVG)",
+                "description": "Institutional order flow strategy targeting imbalance zones.",
+                "category": "Institutional",
+            },
+        ]
+
+        return {"registered": registered, "educational": educational}
+    except Exception as e:
+        logger.error(f"Error getting strategies library: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

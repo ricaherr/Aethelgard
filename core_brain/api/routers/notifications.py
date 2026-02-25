@@ -31,7 +31,7 @@ def _get_notification_service() -> Any:
     if _notification_service_instance is None:
         from core_brain.notification_service import NotificationService
         storage = _get_storage()
-        _notification_service_instance = NotificationService(storage=storage)
+        _notification_service_instance = NotificationService(storage_manager=storage)
     return _notification_service_instance
 
 

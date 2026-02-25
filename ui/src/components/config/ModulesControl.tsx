@@ -127,11 +127,10 @@ export function ModulesControl() {
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0 }}
-                    className={`p-4 rounded-lg border flex items-center gap-2 ${
-                        message.type === 'success'
+                    className={`p-4 rounded-lg border flex items-center gap-2 ${message.type === 'success'
                             ? 'bg-green-500/10 border-green-500/20 text-green-300'
                             : 'bg-red-500/10 border-red-500/20 text-red-300'
-                    }`}
+                        }`}
                 >
                     {message.type === 'success' ? <CheckCircle size={16} /> : <AlertTriangle size={16} />}
                     <span className="text-sm">{message.text}</span>
@@ -140,7 +139,7 @@ export function ModulesControl() {
 
             {/* Modules Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {modules && Object.entries(modules.modules).map(([moduleName, enabled]) => (
+                {modules?.modules && Object.entries(modules.modules).map(([moduleName, enabled]) => (
                     <ModuleCard
                         key={moduleName}
                         name={moduleName}

@@ -8,7 +8,7 @@ import os
 import json
 from typing import Dict, Any, Optional
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from data_vault.storage import StorageManager
 
@@ -396,4 +396,124 @@ async def get_tuning_logs(limit: int = 50) -> Dict[str, Any]:
         return {"status": "success", "history": history}
     except Exception as e:
         logger.error(f"Error recuperando historial de tuning: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============ Module Management Endpoints ============
+
+@router.get("/modules/status")
+async def get_modules_status() -> Dict[str, Any]:
+    """Returns the current enabled/disabled state of all system modules."""
+    try:
+        storage = _get_storage()
+        config = storage.get_modules_config()
+        # Normalize: ensure we always have a 'modules' key with booleans
+        modules = config.get("modules", config) if config else {}
+        return {"modules": modules}
+    except Exception as e:
+        logger.error(f"Error getting modules status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/modules/toggle")
+async def toggle_module(request: Request) -> Dict[str, Any]:
+    """Toggle a specific module on/off.
+    Body: { "module": "scanner", "enabled": true }
+    """
+    try:
+        body = await request.json()
+        module_name = body.get("module")
+        enabled = body.get("enabled", False)
+
+        if not module_name:
+            raise HTTPException(status_code=400, detail="module name is required")
+
+        storage = _get_storage()
+        config = storage.get_modules_config() or {}
+        modules = config.get("modules", config)
+
+        modules[module_name] = enabled
+        storage.save_modules_config({"modules": modules})
+
+        status = "enabled" if enabled else "disabled"
+        logger.info(f"Module '{module_name}' {status}")
+        return {"success": True, "module": module_name, "enabled": enabled}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error toggling module: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============ User Preferences Endpoints ============
+
+@router.get("/user/preferences")
+async def get_user_preferences(user_id: str = "default") -> Dict[str, Any]:
+    """Returns the user preferences from the database."""
+    try:
+        storage = _get_storage()
+        prefs = storage.get_user_preferences(user_id)
+        if prefs is None:
+            return {"preferences": {}, "user_id": user_id}
+        return {"preferences": prefs, "user_id": user_id}
+    except Exception as e:
+        logger.error(f"Error getting user preferences: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/user/preferences")
+async def update_user_preferences(request: Request) -> Dict[str, Any]:
+    """Update user preferences.
+    Body: { "user_id": "default", "key": "value", ... }
+    """
+    try:
+        body = await request.json()
+        user_id = body.pop("user_id", "default")
+
+        if not body:
+            raise HTTPException(status_code=400, detail="No preferences provided")
+
+        storage = _get_storage()
+        success = storage.update_user_preferences(user_id, body)
+
+        if success:
+            return {"success": True, "user_id": user_id}
+        else:
+            raise HTTPException(status_code=400, detail="Failed to update preferences")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating user preferences: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============ Scanner Status Endpoint ============
+
+@router.get("/scanner/status")
+async def get_scanner_status() -> Dict[str, Any]:
+    """Returns the current scanner status.
+    Note: ScannerEngine runs in a separate thread. This endpoint returns
+    a static idle state when the engine reference is not available.
+    """
+    try:
+        # Try to get the scanner from orchestrator if running
+        try:
+            from core_brain.server import _get_orchestrator
+            orchestrator = _get_orchestrator()
+            if orchestrator and hasattr(orchestrator, 'scanner') and orchestrator.scanner:
+                return orchestrator.scanner.get_status()
+        except Exception:
+            pass
+
+        # Fallback: static idle status
+        return {
+            "assets": [],
+            "last_regime": {},
+            "last_scan_time": {},
+            "cpu_percent": 0.0,
+            "cpu_limit_pct": 80.0,
+            "running": False,
+        }
+    except Exception as e:
+        logger.error(f"Error getting scanner status: {e}")
         raise HTTPException(status_code=500, detail=str(e))
