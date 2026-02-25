@@ -29,7 +29,7 @@ class HealthManager:
     def check_config_integrity(self) -> Dict[str, Any]:
         """Checks if critical JSON config files are present and valid."""
         results = {"status": "GREEN", "details": []}
-        critical_files: List[str] = ["modules.json", "dynamic_params.json"]
+        critical_files: List[str] = ["modules.json"]
         
         for cf in critical_files:
             file_path: Path = CONFIG_DIR / cf

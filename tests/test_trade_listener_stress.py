@@ -35,19 +35,7 @@ def temp_config_dir():
     """Create temporary config directory with necessary files."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir_path = Path(tmpdir)
-        
-        # Create minimal config/dynamic_params.json
-        config_data = {
-            "adx_threshold": 25,
-            "atr_multiplier": 0.3,
-            "sma20_proximity_pct": 1.5,
-            "min_score": 60
-        }
-        config_file = tmpdir_path / "dynamic_params.json"
-        with open(config_file, "w") as f:
-            json.dump(config_data, f)
-        
-        # Create risk_settings.json
+        # risk_settings.json is still file-based (not yet migrated)
         risk_settings_data = {
             "max_consecutive_losses": 3,
             "min_trades_for_tuning": 5,
@@ -84,24 +72,37 @@ def storage(temp_db):
 @pytest.fixture
 def trade_listener(storage, temp_config_dir):
     """Create TradeClosureListener with all dependencies."""
+    # Seed dynamic params in DB (SSOT)
+    storage.update_dynamic_params({
+        "adx_threshold": 25,
+        "atr_multiplier": 0.3,
+        "sma20_proximity_pct": 1.5,
+        "min_score": 60,
+        "tuning_enabled": True,
+        "min_trades_for_tuning": 5,
+        "risk_per_trade": 0.01,
+        "max_consecutive_losses": 3
+    })
+    # Seed risk settings in DB
+    storage.update_risk_settings({
+        "max_consecutive_losses": 3,
+        "min_trades_for_tuning": 5,
+        "target_win_rate": 0.55
+    })
+
     risk_manager = RiskManager(
         storage=storage,
-        initial_capital=10000.0,
-        config_path=str(temp_config_dir / "dynamic_params.json"),
-        risk_settings_path=str(temp_config_dir / "risk_settings.json")
+        initial_capital=10000.0
     )
     
-    edge_tuner = EdgeTuner(
-        storage=storage,
-        config_path=str(temp_config_dir / "dynamic_params.json")
-    )
+    edge_tuner = EdgeTuner(storage=storage)
     
     listener = TradeClosureListener(
         storage=storage,
         risk_manager=risk_manager,
         edge_tuner=edge_tuner,
         max_retries=3,
-        retry_backoff=0.1  # Faster for testing
+        retry_backoff=0.1
     )
     
     return listener

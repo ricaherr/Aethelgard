@@ -6,10 +6,8 @@ Implements the "Delta Feedback" logic:
 Delta = Actual Result - Predicted Score (Confidence)
 """
 
-import json
 import logging
 from typing import Dict, List, Optional, Any
-from pathlib import Path
 import numpy as np
 from datetime import datetime, timezone
 
@@ -34,14 +32,12 @@ class EdgeTuner:
     GOVERNANCE_MAX_WEIGHT = 0.50   # 50% ceiling
     GOVERNANCE_MAX_SMOOTHING = 0.02  # Max 2% delta per learning event
 
-    def __init__(self, storage: StorageManager, config_path: Optional[str] = None):
+    def __init__(self, storage: StorageManager):
         """
         Args:
-            storage: StorageManager for accessing trade results and configs
-            config_path: Optional path for legacy JSON config persistence
+            storage: StorageManager for accessing trade results and configs (SSOT)
         """
         self.storage = storage
-        self.config_path = Path(config_path) if config_path else None
     
     # --- Weight Adjustment (Feedback Loop Logic) ---
 
@@ -189,29 +185,14 @@ class EdgeTuner:
     # --- Legacy Parameter Adjustment Logic (Refactored from tuner.py) ---
 
     def _load_config(self) -> Dict:
-        """Carga configuración desde Storage (SSOT)"""
-        if self.config_path and self.config_path.exists():
-            try:
-                with open(self.config_path, "r", encoding="utf-8") as f:
-                    loaded = json.load(f)
-                if isinstance(loaded, dict):
-                    return loaded
-            except Exception as e:
-                logger.warning("Failed to load tuner config from %s: %s", self.config_path, e)
-
+        """Load config from StorageManager (SSOT — Rule 14)."""
         config = self.storage.get_dynamic_params()
         return config if isinstance(config, dict) and config else {}
-    
+
     def _save_config(self, config: Dict) -> None:
-        """Guarda configuración actualizada en Storage"""
+        """Save updated config to StorageManager (SSOT — Rule 14)."""
         self.storage.update_dynamic_params(config)
-        if self.config_path:
-            try:
-                with open(self.config_path, "w", encoding="utf-8") as f:
-                    json.dump(config, f, indent=2)
-            except Exception as e:
-                logger.warning("Failed to persist tuner config to %s: %s", self.config_path, e)
-        logger.info("[OK] Configuración dinámica actualizada en DB")
+        logger.info("[OK] Dynamic config updated in DB (SSOT)")
     
     def _calculate_stats(self, trades: List[Dict]) -> Dict:
         """

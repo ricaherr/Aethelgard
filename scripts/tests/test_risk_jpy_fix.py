@@ -25,10 +25,11 @@ class TestRiskJPYFix(unittest.TestCase):
         }
         
         # Initialize RiskManager with $8386 balance
+        self.storage.get_dynamic_params.return_value = {"risk_per_trade": 0.01, "max_consecutive_losses": 3}
+        self.storage.get_risk_settings.return_value = {"max_consecutive_losses": 3}
         self.risk_manager = RiskManager(
             storage=self.storage,
-            initial_capital=8386.09,
-            config_path='config/dynamic_params.json'
+            initial_capital=8386.09
         )
         self.risk_manager.risk_per_trade = 0.01 # 1%
 

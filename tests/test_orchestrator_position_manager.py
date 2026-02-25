@@ -5,7 +5,7 @@ FASE 2: Integración - Verificar que PositionManager funciona en producción
 
 Tests TDD (Red-Green-Refactor):
 1. PositionManager se instancia en MainOrchestrator.__init__
-2. Config cargada desde dynamic_params.json
+2. Config loaded from DB via storage.get_dynamic_params() (SSOT)
 3. monitor_positions() se llama en run_single_cycle()
 4. Monitor ejecutado cada 10 segundos aprox (según current_cycle_count)
 5. Metadata se guarda al abrir posición (via Executor)
@@ -68,17 +68,17 @@ def mock_storage():
     storage.get_system_state = Mock(return_value={})
     storage.update_module_heartbeat = Mock()
     storage.update_system_state = Mock()
-    storage.get_open_positions = Mock(return_value=[])
+    storage.get_dynamic_params = Mock(return_value=POSITION_MGMT_CONFIG)
     return storage
 
 
 @pytest.fixture
 def temp_config(tmp_path):
-    """Create temporary config files"""
+    """Create temporary config files (only config.json remains as file)."""
     config_dir = tmp_path / "config"
     config_dir.mkdir()
     
-    # config.json básico
+    # config.json is still file-based for orchestrator loop intervals
     config_file = config_dir / "config.json"
     config_data = {
         "orchestrator": {
@@ -90,34 +90,32 @@ def temp_config(tmp_path):
     }
     config_file.write_text(json.dumps(config_data))
     
-    # dynamic_params.json con position_management
-    dynamic_file = config_dir / "dynamic_params.json"
-    dynamic_data = {
-        "position_management": {
-            "enabled": True,
-            "max_drawdown_multiplier": 2.0,
-            "modification_cooldown_seconds": 300,
-            "max_modifications_per_day": 10,
-            "time_based_exit_enabled": True,
-            "stale_position_thresholds": {
-                "TREND": 72,
-                "RANGE": 4,
-                "VOLATILE": 2,
-                "CRASH": 1,
-                "NEUTRAL": 24
-            },
-            "sl_tp_adjustments": {
-                "TREND": {"sl_atr_multiplier": 3.0, "tp_rr_ratio": 3.0},
-                "RANGE": {"sl_atr_multiplier": 1.5, "tp_rr_ratio": 1.5},
-                "VOLATILE": {"sl_atr_multiplier": 2.0, "tp_rr_ratio": 2.0},
-                "CRASH": {"sl_atr_multiplier": 1.0, "tp_rr_ratio": 1.0},
-                "NEUTRAL": {"sl_atr_multiplier": 2.0, "tp_rr_ratio": 2.0}
-            }
+    return config_dir
+
+
+POSITION_MGMT_CONFIG = {
+    "position_management": {
+        "enabled": True,
+        "max_drawdown_multiplier": 2.0,
+        "modification_cooldown_seconds": 300,
+        "max_modifications_per_day": 10,
+        "time_based_exit_enabled": True,
+        "stale_position_thresholds": {
+            "TREND": 72,
+            "RANGE": 4,
+            "VOLATILE": 2,
+            "CRASH": 1,
+            "NEUTRAL": 24
+        },
+        "sl_tp_adjustments": {
+            "TREND": {"sl_atr_multiplier": 3.0, "tp_rr_ratio": 3.0},
+            "RANGE": {"sl_atr_multiplier": 1.5, "tp_rr_ratio": 1.5},
+            "VOLATILE": {"sl_atr_multiplier": 2.0, "tp_rr_ratio": 2.0},
+            "CRASH": {"sl_atr_multiplier": 1.0, "tp_rr_ratio": 1.0},
+            "NEUTRAL": {"sl_atr_multiplier": 2.0, "tp_rr_ratio": 2.0}
         }
     }
-    dynamic_file.write_text(json.dumps(dynamic_data))
-    
-    return config_dir
+}
 
 
 # Tests FASE 2.1
@@ -158,7 +156,7 @@ def test_position_manager_instantiated_in_init(
     # NOTE: connector will be injected from executor when we implement it
 
 
-def test_position_manager_config_loaded_from_dynamic_params(
+def test_position_manager_config_loaded_from_db(
     mock_scanner,
     mock_signal_factory,
     mock_risk_manager,
@@ -167,14 +165,11 @@ def test_position_manager_config_loaded_from_dynamic_params(
     temp_config
 ):
     """
-    Test: Config de PositionManager cargada desde dynamic_params.json
+    Test: Config de PositionManager loaded from storage.get_dynamic_params() (SSOT)
     
-    Expected: orchestrator.position_manager.config contiene valores de dynamic_params.json
+    Expected: orchestrator.position_manager.config contains values from DB
     """
-    # Load dynamic_params.json to verify
-    dynamic_file = temp_config / "dynamic_params.json"
-    with open(dynamic_file) as f:
-        expected_config = json.load(f)['position_management']
+    expected_config = POSITION_MGMT_CONFIG['position_management']
     
     # Create orchestrator
     with patch('core_brain.main_orchestrator.Path') as mock_path:

@@ -27,7 +27,7 @@ class TestInstrumentManager:
     """Test InstrumentManager core functionality."""
     
     def test_load_config(self):
-        """Test configuration loading from instruments.json."""
+        """Test configuration loading from storage (DB SSOT)."""
         manager = InstrumentManager()
         
         assert manager.config is not None
@@ -288,7 +288,7 @@ class TestEdgeCases:
     """Test edge cases and error handling."""
     
     def test_missing_config_file(self, tmp_path):
-        """Test behavior when instruments.json is missing."""
+        """Test behavior when instrument config is missing."""
         # Create manager with non-existent path
         manager = InstrumentManager(config_path=str(tmp_path / "missing.json"))
         

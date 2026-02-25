@@ -97,7 +97,7 @@ El archivo `config/config.json` permite configurar qué timeframes escaneará el
 
 ### Cálculo de Carga
 
-Para cada símbolo habilitado en `instruments.json`:
+Para cada símbolo habilitado en la configuración de instrumentos (DB):
 
 ```
 Total Combinaciones = N_símbolos × N_timeframes_activos
@@ -183,14 +183,14 @@ print(f"Timeframes activos: {scanner.active_timeframes}")
 ### Sistema muy lento
 - Reducir número de timeframes activos
 - Cambiar a modo ECO
-- Reducir número de símbolos en `instruments.json`
+- Reducir número de símbolos habilitados en la DB
 
 ### Pocas señales
 - Habilitar más timeframes
-- Verificar que símbolos estén habilitados en `instruments.json`
+- Verificar que símbolos estén habilitados en la DB (instruments_config)
 - Revisar logs del scanner
 
 ### Demasiadas señales
 - Desactivar timeframes muy cortos (M1)
-- Aumentar `min_score` en `instruments.json`
+- Aumentar `min_score` en la configuración de instrumentos (DB)
 - Usar filtros por régimen de mercado

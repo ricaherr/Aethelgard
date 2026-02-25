@@ -15,7 +15,6 @@
     "max_sleep_multiplier": 5.0,
     "mt5_timeframe": "M5",
     "mt5_bars_count": 500,
-    "config_path": "config/dynamic_params.json",
     "timeframes": [
       {
         "timeframe": "M1",

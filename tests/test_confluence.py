@@ -235,7 +235,7 @@ class TestConfluenceEdgeLearning:
     
     def test_analyzer_loads_weights_from_dynamic_params(self):
         """
-        Weights should be loaded from dynamic_params.json
+        Weights should be loaded from DB (dynamic_params via StorageManager)
         EdgeTuner will optimize these based on win_rate
         """
         storage = StorageManager()

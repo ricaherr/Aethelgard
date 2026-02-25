@@ -40,7 +40,7 @@ def mock_storage():
 
 def mock_dynamic_params():
 
-    """Fixture para simular la lectura del archivo dynamic_params.json."""
+    """Fixture to simulate dynamic params data (now stored in DB — SSOT Rule 14)."""
 
     params = {
 
@@ -198,7 +198,7 @@ def test_can_take_new_trade_rejects_if_exceeds_max_account_risk(instrument_manag
     # ...existing code...
     # ...existing code...
     
-    # Mock dynamic_params.json con risk_per_trade
+    # Mock dynamic_params (DB SSOT) con risk_per_trade
     mock_params = json.dumps({
         "risk_per_trade": 0.01,  # 1% per trade
         "max_consecutive_losses": 3

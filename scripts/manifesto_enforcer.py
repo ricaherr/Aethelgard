@@ -24,7 +24,6 @@ class ManifestoEnforcer:
         self.root_dir = root_dir
         self.forbidden_initializations = {'StorageManager', 'InstrumentManager'}
         self.forbidden_json_reads = {
-            'dynamic_params.json', 
             'risk_settings.json', 
             'config.json',
             'modules.json'

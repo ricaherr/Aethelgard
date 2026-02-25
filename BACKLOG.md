@@ -20,4 +20,4 @@
 **Descripción**: Tareas necesarias para que las Épicas 01 y 02 no degraden el sistema.
 
 * **HU 3.1: Segmentación del API Gateway**: Dividir `server.py` (99KB) para permitir que la lógica SaaS sea escalable.
-* **HU 3.2: Unificación de Verdad (SSOT)**: Migrar `dynamic_params.json` a la DB para que los perfiles SaaS puedan ser editados en tiempo real.
+* **HU 3.2: Unificación de Verdad (SSOT)**: ~~Migrar `dynamic_params.json` a la DB~~ ✅ COMPLETADO (Phase 4). Perfiles SaaS ahora editables en tiempo real vía DB.

@@ -534,12 +534,12 @@ class StorageManager(
             migrated: List[str] = []
 
             # (Path, Section_Existence_Check, Update_Func, Label)
+            # NOTE: dynamic_params.json and instruments.json removed (Phase 4 SSOT migration).
+            # Their data lives exclusively in SQLite now.
             migration_map = [
-                ("config/dynamic_params.json", lambda: not self.get_dynamic_params(), self.update_dynamic_params, "dynamic_params"),
                 ("config/config.json", lambda: "global_config" not in self.get_system_state(), lambda cfg: self.update_system_state({"global_config": cfg}), "global_config"),
                 ("config/risk_settings.json", lambda: not self.get_risk_settings(), self.update_risk_settings, "risk_settings"),
                 ("config/modules.json", lambda: not self.get_modules_config(), self.save_modules_config, "modules_config"),
-                ("config/instruments.json", lambda: "instruments_config" not in self.get_system_state(), lambda cfg: self.update_system_state({"instruments_config": cfg}), "instruments_config"),
             ]
 
             for path_str, check_empty, update_func, label in migration_map:
