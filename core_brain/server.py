@@ -28,6 +28,8 @@ from core_brain.connectivity_orchestrator import ConnectivityOrchestrator
 from data_vault.storage import StorageManager
 from core_brain.notificator import get_notifier
 from core_brain.module_manager import get_module_manager, MembershipLevel
+from core_brain.services.socket_service import get_socket_service, SocketService
+from core_brain.services.system_service import get_system_service, SystemService
 from fastapi.staticfiles import StaticFiles
 import os
 import time
@@ -36,68 +38,28 @@ import time
 # logging.basicConfig(level=logging.INFO)  # DISABLED: Let start.py configure logging
 logger = logging.getLogger(__name__)
 
-
-class ConnectionManager:
-    """Gestiona las conexiones WebSocket activas"""
-    
-    def __init__(self):
-        self.active_connections: Dict[str, WebSocket] = {}
-        self.connector_types: Dict[str, ConnectorType] = {}
-    
-    async def connect(self, websocket: WebSocket, client_id: str, connector: ConnectorType) -> None:
-        """Acepta una nueva conexión WebSocket"""
-        await websocket.accept()
-        self.active_connections[client_id] = websocket
-        self.connector_types[client_id] = connector
-        logger.info(f"Conexión establecida: {client_id} ({connector.value})")
-    
-    def disconnect(self, client_id: str) -> None:
-        """Elimina una conexión"""
-        if client_id in self.active_connections:
-            connector = self.connector_types.get(client_id, "Unknown")
-            del self.active_connections[client_id]
-            del self.connector_types[client_id]
-            logger.info(f"Conexión cerrada: {client_id} ({connector})")
-    
-    async def send_personal_message(self, message: dict, client_id: str) -> None:
-        """Envía un mensaje a un cliente específico"""
-        if client_id in self.active_connections:
-            try:
-                await self.active_connections[client_id].send_json(message)
-            except Exception as e:
-                logger.error(f"Error enviando mensaje a {client_id}: {e}")
-                self.disconnect(client_id)
-    
-    async def broadcast(self, message: dict, exclude: Set[str] = None) -> None:
-        """Envía un mensaje a todos los clientes conectados"""
-        if exclude is None:
-            exclude = set()
-        
-        disconnected = []
-        for client_id, websocket in self.active_connections.items():
-            if client_id not in exclude:
-                try:
-                    await websocket.send_json(message)
-                except Exception as e:
-                    logger.error(f"Error en broadcast a {client_id}: {e}")
-                    disconnected.append(client_id)
-        
-        for client_id in disconnected:
-            self.disconnect(client_id)
-
-    async def emit_event(self, event_type: str, payload: dict) -> None:
-        """Envía un evento formateado a todos los clientes (especialmente UIs)"""
-        await self.broadcast({
-            "type": event_type,
-            "payload": payload,
-            "timestamp": datetime.now().isoformat()
-        })
-
-
-# Instancias globales
-manager = ConnectionManager()
+# ============ Service Instances (Lazy-loaded) ============
+_socket_service_instance = None
+_system_service_instance = None
 _storage_instance = None  # Lazy-loaded storage
 regime_classifier = None  # Lazy-loaded regime classifier
+
+def _get_socket_service() -> SocketService:
+    """Lazy-load SocketService singleton."""
+    global _socket_service_instance
+    if _socket_service_instance is None:
+        _socket_service_instance = get_socket_service()
+    return _socket_service_instance
+
+def _get_system_service() -> SystemService:
+    """Lazy-load SystemService singleton."""
+    global _system_service_instance
+    if _system_service_instance is None:
+        _system_service_instance = get_system_service(
+            storage=_get_storage(),
+            regime_classifier=_get_regime_classifier()
+        )
+    return _system_service_instance
 
 def _get_storage() -> 'StorageManager':
     """Lazy-load StorageManager to avoid import-time initialization."""
@@ -291,12 +253,13 @@ async def broadcast_thought(message: str, module: str = "CORE", level: str = "in
     if metadata:
         payload["metadata"] = metadata
         
-    await manager.emit_event("BREIN_THOUGHT", payload)
+    await _get_socket_service().emit_event("BREIN_THOUGHT", payload)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Startup: Iniciar bucle de heartbeat y pensamientos iniciales
-    asyncio.create_task(heartbeat_loop())
+    system_service = _get_system_service()
+    await system_service.start_heartbeat()
     await broadcast_thought("Cerebro Aethelgard inicializado. Sistema listo para operaciones.")
     
     # Migración/Semilla de configuración inicial:
@@ -304,7 +267,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     pass
         
     yield
-    # Shutdown (opcional)
+    # Shutdown: Detener heartbeat
+    await system_service.stop_heartbeat()
     logger.info("Servidor Aethelgard deteniéndose.")
 
     # Config loading handled by StorageManager on init
@@ -574,7 +538,7 @@ def create_app() -> FastAPI:
             await websocket.close(code=1008, reason=f"Conector inválido: {connector}")
             return
         
-        await manager.connect(websocket, client_id, connector_type)
+        await _get_socket_service().connect(websocket, client_id, connector_type)
         
         # Enviar pensamiento de bienvenida para activar la consola en la UI
         await broadcast_thought(f"Enlace establecido con {client_id}. Sincronizando flujos cerebrales...", module="CORE")
@@ -592,7 +556,7 @@ def create_app() -> FastAPI:
                         await process_signal(message, client_id, connector_type)
                     elif message.get("type") == "ping":
                         # Heartbeat
-                        await manager.send_personal_message(
+                        await _get_socket_service().send_personal_message(
                             {"type": "pong", "timestamp": datetime.now().isoformat()},
                             client_id
                         )
@@ -601,28 +565,28 @@ def create_app() -> FastAPI:
                 
                 except json.JSONDecodeError:
                     logger.error(f"JSON inválido de {client_id}: {data}")
-                    await manager.send_personal_message(
+                    await _get_socket_service().send_personal_message(
                         {"type": "error", "message": "JSON inválido"},
                         client_id
                     )
                 except ValidationError as e:
                     logger.error(f"Error de validación de {client_id}: {e}")
-                    await manager.send_personal_message(
+                    await _get_socket_service().send_personal_message(
                         {"type": "error", "message": f"Error de validación: {str(e)}"},
                         client_id
                     )
                 except Exception as e:
                     logger.error(f"Error procesando mensaje de {client_id}: {e}")
-                    await manager.send_personal_message(
+                    await _get_socket_service().send_personal_message(
                         {"type": "error", "message": f"Error interno: {str(e)}"},
                         client_id
                     )
         
         except WebSocketDisconnect:
-            manager.disconnect(client_id)
+            _get_socket_service().disconnect(client_id)
         except Exception as e:
             logger.error(f"Error en WebSocket {client_id}: {e}")
-            manager.disconnect(client_id)
+            _get_socket_service().disconnect(client_id)
     
     @app.post("/api/signal")
     async def receive_signal_http(signal_data: dict) -> JSONResponse:
@@ -2012,67 +1976,6 @@ def create_app() -> FastAPI:
 
     return app
 
-async def heartbeat_loop() -> None:
-    """Bucle infinito para enviar el pulso del sistema a la UI"""
-    while True:
-        # --- HEARTBEAT (satellites, cpu, sync) ---
-        try:
-            from core_brain.connectivity_orchestrator import ConnectivityOrchestrator
-            orchestrator = ConnectivityOrchestrator()
-            if not orchestrator.storage:
-                orchestrator.set_storage(storage())
-
-            sync_fidelity = {
-                "score": 1.0,
-                "status": "OPTIMAL",
-                "details": "Data & Execution synchronized via MT5 (Omnichain SSOT)"
-            }
-            
-            cpu_load = 0.0
-            try:
-                from core_brain.scanner import CPUMonitor
-                monitor = CPUMonitor()
-                cpu_load = monitor.get_cpu_percent()
-            except Exception:
-                pass
-            
-            metrics = {
-                "core": "ACTIVE",
-                "storage": "STABLE",
-                "notificator": "CONFIGURED",
-                "cpu_load": cpu_load,
-                "satellites": orchestrator.get_status_report(),
-                "sync_fidelity": sync_fidelity,
-                "timestamp": datetime.now().isoformat()
-            }
-            
-            await manager.emit_event("SYSTEM_HEARTBEAT", metrics)
-            
-        except Exception as e:
-            logger.error(f"Error en heartbeat (system metrics): {e}")
-
-        # --- REGIME UPDATE (independent — must not kill heartbeat) ---
-        try:
-            regime = regime_classifier.classify()
-            metrics_edge = regime_classifier.get_metrics()
-            
-            await manager.emit_event("REGIME_UPDATE", {
-                "regime": regime.value,
-                "metrics": {
-                    "adx_strength": metrics_edge.get('adx', 0),
-                    "volatility": "High" if metrics_edge.get('volatility_shock_detected') else "Normal",
-                    "global_bias": metrics_edge.get('bias', 'Neutral'),
-                    "confidence": 85,
-                    "active_agents": 4,
-                    "optimization_rate": 99.1
-                }
-            })
-            
-        except Exception as e:
-            logger.error(f"Error en heartbeat (regime update): {e}")
-            
-        await asyncio.sleep(5)
-
 
 async def process_signal(message: dict, client_id: str, connector_type: ConnectorType) -> None:
     """
@@ -2176,7 +2079,7 @@ async def process_signal(message: dict, client_id: str, connector_type: Connecto
             "timestamp": datetime.now().isoformat()
         }
         
-        await manager.send_personal_message(response, client_id)
+        await _get_socket_service().send_personal_message(response, client_id)
         
         # Verificar si es una señal de Oliver Vélez y enviar notificación
         module_manager = get_module_manager()
