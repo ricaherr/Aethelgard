@@ -4,9 +4,9 @@
 **ID**: EP-SaaS | **Alineación**: ROADMAP Item 1
 **Descripción**: Evolucionar el sistema de un solo usuario a una arquitectura multi-tenant.
 
-* **HU 1.1: Aislamiento de Persistencia**: Implementar lógica de conexión dinámica para que cada tenant tenga su propia base de datos SQLite (o esquema aislado). 
-    * *Nota del CTO*: Requiere eliminar primero los JSONs de configuración para que el aislamiento sea efectivo.
-* **HU 1.2: Gateway de Autenticación**: Refactorizar `server.py` para incluir middleware de validación de JWT por perfil de usuario.
+* **HU 1.1: Aislamiento de Persistencia** `[READY]`: Implementar lógica de conexión dinámica para que cada tenant tenga su propia base de datos SQLite (o esquema aislado). 
+    * *Nota del CTO*: ~~Requiere eliminar primero los JSONs de configuración para que el aislamiento sea efectivo.~~ ✅ Prerequisito cumplido (SSOT 100% SQLite).
+* **HU 1.2: Gateway de Autenticación** `[READY]`: Refactorizar `server.py` para incluir middleware de validación de JWT por perfil de usuario.
 
 ## ⚡ ÉPICA 02: Conectividad FIX Institutional
 **ID**: EP-FIX | **Alineación**: ROADMAP Item 2
@@ -19,5 +19,5 @@
 **ID**: EP-TECH | **Prioridad**: ALTA
 **Descripción**: Tareas necesarias para que las Épicas 01 y 02 no degraden el sistema.
 
-* **HU 3.1: Segmentación del API Gateway**: Dividir `server.py` (99KB) para permitir que la lógica SaaS sea escalable.
-* **HU 3.2: Unificación de Verdad (SSOT)**: ~~Migrar `dynamic_params.json` a la DB~~ ✅ COMPLETADO (Phase 4). Perfiles SaaS ahora editables en tiempo real vía DB.
+* **HU 3.1: Segmentación del API Gateway** `[DONE]`: ~~Dividir `server.py` (99KB) para permitir que la lógica SaaS sea escalable.~~ ✅ COMPLETADO — server.py reducido a 272 líneas. Routers extraídos a `core_brain/api/routers/`.
+* **HU 3.2: Unificación de Verdad (SSOT)** `[DONE]`: ~~Migrar `dynamic_params.json` a la DB~~ ✅ COMPLETADO (Phase 4). Persistencia 100% SQLite. Archivos .json eliminados del sistema.

@@ -18,9 +18,36 @@ render_diffs(file:///c:/Users/Jose Herrera/Documents/Proyectos/Aethelgard/AETHEL
 ## 📅 Hitos Completados (Historic Roadmap)
 
 > [!NOTE]
-> Registro detallado de milestones finalizados migrados desde el Roadmap.
+> Registro conciso de milestones finalizados migrados desde el Roadmap.
 
-render_diffs(file:///c:/Users/Jose Herrera/Documents/Proyectos/Aethelgard/ROADMAP.md)
+| Milestone | Trace_ID | Fecha | Resultado |
+|---|---|---|---|
+| **MICRO-ETI 3.1**: Trading Service Extraction | `ARCH-PURIFY-2026-001-A` | 2026-02-25 | server.py 1107→272 líneas (-75.4%). Lógica encapsulada en `TradingService.py` + `MarketOps.py`. |
+| **CONSOLIDACIÓN ESTRUCTURAL** (ETI v1) | `RECTIFICACIÓN_ARQUITECTÓNICA_V1` | 2026-02-25 | Higiene sistémica, desacoplamiento de utilidades a `utils/market_ops.py`, routers separados. Fase 3 pendiente. |
+| **MICRO-ETI 2.3**: Extracción Control & Notificaciones | `ARCH-DISSECT-2026-003-C` | 2026-02-25 | server.py 1564→1111 (-28.9%). Routers `system.py` + `notifications.py` extraídos. |
+| **MICRO-ETI 2.2**: Migración Mercado & Régimen | `ARCH-DISSECT-2026-003-B` | 2026-02-25 | server.py 1901→1493 (-21.5%). Router `market.py` con 8 endpoints migrados. |
+| **MICRO-ETI 2.1**: Migración Routers Operaciones | — | 2026-02-25 | Estructura `core_brain/api/routers/` creada. 10 endpoints de Trading + Riesgo migrados. |
+
+---
+
+### 📅 Registro: 2026-02-25
+#### ⚡ ARCH-PURIFY-2026-001-A: Trading Service Extraction & SSOT Consolidation
+**Trace_ID**: `ARCH-PURIFY-2026-001-A`  
+**Timestamp**: 2026-02-25 00:35  
+**Estado Final**: ✅ COMPLETADO
+
+**Descripción**:  
+Reducción de `server.py` de 1107 a 272 líneas (-75.4%). Extracción de lógica a `TradingService.py` y `MarketOps.py`. Eliminación definitiva de archivos de configuración `.json`. Persistencia 100% SQLite.
+
+**Cambios Clave**:
+- `core_brain/services/trading_service.py`: 407 líneas de lógica de trading encapsulada.
+- `utils/market_ops.py`: Utilities agnósticas centralizadas (`classify_asset_type`, `calculate_r_multiple`).
+- Eliminación de ~15 endpoints duplicados en server.py.
+- Eliminación de `dynamic_params.json` e `instruments.json` — SSOT 100% en base de datos.
+
+**Validación**:
+- ✅ `validate_all.py`: 11/11 stages PASSED (5.99s).
+- ✅ Server boot verificado: MT5 conectado, scanner operativo, shutdown limpio.
 
 ---
 
