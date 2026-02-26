@@ -16,6 +16,14 @@ Establecer los estándares innegociables para el desarrollo del ecosistema Aethe
 *   **Micro-interacciones**: Los cambios de estado deben "pulsar" o "deslizarse". La UI debe sentirse como un organismo vivo y reactivo.
 *   **Estado Centralizado**: El frontend es una capa de visualización. La lógica de trading y gestión reside exclusivamente en el Backend.
 
+## 🏷️ Protocolo de Versionado (SemVer)
+Aethelgard sigue el estándar **Semantic Versioning 2.0.0**:
+*   **MAJOR**: Cambios arquitectónicos que rompen compatibilidad.
+*   **MINOR**: Nuevas funcionalidades (estrategias, conectores) sin rotura.
+*   **PATCH**: Bugfixes, optimizaciones y documentación.
+
+Toda versión debe validarse con `validate_all.py` antes de su desplieue y registrarse en el `SYSTEM_LEDGER.md`.
+
 ## ⚖️ Governance (Proceso de Validación)
 Cada nueva funcionalidad o Historia de Usuario (HU) debe cumplir con:
 1.  **Representación en UI**: Ninguna lógica de backend está "terminada" hasta que tenga su widget o visualización correspondiente en la Terminal.
