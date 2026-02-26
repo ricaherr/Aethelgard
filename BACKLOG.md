@@ -15,8 +15,18 @@
 ---
 
 ## 01_IDENTITY_SECURITY (SaaS, Auth, Isolation)
-* **HU 1.1: Aislamiento de Persistencia** `[TODO]`: Implementar `TenantDBFactory` para que cada tenant tenga su propia base de datos SQLite. (Relacionado con Dominio 08)
-* **HU 1.2: Gateway de Autenticación** `[TODO]`: Implementar middleware de validación JWT por perfil de usuario.
+* **HU 1.1: Auth Gateway & JWT Protection** `[TODO]`
+    * **Qué**: Implementar el middleware de seguridad para todas las rutas del API.
+    * **Para qué**: Garantizar que solo usuarios autenticados accedan al cerebro de Aethelgard.
+    * **🖥️ UI Representation**: Pantalla de Login (Premium Dark) con feedback de error en tiempo real. Redirección automática al dashboard tras handshake exitoso.
+* **HU 1.2: Tenant Isolation Protocol (Multi-tenancy)** `[TODO]`
+    * **Qué**: Configurar el TenantDBFactory para aislar los datos por cliente.
+    * **Para qué**: Evitar fugas de datos entre usuarios (Principio de Aislamiento).
+    * **🖥️ UI Representation**: Badge persistente en el header que indique Tenant_ID activo y estado de la conexión a su base de datos privada.
+* **HU 1.3: User Role & Membership Level** `[TODO]`
+    * **Qué**: Definir jerarquías de acceso (Admin, Pro, Basic).
+    * **Para qué**: Comercialización SaaS basada en niveles de membresía.
+    * **🖥️ UI Representation**: Menú de perfil donde el usuario vea su rango actual y las funcionalidades bloqueadas/desbloqueadas según su plan.
 
 ## 02_CONTEXT_INTELLIGENCE (Regime, Multi-Scale)
 * **HU 2.1: Conciencia de Correlación Inter-Mercado**: Scanner especializado que detecta divergencias en tiempo real entre activos altamente correlacionados (ej. EURUSD vs DXY). (Anteriormente 4.3)

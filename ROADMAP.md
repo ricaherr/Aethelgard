@@ -19,9 +19,9 @@
 **Objetivo**: Evolucionar el sistema de un solo usuario a una arquitectura multi-tenant con autenticación JWT y aislamiento de datos por tenant.
 
 - [x] **Manifesto Transformation**: Restructuración del `AETHELGARD_MANIFESTO.md` hacia una Constitución Estratégica.
-- [ ] **JWT Middleware**: Implementación de middleware de autenticación JWT para FastAPI (Dominio 01).
-- [ ] **User Management**: Creación de tabla `users` y `UserRepo` para gestión de identidad (Dominio 01).
-- [ ] **Tenant Isolation**: Desarrollo de `TenantDBFactory` para aislamiento de bases de datos por cliente (Dominio 08).
+- [ ] **Auth Gateway & JWT Protection**: Implementación de middleware de seguridad y login premium (HU 1.1).
+- [ ] **Tenant Isolation Protocol**: Aislamiento total de datos por cliente vía TenantDBFactory (HU 1.2).
+- [ ] **SaaS Membership Hierarchy**: Definición de roles (Admin, Pro, Basic) y niveles de acceso (HU 1.3).
 - [ ] **Validación E2E**: Tests de integración para flujo auth completo + aislamiento de datos.
 
 **Dependencias**: Requiere SSOT 100% SQLite (✅ completado) y server.py modular (✅ completado).
