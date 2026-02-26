@@ -33,6 +33,7 @@
 **Objetivo**: Optimización de Alpha y detección de regímenes de mercado multi-escalares.
 
 - [ ] **Contextual Alpha Scoring**: Motor de puntuación dinámica ponderada y dashboard Alpha Radar (HU 3.1).
+- [ ] **Dynamic Alpha Thresholding**: Mecanismo de defensa proactiva y auto-ajuste de umbrales según equidad (HU 3.5).
 - [ ] **Multi-Scale Context**: Implementación de clasificadores de régimen y correlación inter-mercado (Dominio 02).
 
 ---

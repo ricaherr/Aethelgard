@@ -44,6 +44,14 @@
     * **Prioridad**: Baja (Vector V3)
     * **Descripción**: Scanner de confluencia inter-mercado para validación cruzada de señales de alta fidelidad.
     * **🖥️ UI Representation**: Widget de "Correlación Sistémica" con indicadores de fuerza y dirección multi-activo.
+* **HU 3.4: Signal Post-Mortem Analytics**
+    * **Prioridad**: Media (Vector V2)
+    * **Descripción**: Motor de auditoría post-trade que vincula resultados con datos de micro-estructura para alimentar el Meta-Aprendizaje.
+    * **🖥️ UI Representation**: Vista "Post-Mortem" con visualización de velas de tick y marcadores de anomalías detectadas.
+* **HU 3.5: Dynamic Alpha Thresholding**
+    * **Prioridad**: Alta (Vector V2)
+    * **Descripción**: Lógica de auto-ajuste de barreras de entrada basada en la equidad de la cuenta y el régimen de volatilidad.
+    * **🖥️ UI Representation**: Dial de "Exigencia Algorítmica" en el header, mostrando el umbral de entrada activo.
 
 ## 04_RISK_GOVERNANCE (Unidades R, Safety Governor, Veto)
 * **HU 4.4: Sovereignty Gateway Manager** `[TODO]`
