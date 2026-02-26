@@ -35,7 +35,18 @@
 * **HU 3.1: Detector de Absorción Institucional**: Algoritmo para identificar zonas de alta liquidez donde el precio es retenido/absorbido por órdenes iceberg o muros institucionales. (Anteriormente 4.1)
 
 ## 04_RISK_GOVERNANCE (Unidades R, Safety Governor, Veto)
-* *(Sin tareas asignadas actualmente)*
+* **HU 4.4: Sovereignty Gateway Manager** `[TODO]`
+    * **Prioridad**: Alta (Dependencia V1)
+    * **Descripción**: Desarrollo del motor de reglas para la matriz de permisos de autonomía granular (Mercados/Componentes).
+    * **🖥️ UI Representation**: Panel de control "Master Veto" con indicadores de estado (Autónomo/Manual) y Toggles de seguridad institucional.
+* **HU 4.5: Drawdown & Exposure Monitor (Multi-tenant)**
+    * **Prioridad**: Media
+    * **Descripción**: Sistema de monitoreo de riesgo agregado basado en Unidades R para entornos SaaS, garantizando que el riesgo de un cliente no desborde sus límites.
+    * **🖥️ UI Representation**: Dashboard de "Heatmap de Exposición" con alertas visuales de proximidad al Hard Drawdown.
+* **HU 4.6: Anomaly Sentinel (Antifragility Engine)**
+    * **Prioridad**: Baja (Fase 4)
+    * **Descripción**: Monitor de eventos de baja probabilidad (Cisnes Negros) para activar protocolos de defensa o captura de volatilidad extrema.
+    * **🖥️ UI Representation**: Consola de "Thought" con tag [ANOMALY_DETECTED] y sugerencias proactivas de intervención.
 
 ## 05_UNIVERSAL_EXECUTION (EMS, Conectores FIX)
 * **HU 5.1: Abstracción de FIX Engine**: Crear `connectors/fix_connector.py` basado en QuickFIX. (Anteriormente 2.1)

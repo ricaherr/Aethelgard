@@ -23,6 +23,7 @@
 - [ ] **Tenant Isolation Protocol**: Aislamiento total de datos por cliente vía TenantDBFactory (HU 1.2).
 - [ ] **SaaS Membership Hierarchy**: Definición de roles (Admin, Pro, Basic) y niveles de acceso (HU 1.3).
 - [ ] **Validación E2E**: Tests de integración para flujo auth completo + aislamiento de datos.
+- [ ] **Sovereignty Gateway**: Habilitación de control y matriz de permisos autónomos (HU 4.4). *Nota: Dependencia técnica clave para V1.*
 
 **Dependencias**: Requiere SSOT 100% SQLite (✅ completado) y server.py modular (✅ completado).
 
@@ -40,6 +41,8 @@
 **Objetivo**: Establecer la supremacía analítica mediante la detección de huella institucional y meta-aprendizaje de infraestructura.
 
 - [ ] **Safety Governance**: Implementación de Unidades R y Veto granular (Dominio 04).
+- [ ] **Exposure & Drawdown Monitor**: Supervisión de riesgo multi-tenant en tiempo real (HU 4.5).
+- [ ] **Anomaly Sentinel**: Detección de cisnes negros y antifragilidad (HU 4.6).
 - [ ] **Infrastructure Resiliency**: Integración de métricas de salud y auto-curación (Dominio 10).
 
 ---
