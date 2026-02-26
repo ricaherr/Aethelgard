@@ -32,7 +32,7 @@
 ### 🧠 V2 (Vector de Inteligencia) — PLANIFICADO (Dominios 02 y 03)
 **Objetivo**: Optimización de Alpha y detección de regímenes de mercado multi-escalares.
 
-- [ ] **Institutional Alpha**: Desarrollo del Signal Factory basado en absorción y liquidez (Dominio 03).
+- [ ] **Contextual Alpha Scoring**: Motor de puntuación dinámica ponderada y dashboard Alpha Radar (HU 3.1).
 - [ ] **Multi-Scale Context**: Implementación de clasificadores de régimen y correlación inter-mercado (Dominio 02).
 
 ---
@@ -43,6 +43,8 @@
 - [ ] **Safety Governance**: Implementación de Unidades R y Veto granular (Dominio 04).
 - [ ] **Exposure & Drawdown Monitor**: Supervisión de riesgo multi-tenant en tiempo real (HU 4.5).
 - [ ] **Anomaly Sentinel**: Detección de cisnes negros y antifragilidad (HU 4.6).
+- [ ] **Institutional Footprint**: Detección avanzada de huellas institucionales y zonas de liquidez (HU 3.2).
+- [ ] **Multi-Market Correlation**: Scanner de confluencia inter-mercado (HU 3.3).
 - [ ] **Infrastructure Resiliency**: Integración de métricas de salud y auto-curación (Dominio 10).
 
 ---

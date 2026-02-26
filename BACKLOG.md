@@ -32,7 +32,18 @@
 * **HU 2.1: Conciencia de Correlación Inter-Mercado**: Scanner especializado que detecta divergencias en tiempo real entre activos altamente correlacionados (ej. EURUSD vs DXY). (Anteriormente 4.3)
 
 ## 03_ALPHA_GENERATION (Signal Factory, Indicators)
-* **HU 3.1: Detector de Absorción Institucional**: Algoritmo para identificar zonas de alta liquidez donde el precio es retenido/absorbido por órdenes iceberg o muros institucionales. (Anteriormente 4.1)
+* **HU 3.1: Contextual Alpha Scoring System**
+    * **Prioridad**: Alta (Vector V2)
+    * **Descripción**: Desarrollo del motor de puntuación dinámica ponderada por el Regime Classifier y métricas del Shadow Portfolio.
+    * **🖥️ UI Representation**: Dashboard "Alpha Radar" con medidores de confianza (0-100%) y etiquetas de régimen activo.
+* **HU 3.2: Institutional Footprint Core**
+    * **Prioridad**: Media (Vector V3)
+    * **Descripción**: Lógica de detección de huella institucional basada en micro-estructura de precios y volumen.
+    * **🖥️ UI Representation**: Superposición visual de "Liquidity Zones" y clústeres de volumen en el visor de estrategias.
+* **HU 3.3: Multi-Market Alpha Correlator**
+    * **Prioridad**: Baja (Vector V3)
+    * **Descripción**: Scanner de confluencia inter-mercado para validación cruzada de señales de alta fidelidad.
+    * **🖥️ UI Representation**: Widget de "Correlación Sistémica" con indicadores de fuerza y dirección multi-activo.
 
 ## 04_RISK_GOVERNANCE (Unidades R, Safety Governor, Veto)
 * **HU 4.4: Sovereignty Gateway Manager** `[TODO]`
