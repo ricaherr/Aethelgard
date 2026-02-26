@@ -29,5 +29,15 @@
 ### 🌐 EXPANSIÓN COMERCIAL & CONECTIVIDAD
 - [ ] **Capa Institutional (FIX API)**: Conexión directa vía FIX para baja latencia en brokers institucionales.
 
+---
+
+### 👁️ FASE 4: SENSORY DOMINANCE (Depredación de Contexto)
+**Trace_ID**: SENSE-DOM-2026-004
+**Objetivo**: Establecer la supremacía analítica mediante la detección de huella institucional y meta-aprendizaje de infraestructura.
+
+- [ ] **Institutional Absorption**: Implementación del detector de zonas de liquidez y absorción.
+- [ ] **Infrastructure Meta-Learning**: Integración de latencia/slippage en el feedback loop de ejecución.
+- [ ] **Inter-Market Correlation**: Implementación del scanner de divergencias correlacionadas.
+
 > [!NOTE]
 > El historial completo de hitos completados ha sido migrado a [SYSTEM_LEDGER.md](docs/SYSTEM_LEDGER.md).

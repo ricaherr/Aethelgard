@@ -25,3 +25,11 @@
 
 * **HU 2.1: Abstracción de FIX Engine**: Crear `connectors/fix_connector.py` basado en QuickFIX.
 * **HU 2.2: Normalización de Mensajes FIX**: Mapear el protocolo FIX a las entidades de dominio de Aethelgard.
+
+## 👁️ ÉPICA 04: Advanced Sensory Engine
+**ID**: EP-SENSE | **Alineación**: ROADMAP FASE 4
+**Descripción**: Desarrollo de capacidades de detección micro-estructural y conciencia infraestructural.
+
+* **HU 4.1: Detector de Absorción Institucional**: Algoritmo para identificar zonas de alta liquidez donde el precio es retenido/absorbido por órdenes iceberg o muros institucionales.
+* **HU 4.2: Meta-Aprendizaje de Infraestructura**: Registro y análisis de latencia y slippage real como variables críticas de decisión en el motor de ejecución.
+* **HU 4.3: Conciencia de Correlación Inter-Mercado**: Scanner especializado que detecta divergencias en tiempo real entre activos altamente correlacionados (ej. EURUSD vs DXY).

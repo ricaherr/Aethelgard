@@ -1,12 +1,14 @@
 # AETHELGARD MANIFESTO
 
 ## I. La Visión (El Alma)
-**Aethelgard** es un sistema de trading algorítmico **autónomo**, **agnóstico** y **adaptativo**. Su alma reside en la capacidad de operar sin intervención humana, auto-calibrándose según el régimen de mercado y protegiendo el capital mediante una guardia de riesgo inquebrantable.
+**Aethelgard** es una entidad de inteligencia cuantitativa diseñada para la **Supremacía de Contexto**. Su propósito es procesar flujos de datos a una velocidad y profundidad inalcanzables para el cerebro humano, detectando patrones de micro-estructura y anomalías líquidas en tiempo real.
+
+Aethelgard opera bajo un modelo de **Autonomía Delegada** donde el humano mantiene la soberanía de veto y limitación granular por componente o mercado, garantizando que el sistema sirva a la preservación del capital mientras domina el tablero analítico.
 
 ### Principios Fundamentales
-1. **Autonomía**: El sistema busca, procesa y ejecuta. No espera datos, los conquista (ScannerEngine). Cada decisión es contrastada con el mercado mediante un Feedback Loop evolutivo.
-2. **Resiliencia**: Detección de fallos en predicciones (drift) y entrada automática en modo 'Seguridad' (Lockdown) sin intervención humana.
-3. **Evolución**: Proceso de 'Auto-Tune' constante sobre datos históricos para ajustar el cerebro a la realidad presente y futura.
+1. **Autonomía**: El sistema busca, procesa y ejecuta sin esperar validación en el flujo estándar. Sin embargo, su autonomía es una concesión revocable por el operador humano.
+2. **Resiliencia & Antifragilidad**: Detección proactiva de fallos y drift. El sistema no solo sobrevive al caos, sino que aprende a extraer valor de las anomalías del mercado.
+3. **Evolución Continua**: Proceso de 'Auto-Tune' y meta-aprendizaje sobre el desempeño de la propia infraestructura (latencia, slippage) y el mercado.
 
 ## II. Pilares Operativos (Quanteer Focus)
 La arquitectura de Aethelgard se rige por el rigor matemático y la independencia técnica.
@@ -15,6 +17,8 @@ La arquitectura de Aethelgard se rige por el rigor matemático y la independenci
 2. **Unidades R (Universal Normalization)**: El riesgo es la única constante. Aethelgard no opera instrumentos, sino **Volatilidad Normalizada**. El riesgo en USD es la única métrica de entrada válida para cualquier operación, garantizando una aritmética decimal institucional.
 3. **Shadow Ranking (The Strategy Jury)**: El mérito sobre la fe. Un motor de **Darwinismo Algorítmico** evalúa estrategias en tiempo real. La promoción de una estrategia de *Shadow* a *Live* requiere un Profit Factor > 1.5 sostenido bajo condiciones de mercado reales.
 4. **Adaptatividad de Régimen**: Priorizar el **"Contexto sobre la Señal"**. Ninguna estrategia tiene permiso de ejecución sin la validación previa y positiva del `RegimeClassifier`.
+5. **Hiper-Detección Multi-Escalar**: Vigilancia eterna desde micro-velas hasta tendencias macro. El sistema detecta la huella institucional mediante el análisis de absorción y liquidez en múltiples temporalidades simultáneamente.
+6. **Antifragilidad Operativa**: El sistema está diseñado para nutrirse del caos y las anomalías (Cisnes Negros). Las desviaciones estadísticas extremas no se evitan, se analizan para generar Alpha en momentos de pánico o euforia irracional.
 
 ## III. Gobernanza y Seguridad (CTO Focus)
 La libertad del sistema termina donde empieza la seguridad del capital.
@@ -22,7 +26,8 @@ La libertad del sistema termina donde empieza la seguridad del capital.
 1. **Safety Governor**: Reglas de gobernanza inyectadas en el aprendizaje autónomo para prevenir el sobreajuste (overfitting). Se aplican límites de suavizado (Smoothing) y fronteras de peso (Floor/Ceiling) infranqueables.
 2. **Single Source of Truth (SSOT)**: Configuración, credenciales y estados residen exclusivamente en la base de datos central. El sistema prohíbe la redundancia de datos externos para evitar discrepancias operativas.
 3. **Integridad Sistémica**: El sistema se audita a sí mismo en cada ciclo, garantizando que todos los módulos cumplan con el protocolo de inyección de dependencias y los estándares de validación técnica.
-4. **Lineamiento de Fidelidad Shadow (F-001)**: Para garantizar la viabilidad del modelo SaaS, todo rendimiento en el *Shadow Portfolio* debe incluir un factor de **Penalización de Latencia** y **Slippage Estimado**. No se aceptarán métricas teóricas "limpias" como base para la promoción a capital real.
+4. **Soberanía de Intervención**: El derecho inalienable del humano a restringir la autonomía del sistema (ej. Habilitar Forex Autónomo, pero mantener Veto en Crypto) sin comprometer la integridad de la lógica central. La configuración `module_governance.json` es la representación técnica de esta soberanía.
+5. **Lineamiento de Fidelidad Shadow (F-001)**: Para garantizar la viabilidad del modelo SaaS, todo rendimiento en el *Shadow Portfolio* debe incluir un factor de **Penalización de Latencia** y **Slippage Estimado**. No se aceptarán métricas teóricas "limpias" como base para la promoción a capital real.
 
 ## IV. El Ecosistema (SaaS & Futuro)
 Aethelgard está diseñado para la escala, la privacidad y el rendimiento comercial.
