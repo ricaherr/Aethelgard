@@ -24,6 +24,7 @@
 - [ ] **SaaS Membership Hierarchy**: Definición de roles (Admin, Pro, Basic) y niveles de acceso (HU 1.3).
 - [ ] **Validación E2E**: Tests de integración para flujo auth completo + aislamiento de datos.
 - [ ] **Sovereignty Gateway**: Habilitación de control y matriz de permisos autónomos (HU 4.4). *Nota: Dependencia técnica clave para V1.*
+- [ ] **Infrastructure Health Monitoring**: Telemetría básica de salud del servidor para estabilidad multi-tenant (HU 5.3 preliminar).
 
 **Dependencias**: Requiere SSOT 100% SQLite (✅ completado) y server.py modular (✅ completado).
 
@@ -46,6 +47,8 @@
 - [ ] **Anomaly Sentinel**: Detección de cisnes negros y antifragilidad (HU 4.6).
 - [ ] **Institutional Footprint**: Detección avanzada de huellas institucionales y zonas de liquidez (HU 3.2).
 - [ ] **Multi-Market Correlation**: Scanner de confluencia inter-mercado (HU 3.3).
+- [ ] **Ejecución Depredadora (FIX)**: Conectividad FIX de alta fidelidad y control adaptativo de slippage (HU 5.1 & HU 5.2).
+- [ ] **The Pulse (Advanced Feedback)**: Lazo de retroalimentación de infraestructura avanzado para veto técnico (HU 5.3 final).
 - [ ] **Infrastructure Resiliency**: Integración de métricas de salud y auto-curación (Dominio 10).
 
 ---

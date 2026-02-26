@@ -68,8 +68,18 @@
     * **🖥️ UI Representation**: Consola de "Thought" con tag [ANOMALY_DETECTED] y sugerencias proactivas de intervención.
 
 ## 05_UNIVERSAL_EXECUTION (EMS, Conectores FIX)
-* **HU 5.1: Abstracción de FIX Engine**: Crear `connectors/fix_connector.py` basado en QuickFIX. (Anteriormente 2.1)
-* **HU 5.2: Normalización de Mensajes FIX**: Mapear el protocolo FIX a las entidades de dominio de Aethelgard. (Anteriormente 2.2)
+* **HU 5.1: High-Fidelity FIX Connector Core**
+    * **Prioridad**: Media (Vector V3)
+    * **Descripción**: Desarrollo de la capa de transporte FIX basada en QuickFIX para conectividad directa con Prime Brokers.
+    * **🖥️ UI Representation**: Terminal de telemetría FIX con visualización de latencia ida y vuelta (RTT).
+* **HU 5.2: Adaptive Slippage Controller**
+    * **Prioridad**: Alta (Vector V3)
+    * **Descripción**: Implementación del monitor de desviación de ejecución (Slippage) con integración en la lógica de riesgo.
+    * **🖥️ UI Representation**: Badge de "Ejecución Eficiente %" en cada trade cerrado dentro del historial.
+* **HU 5.3: Infrastructure Feedback Loop (The Pulse)**
+    * **Prioridad**: Media (Vector V1 - Conexión básica / V3 - Feedback avanzado)
+    * **Descripción**: Sistema de telemetría que informa al cerebro sobre el estado de los recursos y la red para decisiones de veto técnico.
+    * **🖥️ UI Representation**: Widget de "System Vital Signs" con métricas de salud técnica y red.
 
 ## 06_PORTFOLIO_INTELLIGENCE (Shadow, Performance)
 * *(Sin tareas asignadas actualmente)*
