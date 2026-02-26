@@ -130,6 +130,10 @@
     * **Prioridad**: Alta (Vector V1)
     * **Descripción**: Motor de gestión de esquemas SQLite aislados para consistencia multi-usuario.
     * **🖥️ UI**: Indicador de "Sync Status" de base de datos.
+* **HU 8.2: De-fragmentación de StorageManager** `[TODO]`
+    * **Prioridad**: CRÍTICA
+    * **Descripción**: Dividir el archivo de 1,369 LOC en repositorios modulares por dominio.
+    * **🖥️ UI**: Indicador de "Persistence Health" en dashboard técnico.
 
 ## 09_INSTITUTIONAL_INTERFACE (UI/UX, Terminal)
 * **HU 9.1: Component Library "Intelligence Terminal"**

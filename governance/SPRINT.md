@@ -23,13 +23,18 @@
   - Patrón: `data_vault/{tenant_id}/aethelgard.db`.
   - Migración automática de esquema en primer acceso.
 
+- [ ] **Fragmentación de data_vault/storage.py para cumplimiento de Regla de Masa (<30KB)**
+  - Identificar dominios en `StorageManager`.
+  - Extraer métodos a repositorios especializados.
+  - Inyectar repositorios en `StorageManager` (Fachada).
+
 ---
 
 ## 📸 Snapshot de Contexto
 
 | Métrica | Valor |
 |---|---|
-| **Estado de Persistencia** | 100% SQLite (SSOT validado) |
+| **Estado de Persistencia** | Saneamiento de Deuda Técnica detectada por Función A |
 | **Masa de server.py** | 272 líneas (Cumple <30KB) |
 | **Integridad** | 11/11 tests PASSED |
-| **Versión Global** | v3.2.0 (Post-Refactor) |
+| **Versión Global** | v3.2.1 |
