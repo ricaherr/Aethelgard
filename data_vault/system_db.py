@@ -580,3 +580,314 @@ class SystemMixin(BaseRepository):
             return mapping
         finally:
             self._close_conn(conn)
+
+    # ── User Preferences (Perfiles y Autonomía) ──────────────────────────────
+
+    def get_user_preferences(self, user_id: str = "default") -> Optional[Dict]:
+        """Obtiene las preferencias del usuario desde la base de datos."""
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM user_preferences WHERE user_id = ?", (user_id,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            columns = [desc[0] for desc in cursor.description]
+            prefs = dict(zip(columns, row))
+            for json_field in ("auto_trading_symbols", "auto_trading_strategies",
+                               "auto_trading_timeframes", "active_filters"):
+                if prefs.get(json_field):
+                    try:
+                        prefs[json_field] = json.loads(prefs[json_field])
+                    except ValueError:
+                        prefs[json_field] = None
+            return prefs
+        except Exception as exc:
+            logger.error("Error getting user preferences: %s", exc)
+            return None
+        finally:
+            self._close_conn(conn)
+
+    def update_user_preferences(self, user_id: str, preferences: Dict) -> bool:
+        """Actualiza las preferencias del usuario en la base de datos."""
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            # Serializar campos JSON
+            for json_field in ("auto_trading_symbols", "auto_trading_strategies",
+                               "auto_trading_timeframes", "active_filters"):
+                if json_field in preferences and preferences[json_field] is not None:
+                    if not isinstance(preferences[json_field], str):
+                        preferences[json_field] = json.dumps(preferences[json_field])
+
+            fields = [f"{k} = ?" for k in preferences.keys() if k != "user_id"]
+            values = [v for k, v in preferences.items() if k != "user_id"]
+            if not fields:
+                return False
+
+            fields.append("updated_at = CURRENT_TIMESTAMP")
+            query = f"UPDATE user_preferences SET {', '.join(fields)} WHERE user_id = ?"
+            values.append(user_id)
+            cursor.execute(query, values)
+
+            if cursor.rowcount == 0:
+                preferences["user_id"] = user_id
+                placeholders = ", ".join(["?" for _ in preferences])
+                columns = ", ".join(preferences.keys())
+                cursor.execute(f"INSERT INTO user_preferences ({columns}) VALUES ({placeholders})",
+                               list(preferences.values()))
+            conn.commit()
+            return True
+        except Exception as exc:
+            logger.error("Error updating user preferences: %s", exc)
+            conn.rollback()
+            return False
+        finally:
+            self._close_conn(conn)
+
+    def get_default_profile(self, profile_type: str) -> Dict:
+        """Retorna configuración por defecto para un tipo de perfil."""
+        profiles = {
+            "explorer": {
+                "profile_type": "explorer",
+                "auto_trading_enabled": False,
+                "notify_signals": True,
+                "notify_executions": False,
+                "notify_threshold_score": 0.90,
+                "default_view": "feed",
+                "require_confirmation": True,
+            },
+            "active_trader": {
+                "profile_type": "active_trader",
+                "auto_trading_enabled": False,
+                "auto_trading_max_risk": 1.5,
+                "notify_signals": True,
+                "notify_executions": True,
+                "notify_threshold_score": 0.85,
+                "default_view": "grid",
+                "require_confirmation": True,
+                "max_daily_trades": 10,
+            },
+            "scalper": {
+                "profile_type": "scalper",
+                "auto_trading_enabled": True,
+                "auto_trading_max_risk": 1.0,
+                "auto_trading_timeframes": ["M1", "M5"],
+                "notify_signals": False,
+                "notify_executions": True,
+                "notify_threshold_score": 0.90,
+                "default_view": "feed",
+                "require_confirmation": False,
+                "max_daily_trades": 20,
+            }
+        }
+        return profiles.get(profile_type, profiles["active_trader"])
+
+    def resolve_module_enabled(self, account_id: Optional[str], module_name: str) -> bool:
+        """
+        Resolve final module enabled status with priority logic.
+        Priority: 1. GLOBAL disabled -> disabled. 2. OVERRIDE...
+        """
+        global_enabled = self.get_global_modules_enabled().get(module_name, True)
+        if not global_enabled:
+            logger.debug("[RESOLVE] Module '%s' DISABLED globally", module_name)
+            return False
+
+        if not account_id:
+            return global_enabled
+
+        individual_enabled = self.get_individual_modules_enabled(account_id).get(module_name)
+        if individual_enabled is not None:
+            return individual_enabled
+
+        return global_enabled
+
+    # ── Database Maintenance & Backup ────────────────────────────────────────
+
+    def create_db_backup(self) -> Optional[str]:
+        """Create a backup of the main SQLite database online."""
+        import os
+        import shutil
+        import time
+
+        if self.db_path == ':memory:':
+            logger.warning("[BACKUP] Cannot backup in-memory database.")
+            return None
+
+        # Determine backup directory based on main DB path
+        db_dir = os.path.dirname(self.db_path) or '.'
+        backup_dir = os.path.join(db_dir, 'backups')
+        os.makedirs(backup_dir, exist_ok=True)
+
+        timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
+        backup_filename = f"sqlite_backup_{timestamp}.sqlite"
+        backup_path = os.path.join(backup_dir, backup_filename)
+
+        start_time = time.time()
+        conn = self._get_conn()
+        try:
+            backup_conn = sqlite3.connect(backup_path)
+            conn.backup(backup_conn, pages=250, sleep=0.01)
+            backup_conn.close()
+
+            file_size_mb = os.path.getsize(backup_path) / (1024 * 1024)
+            elapsed = time.time() - start_time
+            logger.info("[BACKUP] DB backup created successfully: %s (%.2f MB, %.2fs)",
+                        backup_filename, file_size_mb, elapsed)
+
+            return backup_path
+        except Exception as e:
+            logger.error("[BACKUP] Backup failed: %s", e)
+            if os.path.exists(backup_path):
+                try: os.remove(backup_path)
+                except: pass
+            return None
+        finally:
+            self._close_conn(conn)
+
+    def list_db_backups(self) -> List[Dict]:
+        """List all available database backups."""
+        import os
+
+        if self.db_path == ':memory:':
+            return []
+
+        db_dir = os.path.dirname(self.db_path) or '.'
+        backup_dir = os.path.join(db_dir, 'backups')
+
+        if not os.path.exists(backup_dir):
+            return []
+
+        backups = []
+        for filename in os.listdir(backup_dir):
+            if filename.startswith("sqlite_backup_") and filename.endswith(".sqlite"):
+                filepath = os.path.join(backup_dir, filename)
+                stat = os.stat(filepath)
+                # Parse timestamp from filename
+                try:
+                    ts_str = filename.replace("sqlite_backup_", "").replace(".sqlite", "")
+                    dt = datetime.strptime(ts_str, '%Y%m%d_%H%M%S').replace(tzinfo=timezone.utc)
+                except ValueError:
+                    dt = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
+
+                backups.append({
+                    "filename": filename,
+                    "path": filepath,
+                    "size_mb": round(stat.st_size / (1024 * 1024), 2),
+                    "created_at": dt.isoformat(),
+                    "timestamp": dt.timestamp()
+                })
+
+        # Sort newest first
+        backups.sort(key=lambda x: x["timestamp"], reverse=True)
+        return backups
+
+    def restore_db_backup(self, backup_filename: str) -> bool:
+        """
+        Restore the database from a given backup filename.
+        Overwrites the current database file. MUST BE USED WITH CAUTION.
+        """
+        import os
+        import shutil
+
+        if self.db_path == ':memory:':
+            logger.error("[BACKUP] Cannot restore into in-memory database.")
+            return False
+
+        db_dir = os.path.dirname(self.db_path) or '.'
+        backup_dir = os.path.join(db_dir, 'backups')
+        backup_path = os.path.join(backup_dir, backup_filename)
+
+        if not os.path.exists(backup_path):
+            logger.error("[BACKUP] Backup file not found: %s", backup_path)
+            return False
+
+        logger.warning("!!! RESTORING DATABASE FROM BACKUP: %s !!!", backup_filename)
+
+        try:
+            self._pool.close_all()
+            
+            temp_db_path = self.db_path + ".tmp"
+            if os.path.exists(self.db_path):
+                os.rename(self.db_path, temp_db_path)
+
+            shutil.copy2(backup_path, self.db_path)
+
+            if os.path.exists(temp_db_path):
+                os.remove(temp_db_path)
+
+            self._pool = getattr(self, '__pool_class__', None)(self.db_path) if hasattr(self, '__pool_class__') else None
+
+            logger.info("[BACKUP] Database restored successfully.")
+            return True
+        except Exception as e:
+            logger.error("[BACKUP] Failed to restore database: %s", e)
+            if 'temp_db_path' in locals() and os.path.exists(temp_db_path):
+                logger.warning("[BACKUP] Attempting to revert to original DB...")
+                try:
+                    if os.path.exists(self.db_path):
+                        os.remove(self.db_path)
+                    os.rename(temp_db_path, self.db_path)
+                    logger.info("[BACKUP] Original database reverted.")
+                except Exception as revert_exc:
+                    logger.critical("[BACKUP] FATAL: Failed to revert database: %s", revert_exc)
+            return False
+
+    def check_integrity(self) -> Dict:
+        """Run SQLite PRAGMA integrity_check and quick_check."""
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            
+            cursor.execute("PRAGMA quick_check")
+            quick_result = cursor.fetchall()
+            
+            cursor.execute("PRAGMA integrity_check")
+            full_result = cursor.fetchall()
+            
+            is_ok = (quick_result and quick_result[0][0] == 'ok') and \
+                    (full_result and full_result[0][0] == 'ok')
+            
+            return {
+                "status": "ok" if is_ok else "error",
+                "quick_check": [row[0] for row in quick_result] if quick_result else ["failed"],
+                "integrity_check": [row[0] for row in full_result] if full_result else ["failed"]
+            }
+        except Exception as e:
+            logger.error("[DB] Integrity check failed: %s", e)
+            return {"status": "error", "error": str(e)}
+        finally:
+            self._close_conn(conn)
+
+    def prune_old_backups(self, max_backups: int = 10, max_age_days: int = 30) -> int:
+        """Delete backups older than max_age_days or exceeding max_backups count."""
+        import os
+        from datetime import timedelta
+
+        backups = self.list_db_backups()
+        if not backups:
+            return 0
+
+        pruned_count = 0
+        now = datetime.now(timezone.utc)
+        cutoff_date = now - timedelta(days=max_age_days)
+
+        for i, backup in enumerate(backups):
+            try:
+                dt = datetime.fromisoformat(backup["created_at"])
+                should_delete = False
+
+                if dt < cutoff_date:
+                    should_delete = True
+                elif i >= max_backups:
+                    should_delete = True
+                
+                if should_delete:
+                    os.remove(backup["path"])
+                    logger.info("[BACKUP] Pruned old backup: %s", backup["filename"])
+                    pruned_count += 1
+            except Exception as e:
+                logger.error("[BACKUP] Failed to prune %s: %s", backup.get("filename"), e)
+                
+        return pruned_count
+

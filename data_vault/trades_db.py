@@ -226,6 +226,174 @@ class TradesMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
+    # ── Position Metadata ─────────────────────────────────────────────────────
+
+    def get_position_metadata(self, ticket: int) -> Optional[Dict]:
+        """Get metadata for a specific position/trade by ticket. Returns None if not found."""
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='position_metadata'"
+            )
+            if not cursor.fetchone():
+                return None
+            cursor.execute("SELECT * FROM position_metadata WHERE ticket = ?", (ticket,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            metadata = dict(row)
+            if metadata.get("data"):
+                try:
+                    import json as _json
+                    metadata["data"] = _json.loads(metadata["data"])
+                except (ValueError, TypeError):
+                    pass
+            return metadata
+        finally:
+            self._close_conn(conn)
+
+    def update_position_metadata(self, ticket: int, metadata: Dict) -> bool:
+        """Save or update position metadata for monitoring. Merges with existing data."""
+        import json as _json
+
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            existing = self.get_position_metadata(ticket)
+            merged = {**(existing or {}), **metadata, "ticket": ticket}
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS position_metadata (
+                    ticket INTEGER PRIMARY KEY,
+                    symbol TEXT NOT NULL,
+                    entry_price REAL NOT NULL,
+                    entry_time TEXT NOT NULL,
+                    direction TEXT,
+                    sl REAL,
+                    tp REAL,
+                    volume REAL NOT NULL,
+                    initial_risk_usd REAL,
+                    entry_regime TEXT,
+                    timeframe TEXT,
+                    strategy TEXT,
+                    data TEXT
+                )
+            """)
+
+            # AUTO-MIGRATION: ensure optional columns exist
+            for col in ("direction", "strategy"):
+                try:
+                    cursor.execute(f"SELECT {col} FROM position_metadata LIMIT 1")
+                except Exception:
+                    cursor.execute(f"ALTER TABLE position_metadata ADD COLUMN {col} TEXT")
+                    conn.commit()
+
+            cursor.execute("""
+                REPLACE INTO position_metadata
+                (ticket, symbol, entry_price, entry_time, direction, sl, tp, volume,
+                 initial_risk_usd, entry_regime, timeframe, strategy, data)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                ticket,
+                merged.get("symbol"), merged.get("entry_price"), merged.get("entry_time"),
+                merged.get("direction"), merged.get("sl"), merged.get("tp"), merged.get("volume"),
+                merged.get("initial_risk_usd"), merged.get("entry_regime"),
+                merged.get("timeframe"), merged.get("strategy"),
+                _json.dumps({k: v for k, v in merged.items() if k not in {
+                    "ticket", "symbol", "entry_price", "entry_time", "direction",
+                    "sl", "tp", "volume", "initial_risk_usd", "entry_regime", "timeframe", "strategy"
+                }}) or None,
+            ))
+            conn.commit()
+            return True
+        except Exception as exc:
+            logger.error("Failed to save position metadata for ticket %s: %s", ticket, exc, exc_info=True)
+            return False
+        finally:
+            self._close_conn(conn)
+
+    def rollback_position_modification(self, ticket: int) -> bool:
+        """No-op: metadata is preserved even if MT5 modification fails."""
+        logger.debug("[ROLLBACK] Position %s — metadata preserved (no-op)", ticket)
+        return True
+
+    def log_position_event(
+        self,
+        ticket: int,
+        symbol: str,
+        event_type: str,
+        old_sl: Optional[float] = None,
+        new_sl: Optional[float] = None,
+        old_tp: Optional[float] = None,
+        new_tp: Optional[float] = None,
+        reason: Optional[str] = None,
+        success: bool = True,
+        error_message: Optional[str] = None,
+        metadata: Optional[Dict] = None,
+    ) -> bool:
+        """Log position management event (SL/TP change, breakeven, trailing, etc.)."""
+        import json as _json
+
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO position_history
+                (ticket, symbol, event_type, old_sl, new_sl, old_tp, new_tp,
+                 reason, success, error_message, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                ticket, symbol, event_type, old_sl, new_sl, old_tp, new_tp,
+                reason, success, error_message,
+                _json.dumps(metadata) if metadata else None,
+            ))
+            conn.commit()
+            logger.debug("[HISTORY] %s for %s (%s) SL:%s→%s TP:%s→%s",
+                         event_type, ticket, symbol, old_sl, new_sl, old_tp, new_tp)
+            return True
+        except Exception as exc:
+            logger.error("[HISTORY] Failed to log event for %s: %s", ticket, exc)
+            return False
+        finally:
+            self._close_conn(conn)
+
+    def get_position_history(
+        self,
+        ticket: Optional[int] = None,
+        symbol: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[Dict]:
+        """Get position history events, newest first."""
+        import json as _json
+
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            query = "SELECT * FROM position_history WHERE 1=1"
+            params: list = []
+            if ticket:
+                query += " AND ticket = ?"
+                params.append(ticket)
+            if symbol:
+                query += " AND symbol = ?"
+                params.append(symbol)
+            query += " ORDER BY timestamp DESC LIMIT ?"
+            params.append(limit)
+            cursor.execute(query, params)
+            events = []
+            for row in cursor.fetchall():
+                evt = dict(row)
+                if evt.get("metadata"):
+                    try:
+                        evt["metadata"] = _json.loads(evt["metadata"])
+                    except Exception:
+                        pass
+                events.append(evt)
+            return events
+        finally:
+            self._close_conn(conn)
+
     def clear_ghost_position(self, symbol: str) -> None:
         """
         Remove 'EXECUTED' status from signals for a symbol that has no real open position.

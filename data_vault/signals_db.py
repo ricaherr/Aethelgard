@@ -190,6 +190,11 @@ class SignalsMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
+    def get_signals_today(self, status: Optional[str] = None) -> List[Dict]:
+        """Obtiene las señales del día actual."""
+        from datetime import date
+        return self.get_signals_by_date(date.today(), status=status)
+
     def get_signals_by_date(self, target_date: date, status: Optional[str] = None) -> List[Dict]:
         """Get all signals from a specific date"""
         conn = self._get_conn()
@@ -398,28 +403,81 @@ class SignalsMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_signals_today(self) -> List[Dict]:
-        """Get signals from today (for dashboard compatibility)"""
-        return self.get_signals_by_date(date.today())
 
-    def get_open_signal_id(self, symbol: str) -> Optional[str]:
+    # ── Signal Pipeline Tracking ──────────────────────────────────────────────
+
+    def log_signal_pipeline_event(
+        self,
+        signal_id: str,
+        stage: str,
+        decision: Optional[str] = None,
+        reason: Optional[str] = None,
+        metadata: Optional[Dict] = None,
+    ) -> bool:
         """
-        Get the signal ID of the open position for a symbol.
-        Returns None if no open position.
+        Log signal pipeline event for audit trail.
+        Stages: CREATED, STRATEGY_ANALYSIS, RISK_VALIDATION, EXECUTED, REJECTED.
         """
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
+            metadata_json = json.dumps(metadata) if metadata else None
             cursor.execute("""
-                SELECT s.id FROM signals s
-                LEFT JOIN trade_results t ON s.id = t.signal_id
-                WHERE s.symbol = ? 
-                AND UPPER(s.status) = 'EXECUTED' 
-                AND t.signal_id IS NULL
-                ORDER BY s.timestamp DESC
-                LIMIT 1
-            """, (symbol,))
-            row = cursor.fetchone()
-            return row[0] if row else None
+                INSERT INTO signal_pipeline
+                (signal_id, stage, decision, reason, metadata)
+                VALUES (?, ?, ?, ?, ?)
+            """, (signal_id, stage, decision, reason, metadata_json))
+            conn.commit()
+            logger.debug("[PIPELINE] %s → %s (%s): %s", signal_id, stage, decision, reason)
+            return True
+        except Exception as exc:
+            logger.error("[PIPELINE] Failed to log event for %s: %s", signal_id, exc)
+            return False
+        finally:
+            self._close_conn(conn)
+
+    def get_signal_pipeline_history(self, limit: int = 100) -> List[Dict]:
+        """Get recent signal pipeline events."""
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM signal_pipeline
+                ORDER BY timestamp DESC
+                LIMIT ?
+            """, (limit,))
+            events = []
+            for row in cursor.fetchall():
+                event = dict(row)
+                if event.get("metadata"):
+                    try:
+                        event["metadata"] = json.loads(event["metadata"])
+                    except Exception:
+                        pass
+                events.append(event)
+            return events
+        finally:
+            self._close_conn(conn)
+
+    def get_signal_pipeline_trace(self, signal_id: str) -> List[Dict]:
+        """Get complete pipeline trace for a specific signal, chronological order."""
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM signal_pipeline
+                WHERE signal_id = ?
+                ORDER BY timestamp ASC
+            """, (signal_id,))
+            events = []
+            for row in cursor.fetchall():
+                event = dict(row)
+                if event.get("metadata"):
+                    try:
+                        event["metadata"] = json.loads(event["metadata"])
+                    except Exception:
+                        pass
+                events.append(event)
+            return events
         finally:
             self._close_conn(conn)
