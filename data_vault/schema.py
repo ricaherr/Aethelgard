@@ -416,6 +416,30 @@ def bootstrap_symbol_mappings(conn: sqlite3.Connection) -> None:
         logger.error("Error seeding symbol mappings: %s", exc)
 
 
+def provision_tenant_db(db_path: str) -> None:
+    """
+    Full DDL + migrations + default seeds for a brand-new tenant DB.
+    Called exclusively by TenantDBFactory on first access (auto-provisioning).
+
+    Idempotent: safe to call even if the DB already exists.
+    """
+    import os
+    os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        initialize_schema(conn)
+        run_migrations(conn)
+        seed_default_user_preferences(conn)
+        bootstrap_symbol_mappings(conn)
+        logger.info("[TENANT] DB provisioned: %s", db_path)
+    except Exception as exc:
+        logger.error("[TENANT] Provisioning failed for %s: %s", db_path, exc)
+        raise
+    finally:
+        conn.close()
+
+
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 def _seed_regime_configs(cursor: sqlite3.Cursor) -> None:
