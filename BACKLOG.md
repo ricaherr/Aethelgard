@@ -82,7 +82,18 @@
     * **🖥️ UI Representation**: Widget de "System Vital Signs" con métricas de salud técnica y red.
 
 ## 06_PORTFOLIO_INTELLIGENCE (Shadow, Performance)
-* *(Sin tareas asignadas actualmente)*
+* **HU 6.1: Shadow Reality Engine (Penalty Injector)**
+    * **Prioridad**: Alta (Vector V2 - Inteligencia)
+    * **Descripción**: Desarrollo del motor de ajuste que inyecta latencia y slippage real en el rendimiento de estrategias Shadow (Lineamiento F-001).
+    * **🖥️ UI Representation**: Gráfico de equity "Shadow vs Theory" con desglose de pips perdidos por ineficiencia.
+* **HU 6.2: Multi-Tenant Strategy Ranker**
+    * **Prioridad**: Media (Vector V1 - SaaS)
+    * **Descripción**: Sistema de clasificación darwinista para organizar estrategias por rendimiento ajustado al riesgo para cada usuario.
+    * **🖥️ UI Representation**: Dashboard "Strategy Darwinism" con rankings dinámicos y estados de cuarentena.
+* **HU 6.3: Coherence Drift Monitor**
+    * **Prioridad**: Media (Vector V3)
+    * **Descripción**: Algoritmo de detección de divergencia entre el comportamiento esperado del modelo y la ejecución en vivo.
+    * **🖥️ UI Representation**: Medidor de "Coherencia de Modelo" con alertas visuales de deriva técnica.
 
 ## 07_ADAPTIVE_LEARNING (EdgeTuner, Feedback Loops)
 * *(Sin tareas asignadas actualmente)*
