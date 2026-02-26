@@ -1,7 +1,9 @@
 # AETHELGARD: ESTRATEGIC ROADMAP
 
-**Versión Log**: 3.2.0 (FASE 1: SaaS Foundations - ACTIVO)
-**Última Actualización**: 25 de Febrero, 2026 (00:41)
+"ESTÁNDAR DE EDICIÓN: El Roadmap se organiza en Vectores de Valor (V1, V2...). Cada hito debe estar vinculado a uno de los 10 dominios del BACKLOG."
+
+**Versión Log**: 3.2.0 (V1: Cimientos SaaS - ACTIVO)
+**Última Actualización**: 25 de Febrero, 2026 (19:57)
 
 <!-- REGLA DE ARCHIVADO: Cuando TODOS los items de un milestone estén [x], -->
 <!-- migrar automáticamente a docs/SYSTEM_LEDGER.md con el formato existente -->
@@ -9,35 +11,42 @@
 
 ---
 
-## 📈 ROADMAP ESTRATÉGICO (Próximos Hitos)
+## 📈 ROADMAP ESTRATÉGICO (Vectores de Valor)
 
-### 🚀 FASE 1: SAAS FOUNDATIONS (AUTH & ISOLATION) — ACTIVO
+### 🚀 V1 (Vector de Cimientos SaaS) — ACTIVO (Dominios 01 y 08)
+**Prioridad Máxima**  
 **Trace_ID**: SAAS-GENESIS-2026-001  
-**Inicio**: 25 de Febrero, 2026  
 **Objetivo**: Evolucionar el sistema de un solo usuario a una arquitectura multi-tenant con autenticación JWT y aislamiento de datos por tenant.
 
 - [x] **Manifesto Transformation**: Restructuración del `AETHELGARD_MANIFESTO.md` hacia una Constitución Estratégica.
-- [ ] **JWT Middleware**: Implementación de middleware de autenticación JWT para FastAPI.
-- [ ] **User Management**: Creación de tabla `users` y `UserRepo` para gestión de identidad.
-- [ ] **Tenant Isolation**: Desarrollo de `TenantDBFactory` para aislamiento de bases de datos por cliente.
+- [ ] **JWT Middleware**: Implementación de middleware de autenticación JWT para FastAPI (Dominio 01).
+- [ ] **User Management**: Creación de tabla `users` y `UserRepo` para gestión de identidad (Dominio 01).
+- [ ] **Tenant Isolation**: Desarrollo de `TenantDBFactory` para aislamiento de bases de datos por cliente (Dominio 08).
 - [ ] **Validación E2E**: Tests de integración para flujo auth completo + aislamiento de datos.
 
 **Dependencias**: Requiere SSOT 100% SQLite (✅ completado) y server.py modular (✅ completado).
 
 ---
 
-### 🌐 EXPANSIÓN COMERCIAL & CONECTIVIDAD
-- [ ] **Capa Institutional (FIX API)**: Conexión directa vía FIX para baja latencia en brokers institucionales.
+### 🧠 V2 (Vector de Inteligencia) — PLANIFICADO (Dominios 02 y 03)
+**Objetivo**: Optimización de Alpha y detección de regímenes de mercado multi-escalares.
+
+- [ ] **Institutional Alpha**: Desarrollo del Signal Factory basado en absorción y liquidez (Dominio 03).
+- [ ] **Multi-Scale Context**: Implementación de clasificadores de régimen y correlación inter-mercado (Dominio 02).
 
 ---
 
-### 👁️ FASE 4: SENSORY DOMINANCE (Depredación de Contexto)
-**Trace_ID**: SENSE-DOM-2026-004
+### 👁️ V3 (Vector de Dominio Sensorial) — PLANIFICADO (Dominios 04 y 10)
 **Objetivo**: Establecer la supremacía analítica mediante la detección de huella institucional y meta-aprendizaje de infraestructura.
 
-- [ ] **Institutional Absorption**: Implementación del detector de zonas de liquidez y absorción.
-- [ ] **Infrastructure Meta-Learning**: Integración de latencia/slippage en el feedback loop de ejecución.
-- [ ] **Inter-Market Correlation**: Implementación del scanner de divergencias correlacionadas.
+- [ ] **Safety Governance**: Implementación de Unidades R y Veto granular (Dominio 04).
+- [ ] **Infrastructure Resiliency**: Integración de métricas de salud y auto-curación (Dominio 10).
+
+---
+
+### 🌐 EXPANSIÓN DE EJECUCIÓN (Dominio 05)
+- [ ] **Capa Institutional (FIX API)**: Conexión directa vía FIX para baja latencia en brokers institucionales (Dominio 05).
 
 > [!NOTE]
 > El historial completo de hitos completados ha sido migrado a [SYSTEM_LEDGER.md](docs/SYSTEM_LEDGER.md).
+

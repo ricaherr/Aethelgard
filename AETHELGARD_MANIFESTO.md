@@ -23,8 +23,21 @@ La arquitectura de Aethelgard se rige por el rigor matemático y la independenci
 ## III. Gobernanza y Seguridad (CTO Focus)
 La libertad del sistema termina donde empieza la seguridad del capital.
 
-1. **Safety Governor**: Reglas de gobernanza inyectadas en el aprendizaje autónomo para prevenir el sobreajuste (overfitting). Se aplican límites de suavizado (Smoothing) y fronteras de peso (Floor/Ceiling) infranqueables.
-2. **Single Source of Truth (SSOT)**: Configuración, credenciales y estados residen exclusivamente en la base de datos central. El sistema prohíbe la redundancia de datos externos para evitar discrepancias operativas.
+1. **Estructura Orgánica (Los 10 Dominios)**: El desarrollo y operación de Aethelgard se rige por 10 Dominios Críticos que garantizan la trazabilidad y especialización del sistema:
+    - **01_IDENTITY_SECURITY**: SaaS, Auth, Isolation.
+    - **02_CONTEXT_INTELLIGENCE**: Regime, Multi-Scale.
+    - **03_ALPHA_GENERATION**: Signal Factory, Indicators.
+    - **04_RISK_GOVERNANCE**: Unidades R, Safety Governor, Veto.
+    - **05_UNIVERSAL_EXECUTION**: EMS, Conectores FIX.
+    - **06_PORTFOLIO_INTELLIGENCE**: Shadow, Performance.
+    - **07_ADAPTIVE_LEARNING**: EdgeTuner, Feedback Loops.
+    - **08_DATA_SOVEREIGNTY**: SSOT, Persistence.
+    - **09_INSTITUTIONAL_INTERFACE**: UI/UX, Terminal.
+    - **10_INFRASTRUCTURE_RESILIENCY**: Health, Self-Healing.
+
+2. **Safety Governor**: Reglas de gobernanza inyectadas en el aprendizaje autónomo para prevenir el sobreajuste (overfitting). Se aplican límites de suavizado (Smoothing) y fronteras de peso (Floor/Ceiling) infranqueables.
+3. **Single Source of Truth (SSOT)**: Configuración, credenciales y estados residen exclusivamente en la base de datos central. El sistema prohíbe la redundancia de datos externos para evitar discrepancias operativas.
+
 3. **Integridad Sistémica**: El sistema se audita a sí mismo en cada ciclo, garantizando que todos los módulos cumplan con el protocolo de inyección de dependencias y los estándares de validación técnica.
 4. **Soberanía de Intervención**: El derecho inalienable del humano a restringir la autonomía del sistema (ej. Habilitar Forex Autónomo, pero mantener Veto en Crypto) sin comprometer la integridad de la lógica central. La configuración `module_governance.json` es la representación técnica de esta soberanía.
 5. **Lineamiento de Fidelidad Shadow (F-001)**: Para garantizar la viabilidad del modelo SaaS, todo rendimiento en el *Shadow Portfolio* debe incluir un factor de **Penalización de Latencia** y **Slippage Estimado**. No se aceptarán métricas teóricas "limpias" como base para la promoción a capital real.
