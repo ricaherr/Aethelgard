@@ -152,6 +152,7 @@ async def main():
         run_audit_module("Connectivity", ["python", "scripts/utilities/check_connectivity_health.py"], workspace),
         run_audit_module("System DB", ["python", "scripts/utilities/verify_sync_fidelity.py"], workspace),
         run_audit_module("DB Integrity", ["python", "scripts/utilities/db_uniqueness_audit.py"], workspace),
+        run_audit_module("Documentation", ["python", "scripts/utilities/documentation_audit.py"], workspace),
     ]
 
     # Ejecución paralela masiva

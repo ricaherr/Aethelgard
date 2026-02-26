@@ -21,6 +21,7 @@ Cada nueva funcionalidad o Historia de Usuario (HU) debe cumplir con:
 1.  **Representación en UI**: Ninguna lógica de backend está "terminada" hasta que tenga su widget o visualización correspondiente en la Terminal.
 2.  **Validación de Aislamiento**: Pruebas explícitas de que los datos no se filtran entre `tenant_id`s.
 3.  **Agnosticismo**: Verificación de que el Core Brain sigue funcionando si se cambia el conector de datos.
+4.  **Trazabilidad**: Toda tarea debe estar registrada en el [Central Backlog](../governance/BACKLOG.md) siguiendo la jerarquía de los 10 Dominios.
 
 ---
 *Este documento es dinámico y representa el estándar de excelencia técnica de Aethelgard.*

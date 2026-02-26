@@ -22,6 +22,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='repla
 class ManifestoEnforcer:
     def __init__(self, root_dir: Path):
         self.root_dir = root_dir
+        self.manifesto_path = root_dir / "docs" / "AETHELGARD_MANIFESTO.md"
         self.forbidden_initializations = {'StorageManager', 'InstrumentManager'}
         self.forbidden_json_reads = {
             'risk_settings.json', 
@@ -108,6 +109,9 @@ class ManifestoEnforcer:
         print("\n" + "="*80)
         print("🏛️  AETHELGARD MANIFESTO ENFORCER")
         print("="*80)
+        
+        if not self.manifesto_path.exists():
+            self.issues.append(f"❌ DOCUMENTATION ERROR: Manifesto not found at {self.manifesto_path}")
         
         if not self.issues:
             print("✅ SUCCESS: No architectural violations found.")
