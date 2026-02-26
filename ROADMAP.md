@@ -26,6 +26,8 @@
 - [ ] **Sovereignty Gateway**: Habilitación de control y matriz de permisos autónomos (HU 4.4). *Nota: Dependencia técnica clave para V1.*
 - [ ] **Infrastructure Health Monitoring**: Telemetría básica de salud del servidor para estabilidad multi-tenant (HU 5.3 preliminar).
 - [ ] **Multi-Tenant Strategy Ranking**: Clasificación darwinista de estrategias por usuario (HU 6.2).
+- [ ] **Multi-Tenant Schema Migration**: Motor de consistencia de datos aislados (HU 8.1).
+- [ ] **Intelligence Terminal UI**: Estandarización de componentes Premium Dark (HU 9.1).
 
 **Dependencias**: Requiere SSOT 100% SQLite (✅ completado) y server.py modular (✅ completado).
 
@@ -38,6 +40,7 @@
 - [ ] **Contextual Alpha Scoring**: Motor de puntuación dinámica ponderada y dashboard Alpha Radar (HU 3.1).
 - [ ] **Dynamic Alpha Thresholding**: Mecanismo de defensa proactiva y auto-ajuste de umbrales según equidad (HU 3.5).
 - [ ] **Shadow Reality Engine (F-001)**: Inyección de penalizaciones reales (Latencia/Slippage) para fidelidad crítica (HU 6.1).
+- [ ] **Confidence Threshold Optimization**: Ajuste dinámico de umbrales por desempeño histórico (HU 7.1).
 
 ---
 
@@ -53,7 +56,8 @@
 - [ ] **Ejecución Depredadora (FIX)**: Conectividad FIX de alta fidelidad y control adaptativo de slippage (HU 5.1 & HU 5.2).
 - [ ] **The Pulse (Advanced Feedback)**: Lazo de retroalimentación de infraestructura avanzado para veto técnico (HU 5.3 final).
 - [ ] **Coherence Drift Monitoring**: Detección de divergencia entre modelo y ejecución en vivo (HU 6.3).
-- [ ] **Infrastructure Resiliency**: Integración de métricas de salud y auto-curación (Dominio 10).
+- [ ] **Autonomous Heartbeat & Self-Healing**: Monitoreo vital y auto-recuperación (HU 10.1).
+- [ ] **Infrastructure Resiliency**: Integración de métricas de salud y auto-curación (HU 10.2).
 
 ---
 

@@ -107,13 +107,26 @@
     * **🖥️ UI Representation**: Medidor de "Coherencia de Modelo" con alertas visuales de deriva técnica.
 
 ## 07_ADAPTIVE_LEARNING (EdgeTuner, Feedback Loops)
-* *(Sin tareas asignadas actualmente)*
+* **HU 7.1: Confidence Threshold Optimizer**
+    * **Prioridad**: Media (Vector V2)
+    * **Descripción**: Optimización dinámica de umbrales de entrada basada en el desempeño histórico reciente.
+    * **🖥️ UI**: Visualizador de "Curva de Exigencia Algorítmica".
 
 ## 08_DATA_SOVEREIGNTY (SSOT, Persistence)
-* *(Tareas integradas en 01_IDENTITY_SECURITY para esta fase inicial)*
+* **HU 8.1: Multi-Tenant Schema Migrator**
+    * **Prioridad**: Alta (Vector V1)
+    * **Descripción**: Motor de gestión de esquemas SQLite aislados para consistencia multi-usuario.
+    * **🖥️ UI**: Indicador de "Sync Status" de base de datos.
 
 ## 09_INSTITUTIONAL_INTERFACE (UI/UX, Terminal)
-* *(Sin tareas asignadas actualmente)*
+* **HU 9.1: Component Library "Intelligence Terminal"**
+    * **Prioridad**: Alta (Vector V1)
+    * **Descripción**: Estandarización de componentes visuales bajo la estética institucional Premium Dark.
+    * **🖥️ UI**: Terminal centralizada con componentes reactivos de alta densidad.
 
 ## 10_INFRASTRUCTURE_RESILIENCY (Health, Self-Healing)
-* **HU 10.1: Meta-Aprendizaje de Infraestructura**: Registro y análisis de latencia y slippage real como variables críticas de decisión en el motor de ejecución. (Anteriormente 4.2)
+* **HU 10.1: Autonomous Heartbeat & Self-Healing**
+    * **Prioridad**: Media (Vector V3)
+    * **Descripción**: Sistema de monitoreo de signos vitales y auto-recuperación de servicios.
+    * **🖥️ UI**: Widget de "Status Vital" con log de eventos técnicos.
+* **HU 10.2: Meta-Aprendizaje de Infraestructura**: Registro y análisis de latencia y slippage real como variables críticas de decisión en el motor de ejecución. (Anteriormente 4.2)
