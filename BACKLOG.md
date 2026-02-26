@@ -29,7 +29,18 @@
     * **🖥️ UI Representation**: Menú de perfil donde el usuario vea su rango actual y las funcionalidades bloqueadas/desbloqueadas según su plan.
 
 ## 02_CONTEXT_INTELLIGENCE (Regime, Multi-Scale)
-* **HU 2.1: Conciencia de Correlación Inter-Mercado**: Scanner especializado que detecta divergencias en tiempo real entre activos altamente correlacionados (ej. EURUSD vs DXY). (Anteriormente 4.3)
+* **HU 2.1: Multi-Scale Regime Vectorizer**
+    * **Prioridad**: Alta (Vector V2 - Inteligencia)
+    * **Descripción**: Desarrollo del motor que unifica la lectura de regímenes en múltiples temporalidades para una decisión coherente.
+    * **🖥️ UI Representation**: Widget "Fractal Context Manager" con visualización de alineación de tendencias.
+* **HU 2.2: Inter-Market Divergence Scanner**
+    * **Prioridad**: Media (Vector V3)
+    * **Descripción**: Implementación del scanner de correlación inter-mercado para validación de fuerza de régimen.
+    * **🖥️ UI Representation**: Matriz de correlación dinámica con alertas de divergencia "Alpha-Sync".
+* **HU 2.3: Contextual Memory Calibration**
+    * **Prioridad**: Baja (Vector V2)
+    * **Descripción**: Lógica de lookback adaptativo para ajustar la profundidad del análisis según el ruido del mercado.
+    * **🖥️ UI Representation**: Slider de "Profundidad Cognitiva" que muestra cuánta historia está procesando el cerebro en tiempo real.
 
 ## 03_ALPHA_GENERATION (Signal Factory, Indicators)
 * **HU 3.1: Contextual Alpha Scoring System**

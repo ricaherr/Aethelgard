@@ -34,10 +34,10 @@
 ### 🧠 V2 (Vector de Inteligencia) — PLANIFICADO (Dominios 02 y 03)
 **Objetivo**: Optimización de Alpha y detección de regímenes de mercado multi-escalares.
 
+- [ ] **Multi-Scale Regime Vectorizer**: Unificación de temporalidades para decisión coherente (HU 2.1 - Base Vector V2).
 - [ ] **Contextual Alpha Scoring**: Motor de puntuación dinámica ponderada y dashboard Alpha Radar (HU 3.1).
 - [ ] **Dynamic Alpha Thresholding**: Mecanismo de defensa proactiva y auto-ajuste de umbrales según equidad (HU 3.5).
 - [ ] **Shadow Reality Engine (F-001)**: Inyección de penalizaciones reales (Latencia/Slippage) para fidelidad crítica (HU 6.1).
-- [ ] **Multi-Scale Context**: Implementación de clasificadores de régimen y correlación inter-mercado (Dominio 02).
 
 ---
 
@@ -49,6 +49,7 @@
 - [ ] **Anomaly Sentinel**: Detección de cisnes negros y antifragilidad (HU 4.6).
 - [ ] **Institutional Footprint**: Detección avanzada de huellas institucionales y zonas de liquidez (HU 3.2).
 - [ ] **Multi-Market Correlation**: Scanner de confluencia inter-mercado (HU 3.3).
+- [ ] **Depredación de Contexto**: Scanner de divergencia inter-mercado para validación de fuerza de régimen (HU 2.2).
 - [ ] **Ejecución Depredadora (FIX)**: Conectividad FIX de alta fidelidad y control adaptativo de slippage (HU 5.1 & HU 5.2).
 - [ ] **The Pulse (Advanced Feedback)**: Lazo de retroalimentación de infraestructura avanzado para veto técnico (HU 5.3 final).
 - [ ] **Coherence Drift Monitoring**: Detección de divergencia entre modelo y ejecución en vivo (HU 6.3).
