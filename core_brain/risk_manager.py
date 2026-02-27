@@ -690,11 +690,11 @@ class RiskManager:
             if hasattr(connector, 'get_account_balance'):
                 return connector.get_account_balance()
             
-            logger.warning("Connector does not support get_account_balance, using default 10000")
-            return 10000.0
+            logger.warning("Connector does not support get_account_balance, using self.capital")
+            return getattr(self, 'capital', 10000.0)
         except Exception as e:
             logger.error(f"Error getting account balance: {e}")
-            return 10000.0
+            return getattr(self, 'capital', 10000.0)
     
     def _get_symbol_info(self, connector: Any, symbol: str) -> Optional[Any]:
         """Obtiene symbol info del broker a través del connector."""

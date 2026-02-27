@@ -70,8 +70,8 @@ class TestSignalDeduplication:
             confidence=0.8,
             connector_type=ConnectorType.PAPER,
             entry_price=1.1000,
-            stop_loss=1.0950,
-            take_profit=1.1100
+            stop_loss=1.0990,  # 1.0R risk (0.0010 dist)
+            take_profit=1.1020
         )
         
         signal_id = storage.save_signal(signal)
@@ -94,7 +94,9 @@ class TestSignalDeduplication:
             signal_type=SignalType.BUY,
             confidence=0.8,
             connector_type=ConnectorType.PAPER,
-            entry_price=1.1000
+            entry_price=1.1000,
+            stop_loss=1.0990,
+            take_profit=1.1020
         )
         
         storage.save_signal(signal)
@@ -118,8 +120,8 @@ class TestSignalDeduplication:
             confidence=0.8,
             connector_type=ConnectorType.PAPER,
             entry_price=1.1000,
-            stop_loss=1.0950,
-            take_profit=1.1100
+            stop_loss=1.0990,
+            take_profit=1.1020
         )
         
         # Simulate SignalFactory assigning ID (required by Opción B)
@@ -136,8 +138,8 @@ class TestSignalDeduplication:
             confidence=0.9,
             connector_type=ConnectorType.PAPER,
             entry_price=1.1050,
-            stop_loss=1.1000,
-            take_profit=1.1150
+            stop_loss=1.1040,
+            take_profit=1.1070
         )
         
         # Simulate SignalFactory assigning ID (required by Opción B)
@@ -163,8 +165,8 @@ class TestSignalDeduplication:
             confidence=0.8,
             connector_type=ConnectorType.PAPER,
             entry_price=1.2500,
-            stop_loss=1.2450,
-            take_profit=1.2600
+            stop_loss=1.2490,  # 1.0R
+            take_profit=1.2520
         )
         
         # Save and mark as EXECUTED (position open)
@@ -183,8 +185,8 @@ class TestSignalDeduplication:
             confidence=0.85,
             connector_type=ConnectorType.PAPER,
             entry_price=1.2510,
-            stop_loss=1.2450,
-            take_profit=1.2600
+            stop_loss=1.2500,
+            take_profit=1.2530
         )
         signal2_id = storage.save_signal(signal2)
         signal2.metadata['signal_id'] = signal2_id  # Assign ID like SignalFactory does
@@ -202,8 +204,8 @@ class TestSignalDeduplication:
             confidence=0.8,
             connector_type=ConnectorType.PAPER,
             entry_price=1.1000,
-            stop_loss=1.0950,
-            take_profit=1.1100
+            stop_loss=1.0990,
+            take_profit=1.1020
         )
         
         result1 = await executor.execute_signal(signal1)
@@ -216,8 +218,8 @@ class TestSignalDeduplication:
             confidence=0.8,
             connector_type=ConnectorType.PAPER,
             entry_price=1.2500,
-            stop_loss=1.2450,
-            take_profit=1.2600
+            stop_loss=1.2490,
+            take_profit=1.2520
         )
         
         result2 = await executor.execute_signal(signal2)
@@ -233,8 +235,8 @@ class TestSignalDeduplication:
             confidence=0.8,
             connector_type=ConnectorType.PAPER,
             entry_price=1.1000,
-            stop_loss=1.0950,
-            take_profit=1.1100
+            stop_loss=1.0990,
+            take_profit=1.1020
         )
         signal1_id = storage.save_signal(signal1)
         signal1.metadata['signal_id'] = signal1_id  # Assign ID like SignalFactory does
@@ -251,8 +253,8 @@ class TestSignalDeduplication:
             confidence=0.8,
             connector_type=ConnectorType.PAPER,
             entry_price=1.1050,
-            stop_loss=1.1100,
-            take_profit=1.1000
+            stop_loss=1.1060,  # 0.0010 higher for SELL
+            take_profit=1.1030
         )
         signal2_id = storage.save_signal(signal2)
         signal2.metadata['signal_id'] = signal2_id  # Assign ID like SignalFactory does
