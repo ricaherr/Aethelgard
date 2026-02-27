@@ -31,6 +31,21 @@ render_diffs(file:///c:/Users/Jose Herrera/Documents/Proyectos/Aethelgard/AETHEL
 ---
 
 ### 📅 Registro: 2026-02-26
+
+#### 🛡️ MILESTONE 8.0: The Blind Reception (Auth Gateway)
+**Trace_ID**: `SAAS-AUTH-2026-001`  
+**Timestamp**: 2026-02-26 21:16  
+**Estado Final**: ✅ COMPLETADO
+
+**Descripción**:  
+Implementación del Auth Gateway (HU 1.1) para proteger y aislar el acceso a las rutas API. Aethelgard ya no permite "invitados" en sus endpoints de inteligencia.
+
+**Cambios Clave**:
+- `auth_service.py`: Manejo core de autenticación y hash de contraseñas de forma segura asíncrona usando `bcrypt`.
+- `dependencias/middleware`: Implementación del dependency `get_current_active_user` en el pipeline de FastAPI. Se valida y decodifica el JWT, y se inyecta el `tenant_id` directamente en el `request.state` o contexto asegurando trazabilidad y aislamiento persistente desde el primer contacto en cada endpoint o router.
+
+---
+
 #### 🛡️ SAAS-BACKBONE-2026-001: Multi-Tenant Schema Migrator (HU 8.1)
 **Trace_ID**: `SAAS-BACKBONE-2026-001`  
 **Timestamp**: 2026-02-26 16:50  

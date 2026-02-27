@@ -2,18 +2,18 @@
 
 **Inicio**: 25 de Febrero, 2026  
 **Objetivo**: Establecer los cimientos de la arquitectura multi-tenant con autenticación y aislamiento de datos.  
-**Versión Target**: v3.4.0
+**Versión Target**: v3.5.0
 
 ---
 
 ## 📋 Tareas del Sprint
 
-- [ ] **Implementación de JWT Middleware para FastAPI**
+- [x] **Implementación de JWT Middleware para FastAPI**
   - Crear middleware de validación de tokens JWT en cada request.
   - Definir esquema de claims (user_id, tenant_id, role, exp).
   - Integrar con el pipeline de routers existente.
 
-- [ ] **Creación de tabla `users` y `UserRepo`**
+- [x] **Creación de tabla `users` y `UserRepo`**
   - Diseñar esquema: `users(id, email, password_hash, tenant_id, role, created_at)`.
   - Implementar `UserRepo` con métodos CRUD + autenticación.
   - Endpoints: `POST /api/auth/register`, `POST /api/auth/login`.
@@ -35,6 +35,7 @@
 | Métrica | Valor |
 |---|---|
 | **Estado de Persistencia** | Aislada y blindada en Multi-Tenant via TenantDBFactory |
+| **Seguridad de Acceso** | Seguridad JWT + Aislamiento por Middleware |
 | **Masa de server.py** | <30KB |
 | **Integridad** | 17/17 tests PASSED |
-| **Versión Global** | v3.4.0 |
+| **Versión Global** | v3.5.0 |

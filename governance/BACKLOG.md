@@ -28,7 +28,8 @@
 ---
 
 ## 01_IDENTITY_SECURITY (SaaS, Auth, Isolation)
-* **HU 1.1: Auth Gateway & JWT Protection** `[DEV]`
+* **HU 1.1: Auth Gateway & JWT Protection** `[x] COMPLETADA`
+    * **Trace_ID**: `SAAS-AUTH-2026-001`
     * **Qué**: Implementar el middleware de seguridad para todas las rutas del API.
     * **Para qué**: Garantizar que solo usuarios autenticados accedan al cerebro de Aethelgard.
     * **🖥️ UI Representation**: Pantalla de Login (Premium Dark) con feedback de error en tiempo real. Redirección automática al dashboard tras handshake exitoso.
