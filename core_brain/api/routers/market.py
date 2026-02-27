@@ -7,10 +7,12 @@ import logging
 import time
 from typing import Dict, Any, Optional
 from datetime import datetime
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 
 from data_vault.storage import StorageManager
 from data_vault.market_db import MarketMixin
+from core_brain.api.dependencies.auth import get_current_active_user
+from models.auth import TokenPayload
 from models.signal import MarketRegime
 
 logger = logging.getLogger(__name__)
@@ -45,24 +47,24 @@ async def _broadcast_thought(message: str, module: str = "MARKET", level: str = 
     await broadcast_thought(message, module=module, level=level, metadata=metadata)
 
 
-def _get_instrument_analysis_service() -> Any:
+def _get_instrument_analysis_service(tenant_id: str) -> Any:
     """Lazy-load InstrumentAnalysisService."""
     from core_brain.analysis_service import InstrumentAnalysisService
-    return InstrumentAnalysisService(storage=_get_storage())
+    return InstrumentAnalysisService(storage=_get_storage(), tenant_id=tenant_id)
 
 
-def _get_chart_service() -> Any:
+def _get_chart_service(tenant_id: str) -> Any:
     """Lazy-load ChartService."""
     from core_brain.chart_service import ChartService
-    return ChartService(storage=_get_storage())
+    return ChartService(storage=_get_storage(), tenant_id=tenant_id)
 
 
 # ============ ENDPOINT: Análisis de Instrumento ============
 @router.get("/instrument/{symbol}/analysis")
-async def instrument_analysis(symbol: str) -> Dict[str, Any]:
+async def instrument_analysis(symbol: str, token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """Retorna análisis completo de un instrumento (régimen, tendencia, trifecta, estrategias)"""
     try:
-        service = _get_instrument_analysis_service()
+        service = _get_instrument_analysis_service(tenant_id=token.tid)
         result = service.get_analysis(symbol)
         return result
     except Exception as e:
@@ -72,7 +74,7 @@ async def instrument_analysis(symbol: str) -> Dict[str, Any]:
 
 # ============ ENDPOINT: Heatmap (CRÍTICO - El más pesado) ============
 @router.get("/analysis/heatmap")
-async def get_heatmap_data() -> Dict[str, Any]:
+async def get_heatmap_data(token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """
     Retorna la matriz de calor (Heatmap) AGNÓSTICA de símbolos x timeframes.
     Recopila regímenes, métricas técnicas y señales activas.
@@ -87,6 +89,7 @@ async def get_heatmap_data() -> Dict[str, Any]:
     timeframes = []
     now_mono = time.monotonic()
     now_ts = time.time()
+    tenant_id = token.tid
 
     scanner = _get_scanner()
 
@@ -125,7 +128,7 @@ async def get_heatmap_data() -> Dict[str, Any]:
     # Intento 2: Fallback a Base de Datos (Cross-Process Resilience)
     if not cells:
         try:
-            db_states = _get_storage().get_latest_heatmap_state()
+            db_states = _get_storage().get_latest_heatmap_state(tenant_id=tenant_id)
             if db_states:
                 # Deducir assets y timeframes de los datos
                 assets = sorted(list(set(s["symbol"] for s in db_states)))
@@ -169,7 +172,7 @@ async def get_heatmap_data() -> Dict[str, Any]:
     # 2. Integrar Señales Recientes (CONFLUENCIA)
     # Buscamos señales PENDING de la última hora
     try:
-        recent_signals = _get_storage().get_recent_signals(minutes=60, status='PENDING')
+        recent_signals = _get_storage().get_recent_signals(minutes=60, status='PENDING', tenant_id=tenant_id)
         # Indexar señales por clave para búsqueda rápida
         signals_lookup = {f"{s['symbol']}|{s['timeframe']}": s for s in recent_signals}
         
@@ -215,11 +218,11 @@ async def get_heatmap_data() -> Dict[str, Any]:
 
 # ============ ENDPOINT: Historial de Régimen ============
 @router.get("/regime/{symbol}/history")
-async def regime_history(symbol: str, limit: int = 100) -> Dict[str, Any]:
+async def regime_history(symbol: str, limit: int = 100, token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """Retorna el historial de cambios de régimen para un símbolo"""
     try:
         market_db = MarketMixin()
-        history = market_db.get_market_state_history(symbol, limit=limit)
+        history = market_db.get_market_state_history(symbol, limit=limit, tenant_id=token.tid)
         formatted = [
             {
                 "regime": h["data"].get("regime"),
@@ -238,10 +241,10 @@ async def regime_history(symbol: str, limit: int = 100) -> Dict[str, Any]:
 
 # ============ ENDPOINT: Datos de Gráfica ============
 @router.get("/chart/{symbol}/{timeframe}")
-async def chart_data(symbol: str, timeframe: str = "M5", count: int = 500) -> Dict[str, Any]:
+async def chart_data(symbol: str, timeframe: str = "M5", count: int = 500, token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """Retorna datos de OHLC + indicadores para un símbolo y timeframe"""
     try:
-        service = _get_chart_service()
+        service = _get_chart_service(tenant_id=token.tid)
         return service.get_chart_data(symbol, timeframe, count)
     except Exception as e:
         logger.error(f"Error en chart_data: {e}")
@@ -250,7 +253,7 @@ async def chart_data(symbol: str, timeframe: str = "M5", count: int = 500) -> Di
 
 # ============ ENDPOINT: Régimen Actual ============
 @router.get("/regime/{symbol}")
-async def get_regime(symbol: str) -> Dict[str, Any]:
+async def get_regime(symbol: str, token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """Obtiene el régimen de mercado actual para un símbolo"""
     try:
         classifier = _get_regime_classifier()
@@ -267,7 +270,7 @@ async def get_regime(symbol: str) -> Dict[str, Any]:
 
 # ============ ENDPOINT: Configuraciones de Régimen ============
 @router.get("/regime_configs")
-async def get_regime_configs() -> Dict[str, Any]:
+async def get_regime_configs(token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """Retorna los pesos y configuraciones dinámicas de cada régimen (regime_configs table).
     Usado por UI para visualizar WeightedMetricsVisualizer (Darwinismo Algorítmico).
     
@@ -281,7 +284,7 @@ async def get_regime_configs() -> Dict[str, Any]:
     try:
         storage = _get_storage()
         # Obtener todos los regime_configs agrupados por régimen
-        all_configs = storage.get_all_regime_configs()
+        all_configs = storage.get_all_regime_configs(tenant_id=token.tid)
         
         # Transformar formato: all_configs es Dict[regime -> Dict[metric_name -> weight]]
         regime_weights = {}
@@ -302,13 +305,13 @@ async def get_regime_configs() -> Dict[str, Any]:
 
 # ============ ENDPOINT: Instrumentos (Lectura) ============
 @router.get("/instruments")
-async def get_instruments(all: bool = False) -> Dict[str, Any]:
+async def get_instruments(all: bool = False, token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """Retorna la lista de instrumentos agrupados por mercado/categoría desde la DB (SSOT).
     Si 'all' es True, incluye categorías e instrumentos inactivos (para Settings).
     """
     try:
         storage = _get_storage()
-        state = storage.get_system_state()
+        state = storage.get_system_state(tenant_id=token.tid)
         instruments_config = state.get("instruments_config")
         if instruments_config is None:
             raise ValueError("instruments_config no encontrado en DB. Inicialice la configuración desde la UI/API.")
@@ -358,10 +361,11 @@ async def get_instruments(all: bool = False) -> Dict[str, Any]:
 
 # ============ ENDPOINT: Instrumentos (Actualización) ============
 @router.post("/instruments")
-async def update_instruments(payload: dict) -> Dict[str, Any]:
+async def update_instruments(payload: dict, token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """Actualiza SOLO una categoría de instrumentos (más eficiente, DRY)"""
     try:
         storage = _get_storage()
+        tenant_id = token.tid
         market = payload.get("market")
         category = payload.get("category")
         data = payload.get("data")
@@ -369,14 +373,14 @@ async def update_instruments(payload: dict) -> Dict[str, Any]:
             raise HTTPException(status_code=400, detail="Faltan campos obligatorios: market, category, data")
         
         # Obtener estado actual
-        state = storage.get_system_state()
+        state = storage.get_system_state(tenant_id=tenant_id)
         instruments_config = state.get("instruments_config")
         if not instruments_config or market not in instruments_config or category not in instruments_config[market]:
             raise HTTPException(status_code=404, detail="Categoría no encontrada en la configuración actual")
         
         # Actualizar categoría
         instruments_config[market][category].update(data)
-        storage.update_system_state({"instruments_config": instruments_config})
+        storage.update_system_state({"instruments_config": instruments_config}, tenant_id=tenant_id)
         
         await _broadcast_thought(f"Categoría {market}/{category} actualizada por el usuario.", module="MARKET")
         return {"status": "success", "message": f"Categoría {market}/{category} actualizada correctamente."}

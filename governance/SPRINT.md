@@ -28,6 +28,11 @@
   - Extraer métodos a repositorios especializados.
   - Inyectar repositorios en `StorageManager` (Fachada).
 
+- [x] **Tenant Context Auto-Injection (HU 8.2)**
+  - Sustituir extracción manual por `get_current_active_user`.
+  - Inyectar `tenant_id` hacia `StorageManager` en los routers (Trading, Risk, Market).
+  - Protección JWT consolidada.
+
 ---
 
 ## 📸 Snapshot de Contexto

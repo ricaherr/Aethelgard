@@ -7,9 +7,11 @@ import logging
 import json
 from typing import Dict, Any, Optional
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Depends
 
 from data_vault.storage import StorageManager
+from core_brain.api.dependencies.auth import get_current_active_user
+from models.auth import TokenPayload
 from models.signal import Signal, SignalType, ConnectorType
 
 logger = logging.getLogger(__name__)
@@ -43,7 +45,8 @@ async def get_signals(
     timeframes: str = None,  # Comma-separated: "M1,M5"
     regimes: str = None,  # Comma-separated: "TREND,RANGE"
     strategies: str = None,  # Comma-separated: "Trifecta,Oliver Velez"
-    status: str = 'PENDING,EXECUTED,EXPIRED'  # Default to recent signals
+    status: str = 'PENDING,EXECUTED,EXPIRED',  # Default to recent signals
+    token: TokenPayload = Depends(get_current_active_user)
 ) -> Dict[str, Any]:
     """
     Get recent signals from database with optional filters
@@ -53,6 +56,7 @@ async def get_signals(
         logger.info(f"GET /api/signals: limit={limit}, minutes={minutes}, symbols={symbols}, status={status}")
         
         storage = _get_storage()
+        tenant_id = token.tid
         
         # Get signals from DB with SQL-level filtering
         all_signals = storage.get_recent_signals(
@@ -60,11 +64,12 @@ async def get_signals(
             limit=limit,
             symbol=symbols,
             timeframe=timeframes,
-            status=status
+            status=status,
+            tenant_id=tenant_id
         )
         
         # Obtener estados de mercado para flag has_chart
-        market_state = storage.get_all_market_states() or {}
+        market_state = storage.get_all_market_states(tenant_id=tenant_id) or {}
         
         # Filter results in memory for metadata-based fields
         filtered = all_signals
@@ -96,7 +101,7 @@ async def get_signals(
         if signal_ids:
             placeholders = ','.join(['?'] * len(signal_ids))
             trace_query = f"SELECT DISTINCT signal_id FROM signal_pipeline WHERE signal_id IN ({placeholders})"
-            trace_results = storage.execute_query(trace_query, tuple(signal_ids))
+            trace_results = storage.execute_query(trace_query, tuple(signal_ids), tenant_id=tenant_id)
             has_trace_set = {r['signal_id'] for r in trace_results}
 
         # Format signals for frontend
@@ -128,7 +133,7 @@ async def get_signals(
             # Augmentar con info de trades si están EXECUTED
             if sig_status == 'EXECUTED':
                 # Buscar en trade_results
-                result = storage.get_trade_result_by_signal_id(sig_id)
+                result = storage.get_trade_result_by_signal_id(sig_id, tenant_id=tenant_id)
                 if result:
                     formatted['live_status'] = 'CLOSED'
                     formatted['pnl'] = result.get('profit')
@@ -150,7 +155,7 @@ async def get_signals(
 
 
 @router.post("/signals/execute")
-async def execute_signal_manual(data: dict) -> Dict[str, Any]:
+async def execute_signal_manual(data: dict, token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """
     Manually execute a signal by ID (triggered from UI Execute button).
     
@@ -170,9 +175,10 @@ async def execute_signal_manual(data: dict) -> Dict[str, Any]:
         
         storage = _get_storage()
         trading_service = _get_trading_service()
+        tenant_id = token.tid
         
         # Get signal from database
-        signal_data = storage.get_signal_by_id(signal_id)
+        signal_data = storage.get_signal_by_id(signal_id, tenant_id=tenant_id)
         if not signal_data:
             raise HTTPException(status_code=404, detail=f"Signal {signal_id} not found")
         
@@ -209,7 +215,7 @@ async def execute_signal_manual(data: dict) -> Dict[str, Any]:
         from core_brain.risk_manager import RiskManager
         
         # Get MT5 connector via TradingService
-        mt5_connector = trading_service.get_mt5_connector()
+        mt5_connector = trading_service.get_mt5_connector(tenant_id=tenant_id)
         if not mt5_connector:
             return {
                 "success": False,
@@ -218,8 +224,8 @@ async def execute_signal_manual(data: dict) -> Dict[str, Any]:
             }
         
         # Create risk manager and executor
-        account_balance = trading_service.get_account_balance()
-        risk_manager = RiskManager(storage=storage, initial_capital=account_balance)
+        account_balance = trading_service.get_account_balance(tenant_id=tenant_id)
+        risk_manager = RiskManager(storage=storage, initial_capital=account_balance, tenant_id=tenant_id)
         executor = OrderExecutor(
             risk_manager=risk_manager,
             storage=storage,
@@ -241,7 +247,7 @@ async def execute_signal_manual(data: dict) -> Dict[str, Any]:
             storage.update_signal_status(signal_id, 'EXECUTED', {
                 'executed_at': datetime.now().isoformat(),
                 'execution_method': 'manual'
-            })
+            }, tenant_id=tenant_id)
             
             await _broadcast_thought(
                 f"Signal {signal_id} executed manually: {signal.symbol} {signal.signal_type.value}",
@@ -274,7 +280,7 @@ async def execute_signal_manual(data: dict) -> Dict[str, Any]:
 
 
 @router.get("/positions/open")
-async def get_open_positions() -> Dict[str, Any]:
+async def get_open_positions(token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """
     Get open positions with risk metadata.
     Returns positions with initial_risk_usd, r_multiple, asset_type.
@@ -282,14 +288,14 @@ async def get_open_positions() -> Dict[str, Any]:
     """
     try:
         trading_service = _get_trading_service()
-        return await trading_service.get_open_positions()
+        return await trading_service.get_open_positions(tenant_id=token.tid)
     except Exception as e:
         logger.error(f"Error getting open positions: {e}")
         return {"positions": [], "total_risk_usd": 0.0, "count": 0}
 
 
 @router.get("/edge/history")
-async def get_edge_history(limit: int = 50) -> Dict[str, Any]:
+async def get_edge_history(limit: int = 50, token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """
     Retorna el historial unificado de aprendizaje y tunning.
     Combina:
@@ -298,12 +304,13 @@ async def get_edge_history(limit: int = 50) -> Dict[str, Any]:
     """
     try:
         storage = _get_storage()
+        tenant_id = token.tid
         
         # 1. Obtener historial de tuning (legacy)
-        tuning_history = storage.get_tuning_history(limit=limit)
+        tuning_history = storage.get_tuning_history(limit=limit, tenant_id=tenant_id)
         
         # 2. Obtener historial de aprendizaje autónomo (Edge)
-        edge_history = storage.get_edge_learning_history(limit=limit)
+        edge_history = storage.get_edge_learning_history(limit=limit, tenant_id=tenant_id)
         
         # 3. Formatear y unificar
         unified_events = []
@@ -365,20 +372,20 @@ async def get_edge_history(limit: int = 50) -> Dict[str, Any]:
 
 
 @router.post("/auto-trading/toggle")
-async def toggle_auto_trading(request: Request) -> Dict[str, Any]:
+async def toggle_auto_trading(request: Request, token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """Activa o desactiva el auto-trading"""
     try:
         # Parse JSON body
         body = await request.json()
-        user_id = body.get('user_id', 'default')
         enabled = body.get('enabled', False)
         
         storage = _get_storage()
+        tenant_id = token.tid
         
-        success = storage.update_user_preferences(user_id, {'auto_trading_enabled': enabled})
+        success = storage.update_user_preferences(tenant_id, {'auto_trading_enabled': enabled}, tenant_id=tenant_id)
         if success:
             status = "enabled" if enabled else "disabled"
-            logger.info(f"Auto-trading {status} for user {user_id}")
+            logger.info(f"Auto-trading {status} for tenant {tenant_id}")
             return {"success": True, "auto_trading_enabled": enabled, "message": f"Auto-trading {status}"}
         else:
             raise HTTPException(status_code=400, detail="Failed to toggle auto-trading")
@@ -388,11 +395,11 @@ async def toggle_auto_trading(request: Request) -> Dict[str, Any]:
 
 
 @router.get("/strategies/library")
-async def get_strategies_library() -> Dict[str, Any]:
+async def get_strategies_library(token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """Returns the strategy library: registered strategies from DB + educational catalog."""
     try:
         storage = _get_storage()
-        rankings = storage.get_all_strategy_rankings()
+        rankings = storage.get_all_strategy_rankings(tenant_id=token.tid)
 
         registered = [
             {

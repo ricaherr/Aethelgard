@@ -131,9 +131,10 @@
     * **Prioridad**: Alta (Vector V1)
     * **Descripción**: Motor de gestión de esquemas SQLite aislados para consistencia multi-usuario. Terminada en ETI SAAS-BACKBONE-2026-001.
     * **🖥️ UI**: Indicador de "Sync Status" de base de datos.
-* **HU 8.2: De-fragmentación de StorageManager** `[TODO]`
+* **HU 8.2: Tenant Context Auto-Injection** `[x] COMPLETADA`
+    * **Trace_ID**: `SAAS-GENESIS-003`
     * **Prioridad**: CRÍTICA
-    * **Descripción**: Dividir el archivo de 1,369 LOC en repositorios modulares por dominio.
+    * **Descripción**: Inyección de contexto de inquilino (tenant_id) desde Auth Middleware a los Routers (Trading, Risk, Market) y delegación automática a StorageManager.
     * **🖥️ UI**: Indicador de "Persistence Health" en dashboard técnico.
 
 ## 09_INSTITUTIONAL_INTERFACE (UI/UX, Terminal)

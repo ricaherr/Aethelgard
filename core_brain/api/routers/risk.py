@@ -45,13 +45,14 @@ async def get_risk_status(token: TokenPayload = Depends(get_current_active_user)
     """
     try:
         storage = _get_storage()
+        tenant_id = token.tid
         
         # 1. Obtener stats de EdgeTuner desde la DB (SSOT)
         risk_mode = "NORMAL"
         last_adjustment = None
         
         # Intentar obtener el último ajuste de la DB (SSOT)
-        adjustments = storage.get_tuning_history(limit=1)
+        adjustments = storage.get_tuning_history(limit=1, tenant_id=tenant_id)
         if adjustments:
             last_adjustment = adjustments[0]
             factor = last_adjustment.get("adjustment_factor", 1.0)
@@ -62,7 +63,7 @@ async def get_risk_status(token: TokenPayload = Depends(get_current_active_user)
         
         # 2. Resumen de riesgos (Single Source of Truth)
         dynamic_params = {}
-        state = storage.get_system_state()
+        state = storage.get_system_state(tenant_id=tenant_id)
         dynamic_params = state.get("config_trading", {})
         
         if not dynamic_params:
@@ -74,7 +75,7 @@ async def get_risk_status(token: TokenPayload = Depends(get_current_active_user)
         last_rejection_reason = None
         
         try:
-            pipeline_events = storage.get_signal_pipeline_history(limit=50)
+            pipeline_events = storage.get_signal_pipeline_history(limit=50, tenant_id=tenant_id)
             today = datetime.now().date()
             for event in pipeline_events:
                 event_time = event.get('timestamp')
@@ -105,7 +106,7 @@ async def get_risk_status(token: TokenPayload = Depends(get_current_active_user)
 
 
 @router.get("/risk/summary")
-async def get_risk_summary() -> Dict[str, Any]:
+async def get_risk_summary(token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """
     Get account risk summary with distribution by asset type.
     Uses real MT5 balance if connected, otherwise cached or default value.
@@ -114,19 +115,20 @@ async def get_risk_summary() -> Dict[str, Any]:
     """
     try:
         trading_service = _get_trading_service()
+        tenant_id = token.tid
         
         # Get open positions via TradingService
-        positions_response = await trading_service.get_open_positions()
+        positions_response = await trading_service.get_open_positions(tenant_id=tenant_id)
         positions = positions_response.get("positions", [])
         total_risk = positions_response.get("total_risk_usd", 0.0)
         
         # Get REAL account balance from TradingService
-        account_balance = trading_service.get_account_balance()
-        balance_metadata = trading_service.get_balance_metadata()
+        account_balance = trading_service.get_account_balance(tenant_id=tenant_id)
+        balance_metadata = trading_service.get_balance_metadata(tenant_id=tenant_id)
         
         # Calculate risk percentage
         risk_percentage = (total_risk / account_balance * 100) if account_balance > 0 else 0.0
-        max_allowed_risk = trading_service.get_max_account_risk_pct()
+        max_allowed_risk = trading_service.get_max_account_risk_pct(tenant_id=tenant_id)
         
         # Distribution by asset type
         by_asset = {}
@@ -172,7 +174,7 @@ async def get_risk_summary() -> Dict[str, Any]:
 
 
 @router.get("/satellite/status")
-async def get_satellite_status() -> Any:
+async def get_satellite_status(token: TokenPayload = Depends(get_current_active_user)) -> Any:
     """
     Returns the status of all registered connectors from ConnectivityOrchestrator.
     """
@@ -181,7 +183,7 @@ async def get_satellite_status() -> Any:
 
 
 @router.post("/satellite/toggle")
-async def toggle_satellite(data: Dict[str, Any]) -> Any:
+async def toggle_satellite(data: Dict[str, Any], token: TokenPayload = Depends(get_current_active_user)) -> Any:
     """
     Manually enable or disable a satellite connector.
     """
@@ -203,13 +205,13 @@ async def toggle_satellite(data: Dict[str, Any]) -> Any:
 
 
 @router.get("/edge/tuning-logs")
-async def get_tuning_logs(limit: int = 50) -> Dict[str, Any]:
+async def get_tuning_logs(limit: int = 50, token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """
     Retorna el historial de ajustes del EdgeTuner (Neuro-evolución).
     """
     try:
         storage = _get_storage()
-        history = storage.get_tuning_history(limit=limit)
+        history = storage.get_tuning_history(limit=limit, tenant_id=token.tid)
         return {"status": "success", "history": history}
     except Exception as e:
         logger.error(f"Error recuperando historial de tuning: {e}")

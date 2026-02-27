@@ -46,6 +46,21 @@ Implementación del Auth Gateway (HU 1.1) para proteger y aislar el acceso a las
 
 ---
 
+#### 🛡️ MILESTONE 8.1: Tenant Context Auto-Injection (HU 8.2)
+**Trace_ID**: `SAAS-GENESIS-003`  
+**Timestamp**: 2026-02-26 21:26  
+**Estado Final**: ✅ COMPLETADO
+
+**Descripción**:  
+Inyección automática de contexto del inquilino en los routers operativos y delegación transparente hacia el `StorageManager` (Cierre del Círculo de Gobernanza).
+
+**Cambios Clave**:
+- `routers/trading.py, risk.py, market.py`: Sustitución de extracción manual de parámetros en favor de `Depends(get_current_active_user)`.
+- El `tenant_id` se extrae del JWT y se propaga limpiamente a `StorageManager` y dependencias de servicios secundarios como `TradingService`.
+- Aislamiento absoluto asegurado. Endpoints operativos protegidos contra acceso anónimo.
+
+---
+
 #### 🛡️ SAAS-BACKBONE-2026-001: Multi-Tenant Schema Migrator (HU 8.1)
 **Trace_ID**: `SAAS-BACKBONE-2026-001`  
 **Timestamp**: 2026-02-26 16:50  
