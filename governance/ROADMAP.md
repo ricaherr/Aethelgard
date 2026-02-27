@@ -23,7 +23,7 @@
 ### 🧠 V2 (Vector de Inteligencia & Supremacía de Ejecución) — ACTIVO (Dominio 04)
 **Objetivo**: Establecer el control de riesgo avanzado y la optimización de Alpha.
 
-- [ ] **Safety Governance & Risk Motor**: Implementación de Unidades R y Veto granular institucional (HU 4.4).
+- [x] **Safety Governance & Risk Motor**: Implementación de Unidades R y Veto granular institucional (HU 4.4).
 - [ ] **Multi-Scale Regime Vectorizer**: Unificación de temporalidades para decisión coherente (HU 2.1 - Base Vector V2).
 - [ ] **Contextual Alpha Scoring**: Motor de puntuación dinámica ponderada y dashboard Alpha Radar (HU 3.1).
 - [ ] **Dynamic Alpha Thresholding**: Mecanismo de defensa proactiva y auto-ajuste de umbrales según equidad (HU 3.5).
@@ -35,8 +35,8 @@
 ### 👁️ V3 (Vector de Dominio Sensorial) — PLANIFICADO (Dominios 04 y 10)
 **Objetivo**: Establecer la supremacía analítica mediante la detección de huella institucional y meta-aprendizaje de infraestructura.
 
-- [ ] **Safety Governance**: Implementación de Unidades R y Veto granular (Dominio 04).
-- [ ] **Exposure & Drawdown Monitor**: Supervisión de riesgo multi-tenant en tiempo real (HU 4.5).
+- [x] **Safety Governance**: Implementación del Safety Governor en Vector V2 (HU 4.4).
+- [x] **Exposure & Drawdown Monitor**: Supervisión de riesgo multi-tenant en tiempo real (HU 4.5).
 - [ ] **Anomaly Sentinel**: Detección de cisnes negros y antifragilidad (HU 4.6).
 - [ ] **Institutional Footprint**: Detección avanzada de huellas institucionales y zonas de liquidez (HU 3.2).
 - [ ] **Multi-Market Correlation**: Scanner de confluencia inter-mercado (HU 3.3).
@@ -45,7 +45,7 @@
 - [ ] **The Pulse (Advanced Feedback)**: Lazo de retroalimentación de infraestructura avanzado para veto técnico (HU 5.3 final).
 - [ ] **Coherence Drift Monitoring**: Detección de divergencia entre modelo y ejecución en vivo (HU 6.3).
 - [ ] **Autonomous Heartbeat & Self-Healing**: Monitoreo vital y auto-recuperación (HU 10.1).
-- [ ] **Infrastructure Resiliency**: Integración de métricas de salud y auto-curación (HU 10.2).
+- [x] **Infrastructure Resiliency**: Integración de métricas de salud (Path Resilience, HU 10.2).
 
 ---
 

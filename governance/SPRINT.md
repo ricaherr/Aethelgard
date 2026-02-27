@@ -1,42 +1,29 @@
-# SPRINT 1: SAAS GENESIS
+# SPRINT 2: SUPREMACÍA DE EJECUCIÓN (Risk Governance)
 
-**Inicio**: 25 de Febrero, 2026  
-**Objetivo**: Establecer los cimientos de la arquitectura multi-tenant con autenticación y aislamiento de datos.  
-**Versión Target**: v3.5.0
+**Inicio**: 27 de Febrero, 2026  
+**Objetivo**: Establecer el sistema nervioso central de gestión de riesgo institucional (Dominio 04) y asegurar la integridad del entorno base.  
+**Versión Target**: v4.0.0-beta.1
 
 ---
 
 ## 📋 Tareas del Sprint
 
-- [x] **Implementación de JWT Middleware para FastAPI**
-  - Crear middleware de validación de tokens JWT en cada request.
-  - Definir esquema de claims (user_id, tenant_id, role, exp).
-  - Integrar con el pipeline de routers existente.
+- [x] **Path Resilience (HU 10.2)**
+  - Script agnóstico `validate_env.py` para verificar salud de infraestructura.
+  - Validación de rutas, dependencias, variables de entorno y versiones de Python.
 
-- [x] **Creación de tabla `users` y `UserRepo`**
-  - Diseñar esquema: `users(id, email, password_hash, tenant_id, role, created_at)`.
-  - Implementar `UserRepo` con métodos CRUD + autenticación.
-  - Endpoints: `POST /api/auth/register`, `POST /api/auth/login`.
+- [x] **Safety Governor & Sovereignty Gateway (HU 4.4)**
+  - TDD implementado (`test_safety_governor.py`).
+  - Lógica de Unidades R implementada en `RiskManager.can_take_new_trade()`.
+  - Veto granular para proteger el capital institucional (`max_r_per_trade`).
+  - Generación de `RejectionAudit` ante vetos.
+  - Endpoint de dry-run validation expuesto en `/api/risk/validate`.
 
-- [x] **Desarrollo de la `TenantDBFactory` para aislamiento de bases de datos**
-  - Factory que resuelve la conexión SQLite por `tenant_id`.
-  - Patrón: `data_vault/{tenant_id}/aethelgard.db`.
-  - Migración automática de esquema en primer acceso.
-
-- [x] **Fragmentación de data_vault/storage.py para cumplimiento de Regla de Masa (<30KB)**
-  - Identificar dominios en `StorageManager`.
-  - Extraer métodos a repositorios especializados.
-  - Inyectar repositorios en `StorageManager` (Fachada).
-
-- [x] **Tenant Context Auto-Injection (HU 8.2)**
-  - Sustituir extracción manual por `get_current_active_user`.
-  - Inyectar `tenant_id` hacia `StorageManager` en los routers (Trading, Risk, Market).
-  - Protección JWT consolidada.
-
-- [x] **Intelligence Terminal UI (HU 9.1)**
-  - Estandarización estética Premium Dark / Glassmorphism.
-  - Implementación de AuthGuard y MainLayout.
-  - Saneamiento y refactorización de `App.tsx`.
+- [x] **Exposure & Drawdown Monitor Multi-Tenant (HU 4.5)**
+  - TDD implementado (`test_drawdown_monitor.py`).
+  - Monitoreo en tiempo real de picos de equidad y umbrales de Drawdown (Soft/Hard).
+  - Aislamiento arquitectónico garantizado por Tenant_ID.
+  - Endpoint de monitoreo expuesto en `/api/risk/exposure`.
 
 ---
 
@@ -44,10 +31,9 @@
 
 | Métrica | Valor |
 |---|---|
-| **Estado de Persistencia** | Aislada y blindada en Multi-Tenant via TenantDBFactory |
-| **Seguridad de Acceso** | Seguridad JWT + Aislamiento por Middleware |
-| **Masa de server.py** | <30KB |
-| **Masa de UI (Build)** | <800KB (733KB) |
-| **Build Stability** | ✅ Production Build SUCCESS |
-| **Integridad** | 17/17 tests PASSED |
-| **Versión Global** | v3.5.0 |
+| **Estado de Riesgo** | Gobernanza R-Unit Activa y Drawdown Controlado |
+| **Resiliencia de Entorno** | Verificada (100% path agnostic) |
+| **Integridad TDD** | 61/61 tests PASSED (Cero Regresiones) |
+| **Arquitectura** | SSOT (Unica DB), Endpoints Aislados |
+| **Versión Global** | v4.0.0-beta.1 |
+

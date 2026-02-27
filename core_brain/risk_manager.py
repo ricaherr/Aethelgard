@@ -8,6 +8,7 @@ EDGE COMPLIANCE: Integrated monitoring with circuit breaker protection.
 """
 import logging
 import uuid
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 from decimal import Decimal, ROUND_DOWN
 
@@ -108,6 +109,8 @@ class RiskManager:
         self.max_consecutive_losses = risk_settings.get('max_consecutive_losses', 
                                                         dynamic_params.get('max_consecutive_losses', 3))
         self.max_account_risk_pct = risk_settings.get('max_account_risk_pct', 5.0)  # Default 5%
+        # HU 4.4: Safety Governor — R-unit limit per trade (loaded from risk_settings, SSOT)
+        self.max_r_per_trade = Decimal(str(risk_settings.get('max_r_per_trade', 2.0)))  # Default 2R
 
         # 3. Persistencia de Lockdown
         system_state = self.storage.get_system_state()
@@ -186,7 +189,25 @@ class RiskManager:
             account_balance = self._get_account_balance(connector)
             if account_balance <= 0:
                 return False, f"Invalid account balance: ${account_balance}"
-            
+
+            # 1.5. HU 4.4: Safety Governor — Veto by R-Units (BEFORE position size calc)
+            # Formula: R = |Entry - SL| * contract_size / account_balance * 100
+            if signal.entry_price and signal.stop_loss and signal.stop_loss > 0:
+                r_unit = self._calculate_r_unit(signal, account_balance)
+                if r_unit > self.max_r_per_trade:
+                    audit = self._build_rejection_audit(
+                        signal=signal,
+                        r_calculated=r_unit,
+                        r_limit=self.max_r_per_trade,
+                        tenant_id=getattr(self.storage, 'tenant_id', 'unknown'),
+                    )
+                    reason = (
+                        f"[SAFETY_GOV] VETO: R={r_unit:.4f}R > limit={self.max_r_per_trade}R. "
+                        f"Audit-ID: {audit['trace_id']}"
+                    )
+                    logger.warning(f"[{signal.symbol}] {reason}")
+                    return False, reason
+
             # 2. Calculate current risk from open positions
            # Get open positions from connector
             try:
@@ -589,9 +610,79 @@ class RiskManager:
             return 0.0
 
     # =========================================================================
+    # SAFETY GOVERNOR - HU 4.4 (Private Methods)
+    # =========================================================================
+
+    def _calculate_r_unit(self, signal: 'Signal', account_balance: float) -> Decimal:
+        """
+        Calculate the R-unit risk of a trade using Decimal precision.
+
+        Formula: R = |Entry - SL| * contract_size / account_balance * 100
+
+        Args:
+            signal: Signal with entry_price and stop_loss
+            account_balance: Current account balance in USD
+
+        Returns:
+            Decimal: Risk in R-units (e.g., 1.0R = 1% of account per trade)
+        """
+        try:
+            d_entry = Decimal(str(signal.entry_price))
+            d_sl = Decimal(str(signal.stop_loss))
+            d_balance = Decimal(str(account_balance))
+
+            if d_balance <= 0:
+                logger.warning("[SAFETY_GOV] Cannot calculate R: balance is 0")
+                return Decimal("0")
+
+            # Get contract size from asset_profiles (SSOT)
+            profile = None
+            if hasattr(self, 'storage') and hasattr(self.storage, 'get_asset_profile'):
+                profile = self.storage.get_asset_profile(signal.symbol)
+            contract_size = Decimal(str(profile['contract_size'])) if profile else Decimal("100000")
+
+            sl_distance = abs(d_entry - d_sl)
+            r_unit = (sl_distance * contract_size / d_balance) * Decimal("100")
+
+            logger.debug(
+                f"[SAFETY_GOV] {signal.symbol}: entry={d_entry}, sl={d_sl}, "
+                f"contract={contract_size}, balance={d_balance} => R={r_unit:.4f}R"
+            )
+            return r_unit
+
+        except Exception as e:
+            logger.error(f"[SAFETY_GOV] Error calculating R-unit for {signal.symbol}: {e}")
+            return Decimal("0")
+
+    def _build_rejection_audit(
+        self,
+        signal: 'Signal',
+        r_calculated: Decimal,
+        r_limit: Decimal,
+        tenant_id: str = "unknown",
+    ) -> Dict[str, Any]:
+        """
+        Build a RejectionAudit dict for full traceability on Safety Governor veto.
+
+        Returns:
+            dict with: trace_id, timestamp, symbol, r_calculated, r_limit, reason, tenant_id
+        """
+        return {
+            "trace_id": f"GOV-{uuid.uuid4().hex[:8].upper()}",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "symbol": signal.symbol,
+            "r_calculated": r_calculated,
+            "r_limit": r_limit,
+            "reason": "RISK_LIMIT_EXCEEDED",
+            "tenant_id": tenant_id,
+            "entry_price": signal.entry_price,
+            "stop_loss": signal.stop_loss,
+        }
+
+    # =========================================================================
     # HELPER METHODS - Private
     # =========================================================================
-    
+
     def _get_account_balance(self, connector: Any) -> float:
         """Obtiene balance de la cuenta del connector."""
         try:

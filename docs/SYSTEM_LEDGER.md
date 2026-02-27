@@ -48,6 +48,27 @@ Resolución definitiva del "Authentication Loop" y estandarización avanzada de 
 
 ---
 
+### 📅 Registro: 2026-02-27
+
+#### 🛡️ MILESTONE 4.0: Risk Governance & Path Resilience (V2)
+**Trace_ID**: `RISK-GOVERNANCE-2026-004`  
+**Timestamp**: 2026-02-27 16:50  
+**Estado Final**: ✅ COMPLETADO
+
+**Descripción**:  
+Implementación del Dominio 04 (Risk Governance) dotando al cerebro de Aethelgard de defensas institucionales inquebrantables, y resolución de deuda técnica ambiental.
+
+**Cambios Clave**:
+- **Safety Governor (HU 4.4)**: Inyección de `max_r_per_trade` en el `RiskManager`. Ahora evalúa cada señal y ejecuta un veto directo si el riesgo en Unidades R supera el threshold del tenant, generando un `RejectionAudit` para trazabilidad total.
+- **Drawdown Monitor (HU 4.5)**: Nueva clase agnóstica `DrawdownMonitor` que trackea el pico de equidad histórico (Peak Equity) por `tenant_id` e implementa umbrales de Soft y Hard Drawdown para congelar la operativa (Lockdown) en escenarios de extremo riesgo.
+- **Path Resilience (HU 10.2)**: Script `validate_env.py` para blindaje multi-plataforma que valida el estado del sistema esquivando falencias clásicas de pathing y módulos fantasma.
+
+**Validación**:
+- ✅ 61/61 Tests universales PASSED (TDD estricto con `pytest`).
+- ✅ APIs `/risk/exposure` y `/risk/validate` expuestas limpiamente.
+
+---
+
 ### 📅 Registro: 2026-02-26
 
 #### 🛡️ MILESTONE 8.0: The Blind Reception (Auth Gateway)

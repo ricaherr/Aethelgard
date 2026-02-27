@@ -218,3 +218,105 @@ async def get_tuning_logs(limit: int = 50, token: TokenPayload = Depends(get_cur
     except Exception as e:
         logger.error(f"Error recuperando historial de tuning: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── HU 4.5: Drawdown & Exposure Monitor ──────────────────────────────────────
+
+@router.get("/risk/exposure")
+async def get_exposure(token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
+    """
+    HU 4.5: Returns the current DrawdownStatus for the authenticated tenant.
+
+    Evaluates account equity vs. peak to classify as SAFE / SOFT_ALERT / HARD_BREACH.
+    """
+    try:
+        from core_brain.drawdown_monitor import DrawdownMonitor
+        tenant_id = token.tid
+        trading_service = _get_trading_service()
+
+        current_equity = trading_service.get_account_balance(tenant_id=tenant_id)
+        balance_meta = trading_service.get_balance_metadata(tenant_id=tenant_id)
+
+        monitor = DrawdownMonitor(soft_threshold_pct=5.0, hard_threshold_pct=10.0)
+        status = monitor.update_equity(
+            tenant_id=tenant_id,
+            peak_equity=current_equity,
+            current_equity=current_equity,
+        )
+
+        return {
+            "tenant_id": tenant_id,
+            "level": status.level,
+            "drawdown_pct": float(status.drawdown_pct),
+            "current_equity": float(status.current_equity),
+            "peak_equity": float(status.peak_equity),
+            "soft_threshold_pct": float(status.soft_threshold),
+            "hard_threshold_pct": float(status.hard_threshold),
+            "should_lockdown": status.should_lockdown,
+            "balance_source": balance_meta.get("source", "UNKNOWN"),
+            "timestamp": datetime.now().isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Error in /api/risk/exposure: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── HU 4.4: Safety Governor Dry-Run Validation ───────────────────────────────
+
+@router.post("/risk/validate")
+async def validate_order_risk(
+    body: Dict[str, Any],
+    token: TokenPayload = Depends(get_current_active_user),
+) -> Dict[str, Any]:
+    """
+    HU 4.4: Dry-run validation of an order against the Safety Governor R-unit limits.
+
+    Body: { symbol, entry_price, stop_loss }
+    Returns: { approved, r_units, max_r_units, reason }
+    """
+    try:
+        from decimal import Decimal
+        from models.signal import Signal, SignalType, ConnectorType
+        from core_brain.risk_manager import RiskManager
+        from core_brain.position_size_monitor import PositionSizeMonitor
+
+        tenant_id = token.tid
+        storage = TenantDBFactory.get_storage(tenant_id)
+        trading_service = _get_trading_service()
+        balance = trading_service.get_account_balance(tenant_id=tenant_id)
+
+        symbol = body.get("symbol", "")
+        entry = float(body.get("entry_price", 0.0))
+        sl = float(body.get("stop_loss", 0.0))
+
+        if not symbol or entry <= 0 or sl <= 0:
+            raise HTTPException(status_code=400, detail="symbol, entry_price, and stop_loss are required.")
+
+        signal = Signal(
+            symbol=symbol,
+            signal_type=SignalType.BUY,
+            confidence=0.5,
+            entry_price=entry,
+            stop_loss=sl,
+            take_profit=entry,
+            connector_type=ConnectorType.PAPER,
+            metadata={"signal_id": "DRY-RUN"},
+        )
+
+        rm = RiskManager(storage=storage, initial_capital=balance, monitor=PositionSizeMonitor())
+        r_unit = rm._calculate_r_unit(signal, account_balance=balance)
+        approved = r_unit <= rm.max_r_per_trade
+
+        return {
+            "approved": approved,
+            "r_units": str(r_unit),
+            "max_r_units": str(rm.max_r_per_trade),
+            "reason": "" if approved else f"R={r_unit:.4f}R exceeds limit={rm.max_r_per_trade}R",
+            "symbol": symbol,
+            "timestamp": datetime.now().isoformat(),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in /api/risk/validate: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

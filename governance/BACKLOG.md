@@ -79,11 +79,11 @@
     * **🖥️ UI Representation**: Dial de "Exigencia Algorítmica" en el header, mostrando el umbral de entrada activo.
 
 ## 04_RISK_GOVERNANCE (Unidades R, Safety Governor, Veto)
-* **HU 4.4: Sovereignty Gateway Manager** `[TODO]`
+* **HU 4.4: Sovereignty Gateway Manager** `[DONE]`
     * **Prioridad**: Alta (Dependencia V1)
     * **Descripción**: Desarrollo del motor de reglas para la matriz de permisos de autonomía granular (Mercados/Componentes).
     * **🖥️ UI Representation**: Panel de control "Master Veto" con indicadores de estado (Autónomo/Manual) y Toggles de seguridad institucional.
-* **HU 4.5: Drawdown & Exposure Monitor (Multi-tenant)**
+* **HU 4.5: Drawdown & Exposure Monitor (Multi-tenant)** `[DONE]`
     * **Prioridad**: Media
     * **Descripción**: Sistema de monitoreo de riesgo agregado basado en Unidades R para entornos SaaS, garantizando que el riesgo de un cliente no desborde sus límites.
     * **🖥️ UI Representation**: Dashboard de "Heatmap de Exposición" con alertas visuales de proximidad al Hard Drawdown.
@@ -148,7 +148,7 @@
     * **Prioridad**: Media (Vector V3)
     * **Descripción**: Sistema de monitoreo de signos vitales y auto-recuperación de servicios.
     * **🖥️ UI**: Widget de "Status Vital" con log de eventos técnicos.
-* **HU 10.2: Path Resilience (Environment Stability)**
+* **HU 10.2: Path Resilience (Environment Stability)** `[DONE]`
     * **Prioridad**: Alta (Deuda Técnica V1)
     * **Descripción**: Desarrollo de un script de validación agnóstico a la ruta para evitar fallos por espacios o caracteres especiales en las rutas del sistema del desarrollador.
     * **🖥️ UI**: No aplica (Backend/Infra).
