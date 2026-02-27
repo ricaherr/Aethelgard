@@ -33,7 +33,7 @@
     * **Qué**: Implementar el middleware de seguridad para todas las rutas del API.
     * **Para qué**: Garantizar que solo usuarios autenticados accedan al cerebro de Aethelgard.
     * **🖥️ UI Representation**: Pantalla de Login (Premium Dark) con feedback de error en tiempo real. Redirección automática al dashboard tras handshake exitoso.
-* **HU 1.2: Tenant Isolation Protocol (Multi-tenancy)** `[TODO]`
+* **HU 1.2: Tenant Isolation Protocol (Multi-tenancy)** `[DONE]`
     * **Qué**: Configurar el TenantDBFactory para aislar los datos por cliente.
     * **Para qué**: Evitar fugas de datos entre usuarios (Principio de Aislamiento).
     * **🖥️ UI Representation**: Badge persistente en el header que indique Tenant_ID activo y estado de la conexión a su base de datos privada.
@@ -148,4 +148,7 @@
     * **Prioridad**: Media (Vector V3)
     * **Descripción**: Sistema de monitoreo de signos vitales y auto-recuperación de servicios.
     * **🖥️ UI**: Widget de "Status Vital" con log de eventos técnicos.
-* **HU 10.2: Meta-Aprendizaje de Infraestructura**: Registro y análisis de latencia y slippage real como variables críticas de decisión en el motor de ejecución. (Anteriormente 4.2)
+* **HU 10.2: Path Resilience (Environment Stability)**
+    * **Prioridad**: Alta (Deuda Técnica V1)
+    * **Descripción**: Desarrollo de un script de validación agnóstico a la ruta para evitar fallos por espacios o caracteres especiales en las rutas del sistema del desarrollador.
+    * **🖥️ UI**: No aplica (Backend/Infra).

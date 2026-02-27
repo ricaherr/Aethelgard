@@ -2,8 +2,8 @@
 
 "ESTÁNDAR DE EDICIÓN: El Roadmap se organiza en Vectores de Valor (V1, V2...). Cada hito debe estar vinculado a uno de los 10 dominios del BACKLOG."
 
-**Versión Log**: 3.5.0 (V1: Cimientos SaaS - ACTIVO)
-**Última Actualización**: 26 de Febrero, 2026 (21:16)
+**Versión Log**: v4.0.0-beta.1 (V2: Supremacía de Ejecución - ACTIVO)
+**Última Actualización**: 27 de Febrero, 2026 (07:15)
 
 <!-- REGLA DE ARCHIVADO: Cuando TODOS los items de un milestone estén [x], -->
 <!-- migrar automáticamente a docs/SYSTEM_LEDGER.md con el formato existente -->
@@ -13,30 +13,17 @@
 
 ## 📈 ROADMAP ESTRATÉGICO (Vectores de Valor)
 
-### 🚀 V1 (Vector de Cimientos SaaS) — ACTIVO (Dominios 01 y 08)
-**Prioridad Máxima**  
+### 🚀 V1 (Vector de Cimientos SaaS) — [x] CERRADO (Dominios 01 y 08)
+**Status**: COMPLETADO ✅
 **Trace_ID**: SAAS-GENESIS-2026-001  
 **Objetivo**: Evolucionar el sistema de un solo usuario a una arquitectura multi-tenant con autenticación JWT y aislamiento de datos por tenant.
 
-- [x] **Manifesto Transformation**: Restructuración del `AETHELGARD_MANIFESTO.md` hacia una Constitución Estratégica.
-- [x] **Auth Gateway & JWT Protection**: Implementación de middleware de seguridad y login premium (HU 1.1).
-- [x] **Tenant Isolation Protocol**: Aislamiento total de datos por cliente vía TenantDBFactory (HU 1.2).
-- [x] **SaaS Membership Hierarchy**: Definición de roles (Admin, Pro, Basic) y niveles de acceso (HU 1.3).
-- [ ] **Validación E2E**: Tests de integración para flujo auth completo + aislamiento de datos.
-- [ ] **Sovereignty Gateway**: Habilitación de control y matriz de permisos autónomos (HU 4.4). *Nota: Dependencia técnica clave para V1.*
-- [ ] **Infrastructure Health Monitoring**: Telemetría básica de salud del servidor para estabilidad multi-tenant (HU 5.3 preliminar).
-- [ ] **Multi-Tenant Strategy Ranking**: Clasificación darwinista de estrategias por usuario (HU 6.2).
-- [/] **Multi-Tenant Schema Migration**: Motor de consistencia de datos aislados — TenantDBFactory implementada (HU 8.1).
-- [x] **Refactorización Quirúrgica de Persistencia**: De-fragmentación de StorageManager para cumplimiento de Regla de Masa (HU 8.2).
-- [x] **Intelligence Terminal UI**: Estandarización de componentes Premium Dark (HU 9.1).
-
-**Dependencias**: Requiere SSOT 100% SQLite (✅ completado) y server.py modular (✅ completado).
-
 ---
 
-### 🧠 V2 (Vector de Inteligencia) — PLANIFICADO (Dominios 02 y 03)
-**Objetivo**: Optimización de Alpha y detección de regímenes de mercado multi-escalares.
+### 🧠 V2 (Vector de Inteligencia & Supremacía de Ejecución) — ACTIVO (Dominio 04)
+**Objetivo**: Establecer el control de riesgo avanzado y la optimización de Alpha.
 
+- [ ] **Safety Governance & Risk Motor**: Implementación de Unidades R y Veto granular institucional (HU 4.4).
 - [ ] **Multi-Scale Regime Vectorizer**: Unificación de temporalidades para decisión coherente (HU 2.1 - Base Vector V2).
 - [ ] **Contextual Alpha Scoring**: Motor de puntuación dinámica ponderada y dashboard Alpha Radar (HU 3.1).
 - [ ] **Dynamic Alpha Thresholding**: Mecanismo de defensa proactiva y auto-ajuste de umbrales según equidad (HU 3.5).

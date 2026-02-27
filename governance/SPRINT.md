@@ -47,5 +47,7 @@
 | **Estado de Persistencia** | Aislada y blindada en Multi-Tenant via TenantDBFactory |
 | **Seguridad de Acceso** | Seguridad JWT + Aislamiento por Middleware |
 | **Masa de server.py** | <30KB |
+| **Masa de UI (Build)** | <800KB (733KB) |
+| **Build Stability** | ✅ Production Build SUCCESS |
 | **Integridad** | 17/17 tests PASSED |
 | **Versión Global** | v3.5.0 |
