@@ -7,10 +7,12 @@ import logging
 import json
 from typing import Dict, Any, Optional
 from datetime import datetime
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 
 from data_vault.storage import StorageManager
 from core_brain.connectivity_orchestrator import ConnectivityOrchestrator
+from core_brain.api.dependencies.auth import get_current_active_user
+from models.auth import TokenPayload
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +38,7 @@ async def _broadcast_thought(message: str, module: str = "RISK", level: str = "i
 
 
 @router.get("/risk/status")
-async def get_risk_status() -> Dict[str, Any]:
+async def get_risk_status(token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """
     Obtiene el estado de riesgo en tiempo real y el modo de operación.
     Se apoya puramente en la base de datos para máxima resiliencia.

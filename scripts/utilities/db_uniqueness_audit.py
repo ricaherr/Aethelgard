@@ -24,8 +24,14 @@ from pathlib import Path
 # Directories excluded from the uniqueness constraint
 EXCLUDED_DIRS = {"backups", "venv", ".venv", "__pycache__", ".git", "node_modules"}
 
-# The one and only permitted database path (relative to workspace root)
-PERMITTED_DB_RELATIVE = Path("data_vault") / "aethelgard.db"
+# Directory containing isolated databases
+TENANTS_DIR_RELATIVE = Path("data_vault") / "tenants"
+
+# 1. The primary structural database path (relative to workspace root)
+PERMITTED_PRIMARY_DB = Path("data_vault") / "aethelgard.db"
+
+# 2. The global authentication database (HU 1.1)
+PERMITTED_AUTH_DB = Path("data_vault") / "global" / "auth.db"
 
 
 def audit_db_uniqueness(workspace: Path) -> int:
@@ -35,16 +41,16 @@ def audit_db_uniqueness(workspace: Path) -> int:
     Returns:
         0 on success, 1 on violation, 2 on missing primary DB.
     """
-    primary_db = workspace / PERMITTED_DB_RELATIVE
+    primary_db = workspace / PERMITTED_PRIMARY_DB
 
     # --- Check 1: Primary DB must exist ---
     if not primary_db.exists():
-        print(f"[CRITICAL] Primary database NOT FOUND: {PERMITTED_DB_RELATIVE}")
+        print(f"[CRITICAL] Primary database NOT FOUND: {PERMITTED_PRIMARY_DB}")
         print(f"  Expected location: {primary_db}")
         print("  The system cannot operate without its primary database.")
         return 2
 
-    print(f"[OK] Primary database confirmed: {PERMITTED_DB_RELATIVE}")
+    print(f"[OK] Primary database confirmed: {PERMITTED_PRIMARY_DB}")
 
     # --- Check 2: Scan for unauthorized .db files ---
     violations: list[Path] = []
@@ -57,9 +63,13 @@ def audit_db_uniqueness(workspace: Path) -> int:
         if any(part in EXCLUDED_DIRS for part in parts):
             continue  # Legitimate location, skip
 
-        # The only authorized database in non-excluded paths
-        if relative == PERMITTED_DB_RELATIVE:
-            continue  # This is the expected primary DB
+        # The authorized databases in non-excluded paths
+        if relative == PERMITTED_PRIMARY_DB or relative == PERMITTED_AUTH_DB:
+            continue  # This is the expected primary or auth DB
+        
+        # Also allow databases located inside data_vault/tenants/
+        if len(parts) >= 3 and parts[0] == "data_vault" and parts[1] == "tenants":
+            continue
 
         # Anything else is a violation
         violations.append(relative)
@@ -85,8 +95,10 @@ def main() -> int:
     print("\n[AUDIT] DB UNIQUENESS AUDIT — Aethelgard Safety Governor")
     print("=" * 70)
     print(f"Workspace: {workspace}")
-    print(f"Permitted: {PERMITTED_DB_RELATIVE}")
-    print(f"Excluded : {', '.join(sorted(EXCLUDED_DIRS))}")
+    print(f"Permitted Primary: {PERMITTED_PRIMARY_DB}")
+    print(f"Permitted Auth   : {PERMITTED_AUTH_DB}")
+    print(f"Permitted Tenants: {TENANTS_DIR_RELATIVE}/*.db")
+    print(f"Excluded Dirs    : {', '.join(sorted(EXCLUDED_DIRS))}")
     print("=" * 70)
 
     result = audit_db_uniqueness(workspace)
