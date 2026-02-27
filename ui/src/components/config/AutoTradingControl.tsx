@@ -1,18 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Power, RefreshCw, AlertCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useApi } from '../../hooks/useApi';
 
 export function AutoTradingControl() {
+    const { apiFetch } = useApi();
     const [autoTradingEnabled, setAutoTradingEnabled] = useState(false);
     const [loading, setLoading] = useState(true);
     const [toggling, setToggling] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const fetchStatus = async () => {
+    const fetchStatus = useCallback(async () => {
         setLoading(true);
         setError(null);
         try {
-            const response = await fetch('/api/user/preferences');
+            const response = await apiFetch('/api/user/preferences');
             if (!response.ok) throw new Error('Failed to fetch preferences');
             const data = await response.json();
             setAutoTradingEnabled(data.preferences?.auto_trading_enabled === 1);
@@ -21,16 +23,15 @@ export function AutoTradingControl() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [apiFetch]);
 
     const toggleAutoTrading = async () => {
         setToggling(true);
         setError(null);
         try {
             const newState = !autoTradingEnabled;
-            const response = await fetch('/api/auto-trading/toggle', {
+            const response = await apiFetch('/api/auto-trading/toggle', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     user_id: 'default',
                     enabled: newState
@@ -53,7 +54,7 @@ export function AutoTradingControl() {
 
     useEffect(() => {
         fetchStatus();
-    }, []);
+    }, [fetchStatus]);
 
     return (
         <div className="space-y-4">

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useApi } from './useApi';
 
 export interface HeatmapData {
     symbols: string[];
@@ -16,14 +17,15 @@ const sortTimeframes = (tfs: string[]) => {
     return [...tfs].sort((a, b) => (timeframeWeights[a] || 999999) - (timeframeWeights[b] || 999999));
 };
 
-export const useHeatmapData = (refreshInterval: number = 10000) => {
+export const useHeatmapData = (refreshInterval: number = 30000) => {
+    const { apiFetch } = useApi();
     const [data, setData] = useState<HeatmapData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
     const fetchHeatmap = useCallback(async () => {
         try {
-            const response = await fetch('/api/analysis/heatmap');
+            const response = await apiFetch('/api/analysis/heatmap');
             if (!response.ok) {
                 const errData = await response.json().catch(() => ({}));
                 throw new Error(errData.detail || 'Failed to fetch heatmap');
@@ -42,7 +44,7 @@ export const useHeatmapData = (refreshInterval: number = 10000) => {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [apiFetch]);
 
     useEffect(() => {
         fetchHeatmap();

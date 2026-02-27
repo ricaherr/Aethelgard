@@ -339,6 +339,12 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
     # Seed regime_configs with default weights (SSOT)
     _seed_regime_configs(cursor)
 
+    # Seed system_state with default configurations (Regla 14)
+    _seed_system_state(cursor)
+
+    # Seed notification_settings
+    _seed_notification_settings(cursor)
+
     conn.commit()
     logger.info("Schema initialized (all tables & indexes present).")
 
@@ -463,3 +469,51 @@ def _seed_regime_configs(cursor: sqlite3.Cursor) -> None:
             INSERT OR IGNORE INTO regime_configs (regime, metric_name, weight)
             VALUES (?, ?, ?)
         """, (regime, metric, weight))
+
+
+def _seed_system_state(cursor: sqlite3.Cursor) -> None:
+    """Seed default system configurations into system_state if missing."""
+    defaults = {
+        "config_trading": {
+            "assets": ["AAPL", "TSLA", "MES", "EURUSD"],
+            "cpu_limit_pct": 80.0,
+            "mt5_timeframe": "M5",
+            "mt5_bars_count": 500,
+            "loop_interval_trend": 5,
+            "loop_interval_range": 30,
+            "loop_interval_volatile": 15,
+            "loop_interval_shock": 60
+        },
+        "config_risk": {
+            "max_consecutive_losses": 3,
+            "lockdown_mode_enabled": 1,
+            "max_account_risk_pct": 5.0,
+            "tuning_enabled": 1,
+            "target_win_rate": 0.55
+        },
+        "config_system": {
+            "global_log_level": "INFO",
+            "performance_mode": 0,
+            "auto_start_mt5": 1
+        }
+    }
+
+    for key, value in defaults.items():
+        cursor.execute("""
+            INSERT OR IGNORE INTO system_state (key, value)
+            VALUES (?, ?)
+        """, (key, json.dumps(value)))
+
+
+def _seed_notification_settings(cursor: sqlite3.Cursor) -> None:
+    """Seed default notification providers."""
+    providers = [
+        ("telegram", 0, "{}"),
+        ("whatsapp", 0, "{}"),
+        ("email", 0, "{}")
+    ]
+    for provider, enabled, config in providers:
+        cursor.execute("""
+            INSERT OR IGNORE INTO notification_settings (provider, enabled, config)
+            VALUES (?, ?, ?)
+        """, (provider, enabled, config))

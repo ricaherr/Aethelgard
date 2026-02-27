@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Bell, X, AlertTriangle, Info, CheckCircle, TrendingUp } from 'lucide-react';
+import { useApi } from '../../hooks/useApi';
 
 interface Notification {
     id: string;
@@ -14,35 +15,40 @@ interface Notification {
 }
 
 export const NotificationCenter: React.FC = () => {
+    const { apiFetch } = useApi();
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [isOpen, setIsOpen] = useState(false);
     const [loading, setLoading] = useState(false);
 
-    useEffect(() => {
-        fetchNotifications();
-        const interval = setInterval(fetchNotifications, 30000); // Refresh cada 30s
-        return () => clearInterval(interval);
-    }, []);
-
-    const fetchNotifications = async () => {
+    const fetchNotifications = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await fetch('/api/notifications/unread?user_id=default');
-            const data = await response.json();
-            setNotifications(data.notifications || []);
+            const response = await apiFetch('/api/notifications/unread?user_id=default');
+            if (response.ok) {
+                const data = await response.json();
+                setNotifications(data.notifications || []);
+            }
         } catch (error) {
             console.error('Error fetching notifications:', error);
         } finally {
             setLoading(false);
         }
-    };
+    }, [apiFetch]);
+
+    useEffect(() => {
+        fetchNotifications();
+        const interval = setInterval(fetchNotifications, 30000); // Refresh cada 30s
+        return () => clearInterval(interval);
+    }, [fetchNotifications]);
 
     const markAsRead = async (notificationId: string) => {
         try {
-            await fetch(`/api/notifications/${notificationId}/mark-read`, {
+            const response = await apiFetch(`/api/notifications/${notificationId}/mark-read`, {
                 method: 'POST'
             });
-            setNotifications(prev => prev.filter(n => n.id !== notificationId));
+            if (response.ok) {
+                setNotifications(prev => prev.filter(n => n.id !== notificationId));
+            }
         } catch (error) {
             console.error('Error marking notification as read:', error);
         }

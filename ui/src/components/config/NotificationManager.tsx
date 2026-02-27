@@ -1,35 +1,23 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bell, MessageCircle, Mail, Send, CheckCircle, Shield, AlertTriangle, Info } from 'lucide-react';
 import { TelegramSetup } from './TelegramSetup';
+import { useApi } from '../../hooks/useApi';
 
 type Provider = 'telegram' | 'whatsapp' | 'email';
 
-export function NotificationManager() {
+interface NotificationManagerProps {
+    config?: any;
+    onRefresh: () => void;
+}
+
+export function NotificationManager({ config, onRefresh }: NotificationManagerProps) {
+    const { apiFetch } = useApi();
     const [activeProvider, setActiveProvider] = useState<Provider>('telegram');
-    const [settings, setSettings] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
-
-    const fetchAllSettings = async () => {
-        try {
-            const response = await fetch('/api/notifications/settings');
-            if (response.ok) {
-                const data = await response.json();
-                setSettings(data.settings || []);
-            }
-        } catch (err) {
-            console.error('Error fetching notification settings:', err);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    useEffect(() => {
-        fetchAllSettings();
-    }, []);
+    const settings = Array.isArray(config) ? config : (config?.settings || []);
 
     const isProviderEnabled = (providerName: string) => {
-        return settings.find(s => s.provider === providerName)?.enabled;
+        return settings.find((s: any) => s.provider === providerName)?.enabled;
     };
 
     return (

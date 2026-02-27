@@ -1,43 +1,46 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Power, Shield, AlertTriangle, Settings } from 'lucide-react';
+import { useApi } from '../../hooks/useApi';
 
 interface AutonomyControlProps {
     onConfigChange?: (config: any) => void;
 }
 
 export const AutonomyControl: React.FC<AutonomyControlProps> = ({ onConfigChange }) => {
+    const { apiFetch } = useApi();
     const [autoTradingEnabled, setAutoTradingEnabled] = useState(false);
     const [maxRisk, setMaxRisk] = useState(1.0);
     const [maxDailyTrades, setMaxDailyTrades] = useState(10);
     const [requireConfirmation, setRequireConfirmation] = useState(true);
     const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        fetchPreferences();
-    }, []);
-
-    const fetchPreferences = async () => {
+    const fetchPreferences = useCallback(async () => {
         try {
-            const response = await fetch('/api/user/preferences?user_id=default');
-            const prefs = await response.json();
-            setAutoTradingEnabled(prefs.auto_trading_enabled || false);
-            setMaxRisk(prefs.auto_trading_max_risk || 1.0);
-            setMaxDailyTrades(prefs.max_daily_trades || 10);
-            setRequireConfirmation(prefs.require_confirmation !== false);
+            const response = await apiFetch('/api/user/preferences?user_id=default');
+            if (response.ok) {
+                const prefs = await response.json();
+                setAutoTradingEnabled(prefs.auto_trading_enabled || false);
+                setMaxRisk(prefs.auto_trading_max_risk || 1.0);
+                setMaxDailyTrades(prefs.max_daily_trades || 10);
+                setRequireConfirmation(prefs.require_confirmation !== false);
+            }
         } catch (error) {
             console.error('Error fetching preferences:', error);
         } finally {
             setLoading(false);
         }
-    };
+    }, [apiFetch]);
+
+    useEffect(() => {
+        fetchPreferences();
+    }, [fetchPreferences]);
 
     const toggleAutoTrading = async () => {
         const newValue = !autoTradingEnabled;
 
         try {
-            const response = await fetch('/api/auto-trading/toggle', {
+            const response = await apiFetch('/api/auto-trading/toggle', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     user_id: 'default',
                     enabled: newValue
@@ -55,9 +58,8 @@ export const AutonomyControl: React.FC<AutonomyControlProps> = ({ onConfigChange
 
     const updatePreference = async (key: string, value: any) => {
         try {
-            await fetch('/api/user/preferences', {
+            await apiFetch('/api/user/preferences', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     user_id: 'default',
                     [key]: value

@@ -14,6 +14,7 @@ from data_vault.market_db import MarketMixin
 from core_brain.api.dependencies.auth import get_current_active_user
 from models.auth import TokenPayload
 from models.signal import MarketRegime
+from data_vault.tenant_factory import TenantDBFactory
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +129,8 @@ async def get_heatmap_data(token: TokenPayload = Depends(get_current_active_user
     # Intento 2: Fallback a Base de Datos (Cross-Process Resilience)
     if not cells:
         try:
-            db_states = _get_storage().get_latest_heatmap_state(tenant_id=tenant_id)
+            storage = TenantDBFactory.get_storage(tenant_id)
+            db_states = storage.get_latest_heatmap_state()
             if db_states:
                 # Deducir assets y timeframes de los datos
                 assets = sorted(list(set(s["symbol"] for s in db_states)))
@@ -172,7 +174,8 @@ async def get_heatmap_data(token: TokenPayload = Depends(get_current_active_user
     # 2. Integrar Señales Recientes (CONFLUENCIA)
     # Buscamos señales PENDING de la última hora
     try:
-        recent_signals = _get_storage().get_recent_signals(minutes=60, status='PENDING', tenant_id=tenant_id)
+        storage = TenantDBFactory.get_storage(tenant_id)
+        recent_signals = storage.get_recent_signals(minutes=60, status='PENDING')
         # Indexar señales por clave para búsqueda rápida
         signals_lookup = {f"{s['symbol']}|{s['timeframe']}": s for s in recent_signals}
         
@@ -221,8 +224,9 @@ async def get_heatmap_data(token: TokenPayload = Depends(get_current_active_user
 async def regime_history(symbol: str, limit: int = 100, token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """Retorna el historial de cambios de régimen para un símbolo"""
     try:
-        market_db = MarketMixin()
-        history = market_db.get_market_state_history(symbol, limit=limit, tenant_id=token.tid)
+        tenant_id = token.tid
+        storage = TenantDBFactory.get_storage(tenant_id)
+        history = storage.get_market_state_history(symbol, limit=limit)
         formatted = [
             {
                 "regime": h["data"].get("regime"),
@@ -282,9 +286,10 @@ async def get_regime_configs(token: TokenPayload = Depends(get_current_active_us
     }
     """
     try:
-        storage = _get_storage()
+        tenant_id = token.tid
+        storage = TenantDBFactory.get_storage(tenant_id)
         # Obtener todos los regime_configs agrupados por régimen
-        all_configs = storage.get_all_regime_configs(tenant_id=token.tid)
+        all_configs = storage.get_all_regime_configs()
         
         # Transformar formato: all_configs es Dict[regime -> Dict[metric_name -> weight]]
         regime_weights = {}
@@ -310,8 +315,9 @@ async def get_instruments(all: bool = False, token: TokenPayload = Depends(get_c
     Si 'all' es True, incluye categorías e instrumentos inactivos (para Settings).
     """
     try:
-        storage = _get_storage()
-        state = storage.get_system_state(tenant_id=token.tid)
+        tenant_id = token.tid
+        storage = TenantDBFactory.get_storage(tenant_id)
+        state = storage.get_system_state()
         instruments_config = state.get("instruments_config")
         if instruments_config is None:
             raise ValueError("instruments_config no encontrado en DB. Inicialice la configuración desde la UI/API.")
@@ -373,14 +379,15 @@ async def update_instruments(payload: dict, token: TokenPayload = Depends(get_cu
             raise HTTPException(status_code=400, detail="Faltan campos obligatorios: market, category, data")
         
         # Obtener estado actual
-        state = storage.get_system_state(tenant_id=tenant_id)
+        storage = TenantDBFactory.get_storage(tenant_id)
+        state = storage.get_system_state()
         instruments_config = state.get("instruments_config")
         if not instruments_config or market not in instruments_config or category not in instruments_config[market]:
             raise HTTPException(status_code=404, detail="Categoría no encontrada en la configuración actual")
         
         # Actualizar categoría
         instruments_config[market][category].update(data)
-        storage.update_system_state({"instruments_config": instruments_config}, tenant_id=tenant_id)
+        storage.update_system_state({"instruments_config": instruments_config})
         
         await _broadcast_thought(f"Categoría {market}/{category} actualizada por el usuario.", module="MARKET")
         return {"status": "success", "message": f"Categoría {market}/{category} actualizada correctamente."}

@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { GlassPanel } from '../common/GlassPanel';
 import { Shield, Power, Loader2, CheckCircle, AlertTriangle } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useApi } from '../../hooks/useApi';
 
 interface ModulesStatus {
     modules: {
@@ -33,23 +34,22 @@ const MODULE_ICONS = {
     notificator: '📢'
 };
 
-export function ModulesControl() {
+interface ModulesControlProps {
+    data?: any;
+    onRefresh: () => void;
+}
+
+export function ModulesControl({ data, onRefresh }: ModulesControlProps) {
+    const { apiFetch } = useApi();
     const [modules, setModules] = useState<ModulesStatus | null>(null);
-    const [loading, setLoading] = useState(true);
     const [toggling, setToggling] = useState<string | null>(null);
     const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-    const fetchModules = async () => {
-        try {
-            const res = await fetch('/api/modules/status');
-            const data = await res.json();
+    useEffect(() => {
+        if (data) {
             setModules(data);
-            setLoading(false);
-        } catch (error) {
-            console.error('Error fetching modules:', error);
-            setLoading(false);
         }
-    };
+    }, [data]);
 
     const toggleModule = async (moduleName: string, currentState: boolean) => {
         // Risk manager cannot be disabled
@@ -61,9 +61,8 @@ export function ModulesControl() {
 
         setToggling(moduleName);
         try {
-            const res = await fetch('/api/modules/toggle', {
+            const res = await apiFetch('/api/modules/toggle', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     module: moduleName,
                     enabled: !currentState
@@ -74,7 +73,7 @@ export function ModulesControl() {
 
             if (res.ok) {
                 setMessage({ type: 'success', text: data.message });
-                await fetchModules(); // Refresh status
+                onRefresh(); // Refresh via parent Hub
             } else {
                 setMessage({ type: 'error', text: data.detail || 'Failed to toggle module' });
             }
@@ -85,20 +84,6 @@ export function ModulesControl() {
             setTimeout(() => setMessage(null), 3000);
         }
     };
-
-    useEffect(() => {
-        fetchModules();
-        const interval = setInterval(fetchModules, 30000); // Refresh every 30s
-        return () => clearInterval(interval);
-    }, []);
-
-    if (loading) {
-        return (
-            <div className="h-full flex items-center justify-center">
-                <div className="text-white/50">Loading modules...</div>
-            </div>
-        );
-    }
 
     return (
         <div className="p-6 space-y-6">
@@ -128,8 +113,8 @@ export function ModulesControl() {
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0 }}
                     className={`p-4 rounded-lg border flex items-center gap-2 ${message.type === 'success'
-                            ? 'bg-green-500/10 border-green-500/20 text-green-300'
-                            : 'bg-red-500/10 border-red-500/20 text-red-300'
+                        ? 'bg-green-500/10 border-green-500/20 text-green-300'
+                        : 'bg-red-500/10 border-red-500/20 text-red-300'
                         }`}
                 >
                     {message.type === 'success' ? <CheckCircle size={16} /> : <AlertTriangle size={16} />}

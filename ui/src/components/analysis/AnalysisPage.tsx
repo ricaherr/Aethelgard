@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { LayoutGrid, List, Map, BarChart3, Settings, ChevronUp, ChevronDown } from 'lucide-react';
 import InstrumentAnalysisPanel from './InstrumentAnalysisPanel';
 import ScannerStatusMonitor from './ScannerStatusMonitor';
@@ -15,16 +15,17 @@ import MetricWidget from './MetricWidget';
 import TopOpportunities from './TopOpportunities';
 import InfoTooltip from './InfoTooltip';
 import { useHeatmapData } from '../../hooks/useHeatmapData';
+import { useApi } from '../../hooks/useApi';
 
 const DEFAULT_SYMBOL = 'EURUSD';
 
 type ViewMode = 'feed' | 'heatmap' | 'grid' | 'overview' | 'strategies' | 'trace';
 
 const AnalysisPage: React.FC = () => {
+  const { apiFetch } = useApi();
   const [symbol, setSymbol] = useState<string>(DEFAULT_SYMBOL);
   const [selectedSignalId, setSelectedSignalId] = useState<string>('');
 
-  // Chart Context State
   // Chart Context State
   const [selectedSignal, setSelectedSignal] = useState<any | null>(null);
   const [showContextPanel, setShowContextPanel] = useState(true);
@@ -67,29 +68,31 @@ const AnalysisPage: React.FC = () => {
     localStorage.setItem('aethelgard_analysis_view', viewMode);
   }, [viewMode]);
 
-  // Cargar preferencias del usuario desde DB
-  useEffect(() => {
-    fetchUserPreferences();
-  }, []);
-
-  const fetchUserPreferences = async () => {
+  const fetchUserPreferences = useCallback(async () => {
     try {
-      const response = await fetch('/api/user/preferences?user_id=default');
-      const prefs = await response.json();
+      const response = await apiFetch('/api/user/preferences?user_id=default');
+      if (response.ok) {
+        const prefs = await response.json();
 
-      // Restaurar filtros activos si existen, preservando defaults nuevos (como limit)
-      if (prefs.active_filters) {
-        setActiveFilters((prev: any) => ({
-          ...prev,
-          ...prefs.active_filters,
-          // Ensure limit exists if not in prefs
-          limit: prefs.active_filters.limit || prev.limit || 100
-        }));
+        // Restaurar filtros activos si existen, preservando defaults nuevos (como limit)
+        if (prefs.active_filters) {
+          setActiveFilters((prev: any) => ({
+            ...prev,
+            ...prefs.active_filters,
+            // Ensure limit exists if not in prefs
+            limit: prefs.active_filters.limit || prev.limit || 100
+          }));
+        }
       }
     } catch (error) {
       console.error('Error fetching user preferences:', error);
     }
-  };
+  }, [apiFetch]);
+
+  // Cargar preferencias del usuario desde DB
+  useEffect(() => {
+    fetchUserPreferences();
+  }, [fetchUserPreferences]);
 
   const handleFiltersChange = async (newFilters: any) => {
     setActiveFilters(newFilters);
@@ -99,9 +102,8 @@ const AnalysisPage: React.FC = () => {
 
     // Persistir filtros en DB
     try {
-      await fetch('/api/user/preferences', {
+      await apiFetch('/api/user/preferences', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           user_id: 'default',
           active_filters: newFilters
@@ -114,12 +116,8 @@ const AnalysisPage: React.FC = () => {
 
   const handleExecuteSignal = async (signalId: string) => {
     try {
-
-      const response = await fetch('/api/signals/execute', {
+      const response = await apiFetch('/api/signals/execute', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify({ signal_id: signalId }),
       });
 

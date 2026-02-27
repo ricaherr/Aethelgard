@@ -13,6 +13,7 @@ from data_vault.storage import StorageManager
 from core_brain.connectivity_orchestrator import ConnectivityOrchestrator
 from core_brain.api.dependencies.auth import get_current_active_user
 from models.auth import TokenPayload
+from data_vault.tenant_factory import TenantDBFactory
 
 logger = logging.getLogger(__name__)
 
@@ -44,15 +45,15 @@ async def get_risk_status(token: TokenPayload = Depends(get_current_active_user)
     Se apoya puramente en la base de datos para máxima resiliencia.
     """
     try:
-        storage = _get_storage()
         tenant_id = token.tid
+        storage = TenantDBFactory.get_storage(tenant_id)
         
         # 1. Obtener stats de EdgeTuner desde la DB (SSOT)
         risk_mode = "NORMAL"
         last_adjustment = None
         
         # Intentar obtener el último ajuste de la DB (SSOT)
-        adjustments = storage.get_tuning_history(limit=1, tenant_id=tenant_id)
+        adjustments = storage.get_tuning_history(limit=1)
         if adjustments:
             last_adjustment = adjustments[0]
             factor = last_adjustment.get("adjustment_factor", 1.0)
@@ -63,7 +64,7 @@ async def get_risk_status(token: TokenPayload = Depends(get_current_active_user)
         
         # 2. Resumen de riesgos (Single Source of Truth)
         dynamic_params = {}
-        state = storage.get_system_state(tenant_id=tenant_id)
+        state = storage.get_system_state()
         dynamic_params = state.get("config_trading", {})
         
         if not dynamic_params:
@@ -75,7 +76,7 @@ async def get_risk_status(token: TokenPayload = Depends(get_current_active_user)
         last_rejection_reason = None
         
         try:
-            pipeline_events = storage.get_signal_pipeline_history(limit=50, tenant_id=tenant_id)
+            pipeline_events = storage.get_signal_pipeline_history(limit=50)
             today = datetime.now().date()
             for event in pipeline_events:
                 event_time = event.get('timestamp')
@@ -210,8 +211,9 @@ async def get_tuning_logs(limit: int = 50, token: TokenPayload = Depends(get_cur
     Retorna el historial de ajustes del EdgeTuner (Neuro-evolución).
     """
     try:
-        storage = _get_storage()
-        history = storage.get_tuning_history(limit=limit, tenant_id=token.tid)
+        tenant_id = token.tid
+        storage = TenantDBFactory.get_storage(tenant_id)
+        history = storage.get_tuning_history(limit=limit)
         return {"status": "success", "history": history}
     except Exception as e:
         logger.error(f"Error recuperando historial de tuning: {e}")

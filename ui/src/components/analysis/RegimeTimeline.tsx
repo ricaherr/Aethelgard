@@ -1,7 +1,9 @@
-
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { GlassPanel } from '../common/GlassPanel';
 import { TrendingUp, TrendingDown, PauseCircle } from 'lucide-react';
+import { useApi } from '../../hooks/useApi';
+
+// ... interface ...
 
 interface RegimeTimelineProps {
   symbol: string;
@@ -22,14 +24,15 @@ const regimeIcon = (regime: string) => {
 };
 
 const RegimeTimeline: React.FC<RegimeTimelineProps> = ({ symbol }) => {
+  const { apiFetch } = useApi();
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchHistory = () => {
+  const fetchHistory = useCallback(() => {
     setLoading(true);
     setError(null);
-    fetch(`/api/regime/${symbol}/history`)
+    apiFetch(`/api/regime/${symbol}/history`)
       .then(res => {
         if (!res.ok) throw new Error('Error al obtener régimen');
         return res.json();
@@ -40,12 +43,12 @@ const RegimeTimeline: React.FC<RegimeTimelineProps> = ({ symbol }) => {
         console.error('[RegimeTimeline] Error:', err);
       })
       .finally(() => setLoading(false));
-  };
+  }, [apiFetch, symbol]);
 
   useEffect(() => {
     fetchHistory();
     // eslint-disable-next-line
-  }, [symbol]);
+  }, [fetchHistory]);
 
   return (
     <GlassPanel className="w-full h-full flex flex-col gap-4">

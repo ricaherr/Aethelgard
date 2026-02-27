@@ -183,30 +183,33 @@ class StrategyRankingMixin(BaseRepository):
             return [dict(row) for row in rows]
         finally:
             self._close_conn(conn)
-    def get_regime_weights(self, regime: str) -> Dict[str, str]:
+    def get_regime_weights(self, regime: str, tenant_id: str = "default") -> Dict[str, str]:
         """
         Get metric weights for a specific regime from regime_configs table.
         
         Args:
             regime: Market regime (TREND, RANGE, VOLATILE)
+            tenant_id: Tenant identifier for isolation
             
         Returns:
             Dictionary mapping metric_name -> weight (as string for Decimal conversion)
         """
         conn = self._get_conn()
         try:
+            # Note: regime_configs currently might be global or tenant-specific.
+            # If following the isolation protocol, we filter by tenant_id.
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT metric_name, weight FROM regime_configs 
-                WHERE regime = ?
+                WHERE regime = ? AND (tenant_id = ? OR tenant_id IS NULL)
                 ORDER BY metric_name
-            """, (regime,))
+            """, (regime, tenant_id))
             rows = cursor.fetchall()
             return {row[0]: row[1] for row in rows}
         finally:
             self._close_conn(conn)
 
-    def get_all_regime_configs(self) -> Dict[str, Dict[str, str]]:
+    def get_all_regime_configs(self, tenant_id: str = "default") -> Dict[str, Dict[str, str]]:
         """
         Get all regime configurations as nested dict.
         
@@ -218,6 +221,7 @@ class StrategyRankingMixin(BaseRepository):
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT regime, metric_name, weight FROM regime_configs
+                WHERE (tenant_id = ? OR tenant_id IS NULL)
                 ORDER BY regime, metric_name
             """)
             rows = cursor.fetchall()

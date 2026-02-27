@@ -1,8 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { MarketRegime } from '../../types/aethelgard';
 import { GlassPanel } from '../common/GlassPanel';
 import { AlertCircle, TrendingUp } from 'lucide-react';
+import { useApi } from '../../hooks/useApi';
+
+// ... interface ...
 
 interface RegimeWeights {
     [regime: string]: {
@@ -19,19 +22,16 @@ export function WeightedMetricsVisualizer({
     currentRegime = 'TREND',
     height = 300
 }: WeightedMetricsVisualizerProps) {
+    const { apiFetch } = useApi();
     const [weights, setWeights] = useState<RegimeWeights | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    useEffect(() => {
-        fetchRegimeConfigs();
-    }, []);
-
-    const fetchRegimeConfigs = async () => {
+    const fetchRegimeConfigs = useCallback(async () => {
         setLoading(true);
         setError(null);
         try {
-            const response = await fetch('/api/regime_configs');
+            const response = await apiFetch('/api/regime_configs');
             if (!response.ok) throw new Error('Failed to fetch regime configs');
 
             const data = await response.json();
@@ -42,7 +42,11 @@ export function WeightedMetricsVisualizer({
         } finally {
             setLoading(false);
         }
-    };
+    }, [apiFetch]);
+
+    useEffect(() => {
+        fetchRegimeConfigs();
+    }, [fetchRegimeConfigs]);
 
     if (loading) {
         return (

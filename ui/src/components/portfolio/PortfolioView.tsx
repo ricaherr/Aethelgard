@@ -1,34 +1,39 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { RiskSummary as RiskSummaryType, PositionMetadata } from '../../types/aethelgard';
 import { RiskSummary } from './RiskSummary';
 import { ActivePositions } from './ActivePositions';
+import { useApi } from '../../hooks/useApi';
 
 export function PortfolioView() {
+    const { apiFetch } = useApi();
     const [positions, setPositions] = useState<PositionMetadata[]>([]);
     const [riskSummary, setRiskSummary] = useState<RiskSummaryType | null>(null);
     const [loading, setLoading] = useState(true);
     const [riskPanelCollapsed, setRiskPanelCollapsed] = useState(false);
     const [fullscreenTicket, setFullscreenTicket] = useState<number | null>(null);
 
-    const fetchPortfolioData = async () => {
+    const fetchPortfolioData = useCallback(async () => {
         try {
-
             // Fetch positions
-            const positionsRes = await fetch('/api/positions/open');
-            const positionsData = await positionsRes.json();
-            setPositions(positionsData.positions || []);
+            const positionsRes = await apiFetch('/api/positions/open');
+            if (positionsRes.ok) {
+                const positionsData = await positionsRes.json();
+                setPositions(positionsData.positions || []);
+            }
 
             // Fetch risk summary (includes real-time balance from MT5 if connected)
-            const riskRes = await fetch('/api/risk/summary');
-            const riskData = await riskRes.json();
-            setRiskSummary(riskData);
+            const riskRes = await apiFetch('/api/risk/summary');
+            if (riskRes.ok) {
+                const riskData = await riskRes.json();
+                setRiskSummary(riskData);
+            }
 
             setLoading(false);
         } catch (error) {
             console.error('[Portfolio] Error fetching portfolio data:', error);
             setLoading(false);
         }
-    };
+    }, [apiFetch]);
 
     useEffect(() => {
         fetchPortfolioData();
@@ -37,7 +42,7 @@ export function PortfolioView() {
         const interval = setInterval(fetchPortfolioData, 30000);
 
         return () => clearInterval(interval);
-    }, []);
+    }, [fetchPortfolioData]);
 
     if (loading) {
         return (

@@ -9,23 +9,8 @@ interface AlphaSignalsProps {
     signals: Signal[];
 }
 
-export function AlphaSignals({ signals }: AlphaSignalsProps) {
-    const [scannerEnabled, setScannerEnabled] = useState(true);
-
-    useEffect(() => {
-        const checkModules = async () => {
-            try {
-                const res = await fetch('/api/modules/status');
-                const data = await res.json();
-                setScannerEnabled(data.modules?.scanner ?? true);
-            } catch (err) {
-                console.error('Error fetching modules:', err);
-            }
-        };
-        checkModules();
-        const interval = setInterval(checkModules, 30000);
-        return () => clearInterval(interval);
-    }, []);
+export function AlphaSignals({ signals, modulesStatus }: AlphaSignalsProps & { modulesStatus?: any }) {
+    const scannerEnabled = modulesStatus?.modules?.scanner ?? true;
 
     return (
         <GlassPanel className="flex-1 flex flex-col border-white/5">

@@ -1,7 +1,7 @@
-
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { GlassPanel } from '../common/GlassPanel';
 import { Zap, TrendingUp, TrendingDown, BarChart2, CheckCircle, AlertCircle } from 'lucide-react';
+import { useApi } from '../../hooks/useApi';
 
 interface InstrumentAnalysisPanelProps {
   symbol: string;
@@ -15,14 +15,15 @@ const badgeColor = (trend: string) => {
 };
 
 const InstrumentAnalysisPanel: React.FC<InstrumentAnalysisPanelProps> = ({ symbol }) => {
+  const { apiFetch } = useApi();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchAnalysis = () => {
+  const fetchAnalysis = useCallback(() => {
     setLoading(true);
     setError(null);
-    fetch(`/api/instrument/${symbol}/analysis`)
+    apiFetch(`/api/instrument/${symbol}/analysis`)
       .then(res => {
         if (!res.ok) throw new Error('Error al obtener análisis');
         return res.json();
@@ -34,12 +35,12 @@ const InstrumentAnalysisPanel: React.FC<InstrumentAnalysisPanelProps> = ({ symbo
         console.error('[InstrumentAnalysisPanel] Error:', err);
       })
       .finally(() => setLoading(false));
-  };
+  }, [apiFetch, symbol]);
 
   useEffect(() => {
     fetchAnalysis();
     // eslint-disable-next-line
-  }, [symbol]);
+  }, [fetchAnalysis]);
 
   return (
     <GlassPanel className="w-full h-full flex flex-col gap-4">

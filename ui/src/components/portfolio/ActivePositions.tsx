@@ -5,6 +5,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect } from 'react';
 import ChartView from '../analysis/ChartView';
 import { CandlestickData } from 'lightweight-charts';
+import { useApi } from '../../hooks/useApi';
+
+// ... rest of the component props interface ...
 
 interface ActivePositionsProps {
     positions: PositionMetadata[];
@@ -13,6 +16,7 @@ interface ActivePositionsProps {
 }
 
 export function ActivePositions({ positions, fullscreenTicket, onFullscreenToggle }: ActivePositionsProps) {
+    // ...
     // Filter positions: if fullscreen active, show only that trade
     const displayPositions = fullscreenTicket !== null
         ? positions.filter(p => p.ticket === fullscreenTicket)
@@ -86,6 +90,7 @@ interface PositionCardProps {
 }
 
 function PositionCard({ position, fullscreenTicket, onFullscreenToggle }: PositionCardProps) {
+    const { apiFetch } = useApi();
     const [showChart, setShowChart] = useState(false);
     const [chartData, setChartData] = useState<CandlestickData[]>([]);
     const [loadingChart, setLoadingChart] = useState(false);
@@ -113,7 +118,7 @@ function PositionCard({ position, fullscreenTicket, onFullscreenToggle }: Positi
     useEffect(() => {
         if ((showChart || isFullscreen) && position.timeframe && chartData.length === 0) {
             setLoadingChart(true);
-            fetch(`/api/chart/${position.symbol}/${position.timeframe}`)
+            apiFetch(`/api/chart/${position.symbol}/${position.timeframe}`)
                 .then(res => res.json())
                 .then(data => {
                     if (data.candles && Array.isArray(data.candles)) {
@@ -125,7 +130,7 @@ function PositionCard({ position, fullscreenTicket, onFullscreenToggle }: Positi
                 .catch(err => console.error("Error loading chart:", err))
                 .finally(() => setLoadingChart(false));
         }
-    }, [showChart, isFullscreen, position.symbol, position.timeframe, chartData.length]);
+    }, [showChart, isFullscreen, position.symbol, position.timeframe, chartData.length, apiFetch]);
 
     return (
         <motion.div

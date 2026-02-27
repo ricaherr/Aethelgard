@@ -8,9 +8,12 @@ import os
 import json
 from typing import Dict, Any, Optional
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Depends
 
 from data_vault.storage import StorageManager
+from core_brain.api.dependencies.auth import get_current_active_user
+from models.auth import TokenPayload
+from data_vault.tenant_factory import TenantDBFactory
 
 logger = logging.getLogger(__name__)
 
@@ -120,15 +123,16 @@ async def health() -> Dict[str, Any]:
 
 
 @router.get("/config/{category}")
-async def get_config(category: str) -> Dict[str, Any]:
+async def get_config(category: str, token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """Obtiene una categoría de configuración de la DB"""
     db_key = f"config_{category}"
-    storage = _get_storage()
+    tenant_id = token.tid
+    storage = TenantDBFactory.get_storage(tenant_id)
     state = storage.get_system_state()
     config_data = state.get(db_key)
     
     if config_data is None:
-        logger.warning(f"Config '{category}' requested not found in DB.")
+        logger.warning(f"Config '{category}' requested not found in DB for tenant {tenant_id}.")
         return {}
         
     if config_data is None and category == "notifications":
@@ -136,7 +140,7 @@ async def get_config(category: str) -> Dict[str, Any]:
         try:
             from data_vault.system_db import SystemMixin
             notif_db = SystemMixin()
-            telegram_settings = notif_db.get_notification_settings("telegram")
+            telegram_settings = notif_db.get_notification_settings("telegram", tenant_id=tenant_id)
             if telegram_settings:
                 # Asegurar que config_data sea un diccionario mutable
                 raw_config = telegram_settings.get("config", {})
@@ -165,10 +169,11 @@ async def get_config(category: str) -> Dict[str, Any]:
 
 
 @router.post("/config/{category}")
-async def update_config(category: str, new_data: dict) -> Dict[str, Any]:
+async def update_config(category: str, new_data: dict, token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """Actualiza una categoría de configuración en la DB"""
     db_key = f"config_{category}"
-    storage = _get_storage()
+    tenant_id = token.tid
+    storage = TenantDBFactory.get_storage(tenant_id)
     
     try:
         storage.update_system_state({db_key: new_data})
@@ -448,10 +453,12 @@ async def toggle_module(request: Request) -> Dict[str, Any]:
 # ============ User Preferences Endpoints ============
 
 @router.get("/user/preferences")
-async def get_user_preferences(user_id: str = "default") -> Dict[str, Any]:
+async def get_user_preferences(user_id: str = "default", token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """Returns the user preferences from the database."""
     try:
-        storage = _get_storage()
+        # Ensure we use the token's tid for tenant isolation
+        tenant_id = token.tid
+        storage = TenantDBFactory.get_storage(tenant_id)
         prefs = storage.get_user_preferences(user_id)
         if prefs is None:
             return {"preferences": {}, "user_id": user_id}
@@ -462,18 +469,19 @@ async def get_user_preferences(user_id: str = "default") -> Dict[str, Any]:
 
 
 @router.post("/user/preferences")
-async def update_user_preferences(request: Request) -> Dict[str, Any]:
+async def update_user_preferences(request: Request, token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """Update user preferences.
     Body: { "user_id": "default", "key": "value", ... }
     """
     try:
         body = await request.json()
         user_id = body.pop("user_id", "default")
+        tenant_id = token.tid
 
         if not body:
             raise HTTPException(status_code=400, detail="No preferences provided")
 
-        storage = _get_storage()
+        storage = TenantDBFactory.get_storage(tenant_id)
         success = storage.update_user_preferences(user_id, body)
 
         if success:

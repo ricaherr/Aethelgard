@@ -19,15 +19,18 @@ import { MonitorPage } from './components/diagnostic/MonitorPage';
 
 // New Core Layout & Auth
 import { AuthProvider } from './contexts/AuthContext';
+import { AethelgardProvider } from './contexts/AethelgardContext';
 import { AuthGuard } from './components/auth/AuthGuard';
 import { MainLayout } from './components/layout/MainLayout';
 
 function App() {
     return (
         <AuthProvider>
-            <AuthGuard>
-                <AuthenticatedView />
-            </AuthGuard>
+            <AethelgardProvider>
+                <AuthGuard>
+                    <AuthenticatedView />
+                </AuthGuard>
+            </AethelgardProvider>
         </AuthProvider>
     );
 }
@@ -37,26 +40,7 @@ function AuthenticatedView() {
     const [isDiagOpen, setIsDiagOpen] = useState(false);
 
     // Real-time data from Cerebro Brain - Only starts when this component mounts
-    const { regime, signals, thoughts, status, metrics, sendCommand, runAudit, runRepair } = useAethelgard();
-
-    const [riskStatus, setRiskStatus] = useState<any>(null);
-
-    useEffect(() => {
-        const fetchRisk = async () => {
-            try {
-                const res = await fetch('/api/risk/status');
-                if (res.ok) {
-                    const data = await res.json();
-                    setRiskStatus(data);
-                }
-            } catch (err) {
-                console.error('Error fetching risk status:', err);
-            }
-        };
-        fetchRisk();
-        const interval = setInterval(fetchRisk, 20000); // 20s update
-        return () => clearInterval(interval);
-    }, []);
+    const { regime, signals, thoughts, status, metrics, riskStatus, modulesStatus, sendCommand, runAudit, runRepair } = useAethelgard();
 
     return (
         <MainLayout activeTab={activeTab} setActiveTab={setActiveTab}>
@@ -95,7 +79,7 @@ function AuthenticatedView() {
                             </div>
 
                             {/* Main Opportunity Stream */}
-                            <AlphaSignals signals={signals} />
+                            <AlphaSignals signals={signals} modulesStatus={modulesStatus} />
                         </div>
                     </motion.div>
                 )}

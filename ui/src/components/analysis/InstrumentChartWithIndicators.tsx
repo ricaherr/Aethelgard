@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import ChartView from './ChartView';
 import { CandlestickData } from 'lightweight-charts';
 import { ChevronDown, ChevronUp } from 'lucide-react';
+import { useApi } from '../../hooks/useApi';
 
 interface InstrumentChartWithIndicatorsProps {
   symbol: string;
@@ -12,6 +13,7 @@ const InstrumentChartWithIndicators: React.FC<InstrumentChartWithIndicatorsProps
   symbol,
   selectedSignal
 }) => {
+  const { apiFetch } = useApi();
   const [chartData, setChartData] = useState<CandlestickData[]>([]);
   // Use signal timeframe or default to M5
   const [timeframe, setTimeframe] = useState<string>(selectedSignal?.timeframe || 'M5');
@@ -34,10 +36,10 @@ const InstrumentChartWithIndicators: React.FC<InstrumentChartWithIndicatorsProps
     isBuy?: boolean;
   }>({});
 
-  const fetchChart = () => {
+  const fetchChart = useCallback(() => {
     setLoading(true);
     setError(null);
-    fetch(`/api/chart/${symbol}/${timeframe}`)
+    apiFetch(`/api/chart/${symbol}/${timeframe}`)
       .then(res => {
         if (!res.ok) throw new Error('Error al obtener gráfica');
         return res.json();
@@ -65,12 +67,12 @@ const InstrumentChartWithIndicators: React.FC<InstrumentChartWithIndicatorsProps
         console.error('[InstrumentChartWithIndicators] Error:', err);
       })
       .finally(() => setLoading(false));
-  };
+  }, [apiFetch, symbol, timeframe]);
 
   useEffect(() => {
     fetchChart();
     // eslint-disable-next-line
-  }, [symbol, timeframe]);
+  }, [fetchChart]);
 
   return (
     <div className="absolute inset-0 flex flex-col bg-gray-900/50 rounded-none xl:rounded-lg border-x border-gray-800 overflow-hidden">

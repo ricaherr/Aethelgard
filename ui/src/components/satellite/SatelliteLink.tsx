@@ -3,16 +3,17 @@ import { Satellite, ShieldCheck, Activity, Power, PowerOff, Wifi, Terminal, Zap,
 import { GlassPanel } from '../common/GlassPanel';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAethelgard } from '../../hooks/useAethelgard';
+import { useApi } from '../../hooks/useApi';
 
 export function SatelliteLink() {
     const { status: systemStatus } = useAethelgard();
+    const { apiFetch } = useApi();
     const providers = systemStatus.satellites || {};
 
     const toggleProvider = async (id: string, currentlyEnabled: boolean) => {
         try {
-            await fetch('/api/satellite/toggle', {
+            await apiFetch('/api/satellite/toggle', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ provider_id: id, enabled: !currentlyEnabled })
             });
         } catch (err) {

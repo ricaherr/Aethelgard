@@ -6,9 +6,11 @@ import logging
 import json
 from typing import Dict, Any, Optional
 from datetime import datetime
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 
-from data_vault.storage import StorageManager
+from core_brain.api.dependencies.auth import get_current_active_user
+from models.auth import TokenPayload
+from data_vault.tenant_factory import TenantDBFactory
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +53,10 @@ async def _broadcast_thought(message: str, module: str = "CORE", level: str = "i
 
 
 @router.get("/notifications/unread")
-async def get_unread_notifications(user_id: str = 'default') -> Dict[str, Any]:
+async def get_unread_notifications(token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """Obtiene notificaciones no leídas"""
     try:
+        user_id = token.sub
         notification_service = _get_notification_service()
         notifications = notification_service.get_unread_notifications(user_id)
         return {"notifications": notifications, "count": len(notifications)}
@@ -63,7 +66,7 @@ async def get_unread_notifications(user_id: str = 'default') -> Dict[str, Any]:
 
 
 @router.post("/notifications/{notification_id}/mark-read")
-async def mark_notification_read(notification_id: str) -> Dict[str, Any]:
+async def mark_notification_read(notification_id: str, token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """Marca notificación como leída"""
     try:
         notification_service = _get_notification_service()
@@ -78,12 +81,12 @@ async def mark_notification_read(notification_id: str) -> Dict[str, Any]:
 
 
 @router.get("/notifications/settings")
-async def get_all_notification_settings() -> Dict[str, Any]:
+async def get_all_notification_settings(token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """Retorna la configuración de todos los proveedores de notificaciones"""
     try:
-        from data_vault.system_db import SystemMixin
-        notif_db = SystemMixin()
-        settings = notif_db.get_all_notification_settings()
+        tenant_id = token.tid
+        storage = TenantDBFactory.get_storage(tenant_id)
+        settings = storage.get_all_notification_settings()
         return {"status": "success", "settings": settings}
     except Exception as e:
         logger.error(f"Error getting notification settings: {e}")
@@ -97,13 +100,13 @@ async def update_notification_provider_settings(provider: str, data: dict) -> Di
     config = data.get("config", {})
     
     try:
-        from data_vault.system_db import SystemMixin
-        notif_db = SystemMixin()
-        success = notif_db.update_notification_settings(provider, enabled, config)
+        tenant_id = token.tid
+        storage = TenantDBFactory.get_storage(tenant_id)
+        success = storage.update_notification_settings(provider, enabled, config)
         
         if success:
             from core_brain.notificator import initialize_notifier
-            initialize_notifier(_get_storage())
+            initialize_notifier(storage)
             await _broadcast_thought(f"Notificaciones de {provider} actualizadas.", module="CORE")
             return {"status": "success", "message": f"Configuración de {provider} actualizada."}
         else:
@@ -187,15 +190,15 @@ async def save_telegram_config(data: dict) -> Dict[str, Any]:
             "premium_chat_id": chat_id
         }
         
-        # Guardar usando el nuevo SystemMixin
-        from data_vault.system_db import SystemMixin
-        notif_db = SystemMixin()
-        success = notif_db.update_notification_settings("telegram", enabled, telegram_config)
+        # Guardar usando el nuevo SystemMixin (vía Factory)
+        tenant_id = token.tid
+        storage = TenantDBFactory.get_storage(tenant_id)
+        success = storage.update_notification_settings("telegram", enabled, telegram_config)
         
         if success:
             # Re-inicializar el motor de notificaciones
             from core_brain.notificator import initialize_notifier
-            initialize_notifier(_get_storage())
+            initialize_notifier(storage)
             
             await _broadcast_thought("Notificaciones de Telegram configuradas correctamente.", module="CORE")
             logger.info(f"✅ Telegram configurado: Chat ID {chat_id}")

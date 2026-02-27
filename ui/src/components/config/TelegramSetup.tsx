@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Send, CheckCircle, Loader, AlertCircle, ExternalLink, Copy } from 'lucide-react';
+import { useApi } from '../../hooks/useApi';
 
 export function TelegramSetup() {
+    const { apiFetch } = useApi();
     const [botToken, setBotToken] = useState('');
     const [chatId, setChatId] = useState('');
     const [step, setStep] = useState<1 | 2 | 3 | 4>(1); // Wizard steps
@@ -12,15 +14,9 @@ export function TelegramSetup() {
     const [botInfo, setBotInfo] = useState<any>(null);
     const [instructions, setInstructions] = useState<any>(null);
 
-    // Load existing config
-    useEffect(() => {
-        loadExistingConfig();
-        loadInstructions();
-    }, []);
-
-    const loadExistingConfig = async () => {
+    const loadExistingConfig = useCallback(async () => {
         try {
-            const response = await fetch('/api/config/notifications');
+            const response = await apiFetch('/api/config/notifications');
             if (response.ok) {
                 const data = await response.json();
                 if (data.data?.bot_token) {
@@ -35,11 +31,11 @@ export function TelegramSetup() {
         } catch (err) {
             console.error('Error loading config:', err);
         }
-    };
+    }, [apiFetch]);
 
-    const loadInstructions = async () => {
+    const loadInstructions = useCallback(async () => {
         try {
-            const response = await fetch('/api/telegram/instructions');
+            const response = await apiFetch('/api/telegram/instructions');
             if (response.ok) {
                 const data = await response.json();
                 setInstructions(data);
@@ -47,7 +43,13 @@ export function TelegramSetup() {
         } catch (err) {
             console.error('Error loading instructions:', err);
         }
-    };
+    }, [apiFetch]);
+
+    // Load existing config
+    useEffect(() => {
+        loadExistingConfig();
+        loadInstructions();
+    }, [loadExistingConfig, loadInstructions]);
 
     const validateToken = async () => {
         if (!botToken || botToken.length < 40) {
@@ -59,9 +61,8 @@ export function TelegramSetup() {
         setError(null);
 
         try {
-            const response = await fetch('/api/telegram/validate', {
+            const response = await apiFetch('/api/telegram/validate', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ bot_token: botToken })
             });
 
@@ -86,9 +87,8 @@ export function TelegramSetup() {
         setError(null);
 
         try {
-            const response = await fetch('/api/telegram/get-chat-id', {
+            const response = await apiFetch('/api/telegram/get-chat-id', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ bot_token: botToken })
             });
 
@@ -115,9 +115,8 @@ export function TelegramSetup() {
         setError(null);
 
         try {
-            const response = await fetch('/api/telegram/test', {
+            const response = await apiFetch('/api/telegram/test', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ bot_token: botToken, chat_id: chatId })
             });
 
@@ -141,9 +140,8 @@ export function TelegramSetup() {
         setError(null);
 
         try {
-            const response = await fetch('/api/telegram/save', {
+            const response = await apiFetch('/api/telegram/save', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     bot_token: botToken,
                     chat_id: chatId,
@@ -191,11 +189,10 @@ export function TelegramSetup() {
             <div className="flex items-center gap-3">
                 {[1, 2, 3, 4].map((s) => (
                     <div key={s} className="flex items-center gap-3 flex-1">
-                        <div className={`flex items-center justify-center w-8 h-8 rounded-full border-2 transition-all ${
-                            step >= s
+                        <div className={`flex items-center justify-center w-8 h-8 rounded-full border-2 transition-all ${step >= s
                                 ? 'bg-aethelgard-green/20 border-aethelgard-green text-aethelgard-green'
                                 : 'bg-white/5 border-white/10 text-white/30'
-                        }`}>
+                            }`}>
                             {step > s ? <CheckCircle size={16} /> : <span className="text-xs font-bold">{s}</span>}
                         </div>
                         {s < 4 && <div className={`flex-1 h-0.5 ${step > s ? 'bg-aethelgard-green/30' : 'bg-white/10'}`} />}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Save, RefreshCw, AlertTriangle, Shield, Sliders, Settings, Bell, Power, Server } from 'lucide-react';
 import { GlassPanel } from '../common/GlassPanel';
@@ -8,55 +8,111 @@ import { AutoTradingControl } from './AutoTradingControl';
 import { InstrumentsEditor } from './InstrumentsEditor';
 import { BackupSettings } from './BackupSettings';
 import { ConnectivityHub } from './ConnectivityHub';
+import { useApi } from '../../hooks/useApi';
 
 type ConfigCategory = 'trading' | 'risk' | 'system' | 'notifications' | 'modules' | 'instruments' | 'backups' | 'connectivity';
 
+const CATEGORY_ENDPOINTS: Record<string, string> = {
+    'trading': '/api/config/trading',
+    'risk': '/api/config/risk',
+    'system': '/api/config/system',
+    'notifications': '/api/notifications/settings',
+    'backups': '/api/backup/settings',
+    'instruments': '/api/instruments?all=true',
+    'modules': '/api/modules/status'
+};
+
 export function ConfigHub() {
+    const { apiFetch } = useApi();
     const [activeCategory, setActiveCategory] = useState<ConfigCategory>('trading');
     const [config, setConfig] = useState<any>(null);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [message, setMessage] = useState<string | null>(null);
-    const specialCategories: ConfigCategory[] = ['modules', 'notifications', 'instruments', 'backups', 'connectivity'];
-    const usesGenericSave = !specialCategories.includes(activeCategory);
+    const [retryCount, setRetryCount] = useState(0);
 
-    const fetchConfig = async (category: ConfigCategory) => {
-        // Special categories don't need backend config
-        if (specialCategories.includes(category)) {
-            setLoading(false);
-            setConfig(null);
+    const isSpecialCategory = ['notifications', 'modules', 'instruments', 'backups', 'connectivity'].includes(activeCategory);
+    const usesGenericSave = !isSpecialCategory;
+
+    const fetchConfig = useCallback(async (category: ConfigCategory, isRetry = false) => {
+        const endpoint = CATEGORY_ENDPOINTS[category as string];
+        if (!endpoint) {
+            if (category === 'connectivity') {
+                setLoading(false);
+                setConfig(null);
+            }
             return;
         }
-        setLoading(true);
-        setError(null);
-        try {
-            const response = await fetch(`/api/config/${category}`);
-            if (!response.ok) throw new Error(`Error ${response.status}: ${category} config not found.`);
-            const data = await response.json();
-            setConfig(data.data);
-        } catch (err: any) {
-            setError(err.message);
-        } finally {
-            setLoading(false);
+
+        if (!isRetry) {
+            setLoading(true);
+            setError(null);
+            setRetryCount(0);
         }
-    };
+
+        try {
+            const response = await apiFetch(endpoint);
+            if (response.ok) {
+                const data = await response.json();
+
+                // Normalización de datos por categoría
+                if (category === 'notifications' || category === 'backups') {
+                    setConfig(data.settings || {});
+                } else if (category === 'modules') {
+                    setConfig(data);
+                } else if (category === 'instruments') {
+                    setConfig(data.markets || {});
+                } else {
+                    setConfig(data.data || {});
+                }
+
+                setLoading(false);
+                setRetryCount(0);
+            } else {
+                throw new Error(`Error ${response.status}: Failed to load ${category}`);
+            }
+        } catch (err: any) {
+            console.warn(`[ConfigHub] Fetch for ${category} failed:`, err);
+            if (retryCount < 10) {
+                const nextRetry = retryCount + 1;
+                setRetryCount(nextRetry);
+                const delay = nextRetry <= 3 ? 20000 : 60000;
+                setError(`Reintentando ${category}... (${nextRetry}/10)`);
+                setTimeout(() => fetchConfig(category, true), delay);
+            } else {
+                setError(`Falla crítica en '${category}'. Ingrese a modo manual.`);
+                setLoading(false);
+            }
+        }
+    }, [apiFetch, retryCount]);
 
     const handleSave = async () => {
-        if (!config) return;
+        if (!config && activeCategory !== 'connectivity') return;
         setSaving(true);
         setError(null);
         setMessage(null);
         try {
-            const response = await fetch(`/api/config/${activeCategory}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(config)
-            });
-            if (!response.ok) throw new Error('Failed to save configuration.');
+            let endpoint = `/api/config/${activeCategory}`;
+            let body = config;
 
-            setMessage(`✅ ${activeCategory.toUpperCase()} configuration saved to DB.`);
+            if (activeCategory === 'backups') {
+                endpoint = '/api/backup/settings';
+            } else if (activeCategory === 'notifications') {
+                // Notificaciones se guardan por proveedor usualmente, pero aquí guardamos la base
+                endpoint = '/api/config/notifications';
+            }
+
+            const response = await apiFetch(endpoint, {
+                method: 'POST',
+                body: JSON.stringify(body)
+            });
+
+            if (!response.ok) throw new Error('Falló el guardado en el Data Vault.');
+
+            setMessage(`✅ ${activeCategory.toUpperCase()} sincronizado correctamente.`);
             setTimeout(() => setMessage(null), 3000);
+            await fetchConfig(activeCategory);
         } catch (err: any) {
             setError(err.message);
         } finally {
@@ -66,7 +122,7 @@ export function ConfigHub() {
 
     useEffect(() => {
         fetchConfig(activeCategory);
-    }, [activeCategory]);
+    }, [fetchConfig, activeCategory]);
 
     const handleInputChange = (key: string, value: any) => {
         setConfig((prev: any) => {
@@ -211,32 +267,32 @@ export function ConfigHub() {
                                     </div>
                                 )}
 
-                                {/* Special case: Notification Manager (Telegram, WhatsApp, Email) */}
+                                {/* Special case: Notification Manager */}
                                 {!loading && activeCategory === 'notifications' && (
-                                    <NotificationManager />
+                                    <NotificationManager config={config} onRefresh={() => fetchConfig('notifications')} />
                                 )}
 
                                 {/* Special case: System Modules */}
                                 {!loading && activeCategory === 'modules' && (
-                                    <ModulesControl />
+                                    <ModulesControl data={config} onRefresh={() => fetchConfig('modules')} />
                                 )}
 
                                 {/* Special case: Instruments Editor */}
                                 {!loading && activeCategory === 'instruments' && (
-                                    <InstrumentsEditor />
+                                    <InstrumentsEditor data={config} onRefresh={() => fetchConfig('instruments')} />
                                 )}
 
                                 {/* Special case: Backup Settings */}
                                 {!loading && activeCategory === 'backups' && (
-                                    <BackupSettings />
+                                    <BackupSettings config={config} onRefresh={() => fetchConfig('backups')} />
                                 )}
 
-                                {/* Special case: Connectivity Hub (NEW) */}
+                                {/* Special case: Connectivity Hub */}
                                 {!loading && activeCategory === 'connectivity' && (
                                     <ConnectivityHub />
                                 )}
 
-                                {!loading && config && activeCategory !== 'notifications' && activeCategory !== 'modules' && activeCategory !== 'backups' && activeCategory !== 'connectivity' && (
+                                {!loading && config && !['notifications', 'modules', 'instruments', 'backups', 'connectivity'].includes(activeCategory) && (
                                     <>
                                         {/* Auto-Trading Control (only in trading category) */}
                                         {activeCategory === 'trading' && (

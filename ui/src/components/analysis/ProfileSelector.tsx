@@ -1,5 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { User, ChevronDown } from 'lucide-react';
+import { useApi } from '../../hooks/useApi';
+
+// ... interfaces ...
 
 interface Profile {
     profile_type: string;
@@ -38,17 +41,14 @@ export const ProfileSelector: React.FC<ProfileSelectorProps> = ({
     currentProfile,
     onProfileChange
 }) => {
+    const { apiFetch } = useApi();
     const [isOpen, setIsOpen] = useState(false);
     const [profiles, setProfiles] = useState<Record<string, Profile>>({});
     const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        fetchProfiles();
-    }, []);
-
-    const fetchProfiles = async () => {
+    const fetchProfiles = useCallback(async () => {
         try {
-            const response = await fetch('/api/user/profiles');
+            const response = await apiFetch('/api/user/profiles');
             const data = await response.json();
             setProfiles(data.profiles);
         } catch (error) {
@@ -56,7 +56,11 @@ export const ProfileSelector: React.FC<ProfileSelectorProps> = ({
         } finally {
             setLoading(false);
         }
-    };
+    }, [apiFetch]);
+
+    useEffect(() => {
+        fetchProfiles();
+    }, [fetchProfiles]);
 
     const handleProfileSelect = async (profileType: string) => {
         setIsOpen(false);
@@ -72,9 +76,8 @@ export const ProfileSelector: React.FC<ProfileSelectorProps> = ({
                 ...profileConfig
             };
 
-            const response = await fetch('/api/user/preferences', {
+            const response = await apiFetch('/api/user/preferences', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
 

@@ -1,44 +1,38 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { GlassPanel } from '../common/GlassPanel';
-import { Save, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Save, RefreshCw, AlertTriangle, Sliders } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useApi } from '../../hooks/useApi';
 
 
-export function InstrumentsEditor() {
+interface InstrumentsEditorProps {
+    data?: any;
+    onRefresh: () => void;
+}
+
+export function InstrumentsEditor({ data, onRefresh }: InstrumentsEditorProps) {
+    const { apiFetch } = useApi();
     const [markets, setMarkets] = useState<any>({});
     const [activeMarket, setActiveMarket] = useState<string | null>(null);
     const [activeCategory, setActiveCategory] = useState<string | null>(null);
-    const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [message, setMessage] = useState<string | null>(null);
     const [newSymbol, setNewSymbol] = useState<string>("");
 
-    const fetchInstruments = async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            // En Settings, pedir todos los instrumentos y categorías (activos e inactivos)
-            const res = await fetch('/api/instruments?all=true');
-            if (!res.ok) throw new Error('No se pudo obtener la lista de instrumentos.');
-            const data = await res.json();
-            const mkts = data.markets || {};
-            setMarkets(mkts);
-            // Selección inicial
-            const firstMarket = Object.keys(mkts)[0] || null;
-            setActiveMarket(firstMarket);
-            const firstCat = firstMarket ? Object.keys(mkts[firstMarket])[0] : null;
-            setActiveCategory(firstCat);
-        } catch (err: any) {
-            setError(err.message);
-        } finally {
-            setLoading(false);
-        }
-    };
-
     useEffect(() => {
-        fetchInstruments();
-    }, []);
+        if (data) {
+            setMarkets(data);
+            if (!activeMarket) {
+                const firstMarket = Object.keys(data)[0] || null;
+                setActiveMarket(firstMarket);
+                if (firstMarket) {
+                    const firstCat = Object.keys(data[firstMarket])[0] || null;
+                    setActiveCategory(firstCat);
+                }
+            }
+        }
+    }, [data]);
 
     // Edición de campos de categoría
     const handleCategoryField = (field: string, value: any) => {
@@ -125,9 +119,8 @@ export function InstrumentsEditor() {
                 category: activeCategory,
                 data
             };
-            const res = await fetch('/api/instruments', {
+            const res = await apiFetch('/api/instruments', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
             if (!res.ok) throw new Error('Error al guardar la categoría.');
@@ -146,15 +139,15 @@ export function InstrumentsEditor() {
                 <h3 className="text-2xl font-bold font-outfit text-white/90">Gestión de Instrumentos</h3>
                 <div className="flex gap-3">
                     <button
-                        onClick={fetchInstruments}
+                        onClick={onRefresh}
                         className="p-3 rounded-xl bg-white/5 border border-white/5 text-white/40 hover:text-white/80 hover:bg-white/10 transition-all"
                         title="Recargar desde DB"
                     >
-                        <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
+                        <RefreshCw size={20} />
                     </button>
                     <button
                         onClick={handleSave}
-                        disabled={saving || loading}
+                        disabled={saving}
                         className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold font-outfit transition-all shadow-lg ${saving ? 'bg-white/20 text-white/40 cursor-not-allowed' : 'bg-aethelgard-green text-dark hover:scale-105 active:scale-95 shadow-aethelgard-green/20'}`}
                     >
                         <Save size={18} />
@@ -179,10 +172,14 @@ export function InstrumentsEditor() {
                 </motion.div>
             )}
 
-            {loading ? (
+            {!markets || Object.keys(markets).length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-64 text-white/20 gap-4">
-                    <RefreshCw size={48} className="animate-spin" />
-                    <p className="text-sm font-mono uppercase tracking-widest">Cargando instrumentos...</p>
+                    <div className="p-4 rounded-full bg-white/5">
+                        <Sliders size={32} />
+                    </div>
+                    <p className="text-sm font-mono uppercase tracking-widest text-center max-w-xs">
+                        No se encontraron mercados configurados.
+                    </p>
                 </div>
             ) : (
                 <>
