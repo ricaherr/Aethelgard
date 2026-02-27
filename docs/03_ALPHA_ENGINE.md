@@ -6,6 +6,7 @@ Garantizar la generación constante de oportunidades de inversión mediante el e
 ## 🚀 Componentes Críticos
 *   **Scanner Proactivo**: Escaneo multi-timeframe de alta eficiencia que busca ineficiencias de mercado.
 *   **Technical Analyzer**: Fuente única de verdad para indicadores vectorizados y métricas de volatilidad.
+*   **Liquidity Service**: Detección micro-estructural de Fair Value Gaps (FVG) y Order Blocks mediante análisis de absorción de volumen.
 *   **Signal Factory**: Generador de señales con scoring dinámico basado en confluencia y riesgo/beneficio.
 *   **Strategy Jury**: Mecanismo de decisión darwinista que evalúa la probabilidad de éxito de una señal antes de su ejecución.
 
@@ -18,6 +19,6 @@ El sistema utiliza un **Shadow Engine** que decide si una señal merece riesgo r
 *   **Dial de Exigencia Algorítmica**: Indicador visual en el header que muestra el umbral de entrada activo ajustado por volatilidad.
 
 ## 📈 Roadmap del Dominio
-1.  Implementación de detección de huella institucional (Footprint).
-2.  Despliegue del motor de puntuación Alpha dinámico.
-3.  Optimización del Darwinismo Algorítmico para autogestión de estrategias.
+1.  [x] Implementación de detección de huella institucional (Footprint).
+2.  [ ] Despliegue del motor de puntuación Alpha dinámico.
+3.  [ ] Optimización del Darwinismo Algorítmico para autogestión de estrategias.

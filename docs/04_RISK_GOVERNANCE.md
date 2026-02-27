@@ -4,7 +4,7 @@
 Garantizar la preservación del capital mediante una gestión de riesgo de nivel institucional, basada en la normalización universal de activos y la soberanía de intervención humana.
 
 ## 🚀 Componentes Críticos
-*   **Universal Risk Manager**: Motor de cálculo basado en Unidades R que garantiza un riesgo constante en USD independientemente del activo.
+*   **Universal Risk Manager**: Motor de cálculo basado en Unidades R que garantiza un riesgo constante en USD independientemente del activo. Evalúa el contexto (FVG/Order Blocks) emitiendo advertencias de probabilidad mitigada `[CONTEXT_WARNING]` sin interrumpir la operación.
 *   **Sovereignty Gateway**: Matriz de permisos que define la autonomía del sistema por componente o mercado.
 *   **Anomaly Sentinel**: Monitor de "Cisnes Negros" que activa protocolos de defensa ante eventos de baja probabilidad.
 *   **Circuit Breakers**: Bloqueos automáticos por drawdown o fallos consecutivos.

@@ -20,6 +20,8 @@ from core_brain.risk_calculator import RiskCalculator
 from core_brain.multi_timeframe_limiter import MultiTimeframeLimiter
 from utils.market_ops import normalize_price, normalize_volume, calculate_pip_size
 from core_brain.instrument_manager import InstrumentManager
+from core_brain.services.liquidity_service import LiquidityService
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +86,8 @@ class RiskManager:
             self.monitor = PositionSizeMonitor()
         else:
             self.monitor = monitor
+            
+        self.liquidity_service = LiquidityService(storage=self.storage)
         
         # 1. Load settings from DB (Single Source of Truth)
         # Rule 14: Config reside en la BD. 
@@ -207,6 +211,48 @@ class RiskManager:
                     )
                     logger.warning(f"[{signal.symbol}] {reason}")
                     return False, reason
+
+            # 1.8 HU 3.2: Institutional Footprint & Liquidity Zones
+            # Fetch recent OHLCV data to evaluate execution context
+            try:
+                ohlcv_df = None
+                if hasattr(connector, 'fetch_ohlc'):
+                    ohlcv_df = connector.fetch_ohlc(signal.symbol, signal.timeframe or "M5", count=30)
+                elif hasattr(connector, 'get_market_data'):
+                    ohlcv_df = connector.get_market_data(signal.symbol, signal.timeframe or "M5", count=30)
+                    
+                if ohlcv_df is not None and not ohlcv_df.empty:
+                    # Convert to list of dicts: [{'high':..., 'low':..., 'open':..., 'close':..., 'volume':...}]
+                    # Pandas to_dict('records') assumes column names exist
+                    # Often df columns are lowercase or capitalized. Ensure they map to lowercase
+                    # for the LiquidityService.
+                    records = ohlcv_df.to_dict('records')
+                    formatted_records = []
+                    for row in records:
+                        formatted_records.append({
+                            'high': row.get('high', row.get('High', 0)),
+                            'low': row.get('low', row.get('Low', 0)),
+                            'open': row.get('open', row.get('Open', 0)),
+                            'close': row.get('close', row.get('Close', 0)),
+                            'volume': row.get('tick_volume', row.get('volume', row.get('Volume', 0)))
+                        })
+                    
+                    pip_size = self._calculate_pip_size(signal.symbol, connector)
+                    # Check if executing in a high probability zone
+                    is_high_prob, context_msg = self.liquidity_service.is_in_high_probability_zone(
+                        symbol=signal.symbol,
+                        price=signal.entry_price,
+                        side=signal.signal_type.value,
+                        ohlcv_data=formatted_records,
+                        pip_size=pip_size
+                    )
+                    
+                    if not is_high_prob:
+                        logger.warning(f"[{signal.symbol}] [CONTEXT_WARNING] {context_msg}")
+                    else:
+                        logger.info(f"[{signal.symbol}] [CONTEXT_OK] {context_msg}")
+            except Exception as e:
+                logger.error(f"[{signal.symbol}] Error evaluating Liquidity Zones: {e}")
 
             # 2. Calculate current risk from open positions
            # Get open positions from connector

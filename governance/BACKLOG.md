@@ -61,7 +61,7 @@
     * **Prioridad**: Alta (Vector V2)
     * **Descripción**: Desarrollo del motor de puntuación dinámica ponderada por el Regime Classifier y métricas del Shadow Portfolio.
     * **🖥️ UI Representation**: Dashboard "Alpha Radar" con medidores de confianza (0-100%) y etiquetas de régimen activo.
-* **HU 3.2: Institutional Footprint Core**
+* **HU 3.2: Institutional Footprint Core** `[DEV]`
     * **Prioridad**: Media (Vector V3)
     * **Descripción**: Lógica de detección de huella institucional basada en micro-estructura de precios y volumen.
     * **🖥️ UI Representation**: Superposición visual de "Liquidity Zones" y clústeres de volumen en el visor de estrategias.

@@ -25,6 +25,11 @@
   - Aislamiento arquitectónico garantizado por Tenant_ID.
   - Endpoint de monitoreo expuesto en `/api/risk/exposure`.
 
+- [x] **Institutional Footprint Core (HU 3.2)**
+  - Creado `LiquidityService` con detección de FVG y Order Blocks.
+  - Integrado en `RiskManager.can_take_new_trade` mediante `[CONTEXT_WARNING]`.
+  - TDD implementado (`test_liquidity_service.py`).
+
 ---
 
 ## 📸 Snapshot de Contexto

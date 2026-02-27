@@ -50,6 +50,25 @@ Resolución definitiva del "Authentication Loop" y estandarización avanzada de 
 
 ### 📅 Registro: 2026-02-27
 
+#### 🛡️ MILESTONE 3.2: Institutional Footprint Core (HU 3.2)
+**Trace_ID**: `PREDATOR-SENSE-2026-001`  
+**Timestamp**: 2026-02-27 18:50  
+**Estado Final**: ✅ COMPLETADO
+
+**Descripción**:  
+Implementación del motor de detección de liquidez (`LiquidityService`) dotando al sistema de la capacidad de analizar la micro-estructura de precios. Integrado en el Safety Governor para validar contexto institucional.
+
+**Cambios Clave**:
+- **LiquidityService**: Creado módulo agnóstico con Dependency Injection puro que detecta Fair Value Gaps (FVG) y Order Blocks mediante análisis de precio y volumen.
+- **Risk Governance Integration**: Modificado `RiskManager.can_take_new_trade()` para validar el nivel de precio operativo contra las zonas de alta probabilidad en las últimas velas, emitiendo un `[CONTEXT_WARNING]` a los logs del sistema sin interrumpir la operación dura, actuando como gobernador contextual proactivo.
+- **Higiene Arquitectónica**: El servicio superó las barreras de `manifesto_enforcer.py` respetando límites de línea (<500), aislación estricta y delegación de estado al `StorageManager` (SSOT).
+
+**Validación**:
+- ✅ Tests Unitarios Estrictos en `tests/test_liquidity_service.py`.
+- ✅ Scanner Global (`validate_all.py`) PASSED en sus 12 vectores matriciales, resguardando la integridad núcleo del sistema.
+
+---
+
 #### 🛡️ SNAPSHOT DE CONTEXTO: v3.5.0 (Reforma Técnica y Documentación)
 **Trace_ID**: `TECH-REFORM-2026-001`  
 **Timestamp**: 2026-02-27 17:02  
