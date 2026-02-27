@@ -1,21 +1,25 @@
 """
 Trading Service - Core business logic for signal processing and positions.
 Micro-ETI 3.1: Extracted from server.py to centralize trading operations.
+HU 8.1 (SAAS-BACKBONE-2026-001): Tenant context blindaje — TradingService
+is agnostic of storage internals; it only passes tenant_id to the Factory.
 
 This service owns:
 - Signal processing pipeline (validate → classify → persist → notify)
 - Open position enrichment (MT5 + DB metadata)
 - Account balance resolution (MT5 → cache → default)
 """
-import json
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, TYPE_CHECKING
 from datetime import datetime
 
 from models.signal import Signal, ConnectorType, MarketRegime
 from core_brain.notificator import get_notifier
 from core_brain.module_manager import get_module_manager, MembershipLevel
 from utils.market_ops import classify_asset_type, calculate_r_multiple
+
+if TYPE_CHECKING:
+    from data_vault.storage import StorageManager
 
 logger = logging.getLogger(__name__)
 
@@ -30,12 +34,43 @@ class TradingService:
         socket_service: SocketService instance (for broadcasting thoughts)
     """
 
-    def __init__(self, storage, regime_classifier=None, socket_service=None):
-        self._storage = storage
+    def __init__(self, storage=None, regime_classifier=None, socket_service=None, tenant_id: Optional[str] = None):
+        self._tenant_id = tenant_id          # HU 8.1: tenant context
+        self._storage = storage              # If None, resolved lazily via Factory
         self._regime_classifier = regime_classifier
         self._socket_service = socket_service
         self._mt5_connector_instance = None
         self._last_regime_by_symbol: Dict[str, MarketRegime] = {}
+
+    # ========== Tenant Storage Resolution (HU 8.1) ==========
+
+    @property
+    def storage(self) -> 'StorageManager':
+        """
+        Lazy-resolution of StorageManager.
+        - If tenant_id was provided → resolves via TenantDBFactory (isolated DB).
+        - If an explicit storage was injected → uses it as-is (backward compat).
+        - Otherwise → falls back to global StorageManager.
+        """
+        if self._storage is None:
+            if self._tenant_id:
+                from data_vault.tenant_factory import TenantDBFactory
+                self._storage = TenantDBFactory.get_storage(self._tenant_id)
+            else:
+                from data_vault.storage import StorageManager
+                self._storage = StorageManager()
+        return self._storage
+
+    def _resolve_storage(self, tenant_id: Optional[str] = None) -> 'StorageManager':
+        """
+        Per-call storage resolver for methods that receive tenant_id as argument.
+        If a tenant_id is provided for this call, it overrides the instance-level one.
+        The TradingService never knows HOW the data is stored — it only passes the key.
+        """
+        if tenant_id:
+            from data_vault.tenant_factory import TenantDBFactory
+            return TenantDBFactory.get_storage(tenant_id)
+        return self.storage
 
     # ========== MT5 Connector ==========
 
@@ -64,19 +99,20 @@ class TradingService:
 
     # ========== Balance Helpers ==========
 
-    def get_account_balance(self) -> float:
+    def get_account_balance(self, tenant_id: Optional[str] = None) -> float:
         """
         Get real account balance from MT5 or cached value.
 
         Returns:
             Account balance (USD) from MT5 if connected, otherwise cached or default.
         """
+        store = self._resolve_storage(tenant_id)
         # Try to get from MT5 directly
         mt5 = self.get_mt5_connector()
         if mt5:
             try:
                 balance = mt5.get_account_balance()
-                self._storage.update_system_state({
+                store.update_system_state({
                     "account_balance": balance,
                     "balance_source": "MT5_LIVE",
                     "balance_last_update": datetime.now().isoformat()
@@ -87,7 +123,7 @@ class TradingService:
 
         # Fallback to cached balance in DB
         try:
-            state = self._storage.get_system_state()
+            state = store.get_system_state()
             cached_balance = state.get("account_balance")
             if cached_balance:
                 return float(cached_balance)
@@ -96,22 +132,23 @@ class TradingService:
 
         # Final fallback (initial capital)
         logger.warning("Using default balance 10000.0 - MT5 not connected")
-        self._storage.update_system_state({
+        store.update_system_state({
             "account_balance": 10000.0,
             "balance_source": "DEFAULT",
             "balance_last_update": datetime.now().isoformat()
         })
         return 10000.0
 
-    def get_balance_metadata(self) -> Dict[str, Any]:
+    def get_balance_metadata(self, tenant_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Get balance metadata (source, last update timestamp).
 
         Returns:
             Dict with source ('MT5_LIVE' | 'CACHED' | 'DEFAULT') and last_update timestamp.
         """
+        store = self._resolve_storage(tenant_id)
         try:
-            state = self._storage.get_system_state()
+            state = store.get_system_state()
             return {
                 "source": state.get("balance_source", "UNKNOWN"),
                 "last_update": state.get("balance_last_update", datetime.now().isoformat()),
@@ -125,14 +162,16 @@ class TradingService:
                 "is_live": False
             }
 
-    def get_max_account_risk_pct(self) -> float:
+    def get_max_account_risk_pct(self, tenant_id: Optional[str] = None) -> float:
         """
         Load max_account_risk_pct from StorageManager (SSOT).
+        If tenant_id is provided, resolves the tenant's isolated storage.
 
         Returns:
             float: Max account risk percentage (default 5.0%).
         """
-        settings = self._storage.get_risk_settings()
+        store = self._resolve_storage(tenant_id)
+        settings = store.get_risk_settings()
         return settings.get('max_account_risk_pct', 5.0)
 
     # ========== Broadcasting ==========
@@ -152,7 +191,7 @@ class TradingService:
 
     # ========== Open Positions ==========
 
-    async def get_open_positions(self) -> Dict[str, Any]:
+    async def get_open_positions(self, tenant_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Get open positions enriched with risk metadata.
 
@@ -163,6 +202,7 @@ class TradingService:
         Returns:
             Dict with positions list, total_risk_usd, and count.
         """
+        store = self._resolve_storage(tenant_id)
         positions_list = []
         total_risk = 0.0
 
@@ -172,7 +212,7 @@ class TradingService:
                 # Update cached balance when we connect to MT5
                 try:
                     current_balance = mt5.get_account_balance()
-                    self._storage.update_system_state({
+                    store.update_system_state({
                         "account_balance": current_balance,
                         "balance_source": "MT5_LIVE",
                         "balance_last_update": datetime.now().isoformat()
@@ -188,7 +228,7 @@ class TradingService:
                         ticket = mt5_pos['ticket']
 
                         # Get metadata from DB via StorageManager (no raw SQL)
-                        meta = self._storage.get_position_metadata(ticket)
+                        meta = store.get_position_metadata(ticket)
 
                         if meta:
                             risk = meta.get('initial_risk_usd', 0.0)
@@ -234,7 +274,7 @@ class TradingService:
 
     # ========== Signal Processing ==========
 
-    async def process_signal(self, message: dict, client_id: str, connector_type: ConnectorType) -> None:
+    async def process_signal(self, message: dict, client_id: str, connector_type: ConnectorType, tenant_id: Optional[str] = None) -> None:
         """
         Process an incoming trading signal through the full pipeline:
         1. Validate and create Signal model
@@ -244,6 +284,7 @@ class TradingService:
         5. Send response to client
         6. Check for strategy-specific notifications (Oliver Vélez)
         """
+        store = self._resolve_storage(tenant_id)
         try:
             # Initial thought
             await self._broadcast_thought(
@@ -298,7 +339,7 @@ class TradingService:
 
                 # Save market state
                 try:
-                    self._storage.log_market_state(state_data)
+                    store.log_market_state(state_data)
                     logger.info(
                         f"Cambio de régimen detectado: {signal.symbol} "
                         f"{previous_regime.value if previous_regime else 'N/A'} -> {regime.value}"
@@ -325,8 +366,8 @@ class TradingService:
                 # Update previous regime
                 self._last_regime_by_symbol[signal.symbol] = regime
 
-            # Save to database
-            signal_id = self._storage.save_signal(signal)
+            # Save to database (tenant-isolated via resolved store)
+            signal_id = store.save_signal(signal)
 
             logger.info(
                 f"Señal procesada: {signal.symbol} {signal.signal_type.value} "
@@ -391,9 +432,31 @@ class TradingService:
 _trading_service_instance = None
 
 
-def get_trading_service(storage: Optional[Any] = None, regime_classifier: Optional[Any] = None, socket_service: Optional[Any] = None) -> TradingService:
-    """Lazy-load TradingService singleton."""
+def get_trading_service(
+    storage: Optional[Any] = None,
+    regime_classifier: Optional[Any] = None,
+    socket_service: Optional[Any] = None,
+    tenant_id: Optional[str] = None,
+) -> TradingService:
+    """
+    Return a TradingService.
+
+    - If tenant_id is provided → returns a FRESH per-tenant instance (not the global singleton).
+      The tenant_id is bound to the instance; TenantDBFactory resolves the isolated DB lazily.
+    - Otherwise → returns (or creates) the global singleton for backward compatibility.
+    """
     global _trading_service_instance
+
+    # HU 8.1: per-tenant requests always get a dedicated instance
+    if tenant_id:
+        return TradingService(
+            storage=None,   # resolved lazily by the storage property
+            regime_classifier=regime_classifier,
+            socket_service=socket_service,
+            tenant_id=tenant_id,
+        )
+
+    # Global singleton path (backward compatible)
     if _trading_service_instance is None:
         if storage is None:
             from data_vault.storage import StorageManager
@@ -401,6 +464,6 @@ def get_trading_service(storage: Optional[Any] = None, regime_classifier: Option
         _trading_service_instance = TradingService(
             storage=storage,
             regime_classifier=regime_classifier,
-            socket_service=socket_service
+            socket_service=socket_service,
         )
     return _trading_service_instance

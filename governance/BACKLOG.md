@@ -28,7 +28,7 @@
 ---
 
 ## 01_IDENTITY_SECURITY (SaaS, Auth, Isolation)
-* **HU 1.1: Auth Gateway & JWT Protection** `[TODO]`
+* **HU 1.1: Auth Gateway & JWT Protection** `[DEV]`
     * **Qué**: Implementar el middleware de seguridad para todas las rutas del API.
     * **Para qué**: Garantizar que solo usuarios autenticados accedan al cerebro de Aethelgard.
     * **🖥️ UI Representation**: Pantalla de Login (Premium Dark) con feedback de error en tiempo real. Redirección automática al dashboard tras handshake exitoso.
@@ -126,9 +126,9 @@
     * **🖥️ UI**: Visualizador de "Curva de Exigencia Algorítmica".
 
 ## 08_DATA_SOVEREIGNTY (SSOT, Persistence)
-* **HU 8.1: Multi-Tenant Schema Migrator**
+* **HU 8.1: Multi-Tenant Schema Migrator** `[DONE]`
     * **Prioridad**: Alta (Vector V1)
-    * **Descripción**: Motor de gestión de esquemas SQLite aislados para consistencia multi-usuario.
+    * **Descripción**: Motor de gestión de esquemas SQLite aislados para consistencia multi-usuario. Terminada en ETI SAAS-BACKBONE-2026-001.
     * **🖥️ UI**: Indicador de "Sync Status" de base de datos.
 * **HU 8.2: De-fragmentación de StorageManager** `[TODO]`
     * **Prioridad**: CRÍTICA

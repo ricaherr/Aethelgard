@@ -30,6 +30,26 @@ render_diffs(file:///c:/Users/Jose Herrera/Documents/Proyectos/Aethelgard/AETHEL
 
 ---
 
+### 📅 Registro: 2026-02-26
+#### 🛡️ SAAS-BACKBONE-2026-001: Multi-Tenant Schema Migrator (HU 8.1)
+**Trace_ID**: `SAAS-BACKBONE-2026-001`  
+**Timestamp**: 2026-02-26 16:50  
+**Estado Final**: ✅ COMPLETADO
+
+**Descripción**:  
+Implementación del sistema Multi-Tenant para aislamiento absoluto de datos por usuario (`tenant_id`). Se transformó el `StorageManager` en un motor dinámico utilizando `TenantDBFactory`.
+
+**Cambios Clave**:
+- `data_vault/tenant_factory.py`: Caché Singleton thread-safe para bases de datos aisladas.
+- `data_vault/schema.py`: Auto-provisioning automático y siembra (`seed`) de tablas para nuevos tenants y soporte DDL.
+- `core_brain/services/trading_service.py`: Blindaje de contexto. El servicio ahora exige o propaga `tenant_id` pero se mantiene agnóstico de la persistencia (delegan al Factory).
+
+**Validación**:
+- ✅ `test_tenant_factory.py`: 12/12 Tests PASSED (incluyendo prueba de concurrencia y retención).
+- ✅ `test_tenant_signal_isolation.py`: "Prueba de Fuego". Señales del Usuario_A son invisibles para el Usuario_B.
+- ✅ `validate_all.py`: Lógica de masa (<30KB en storage) y typings OK. 100% Integrity Guaranteed.
+
+---
 ### 📅 Registro: 2026-02-25
 #### ⚡ ARCH-PURIFY-2026-001-A: Trading Service Extraction & SSOT Consolidation
 **Trace_ID**: `ARCH-PURIFY-2026-001-A`  

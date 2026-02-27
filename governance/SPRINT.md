@@ -2,7 +2,7 @@
 
 **Inicio**: 25 de Febrero, 2026  
 **Objetivo**: Establecer los cimientos de la arquitectura multi-tenant con autenticación y aislamiento de datos.  
-**Versión Target**: v3.3.0
+**Versión Target**: v3.4.0
 
 ---
 
@@ -18,12 +18,12 @@
   - Implementar `UserRepo` con métodos CRUD + autenticación.
   - Endpoints: `POST /api/auth/register`, `POST /api/auth/login`.
 
-- [ ] **Desarrollo de la `TenantDBFactory` para aislamiento de bases de datos**
+- [x] **Desarrollo de la `TenantDBFactory` para aislamiento de bases de datos**
   - Factory que resuelve la conexión SQLite por `tenant_id`.
   - Patrón: `data_vault/{tenant_id}/aethelgard.db`.
   - Migración automática de esquema en primer acceso.
 
-- [ ] **Fragmentación de data_vault/storage.py para cumplimiento de Regla de Masa (<30KB)**
+- [x] **Fragmentación de data_vault/storage.py para cumplimiento de Regla de Masa (<30KB)**
   - Identificar dominios en `StorageManager`.
   - Extraer métodos a repositorios especializados.
   - Inyectar repositorios en `StorageManager` (Fachada).
@@ -34,7 +34,7 @@
 
 | Métrica | Valor |
 |---|---|
-| **Estado de Persistencia** | Saneamiento de Deuda Técnica detectada por Función A |
-| **Masa de server.py** | 272 líneas (Cumple <30KB) |
-| **Integridad** | 11/11 tests PASSED |
-| **Versión Global** | v3.2.1 |
+| **Estado de Persistencia** | Aislada y blindada en Multi-Tenant via TenantDBFactory |
+| **Masa de server.py** | <30KB |
+| **Integridad** | 17/17 tests PASSED |
+| **Versión Global** | v3.4.0 |
