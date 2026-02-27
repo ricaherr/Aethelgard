@@ -6,6 +6,8 @@ Proveer una ventana de alta fidelidad al cerebro de Aethelgard mediante una inte
 ## 🚀 Componentes Críticos
 *   **Intelligence Terminal Core**: Estandarización de componentes bajo la estética Bloomberg-Dark (#050505).
 *   **Real-time Handshake Visualizer**: Sistema de feedback visual para transacciones y estados de autenticación.
+*   **Interactive Tooltips**: Elementos de acción destructiva o secundaria (ej. Logout) deben usar iconos con tooltips informativos para maximizar el espacio de datos sin sacrificar claridad.
+*   **Zero-Leak Loading**: La UI debe ocultar cualquier indicador de telemetría hasta que el contexto de Tenant sea inyectado.
 *   **Micro-interaction Framework**: Motor que dota de pulsos y transiciones orgánicas a los componentes reactivos.
 *   **High-Density Grid System**: Estructura de diseño para visualización efectiva de grandes volúmenes de datos.
 

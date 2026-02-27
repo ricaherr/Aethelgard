@@ -19,8 +19,10 @@ export default {
                 aethelgard: {
                     green: '#00ff41', // Matrix/Hacker green
                     blue: '#00d2ff',
+                    cyan: '#00f2ff', // Cian Neón
                     purple: '#9d50bb',
                     gold: '#cba135',
+                    red: '#ff0055',  // Rojo Alerta
                 }
             }
         },

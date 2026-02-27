@@ -33,6 +33,11 @@
   - Inyectar `tenant_id` hacia `StorageManager` en los routers (Trading, Risk, Market).
   - Protección JWT consolidada.
 
+- [x] **Intelligence Terminal UI (HU 9.1)**
+  - Estandarización estética Premium Dark / Glassmorphism.
+  - Implementación de AuthGuard y MainLayout.
+  - Saneamiento y refactorización de `App.tsx`.
+
 ---
 
 ## 📸 Snapshot de Contexto

@@ -20,15 +20,15 @@
 
 - [x] **Manifesto Transformation**: Restructuración del `AETHELGARD_MANIFESTO.md` hacia una Constitución Estratégica.
 - [x] **Auth Gateway & JWT Protection**: Implementación de middleware de seguridad y login premium (HU 1.1).
-- [ ] **Tenant Isolation Protocol**: Aislamiento total de datos por cliente vía TenantDBFactory (HU 1.2).
-- [ ] **SaaS Membership Hierarchy**: Definición de roles (Admin, Pro, Basic) y niveles de acceso (HU 1.3).
+- [x] **Tenant Isolation Protocol**: Aislamiento total de datos por cliente vía TenantDBFactory (HU 1.2).
+- [x] **SaaS Membership Hierarchy**: Definición de roles (Admin, Pro, Basic) y niveles de acceso (HU 1.3).
 - [ ] **Validación E2E**: Tests de integración para flujo auth completo + aislamiento de datos.
 - [ ] **Sovereignty Gateway**: Habilitación de control y matriz de permisos autónomos (HU 4.4). *Nota: Dependencia técnica clave para V1.*
 - [ ] **Infrastructure Health Monitoring**: Telemetría básica de salud del servidor para estabilidad multi-tenant (HU 5.3 preliminar).
 - [ ] **Multi-Tenant Strategy Ranking**: Clasificación darwinista de estrategias por usuario (HU 6.2).
 - [/] **Multi-Tenant Schema Migration**: Motor de consistencia de datos aislados — TenantDBFactory implementada (HU 8.1).
 - [x] **Refactorización Quirúrgica de Persistencia**: De-fragmentación de StorageManager para cumplimiento de Regla de Masa (HU 8.2).
-- [ ] **Intelligence Terminal UI**: Estandarización de componentes Premium Dark (HU 9.1).
+- [x] **Intelligence Terminal UI**: Estandarización de componentes Premium Dark (HU 9.1).
 
 **Dependencias**: Requiere SSOT 100% SQLite (✅ completado) y server.py modular (✅ completado).
 
