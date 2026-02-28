@@ -48,6 +48,33 @@ Resolución definitiva del "Authentication Loop" y estandarización avanzada de 
 
 ---
 
+---
+
+### 📅 Registro: 2026-02-27
+
+#### 🛡️ MILESTONE: Rectificación de Verdad Técnica (v4.1.0-beta.1)
+**Trace_ID**: `RECTIFICATION-MANDATE-2026-001`  
+**Timestamp**: 2026-02-27 22:05  
+**Estado Final**: ✅ CERTIFICADO PARA PRUEBAS
+
+**Descripción**:  
+Operación de limpieza de honor y restauración de la fidelidad técnica. Saneamiento de parámetros de slippage en tests, alineación de mock signals con la realidad del mercado y blindaje documental de infraestructura.
+
+**Cambios Clave**:
+- **Saneamiento de Slippage**: Reversión de límites de slippage artificiales (9999) a los estándares institucionales de **2.0 pips** (ExecutionService default).
+- **Ajuste de Fidelidad (Mock Signals)**: Calibración de precios de entrada en `test_multi_timeframe_limiter.py` para GBPUSD, asegurando un slippage real de **1.0-2.0 pips** contra el baseline del `PaperConnector`.
+- **Sincronización de Manuales**: 
+  - `05_UNIVERSAL_EXECUTION.md`: Documentado el rol protector del **Shadow Reporting** (Veto Técnico).
+  - `10_INFRA_RESILIENCY.md`: Documentado el **PaperConnector** como salvaguarda de simulación de alta fidelidad.
+- **Higienización de Gobernanza**: Purga de tareas completadas en `ROADMAP.md` y `BACKLOG.md` para mantener una visión prospectiva unificada.
+
+**Validación**:
+- ✅ Tests de Límites multi-timeframe: **PASSED** con datos realistas.
+- ✅ Integridad Documental: 100% Sincronizada con v4.1.0-beta.1.
+- ✅ Gobernanza: Roadmap y Backlog limpios.
+
+---
+
 ### 📅 Registro: 2026-02-28
 
 #### 🛡️ MILESTONE 5.1: Execution Supremacy (High-Fidelity Bridge)

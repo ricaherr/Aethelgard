@@ -56,7 +56,7 @@
     * **Prioridad**: Media (Vector V3)
     * **Descripción**: Lógica de detección de huella institucional basada en micro-estructura de precios y volumen.
     * **🖥️ UI Representation**: Superposición visual de "Liquidity Zones" y clústeres de volumen en el visor de estrategias.
-* **HU 3.3: Multi-Market Alpha Correlator** `[DONE]`
+* **HU 3.3: Multi-Market Alpha Correlator**
     * **Prioridad**: Baja (Vector V3)
     * **Descripción**: Scanner de confluencia inter-mercado para validación cruzada de señales de alta fidelidad.
     * **🖥️ UI Representation**: Widget de "Correlación Sistémica" con indicadores de fuerza y dirección multi-activo.
@@ -110,10 +110,8 @@
     * **🖥️ UI**: Visualizador de "Curva de Exigencia Algorítmica".
 
 ## 08_DATA_SOVEREIGNTY (SSOT, Persistence)
-*   *Purged metadata: SAAS-GENESIS-003, SAAS-BACKBONE-2026-001*
 
 ## 09_INSTITUTIONAL_INTERFACE (UI/UX, Terminal)
-*HU 9.1 Completed*
 
 ## 10_INFRASTRUCTURE_RESILIENCY (Health, Self-Healing)
 * **HU 10.1: Autonomous Heartbeat & Self-Healing**

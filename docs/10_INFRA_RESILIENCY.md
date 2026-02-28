@@ -8,6 +8,7 @@ Garantizar la operatividad perpetua del sistema mediante una infraestructura aut
 *   **Auto-Healing Engine**: Protocolos de recuperación automática que reinician servicios o resincronizan estados tras detectar fallos.
 *   **Resource Sentinel**: Monitor de consumo de CPU, memoria y espacio en disco con alertas de umbral.
 *   **Log Management (Linux Style)**: Sistema de rotación diaria con retención estricta de 15 días para optimizar el almacenamiento.
+*   **PaperConnector (Hybrid Safety)**: Entorno de simulación de alta fidelidad que desacopla el riesgo financiero del riesgo de infraestructura durante fases de calibración o fallos de red críticos.
 
 ## ⚕️ Protocolo de Salud (EDGE Autónomo)
 El sistema supervisa su propia integridad mediante:

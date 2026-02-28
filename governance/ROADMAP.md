@@ -30,11 +30,9 @@
 ### 🧠 V2 (Vector de Inteligencia & Supremacía de Ejecución) — ACTIVO (Dominio 04)
 **Objetivo**: Establecer el control de riesgo avanzado y la optimización de Alpha.
 
-- [x] **Safety Governance & Risk Motor**: Implementación de Unidades R y Veto granular institucional (HU 4.4).
 - [ ] **Multi-Scale Regime Vectorizer**: Unificación de temporalidades para decisión coherente (HU 2.1 - Base Vector V2).
 - [ ] **Contextual Alpha Scoring**: Motor de puntuación dinámica ponderada y dashboard Alpha Radar (HU 3.1).
 - [ ] **Dynamic Alpha Thresholding**: Mecanismo de defensa proactiva y auto-ajuste de umbrales según equidad (HU 3.5).
-- [x] **Shadow Reality Engine (HU 5.1)**: Implementación de ExecutionService, Veto de Slippage y Shadow Reporting (F-001).
 - [ ] **Confidence Threshold Optimization**: Ajuste dinámico de umbrales por desempeño histórico (HU 7.1).
 
 ---
@@ -42,17 +40,11 @@
 ### 👁️ V3 (Vector de Dominio Sensorial) — PLANIFICADO (Dominios 04 y 10)
 **Objetivo**: Establecer la supremacía analítica mediante la detección de huella institucional y meta-aprendizaje de infraestructura.
 
-- [x] **Safety Governance**: Implementación del Safety Governor en Vector V2 (HU 4.4).
-- [x] **Exposure & Drawdown Monitor**: Supervisión de riesgo multi-tenant en tiempo real (HU 4.5).
 - [ ] **Anomaly Sentinel**: Detección de cisnes negros y antifragilidad (HU 4.6).
-- [x] **Institutional Footprint**: Detección avanzada de huellas institucionales y zonas de liquidez (HU 3.2).
-- [x] **Multi-Market Correlation**: Scanner de confluencia inter-mercado (HU 3.3).
 - [ ] **Depredación de Contexto**: Scanner de divergencia inter-mercado para validación de fuerza de régimen (HU 2.2).
-- [x] **Ejecución Depredadora (HU 5.1)**: Conectividad de alta fidelidad y control adaptativo de slippage (Veto Técnico).
 - [ ] **The Pulse (Advanced Feedback)**: Lazo de retroalimentación de infraestructura avanzado para veto técnico (HU 5.3 final).
 - [ ] **Coherence Drift Monitoring**: Detección de divergencia entre modelo y ejecución en vivo (HU 6.3).
 - [ ] **Autonomous Heartbeat & Self-Healing**: Monitoreo vital y auto-recuperación (HU 10.1).
-- [x] **Infrastructure Resiliency**: Integración de métricas de salud (Path Resilience, HU 10.2).
 
 ---
 

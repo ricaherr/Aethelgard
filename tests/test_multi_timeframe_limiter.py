@@ -65,7 +65,7 @@ def test_max_volume_per_symbol_enforced(storage):
             signal_type=SignalType.SELL,
             timeframe=tf,
             connector_type=ConnectorType.METATRADER5,
-            entry_price=1.25,
+            entry_price=1.2501,  # Theo=1.2501, Real_Bid=1.2500 => 1.0 pip slippage
             stop_loss=1.27,
             take_profit=1.20,
             volume=volume,
@@ -81,7 +81,7 @@ def test_max_volume_per_symbol_enforced(storage):
         signal_type=SignalType.SELL,
         timeframe='D1',
         connector_type=ConnectorType.METATRADER5,
-        entry_price=1.25,
+        entry_price=1.2501,  # Mantener realismo de slippage
         stop_loss=1.27,
         take_profit=1.20,
         volume=1.0,
@@ -265,7 +265,7 @@ def test_different_symbols_not_affected(storage):
         signal_type=SignalType.BUY,
         timeframe='H1',
         connector_type=ConnectorType.METATRADER5,
-        entry_price=1.25,
+        entry_price=1.2499,  # Theo=1.2499, Real_Ask=1.2501 => 2.0 pips slippage
         stop_loss=1.23,
         take_profit=1.30,
         volume=1.0,
