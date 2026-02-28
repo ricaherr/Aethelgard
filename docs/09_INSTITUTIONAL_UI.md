@@ -22,6 +22,6 @@ Proveer una ventana de alta fidelidad al cerebro de Aethelgard mediante una inte
 *   **Diagnostic Drawer**: Panel deslizante con telemetría visual sobre CPU, WebSockets y salud de satélites.
 
 ## 📈 Roadmap del Dominio
-1.  Estandarización de la librería de componentes "Intelligence Terminal".
-2.  Implementación del Dashboard de Darwinismo Estratégico.
-3.  Desarrollo de herramientas de visualización de micro-estructura (Order Flow).
+- [x] Estandarización de la librería de componentes "Intelligence Terminal".
+- [x] Implementación de Dashboards de Darwinismo Estratégico y Neural History.
+- [ ] Desarrollo de herramientas de visualización de micro-estructura (Order Flow).

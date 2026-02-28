@@ -31,6 +31,7 @@ Cuando el Governor interviene, el evento se marca con `[SAFETY_GOVERNOR]` en la 
 *   **Edge Evolution Logs**: Feed de pensamientos del sistema sobre sus propios ajustes y calibraciones.
 
 ## 📈 Roadmap del Dominio
-1.  Consolidación de la telemetría post-mortem.
-2.  Automatización de umbrales en base a volatilidad.
-3.  Meta-aprendizaje sobre latencia y slippage real.
+- [x] Implementación del EdgeTuner y Feedback Loops paramétricos.
+- [x] Consolidación de la telemetría post-mortem y Gobernanza.
+- [ ] Automatización de umbrales en base a volatilidad.
+- [ ] Meta-aprendizaje sobre latencia y slippage real.

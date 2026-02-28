@@ -29,6 +29,7 @@ Aethelgard utiliza un sistema de **fallback automático** para garantizar la dis
 *   **System Vital Signs Widget**: Medidores de salud técnica, carga de red y estado de los hilos de ejecución.
 
 ## 📈 Roadmap del Dominio
-1.  Despliegue del núcleo QuickFIX.
-2.  Implementación del Feedback Loop de infraestructura (The Pulse).
-3.  Desarrollo de algoritmos de ejecución inteligente (Smart Routing).
+- [ ] Despliegue del núcleo QuickFIX.
+- [ ] Implementación del Feedback Loop de infraestructura (The Pulse).
+- [ ] Desarrollo de algoritmos de ejecución inteligente (Smart Routing).
+- [x] Agnosticismo de activos y Normalización SSOT (Unidades R).

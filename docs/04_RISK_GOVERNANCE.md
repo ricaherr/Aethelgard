@@ -21,6 +21,7 @@ Aethelgard no opera instrumentos, sino **Volatilidad Normalizada**.
 *   **Sentient Thought Console**: Feed de pensamientos con tags `[ANOMALY_DETECTED]` y sugerencias proactivas de intervención.
 
 ## 📈 Roadmap del Dominio
-1.  Implementación del Sovereignty Gateway Manager.
-2.  Despliegue de Drawdown Monitors multi-tenant.
-3.  Integración del Anomaly Sentinel (Antifragility Engine).
+- [ ] Implementación del Sovereignty Gateway Manager.
+- [x] Despliegue del Safety Governor y Veto granular.
+- [x] Despliegue de Drawdown Monitors multi-tenant.
+- [ ] Integración del Anomaly Sentinel (Antifragility Engine).

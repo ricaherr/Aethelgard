@@ -13,6 +13,6 @@ Garantizar que la información sea el activo más fiable y protegido del sistema
 *   **Schema Evolution Map**: Log visual de migraciones y cambios estructurales aplicados al sistema.
 
 ## 📈 Roadmap del Dominio
-1.  Migración total de archivos JSON restantes a DB.
-2.  Implementación de protocolos de auditoría de hash para integridad de datos.
-3.  Despliegue de redundancia geográfica para el modo SaaS.
+- [x] Migración total de archivos JSON restantes a DB.
+- [x] Implementación de protocolos de auditoría de hash para integridad de datos.
+- [ ] Despliegue de redundancia geográfica para el modo SaaS.

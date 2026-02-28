@@ -19,6 +19,6 @@ El sistema utiliza un **Shadow Engine** que decide si una señal merece riesgo r
 *   **Dial de Exigencia Algorítmica**: Indicador visual en el header que muestra el umbral de entrada activo ajustado por volatilidad.
 
 ## 📈 Roadmap del Dominio
-1.  [x] Implementación de detección de huella institucional (Footprint).
-2.  [ ] Despliegue del motor de puntuación Alpha dinámico.
-3.  [ ] Optimización del Darwinismo Algorítmico para autogestión de estrategias.
+- [x] Implementación de detección de huella institucional (Footprint).
+- [ ] Despliegue del motor de puntuación Alpha dinámico.
+- [x] Optimización del Darwinismo Algorítmico para autogestión de estrategias.

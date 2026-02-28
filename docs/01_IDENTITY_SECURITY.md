@@ -14,6 +14,6 @@ Garantizar la integridad, privacidad y seguridad del ecosistema Aethelgard media
 *   **Membership Shield**: Menú de perfil que muestra las capacidades desbloqueadas según el rango del usuario.
 
 ## 📈 Roadmap del Dominio
-1.  Implementación de JWT y rotación de secretos.
-2.  Despliegue de esquemas SQLite aislados.
-3.  Lógica de filtrado de módulos por suscripción.
+- [x] Implementación de JWT y rotación de secretos.
+- [x] Despliegue de esquemas SQLite aislados.
+- [ ] Lógica de filtrado de módulos por suscripción.

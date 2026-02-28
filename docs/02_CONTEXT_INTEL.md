@@ -26,6 +26,6 @@ El sistema permite el análisis fractal mediante la activación selectiva de tem
 *   **Profundidad Cognitiva**: Slider interactivo que muestra la ventana de lookback adaptativo procesada por el cerebro.
 
 ## 📈 Roadmap del Dominio
-1.  Unificación de la lógica de regímenes (antes en Alpha).
-2.  Despliegue del scanner inter-mercado.
-3.  Optimización de la memoria contextual adaptativa.
+- [x] Unificación de la lógica de regímenes (antes en Alpha).
+- [ ] Despliegue del scanner inter-mercado.
+- [ ] Optimización de la memoria contextual adaptativa.

@@ -20,6 +20,13 @@
 
 ---
 
+### 🛡️ AUDITORÍA & ESTANDARIZACIÓN — ACTIVO
+**Objetivo**: Sincronización de la realidad técnica documentada.
+
+- [ ] **Auditoría de Espejo (v4.0)**: Sincronizar todos los hitos del `SYSTEM_LEDGER.md` con sus respectivos documentos de dominio (01-10) para reflejar el estado "Saneado" y actual de la arquitectura.
+
+---
+
 ### 🧠 V2 (Vector de Inteligencia & Supremacía de Ejecución) — ACTIVO (Dominio 04)
 **Objetivo**: Establecer el control de riesgo avanzado y la optimización de Alpha.
 

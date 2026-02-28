@@ -21,6 +21,6 @@ Las estrategias en Aethelgard deben atravesar tres estados:
 *   **Coherence Meter**: Indicador visual de la salud matemática del modelo con alertas de deriva técnica.
 
 ## 📈 Roadmap del Dominio
-1.  Desarrollo del Penalty Injector para fidelidad Shadow.
-2.  Implementación del Ranker multi-tenant.
-3.  Despliegue de alertas de Coherence Drift.
+- [ ] Desarrollo del Penalty Injector para fidelidad Shadow.
+- [x] Implementación del Ranker multi-tenant.
+- [ ] Despliegue de alertas de Coherence Drift.
