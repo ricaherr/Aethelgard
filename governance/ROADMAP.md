@@ -46,7 +46,7 @@
 - [x] **Exposure & Drawdown Monitor**: Supervisión de riesgo multi-tenant en tiempo real (HU 4.5).
 - [ ] **Anomaly Sentinel**: Detección de cisnes negros y antifragilidad (HU 4.6).
 - [x] **Institutional Footprint**: Detección avanzada de huellas institucionales y zonas de liquidez (HU 3.2).
-- [ ] **Multi-Market Correlation**: Scanner de confluencia inter-mercado (HU 3.3).
+- [x] **Multi-Market Correlation**: Scanner de confluencia inter-mercado (HU 3.3).
 - [ ] **Depredación de Contexto**: Scanner de divergencia inter-mercado para validación de fuerza de régimen (HU 2.2).
 - [ ] **Ejecución Depredadora (FIX)**: Conectividad FIX de alta fidelidad y control adaptativo de slippage (HU 5.1 & HU 5.2).
 - [ ] **The Pulse (Advanced Feedback)**: Lazo de retroalimentación de infraestructura avanzado para veto técnico (HU 5.3 final).

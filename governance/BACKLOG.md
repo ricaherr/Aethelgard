@@ -28,15 +28,6 @@
 ---
 
 ## 01_IDENTITY_SECURITY (SaaS, Auth, Isolation)
-* **HU 1.1: Auth Gateway & JWT Protection** `[x] COMPLETADA`
-    * **Trace_ID**: `SAAS-AUTH-2026-001`
-    * **Qué**: Implementar el middleware de seguridad para todas las rutas del API.
-    * **Para qué**: Garantizar que solo usuarios autenticados accedan al cerebro de Aethelgard.
-    * **🖥️ UI Representation**: Pantalla de Login (Premium Dark) con feedback de error en tiempo real. Redirección automática al dashboard tras handshake exitoso.
-* **HU 1.2: Tenant Isolation Protocol (Multi-tenancy)** `[DONE]`
-    * **Qué**: Configurar el TenantDBFactory para aislar los datos por cliente.
-    * **Para qué**: Evitar fugas de datos entre usuarios (Principio de Aislamiento).
-    * **🖥️ UI Representation**: Badge persistente en el header que indique Tenant_ID activo y estado de la conexión a su base de datos privada.
 * **HU 1.3: User Role & Membership Level** `[TODO]`
     * **Qué**: Definir jerarquías de acceso (Admin, Pro, Basic).
     * **Para qué**: Comercialización SaaS basada en niveles de membresía.
@@ -65,7 +56,7 @@
     * **Prioridad**: Media (Vector V3)
     * **Descripción**: Lógica de detección de huella institucional basada en micro-estructura de precios y volumen.
     * **🖥️ UI Representation**: Superposición visual de "Liquidity Zones" y clústeres de volumen en el visor de estrategias.
-* **HU 3.3: Multi-Market Alpha Correlator**
+* **HU 3.3: Multi-Market Alpha Correlator** `[DONE]`
     * **Prioridad**: Baja (Vector V3)
     * **Descripción**: Scanner de confluencia inter-mercado para validación cruzada de señales de alta fidelidad.
     * **🖥️ UI Representation**: Widget de "Correlación Sistémica" con indicadores de fuerza y dirección multi-activo.
@@ -79,14 +70,6 @@
     * **🖥️ UI Representation**: Dial de "Exigencia Algorítmica" en el header, mostrando el umbral de entrada activo.
 
 ## 04_RISK_GOVERNANCE (Unidades R, Safety Governor, Veto)
-* **HU 4.4: Sovereignty Gateway Manager** `[DONE]`
-    * **Prioridad**: Alta (Dependencia V1)
-    * **Descripción**: Desarrollo del motor de reglas para la matriz de permisos de autonomía granular (Mercados/Componentes).
-    * **🖥️ UI Representation**: Panel de control "Master Veto" con indicadores de estado (Autónomo/Manual) y Toggles de seguridad institucional.
-* **HU 4.5: Drawdown & Exposure Monitor (Multi-tenant)** `[DONE]`
-    * **Prioridad**: Media
-    * **Descripción**: Sistema de monitoreo de riesgo agregado basado en Unidades R para entornos SaaS, garantizando que el riesgo de un cliente no desborde sus límites.
-    * **🖥️ UI Representation**: Dashboard de "Heatmap de Exposición" con alertas visuales de proximidad al Hard Drawdown.
 * **HU 4.6: Anomaly Sentinel (Antifragility Engine)**
     * **Prioridad**: Baja (Fase 4)
     * **Descripción**: Monitor de eventos de baja probabilidad (Cisnes Negros) para activar protocolos de defensa o captura de volatilidad extrema.
@@ -127,28 +110,13 @@
     * **🖥️ UI**: Visualizador de "Curva de Exigencia Algorítmica".
 
 ## 08_DATA_SOVEREIGNTY (SSOT, Persistence)
-* **HU 8.1: Multi-Tenant Schema Migrator** `[DONE]`
-    * **Prioridad**: Alta (Vector V1)
-    * **Descripción**: Motor de gestión de esquemas SQLite aislados para consistencia multi-usuario. Terminada en ETI SAAS-BACKBONE-2026-001.
-    * **🖥️ UI**: Indicador de "Sync Status" de base de datos.
-* **HU 8.2: Tenant Context Auto-Injection** `[x] COMPLETADA`
-    * **Trace_ID**: `SAAS-GENESIS-003`
-    * **Prioridad**: CRÍTICA
-    * **Descripción**: Inyección de contexto de inquilino (tenant_id) desde Auth Middleware a los Routers (Trading, Risk, Market) y delegación automática a StorageManager.
-    * **🖥️ UI**: Indicador de "Persistence Health" en dashboard técnico.
+*   *Purged metadata: SAAS-GENESIS-003, SAAS-BACKBONE-2026-001*
 
 ## 09_INSTITUTIONAL_INTERFACE (UI/UX, Terminal)
-* **HU 9.1: Component Library "Intelligence Terminal"** `[DONE]`
-    * **Prioridad**: Alta (Vector V1)
-    * **Descripción**: Estandarización de componentes visuales bajo la estética institucional Premium Dark.
-    * **🖥️ UI**: Terminal centralizada con componentes reactivos de alta densidad.
+*HU 9.1 Completed*
 
 ## 10_INFRASTRUCTURE_RESILIENCY (Health, Self-Healing)
 * **HU 10.1: Autonomous Heartbeat & Self-Healing**
     * **Prioridad**: Media (Vector V3)
     * **Descripción**: Sistema de monitoreo de signos vitales y auto-recuperación de servicios.
     * **🖥️ UI**: Widget de "Status Vital" con log de eventos técnicos.
-* **HU 10.2: Path Resilience (Environment Stability)** `[DONE]`
-    * **Prioridad**: Alta (Deuda Técnica V1)
-    * **Descripción**: Desarrollo de un script de validación agnóstico a la ruta para evitar fallos por espacios o caracteres especiales en las rutas del sistema del desarrollador.
-    * **🖥️ UI**: No aplica (Backend/Infra).

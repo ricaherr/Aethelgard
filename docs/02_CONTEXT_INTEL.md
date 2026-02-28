@@ -27,5 +27,11 @@ El sistema permite el análisis fractal mediante la activación selectiva de tem
 
 ## 📈 Roadmap del Dominio
 - [x] Unificación de la lógica de regímenes (antes en Alpha).
-- [ ] Despliegue del scanner inter-mercado.
+- [x] Despliegue del scanner inter-mercado (ConfluenceService).
 - [ ] Optimización de la memoria contextual adaptativa.
+
+## 🛠️ Detalles de Implementación: ConfluenceService
+El motor de confluencia compara activos con correlación inversa (ej. EURUSD vs DXY) o directa (ej. BTC vs ETH) para detectar divergencias de tipo SmT (Symmetric/Asymmetric Divergence).
+
+*   **Veto por Correlación**: Si se detecta una divergencia alcista en un par con correlación inversa mientras se busca una venta, el sistema aplica un veto o aumenta el umbral de confianza requerido a 0.85.
+*   **Estado Choppy**: La falta de alineación en tendencias de activos inversos activa una alerta de mercado lateral/indeciso.

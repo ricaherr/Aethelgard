@@ -21,6 +21,7 @@ from core_brain.multi_timeframe_limiter import MultiTimeframeLimiter
 from utils.market_ops import normalize_price, normalize_volume, calculate_pip_size
 from core_brain.instrument_manager import InstrumentManager
 from core_brain.services.liquidity_service import LiquidityService
+from core_brain.services.confluence_service import ConfluenceService
 import pandas as pd
 
 logger = logging.getLogger(__name__)
@@ -88,6 +89,7 @@ class RiskManager:
             self.monitor = monitor
             
         self.liquidity_service = LiquidityService(storage=self.storage)
+        self.confluence_service = ConfluenceService(storage=self.storage)
         
         # 1. Load settings from DB (Single Source of Truth)
         # Rule 14: Config reside en la BD. 
@@ -253,6 +255,32 @@ class RiskManager:
                         logger.info(f"[{signal.symbol}] [CONTEXT_OK] {context_msg}")
             except Exception as e:
                 logger.error(f"[{signal.symbol}] Error evaluating Liquidity Zones: {e}")
+
+            # 1.9 HU 3.3: Multi-Market Correlation & Confluence (Inter-market Veto)
+            try:
+                is_confirmed, confluence_msg, penalty = self.confluence_service.validate_confluence(
+                    symbol=signal.symbol,
+                    side=signal.signal_type.value,
+                    connector=connector,
+                    timeframe=signal.timeframe or "M5"
+                )
+                
+                if not is_confirmed:
+                    # In Aethelgard, if correlation conflicts or is choppy, we elevate the threshold
+                    # This means we might reject if confidence isn't high enough
+                    current_confidence = getattr(signal, 'confidence', 0.5)
+                    minimum_required = 0.85 # High threshold for choppy/divergent states
+                    
+                    if current_confidence < minimum_required:
+                        reason = f"[CONFLUENCE_VETO] {confluence_msg} (Confidence {current_confidence:.2f} < {minimum_required})"
+                        logger.warning(f"[{signal.symbol}] {reason}")
+                        return False, reason
+                    else:
+                        logger.info(f"[{signal.symbol}] [CONFLUENCE_WARNING] {confluence_msg} - Proceeding due to high confidence ({current_confidence:.2f})")
+                else:
+                    logger.info(f"[{signal.symbol}] [CONFLUENCE_OK] {confluence_msg}")
+            except Exception as e:
+                logger.error(f"[{signal.symbol}] Error in Confluence check: {e}")
 
             # 2. Calculate current risk from open positions
            # Get open positions from connector

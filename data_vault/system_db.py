@@ -704,7 +704,7 @@ class SystemMixin(BaseRepository):
 
     # ── Database Maintenance & Backup ────────────────────────────────────────
 
-    def create_db_backup(self) -> Optional[str]:
+    def create_db_backup(self, backup_dir: Optional[str] = None, retention_count: int = 15) -> Optional[str]:
         """Create a backup of the main SQLite database online."""
         import os
         import shutil
@@ -714,9 +714,11 @@ class SystemMixin(BaseRepository):
             logger.warning("[BACKUP] Cannot backup in-memory database.")
             return None
 
-        # Determine backup directory based on main DB path
-        db_dir = os.path.dirname(self.db_path) or '.'
-        backup_dir = os.path.join(db_dir, 'backups')
+        # Determine backup directory
+        if not backup_dir:
+            db_dir = os.path.dirname(self.db_path) or '.'
+            backup_dir = os.path.join(db_dir, 'backups')
+        
         os.makedirs(backup_dir, exist_ok=True)
 
         timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
@@ -735,6 +737,9 @@ class SystemMixin(BaseRepository):
             logger.info("[BACKUP] DB backup created successfully: %s (%.2f MB, %.2fs)",
                         backup_filename, file_size_mb, elapsed)
 
+            # Implement retention logic
+            self._cleanup_old_backups(backup_dir, retention_count)
+
             return backup_path
         except Exception as e:
             logger.error("[BACKUP] Backup failed: %s", e)
@@ -744,6 +749,29 @@ class SystemMixin(BaseRepository):
             return None
         finally:
             self._close_conn(conn)
+
+    def _cleanup_old_backups(self, backup_dir: str, retention_count: int) -> None:
+        """Keep only the N most recent backups."""
+        import os
+        try:
+            backups = []
+            for f in os.listdir(backup_dir):
+                if f.startswith("sqlite_backup_") and f.endswith(".sqlite"):
+                    path = os.path.join(backup_dir, f)
+                    backups.append((path, os.path.getmtime(path)))
+            
+            # Sort by modification time (newest first)
+            backups.sort(key=lambda x: x[1], reverse=True)
+            
+            if len(backups) > retention_count:
+                for path, _ in backups[retention_count:]:
+                    try:
+                        os.remove(path)
+                        logger.debug("[BACKUP] Retention: Removed old backup %s", os.path.basename(path))
+                    except Exception as e:
+                        logger.warning("[BACKUP] Could not remove old backup %s: %s", path, e)
+        except Exception as e:
+            logger.error("[BACKUP] Error during retention cleanup: %s", e)
 
     def list_db_backups(self) -> List[Dict]:
         """List all available database backups."""

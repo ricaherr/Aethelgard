@@ -20,5 +20,5 @@ El sistema utiliza un **Shadow Engine** que decide si una señal merece riesgo r
 
 ## 📈 Roadmap del Dominio
 - [x] Implementación de detección de huella institucional (Footprint).
-- [ ] Despliegue del motor de puntuación Alpha dinámico.
+- [x] Despliegue del motor de puntuación Alpha dinámico (Confluence Integration).
 - [x] Optimización del Darwinismo Algorítmico para autogestión de estrategias.
