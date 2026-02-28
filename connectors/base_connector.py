@@ -77,6 +77,16 @@ class BaseConnector(ABC):
         """
         pass
 
+    @abstractmethod
+    def get_last_tick(self, symbol: str) -> Dict[str, float]:
+        """
+        Get the most recent tick (bid/ask) for a symbol.
+        
+        Returns:
+            Dict with 'bid', 'ask', 'time'.
+        """
+        pass
+
     @property
     @abstractmethod
     def provider_id(self) -> str:

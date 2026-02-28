@@ -756,6 +756,29 @@ class MT5Connector(BaseConnector):
         """Check if connector is connected and ready"""
         return self.is_connected
 
+    def get_last_tick(self, symbol: str) -> Dict[str, float]:
+        """
+        Get the most recent tick (bid/ask) for a symbol.
+        """
+        if not self.is_connected:
+            return {'bid': 0.0, 'ask': 0.0, 'time': 0.0}
+            
+        mt5_symbol = self.normalize_symbol(symbol)
+        tick = mt5.symbol_info_tick(mt5_symbol)
+        if tick is None:
+            # Try to select symbol first
+            mt5.symbol_select(mt5_symbol, True)
+            tick = mt5.symbol_info_tick(mt5_symbol)
+            
+        if tick is None:
+            return {'bid': 0.0, 'ask': 0.0, 'time': 0.0}
+            
+        return {
+            'bid': float(tick.bid),
+            'ask': float(tick.ask),
+            'time': float(tick.time)
+        }
+
     def fetch_ohlc(self, symbol: str, timeframe: str = "M5", count: int = 500) -> Optional[Any]:
         """
         Fetch OHLC data from MT5 (DataProvider Protocol)

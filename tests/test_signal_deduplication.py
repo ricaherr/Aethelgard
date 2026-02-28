@@ -137,9 +137,9 @@ class TestSignalDeduplication:
             signal_type=SignalType.BUY,
             confidence=0.9,
             connector_type=ConnectorType.PAPER,
-            entry_price=1.1050,
-            stop_loss=1.1040,
-            take_profit=1.1070
+            entry_price=1.1000, # Ajustado de 1.1050 para evitar slippage masivo contra baseline 1.1000
+            stop_loss=1.0990,
+            take_profit=1.1020
         )
         
         # Simulate SignalFactory assigning ID (required by Opción B)
@@ -184,9 +184,9 @@ class TestSignalDeduplication:
             signal_type=SignalType.BUY,
             confidence=0.85,
             connector_type=ConnectorType.PAPER,
-            entry_price=1.2510,
-            stop_loss=1.2500,
-            take_profit=1.2530
+            entry_price=1.2500, # Ajustado de 1.2510 para que slippage sea 1 pip (ask=1.2501)
+            stop_loss=1.2490,
+            take_profit=1.2520
         )
         signal2_id = storage.save_signal(signal2)
         signal2.metadata['signal_id'] = signal2_id  # Assign ID like SignalFactory does
@@ -252,9 +252,9 @@ class TestSignalDeduplication:
             signal_type=SignalType.SELL,
             confidence=0.8,
             connector_type=ConnectorType.PAPER,
-            entry_price=1.1050,
-            stop_loss=1.1060,  # 0.0010 higher for SELL
-            take_profit=1.1030
+            entry_price=1.1001, # Ajustado para SELL: real_bid=1.1000, entry=1.1001 -> 1 pip slippage
+            stop_loss=1.1011,
+            take_profit=1.0991
         )
         signal2_id = storage.save_signal(signal2)
         signal2.metadata['signal_id'] = signal2_id  # Assign ID like SignalFactory does

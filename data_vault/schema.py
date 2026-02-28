@@ -322,7 +322,29 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_strategy_ranking_mode ON strategy_ranking (execution_mode)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_strategy_ranking_profit_factor ON strategy_ranking (profit_factor DESC)")
 
-    # ── 14. Regime Configurations (Metric Weighting) ─────────────────────────
+    # ── 15. Execution Shadow Logs (Shadow Reporting / Slippage) ────────────────
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS execution_shadow_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            signal_id TEXT NOT NULL,
+            symbol TEXT NOT NULL,
+            theoretical_price REAL NOT NULL,
+            real_price REAL NOT NULL,
+            slippage_pips REAL NOT NULL,
+            latency_ms REAL NOT NULL,
+            status TEXT NOT NULL,
+            tenant_id TEXT NOT NULL,
+            trace_id TEXT NOT NULL,
+            metadata TEXT,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (signal_id) REFERENCES signals (id)
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_execution_shadow_signal_id ON execution_shadow_logs (signal_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_execution_shadow_tenant_id ON execution_shadow_logs (tenant_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_execution_shadow_trace_id ON execution_shadow_logs (trace_id)")
+
+    # ── 16. Regime Configurations (Metric Weighting) ─────────────────────────
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS regime_configs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

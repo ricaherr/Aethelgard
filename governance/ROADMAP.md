@@ -2,8 +2,8 @@
 
 "ESTÁNDAR DE EDICIÓN: El Roadmap se organiza en Vectores de Valor (V1, V2...). Cada hito debe estar vinculado a uno de los 10 dominios del BACKLOG."
 
-**Versión Log**: v4.0.0-beta.1 (V2: Supremacía de Ejecución - ACTIVO)
-**Última Actualización**: 27 de Febrero, 2026 (07:15)
+**Versión Log**: v4.1.0-beta.1 (V2: Supremacía de Ejecución - EVOLUCIÓN)
+**Última Actualización**: 28 de Febrero, 2026 (02:30)
 
 <!-- REGLA DE ARCHIVADO: Cuando TODOS los items de un milestone estén [x], -->
 <!-- migrar automáticamente a docs/SYSTEM_LEDGER.md con el formato existente -->
@@ -34,7 +34,7 @@
 - [ ] **Multi-Scale Regime Vectorizer**: Unificación de temporalidades para decisión coherente (HU 2.1 - Base Vector V2).
 - [ ] **Contextual Alpha Scoring**: Motor de puntuación dinámica ponderada y dashboard Alpha Radar (HU 3.1).
 - [ ] **Dynamic Alpha Thresholding**: Mecanismo de defensa proactiva y auto-ajuste de umbrales según equidad (HU 3.5).
-- [ ] **Shadow Reality Engine (F-001)**: Inyección de penalizaciones reales (Latencia/Slippage) para fidelidad crítica (HU 6.1).
+- [x] **Shadow Reality Engine (HU 5.1)**: Implementación de ExecutionService, Veto de Slippage y Shadow Reporting (F-001).
 - [ ] **Confidence Threshold Optimization**: Ajuste dinámico de umbrales por desempeño histórico (HU 7.1).
 
 ---
@@ -48,7 +48,7 @@
 - [x] **Institutional Footprint**: Detección avanzada de huellas institucionales y zonas de liquidez (HU 3.2).
 - [x] **Multi-Market Correlation**: Scanner de confluencia inter-mercado (HU 3.3).
 - [ ] **Depredación de Contexto**: Scanner de divergencia inter-mercado para validación de fuerza de régimen (HU 2.2).
-- [ ] **Ejecución Depredadora (FIX)**: Conectividad FIX de alta fidelidad y control adaptativo de slippage (HU 5.1 & HU 5.2).
+- [x] **Ejecución Depredadora (HU 5.1)**: Conectividad de alta fidelidad y control adaptativo de slippage (Veto Técnico).
 - [ ] **The Pulse (Advanced Feedback)**: Lazo de retroalimentación de infraestructura avanzado para veto técnico (HU 5.3 final).
 - [ ] **Coherence Drift Monitoring**: Detección de divergencia entre modelo y ejecución en vivo (HU 6.3).
 - [ ] **Autonomous Heartbeat & Self-Healing**: Monitoreo vital y auto-recuperación (HU 10.1).

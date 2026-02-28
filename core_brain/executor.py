@@ -16,6 +16,7 @@ from core_brain.risk_calculator import RiskCalculator
 from core_brain.multi_timeframe_limiter import MultiTimeframeLimiter
 from data_vault.storage import StorageManager
 from core_brain.notification_service import NotificationService, NotificationCategory
+from core_brain.services.execution_service import ExecutionService
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,8 @@ class OrderExecutor:
         multi_tf_limiter: Optional[MultiTimeframeLimiter] = None,
         notificator: Optional[Any] = None,
         notification_service: Optional[NotificationService] = None,
-        connectors: Optional[Dict[ConnectorType, Any]] = None
+        connectors: Optional[Dict[ConnectorType, Any]] = None,
+        execution_service: Optional[ExecutionService] = None
     ):
         """
         Initialize OrderExecutor with Dependency Injection.
@@ -76,6 +78,11 @@ class OrderExecutor:
             self.multi_tf_limiter = MultiTimeframeLimiter(self.storage, config)
         else:
             self.multi_tf_limiter = multi_tf_limiter
+            
+        if execution_service is None:
+            self.execution_service = ExecutionService(self.storage)
+        else:
+            self.execution_service = execution_service
             
         self.persists_signals = True
         
@@ -317,11 +324,18 @@ class OrderExecutor:
                 else:
                     logger.info(f"[RACE FIX] [OK] MT5 connected successfully after {waited}s wait")
             
-            # Execute signal through connector
-            result = connector.execute_signal(signal)
+            # --- NUEVO FLUJO HU 5.1: ExecutionService with Protection ---
+            execution_response = await self.execution_service.execute_with_protection(signal, connector)
             
-            # Verify execution success (support both formats)
-            success = result.get('success', False) or result.get("status") == "success"
+            success = execution_response.success
+            # Map response to result format for backward compatibility
+            result = {
+                'success': success,
+                'ticket': execution_response.order_id,
+                'price': float(execution_response.real_price) if execution_response.real_price else None,
+                'error': execution_response.error_message,
+                'status': execution_response.status
+            }
             
 
             if success:

@@ -41,6 +41,16 @@ class YahooConnector(BaseConnector):
         """Simulated latency for API request."""
         return 200.0
 
+    def get_last_tick(self, symbol: str) -> Dict[str, float]:
+        """
+        Get the most recent tick for Yahoo (fallback to last OHLC close).
+        """
+        data = self.get_market_data(symbol, "M1", 1)
+        if data is not None and not data.empty:
+            last_close = float(data['close'].iloc[-1])
+            return {'bid': last_close, 'ask': last_close, 'time': datetime.now().timestamp()}
+        return {'bid': 0.0, 'ask': 0.0, 'time': 0.0}
+
     @property
     def provider_id(self) -> str:
         return "yahoo"

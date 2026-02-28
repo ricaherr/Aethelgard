@@ -52,15 +52,25 @@ def mock_connector():
         'sl': 1.08200,
         'tp': 1.09000
     })
+    connector.execute_order = connector.execute_signal
     connector.get_account_balance = Mock(return_value=10000.0)
     
     # Mock symbol info for RiskCalculator
     mock_symbol_info = Mock()
     mock_symbol_info.trade_contract_size = 100000  # Standard Forex lot
+    mock_symbol_info.digits = 5
+    mock_symbol_info.point = 0.00001
     connector.get_symbol_info = Mock(return_value=mock_symbol_info)
     
     # Mock current price for RiskCalculator
     connector.get_current_price = Mock(return_value=1.08500)
+    
+    # Mock get_last_tick for ExecutionService
+    connector.get_last_tick = Mock(return_value={
+        'bid': 1.08500,
+        'ask': 1.08510,
+        'time': datetime.now().timestamp()
+    })
     
     return connector
 
@@ -202,7 +212,7 @@ async def test_failed_execution_does_not_save_metadata(
     Expected: Database should NOT have metadata for failed trade
     """
     # Configure connector to fail
-    mock_connector.execute_signal = Mock(return_value={
+    mock_connector.execute_order = Mock(return_value={
         'success': False,
         'error': 'Insufficient margin'
     })

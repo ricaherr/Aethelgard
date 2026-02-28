@@ -6,7 +6,9 @@ from models.signal import Signal
 
 logger = logging.getLogger(__name__)
 
-class PaperConnector:
+from connectors.base_connector import BaseConnector
+
+class PaperConnector(BaseConnector):
     """
     Paper Trading Connector for Aethelgard.
     Simulates execution of signals without real broker interaction.
@@ -16,9 +18,17 @@ class PaperConnector:
         self.instrument_manager = instrument_manager
         logger.info("PaperConnector initialized (DI InstrumentManager: %s)", bool(instrument_manager))
         
+    def disconnect(self) -> bool:
+        """Simulate disconnection"""
+        return True
+        
     def connect(self) -> bool:
         """Simulate connection"""
         return True
+        
+    def execute_order(self, signal: Any) -> Dict[str, Any]:
+        """Alias para execute_signal (BaseConnector interface)"""
+        return self.execute_signal(signal)
         
     def execute_signal(self, signal: Signal) -> Dict:
         """
@@ -50,6 +60,39 @@ class PaperConnector:
     def get_open_positions(self) -> list[dict]:
         """Return empty list for paper mode (no real open positions tracked)."""
         return []
+        
+    def get_positions(self) -> list[dict]:
+        """Alias para get_open_positions (BaseConnector interface)"""
+        return self.get_open_positions()
+        
+    def get_market_data(self, symbol: str, timeframe: str, count: int) -> Any:
+        """Paper trading typically doesn't provide data (uses other providers)."""
+        return None
+        
+    def get_latency(self) -> float:
+        """Simulated paper latency"""
+        return 1.0
+        
+    def get_last_tick(self, symbol: str) -> Dict[str, float]:
+        """Simulated tick for paper mode. Returns realistic baseline prices."""
+        baselines = {
+            "EURUSD": 1.1000,
+            "GBPUSD": 1.2500,
+            "BTCUSDT": 50000.0,
+            "ETHUSDT": 3000.0
+        }
+        base = baselines.get(symbol.upper(), 1.0)
+        # Spread de 1 pip (0.0001 para Forex, 1.0 para Crypto alto)
+        spread = 0.0001 if base < 100 else 1.0
+        return {'bid': base, 'ask': base + spread, 'time': datetime.now().timestamp()}
+
+    def is_available(self) -> bool:
+        """Paper is always available."""
+        return True
+        
+    @property
+    def provider_id(self) -> str: 
+        return "paper"
     
     def get_account_balance(self) -> float:
         """Return simulated account balance for paper trading."""
