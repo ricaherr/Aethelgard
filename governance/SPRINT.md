@@ -30,6 +30,16 @@
   - Integrado en `RiskManager.can_take_new_trade` mediante `[CONTEXT_WARNING]`.
   - TDD implementado (`test_liquidity_service.py`).
 
+- [x] **Sentiment Stream Integration (HU 3.4 - Vector V3)**
+  - Creado `core_brain/services/sentiment_service.py` con enfoque API-first y fallback heurístico institucional.
+  - Integrado veto macro en `RiskManager.can_take_new_trade` mediante `[SENTIMENT_VETO]`.
+  - Snapshot de sesgo macro persistido en `signal.metadata["institutional_sentiment"]`.
+
+- [x] **Depredación de Contexto / Predator Sense (HU 2.2 - Vector V3)**
+  - Extendido `ConfluenceService` con detección de barrido de liquidez inter-mercado (`detect_predator_divergence`).
+  - Expuesto endpoint operativo `/api/analysis/predator-radar`.
+  - UI: widget `Predator Radar` en `AnalysisPage` para monitoreo de `divergence_strength` en tiempo real.
+
 ---
 
 ## 📸 Snapshot de Contexto

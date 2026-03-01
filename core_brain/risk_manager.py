@@ -1,1250 +1,310 @@
 """
 Risk Manager Module
 Manages position sizing, risk allocation, and lockdown mode.
-Aligned with Aethelgard's principles of Autonomy and Resilience.
-
-CONSOLIDATION: Single Source of Truth for position size calculation.
-EDGE COMPLIANCE: Integrated monitoring with circuit breaker protection.
+Delegates validation to RiskPolicyEnforcer and lot calculation to PositionSizeEngine.
 """
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Optional, Dict, Any
 from decimal import Decimal, ROUND_DOWN
+from typing import Any, Dict, Optional
 
-# Dependencies aligned with the project structure
 from data_vault.storage import StorageManager
-from models.signal import Signal, ConnectorType, MarketRegime
-from core_brain.position_size_monitor import PositionSizeMonitor, CalculationStatus
-from core_brain.risk_calculator import RiskCalculator
-from core_brain.multi_timeframe_limiter import MultiTimeframeLimiter
-from utils.market_ops import normalize_price, normalize_volume, calculate_pip_size
+from models.signal import Signal, MarketRegime
+
+from core_brain.position_size_monitor import PositionSizeMonitor
+from core_brain.risk_policy_enforcer import RiskPolicyEnforcer
+from core_brain.position_size_engine import PositionSizeEngine
 from core_brain.instrument_manager import InstrumentManager
 from core_brain.services.liquidity_service import LiquidityService
 from core_brain.services.confluence_service import ConfluenceService
-import pandas as pd
+from core_brain.services.sentiment_service import SentimentService
 
 logger = logging.getLogger(__name__)
 
+
 class AssetNotNormalizedError(Exception):
-    """Exception raised when an asset is not found in asset_profiles."""
+    """Raised when an asset is not found in asset_profiles."""
     def __init__(self, symbol: str):
         self.symbol = symbol
         self.message = f"CRITICAL: Asset {symbol} is NOT normalized in asset_profiles. Trade aborted for safety."
         super().__init__(self.message)
 
+
 def _resolve_storage(storage: Optional[StorageManager]) -> StorageManager:
-    """Resolve storage dependency with legacy fallback."""
     if storage is not None:
         return storage
-    logger.warning("RiskManager initialized without explicit storage! Falling back to default storage.")
+    logger.warning("RiskManager initialized without explicit storage! Falling back to default.")
     return StorageManager()
 
+
 def _resolve_instrument_manager(
-    instrument_manager: Optional['InstrumentManager'],
-    storage: StorageManager
-) -> 'InstrumentManager':
-    """Resolve instrument manager dependency with legacy fallback."""
+    instrument_manager: Optional[InstrumentManager],
+    storage: StorageManager,
+) -> InstrumentManager:
     if instrument_manager is not None:
         return instrument_manager
-    logger.warning("RiskManager initialized without explicit InstrumentManager! Using fallback instance.")
+    logger.warning("RiskManager initialized without explicit InstrumentManager!")
     return InstrumentManager(storage=storage)
+
 
 class RiskManager:
     """
-    Manages trading risk by being adaptive, persistent, resilient, and agnostic.
-    
-    Features:
-    - Auto-Adjusting Risk: Loads risk parameters from StorageManager (SSOT), allowing a Tuner to modify them.
-    - Lockdown Persistence: Saves and restores lockdown state from the database.
-    - Data Resilience: Handles None market regimes defensively.
-    - Agnostic Sizing: Calculates position size based on explicit point/pip value.
+    Orchestrates risk: delegates policy validation to RiskPolicyEnforcer and
+    position size calculation to PositionSizeEngine. Owns lockdown state and legacy APIs.
     """
-    
+
     def __init__(
         self,
         storage: Optional[StorageManager] = None,
         initial_capital: float = 10000.0,
-        instrument_manager: Optional['InstrumentManager'] = None,
-        monitor: Optional['PositionSizeMonitor'] = None,
+        instrument_manager: Optional[InstrumentManager] = None,
+        monitor: Optional[PositionSizeMonitor] = None,
         config_path: Optional[str] = None,
-        risk_settings_path: Optional[str] = None
+        risk_settings_path: Optional[str] = None,
     ):
-        """
-        Initialize RiskManager with dependency injection.
-        
-        Args:
-            storage: StorageManager instance.
-            initial_capital: Starting capital amount.
-            monitor: PositionSizeMonitor instance (DI).
-        """
         self.storage = _resolve_storage(storage)
         self.capital = initial_capital
         self.instrument_manager = _resolve_instrument_manager(instrument_manager, self.storage)
-        if monitor is None:
-            logger.warning("RiskManager initialized without explicit monitor! Violates strict DI.")
-            from core_brain.position_size_monitor import PositionSizeMonitor
-            self.monitor = PositionSizeMonitor()
-        else:
-            self.monitor = monitor
-            
+        self.monitor = monitor or PositionSizeMonitor()
+
         self.liquidity_service = LiquidityService(storage=self.storage)
         self.confluence_service = ConfluenceService(storage=self.storage)
-        
-        # 1. Load settings from DB (Single Source of Truth)
-        # Rule 14: Config reside en la BD. 
+        self.sentiment_service = SentimentService(storage=self.storage)
+
         risk_settings = self.storage.get_risk_settings()
         dynamic_params = self.storage.get_dynamic_params()
         if not isinstance(risk_settings, dict):
             risk_settings = {}
         if not isinstance(dynamic_params, dict):
             dynamic_params = {}
-
         if config_path or risk_settings_path:
-            logger.warning(
-                "RiskManager legacy file paths are deprecated and ignored (SSOT DB-first)."
-            )
-        
-        # MIGRATION FALLBACK: Si la config no está en DB, advertir y forzar inicialización vacía
+            logger.warning("Legacy file paths deprecated (SSOT DB-first).")
         if not risk_settings or not dynamic_params:
-            logger.warning("[SSOT] Configuración de riesgo/dinámica no encontrada en DB. Inicialice desde la UI/API.")
+            logger.warning("[SSOT] Risk/dynamic config not in DB. Initialize from UI/API.")
             risk_settings = risk_settings or {}
             dynamic_params = dynamic_params or {}
 
-        self.risk_per_trade = dynamic_params.get('risk_per_trade', 0.005) # Defensivo 0.5%
-        self.max_consecutive_losses = risk_settings.get('max_consecutive_losses', 
-                                                        dynamic_params.get('max_consecutive_losses', 3))
-        self.max_account_risk_pct = risk_settings.get('max_account_risk_pct', 5.0)  # Default 5%
-        # HU 4.4: Safety Governor — R-unit limit per trade (loaded from risk_settings, SSOT)
-        self.max_r_per_trade = Decimal(str(risk_settings.get('max_r_per_trade', 2.0)))  # Default 2R
+        self.risk_per_trade = dynamic_params.get("risk_per_trade", 0.005)
+        self.max_consecutive_losses = risk_settings.get(
+            "max_consecutive_losses", dynamic_params.get("max_consecutive_losses", 3)
+        )
+        self.max_account_risk_pct = risk_settings.get("max_account_risk_pct", 5.0)
+        self.max_r_per_trade = Decimal(str(risk_settings.get("max_r_per_trade", 2.0)))
 
-        # 3. Persistencia de Lockdown
         system_state = self.storage.get_system_state()
-        self.lockdown_mode = system_state.get('lockdown_mode', False)
-        lockdown_date = system_state.get('lockdown_date', None)
-        lockdown_balance = system_state.get('lockdown_balance', None)
-        
-        # ADAPTIVE LOCKDOWN: Auto-reset based on market conditions, not calendar
+        self.lockdown_mode = system_state.get("lockdown_mode", False)
+        lockdown_date = system_state.get("lockdown_date")
+        lockdown_balance = system_state.get("lockdown_balance")
+
         if self.lockdown_mode:
             should_reset, reason = self._should_reset_lockdown(
-                lockdown_date=lockdown_date,
-                lockdown_balance=lockdown_balance,
-                current_balance=initial_capital
+                lockdown_date, lockdown_balance, initial_capital
             )
-            
             if should_reset:
-                logger.warning(
-                    f"Lockdown auto-reset triggered: {reason}. "
-                    f"Lockdown was active since {lockdown_date or 'unknown'}."
-                )
                 self.lockdown_mode = False
                 self.storage.update_system_state({
-                    'lockdown_mode': False,
-                    'lockdown_date': None,
-                    'lockdown_balance': None,
-                    'consecutive_losses': 0
+                    "lockdown_mode": False,
+                    "lockdown_date": None,
+                    "lockdown_balance": None,
+                    "consecutive_losses": 0,
                 })
-                logger.info(f"✅ Lockdown deactivated: {reason}. Trading enabled.")
-            else:
-                logger.info(
-                    f"Lockdown still active (since {lockdown_date}). "
-                    f"Waiting for: balance recovery or 24h system rest."
-                )
-        
-        self.consecutive_losses = 0 # Se resetea, la persistencia está en el estado de lockdown
-        
+                logger.info("Lockdown deactivated: %s", reason)
+        self.consecutive_losses = 0
+
+        self._enforcer = RiskPolicyEnforcer(
+            storage=self.storage,
+            liquidity_service=self.liquidity_service,
+            confluence_service=self.confluence_service,
+            sentiment_service=self.sentiment_service,
+            max_r_per_trade=self.max_r_per_trade,
+            risk_per_trade=self.risk_per_trade,
+            max_account_risk_pct=self.max_account_risk_pct,
+            instrument_manager=self.instrument_manager,
+        )
+        self._engine = PositionSizeEngine(
+            storage=self.storage,
+            instrument_manager=self.instrument_manager,
+            monitor=self.monitor,
+            risk_per_trade=self.risk_per_trade,
+        )
         logger.info(
-            f"RiskManager initialized: Capital=${initial_capital:,.2f}, "
-            f"Dynamic Risk={self.risk_per_trade*100:.2f}%, Lockdown={self.lockdown_mode}, "
-            f"Max Risk={self.max_account_risk_pct}%"
+            "RiskManager initialized: Capital=$%.2f, Risk=%.2f%%, Lockdown=%s",
+            initial_capital, self.risk_per_trade * 100, self.lockdown_mode,
         )
 
-    def _migrate_config_from_json(self) -> None:
-        """Migrates JSON config files to DB as a fallback one-time action."""
-        # Fallback deshabilitado: StorageManager es la única fuente de verdad
-        logger.warning("[SSOT] Fallback de migración desde JSON deshabilitado. Configuración debe inicializarse desde la UI/API.")
-
-    # =========================================================================
-    # ACCOUNT RISK VALIDATION
-    # =========================================================================
-    
     def can_take_new_trade(self, signal: Signal, connector: Any) -> tuple[bool, str]:
-        """
-        Validates if a new trade can be taken without exceeding max account risk.
-        
-        This is the critical validation that prevents the account from being overexposed.
-        Should be called BEFORE calculating position size in Executor.
-        
-        Args:
-            signal: Signal to validate
-            connector: Broker connector to get account balance and open positions
-            
-        Returns:
-            tuple[bool, str]: (can_trade, reason)
-                - (True, "") if signal can be executed
-                - (False, "reason") if signal must be rejected
-        
-        Example:
-            >>> can_trade, reason = risk_manager.can_take_new_trade(signal, connector)
-            >>> if not can_trade:
-            >>>     logger.warning(f"Signal rejected: {reason}")
-            >>>     return False
-        """
+        """Validates if a new trade can be taken. Delegates to RiskPolicyEnforcer with Trace_ID."""
         try:
-            # 1. Get account balance
-            account_balance = self._get_account_balance(connector)
-            if account_balance <= 0:
-                return False, f"Invalid account balance: ${account_balance}"
-
-            # 1.5. HU 4.4: Safety Governor — Veto by R-Units (BEFORE position size calc)
-            # Formula: R = |Entry - SL| * contract_size / account_balance * 100
-            if signal.entry_price and signal.stop_loss and signal.stop_loss > 0:
-                r_unit = self._calculate_r_unit(signal, account_balance)
-                if r_unit > self.max_r_per_trade:
-                    audit = self._build_rejection_audit(
-                        signal=signal,
-                        r_calculated=r_unit,
-                        r_limit=self.max_r_per_trade,
-                        tenant_id=getattr(self.storage, 'tenant_id', 'unknown'),
-                    )
-                    reason = (
-                        f"[SAFETY_GOV] VETO: R={r_unit:.4f}R > limit={self.max_r_per_trade}R. "
-                        f"Audit-ID: {audit['trace_id']}"
-                    )
-                    logger.warning(f"[{signal.symbol}] {reason}")
-                    return False, reason
-
-            # 1.8 HU 3.2: Institutional Footprint & Liquidity Zones
-            # Fetch recent OHLCV data to evaluate execution context
-            try:
-                ohlcv_df = None
-                if hasattr(connector, 'fetch_ohlc'):
-                    ohlcv_df = connector.fetch_ohlc(signal.symbol, signal.timeframe or "M5", count=30)
-                elif hasattr(connector, 'get_market_data'):
-                    ohlcv_df = connector.get_market_data(signal.symbol, signal.timeframe or "M5", count=30)
-                    
-                if ohlcv_df is not None and not ohlcv_df.empty:
-                    # Convert to list of dicts: [{'high':..., 'low':..., 'open':..., 'close':..., 'volume':...}]
-                    # Pandas to_dict('records') assumes column names exist
-                    # Often df columns are lowercase or capitalized. Ensure they map to lowercase
-                    # for the LiquidityService.
-                    records = ohlcv_df.to_dict('records')
-                    formatted_records = []
-                    for row in records:
-                        formatted_records.append({
-                            'high': row.get('high', row.get('High', 0)),
-                            'low': row.get('low', row.get('Low', 0)),
-                            'open': row.get('open', row.get('Open', 0)),
-                            'close': row.get('close', row.get('Close', 0)),
-                            'volume': row.get('tick_volume', row.get('volume', row.get('Volume', 0)))
-                        })
-                    
-                    pip_size = self._calculate_pip_size(signal.symbol, connector)
-                    # Check if executing in a high probability zone
-                    is_high_prob, context_msg = self.liquidity_service.is_in_high_probability_zone(
-                        symbol=signal.symbol,
-                        price=signal.entry_price,
-                        side=signal.signal_type.value,
-                        ohlcv_data=formatted_records,
-                        pip_size=pip_size
-                    )
-                    
-                    if not is_high_prob:
-                        logger.warning(f"[{signal.symbol}] [CONTEXT_WARNING] {context_msg}")
-                    else:
-                        logger.info(f"[{signal.symbol}] [CONTEXT_OK] {context_msg}")
-            except Exception as e:
-                logger.error(f"[{signal.symbol}] Error evaluating Liquidity Zones: {e}")
-
-            # 1.9 HU 3.3: Multi-Market Correlation & Confluence (Inter-market Veto)
-            try:
-                is_confirmed, confluence_msg, penalty = self.confluence_service.validate_confluence(
-                    symbol=signal.symbol,
-                    side=signal.signal_type.value,
-                    connector=connector,
-                    timeframe=signal.timeframe or "M5"
-                )
-                
-                if not is_confirmed:
-                    # In Aethelgard, if correlation conflicts or is choppy, we elevate the threshold
-                    # This means we might reject if confidence isn't high enough
-                    current_confidence = getattr(signal, 'confidence', 0.5)
-                    minimum_required = 0.85 # High threshold for choppy/divergent states
-                    
-                    if current_confidence < minimum_required:
-                        reason = f"[CONFLUENCE_VETO] {confluence_msg} (Confidence {current_confidence:.2f} < {minimum_required})"
-                        logger.warning(f"[{signal.symbol}] {reason}")
-                        return False, reason
-                    else:
-                        logger.info(f"[{signal.symbol}] [CONFLUENCE_WARNING] {confluence_msg} - Proceeding due to high confidence ({current_confidence:.2f})")
-                else:
-                    logger.info(f"[{signal.symbol}] [CONFLUENCE_OK] {confluence_msg}")
-            except Exception as e:
-                logger.error(f"[{signal.symbol}] Error in Confluence check: {e}")
-
-            # 2. Calculate current risk from open positions
-           # Get open positions from connector
-            try:
-                open_positions = connector.get_open_positions()
-            except AttributeError:
-                # Connector doesn't have get_open_positions (e.g., PaperConnector in tests)
-                # Fall back to calculating risk from storage
-                logger.debug(f"Connector {type(connector).__name__} doesn't have get_open_positions, using storage fallback")
-                open_positions = []
-            
-            current_risk_usd = 0.0
-            for pos in open_positions:
-                # Calculate risk from position: volume * (entry - SL) * point_value
-                try:
-                    symbol = pos.get("symbol", "")
-                    volume = pos.get("volume", 0.0)
-                    entry_price = pos.get("entry_price", pos.get("price_open", 0.0))
-                    stop_loss = pos.get("stop_loss", pos.get("sl", 0.0))
-                    
-                    if stop_loss > 0:
-                        # Get symbol info for point value calculation
-                        symbol_info = connector.get_symbol_info(symbol)
-                        if symbol_info:
-                            # Calculate risk
-                            price_diff = abs(entry_price - stop_loss)
-                            contract_size = getattr(symbol_info, 'trade_contract_size', 100000)
-                            point = getattr(symbol_info, 'point', 0.00001)
-                            pips = price_diff / point
-                            risk_usd = (pips * point) * contract_size * volume
-                            current_risk_usd += risk_usd
-                except Exception as e:
-                    logger.warning(f"Error calculating risk for position {pos.get('ticket', 'unknown')}: {e}")
-                    continue
-            
-            # 3. Calculate risk of new signal
-            # Use a simplified calculation: risk_per_trade * balance
-            # (Actual position size calculation happens later if approved)
-            signal_risk_usd = account_balance * self.risk_per_trade
-            
-            # 4. Calculate total risk if signal is executed
-            total_risk_usd = current_risk_usd + signal_risk_usd
-            total_risk_pct = (total_risk_usd / account_balance) * 100
-            
-            # 5. Compare against max_account_risk_pct
-            if total_risk_pct > self.max_account_risk_pct:
-                reason = (
-                    f"Account risk would exceed {self.max_account_risk_pct}% "
-                    f"(current: {current_risk_usd / account_balance * 100:.1f}% "
-                    f"+ signal: {signal_risk_usd / account_balance * 100:.1f}% "
-                    f"= {total_risk_pct:.1f}%)"
-                )
-                logger.warning(f"[{signal.symbol}] Signal rejected: {reason}")
-                return False, reason
-            
-            # 6. Approved: within risk limits
-            logger.info(
-                f"[{signal.symbol}] Risk check passed: "
-                f"Total risk {total_risk_pct:.1f}% / {self.max_account_risk_pct}%"
-            )
-            return True, ""
-            
+            trace_id = getattr(signal, "trace_id", None) or f"RPV-{uuid.uuid4().hex[:8].upper()}"
+            return self._enforcer.validate(signal, connector, trace_id=trace_id)
         except Exception as e:
-            logger.error(f"Error validating account risk: {e}")
-            # Defensive: reject trade on error
+            logger.error("Error validating account risk: %s", e)
             return False, f"Risk validation error: {str(e)}"
 
-    # =========================================================================
-    # POSITION SIZE CALCULATION - MASTER FUNCTION (Single Source of Truth)
-    # =========================================================================
-    
     def calculate_position_size_master(
         self,
         signal: Signal,
         connector: Any,
-        regime_classifier: Optional[Any] = None
+        regime_classifier: Optional[Any] = None,
     ) -> float:
-        """
-        🎯 MASTER FUNCTION - Single Source of Truth for Position Size Calculation
-        
-        Calcula position size de forma completa y correcta:
-        1. Valida lockdown mode
-        2. Obtiene balance real del broker
-        3. Obtiene symbol info del broker
-        4. Calcula pip_size dinámicamente (JPY vs no-JPY)
-        5. Calcula point_value dinámicamente (usa exchange rate real)
-        6. Obtiene régimen real del mercado (o usa default seguro)
-        7. Calcula SL distance en pips
-        8. Aplica fórmula de riesgo con volatility multiplier
-        9. Valida margen disponible
-        10. Valida exposición total
-        11. Aplica límites de broker (min/max lots)
-        12. Retorna position size final
-        
-        Args:
-            signal: Signal con symbol, entry_price, stop_loss, take_profit
-            connector: Broker connector (MT5Connector, etc.) con acceso a MT5
-            regime_classifier: Optional RegimeClassifier para obtener régimen real
-            
-        Returns:
-            float: Position size en lotes (0.0 si rechazado por cualquier razón)
-        """
-        try:
-            # 1. Validar lockdown
-            if self.lockdown_mode:
-                logger.warning(f"Position size = 0: Account in LOCKDOWN mode")
-                self.monitor.record_calculation(
-                    symbol=signal.symbol,
-                    position_size=0.0,
-                    risk_target=0.0,
-                    status=CalculationStatus.WARNING,
-                    warnings=["Lockdown mode active"]
-                )
-                return 0.0
-            
-            # 1b. EDGE: Check circuit breaker
-            if not self.monitor.is_trading_allowed():
-                logger.critical(
-                    f"🔥 Position size = 0: CIRCUIT BREAKER ACTIVE "
-                    f"(consecutive failures: {self.monitor.consecutive_failures})"
-                )
-                self.monitor.record_calculation(
-                    symbol=signal.symbol,
-                    position_size=0.0,
-                    risk_target=0.0,
-                    status=CalculationStatus.CRITICAL,
-                    error_message="Circuit breaker active"
-                )
-                return 0.0
-            
-            # 2. Obtener balance real
-            account_balance = self._get_account_balance(connector)
-            if account_balance <= 0:
-                logger.error(f"Invalid account balance: {account_balance}")
-                self.monitor.record_calculation(
-                    symbol=signal.symbol,
-                    position_size=0.0,
-                    risk_target=0.0,
-                    status=CalculationStatus.ERROR,
-                    error_message=f"Invalid account balance: {account_balance}"
-                )
-                return 0.0
-            
-            # 3. Obtener symbol info del broker
-            symbol_info = self._get_symbol_info(connector, signal.symbol)
-            if symbol_info is None:
-                logger.error(f"Could not get symbol info for {signal.symbol}")
-                self.monitor.record_calculation(
-                    symbol=signal.symbol,
-                    position_size=0.0,
-                    risk_target=0.0,
-                    status=CalculationStatus.ERROR,
-                    error_message=f"Could not get symbol info for {signal.symbol}"
-                )
-                return 0.0
-            
-            # 4. Calcular pip_size (JPY vs no-JPY)
-            pip_size = self._calculate_pip_size(signal.symbol)
-            
-            # 5. Calcular point_value dinámicamente
-            point_value = self._calculate_point_value(
-                symbol_info=symbol_info,
-                pip_size=pip_size,
-                entry_price=signal.entry_price,
-                symbol=signal.symbol,
-                connector=connector
-            )
-            
-            if point_value <= 0:
-                logger.error(f"Invalid point_value: {point_value}")
-                return 0.0
-            
-            # 6. Obtener régimen real del mercado
-            current_regime = self._get_market_regime(signal, regime_classifier)
-            
-            # 7. Calcular SL distance en pips
-            if not signal.stop_loss or signal.stop_loss <= 0:
-                logger.warning(f"Invalid stop_loss for {signal.symbol}, using default 50 pips")
-                stop_loss_distance_pips = 50.0
-            else:
-                price_distance = abs(signal.entry_price - signal.stop_loss)
-                stop_loss_distance_pips = price_distance / pip_size
-            
-            if stop_loss_distance_pips <= 0:
-                logger.error(f"Invalid stop_loss distance: {stop_loss_distance_pips} pips")
-                return 0.0
-            
-            # 8. Aplicar fórmula de riesgo
-            volatility_multiplier = self._get_volatility_multiplier(current_regime)
-            risk_per_trade_adjusted = self.risk_per_trade * volatility_multiplier
-            risk_amount_usd = account_balance * risk_per_trade_adjusted
-            value_at_risk_per_lot = stop_loss_distance_pips * point_value
-            
-            if value_at_risk_per_lot <= 0:
-                logger.error(f"Invalid value_at_risk_per_lot: {value_at_risk_per_lot}")
-                return 0.0
-            
-            position_size = risk_amount_usd / value_at_risk_per_lot
-            
-            logger.debug(
-                f"Position calc: Symbol={signal.symbol}, Regime={current_regime.value}, "
-                f"Pip={pip_size}, PV=${point_value:.2f}, SL={stop_loss_distance_pips:.1f}pips, "
-                f"Risk={risk_per_trade_adjusted*100:.2f}%, Size={position_size:.4f}"
-            )
-            
-            # 9. Validar margen disponible
-            if not self._validate_margin(connector, position_size, signal, symbol_info):
-                logger.warning(f"Insufficient margin for {position_size:.2f} lots of {signal.symbol}")
-                self.monitor.record_calculation(
-                    symbol=signal.symbol,
-                    position_size=0.0,
-                    risk_target=risk_amount_usd,
-                    risk_actual=0.0,
-                    status=CalculationStatus.ERROR,
-                    error_message="Insufficient margin"
-                )
-                return 0.0
-            
-            # 10. Validar exposición total (TODO: implementar cuando tengamos exposure manager)
-            # if not self._validate_exposure(position_size, signal):
-            #     return 0.0
-            
-            # 11. Aplicar límites de broker
-            position_size_final = self._apply_broker_limits(position_size, symbol_info)
-            
-            # 11b. SAFETY CHECK: Si después del redondeo el riesgo excede el objetivo,
-            # bajar un step para ser conservador
-            real_risk_after_round = position_size_final * stop_loss_distance_pips * point_value
-            if real_risk_after_round > risk_amount_usd:
-                # Bajar un step
-                step = symbol_info.volume_step if symbol_info.volume_step > 0 else 0.01
-                position_size_conservative = position_size_final - step
-                # Asegurar que no baje del mínimo
-                if position_size_conservative >= symbol_info.volume_min:
-                    position_size_final = position_size_conservative
-                    logger.debug(
-                        f"Position size reduced to stay within risk target: "
-                        f"{position_size_final + step:.2f} → {position_size_final:.2f}"
-                   )
-            
-            # 12. Log final
-            real_risk_usd = position_size_final * stop_loss_distance_pips * point_value
-            real_risk_pct = (real_risk_usd / account_balance) * 100
-            
-            # ====== EDGE VALIDATION: Final Safety Checks ======
-            # 1. Sanity Check: Garantizar que NUNCA excedemos riesgo objetivo (crítico)
-            is_sane, sanity_msg = self._validate_risk_sanity(
-                position_size_final, stop_loss_distance_pips, point_value, risk_amount_usd, account_balance
-            )
-            
-            if not is_sane:
-                logger.error(f"🔥 CALCULATION REJECTED: {sanity_msg}")
-                # Record CRITICAL failure
-                self.monitor.record_calculation(
-                    symbol=signal.symbol,
-                    position_size=position_size_final,
-                    risk_target=risk_amount_usd,
-                    risk_actual=position_size_final * stop_loss_distance_pips * point_value,
-                    status=CalculationStatus.CRITICAL,
-                    error_message=sanity_msg
-                )
-                return 0.0
-            
-            # Collect warnings
-            warnings_list = []
-            
-            # Detectar anomalías: position size extremadamente pequeño
-            if position_size_final < symbol_info.volume_min * 1.5:
-                warning_msg = (
-                    f"Position size muy pequeño: {position_size_final:.4f} lots "
-                    f"(min: {symbol_info.volume_min:.2f})"
-                )
-                logger.warning(f"⚠️  {warning_msg} - Symbol: {signal.symbol}")
-                warnings_list.append(warning_msg)
-            
-            # Detectar anomalías: position size extremadamente grande (> 50% de max)
-            if position_size_final > symbol_info.volume_max * 0.5:
-                warning_msg = (
-                    f"Position size muy grande: {position_size_final:.2f} lots "
-                    f"(max: {symbol_info.volume_max:.2f})"
-                )
-                logger.warning(f"⚠️  {warning_msg} - Symbol: {signal.symbol}")
-                warnings_list.append(warning_msg)
-            
-            # Validar que el error está dentro de tolerancia
-            error_absolute = abs(real_risk_usd - risk_amount_usd)
-            error_pct = (error_absolute / risk_amount_usd) * 100 if risk_amount_usd > 0 else 0
-            
-            if error_pct > 10.0:
-                warning_msg = f"Error > 10%: {error_pct:.2f}%"
-                logger.warning(
-                    f"⚠️  Position size {warning_msg} "
-                    f"(Target: ${risk_amount_usd:.2f}, Real: ${real_risk_usd:.2f}) "
-                    f"Symbol: {signal.symbol}"
-                )
-                warnings_list.append(warning_msg)
-            
-            logger.info(
-                f"✅ Position Size Calculated: {position_size_final:.2f} lots | "
-                f"Risk: ${real_risk_usd:.2f} ({real_risk_pct:.2f}%) | "
-                f"SL: {stop_loss_distance_pips:.1f} pips | "
-                f"Regime: {current_regime.value}"
-            )
-            
-            # Record successful calculation or warning
-            calc_status = CalculationStatus.WARNING if warnings_list else CalculationStatus.SUCCESS
-            self.monitor.record_calculation(
-                symbol=signal.symbol,
-                position_size=position_size_final,
-                risk_target=risk_amount_usd,
-                risk_actual=real_risk_usd,
-                status=calc_status,
-                warnings=warnings_list if warnings_list else None
-            )
-            
-            return position_size_final
-            
-        except Exception as e:
-            logger.error(f"Error in calculate_position_size_master: {e}", exc_info=True)
-            # Record ERROR
-            self.monitor.record_calculation(
-                symbol=signal.symbol if signal else "UNKNOWN",
-                position_size=0.0,
-                risk_target=0.0,
-                status=CalculationStatus.ERROR,
-                error_message=str(e)
-            )
-            return 0.0
+        """Single source of truth for position size. Delegates to PositionSizeEngine."""
+        return self._engine.calculate_master(
+            signal,
+            connector,
+            regime_classifier=regime_classifier,
+            lockdown_active=self.lockdown_mode,
+            balance_fallback=self.capital,
+        )
 
     def calculate_position_size(
         self,
         symbol: str,
         risk_amount_usd: float,
-        stop_loss_dist: float
+        stop_loss_dist: float,
     ) -> float:
-        """
-        Calcula el lotaje exacto usando Universal Trading Foundation.
-        
-        Directrices de Seguridad (Aprobadas por Arquitecto Jefe):
-        1. Usa Decimal para evitar errores de coma flotante.
-        2. Redondeo estricto hacia abajo (ROUND_DOWN).
-        3. stop_loss_dist es precio bruto (ej: 0.0050).
-        
-        Args:
-            symbol: Símbolo del activo (ej: EURUSD)
-            risk_amount_usd: Riesgo monetario en USD (ej: 100.0)
-            stop_loss_dist: Distancia al SL en precio bruto (ej: 0.0050)
-            
-        Returns:
-            float: Lotaje final normalizado.
-            
-        Raises:
-            AssetNotNormalizedError: Si el símbolo no está en la DB.
-        """
+        """Legacy: Universal Trading Foundation lot calculation (Decimal, ROUND_DOWN)."""
         trace_id = f"NORM-{uuid.uuid4().hex[:8]}"
-        logger.info(f"[{trace_id}] Starting Universal Risk Calculation for {symbol}")
-        
-        # a) Consulta datos de asset_profiles (SSOT)
+        logger.info("[%s] Starting Universal Risk Calculation for %s", trace_id, symbol)
         profile = self.storage.get_asset_profile(symbol, trace_id=trace_id)
-        
         if not profile:
-            logger.critical(f"[{trace_id}] {symbol} not found in asset_profiles!")
+            logger.critical("[%s] %s not in asset_profiles!", trace_id, symbol)
             raise AssetNotNormalizedError(symbol)
-            
         try:
-            # b) Cálculo de lotaje exacto usando Decimal
-            # Fórmula: Lots = Risk_USD / (SL_Dist * Contract_Size)
-            
             d_risk = Decimal(str(risk_amount_usd))
-            d_sl_dist = Decimal(str(stop_loss_dist))
-            d_contract_size = Decimal(str(profile['contract_size']))
-            d_lot_step = Decimal(str(profile['lot_step']))
-            
-            if d_sl_dist <= 0:
-                logger.error(f"[{trace_id}] Invalid stop_loss_dist: {stop_loss_dist}")
+            d_sl = Decimal(str(stop_loss_dist))
+            d_cs = Decimal(str(profile["contract_size"]))
+            d_step = Decimal(str(profile["lot_step"]))
+            if d_sl <= 0:
                 return 0.0
-                
-            # Raw lot calculation
-            # Risk per Lot = SL_Dist * Contract_Size
-            
-            risk_per_lot = d_sl_dist * d_contract_size
+            risk_per_lot = d_sl * d_cs
             raw_lots = d_risk / risk_per_lot
-            
-            # c) Redondeo hacia abajo según lot_step
-            # lots = floor(raw_lots / lot_step) * lot_step
-            
-            final_lots = (raw_lots / d_lot_step).to_integral_value(rounding=ROUND_DOWN) * d_lot_step
-            
+            final_lots = (raw_lots / d_step).to_integral_value(rounding=ROUND_DOWN) * d_step
             result = float(final_lots)
-            
-            logger.info(
-                f"[{trace_id}] Result for {symbol}: {result} lots "
-                f"(Risk: ${risk_amount_usd}, SL_Dist: {stop_loss_dist}, "
-                f"Contract: {profile['contract_size']}, Step: {profile['lot_step']})"
-            )
-            
+            logger.info("[%s] Result %s: %.4f lots", trace_id, symbol, result)
             return result
-            
         except Exception as e:
-            logger.error(f"[{trace_id}] Error in Universal Calculation for {symbol}: {e}", exc_info=True)
+            logger.error("[%s] Error for %s: %s", trace_id, symbol, e, exc_info=True)
             return 0.0
 
-    # =========================================================================
-    # SAFETY GOVERNOR - HU 4.4 (Private Methods)
-    # =========================================================================
-
-    def _calculate_r_unit(self, signal: 'Signal', account_balance: float) -> Decimal:
-        """
-        Calculate the R-unit risk of a trade using Decimal precision.
-
-        Formula: R = |Entry - SL| * contract_size / account_balance * 100
-
-        Args:
-            signal: Signal with entry_price and stop_loss
-            account_balance: Current account balance in USD
-
-        Returns:
-            Decimal: Risk in R-units (e.g., 1.0R = 1% of account per trade)
-        """
-        try:
-            d_entry = Decimal(str(signal.entry_price))
-            d_sl = Decimal(str(signal.stop_loss))
-            d_balance = Decimal(str(account_balance))
-
-            if d_balance <= 0:
-                logger.warning("[SAFETY_GOV] Cannot calculate R: balance is 0")
-                return Decimal("0")
-
-            # Get contract size from asset_profiles (SSOT)
-            profile = None
-            if hasattr(self, 'storage') and hasattr(self.storage, 'get_asset_profile'):
-                profile = self.storage.get_asset_profile(signal.symbol)
-            contract_size = Decimal(str(profile['contract_size'])) if profile else Decimal("100000")
-
-            sl_distance = abs(d_entry - d_sl)
-            r_unit = (sl_distance * contract_size / d_balance) * Decimal("100")
-
-            logger.debug(
-                f"[SAFETY_GOV] {signal.symbol}: entry={d_entry}, sl={d_sl}, "
-                f"contract={contract_size}, balance={d_balance} => R={r_unit:.4f}R"
-            )
-            return r_unit
-
-        except Exception as e:
-            logger.error(f"[SAFETY_GOV] Error calculating R-unit for {signal.symbol}: {e}")
-            return Decimal("0")
-
-    def _build_rejection_audit(
-        self,
-        signal: 'Signal',
-        r_calculated: Decimal,
-        r_limit: Decimal,
-        tenant_id: str = "unknown",
-    ) -> Dict[str, Any]:
-        """
-        Build a RejectionAudit dict for full traceability on Safety Governor veto.
-
-        Returns:
-            dict with: trace_id, timestamp, symbol, r_calculated, r_limit, reason, tenant_id
-        """
-        return {
-            "trace_id": f"GOV-{uuid.uuid4().hex[:8].upper()}",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "symbol": signal.symbol,
-            "r_calculated": r_calculated,
-            "r_limit": r_limit,
-            "reason": "RISK_LIMIT_EXCEEDED",
-            "tenant_id": tenant_id,
-            "entry_price": signal.entry_price,
-            "stop_loss": signal.stop_loss,
-        }
-
-    # =========================================================================
-    # HELPER METHODS - Private
-    # =========================================================================
-
-    def _get_account_balance(self, connector: Any) -> float:
-        """Obtiene balance de la cuenta del connector."""
-        try:
-            # Usa método del connector (arquitectura agnóstica)
-            if hasattr(connector, 'get_account_balance'):
-                return connector.get_account_balance()
-            
-            logger.warning("Connector does not support get_account_balance, using self.capital")
-            return getattr(self, 'capital', 10000.0)
-        except Exception as e:
-            logger.error(f"Error getting account balance: {e}")
-            return getattr(self, 'capital', 10000.0)
-    
-    def _get_symbol_info(self, connector: Any, symbol: str) -> Optional[Any]:
-        """Obtiene symbol info del broker a través del connector."""
-        try:
-            # Usa método del connector (arquitectura agnóstica)
-            if hasattr(connector, 'get_symbol_info'):
-                return connector.get_symbol_info(symbol)
-            
-            logger.error(f"Connector does not support get_symbol_info for {symbol}")
-            return None
-        except Exception as e:
-            logger.error(f"Error getting symbol info for {symbol}: {e}")
-            return None
-    
-    def _calculate_pip_size(self, symbol: str, connector: Any = None) -> float:
-        """
-        Calcula pip size basado en el símbolo y la información del broker.
-        Usa la utilidad global agnóstica de mercado.
-        """
-        symbol_info = self._get_symbol_info(connector, symbol) if connector else None
-        return calculate_pip_size(symbol_info, symbol, self.instrument_manager)
-    
-    def _calculate_point_value(
-        self,
-        symbol_info: Any,
-        pip_size: float,
-        entry_price: float,
-        symbol: str,
-        connector: Any
-    ) -> float:
-        try:
-            contract_size = symbol_info.trade_contract_size
-            account_currency = "USD" # TODO: Obtener dinámicamente de account_info
-            
-            # Caso 1: Símbolo termina en la moneda de la cuenta (Major)
-            if symbol.endswith(account_currency):
-                point_value = contract_size * pip_size
-                
-            # Caso 2: Símbolo empieza con la moneda de la cuenta (Directe)
-            # Ej: USDJPY (Quote=JPY). 1 Pip en USD = (contract * pip) / price
-            elif symbol.startswith(account_currency):
-                point_value = (contract_size * pip_size) / entry_price
-                
-            # Caso 3: Cruce (Triangulación)
-            # Ej: GBPJPY (Quote=JPY). Necesitamos USDJPY para convertir JPY -> USD.
-            else:
-                quote_currency = symbol[-3:]
-                # Buscar par de conversión USD + Moneda de Cotización
-                conv_symbol = f"USD{quote_currency}"
-                
-                # Intentar obtener precio de conversión a través del connector
-                from connectors.generic_data_provider import GenericDataProvider
-                conv_price = 0.0
-                if hasattr(connector, 'get_current_price'):
-                    conv_price = connector.get_current_price(conv_symbol)
-                
-                if conv_price and conv_price > 0:
-                    # En JPY (USDJPY), dividimos por el precio (1 USD = 150 JPY)
-                    point_value = (contract_size * pip_size) / conv_price
-                    logger.debug(f"[JPY FIX] Using triangulation via {conv_symbol} @ {conv_price}")
-                else:
-                    # Fallback agresivo: Si no hay par USDXXX, intentar XXXUSD
-                    conv_symbol_inv = f"{quote_currency}USD"
-                    if hasattr(connector, 'get_current_price'):
-                        conv_price_inv = connector.get_current_price(conv_symbol_inv)
-                        if conv_price_inv and conv_price_inv > 0:
-                            point_value = (contract_size * pip_size) * conv_price_inv
-                            logger.debug(f"[JPY FIX] Using triangulation via {conv_symbol_inv} @ {conv_price_inv}")
-                        else:
-                            # Fallback final a heurística EURUSD-style
-                            point_value = (contract_size * pip_size) / entry_price
-                            logger.warning(f"[JPY FIX] Triangulation failed for {symbol}, using entry_price fallback")
-            
-            logger.info(
-                f"[RISK] {symbol} Point Value calculated: ${point_value:.4f}/pip "
-                f"(Contract={contract_size}, Pip={pip_size}, Price={entry_price})"
-            )
-            
-            return point_value
-            
-        except Exception as e:
-            logger.error(f"Error calculating point_value: {e}")
-            return 10.0  # Default fallback para forex estándar
-    
-    def _validate_risk_sanity(
-        self,
-        lots: float,
-        sl_pips: float,
-        point_value: float,
-        target_usd: float,
-        balance: float
-    ) -> tuple[bool, str]:
-        """
-        Capa de validación adicional para evitar errores de cálculo catastróficos.
-        """
-        actual_risk_usd = lots * sl_pips * point_value
-        
-        if target_usd > 0:
-            # Calculate deviation
-            if actual_risk_usd > target_usd:
-                # OVER-RISK: Strict tolerance (10%)
-                error_pct = (actual_risk_usd - target_usd) / target_usd
-                if error_pct > 0.1:
-                    return False, f"OVER-RISK: Multiplier error or rounding led to {error_pct:.1%} higher risk (${actual_risk_usd:.2f} vs ${target_usd:.2f})"
-            else:
-                # UNDER-RISK: Lenient tolerance (30%) - rounding down is safe
-                # This is common in small accounts where 1 lot step is > 10% of total risk
-                error_pct = (target_usd - actual_risk_usd) / target_usd
-                if error_pct > 0.3:
-                    return False, f"UNDER-RISK: Deviation too high {error_pct:.1%} (${actual_risk_usd:.2f} vs ${target_usd:.2f})"
-        
-        # 2. Hard limit por trade (NUNCA más de 2.5% de la cuenta, pase lo que pase)
-        risk_of_balance = actual_risk_usd / balance
-        if risk_of_balance > 0.03: # Slight increase to avoid edge case rejections on tiny accounts
-            return False, f"ABSOLUTE RISK LIMIT REACHED: {risk_of_balance:.1%} of account (${actual_risk_usd:.2f})"
-            
-        # 3. Lotaje anómalo (Protección contra errores de contract_size)
-        if lots > 1000: # Heurística de seguridad
-            return False, f"Anomalous lot size detected: {lots:.2f}"
-            
-        return True, ""
-
-    def _get_market_regime(
-        self,
-        signal: Signal,
-        regime_classifier: Optional[Any]
-    ) -> MarketRegime:
-        """
-        Obtiene el régimen real del mercado.
-        
-        Orden de prioridad:
-        1. Signal tiene metadata['regime']
-        2. RegimeClassifier.classify() si está disponible
-        3. Default: MarketRegime.RANGE (defensive)
-        """
-        # Intentar obtener de signal.metadata
-        if signal.metadata and 'regime' in signal.metadata:
-            try:
-                regime_val = signal.metadata['regime']
-                if isinstance(regime_val, MarketRegime):
-                    return regime_val
-                return MarketRegime(regime_val)
-            except (ValueError, KeyError):
-                pass
-        
-        # Intentar obtener de signal.regime property
-        if hasattr(signal, 'regime') and signal.regime:
-            return signal.regime
-        
-        # TODO: Usar regime_classifier si está disponible
-        # if regime_classifier and hasattr(regime_classifier, 'classify'):
-        #     return regime_classifier.classify(...)
-        
-        # Default defensivo
-        logger.debug(f"No regime found for {signal.symbol}, using defensive default: RANGE")
-        return MarketRegime.RANGE
-    
-    def _validate_margin(
-        self,
-        connector: Any,
-        position_size: float,
-        signal: Signal,
-        symbol_info: Any
-    ) -> bool:
-        """
-        Valida que hay margen suficiente para abrir la posición.
-        Usa MT5 built-in a través del connector (arquitectura agnóstica).
-        
-        Returns:
-            True si hay margen suficiente, False si no
-        """
-        try:
-            # Delega al connector para calcular margen
-            if not hasattr(connector, 'calculate_margin'):
-                logger.warning("Connector does not support calculate_margin, skipping validation")
-                return True  # No bloquear si connector no soporta validación
-            
-            margin_required = connector.calculate_margin(signal, position_size)
-            
-            if margin_required is None:
-                logger.warning(f"Could not calculate margin for {signal.symbol}, skipping validation")
-                return True  # No bloquear si no podemos calcular
-            
-            # Obtener margin_free del connector
-            if not hasattr(connector, 'get_account_balance'):
-                logger.warning("Connector does not support balance check, skipping")
-                return True
-            
-            # Para MT5: necesitamos account_info completa para margin_free
-            # Como no queremos importar MT5 aquí, asumimos que si el cálculo de margen funcionó,
-            # el connector puede validar internamente. Por ahora, aceptamos el margen calculado.
-            # TODO: Agregar get_margin_free() al connector interface si es necesario
-            
-            logger.debug(
-                f"Margin calculation OK: Required=${margin_required:.2f} for {signal.symbol}"
-            )
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error validating margin: {e}")
-            return True  # No bloquear por error de validación
-    
-    def _apply_broker_limits(self, position_size: float, symbol_info: Any) -> float:
-        """
-        Aplica límites de broker (min/max volume) y redondea al step usando utilidades globales.
-        """
-        return normalize_volume(position_size, symbol_info)
-    
-    # =========================================================================
-    # LEGACY METHOD - Deprecated, mantener por compatibilidad
-    # =========================================================================
-    
     def calculate_position_size_deprecated(
         self,
         account_balance: float,
         stop_loss_distance: float,
         point_value: float,
-        current_regime: Optional[MarketRegime] = None
+        current_regime: Optional[MarketRegime] = None,
     ) -> float:
-        """
-        ⚠️ DEPRECATED - Use calculate_position_size_master() instead
-        
-        Calcula el tamaño de la posición de forma agnóstica y resiliente.
-        
-        MANTENIDO POR COMPATIBILIDAD. Este método asume que pip_size y point_value
-        ya fueron calculados correctamente externamente. Para cálculo completo
-        y correcto, usar calculate_position_size_master().
-        
-        Args:
-            account_balance: Balance actual de la cuenta.
-            stop_loss_distance: Distancia al stop loss en puntos o pips.
-            point_value: Valor monetario de un punto/pip para el instrumento.
-            current_regime: El régimen de mercado actual.
-        
-        Returns:
-            Tamaño de la posición (0 si no es seguro operar).
-        """
-        # 3. Resiliencia de Datos: Comprobar lockdown y régimen nulo
+        """Deprecated. Use calculate_position_size_master()."""
         if self.lockdown_mode or not current_regime:
-            if self.lockdown_mode:
-                logger.warning("Position size = 0: Account is in LOCKDOWN mode.")
-            if not current_regime:
-                logger.warning("Position size = 0: Market regime is None. Adopting defensive posture.")
             return 0.0
-
         if stop_loss_distance <= 0 or point_value <= 0:
-            logger.warning("Position size = 0: Invalid stop loss distance or point value.")
             return 0.0
-
-        # Obtener multiplicador de volatilidad (ejemplo, puede ser más complejo)
-        volatility_multiplier = self._get_volatility_multiplier(current_regime)
-        risk_per_trade_adjusted = self.risk_per_trade * volatility_multiplier
-        
-        # 4. Agnosticismo: Usar point_value en el cálculo
-        risk_amount_per_trade = account_balance * risk_per_trade_adjusted
-        value_at_risk_per_lot = stop_loss_distance * point_value
-
-        if value_at_risk_per_lot <= 0:
+        vol_mult = 0.5 if current_regime in {MarketRegime.RANGE, MarketRegime.CRASH} else 1.0
+        risk_adj = self.risk_per_trade * vol_mult
+        risk_usd = account_balance * risk_adj
+        var_per_lot = stop_loss_distance * point_value
+        if var_per_lot <= 0:
             return 0.0
-            
-        position_size = risk_amount_per_trade / value_at_risk_per_lot
-        
-        logger.debug(
-            f"Position calc: Regime={current_regime.value}, Adjusted Risk={risk_per_trade_adjusted*100:.2f}%, "
-            f"Risk Amount=${risk_amount_per_trade:.2f}, Pos Size={position_size:.2f}"
-        )
-
-        return round(position_size, 2)
+        return round(risk_usd / var_per_lot, 2)
 
     def record_trade_result(self, is_win: bool, pnl: float) -> None:
-        """
-        Record trade result and update risk state, including lockdown persistence.
-        """
         self.capital += pnl
-        
         if is_win:
             self.consecutive_losses = 0
-            logger.info(f"WIN: PnL=${pnl:+.2f}, Capital=${self.capital:,.2f}")
             if self.lockdown_mode:
-                self._deactivate_lockdown() # Opcional: un trade ganador podría desactivar el lockdown
+                self._deactivate_lockdown()
         else:
             self.consecutive_losses += 1
-            logger.warning(
-                f"LOSS: PnL=${pnl:+.2f}, Capital=${self.capital:,.2f}, "
-                f"Consecutive losses: {self.consecutive_losses}"
-            )
-            
             if self.consecutive_losses >= self.max_consecutive_losses:
                 self._activate_lockdown()
 
     def _activate_lockdown(self) -> None:
-        """Activa y persiste el modo lockdown con fecha y balance."""
         if not self.lockdown_mode:
             from datetime import datetime, timezone
-            from utils.time_utils import to_utc
             now = datetime.now(timezone.utc).isoformat()
-            
             self.lockdown_mode = True
             self.storage.update_system_state({
-                'lockdown_mode': True,
-                'lockdown_date': now,
-                'lockdown_balance': self.capital,  # Save balance for recovery tracking
-                'consecutive_losses': self.consecutive_losses
+                "lockdown_mode": True,
+                "lockdown_date": now,
+                "lockdown_balance": self.capital,
+                "consecutive_losses": self.consecutive_losses,
             })
-            logger.error(
-                f"🔒 LOCKDOWN ACTIVATED: {self.consecutive_losses} consecutive losses at {now}. "
-                f"Balance: ${self.capital:,.2f}. "
-                "Trading disabled until balance recovers or system rests 24h."
-            )
+            logger.error("LOCKDOWN ACTIVATED: %s consecutive losses at %s", self.consecutive_losses, now)
 
     def _deactivate_lockdown(self) -> None:
-        """Desactiva y persiste el modo lockdown."""
         if self.lockdown_mode:
             self.lockdown_mode = False
             self.consecutive_losses = 0
             self.storage.update_system_state({
-                'lockdown_mode': False,
-                'lockdown_date': None,
-                'lockdown_balance': None,
-                'consecutive_losses': 0
+                "lockdown_mode": False,
+                "lockdown_date": None,
+                "lockdown_balance": None,
+                "consecutive_losses": 0,
             })
-            logger.info("✅ Lockdown DEACTIVATED. Trading resumed.")
-    
+            logger.info("Lockdown DEACTIVATED.")
+
     def _should_reset_lockdown(
-        self, 
-        lockdown_date: Optional[str], 
+        self,
+        lockdown_date: Optional[str],
         lockdown_balance: Optional[float],
-        current_balance: float
+        current_balance: float,
     ) -> tuple[bool, str]:
-        """
-        Adaptive lockdown reset logic based on market conditions, not calendar.
-        
-        Resets lockdown if:
-        1. Balance recovered (account recovered from drawdown), OR
-        2. System rested (24h without trading)
-        
-        Args:
-            lockdown_date: ISO timestamp when lockdown was activated
-            lockdown_balance: Account balance when lockdown was activated
-            current_balance: Current account balance
-            
-        Returns:
-            tuple[bool, str]: (should_reset, reason)
-        """
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timezone
         from utils.time_utils import to_utc
-        
-        # Safety: If no lockdown_date, assume it's old and reset
         if not lockdown_date:
-            return True, "No lockdown date found (stale lockdown)"
-        
+            return True, "No lockdown date (stale)"
         try:
-            from utils.time_utils import to_utc
-            from datetime import datetime, timezone
-            if lockdown_date:
-                if isinstance(lockdown_date, datetime):
-                    if lockdown_date.tzinfo is None:
-                        lockdown_time = lockdown_date.replace(tzinfo=timezone.utc)
-                    else:
-                        lockdown_time = lockdown_date.astimezone(timezone.utc)
-                else:
-                    dt_str = to_utc(lockdown_date)
-                    try:
-                        lockdown_time = datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S.%f').replace(tzinfo=timezone.utc)
-                    except Exception:
-                        lockdown_time = datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
+            if isinstance(lockdown_date, datetime):
+                lockdown_time = lockdown_date.astimezone(timezone.utc) if lockdown_date.tzinfo else lockdown_date.replace(tzinfo=timezone.utc)
             else:
-                lockdown_time = None
+                dt_str = to_utc(lockdown_date)
+                try:
+                    lockdown_time = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S.%f").replace(tzinfo=timezone.utc)
+                except Exception:
+                    lockdown_time = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
         except (ValueError, TypeError):
-            return True, "Invalid lockdown date format"
-        
-        # Criterion 1: Balance Recovery (PRIORITY)
-        # If balance recovered 2% from lockdown level, conditions likely improved
+            return True, "Invalid lockdown date"
         if lockdown_balance and current_balance >= lockdown_balance * 1.02:
-            recovery_pct = ((current_balance - lockdown_balance) / lockdown_balance) * 100
-            return True, f"Balance recovered +{recovery_pct:.1f}% from lockdown level"
-        
-        # Criterion 2: System Rest (24h without trading)
-        # Get last trade time from storage
+            return True, f"Balance recovered from lockdown level"
         try:
             conn = self.storage._get_conn()
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT MAX(timestamp) 
-                FROM trades 
-                WHERE timestamp > ?
-            """, (lockdown_date,))
-            result = cursor.fetchone()
-            last_trade_time = result[0] if result and result[0] else None
+            cursor.execute("SELECT MAX(timestamp) FROM trades WHERE timestamp > ?", (lockdown_date,))
+            row = cursor.fetchone()
+            last_trade = row[0] if row and row[0] else None
             conn.close()
-            
-            if last_trade_time:
-                # There were trades after lockdown - check if system rested since then
-                try:
-                    last_trade = to_utc(last_trade_time)
-                    hours_since_trade = (datetime.now(timezone.utc) - last_trade).total_seconds() / 3600
-                    
-                    if hours_since_trade >= 24:
-                        return True, f"System rested {hours_since_trade:.1f}h without trading"
-                except (ValueError, TypeError):
-                    pass
+            if last_trade:
+                last_dt = to_utc(last_trade)
+                hours = (datetime.now(timezone.utc) - last_dt).total_seconds() / 3600
+                if hours >= 24:
+                    return True, f"System rested {hours:.1f}h"
             else:
-                # No trades since lockdown - check time since lockdown
-                hours_since_lockdown = (datetime.now(timezone.utc) - lockdown_time).total_seconds() / 3600
-                
-                if hours_since_lockdown >= 24:
-                    return True, f"System rested {hours_since_lockdown:.1f}h since lockdown"
-        
+                hours = (datetime.now(timezone.utc) - lockdown_time).total_seconds() / 3600
+                if hours >= 24:
+                    return True, f"System rested {hours:.1f}h since lockdown"
         except Exception as e:
-            logger.error(f"Error checking trade history for lockdown reset: {e}")
-            # Don't reset on error - be conservative
-        
-        # Lockdown persists
-        hours_since_lockdown = (datetime.now(timezone.utc) - lockdown_time).total_seconds() / 3600
-        return False, f"Lockdown active for {hours_since_lockdown:.1f}h - waiting for recovery or 24h rest"
-            
-    def _get_volatility_multiplier(self, regime: MarketRegime) -> float:
-        """Determina un multiplicador de riesgo basado en el régimen."""
-        volatile_regimes = {MarketRegime.RANGE, MarketRegime.CRASH}
-        if regime in volatile_regimes:
-            return 0.5 # Reduce el riesgo a la mitad en mercados volátiles/inciertos
-        return 1.0 # Riesgo normal
-    
+            logger.error("Error checking lockdown reset: %s", e)
+        return False, "Lockdown active - waiting recovery or 24h rest"
+
     def is_locked(self) -> bool:
-        """
-        Check if trading is locked due to lockdown mode.
-        
-        Returns:
-            True if in lockdown mode, False otherwise
-        """
         return self.lockdown_mode
-    
+
     def is_lockdown_active(self) -> bool:
-        """
-        Alias for is_locked() for compatibility with MainOrchestrator.
-        
-        Returns:
-            True if in lockdown mode, False otherwise
-        """
         return self.lockdown_mode
 
     def get_status(self) -> Dict:
-        """Get current risk manager status."""
         return {
-            'capital': self.capital,
-            'consecutive_losses': self.consecutive_losses,
-            'is_locked': self.lockdown_mode,
-            'dynamic_risk_per_trade': self.risk_per_trade,
-            'max_consecutive_losses': self.max_consecutive_losses
+            "capital": self.capital,
+            "consecutive_losses": self.consecutive_losses,
+            "is_locked": self.lockdown_mode,
+            "dynamic_risk_per_trade": self.risk_per_trade,
+            "max_consecutive_losses": self.max_consecutive_losses,
         }
 
     def validate_signal(self, signal: Signal) -> bool:
-        """
-        Validate a signal against risk rules.
-        
-        Args:
-            signal: Signal to validate
-            
-        Returns:
-            True if signal passes validation, False otherwise.
-            Sets signal.status to 'VETADO' if rejected.
-        """
-        # Check lockdown mode
         if self.lockdown_mode:
-            signal.status = 'VETADO'
-            logger.warning(f"Signal {signal.symbol} rejected: Lockdown mode active")
+            signal.status = "VETADO"
             return False
-        
-        # Check consecutive losses
         if self.consecutive_losses >= self.max_consecutive_losses:
-            signal.status = 'VETADO'
-            logger.warning(f"Signal {signal.symbol} rejected: Max consecutive losses reached ({self.consecutive_losses})")
+            signal.status = "VETADO"
             return False
-        
-        # Additional risk checks can be added here
-        # For now, basic validation
-        
-        logger.debug(f"Signal {signal.symbol} passed risk validation")
         return True

@@ -35,3 +35,19 @@ El motor de confluencia compara activos con correlación inversa (ej. EURUSD vs 
 
 *   **Veto por Correlación**: Si se detecta una divergencia alcista en un par con correlación inversa mientras se busca una venta, el sistema aplica un veto o aumenta el umbral de confianza requerido a 0.85.
 *   **Estado Choppy**: La falta de alineación en tendencias de activos inversos activa una alerta de mercado lateral/indeciso.
+
+## 📡 Espacio de API: Sentiment Stream Institucional (HU 3.4)
+Integración activa en `core_brain/services/sentiment_service.py` bajo enfoque API-first (liviano, sin modelos NLP pesados en Core).
+
+*   **Fuentes objetivo**: RSS, X/Twitter institucional, Bloomberg/Reuters/Fed wire.
+*   **Modelo operacional**: El servicio consume eventos preprocesados externos y aplica scoring heurístico de posicionamiento institucional (macro + peso de fuente).
+*   **Regla de veto**: Si el stream macro marca sesgo extremo (>= 80%) contrario a la dirección de una señal de alta probabilidad técnica, el `RiskManager` ejecuta veto con etiqueta `[SENTIMENT_VETO]`.
+*   **Persistencia de contexto**: Snapshot de sentimiento queda inyectado en `signal.metadata["institutional_sentiment"]` para trazabilidad.
+
+## 🛰️ Avance Radar: Predator Sense (HU 2.2)
+Estado actualizado del scanner de depredación de contexto:
+
+*   **Motor**: `ConfluenceService.detect_predator_divergence()` detecta barrido de liquidez inter-mercado + estancamiento del activo base.
+*   **Caso canónico implementado**: DXY barriendo máximos mientras EURUSD se estanca.
+*   **Salida normalizada**: `divergence_strength` (0-100), `state` (`DORMANT`, `TRACKING`, `PREDATOR_ACTIVE`), `signal_bias`.
+*   **UI en tiempo real**: endpoint `/api/analysis/predator-radar` + widget `Predator Radar` en la Terminal de análisis.

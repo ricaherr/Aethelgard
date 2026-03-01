@@ -16,3 +16,4 @@ export { SignalFeed } from './SignalFeed';
 export { SignalCard } from './SignalCard';
 export { default as HeatmapView } from './HeatmapView';
 export { default as HeatmapCell } from './HeatmapCell';
+export { default as PredatorRadar } from './PredatorRadar';

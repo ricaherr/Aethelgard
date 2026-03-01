@@ -14,6 +14,7 @@ from data_vault.market_db import MarketMixin
 from core_brain.api.dependencies.auth import get_current_active_user
 from models.auth import TokenPayload
 from models.signal import MarketRegime
+from models.market import PredatorRadarResponse
 from data_vault.tenant_factory import TenantDBFactory
 
 logger = logging.getLogger(__name__)
@@ -217,6 +218,49 @@ async def get_heatmap_data(token: TokenPayload = Depends(get_current_active_user
         "cells": cells,
         "timestamp": datetime.now().isoformat()
     }
+
+
+@router.get("/analysis/predator-radar", response_model=PredatorRadarResponse)
+async def get_predator_radar(
+    symbol: str = "EURUSD",
+    timeframe: str = "M5",
+    token: TokenPayload = Depends(get_current_active_user)
+) -> PredatorRadarResponse:
+    """
+    Retorna snapshot de divergencia inter-mercado (Predator Radar) para HU 2.2.
+    Detecta barridos de liquidez (SmT) y cuantifica fuerza de divergencia 0-100.
+    """
+    try:
+        from core_brain.services.confluence_service import ConfluenceService
+        from core_brain.data_provider_manager import DataProviderManager
+
+        tenant_id = token.tid
+        storage = TenantDBFactory.get_storage(tenant_id)
+        confluence_service = ConfluenceService(storage=storage)
+
+        scanner = _get_scanner()
+        base_ohlcv = None
+        if scanner is not None:
+            key = f"{symbol}|{timeframe}"
+            try:
+                with scanner._lock:
+                    base_ohlcv = scanner.last_dataframes.get(key)
+            except Exception:
+                base_ohlcv = None
+
+        provider_manager = DataProviderManager(storage=storage)
+        provider = provider_manager.get_best_provider()
+
+        snapshot = confluence_service.get_predator_radar(
+            symbol=symbol,
+            timeframe=timeframe,
+            connector=provider,
+            base_ohlcv=base_ohlcv
+        )
+        return PredatorRadarResponse(**snapshot)
+    except Exception as e:
+        logger.error(f"Error en get_predator_radar: {e}")
+        raise HTTPException(status_code=500, detail=f"Error fetching predator radar: {str(e)}")
 
 
 # ============ ENDPOINT: Historial de Régimen ============

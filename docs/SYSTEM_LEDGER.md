@@ -77,6 +77,32 @@ Operación de limpieza de honor y restauración de la fidelidad técnica. Saneam
 
 ### 📅 Registro: 2026-02-28
 
+#### 🛡️ Vector V3 – Cirugía de precisión (Refactor Masa + Trace_ID + Pydantic)
+**Trace_ID**: `VECTOR-V3-SANITY-2026-001`  
+**Timestamp**: 2026-02-28  
+**Estado Final**: ✅ EJECUTADO
+
+**Descripción**:  
+Refactorización de masa del RiskManager, inyección de Trace_ID en vetos de sentimiento/confluencia, y tipado Pydantic para el endpoint Predator Radar.
+
+**Cambios Clave**:
+- **RiskPolicyEnforcer** (`core_brain/risk_policy_enforcer.py`): Nuevo componente satélite que ejecuta todas las validaciones de política (R-unit, liquidez, confluencia, sentimiento, riesgo de cuenta). Cada veto se registra con Trace_ID. RiskManager delega `can_take_new_trade` al enforcer.
+- **PositionSizeEngine** (`core_brain/position_size_engine.py`): Motor de cálculo de lotes (balance, symbol info, pip/point value, régimen, margen, límites broker, sanity check). RiskManager delega `calculate_position_size_master` al engine.
+- **RiskManager** (`core_brain/risk_manager.py`): Reducido a &lt;450 líneas. Mantiene estado de lockdown, inicialización y APIs legacy; delega validación y cálculo a Enforcer y Engine.
+- **Trace_ID en servicios**:
+  - `SentimentService.evaluate_trade_veto(..., trace_id)` — motivo de veto con formato `[SENTIMENT_VETO][Trace_ID: XYZ] Bearish Sentiment detected (85%).`
+  - `ConfluenceService.validate_confluence(..., trace_id)` y `get_predator_radar(..., trace_id)` — vetos con prefijo `[CONFLUENCE_VETO][Trace_ID: XYZ]`
+- **Pydantic**: Modelo `PredatorRadarResponse` en `models/market.py` aplicado como `response_model` en `GET /api/analysis/predator-radar`.
+
+**Validación**:  
+- `risk_manager.py`: **310 líneas** (&lt;450, cumplido).
+- `scripts/validate_all.py`: **12/12 módulos PASSED** (Architecture, QA Guard, Code Quality, UI Quality, Manifesto, Patterns, Core Tests, Integration, Connectivity, System DB, DB Integrity, Documentation).
+- Tests de fase Vector V3: test_sentiment_service, test_confluence_service_predator, test_risk_manager_sentiment — **5/5 PASSED**.
+
+---
+
+### 📅 Registro: 2026-02-28
+
 #### 🛡️ MILESTONE 5.1: Execution Supremacy (High-Fidelity Bridge)
 **Trace_ID**: `EXECUTION-SUPREMACY-2026-001`  
 **Timestamp**: 2026-02-28 02:40  

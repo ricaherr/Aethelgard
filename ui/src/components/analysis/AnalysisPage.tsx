@@ -13,6 +13,7 @@ import { useToast, ToastContainer } from '../common/Toast';
 import HeatmapView from './HeatmapView';
 import MetricWidget from './MetricWidget';
 import TopOpportunities from './TopOpportunities';
+import PredatorRadar from './PredatorRadar';
 import InfoTooltip from './InfoTooltip';
 import { useHeatmapData } from '../../hooks/useHeatmapData';
 import { useApi } from '../../hooks/useApi';
@@ -178,6 +179,9 @@ const AnalysisPage: React.FC = () => {
           <div className="flex flex-col xl:flex-row gap-4 mb-4">
             <div className="flex-1">
               <MetricWidget data={heatmapData} loading={heatmapLoading} />
+            </div>
+            <div className="xl:w-[320px]">
+              <PredatorRadar symbol={symbol} timeframe="M5" />
             </div>
             <div className="xl:w-auto">
               <TopOpportunities
