@@ -10,6 +10,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Request, Depends
 
 from data_vault.storage import StorageManager
+from data_vault.tenant_factory import TenantDBFactory
 from core_brain.api.dependencies.auth import get_current_active_user
 from models.auth import TokenPayload
 from models.signal import Signal, SignalType, ConnectorType
@@ -373,16 +374,14 @@ async def get_edge_history(limit: int = 50, token: TokenPayload = Depends(get_cu
 
 @router.post("/auto-trading/toggle")
 async def toggle_auto_trading(request: Request, token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
-    """Activa o desactiva el auto-trading"""
+    """Activa o desactiva el auto-trading para el tenant actual."""
     try:
-        # Parse JSON body
         body = await request.json()
-        enabled = body.get('enabled', False)
-        
-        storage = _get_storage()
+        enabled = body.get("enabled", False)
         tenant_id = token.tid
-        
-        success = storage.update_user_preferences(tenant_id, {'auto_trading_enabled': enabled}, tenant_id=tenant_id)
+        storage = TenantDBFactory.get_storage(tenant_id)
+        # user_id "default" scoped to tenant DB (preferences row per tenant)
+        success = storage.update_user_preferences("default", {"auto_trading_enabled": enabled})
         if success:
             status = "enabled" if enabled else "disabled"
             logger.info(f"Auto-trading {status} for tenant {tenant_id}")

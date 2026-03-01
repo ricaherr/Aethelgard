@@ -149,77 +149,9 @@ class InstrumentManager:
                     self.symbol_cache[symbol.upper()] = cfg
     
     def _get_default_config(self) -> Dict:
-        """Return built-in baseline instrument configuration."""
-        return {
-            "FOREX": {
-                "majors": {
-                    "enabled": True,
-                    "instruments": ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD"],
-                    "min_score": 70.0,
-                    "risk_multiplier": 1.0,
-                    "max_spread_pips": 2.0,
-                    "priority": 1
-                },
-                "minors": {
-                    "enabled": True,
-                    "instruments": ["EURGBP", "EURJPY", "GBPJPY", "EURAUD", "EURNZD", "GBPAUD", "AUDNZD", "AUDJPY"],
-                    "min_score": 75.0,
-                    "risk_multiplier": 0.9,
-                    "max_spread_pips": 4.0,
-                    "priority": 2
-                },
-                "exotics": {
-                    "enabled": False,
-                    "instruments": ["USDTRY", "USDZAR", "USDMXN", "USDRUB", "EURTRY", "GBPTRY", "USDBRL", "USDCLP"],
-                    "min_score": 90.0,
-                    "risk_multiplier": 0.5,
-                    "max_spread_pips": 30.0,
-                    "priority": 3
-                }
-            },
-            "CRYPTO": {
-                "tier1": {
-                    "enabled": True,
-                    "instruments": ["BTCUSDT", "ETHUSDT", "BNBUSDT"],
-                    "min_score": 75.0,
-                    "risk_multiplier": 0.8,
-                    "max_spread_bps": 10,
-                    "priority": 1
-                },
-                "altcoins": {
-                    "enabled": False,
-                    "instruments": ["ADAUSDT", "DOGEUSDT", "SHIBUSDT", "XRPUSDT", "SOLUSDT", "DOTUSDT", "MATICUSDT"],
-                    "min_score": 85.0,
-                    "risk_multiplier": 0.5,
-                    "max_spread_bps": 50,
-                    "priority": 2
-                }
-            },
-            "METALS": {
-                "spot": {
-                    "enabled": True,
-                    "instruments": ["XAUUSD", "XAGUSD"],
-                    "min_score": 75.0,
-                    "risk_multiplier": 0.8,
-                    "priority": 1
-                }
-            },
-            "INDEXES": {
-                "majors": {
-                    "enabled": True,
-                    "instruments": ["US30", "NAS100", "SPX500"],
-                    "min_score": 75.0,
-                    "risk_multiplier": 0.8,
-                    "priority": 1
-                }
-            },
-            "_global_settings": {
-                "default_min_score": 80.0,
-                "default_risk_multiplier": 0.8,
-                "fallback_behavior": "conservative",
-                "unknown_instrument_action": "reject"
-            }
-        }
+        """Return built-in baseline instrument configuration (SSOT from data_vault)."""
+        from data_vault.default_instruments import DEFAULT_INSTRUMENTS_CONFIG
+        return dict(DEFAULT_INSTRUMENTS_CONFIG)
 
     def _get_conservative_fallback_config(self) -> Dict:
         """

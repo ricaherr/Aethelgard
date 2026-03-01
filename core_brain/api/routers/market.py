@@ -16,6 +16,7 @@ from models.auth import TokenPayload
 from models.signal import MarketRegime
 from models.market import PredatorRadarResponse
 from data_vault.tenant_factory import TenantDBFactory
+from data_vault.default_instruments import DEFAULT_INSTRUMENTS_CONFIG
 
 logger = logging.getLogger(__name__)
 
@@ -332,8 +333,8 @@ async def get_regime_configs(token: TokenPayload = Depends(get_current_active_us
     try:
         tenant_id = token.tid
         storage = TenantDBFactory.get_storage(tenant_id)
-        # Obtener todos los regime_configs agrupados por régimen
-        all_configs = storage.get_all_regime_configs()
+        # Obtener todos los regime_configs agrupados por régimen (por tenant o global)
+        all_configs = storage.get_all_regime_configs(tenant_id=tenant_id)
         
         # Transformar formato: all_configs es Dict[regime -> Dict[metric_name -> weight]]
         regime_weights = {}
@@ -353,60 +354,70 @@ async def get_regime_configs(token: TokenPayload = Depends(get_current_active_us
 
 
 # ============ ENDPOINT: Instrumentos (Lectura) ============
+def _build_markets_response(instruments_config: Dict[str, Any], all: bool) -> Dict[str, Any]:
+    """Build markets dict from instruments_config; skip keys starting with _."""
+    result = {}
+    for market, categories in instruments_config.items():
+        if market.startswith("_"):
+            continue
+        if not isinstance(categories, dict):
+            continue
+        result[market] = {}
+        for cat, cat_data in categories.items():
+            if not isinstance(cat_data, dict):
+                continue
+            if not all and not cat_data.get("enabled", False):
+                continue
+            instruments = cat_data.get("instruments", [])
+            if not all:
+                actives = cat_data.get("actives", {})
+                instruments = [sym for sym in instruments if actives.get(sym, True)]
+            if instruments or all:
+                result[market][cat] = {
+                    "description": cat_data.get("description", ""),
+                    "instruments": instruments,
+                    "priority": cat_data.get("priority", 0),
+                    "min_score": cat_data.get("min_score", None),
+                    "risk_multiplier": cat_data.get("risk_multiplier", None),
+                    "enabled": cat_data.get("enabled", False),
+                    "actives": cat_data.get("actives", {}),
+                }
+    return result
+
+
 @router.get("/instruments")
 async def get_instruments(all: bool = False, token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """Retorna la lista de instrumentos agrupados por mercado/categoría desde la DB (SSOT).
     Si 'all' es True, incluye categorías e instrumentos inactivos (para Settings).
+    Integridad: solo se persiste el default cuando la clave falta; nunca se sobrescriben datos existentes.
     """
     try:
         tenant_id = token.tid
         storage = TenantDBFactory.get_storage(tenant_id)
         state = storage.get_system_state()
         instruments_config = state.get("instruments_config")
+        # Solo sembrar cuando la clave NO existe (evitar borrar datos del usuario)
         if instruments_config is None:
-            raise ValueError("instruments_config no encontrado en DB. Inicialice la configuración desde la UI/API.")
-        result = {}
-        for market, categories in instruments_config.items():
-            if market.startswith("_"):
-                continue
-            result[market] = {}
-            for cat, cat_data in categories.items():
-                # Si all=False, solo mostrar categorías activas
-                if not all and not cat_data.get("enabled", False):
-                    continue
-                instruments = cat_data.get("instruments", [])
-                # Si all=False, solo mostrar instrumentos activos
-                if not all:
-                    actives = cat_data.get("actives", {})
-                    instruments = [sym for sym in instruments if actives.get(sym, True)]
-                if instruments or all:
-                    result[market][cat] = {
-                        "description": cat_data.get("description", ""),
-                        "instruments": instruments,
-                        "priority": cat_data.get("priority", 0),
-                        "min_score": cat_data.get("min_score", None),
-                        "risk_multiplier": cat_data.get("risk_multiplier", None),
-                        "enabled": cat_data.get("enabled", False),
-                        "actives": cat_data.get("actives", {})
-                    }
-        return {"markets": result}
+            logger.warning(
+                "[EDGE] instruments_config missing in DB for tenant %s; seeding once and persisting.",
+                tenant_id,
+            )
+            storage.update_system_state({"instruments_config": DEFAULT_INSTRUMENTS_CONFIG})
+            instruments_config = DEFAULT_INSTRUMENTS_CONFIG
+        elif isinstance(instruments_config, str):
+            try:
+                import json as _json
+                instruments_config = _json.loads(instruments_config)
+            except Exception as e:
+                logger.error("Invalid instruments_config format in DB: %s. Returning default without overwriting.", e)
+                return {"markets": _build_markets_response(DEFAULT_INSTRUMENTS_CONFIG, all)}
+        if not isinstance(instruments_config, dict):
+            logger.error("instruments_config is not a dict. Returning default without overwriting.")
+            return {"markets": _build_markets_response(DEFAULT_INSTRUMENTS_CONFIG, all)}
+        return {"markets": _build_markets_response(instruments_config, all)}
     except Exception as e:
-        logger.error(f"Error loading instruments config from DB: {e}")
-        # Fallback: lista mínima hardcodeada
-        return {
-            "markets": {
-                "FOREX": {
-                    "majors": {
-                        "description": "Fallback: Pares principales",
-                        "instruments": ["EURUSD", "GBPUSD", "USDJPY"],
-                        "priority": 1,
-                        "min_score": 70,
-                        "risk_multiplier": 1.0
-                    }
-                }
-            },
-            "error": f"No se pudo cargar instruments_config de la DB: {str(e)}"
-        }
+        logger.error("Error loading instruments config: %s", e)
+        return {"markets": _build_markets_response(DEFAULT_INSTRUMENTS_CONFIG, all)}
 
 
 # ============ ENDPOINT: Instrumentos (Actualización) ============
@@ -414,16 +425,14 @@ async def get_instruments(all: bool = False, token: TokenPayload = Depends(get_c
 async def update_instruments(payload: dict, token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """Actualiza SOLO una categoría de instrumentos (más eficiente, DRY)"""
     try:
-        storage = _get_storage()
         tenant_id = token.tid
+        storage = TenantDBFactory.get_storage(tenant_id)
         market = payload.get("market")
         category = payload.get("category")
         data = payload.get("data")
         if not (market and category and isinstance(data, dict)):
             raise HTTPException(status_code=400, detail="Faltan campos obligatorios: market, category, data")
-        
-        # Obtener estado actual
-        storage = TenantDBFactory.get_storage(tenant_id)
+
         state = storage.get_system_state()
         instruments_config = state.get("instruments_config")
         if not instruments_config or market not in instruments_config or category not in instruments_config[market]:

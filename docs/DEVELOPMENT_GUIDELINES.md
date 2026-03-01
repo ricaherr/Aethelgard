@@ -23,9 +23,10 @@ Establecer los estándares innegociables para el desarrollo del ecosistema Aethe
 *   **3.1. Gestión de Temporales**: Todo script de prueba, archivo .tmp, o código de depuración debe ser eliminado INMEDIATAMENTE después de cumplir su función. No se permite la persistencia de "basura técnica" en el repositorio principal.
 *   **3.2. Comentarios de Producción**: Se prohíbe dejar bloques de código comentados ("muertos"). Si el código no es funcional, se elimina. La trazabilidad reside en el Git, no en los comentarios.
 
-## 4. Gestión de Excepciones y Veto
+## 4. Gestión de Excepciones y Veto (OBLIGATORIO)
 *   **4.1. Fail-Safe**: Todo proceso financiero debe incluir un bloque try-except específico con rollback de base de datos en caso de fallo.
 *   **4.2. Veto Técnico**: La autonomía delegada se detiene si los signos vitales (latencia > 500ms o pérdida de WS) se degradan.
+*   **4.3. Try/Except obligatorio**: No es aceptable dejar sin protección bloques que accedan a persistencia (DB), APIs (HTTP, WebSocket) o servicios externos. Cualquier ruta que lea/escriba en storage, llame a un endpoint o a un conector debe estar dentro de try/except con logging del error y comportamiento definido (retorno seguro, rollback o re-raise). El revisor debe rechazar código nuevo que añada estas rutas sin manejo explícito de excepciones.
 
 ## 🏷️ Protocolo de Versionado (SemVer)
 Aethelgard sigue el estándar **Semantic Versioning 2.0.0**:

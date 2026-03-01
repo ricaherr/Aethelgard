@@ -223,7 +223,7 @@ class StrategyRankingMixin(BaseRepository):
                 SELECT regime, metric_name, weight FROM regime_configs
                 WHERE (tenant_id = ? OR tenant_id IS NULL)
                 ORDER BY regime, metric_name
-            """)
+            """, (tenant_id,))
             rows = cursor.fetchall()
             
             result = {}

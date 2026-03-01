@@ -17,7 +17,7 @@ export function AutoTradingControl() {
             const response = await apiFetch('/api/user/preferences');
             if (!response.ok) throw new Error('Failed to fetch preferences');
             const data = await response.json();
-            setAutoTradingEnabled(data.preferences?.auto_trading_enabled === 1);
+            setAutoTradingEnabled(Boolean(data.preferences?.auto_trading_enabled));
         } catch (err: any) {
             setError(err.message);
         } finally {

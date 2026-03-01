@@ -122,9 +122,11 @@ class TenantDBFactory:
 
     @classmethod
     def _ensure_provisioned(cls, tenant_id: str, db_path: str) -> None:
-        """Create and initialise the tenant DB if it doesn't already exist."""
+        """Create and initialise the tenant DB only when the file does not exist (once per tenant).
+        Never overwrites or recreates an existing DB; subsequent calls only open the existing file.
+        """
         if not os.path.isfile(db_path):
             logger.info(
-                "[TENANT] New tenant detected — provisioning DB for '%s'...", tenant_id
+                "[TENANT] New tenant detected — provisioning DB for '%s' (once).", tenant_id
             )
             provision_tenant_db(db_path)

@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING
 
 import sqlite3
 
+from .default_instruments import DEFAULT_INSTRUMENTS_CONFIG
+
 if TYPE_CHECKING:
     pass
 
@@ -403,6 +405,23 @@ def run_migrations(conn: sqlite3.Connection) -> None:
     # Enable WAL mode for concurrency performance
     cursor.execute("PRAGMA journal_mode=WAL;")
 
+    # regime_configs: add tenant_id for multi-tenant isolation (nullable for backward compat)
+    cursor.execute("PRAGMA table_info(regime_configs)")
+    rc_cols = [r[1] for r in cursor.fetchall()]
+    if "tenant_id" not in rc_cols:
+        cursor.execute("ALTER TABLE regime_configs ADD COLUMN tenant_id TEXT DEFAULT NULL")
+        logger.info("Migration applied: regime_configs.tenant_id added.")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_regime_configs_tenant_id ON regime_configs (tenant_id)")
+
+    # instruments_config: seed only when key is absent (never overwrite existing data)
+    cursor.execute("SELECT 1 FROM system_state WHERE key = ?", ("instruments_config",))
+    if cursor.fetchone() is None:
+        cursor.execute(
+            "INSERT OR IGNORE INTO system_state (key, value) VALUES (?, ?)",
+            ("instruments_config", json.dumps(DEFAULT_INSTRUMENTS_CONFIG)),
+        )
+        logger.info("Migration applied: system_state.instruments_config seeded.")
+
     conn.commit()
     logger.debug("Migrations completed.")
 
@@ -496,6 +515,7 @@ def _seed_regime_configs(cursor: sqlite3.Cursor) -> None:
 def _seed_system_state(cursor: sqlite3.Cursor) -> None:
     """Seed default system configurations into system_state if missing."""
     defaults = {
+        "instruments_config": DEFAULT_INSTRUMENTS_CONFIG,
         "config_trading": {
             "assets": ["AAPL", "TSLA", "MES", "EURUSD"],
             "cpu_limit_pct": 80.0,
