@@ -1,28 +1,27 @@
-# Aethelgard: Framework de Inteligencia Financiera Agnóstico
+# 📜 AI ORCHESTRATION RULES: AETHELGARD SYSTEM
 
-## Identidad del Proyecto
-- **Nombre**: Aethelgard
-- **Misión**: Cerebro centralizado para trading algorítmico multi-plataforma.
-- **Arquitectura**: Hub-and-Spoke (Python Core <-> Conectores Externos).
+## 🎯 1. FILOSOFÍA Y SSOT
+- **Arquitectura:** Hexagonal. El Core debe ser agnóstico.
+- **Soberanía de Persistencia (Regla de ORO):** `aethelgard.db` es la ÚNICA fuente de verdad. Se prohíbe el uso de archivos JSON para estado o config. Si el código usa .json, el Tester debe rechazarlo.
 
-## Reglas de Desarrollo Críticas
-1. **Agnosticismo de Plataforma**: El código en `core_brain` nunca debe depender de librerías específicas de brokers. Comunicación vía JSON por WebSockets.
-2. **Inyección de Dependencias**: Obligatoria para todas las clases de lógica. Inyectar desde `MainOrchestrator` o tests.
-3. **Single Source of Truth (SSOT)**: Configuración y credenciales en la BASE DE DATOS.
-4. **TDD & Validación**: Test primero. Ejecutar `scripts/validate_all.py` antes de completar cualquier tarea.
-5. **Documentación**: Centralizada en `AETHELGARD_MANIFESTO.md`.
+## 🏗️ 2. REGLAS DE ARQUITECTURA
+- **Aislamiento:** Conectores solo exportan datos normalizados.
+- **Asyncio:** Sistema 100% asíncrono y no bloqueante.
+- **Inyección de Dependencias:** Obligatoria inyectada desde el MainOrchestrator.
+- **Comunicación:** Uso de WebSockets (JSON) para la comunicación entre el Core y conectores/UI.
 
-## Regla de Autonomía y Evolución (Core Rule)
-1. **Feedback Loop**: Contrastar cada decisión con el resultado a 5, 10 y 20 velas.
-2. **Auto-Tune**: Re-ejecutar tests de sensibilidad sobre `data_vault` de forma autónoma.
-3. **Detección de Drift**: Entrar en modo 'Seguridad' si las predicciones fallan sistemáticamente.
+## 🛠️ 3. CONTROL DE COMPLEJIDAD
+- **Límite de Masa (Regla de ORO):** Ningún archivo >30KB o >500 líneas. Si se excede, el Orquestador debe obligar a una división antes de que el Ejecutor proceda.
 
-## Preferencias de Código
-- **Python**: Estilo PEP 8, asíncrono (asyncio/fastapi), Type Hints y Pydantic.
-- **UI**: React + TypeScript + Vite.
-- **Idioma**: Chat en Español, Código/Comentarios en Inglés.
+## 🛠️ 4. PAUTAS DE CODIFICACIÓN Y TRAZABILIDAD
+- **Trazabilidad (Regla de ORO):** Obligatorio el uso de Trace_ID en cada operación.
+- **Higiene (Regla de ORO):** El Ejecutor debe borrar archivos temporales y logs antes de la entrega.
+- **Calidad:** Type Hints obligatorios al 100% y respeto a Black/Mypy.
+- **Idioma:** Chat/Documentación en Español. Código y documentación técnica en Inglés.
 
-## Contexto del Mercado
-- Priorizar la detección de "Régimen de Mercado" antes de validar señales técnicas.
-- Validar jerarquía de SMA (Precio > SMA20 > SMA200 para BUY).
-- 3 pérdidas consecutivas activan el modo **Lockdown**.
+## ✅ 5. PROTOCOLO DE VALIDACIÓN (QA)
+- **Gestión:** El Ejecutor debe mover tareas en SPRINT.md de [TODO] a [IN_PROGRESS] y luego a [QA].
+- **Integridad:** Ejecución obligatoria de validate_all.py antes de cualquier Handshake.
+
+## 🔄 6. EVOLUCIÓN Y DRIFT
+- **Feedback Loop:** Las decisiones del Alpha Engine deben contrastarse contra el resultado real a 5, 10 y 20 velas para calibración automática.
