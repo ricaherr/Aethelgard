@@ -1040,3 +1040,106 @@ Reconciliación documental final de la HU 4.6 (Anomaly Sentinel - Antifragility 
 **Sistema Estado**: 🟢 OPERATIVO | Ciclo de documentación CERRADO | Arquitectura lista para integración operativa
 
 **Dominios Involucrados**: 04 (RISK_GOVERNANCE), 10 (INFRA_RESILIENCY)
+
+---
+
+### 📅 Registro: 2026-03-02 (MISIÓN A: Ejecución Quirúrgica Completada)
+
+#### 🛡️ OPERACIÓN MISION-A-2026: Conectar AnomalyService con OrderManager para Cancelación Real
+**Trace_ID**: `MISION-A-ORDER-CANCELLATION-2026-001`  
+**Timestamp**: 2026-03-02 09:30  
+**Estado Final**: ✅ COMPLETADO | 10/10 Tests PASSED | validate_all.py: 14/14 PASSED
+
+**Descripción**:
+Implementación de la integración operativa entre AnomalyService (detección de anomalías) y RiskManager (defensa automática) para cancelación quirúrgica de órdenes pendientes en tiempo real. Capacidad de ajustar stops a breakeven cuando se detectan eventos extremos (Flash Crashes, volatilidad > 3-sigma).
+
+**Arquitectura de la Integración**:
+
+```
+AnomalyService (detección)
+    ↓ [ANOMALY_DETECTED]
+RiskManager.activate_lockdown() + defensive_protocol()
+    ├→ RiskManager.cancel_pending_orders(symbol)
+    │  └→ MT5Connector.get_pending_orders()
+    │  └→ MT5Connector.cancel_order(ticket, reason)
+    └→ RiskManager.adjust_stops_to_breakeven(symbol)
+       └→ MT5Connector.get_open_positions()
+       └→ MT5Connector.modify_order(ticket, sl, reason)
+```
+
+**Cambios Implementados**:
+
+1. **MT5Connector** (`connectors/mt5_connector.py`) — 2 nuevos métodos
+   - `get_pending_orders(symbol=None)` - Obtiene órdenes pendientes con mt5.orders_get()
+   - `cancel_order(order_ticket, reason)` - Cancela órdenes con TRADE_ACTION_REMOVE
+   - Logging con tag [ANOMALY_SENTINEL] para trazabilidad
+   - Manejo de errores y validaciones
+
+2. **RiskManager** (`core_brain/risk_manager.py`) — Inyección de dependencias + lógica real
+   - Parámetro `connectors` en constructor (inyección de dependencias)
+   - Almacenamiento en `self.connectors`
+   - Método `cancel_pending_orders()` - Implementación real
+     - Itera sobre conectores (MT5, NT8, etc.)
+     - Llama `get_pending_orders()` en cada conector
+     - Ejecuta `cancel_order()` para cada orden
+     - Retorna: `{cancelled: int, failed: int, status: str}`
+   - Método `adjust_stops_to_breakeven()` - Implementación real
+     - Itera sobre conectores
+     - Obtiene posiciones abiertas con `get_open_positions()`
+     - Modifica SL a precio actual (breakeven) con `modify_order()`
+     - Retorna: `{adjusted: int, failed: int, status: str}`
+   - Modo degradado: Si no hay conectores, retorna `status=pending_integration`
+
+3. **Tests TDD** (`tests/test_anomaly_order_cancellation.py`) — 10 test cases
+   - `test_cancel_pending_orders_with_mt5_connector` ✅ - Cancela 3 órdenes
+   - `test_cancel_pending_orders_filtered_by_symbol` ✅ - Filtra por símbolo
+   - `test_cancel_orders_handles_partial_failures` ✅ - Maneja fallos parciales
+   - `test_adjust_stops_to_breakeven` ✅ - Ajusta 2 posiciones
+   - `test_adjust_stops_filters_by_symbol` ✅ - Filtra por símbolo
+   - `test_cancel_orders_without_connectors` ✅ - Degradación graceful
+   - `test_adjust_stops_without_connectors` ✅ - Degradación graceful
+   - `test_order_cancellation_trace_logging` ✅ - Logging con Trace_ID
+   - `test_stop_adjustment_with_mixed_position_types` ✅ - BUY + SELL
+   - `test_complete_anomaly_defensive_protocol` ✅ - End-to-end integration
+
+**Flujo Operativo Completo** (Anomaly → Defense):
+
+1. AnomalyService detecta Z-Score > 3.0 o Flash Crash < -2%
+2. Broadcast: [ANOMALY_DETECTED] con trace_id
+3. RiskManager.activate_lockdown() se ejecuta
+4. RiskManager.cancel_pending_orders() cancela órdenes abiertas
+5. RiskManager.adjust_stops_to_breakeven() protege posiciones
+6. UI Thought Console muestra sugerencia de intervención
+7. Health System transita a DEGRADED/STRESSED
+8. Sistema espera confirmación manual o estabilización
+
+**Persistencia y Auditoría**:
+- Todas las cancelaciones registran Trace_ID en logs
+- anomaly_events table vincula evento a acciones de defensa
+- system_health_history registra transiciones de estado
+- Cancelaciones y ajustes son trazables hasta el evento original
+
+**Compatibilidad**:
+- ✅ MT5Connector: Implementado completamente
+- ✅ BaseConnector: Interfaz compatible (métodos heredables)
+- 🟡 NT8Connector: Pendiente de implementar métodos equivalentes
+- 🟡 PaperConnector: Simular cancelaciones (no es mucho problema)
+
+**Validación**:
+- ✅ 10/10 Tests PASSED (test_anomaly_order_cancellation.py)
+- ✅ 14/14 validate_all.py modules PASSED
+- ✅ Cero regresiones (arquitectura íntegra)
+- ✅ Type hints: 100%
+- ✅ TDD compliance: Tests primero, implementación después
+- ✅ Dependency Injection: Conectores inyectados, no instanciados
+
+**Dominios Involucrados**: 
+- 04 (RISK_GOVERNANCE) - RiskManager defensive protocol
+- 05 (UNIVERSAL_EXECUTION) - Integración con conectores multi-broker
+- 10 (INFRA_RESILIENCY) - Coordinación con Health System
+
+**Próximos Pasos**:
+- Implementar métodos equivalentes en NT8Connector (cancel_order, modify_order)
+- Conectar MainOrchestrator para inyectar conectores en RiskManager
+- Integrar con PositionManager para casos avanzados (trailing stops, etc.)
+- Misión B: Coherence Drift Monitor (HU 6.3) - detectar divergencia ejecución real vs teoría

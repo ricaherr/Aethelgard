@@ -1113,7 +1113,108 @@ class MT5Connector(BaseConnector):
         except Exception as e:
             logger.error(f"Error getting closed positions: {e}")
             return []
-    
+
+    def get_pending_orders(self, symbol: Optional[str] = None) -> Optional[List[Dict]]:
+        """
+        Get all pending orders from MT5 (MISIÓN A: Anomaly Sentinel Integration)
+        
+        Args:
+            symbol: Optional symbol filter (None = all pending orders)
+        
+        Returns:
+            List of pending order dicts or None if error
+        """
+        if not self.is_connected:
+            logger.warning("MT5 not connected, cannot get pending orders")
+            return None
+        
+        try:
+            # Get all pending orders
+            if symbol:
+                orders = mt5.orders_get(symbol=symbol)
+            else:
+                orders = mt5.orders_get()
+            
+            if orders is None:
+                logger.debug(f"No pending orders found")
+                return []
+            
+            # Convert to normalized dict format
+            order_list = []
+            for order in orders:
+                order_dict = {
+                    'ticket': order.ticket,
+                    'symbol': order.symbol,
+                    'type': order.type,  # ORDER_TYPE_BUY, ORDER_TYPE_SELL, etc.
+                    'state': order.state,  # ORDER_STATE_PLACED, etc.
+                    'volume': order.volume_current,
+                    'price_open': order.price_open,
+                    'time_setup': order.time_setup,  # Unix timestamp
+                    'magic': order.magic,  # Magic number
+                    'comment': order.comment,
+                }
+                order_list.append(order_dict)
+            
+            logger.info(f"[ANOMALY_SENTINEL] Found {len(order_list)} pending orders"
+                       f" for {symbol or 'all symbols'}")
+            return order_list
+            
+        except Exception as e:
+            logger.error(f"Error getting pending orders: {e}")
+            return None
+
+    def cancel_order(self, order_ticket: int, reason: str = "Lockdown Mode") -> Dict[str, Any]:
+        """
+        Cancel a pending order (MISIÓN A: Anomaly Sentinel Integration)
+        
+        Args:
+            order_ticket: Ticket ID of the order to cancel
+            reason: Reason for cancellation (for logging)
+        
+        Returns:
+            Dict: {'success': bool, 'error'?: str, 'ticket'?: int}
+        """
+        if not self.is_connected:
+            return {'success': False, 'error': 'MT5 not connected'}
+        
+        try:
+            # Get the order to verify it exists
+            orders = mt5.orders_get(ticket=order_ticket)
+            
+            if not orders or len(orders) == 0:
+                error = f"Order {order_ticket} not found"
+                logger.warning(f"[ANOMALY_SENTINEL] {error}")
+                return {'success': False, 'error': error}
+            
+            order = orders[0]
+            
+            # Prepare cancel request
+            cancel_request = {
+                "action": mt5.TRADE_ACTION_REMOVE,
+                "order": order_ticket,
+                "magic": self.magic_number,
+                "comment": f"Aethelgard_Cancel_{reason}",
+                "type_time": mt5.ORDER_TIME_GTC,
+            }
+            
+            result = mt5.order_send(cancel_request)
+            
+            if result and result.retcode == mt5.TRADE_RETCODE_DONE:
+                logger.warning(
+                    f"[ANOMALY_SENTINEL] ✅ Order {order_ticket} cancelled successfully. "
+                    f"Reason: {reason}"
+                )
+                return {'success': True, 'ticket': order_ticket}
+            else:
+                error_msg = result.comment if result else 'Unknown error'
+                logger.error(f"[ANOMALY_SENTINEL] Failed to cancel order {order_ticket}: {error_msg}")
+                return {'success': False, 'error': error_msg}
+        
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"[ANOMALY_SENTINEL] Error cancelling order {order_ticket}: {error_msg}")
+            return {'success': False, 'error': error_msg}
+
     def get_account_balance(self) -> float:
         """
         Get current account balance from MT5.

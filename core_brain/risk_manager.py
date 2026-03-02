@@ -62,11 +62,13 @@ class RiskManager:
         monitor: Optional[PositionSizeMonitor] = None,
         config_path: Optional[str] = None,
         risk_settings_path: Optional[str] = None,
+        connectors: Optional[Dict[str, Any]] = None,  # MISIÓN A: Inyección de conectores
     ):
         self.storage = _resolve_storage(storage)
         self.capital = initial_capital
         self.instrument_manager = _resolve_instrument_manager(instrument_manager, self.storage)
         self.monitor = monitor or PositionSizeMonitor()
+        self.connectors = connectors or {}  # MISIÓN A: Almacenar conectores para cancelación de órdenes
 
         self.liquidity_service = LiquidityService(storage=self.storage)
         self.confluence_service = ConfluenceService(storage=self.storage)
@@ -339,25 +341,104 @@ class RiskManager:
     ) -> Dict[str, int]:
         """
         Cancela todas las órdenes pendientes para un símbolo o globalmente.
+        MISIÓN A: Integración real con conectores para cancelación de órdenes en brokers.
         
         Args:
             symbol: Símbolo a afectar (None = todas las órdenes)
             reason: Razón de la cancelación
             
         Returns:
-            Dict con número de órdenes canceladas
+            Dict con número de órdenes canceladas: {'cancelled': int, 'failed': int, 'status': str}
         """
         try:
-            # TODO: Integración con order_manager/executor
-            # Por ahora, retorna estructura esperada por anomaly_service
+            cancelled_count = 0
+            failed_count = 0
+            
             logger.warning(
-                f"[RISK_MANAGER] Cancelling pending orders for {symbol or 'ALL'}. "
+                f"[ANOMALY_SENTINEL] Initiating order cancellation for {symbol or 'ALL'}. "
                 f"Reason: {reason}"
             )
-            return {"cancelled": 0, "status": "pending_integration"}
+            
+            # No hay conectores inyectados - modo degradado (sin conexión directa a broker)
+            if not self.connectors:
+                logger.warning(
+                    f"[ANOMALY_SENTINEL] No connectors injected. Returning pending_integration status."
+                )
+                return {
+                    "cancelled": 0,
+                    "failed": 0,
+                    "status": "pending_integration",
+                    "message": "No connectors available for real order cancellation"
+                }
+            
+            # Iterar sobre conectores disponibles (MT5, NT8, etc.)
+            for connector_type, connector in self.connectors.items():
+                if not connector:
+                    continue
+                
+                try:
+                    # Verificar si el conector tiene el método get_pending_orders
+                    if not hasattr(connector, 'get_pending_orders'):
+                        logger.debug(f"Connector {connector_type} does not support get_pending_orders")
+                        continue
+                    
+                    # Obtener órdenes pendientes
+                    pending_orders = connector.get_pending_orders(symbol=symbol)
+                    
+                    if pending_orders is None or not pending_orders:
+                        logger.info(f"No pending orders found on {connector_type} for {symbol or 'ALL'}")
+                        continue
+                    
+                    # Cancelar cada orden
+                    for order in pending_orders:
+                        order_ticket = order.get('ticket')
+                        if not order_ticket:
+                            failed_count += 1
+                            continue
+                        
+                        try:
+                            # Llamar a cancel_order en el conector
+                            result = connector.cancel_order(order_ticket, reason=reason)
+                            
+                            if result.get('success', False):
+                                cancelled_count += 1
+                                logger.warning(
+                                    f"[ANOMALY_SENTINEL] ✅ Order {order_ticket} cancelled via {connector_type}"
+                                )
+                            else:
+                                failed_count += 1
+                                logger.warning(
+                                    f"[ANOMALY_SENTINEL] Failed to cancel order {order_ticket}: "
+                                    f"{result.get('error', 'Unknown error')}"
+                                )
+                        except Exception as e:
+                            failed_count += 1
+                            logger.error(f"[ANOMALY_SENTINEL] Error cancelling order {order_ticket}: {e}")
+                
+                except Exception as e:
+                    logger.error(f"[ANOMALY_SENTINEL] Error processing connector {connector_type}: {e}")
+            
+            status = "success" if failed_count == 0 else "partial"
+            logger.warning(
+                f"[ANOMALY_SENTINEL] Order cancellation complete. "
+                f"Cancelled: {cancelled_count}, Failed: {failed_count}"
+            )
+            
+            return {
+                "cancelled": cancelled_count,
+                "failed": failed_count,
+                "status": status,
+                "message": f"Cancelled {cancelled_count} orders, {failed_count} failed"
+            }
+        
         except Exception as e:
-            logger.error(f"[RISK_MANAGER] Error cancelling orders: {e}")
-            return {"cancelled": 0, "error": str(e)}
+            logger.error(f"[ANOMALY_SENTINEL] Error in cancel_pending_orders: {e}")
+            return {
+                "cancelled": 0,
+                "failed": 0,
+                "status": "error",
+                "error": str(e)
+            }
 
     async def adjust_stops_to_breakeven(
         self,
@@ -366,25 +447,125 @@ class RiskManager:
     ) -> Dict[str, int]:
         """
         Ajusta todos los Stop Loss a Breakeven para proteger capital en anomalías.
+        MISIÓN A: Integración real con conectores para modificación de stops.
         
         Args:
             symbol: Símbolo a afectar (None = todas las posiciones)
             reason: Razón del ajuste
             
         Returns:
-            Dict con número de posiciones ajustadas
+            Dict con número de posiciones ajustadas: {'adjusted': int, 'failed': int, 'status': str}
         """
         try:
-            # TODO: Integración con position_manager
-            # Por ahora, retorna estructura esperada por anomaly_service
+            adjusted_count = 0
+            failed_count = 0
+            
             logger.warning(
-                f"[RISK_MANAGER] Adjusting stops to breakeven for {symbol or 'ALL'}. "
+                f"[ANOMALY_SENTINEL] Initiating SL→Breakeven for {symbol or 'ALL'}. "
                 f"Reason: {reason}"
             )
-            return {"adjusted": 0, "status": "pending_integration"}
+            
+            # No hay conectores inyectados - modo degradado
+            if not self.connectors:
+                logger.warning(
+                    f"[ANOMALY_SENTINEL] No connectors injected. Returning pending_integration status."
+                )
+                return {
+                    "adjusted": 0,
+                    "failed": 0,
+                    "status": "pending_integration",
+                    "message": "No connectors available for real stop modification"
+                }
+            
+            # Iterar sobre conectores disponibles (MT5, NT8, etc.)
+            for connector_type, connector in self.connectors.items():
+                if not connector:
+                    continue
+                
+                try:
+                    # Verificar si el conector tiene el método get_open_positions
+                    if not hasattr(connector, 'get_open_positions'):
+                        logger.debug(f"Connector {connector_type} does not support get_open_positions")
+                        continue
+                    
+                    # Obtener posiciones abiertas
+                    positions = connector.get_open_positions()
+                    
+                    if positions is None or not positions:
+                        logger.info(f"No open positions found on {connector_type} for {symbol or 'ALL'}")
+                        continue
+                    
+                    # Filtrar por símbolo si es necesario
+                    if symbol:
+                        positions = [p for p in positions if p.get('symbol') == symbol]
+                    
+                    # Ajustar cada posición
+                    for position in positions:
+                        ticket = position.get('ticket')
+                        current_price = position.get('price_current') or position.get('current_price')
+                        pos_type = position.get('type')  # 0=BUY, 1=SELL
+                        
+                        if not ticket or current_price is None:
+                            failed_count += 1
+                            continue
+                        
+                        try:
+                            # Verificar si el conector tiene modify_order
+                            if not hasattr(connector, 'modify_order'):
+                                logger.debug(f"Connector {connector_type} does not support modify_order")
+                                failed_count += 1
+                                continue
+                            
+                            # Breakeven SL = entry price (proteja la ganancia actual)
+                            new_sl = current_price  # Breakeven = precio actual
+                            
+                            # Llamar a modify_order en el conector
+                            result = connector.modify_order(
+                                ticket=ticket,
+                                sl=new_sl,
+                                reason=reason
+                            )
+                            
+                            if result.get('success', False) or isinstance(result, dict) and 'error' not in result:
+                                adjusted_count += 1
+                                logger.warning(
+                                    f"[ANOMALY_SENTINEL] ✅ Position {ticket} SL adjusted to Breakeven ({new_sl}) "
+                                    f"via {connector_type}"
+                                )
+                            else:
+                                failed_count += 1
+                                logger.warning(
+                                    f"[ANOMALY_SENTINEL] Failed to modify position {ticket}: "
+                                    f"{result.get('error', 'Unknown error')}"
+                                )
+                        except Exception as e:
+                            failed_count += 1
+                            logger.error(f"[ANOMALY_SENTINEL] Error modifying position {ticket}: {e}")
+                
+                except Exception as e:
+                    logger.error(f"[ANOMALY_SENTINEL] Error processing connector {connector_type}: {e}")
+            
+            status = "success" if failed_count == 0 else "partial"
+            logger.warning(
+                f"[ANOMALY_SENTINEL] SL→Breakeven complete. "
+                f"Adjusted: {adjusted_count}, Failed: {failed_count}"
+            )
+            
+            return {
+                "adjusted": adjusted_count,
+                "failed": failed_count,
+                "status": status,
+                "message": f"Adjusted {adjusted_count} positions, {failed_count} failed"
+            }
+        
         except Exception as e:
-            logger.error(f"[RISK_MANAGER] Error adjusting stops: {e}")
-            return {"adjusted": 0, "error": str(e)}
+            logger.error(f"[ANOMALY_SENTINEL] Error in adjust_stops_to_breakeven: {e}")
+            return {
+                "adjusted": 0,
+                "failed": 0,
+                "status": "error",
+                "error": str(e)
+            }
 
     def get_status(self) -> Dict:
         return {
