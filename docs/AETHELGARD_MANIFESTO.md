@@ -53,6 +53,49 @@ Aethelgard está diseñado para la escala, la privacidad y el rendimiento comerc
 3. **Ética del Dato**: Priorización del aprendizaje de calidad. El sistema depura y calibra su memoria histórica para alimentar un cerebro eficiente y resiliente al ruido del mercado.
 4. **Excelencia en la Construcción**: Todo desarrollo debe seguir estrictamente la [Guía de Estilo y Desarrollo](DEVELOPMENT_GUIDELINES.md). El aislamiento multi-tenant y el agnosticismo de datos son dogmas innegociables que garantizan la integridad sistémica.
 
+## V. Standards Técnicos - Manejo de Fechas y Timezones
+
+### Contexto: Limitación Nativa de SQLite
+SQLite **no posee un tipo de dato DATE nativo**. Todas las fechas se almacenan como strings en formato ISO 8601, lo que requiere un manejo consistente a nivel de aplicación para evitar discrepancias operativas.
+
+### Standard Obligatorio para Aethelgard
+1. **Normalización UTC Centralizada**: Todas las timestamps en la base de datos deben estar en **UTC** y almacenadas como strings en formato **`YYYY-MM-DD HH:MM:SS.SSS`** (ej. `2026-03-02 15:45:32.567`).
+
+2. **Funciones de Utilidad (utils/time_utils.py)**:
+   - **`to_utc(datetime_obj, source_tz=None) -> str`**: Convierte un objeto `datetime` Python a string UTC normalizado.
+     - Si `datetime_obj` es naive (sin timezone), se interpreta como timezone local a menos que `source_tz` sea especificado.
+     - Retorna: `'YYYY-MM-DD HH:MM:SS.SSS'` en UTC.
+   - **`to_utc_datetime(datetime_obj_or_string, source_tz=None) -> datetime`**: Convierte a objeto `datetime` con timezone UTC aware.
+     - Retorna: `datetime` object con `tzinfo=timezone.utc`.
+
+3. **Regla de Oro - Nunca Usar `.isoformat()`**: 
+   - ❌ **PROHIBIDO**: `datetime.now(timezone.utc).isoformat()`
+   - ✅ **OBLIGATORIO**: `to_utc(datetime.now(timezone.utc))`
+   - `.isoformat()` produce strings en formato completo ISO 8601 (ej. `2026-03-02T15:45:32.567000+00:00`) que **no coinciden** con el formato de SQLite y causa fallos en comparaciones de timestamps.
+
+4. **Inserción en Base de Datos**:
+   - El esquema de SQLite usa `DEFAULT CURRENT_TIMESTAMP` en columnas de fecha para capturar automáticamente la timestamp al insertar registros.
+   - Para insertions explícitas: usar siempre `to_utc(datetime.now(timezone.utc))`.
+
+5. **Comparaciones y Filtros**:
+   - Al comparar timestamps en queries SQL: usar strings UTC normalizados, no objetos datetime.
+   - Ejemplo correcto:
+     ```python
+     time_threshold = to_utc(datetime.now(timezone.utc) - timedelta(minutes=window_minutes))
+     cursor.execute("SELECT * FROM logs WHERE timestamp >= ?", [time_threshold])
+     ```
+
+6. **Auditoría y Debugging**:
+   - Verificar formato de timestamps en logs: debe verse como `2026-03-02 15:45:32.567`, no `2026-03-02T15:45:32.567000+00:00`.
+   - Si hay discrepancias en filtros de ventanas de tiempo, verificar primero que se usó `to_utc()` y no `.isoformat()` al generar umbrales.
+
+### Cobertura en el Codebase
+Este estándar se aplica a:
+- ✅ `core_brain/services/coherence_service.py` - Timestamps de eventos de coherencia
+- ✅ `data_vault/execution_db.py` - Comparaciones de ventanas temporales en shadow logs
+- ✅ `tests/test_coherence_service.py` - Fixtures de test con timestamps
+- ✅ Todo nuevo módulo que maneje timestamps después de esta versión
+
 ---
 > [!TIP]
 > Los detalles técnicos, diagramas de arquitectura y manuales de dominio se encuentran en la carpeta `docs/`. El historial cronológico de cambios técnicos reside en [SYSTEM_LEDGER.md](SYSTEM_LEDGER.md).

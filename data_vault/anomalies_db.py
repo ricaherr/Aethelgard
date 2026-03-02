@@ -334,3 +334,68 @@ class AnomaliesMixin(BaseRepository):
             return {"error": str(e)}
         finally:
             self._close_conn(conn)
+
+    def register_coherence_event(
+        self,
+        symbol: str,
+        strategy_id: Optional[str],
+        status: str,
+        coherence_score: float,
+        performance_degradation: float,
+        trace_id: str,
+        details: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """
+        Register a coherence monitoring event (HU 6.3).
+        
+        Args:
+            symbol: Trading symbol
+            strategy_id: Strategy ID (optional)
+            status: Coherence status (COHERENT, INCOHERENT, MONITORING, etc)
+            coherence_score: Calculated coherence (0-1)
+            performance_degradation: Performance degradation ratio (0-1)
+            trace_id: Trace ID for audit trail
+            details: Additional metadata
+        
+        Returns:
+            True if successfully registered
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            
+            details_json = json.dumps(details or {})
+            reason = (
+                f"Coherence={coherence_score*100:.1f}%, Degradation={performance_degradation*100:.1f}%"
+            )
+            
+            cursor.execute("""
+                INSERT INTO coherence_events
+                (signal_id, symbol, timeframe, strategy, stage, status, incoherence_type, reason, details, connector_type, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                trace_id,
+                symbol,
+                "multi",  # Multi-timeframe detection
+                strategy_id or "SYSTEM",
+                "DRIFT" if status == "INCOHERENT" else "MONITORING",
+                status,
+                f"SHA_DEGRADATION_{int(performance_degradation*100)}PCT" if status == "INCOHERENT" else None,
+                reason,
+                details_json,
+                "AGGREGATED",
+                datetime.now().isoformat(),
+            ))
+            
+            conn.commit()
+            logger.debug(
+                f"[COHERENCE_DB] Event registered: {symbol} {status} "
+                f"Score={coherence_score*100:.1f}% Trace_ID={trace_id}"
+            )
+            return True
+            
+        except Exception as e:
+            logger.error(f"[COHERENCE_DB] Error registering coherence event: {e}")
+            return False
+        finally:
+            self._close_conn(conn)

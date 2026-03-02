@@ -18,6 +18,7 @@ from models.signal import Signal
 from core_brain.services.liquidity_service import LiquidityService
 from core_brain.services.confluence_service import ConfluenceService
 from core_brain.services.sentiment_service import SentimentService
+from core_brain.services.coherence_service import CoherenceService
 from utils.market_ops import calculate_pip_size
 
 logger = logging.getLogger(__name__)
@@ -85,6 +86,7 @@ class RiskPolicyEnforcer:
         liquidity_service: LiquidityService,
         confluence_service: ConfluenceService,
         sentiment_service: SentimentService,
+        coherence_service: CoherenceService,
         max_r_per_trade: Decimal,
         risk_per_trade: float,
         max_account_risk_pct: float,
@@ -94,6 +96,7 @@ class RiskPolicyEnforcer:
         self.liquidity_service = liquidity_service
         self.confluence_service = confluence_service
         self.sentiment_service = sentiment_service
+        self.coherence_service = coherence_service
         self.max_r_per_trade = max_r_per_trade
         self.risk_per_trade = risk_per_trade
         self.max_account_risk_pct = max_account_risk_pct
@@ -256,4 +259,40 @@ class RiskPolicyEnforcer:
             "[%s] Risk check passed: Total risk %.1f%% / %.1f%%",
             signal.symbol, total_risk_pct, self.max_account_risk_pct,
         )
+        
+        # 6. COHERENCE CHECK (HU 6.3) — Model Fidelity Validation
+        # If model has drifted from reality, block new entries to prevent losses on invalid model
+        try:
+            coherence_result = self.coherence_service.detect_drift(
+                symbol=signal.symbol,
+                window_minutes=60,  # Last 60 minutes of execution history
+                strategy_id=getattr(signal, "strategy_id", None),
+            )
+            
+            if coherence_result.get("veto_new_entries", False):
+                reason = (
+                    f"[COHERENCE_VETO][Trace_ID: {tid}] Model incoherence detected. "
+                    f"Coherence score {coherence_result.get('coherence_score', 0)*100:.1f}% < 80%. "
+                    f"Reason: {coherence_result.get('reason', 'Unknown drift')}. "
+                    f"System blocking new entries until model recovers."
+                )
+                logger.warning("[%s] %s", signal.symbol, reason)
+                return False, reason
+            
+            # Log coherence status for monitoring
+            coherence_score = coherence_result.get("coherence_score", 1.0)
+            if coherence_score < 0.95:
+                logger.info(
+                    "[%s] [COHERENCE_WARNING] Coherence degraded to %.1f%%. Monitoring active. Status: %s",
+                    signal.symbol, coherence_score*100, coherence_result.get("status", "MONITORING")
+                )
+            else:
+                logger.debug(
+                    "[%s] [COHERENCE_OK] Model coherent (%.1f%%). Status: %s",
+                    signal.symbol, coherence_score*100, coherence_result.get("status", "COHERENT")
+                )
+        except Exception as e:
+            logger.error("[%s] Error in Coherence check: %s", signal.symbol, e)
+            # Fail-open: Coherence service error doesn't block trade (log it for investigation)
+        
         return True, ""

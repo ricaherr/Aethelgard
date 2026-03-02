@@ -4,6 +4,7 @@ Ensures no duplicate signals are generated or executed
 """
 import pytest
 from datetime import datetime, timedelta
+from decimal import Decimal
 from unittest.mock import Mock, AsyncMock
 
 from data_vault.storage import StorageManager
@@ -11,6 +12,7 @@ from core_brain.executor import OrderExecutor
 from core_brain.risk_manager import RiskManager
 from core_brain.instrument_manager import InstrumentManager
 from models.signal import Signal, ConnectorType, SignalType
+from utils.time_utils import to_utc
 
 INSTRUMENTS_CONFIG_EXAMPLE = {
     "FOREX": {
@@ -23,6 +25,44 @@ INSTRUMENTS_CONFIG_EXAMPLE = {
         "altcoins": {"instruments": ["ADAUSDT", "DOGEUSDT"], "enabled": False, "min_score": 85.0},
     }
 }
+
+
+def _insert_execution_shadow_for_testing(
+    storage: StorageManager,
+    symbol: str,
+    num_executions: int = 5
+) -> bool:
+    """Pre-populate execution shadow logs so CoherenceService has baseline data"""
+    from datetime import datetime, timezone, timedelta
+    try:
+        now = datetime.now(timezone.utc)
+        # Base price depends on symbol (realistic values)
+        base_prices = {
+            "EURUSD": 1.0850,
+            "GBPUSD": 1.2700,
+            "USDJPY": 110.0,
+        }
+        base_price = base_prices.get(symbol, 1.0)
+        
+        for i in range(num_executions):
+            timestamp = to_utc(now - timedelta(minutes=30-i*10))
+            # Use PERFECT execution data (0 slippage, low latency) to ensure coherence > 80%
+            storage.log_execution_shadow(
+                signal_id=f"setup_{symbol}_{i}",
+                symbol=symbol,
+                theoretical_price=Decimal(str(base_price)),
+                real_price=Decimal(str(base_price)),  # Perfect execution
+                slippage_pips=Decimal("0.0"),   # Zero slippage
+                latency_ms=5.0,                  # Low latency
+                status="SUCCESS",
+                tenant_id="default",
+                trace_id=f"setup_{i}",
+                metadata=None,
+            )
+        return True
+    except Exception as e:
+        print(f"Warning: Could not pre-populate execution logs for {symbol}: {e}")
+        return False
 
 class TestSignalDeduplication:
     """Test cases for signal deduplication logic"""
@@ -47,8 +87,14 @@ class TestSignalDeduplication:
     
     @pytest.fixture
     def executor(self, risk_manager, storage, instrument_manager):
-        """Create executor with paper connector (DI InstrumentManager real)"""
+        """Create executor with paper connector (DI InstrumentManager real)
+        Also pre-populates shadow execution logs for CoherenceService baseline"""
         from connectors.paper_connector import PaperConnector
+        
+        # Pre-populate execution shadow logs for multiple symbols so CoherenceService has baseline data
+        # This prevents coherence veto due to insufficient data (0 executions = 0% coherence)
+        for symbol in ["EURUSD", "GBPUSD"]:
+            _insert_execution_shadow_for_testing(storage, symbol, num_executions=5)
 
         paper_connector = PaperConnector(instrument_manager=instrument_manager)
         connectors = {ConnectorType.PAPER: paper_connector}

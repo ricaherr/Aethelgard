@@ -1,11 +1,12 @@
 import json
 import logging
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from typing import Optional, Dict, List, Any
 
 from .base_repo import BaseRepository
+from utils.time_utils import to_utc, to_utc_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,66 @@ class ExecutionMixin(BaseRepository):
                     except:
                         log['metadata'] = {}
                 logs.append(log)
+            return logs
+        finally:
+            self._close_conn(conn)
+
+    def get_execution_shadow_logs_by_symbol_and_window(
+        self,
+        symbol: str,
+        window_minutes: int = 60,
+        tenant_id: Optional[str] = None,
+        status_filter: str = "SUCCESS"
+    ) -> List[Dict[str, Any]]:
+        """
+        Recupera logs de ejecución shadow para un símbolo dentro de una ventana de tiempo.
+        Usado por CoherenceService para análisis de drift.
+        
+        Args:
+            symbol: Trading symbol (e.g., "EURUSD")
+            window_minutes: Look-back window in minutes (default 60)
+            tenant_id: Optional tenant ID for isolation
+            status_filter: Filter by execution status (default "SUCCESS")
+        
+        Returns:
+            List of execution logs with fields: signal_id, symbol, theoretical_price, 
+            real_price, slippage_pips, latency_ms, status, timestamp
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            
+            # Calculate time threshold using to_utc() for system-standard UTC normalization
+            # SQLite stores timestamps as ISO 8601 strings in UTC via DEFAULT CURRENT_TIMESTAMP
+            time_threshold = to_utc(datetime.now(timezone.utc) - timedelta(minutes=window_minutes))
+            
+            query = """
+                SELECT
+                    signal_id,
+                    symbol,
+                    theoretical_price,
+                    real_price,
+                    slippage_pips,
+                    latency_ms,
+                    status,
+                    timestamp
+                FROM execution_shadow_logs
+                WHERE symbol = ? 
+                    AND status = ?
+                    AND timestamp >= ?
+            """
+            params = [symbol, status_filter, time_threshold]
+            
+            if tenant_id:
+                query += " AND tenant_id = ?"
+                params.append(tenant_id)
+            
+            query += " ORDER BY timestamp ASC"
+            
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            
+            logs = [dict(row) for row in rows]
             return logs
         finally:
             self._close_conn(conn)

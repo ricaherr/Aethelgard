@@ -19,6 +19,7 @@ from core_brain.instrument_manager import InstrumentManager
 from core_brain.services.liquidity_service import LiquidityService
 from core_brain.services.confluence_service import ConfluenceService
 from core_brain.services.sentiment_service import SentimentService
+from core_brain.services.coherence_service import CoherenceService
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +74,7 @@ class RiskManager:
         self.liquidity_service = LiquidityService(storage=self.storage)
         self.confluence_service = ConfluenceService(storage=self.storage)
         self.sentiment_service = SentimentService(storage=self.storage)
+        self.coherence_service = CoherenceService(storage=self.storage)
 
         risk_settings = self.storage.get_risk_settings()
         dynamic_params = self.storage.get_dynamic_params()
@@ -119,6 +121,7 @@ class RiskManager:
             liquidity_service=self.liquidity_service,
             confluence_service=self.confluence_service,
             sentiment_service=self.sentiment_service,
+            coherence_service=self.coherence_service,
             max_r_per_trade=self.max_r_per_trade,
             risk_per_trade=self.risk_per_trade,
             max_account_risk_pct=self.max_account_risk_pct,
