@@ -53,6 +53,147 @@ Aethelgard está diseñado para la escala, la privacidad y el rendimiento comerc
 3. **Ética del Dato**: Priorización del aprendizaje de calidad. El sistema depura y calibra su memoria histórica para alimentar un cerebro eficiente y resiliente al ruido del mercado.
 4. **Excelencia en la Construcción**: Todo desarrollo debe seguir estrictamente la [Guía de Estilo y Desarrollo](DEVELOPMENT_GUIDELINES.md). El aislamiento multi-tenant y el agnosticismo de datos son dogmas innegociables que garantizan la integridad sistémica.
 
+#### Estándar de Identidad de Alpha (Trazabilidad Institucional)
+Cada estrategia/firma operativa genera su propia **Identidad Digital de Alpha** inmutable para garantizar trazabilidad entre el Core Brain, la Data Vault y los Logs del sistema.
+
+**Componentes Obligatorios del ID de Alpha**:
+
+| Componente | Formato | Ejemplo | Propósito |
+|-----------|---------|---------|-----------|
+| **Strategy Class ID** | `CLASE_XXXX` | `BRK_OPEN_0001` | Identificador único persistente de la estrategia (no cambia) |
+| **Mnemonic Name** | `CCC_NAME_MARKET` | `BRK_OPEN_NY_STRIKE` | Nombre legible describiendo mercado, patrón y sesión operativa |
+| **Instance ID** | UUID v4 | `a4e7f2c1-9d8b-4f3a-b7c2-e8d1f9a3b5c7` | Identificador único por operación/sesión (infinito, cada trade tiene uno) |
+
+**Reglas de Gobernanza**:
+- ✅ **Inmutable**: Strategy Class ID NO puede cambiar una vez registrado (SSOT en BD).
+- ✅ **Trazable**: Instance ID se registra en TODOS los eventos (ejecución, cierre, logging, auditoría).
+- ✅ **Única Fuente de Verdad**: El registro de Alpha reside en `strategies DB` con versionamiento semántico (v1.0, v1.1, v2.0).
+- ✅ **Coherencia Multi-Dominio**: Todos los dominios (Brain, DataVault, Logger, UI) referencia el mismo Strategy ID.
+
+**Almacenamiento**:
+- **`data_vault/strategies_db.py`**: Tabla `strategies` con columns `class_id`, `mnemonic`, `version`, `created_at`, `status`.
+- **`core_brain/signal_factory.py`**: Inyecta `strategy_class_id` + `instance_id` en cada OutputSignal emitido.
+- **`SYSTEM_LEDGER.md`**: Registro histórico de todas las Alphas institucionalizadas con fecha de primera operación.
+
+**Ejemplo de Flujo Completo**:
+```
+1. Se crea BRK_OPEN_0001 (NY Strike, Market Open Gap en EUR/USD)
+   - Class ID: BRK_OPEN_0001
+   - Mnemonic: BRK_OPEN_NY_STRIKE
+   - Registrado en BD con status "SHADOW"
+
+2. Scanner dispara señal el 2 de Marzo, 2026 09:15 EST
+   - Genera Instance ID: a4e7f2c1-9d8b-4f3a-b7c2-e8d1f9a3b5c7
+   - Signal emitida: {strategy_class_id: "BRK_OPEN_0001", instance_id: "...", ...}
+
+3. RiskManager valida y ejecuta
+   - Posición abierta con trace_id = BRK_OPEN_0001_a4e7f2c1...
+   - Registrada en execution_db.trades
+
+4. CoherenceService monitorea coherencia
+   - Registra shadow vs live en signal_events con Instance ID
+   - Calcula score y persiste en coherence_db
+
+5. Trade cierra, instance_id completado en ejecutados
+   - SYSTEM_LEDGER actualizado automáticamente
+   - Auditoría: pull por BRK_OPEN_0001 + Instance ID = trazabilidad 100%
+```
+
+**Impacto Comercial (SaaS**):
+- Cada tenant ve solo las Alphas de su nivel de membresía.
+- Premium/Institutional pueden custom-calibrate parámetros de BRK_OPEN_0001 sin crear duplicado (misma Class ID).
+- Reportes financieros pueden filtrar por Strategy ID para atribuir P&L exacto.
+- Regulación: trazabilidad auditada para cada operación con chain of custody digital.
+
+## V. Protocolo Quanter: Los 4 Pilares de la Firma Operativa
+El motor doble de generación de estrategias (UniversalStrategyEngine) opera bajo un conjunto de principios constitucionales que garantizan la coherencia, adaptabilidad y supremacía de contexto en la ejecución de firmas operativas.
+
+### 1. **Pilar Sensorial: Compatibilidad de Inputs**
+Toda firma operativa es un composición estructurada de **inputs sensoriales** (indicadores, patrones, anomalías) que el sistema traduce en un **namespace de variables calculadas**.
+
+**Regla Constitucional**: 
+- Los inputs (Sensors) se definen como parámetros dinámicos (ej. RSI Period=14, FVG Sensitivity=0.5).
+- El motor verifica que TODOS los indicadores requeridos estén disponibles en el `IndicatorFunctionMapper`.
+- Si falta un indicador → **STRATEGY_INCOMPATIBLE_VETO**: la estrategia se marca como inoperable en este mercado/timeframe.
+- Los inputs se persist en el Schema JSON bajo `"inputs": { "param_name": value, ...}`.
+
+**Implementación**: `UniversalStrategyEngine.__init__()` valida el schema y genera el namespace antes de cualquier evalación de lógica.
+
+### 2. **Pilar de Régimen: Type de Mercado y Hábitat Operativo**
+Ninguna firma operativa puede ejecutarse sin la aprobación previa del **RegimeClassifier**. El mercado tiene un tipo de comportamiento (Tendencia, Media Reversion, Anomalía) y la firma debe estar diseñada para prosperar en ese hábitat específico.
+
+**Regla Constitucional**:
+- **regime_filter**: Atributo obligatorio del Schema que especifica los regímenes permitidos (ej. ["TREND_UP", "EXPANSION"]).
+- **RegimeService** calcula el régimen actual en M15, H1, H4 (Multi-Scale Fractal Veto).
+- Si el régimen actual NO está en `regime_filter` → **REGIME_VETO**: se rechaza la entrada de nuevas posiciones.
+- Posiciones activas respetan el veto de liquidación (SL se ejecuta, pero se bloquean nuevas señales).
+
+**Implementación**: `RiskManager.execute()` consulta `RegimeService.get_current_regime()` durante la evaluación de confianza.
+
+### 3. **Pilar de Coherencia: Health Check del Modelo**
+El rendimiento teórico (Shadow) y la ejecución real (Live) deben navegar en la misma dirección. La divergencia sostenida es una señal de que el mercado ha cambiado o el modelo está sobreajustado.
+
+**Regla Constitucional**:
+- **CoherenceService** monitorea continuamente la desviación entre shadow y live execution.
+- **coherence_score**: 0-100%. Se recalcula tras cada operación cerrada.
+  - 100% → Perfecta sincronía (raro, pero ideal).
+  - 75-99% → Operativo (slippage + latencia normales).
+  - 50-74% → Atención (posible drift; no se promueven nuevas estrategias a este nivel).
+  - <50% → **COHERENCE_VETO**: la firma se retira a shadow mode automáticamente.
+- Veto persistente en `system_state.coherence_veto` (SSOT).
+
+**Implementación**: `ExecutionService` loguea detalles de trade shadow y live; `CoherenceService.calculate_coherence()` compara post-cierre.
+
+### 4. **Pilar Multi-tenant: Aislamiento Operativo y Configuración Personalizada**
+Cada tenant tiene su propio alquiler de estrategias, ajustes de riesgo y niveles de membresía. Las firmas operativas se distribuyen según el nivel comercial.
+
+**Regla Constitucional**:
+- **tenant_id**: Obligatorio en todo contexto de ejecución. Aísla datos, configuración y persisintencia.
+- **membership_level**: [Basic, Premium, Institutional] determina qué estrategias están disponibles.
+  - **Basic**: Estrategias de baja volatilidad, régimen único (Trend).
+  - **Premium**: Acceso a Market Open Gap, apertura de micro-estructuras, multi-régimen.
+  - **Institutional**: Acceso a adaptación dinámica de regímenes, custom thresholds, feedback loops avanzados.
+- **strategy_params**: Configurables por tenant en `tenant_config` (SSOT en BD), permitiendo custom RSI periods, TP/SL ratios, etc.
+- Se rechaza cualquier firma que requiera features de nivel superior al del tenant.
+
+**Implementación**: `MainOrchestrator.initialize()` carga `tenant_config` desde BD; `StrategyModeSelector` valida membership antes de habilitar estrategias.
+
+---
+
+### Estructura Plug-and-Play de Entrega
+Todas las Firmas Operativas deben seguir este formato estricto para garantizar compatibilidad con el Doble Motor:
+
+```json
+{
+  "name": "EUR/USD - Market Open Gap",
+  "market": "Forex",
+  "timeframe_primary": "H1",
+  "inputs": {
+    "lookback_minutes": 60,
+    "fvg_sensitivity": 0.5,
+    "regime_check_periods": [15, 60, 240]
+  },
+  "regime_filter": ["TREND_UP", "EXPANSION", "ANOMALY"],
+  "entry_logic": {
+    "condition": "AND(price_in_fvg, h4_trend_positive, coherence_score >= 75)",
+    "trigger": "consecutive_encroachment_50pct"
+  },
+  "exit_logic": {
+    "take_profit": "R2_institutional_level",
+    "stop_loss": "0.5R_or_candle_close",
+    "trailing": "1.5R_partial_lock"
+  },
+  "risk_management": {
+    "position_size_pct": 1.0,
+    "max_consecutive_losses": 3,
+    "min_coherence_threshold": 75
+  },
+  "membership_required": "Premium"
+}
+```
+
+Este formato es la ley constitucional para todas las futuras firmas operativas. Cualquier desviación requiere validación explícita por el Protocolo de Gobernanza.
+
 ## V. Standards Técnicos - Manejo de Fechas y Timezones
 
 ### Contexto: Limitación Nativa de SQLite

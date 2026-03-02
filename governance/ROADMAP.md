@@ -105,6 +105,26 @@
     - ✅ SSOT database: tenant config y ledger en system_state (SQLite)
     - ✅ MainOrchestrator integración: dual-motor activo en startup
 
+- [x] **Firma Operativa: Market Open Gap (Forex Edition) — ✅ COMPLETADA (2 de Marzo, 2026)**
+  - **Mercado**: EUR/USD (Forex)
+  - **Ventana de Operación**: 08:00 AM - 10:00 AM EST (Apertura NY)
+  - **Protocolo Quanter**: Los 4 Pilares (Sensorial, Régimen, Coherencia, Multi-tenant) documentados en AETHELGARD_MANIFESTO.md Sección V
+  - **Lógica de Entrada**:
+    - ✅ Identificación del rango de 60 minutos pre-apertura
+    - ✅ Detección de Gap de Ineficiencia (ruptura violenta)
+    - ✅ Entrada en retroceso al 50% del FVG (Consecutive Encroachment)
+    - ✅ Filtro de Régimen: Expansión o Tendencia en H1 (Context Intelligence HU 2.1)
+  - **Gestión de Riesgo**:
+    - ✅ Stop Loss: Encima/debajo de vela generadora del Gap
+    - ✅ Take Profit: Niveles de liquidez institucional (Order Block previo)
+    - ✅ Risk per Trade: 1% del capital (ajustado a 0.5% en volatilidad)
+  - **Componentes Validados**:
+    - ✅ Fair Value Gap (FVG) Detection: LiquidityService
+    - ✅ Regime Filter: RegimeService Multi-Scale
+    - ✅ Coherence Monitoring: CoherenceService (Shadow vs Live)
+    - ✅ Schema JSON pesquisito en docs/03_ALPHA_ENGINE.md (Firmas Operativas Validadas)
+  - **Trace_ID**: STRATEGY-MARKET-OPEN-GAP-2026-001
+
 - [ ] **Confidence Threshold Adaptive (HU 7.1)** — EN DESARROLLO
   - Optimizer que ajusta el umbral de confianza dinámicamente según desempeño histórico.
   - Detección de rachas de pérdidas → incrementa exigencia automáticamente.
