@@ -145,3 +145,39 @@ class StorageManager(
         except Exception as e:
             logger.error(f"Error reloading global config: {e}")
             return {}
+
+    def save_coherence_event(self, event: Dict[str, Any]) -> None:
+        """
+        Guarda un evento de coherencia en la base de datos.
+        
+        Args:
+            event: Dict con los datos del evento
+        """
+        try:
+            conn = self._get_conn()
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                INSERT INTO coherence_events 
+                (signal_id, symbol, timeframe, strategy, stage, status, 
+                 incoherence_type, reason, details, connector_type)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                event.get("signal_id"),
+                event.get("symbol"),
+                event.get("timeframe"),
+                event.get("strategy"),
+                event.get("stage"),
+                event.get("status"),
+                event.get("incoherence_type"),
+                event.get("reason"),
+                event.get("details"),
+                event.get("connector_type"),
+            ))
+            
+            conn.commit()
+        except Exception as e:
+            logger.error(f"Error saving coherence event: {e}")
+        finally:
+            self._close_conn(conn)
+

@@ -251,6 +251,22 @@ async def get_predator_radar(
 
         provider_manager = DataProviderManager(storage=storage)
         provider = provider_manager.get_best_provider()
+        
+        if provider is None:
+            logger.warning(f"[PREDATOR_RADAR] No data provider available for {symbol}")
+            # Proporcionar un resultado con datos insuficientes
+            return PredatorRadarResponse(
+                symbol=symbol,
+                anchor=None,
+                timeframe=timeframe,
+                detected=False,
+                state="UNMAPPED",
+                divergence_strength=0.0,
+                signal_bias="NEUTRAL",
+                message="No data provider available. Cannot fetch market data.",
+                timestamp=datetime.now().isoformat(),
+                metrics={}
+            )
 
         snapshot = confluence_service.get_predator_radar(
             symbol=symbol,
@@ -260,7 +276,7 @@ async def get_predator_radar(
         )
         return PredatorRadarResponse(**snapshot)
     except Exception as e:
-        logger.error(f"Error en get_predator_radar: {e}")
+        logger.error(f"Error en get_predator_radar: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error fetching predator radar: {str(e)}")
 
 
