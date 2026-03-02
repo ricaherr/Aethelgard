@@ -937,7 +937,8 @@ El sistema reportaba 500 Internal Server Error en tres endpoints críticos tras 
    - Removidos parámetros inválidos 	enant_id=tenant_id de llamadas a métodos
    - Razón: Métodos no soportan este parámetro, aislamiento multi-tenant ocurre en TenantDBFactory
 
-2. **Schema Migration Fix** (data_vault/schema.py - función un_migrations()):
+2. **Schema Migration Fix** (data_vault/schema.py - función 
+un_migrations()):
    - Agregadas 6 columnas faltantes a tabla data_providers: priority, requires_auth, api_key, api_secret, additional_config, is_system
    - Migraciones idempotentes: verifican PRAGMA table_info antes de ALTER
 
@@ -955,3 +956,87 @@ El sistema reportaba 500 Internal Server Error en tres endpoints críticos tras 
 
 **Dominios**: 05 (UNIVERSAL_EXECUTION), 08 (DATA_SOVEREIGNTY), 09 (INSTITUTIONAL_INTERFACE)
 **Impacto**: 🟢 BAJO - Solo correcciones de bugs, sin cambios arquitectónicos
+
+---
+
+### 📅 Registro: 2026-03-02 (Cierre Documental HU 4.6)
+
+#### 📋 OPERACIÓN DOC-SYNC-2026-004: Ciclo de Cierre Documental - HU 4.6 COMPLETADA
+**Trace_ID**: `DOC-SYNC-2026-004`  
+**Timestamp**: 2026-03-02 08:00  
+**Estado Final**: ✅ COMPLETADO | Ciclo documental CERRADO
+
+**Descripción**:
+Reconciliación documental final de la HU 4.6 (Anomaly Sentinel - Antifragility Engine). Actualización integral de documentación técnica: dominio de Gobernanza de Riesgo, dominio de Resiliencia de Infraestructura, y registros históricos. Confirmación de cumplimiento del estándar institucional de trazabilidad.
+
+**Cambios Administrativos Realizados**:
+
+1. **04_RISK_GOVERNANCE.md** — Documentación de Umbrales y Protocolo Lockdown
+   - ✅ Título actualizado incluyendo "Anomaly Sentinel"
+   - ✅ Propósito expandido: adición de "neutralización autónoma de eventos extremos"
+   - ✅ Nueva sección **"🛡️ ANOMALY SENTINEL (HU 4.6)"**:
+     - Tabla de umbrales críticos (Z-Score=3.0, Flash Crash=-2%, lookback=50 velas)
+     - Estados de salud 4-tier (NORMAL → CAUTION → DEGRADED → STRESSED)
+     - Protocolo defensivo automático (Lockdown, cancelación, SL→Breakeven)
+     - Arquitectura de persistencia (anomaly_events table + Trace_ID)
+   - ✅ Sección UI/UX ampliada con "Anomaly History Widget"
+   - ✅ Roadmap marcado: Anomaly Sentinel → [x] COMPLETADA
+
+2. **10_INFRA_RESILIENCY.md** — Integración de Anomalías con Salud del Sistema
+   - ✅ Título actualizado: "... Anomaly Integration"
+   - ✅ Nueva sección **"🔗 Integración Anomalías ↔ Estados de Salud"**:
+     - Máquina de estados operacional (diagrama ASCII de transiciones)
+     - Tabla de detalle de transiciones (evento → estado → acciones)
+     - Persistencia de transiciones en system_health_history table
+     - Broadcast WebSocket en tiempo real
+   - ✅ Roadmap actualizado: Integración completada [x]
+   - ✅ Componentes coordinados: AnomalyService (DOM 04) + HealthService (DOM 10)
+
+3. **SPRINT.md** — Confirmación de HU 4.6 [DONE]
+   - ✅ Ya estaba marcada: "✅ COMPLETADA" con desglose de 8 sub-tareas
+   - ✅ Tests: 21/21 PASSED
+   - ✅ Validación: validate_all.py 100% OK
+   - ✅ Estado: Cerrado para futuros sprints
+
+4. **BACKLOG.md** — Confirmación de HU 4.6 [DONE] con Artefactos
+   - ✅ Ya estaba marcada: `[DONE]` con descripción completa
+   - ✅ Artefactos enumerados: 5 archivos clave
+   - ✅ Trace_ID registrado: BLACK-SWAN-SENTINEL-2026-001
+   - ✅ Estado: Archivada (no requiere acción adicional)
+
+5. **SYSTEM_LEDGER.md** — Registro Formal del Milestone
+   - ✅ Este documento: Nuevo entry con timestamp
+   - ✅ Trazabilidad: Vinculado a todos los documentos actualizados
+   - ✅ Trace_ID: DOC-SYNC-2026-004
+
+**Validación del Ciclo Documental Completo**:
+
+| Documento | Elemento | Estado |
+|---|---|---|
+| 04_RISK_GOVERNANCE.md | Umbrales Z-Score | ✅ Documentado (tabla) |
+| 04_RISK_GOVERNANCE.md | Protocolo Lockdown | ✅ Documentado (6-step) |
+| 04_RISK_GOVERNANCE.md | Estados de Salud | ✅ Documentado (4-tier) |
+| 04_RISK_GOVERNANCE.md | Roadmap HU 4.6 | ✅ Marcado [DONE] |
+| 10_INFRA_RESILIENCY.md | Transiciones Salud | ✅ Documentado (máquina) |
+| 10_INFRA_RESILIENCY.md | Anomalía→Health Mapping | ✅ Documentado (tabla) |
+| 10_INFRA_RESILIENCY.md | Broadcast WebSocket | ✅ Documentado (JSON schema) |
+| 10_INFRA_RESILIENCY.md | Roadmap HU 4.6 | ✅ Marcado [DONE] |
+| SPRINT.md | HU 4.6 Completada | ✅ Confirmado [DONE] |
+| BACKLOG.md | HU 4.6 [DONE] | ✅ Confirmado |
+| BACKLOG.md | Artefactos HU 4.6 | ✅ 5 archivos listados |
+| SYSTEM_LEDGER.md | Milestone Entry | ✅ Este registro |
+
+**Coherencia Técnica Confirmada**:
+- 🔗 Dominio 04 (Risk Governance) ↔ Dominio 10 (Infrastructure Resiliency) coordinados
+- 🔗 AnomalyService (detección) ↔ HealthService (transiciones) integrados
+- 🔗 Persistencia (anomaly_events + system_health_history) SSOT
+- 🔗 UI/UX (Thought Console + Status Badge) sincronizado
+- 🔗 Tests: 21/21 PASSED (Anomaly) + 14/14 validate_all.py = Cero regresiones
+
+**Próximos Pasos Habilitados**:
+- ✅ **Misión A (HU 6.3a)**: Conectar AnomalyService con OrderManager para cancelación real de órdenes
+- ✅ **Misión B (HU 6.3)**: Implementar Coherence Drift Monitor (ejecución real vs teoría)
+
+**Sistema Estado**: 🟢 OPERATIVO | Ciclo de documentación CERRADO | Arquitectura lista para integración operativa
+
+**Dominios Involucrados**: 04 (RISK_GOVERNANCE), 10 (INFRA_RESILIENCY)
