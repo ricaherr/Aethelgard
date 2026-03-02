@@ -14,6 +14,7 @@ import pytest
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 from models.signal import Signal, SignalType, ConnectorType
+from core_brain.risk_policy_enforcer import _calculate_r_unit, _build_rejection_audit
 
 
 # ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -163,10 +164,9 @@ class TestRUnitCalculation:
         This enforces financial precision per project standards.
         """
         storage = _make_storage(max_r=1.0)
-        rm = _make_risk_manager(storage)
         signal = _make_signal(entry=1.0800, sl=1.0750)
 
-        r = rm._calculate_r_unit(signal, account_balance=10000.0)
+        r = _calculate_r_unit(signal, account_balance=10000.0, storage=storage)
 
         assert isinstance(r, Decimal), (
             f"_calculate_r_unit() must return Decimal, got {type(r).__name__}"
@@ -178,10 +178,9 @@ class TestRUnitCalculation:
         R = |1.0800-1.0750| * 100000 / 10000 * 100 = 0.0050 * 100000/10000 * 100 = 5.0R
         """
         storage = _make_storage(max_r=10.0)
-        rm = _make_risk_manager(storage)
         signal = _make_signal(entry=1.0800, sl=1.0750)
 
-        r = rm._calculate_r_unit(signal, account_balance=10000.0)
+        r = _calculate_r_unit(signal, account_balance=10000.0, storage=storage)
 
         assert r == pytest.approx(Decimal("5.0"), rel=Decimal("0.01")), (
             f"Expected R=5.0 for 50-pip EURUSD SL on $10k, got {r}"
@@ -190,12 +189,10 @@ class TestRUnitCalculation:
     def test_r_formula_scales_with_balance(self):
         """Doubling the balance should halve the R-units for the same trade."""
         storage = _make_storage(max_r=10.0)
-        rm_small = _make_risk_manager(storage)
-        rm_large = _make_risk_manager(storage)
         signal = _make_signal(entry=1.0800, sl=1.0750)
 
-        r_small = rm_small._calculate_r_unit(signal, account_balance=5000.0)
-        r_large = rm_large._calculate_r_unit(signal, account_balance=10000.0)
+        r_small = _calculate_r_unit(signal, account_balance=5000.0, storage=storage)
+        r_large = _calculate_r_unit(signal, account_balance=10000.0, storage=storage)
 
         assert r_small == pytest.approx(r_large * 2, rel=Decimal("0.01")), (
             f"R should double when balance halves. Got small={r_small}, large={r_large}"
@@ -232,10 +229,9 @@ class TestRejectionAudit:
         for full auditability.
         """
         storage = _make_storage(max_r=1.0)
-        rm = _make_risk_manager(storage)
         signal = _make_signal()
 
-        audit = rm._build_rejection_audit(
+        audit = _build_rejection_audit(
             signal=signal,
             r_calculated=Decimal("5.0"),
             r_limit=Decimal("1.0"),

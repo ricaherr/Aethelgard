@@ -38,7 +38,7 @@
     * **Prioridad**: Alta (Vector V2 - Inteligencia)
     * **Descripción**: Desarrollo del motor que unifica la lectura de regímenes en múltiples temporalidades para una decisión coherente.
     * **🖥️ UI Representation**: Widget "Fractal Context Manager" con visualización de alineación de tendencias.
-* **HU 2.2: Inter-Market Divergence Scanner**
+* **HU 2.2: Inter-Market Divergence Scanner** `[DONE]`
     * **Prioridad**: Media (Vector V3)
     * **Descripción**: Implementación del scanner de correlación inter-mercado para validación de fuerza de régimen.
     * **🖥️ UI Representation**: Matriz de correlación dinámica con alertas de divergencia "Alpha-Sync".
@@ -52,7 +52,7 @@
     * **Prioridad**: Alta (Vector V2)
     * **Descripción**: Desarrollo del motor de puntuación dinámica ponderada por el Regime Classifier y métricas del Shadow Portfolio.
     * **🖥️ UI Representation**: Dashboard "Alpha Radar" con medidores de confianza (0-100%) y etiquetas de régimen activo.
-* **HU 3.2: Institutional Footprint Core** `[DEV]`
+* **HU 3.2: Institutional Footprint Core** `[DONE]`
     * **Prioridad**: Media (Vector V3)
     * **Descripción**: Lógica de detección de huella institucional basada en micro-estructura de precios y volumen.
     * **🖥️ UI Representation**: Superposición visual de "Liquidity Zones" y clústeres de volumen en el visor de estrategias.
@@ -60,7 +60,7 @@
     * **Prioridad**: Baja (Vector V3)
     * **Descripción**: Scanner de confluencia inter-mercado para validación cruzada de señales de alta fidelidad.
     * **🖥️ UI Representation**: Widget de "Correlación Sistémica" con indicadores de fuerza y dirección multi-activo.
-* **HU 3.4: Signal Post-Mortem Analytics**
+* **HU 3.4: Signal Post-Mortem Analytics** `[DONE]`
     * **Prioridad**: Media (Vector V2)
     * **Descripción**: Motor de auditoría post-trade que vincula resultados con datos de micro-estructura para alimentar el Meta-Aprendizaje.
     * **🖥️ UI Representation**: Vista "Post-Mortem" con visualización de velas de tick y marcadores de anomalías detectadas.
@@ -70,15 +70,26 @@
     * **🖥️ UI Representation**: Dial de "Exigencia Algorítmica" en el header, mostrando el umbral de entrada activo.
 
 ## 04_RISK_GOVERNANCE (Unidades R, Safety Governor, Veto)
+* **HU 4.4: Safety Governor & Sovereignty Gateway** `[DONE]`
+    * **Prioridad**: Alta (Vector V2)
+    * **Descripción**: Gobernanza de riesgo basada en Unidades R con veto granular y auditoría de rechazos.
+    * **Estado**: Implementado en Sprint 2. RiskManager + RejectionAudit + Endpoint /api/risk/validate.
+
+* **HU 4.5: Exposure & Drawdown Monitor Multi-Tenant** `[DONE]`
+    * **Prioridad**: Alta (Vector V2)
+    * **Descripción**: Monitoreo en tiempo real de picos de equidad y umbrales de Drawdown (Soft/Hard) por tenant.
+    * **Estado**: Implementado en Sprint 2. DrawdownMonitor + Endpoint /api/risk/exposure.
+
 * **HU 4.6: Anomaly Sentinel (Antifragility Engine)**
     * **Prioridad**: Baja (Fase 4)
     * **Descripción**: Monitor de eventos de baja probabilidad (Cisnes Negros) para activar protocolos de defensa o captura de volatilidad extrema.
     * **🖥️ UI Representation**: Consola de "Thought" con tag [ANOMALY_DETECTED] y sugerencias proactivas de intervención.
 
 ## 05_UNIVERSAL_EXECUTION (EMS, Conectores FIX)
-* **HU 5.1: High-Fidelity FIX Connector Core**
+* **HU 5.1: High-Fidelity FIX Connector Core** `[DEV]`
     * **Prioridad**: Media (Vector V3)
     * **Descripción**: Desarrollo de la capa de transporte FIX basada en QuickFIX para conectividad directa con Prime Brokers.
+    * **Estado**: Normalización de conectores completada. ExecutionService operativo. Integración FIX con Prime Brokers en progreso.
     * **🖥️ UI Representation**: Terminal de telemetría FIX con visualización de latencia ida y vuelta (RTT).
 * **HU 5.2: Adaptive Slippage Controller**
     * **Prioridad**: Alta (Vector V3)
