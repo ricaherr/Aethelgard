@@ -101,6 +101,39 @@ class Signal(BaseModel):
         else:
             self.metadata["regime"] = value
 
+class FractalContext(BaseModel):
+    """
+    Contexto de alineación multi-temporal (Fractal Unification).
+    Encapsula el estado de sincronización entre M15, H1 y H4.
+    """
+    m15_regime: MarketRegime = MarketRegime.NORMAL
+    h1_regime: MarketRegime = MarketRegime.NORMAL
+    h4_regime: MarketRegime = MarketRegime.NORMAL
+    
+    # Veto Fractal: Si H4=BEAR Y M15=BULL → RETRACEMENT_RISK
+    veto_signal: Optional[str] = None  # "RETRACEMENT_RISK", "ALIGNED", None
+    confidence_threshold: float = 0.75  # Umbral default (eleva a 0.90 si veto=RETRACEMENT_RISK)
+    
+    # Metadata
+    timestamp: datetime = Field(default_factory=datetime.now)
+    trace_id: Optional[str] = None
+    
+    @property
+    def is_fractally_aligned(self) -> bool:
+        """Retorna True si todas las temporalidades tienen el mismo sesgo."""
+        regimes = [self.m15_regime, self.h1_regime, self.h4_regime]
+        return len(set(regimes)) == 1
+    
+    @property
+    def alignment_score(self) -> float:
+        """Puntaje de alineación (0.0 = ninguna, 1.0 = perfecta)."""
+        regimes = [self.m15_regime, self.h1_regime, self.h4_regime]
+        from collections import Counter
+        counts = Counter(regimes)
+        max_count = max(counts.values())
+        return max_count / len(regimes)
+
+
 class SignalResult(BaseModel):
     """Representa el resultado de una operación basada en una señal."""
     signal: Signal

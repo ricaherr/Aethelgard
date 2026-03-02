@@ -49,6 +49,13 @@
 **Sprint Actual**: SPRINT 3 (Inicio: 1 de Marzo, 2026)
 
 **Hitos en Desarrollo**:
+- [x] **Multi-Scale Regime Vectorizer (HU 2.1)** — ✅ COMPLETADA
+  - Unificación de temporalidades M15, H1, H4.
+  - Motor RegimeService con Regla de Veto Fractal.
+  - Widget "Fractal Context Manager" en UI.
+  - Sincronización de Ledger (SSOT).
+  - 15/15 Tests PASSED.
+
 - [ ] **Anomaly Sentinel**: Detección de cisnes negros y antifragilidad (HU 4.6 - Fase inicial).
 - [ ] **Depredação de Contexto Optimizado**: Extensión del scanner inter-mercado con predicción (HU 2.2+).
 - [ ] **The Pulse (Advanced Feedback)**: Lazo de retroalimentación de infraestructura avanzado (HU 5.3 final).

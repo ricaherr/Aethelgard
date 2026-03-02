@@ -68,10 +68,13 @@
 
 ## 📋 Tareas del Sprint 3
 
-- [ ] **Multi-Scale Regime Vectorizer (HU 2.1)**
-  - Unificación de temporalidades para decisión coherente.
-  - Desarrollo del motor de lectura de regímenes en múltiples marcos temporales.
-  - Widget "Fractal Context Manager" en UI.
+- [x] **Multi-Scale Regime Vectorizer (HU 2.1)**
+  - ✅ Unificación de temporalidades para decisión coherente.
+  - ✅ Motor RegimeService con lectura de M15, H1, H4.
+  - ✅ Regla de Veto Fractal (H4=BEAR + M15=BULL → RETRACEMENT_RISK).
+  - ✅ Widget "Fractal Context Manager" en UI.
+  - ✅ Sincronización de Ledger (SSOT).
+  - ✅ 15/15 Tests PASSED.
 
 - [ ] **Depredación de Contexto / Predator Sense Optimization (HU 2.2 - Extensión)**
   - Optimización del scanner `detect_predator_divergence` con métricas de predicción.
@@ -96,13 +99,15 @@
 
 ---
 
-## 📸 Snapshot Inicial Sprint 3
+## 📸 Snapshot Sprint 3 (Progreso: 1/6)
 
 | Métrica | Valor |
 |---|---|
 | **Arquitectura Base** | v4.0.0-beta.1 (18 módulos core + 8 servicios) |
 | **Versión Target** | v4.1.0-beta.3 |
-| **Dependencia de Sprint 2** | ✅ Completada (Gobernanza de Riesgo operativa) |
+| **HU 2.1 Status** | ✅ COMPLETADA (RegimeService, FractalContext, Tests 15/15) |
+| **Validación Sistema** | ✅ 12/12 PASSED (validate_all.py) |
 | **Vector Activo** | V3: Dominio Sensorial & Adaptabilidad |
 | **Tests Críticos Disponibles** | 61/61 PASSED (Cero deuda) |
+| **Última Actualización** | 1 de Marzo, 2026 - 19:30 UTC
 

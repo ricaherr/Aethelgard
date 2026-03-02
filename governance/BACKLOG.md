@@ -34,10 +34,16 @@
     * **🖥️ UI Representation**: Menú de perfil donde el usuario vea su rango actual y las funcionalidades bloqueadas/desbloqueadas según su plan.
 
 ## 02_CONTEXT_INTELLIGENCE (Regime, Multi-Scale)
-* **HU 2.1: Multi-Scale Regime Vectorizer**
-    * **Prioridad**: Alta (Vector V2 - Inteligencia)
-    * **Descripción**: Desarrollo del motor que unifica la lectura de regímenes en múltiples temporalidades para una decisión coherente.
-    * **🖥️ UI Representation**: Widget "Fractal Context Manager" con visualización de alineación de tendencias.
+* **HU 2.1: Multi-Scale Regime Vectorizer** `[DONE]`
+    * **Prioridad**: Alta (Vector V3 - Dominio Sensorial)
+    * **Descripción**: Motor de unificación temporal que lee regímenes en M15, H1, H4 con Regla de Veto Fractal (H4=BEAR + M15=BULL → RETRACEMENT_RISK).
+    * **Estado**: Implementado en Sprint 3. RegimeService operativo (337 líneas, <500). 15/15 tests PASSED.
+    * **🖥️ UI Representation**: Widget "Fractal Context Manager" con visualización de "Alineación de Engranajes".
+    * **Artefactos**:
+      - `core_brain/services/regime_service.py` (RegimeService, sincronización Ledger)
+      - `models/signal.py` (FractalContext model)
+      - `tests/test_regime_service.py` (15 tests, 100% coverage)
+      - `ui/components/FractalContextManager.tsx` (Widget React)
 * **HU 2.2: Inter-Market Divergence Scanner** `[DONE]`
     * **Prioridad**: Media (Vector V3)
     * **Descripción**: Implementación del scanner de correlación inter-mercado para validación de fuerza de régimen.

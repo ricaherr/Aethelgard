@@ -174,12 +174,12 @@ async def execute_signal_manual(data: dict, token: TokenPayload = Depends(get_cu
         
         logger.info(f"Manual execution requested for signal: {signal_id}")
         
-        storage = _get_storage()
+        # SECURITY: Get tenant-isolated storage using TenantDBFactory
+        storage = TenantDBFactory.get_storage(token.tid)
         trading_service = _get_trading_service()
-        tenant_id = token.tid
         
-        # Get signal from database
-        signal_data = storage.get_signal_by_id(signal_id, tenant_id=tenant_id)
+        # Get signal from database (already tenant-isolated)
+        signal_data = storage.get_signal_by_id(signal_id)
         if not signal_data:
             raise HTTPException(status_code=404, detail=f"Signal {signal_id} not found")
         
@@ -302,32 +302,38 @@ async def get_edge_history(limit: int = 50, token: TokenPayload = Depends(get_cu
     Combina:
     1. Ajustes paramétricos (vía EdgeTuner.adjust_parameters).
     2. Aprendizaje autónomo (vía EdgeTuner - Delta Feedback).
+    
+    SECURITY: Uses TenantDBFactory to ensure data isolation per tenant.
+    Each user only accesses their own isolated database.
     """
     try:
-        storage = _get_storage()
-        tenant_id = token.tid
+        # ✅ SECURITY: Get tenant-isolated storage using TenantDBFactory
+        storage = TenantDBFactory.get_storage(token.tid)
         
         # 1. Obtener historial de tuning (legacy)
-        tuning_history = storage.get_tuning_history(limit=limit, tenant_id=tenant_id)
+        tuning_history = storage.get_tuning_history(limit=limit)
         
         # 2. Obtener historial de aprendizaje autónomo (Edge)
-        edge_history = storage.get_edge_learning_history(limit=limit, tenant_id=tenant_id)
+        edge_history = storage.get_edge_learning_history(limit=limit)
         
         # 3. Formatear y unificar
         unified_events = []
         
         # Formatear Tuning logs (Legacy format)
         for log in tuning_history:
-            # adjustment_data puede llegar como string o como dict
-            ad = log['adjustment_data']
+            # adjustment_data puede llegar como string, dict, o None
+            ad = log.get('adjustment_data')
             if isinstance(ad, str):
                 try:
                     ad = json.loads(ad)
                 except Exception:
                     ad = {}
+            elif ad is None:
+                ad = {}
+            
             unified_events.append({
-                "id": f"tuning_{log['id']}",
-                "timestamp": log['timestamp'],
+                "id": f"tuning_{log.get('id', 'unknown')}",
+                "timestamp": log.get('timestamp', ''),
                 "type": "PARAMETRIC_TUNING",
                 "trigger": ad.get('trigger', 'periodic'),
                 "adjustment_factor": ad.get('adjustment_factor', 1.0),
@@ -340,15 +346,16 @@ async def get_edge_history(limit: int = 50, token: TokenPayload = Depends(get_cu
         # Formatear Edge logs (New Autonomous learning)
         for log in edge_history:
             details_json = {}
-            if log.get('details'):
+            details_str = log.get('details')
+            if details_str:
                 try:
-                    details_json = json.loads(log['details'])
-                except:
+                    details_json = json.loads(details_str)
+                except Exception:
                     pass
             
             unified_events.append({
-                "id": f"edge_{log['id']}",
-                "timestamp": log['timestamp'],
+                "id": f"edge_{log.get('id', 'unknown')}",
+                "timestamp": log.get('timestamp', ''),
                 "type": "AUTONOMOUS_LEARNING",
                 "trigger": "TRADE_FEEDBACK",
                 "detection": log.get('detection'),
@@ -397,8 +404,9 @@ async def toggle_auto_trading(request: Request, token: TokenPayload = Depends(ge
 async def get_strategies_library(token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """Returns the strategy library: registered strategies from DB + educational catalog."""
     try:
-        storage = _get_storage()
-        rankings = storage.get_all_strategy_rankings(tenant_id=token.tid)
+        # SECURITY: Get tenant-isolated storage using TenantDBFactory
+        storage = TenantDBFactory.get_storage(token.tid)
+        rankings = storage.get_all_strategy_rankings()
 
         registered = [
             {

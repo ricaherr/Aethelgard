@@ -1,4 +1,4 @@
-import { Activity, Database, Shield, HardDrive, Satellite, Wifi, Key, Terminal, Cpu, SignalHigh, ShieldCheck, Zap, AlertTriangle, CheckCircle2, Search, ArrowRight, Info, Server, LineChart, Loader2 } from 'lucide-react';
+import { Activity, Database, Shield, HardDrive, Satellite, Wifi, Key, Terminal, Cpu, SignalHigh, ShieldCheck, Zap, AlertTriangle, CheckCircle2, Search, ArrowRight, Info, Server, LineChart, Loader2, Lock } from 'lucide-react';
 import { SystemStatus, SatelliteStatus } from '../../types/aethelgard';
 import { motion } from 'framer-motion';
 import { GlassPanel } from '../common/GlassPanel';
@@ -183,9 +183,11 @@ export const MonitorPage = ({ status, thoughts, runAudit, runRepair }: MonitorPa
                     <div className="grid grid-cols-2 gap-3 flex-1 overflow-y-auto pr-1 custom-scrollbar">
                         {[
                             { id: 'Architecture', label: 'Architecture', icon: <Cpu size={14} />, short: 'ARC', color: 'text-aethelgard-blue' },
+                            { id: 'Tenant Isolation Scanner', label: 'Multi-Tenant', icon: <Lock size={14} />, short: 'TIS', color: 'text-purple-400' },
                             { id: 'System DB', label: 'Data Vault', icon: <Database size={14} />, short: 'DBV', color: 'text-aethelgard-green' },
                             { id: 'Patterns', label: 'Edge Patterns', icon: <Zap size={14} />, short: 'PAT', color: 'text-purple-400' },
                             { id: 'Core Tests', label: 'Risk Shield', icon: <Shield size={14} />, short: 'RSK', color: 'text-aethelgard-gold' },
+                            { id: 'Tenant Security', label: 'Auth Isolation', icon: <Key size={14} />, short: 'AUTH', color: 'text-purple-500' },
                             { id: 'Connectivity', label: 'Broker Uplink', icon: <SignalHigh size={14} />, short: 'CON', color: 'text-aethelgard-blue' },
                             { id: 'QA Guard', label: 'Security QA', icon: <Key size={14} />, short: 'SEC', color: 'text-white' }
                         ].map((vector, i) => {

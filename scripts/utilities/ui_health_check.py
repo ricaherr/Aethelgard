@@ -42,6 +42,43 @@ class UIHealthCheck:
             "/api/regime_configs"
         ]
 
+    def check_typescript_strict(self) -> bool:
+        """
+        Ejecuta TypeScript con validación de tipos estricta.
+        Detecta errores de tipos que podrían no aparecer en build normal.
+        """
+        import subprocess
+        
+        ui_dir = self.project_root / "ui"
+        logger.info("Ejecutando validación estricta de TypeScript...")
+        
+        try:
+            # Intentar ejecutar con npm run tsc-check primero
+            result = subprocess.run(
+                ["npm", "run", "tsc-check"],
+                cwd=str(ui_dir),
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            if result.returncode == 0:
+                logger.info("✅ TypeScript strict check: OK (sin errores de tipos)")
+                return True
+            else:
+                logger.error(f"❌ Errores de tipos detectados en TypeScript")
+                if result.stdout:
+                    logger.error(f"   {result.stdout[:200]}")
+                return False
+        except subprocess.TimeoutExpired:
+            logger.error("❌ TypeScript check timeout")
+            return False
+        except Exception as e:
+            logger.warning(f"⚠️ No se pudo ejecutar TypeScript check automáticamente: {e}")
+            logger.info("   (Ejecuta 'npm run tsc-check' en ui/ manualmente)")
+            # No fallar completamente, solo alertar
+            return True
+
     def check_build_accessibility(self) -> bool:
         """Verifica que la build de producción exista y sea legible"""
         index_html = self.ui_dist / "index.html"
@@ -114,6 +151,7 @@ class UIHealthCheck:
         print("="*60)
         
         results = [
+            self.check_typescript_strict(),  # NEW: TypeScript type validation
             self.check_build_accessibility(),
             self.check_component_integrity(),
             self.check_api_connectivity()

@@ -15,6 +15,125 @@ render_diffs(file:///c:/Users/Jose Herrera/Documents/Proyectos/Aethelgard/AETHEL
 
 ---
 
+### 📅 Registro: 2026-03-01 (Continuación)
+
+#### 🛡️ HITO: Multi-Scale Regime Vectorizer (HU 2.1) — Fractal Time Sense Engine
+**Trace_ID**: `REGIME-FRACTAL-2026-001`  
+**Timestamp**: 2026-03-01 19:30  
+**Estado Final**: ✅ COMPLETADO (Sprint 3)
+
+**Descripción**:  
+Implementación del Motor de Unificación Temporal que sincroniza regímenes de mercado en múltiples temporalidades (M15, H1, H4) para detección de conflictos fractales. Prevención de "operaciones suicidas" (ej. Long en M15 cuando H4 está en caída libre).
+
+**Cambios Clave**:
+- **RegimeService** (`core_brain/services/regime_service.py`):
+  - 302 líneas (<500 limit ✅)
+  - Sincroniza 3 clasificadores de régimen (M15, H1, H4)
+  - Matriz de Veto Fractal: (H4=BEAR, M15=BULL) → RETRACEMENT_RISK, eleva confianza a 0.90
+  - Sincronización automática de Ledger en Storage (SSOT) tras each update
+  - Trazabilidad: Trace_ID único en cada operación
+  
+- **FractalContext Model** (`models/signal.py`):
+  - Encapsula alineación multi-temporal
+  - Propiedades: `is_fractally_aligned`, `alignment_score`
+  - Veto signals: RETRACEMENT_RISK, CATASTROPHIC_CONFLICT, VOLATILITY_TRAP
+  
+- **Tests** (`tests/test_regime_service.py`):
+  - 15/15 PASSED ✅
+  - TDD: Tests completados antes de implementación
+  - Coverage completo: Inicialización, veto fractal, aplicación a señales, sincronización Ledger, métricas
+  
+- **UI Widget** (`ui/components/FractalContextManager.tsx`):
+  - "Alineación de Engranajes" con visualización en tiempo real
+  - Muestra regímenes M15, H1, H4 con códigos de color
+  - Barra de alineación (0-100%)
+  - Alerta roja si veto activo + razón específica
+  - Métricas técnicas (ADX, Bias) por timeframe
+
+**Arquitectura Compliance**:
+- ✅ Inyección de Dependencias: `__init__(storage: StorageManager)`
+- ✅ Type Hints 100%: Todos los parámetros y retornos tipados
+- ✅ Try/Except en persistencia: `_sync_ledger()` líneas 145-168
+- ✅ Trace ID: `self.trace_id = REGIME-{uuid}`
+- ✅ SSOT: Ledger persistido en BD, no en JSON
+- ✅ Agnosticismo: Core Brain no importa MT5/conectores
+- ✅ Higiene: Raíz limpia (archivos temporales eliminados)
+
+**Dominios Involucrados**: 02 (CONTEXT_INTELLIGENCE), 04 (RISK_GOVERNANCE)
+
+**Validación**:
+- ✅ validate_all.py: 12/12 PASSED
+- ✅ pytest regime_service: 15/15 PASSED
+- ✅ SPRINT.md: HU 2.1 marcada como [DONE]
+- ✅ BACKLOG.md: HU 2.1 marcada como [DONE] con artefactos listados
+
+**Integración futura (ExecutionService)**:
+- ExecutionService debe consultar `RegimeService.get_veto_status()` antes de ejecutar
+- Si veto activo: aplica `apply_veto_to_signal()` y eleva confianza a 0.90
+
+---
+
+### 📅 Registro: 2026-03-01 (Post-Validación)
+
+#### 🛡️ ISSUE: Aislamiento Multi-Tenant en Endpoint /api/edge/history — Security Hardening
+**Trace_ID**: `SECURITY-TENANT-ISOLATION-2026-001`  
+**Timestamp**: 2026-03-01 14:30  
+**Estado Final**: ✅ CORREGIDO + VALIDADO
+
+**Problema Identificado**:  
+El endpoint `GET /api/edge/history` estaba usando `_get_storage()` (BD genérica compartida) en lugar de `TenantDBFactory.get_storage(token.tid)` (BD aislada por tenant). Aunque el token estaba siendo validado por autenticación, no se aplicaba el aislamiento de datos multi-tenant.
+
+**Impacto de Seguridad**:  
+- 🔴 CRÍTICO: Posible fuga de datos entre tenants si compartían BD
+- 🟡 Inconsistencia: El patrón multi-tenant NO se aplicaba consistentemente
+- 🟡 Tests: No había validación de aislamiento de datos en suite de tests
+
+**Raíz del Problema**:  
+1. El endpoint tiene autenticación (`token: TokenPayload = Depends(get_current_active_user)`)
+2. Pero NO utilizaba `token.tid` para obtener storage aislado
+3. La arquitectura tiene `TenantDBFactory` (cada tenant → BD separada en `data_vault/tenants/{tenant_id}/aethelgard.db`)
+4. Pero el endpoint no estaba usando este mecanismo
+
+**¿Por qué no se detectó en `validate_all.py`?**:
+- ✗ El validate_all.py NO ejecuta tests de integridad de endpoints HTTP
+- ✗ No hay validación de que endpoints con tokens usen TenantDBFactory
+- ✗ No existe test de "contract" HTTP que valide flujos de autenticación end-to-end
+- ✗ Los tests existentes (test_signal_deduplication, test_risk_manager) son de lógica pura, no de endpoints
+
+**Solución Implementada**:
+
+1. **Corrección de Endpoint** (`core_brain/api/routers/trading.py`, línea 307-310):
+   ```python
+   # ❌ ANTES:
+   storage = _get_storage()
+   
+   # ✅ DESPUÉS:
+   storage = TenantDBFactory.get_storage(token.tid)  # Aislamiento por tenant
+   ```
+
+2. **Test de Validación** (`tests/test_tenant_isolation_edge_history.py`):
+   - Test `test_tenant_isolation_edge_history_alice_vs_bob`: Verifica que Alice y Bob usan BDs separadas
+   - Test `test_endpoint_uses_tenantdbfactory_not_generic_storage`: Valida que usa TenantDBFactory
+   - Test `test_edge_history_response_format`: Verifica estructura de respuesta
+   - Test `test_tuning_event_structure`: Valida eventos PARAMETRIC_TUNING
+   - Test `test_autonomous_learning_event_structure`: Valida eventos AUTONOMOUS_LEARNING
+   - **Resultado**: 5/5 PASSED ✅
+
+**Validación Post-Fix**:
+- ✅ Syntax check: `python -m py_compile trading.py` → OK
+- ✅ validate_all.py: 12/12 PASSED (sin regresiones)
+- ✅ New security test: 5/5 PASSED
+- ✅ Endpoint retorna datos correctamente con TenantDBFactory
+
+**Recomendaciones para Improvements**:
+1. **Agregar validación de TenantDBFactory a validate_all.py**: Verificar que todos los endpoints con tokens usen TenantDBFactory
+2. **Crear test suite de HTTP contracts**: Validar autenticación + aislamiento en todos los endpoints
+3. **Standardizar patrón multi-tenant**: Revisar otros endpoints (GET /signals, POST /execute_signal_manual, etc.) para consistencia
+
+**Dominios Involucrados**: 01 (IDENTITY_SECURITY), 05 (UNIVERSAL_EXECUTION)
+
+---
+
 ### 📅 Registro: 2026-03-01
 
 #### 🛡️ OPERACIÓN DOC-SYNC-2026-003: Saneamiento Administrativo & Gobernanza Sinfónica

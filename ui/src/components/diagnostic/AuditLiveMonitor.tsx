@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ShieldCheck, Zap, Loader2, CheckCircle2, AlertTriangle, Cpu, Database, Network, FileCode, Beaker } from 'lucide-react';
+import { X, ShieldCheck, Zap, Loader2, CheckCircle2, AlertTriangle, Cpu, Database, Network, FileCode, Beaker, Lock } from 'lucide-react';
 import { CerebroThought } from '../../types/aethelgard';
 import { GlassPanel } from '../common/GlassPanel';
 import { useEffect, useState, useMemo } from 'react';
@@ -23,6 +23,7 @@ interface AuditStage {
 
 const INITIAL_STAGES: AuditStage[] = [
     { id: 'Architecture', label: 'Architecture Topology', icon: <Cpu size={14} />, status: 'PENDING' },
+    { id: 'Tenant Isolation Scanner', label: 'Multi-Tenant Isolation', icon: <Lock size={14} />, status: 'PENDING' },
     { id: 'QA Guard', label: 'QA Integrity Guard', icon: <ShieldCheck size={14} />, status: 'PENDING' },
     { id: 'Code Quality', label: 'Complexity Density', icon: <FileCode size={14} />, status: 'PENDING' },
     { id: 'UI Quality', label: 'React Ecosystem', icon: <Zap size={14} />, status: 'PENDING' },
@@ -30,6 +31,7 @@ const INITIAL_STAGES: AuditStage[] = [
     { id: 'Patterns', label: 'Design Patterns', icon: <ShieldCheck size={14} />, status: 'PENDING' },
     { id: 'Core Tests', label: 'Core Consensus Tests', icon: <Beaker size={14} />, status: 'PENDING' },
     { id: 'Integration', label: 'Integration Bridges', icon: <Network size={14} />, status: 'PENDING' },
+    { id: 'Tenant Security', label: 'Endpoint Authorization', icon: <Lock size={14} />, status: 'PENDING' },
     { id: 'Connectivity', label: 'Broker Uplink', icon: <Network size={14} />, status: 'PENDING' },
     { id: 'System DB', label: 'Data Vault Integrity', icon: <Database size={14} />, status: 'PENDING' }
 ];

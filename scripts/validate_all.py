@@ -142,6 +142,7 @@ async def main():
     # Formato: [ejecutable, script, args...]
     audit_tasks = [
         run_audit_module("Architecture", ["python", "scripts/utilities/architecture_audit.py"], workspace),
+        run_audit_module("Tenant Isolation Scanner", ["python", "scripts/tenant_isolation_audit.py"], workspace),
         run_audit_module("QA Guard", ["python", "scripts/qa_guard.py"], workspace),
         run_audit_module("Code Quality", ["python", "scripts/code_quality_analyzer.py"], workspace),
         run_audit_module("UI Quality", ["python", "scripts/utilities/ui_health_check.py"], workspace),
@@ -149,6 +150,7 @@ async def main():
         run_audit_module("Patterns", ["python", "scripts/enforce_patterns.py"], workspace),
         run_audit_module("Core Tests", ["python", "-m", "pytest", "tests/test_signal_deduplication.py", "tests/test_risk_manager.py", "-q"], workspace),
         run_audit_module("Integration", ["python", "-m", "pytest", "tests/test_executor_metadata_integration.py", "-q"], workspace),
+        run_audit_module("Tenant Security", ["python", "-m", "pytest", "tests/test_tenant_isolation_edge_history.py", "-q"], workspace),
         run_audit_module("Connectivity", ["python", "scripts/utilities/check_connectivity_health.py"], workspace),
         run_audit_module("System DB", ["python", "scripts/utilities/verify_sync_fidelity.py"], workspace),
         run_audit_module("DB Integrity", ["python", "scripts/utilities/db_uniqueness_audit.py"], workspace),
