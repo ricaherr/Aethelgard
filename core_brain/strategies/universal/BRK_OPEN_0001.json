@@ -1,0 +1,216 @@
+{
+  "strategy_id": "BRK_OPEN_0001",
+  "version": "1.0",
+  "mnemonic": "BRK_OPEN_NY_STRIKE",
+  "description": "Market Open Gap Strategy - NY Session Pre-Market Detection",
+  "author": "Aethelgard Trading System",
+  "published_date": "2026-03-02",
+  "trading_style": "Momentum / Order Flow Institutional",
+  "market_regime_context": "Multi-Scale Regime Vectorizer (MSRV) required",
+  
+  "strategy_class_info": {
+    "class_id": "BRK_OPEN_0001",
+    "mnemonic": "BRK_OPEN_NY_STRIKE",
+    "instance_id_requirement": "UUID v4 (mandatory per trade)",
+    "description": "Identifica gaps pre-apertura NY (Fair Value Gaps) usando MarketSessionService y ImbalanceDetector. Entrada: 50% penetración del FVG. Salida: Unidades R dinámicas."
+  },
+  
+  "operating_hours": {
+    "session": "ny_premarket",
+    "session_name": "New York Pre-Market",
+    "open_utc": "18:00",
+    "close_utc": "02:30",
+    "pre_market_buffer_minutes": 30,
+    "target_entry_window": "18:00-18:30 UTC (30 MIN ANTES APERTURA NY 18:30)",
+    "timezone": "UTC"
+  },
+  
+  "required_services": [
+    {
+      "service": "MarketSessionService",
+      "module": "core_brain.services.market_session_service",
+      "responsibility": "Trackear sesiones globales y proveer get_pre_market_range()",
+      "critical": true
+    },
+    {
+      "service": "ImbalanceDetector",
+      "module": "core_brain.sensors.imbalance_detector",
+      "responsibility": "Detectar FVGs en M5/M15 con validación de volumen",
+      "critical": true
+    },
+    {
+      "service": "LiquidityService",
+      "module": "core_brain.services.liquidity_service",
+      "responsibility": "Validar zonas de alta probabilidad institucional",
+      "critical": true
+    },
+    {
+      "service": "RegimeService",
+      "module": "core_brain.services.regime_service",
+      "responsibility": "Veto si régimen fractal es conflictivo",
+      "critical": true
+    }
+  ],
+  
+  "signals_generated": {
+    "signal_type": "IMBALANCE_DETECTION",
+    "base_signal_name": "NY_OPEN_GAP",
+    "generation_method": "ImbalanceDetector.generate_signal()",
+    "payload_structure": {
+      "strategy_class_id": "BRK_OPEN_0001",
+      "mnemonic": "BRK_OPEN_NY_STRIKE",
+      "instance_id": "<UUID v4 - MANDATORY>",
+      "instrument": "string (EURUSD, GBPUSD, etc)",
+      "timeframe": "M5 or M15",
+      "fvg_count": "integer",
+      "fvgs": [
+        {
+          "type": "bullish_fvg | bearish_fvg",
+          "top": "float (precio techo del gap)",
+          "bottom": "float (precio piso del gap)",
+          "size_pips": "float",
+          "institutional_footprint_confirmed": "boolean (validación volumen)"
+        }
+      ],
+      "confidence": "float 0-1",
+      "timestamp": "ISO8601",
+      "trace_id": "string"
+    }
+  },
+  
+  "entry_logic": {
+    "description": "Entra cuando detecta FVG con huella institucional en pre-market NY",
+    "entry_method": "IMBALANCE_PENETRATION",
+    "entry_levels": [
+      {
+        "level": "L1_FULL_FVG",
+        "description": "Entrada al 50% de penetración del FVG",
+        "penetration_percent": 0.50,
+        "rule": "Si FVG es 100 pips, entra a 50 pips dentro del gap (50% del FVG)",
+        "position_size": "Basado en RiskManager (1% del capital)"
+      }
+    ],
+    "conditions": [
+      {
+        "type": "AND",
+        "rules": [
+          {
+            "service": "MarketSessionService",
+            "check": "get_pre_market_range() retorna NOT NULL",
+            "description": "Debe estar dentro de 30 MIN antes de apertura NY"
+          },
+          {
+            "service": "ImbalanceDetector",
+            "check": "detect_fvg() retorna >=1 FVG confirmado",
+            "description": "FVG debe pasar validación de volumen institucional"
+          },
+          {
+            "service": "LiquidityService",
+            "check": "is_in_high_probability_zone() retorna TRUE",
+            "description": "Precio entrada debe estar en zona FVG o Order Block"
+          },
+          {
+            "service": "RegimeService",
+            "check": "get_veto_status() retorna NONE",
+            "description": "Veto fractal debe estar inactivo (sin conflicto H4 vs M15)"
+          }
+        ]
+      }
+    ]
+  },
+  
+  "exit_logic": {
+    "description": "Salida basada en Unidades R dinámicas y patrones estructurales",
+    "exit_method": "RISK_UNITS_R",
+    "exit_rules": [
+      {
+        "type": "TAKE_PROFIT",
+        "rule": "R2.0",
+        "description": "Toma ganancia a 2 Unidades R de riesgo inicial",
+        "calculation": "SL inicial + (SL_distance * 2)"
+      },
+      {
+        "type": "STOP_LOSS",
+        "rule": "R1.0",
+        "description": "Stop loss a 1 Unidad R (negativa)",
+        "calculation": "Entry + (Entry - Pre-Market Low) * -1"
+      },
+      {
+        "type": "STRUCTURAL_BREAK",
+        "rule": "Volatility Shock > 3 sigmas",
+        "description": "Cierre inmediato si volatilidad extrema (Black Swan)",
+        "integration": "AnomalySentinel.lock_down_mode()"
+      }
+    ]
+  },
+  
+  "risk_parameters": {
+    "risk_per_trade_percent": 1.0,
+    "max_consecutive_losses": 3,
+    "drawdown_limit_percent": 10.0,
+    "max_position_size_units": 2,
+    "regime_specific_adjustments": {
+      "VOLATILE": 0.5,
+      "CRASH": 0.25,
+      "RANGE": 0.75
+    }
+  },
+  
+  "persistence_and_tracing": {
+    "instance_id_generation": "UUID v4 - UNA POR CADA SEÑAL/TRADE",
+    "persistence_db_table": "strategies",
+    "ledger_table": "signal_events",
+    "trace_id_format": "BRK_OPEN_0001_{instance_id}",
+    "audit_requirements": [
+      "Cada trade debe registrarse con instance_id único",
+      "Shadow vs Live comparison usando instance_id",
+      "Coherence scoring basado en instance_id",
+      "SYSTEM_LEDGER actualizado con fecha de primera operación"
+    ]
+  },
+  
+  "integration_points": {
+    "signal_factory": "core_brain/signal_factory.py - inyecta strategy_class_id + instance_id",
+    "risk_manager": "core_brain/risk_manager.py - valida contra safety_governor",
+    "execution_service": "core_brain/services/execution_service.py - genera OrderSignal",
+    "coherence_service": "core_brain/services/coherence_service.py - compara shadow vs live",
+    "monitor": "core_brain/monitor.py - tracksmanual estado en tiempo real"
+  },
+  
+  "testing_requirements": {
+    "test_files": [
+      "tests/test_market_session_service.py",
+      "tests/test_imbalance_detector.py",
+      "tests/test_brk_open_0001_integration.py"
+    ],
+    "critical_validations": [
+      "FVG detection en M5/M15 con validación volumen",
+      "Pre-market window detection en UTC correcta",
+      "Instance ID UUID v4 generation y persistencia",
+      "Risk management respeta 1% capital y R2.0 TP",
+      "Regime veto bloquea entrada si H4 bear + M15 bull"
+    ]
+  },
+  
+  "membership_level": "PREMIUM",
+  "min_capital": 5000,
+  "min_account_leverage": 1,
+  "supported_instruments": [
+    "EURUSD",
+    "GBPUSD",
+    "USDJPY",
+    "GOLD",
+    "CRUDE"
+  ],
+  
+  "notes": {
+    "design_philosophy": "Institutional order flow detection using micro-structure analysis",
+    "competitive_advantage": "Early entry detection via Fair Value Gap before London open confirmation",
+    "institutional_footprint": "High volume on expansion candle = Institutional manipulation detected",
+    "future_enhancements": [
+      "V1.1: Order Block integration (estructura de SUPPLY/DEMAND definitiva)",
+      "V1.2: Multi-timeframe confluence (M5 + M15 + H1 alignment)",
+      "V2.0: Shadow portfolio performance tracking y coherence scoring"
+    ]
+  }
+}

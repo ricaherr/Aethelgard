@@ -67,7 +67,38 @@
   - 21/21 Tests PASSED | validate_all.py: 100% OK
   - Trace_ID: BLACK-SWAN-SENTINEL-2026-001
 
-- [ ] **Depredação de Contexto Optimizado**: Extensión del scanner inter-mercado con predicción (HU 2.2+).
+- [x] **Global Liquidity Clock (HU 2.2)** — ✅ COMPLETADO (2 de Marzo, 2026)
+  - **MarketSessionService**: Motor de sesiones globales (Sydney, Tokyo, London, NY)
+  - Métodos: `is_session_active()`, `get_pre_market_range()`, `get_session_liquidity_metrics()`
+  - Pre-market range detection: 30 minutos antes de apertura NY (18:00-18:30 UTC)
+  - Cálculos UTC correctos con soporte para timezones múltiples
+  - Persistencia en DB (SSOT) con Trace_ID: SESSION-XXXXXXXX
+  - Integración: RiskManager consulta liquidez por sesión
+  - 22/22 Tests PASSED | validate_all.py: 100% OK
+  - Documentación: Payload de pre-market range incluido en BRK_OPEN_0001.json
+  - Trace_ID: EXEC-STRAT-OPEN-001
+
+- [x] **Detector de Ineficiencias (HU 3.3)** — ✅ COMPLETADO (2 de Marzo, 2026)
+  - **ImbalanceDetector**: Detección asíncrona de FVGs en M5/M15
+  - Métodos: `detect_fvg()`, `validate_institutional_footprint()`, `detect_imbalances_async()`, `generate_signal()`
+  - Validación de volumen para confirmar huella institucional
+  - Señales incluyen UUID v4 como Instance ID (SSOT Mnemonic)
+  - Persistencia en DB con trace_id para auditoría
+  - Integración: Signal Factory inyecta strategy_class_id + instance_id
+  - 18/18 Tests PASSED | validate_all.py: 100% OK
+  - Documentación: Signal payload structure en BRK_OPEN_0001.json
+  - Trace_ID: EXEC-STRAT-OPEN-001
+
+- [x] **Configuración de Estrategia S-0001 (HU 3.4)** — ✅ COMPLETADA (2 de Marzo, 2026)
+  - **BRK_OPEN_0001.json**: Schema de estrategia "NY Strike" completo
+  - Entry: 50% penetración del FVG, basado en ImbalanceDetector
+  - Exit: Unidades R dinámicas (R2.0 TP, R1.0 SL)
+  - Mnemonic: BRK_OPEN_NY_STRIKE
+  - UUID v4 Instance ID generation mandatory (per trade)
+  - Integración completa: MarketSessionService + ImbalanceDetector + LiquidityService + RegimeService
+  - Persistencia: strategies table con clase_id = BRK_OPEN_0001
+  - Trace_ID: EXEC-STRAT-OPEN-001
+
 - [ ] **The Pulse (Advanced Feedback)**: Lazo de retroalimentación de infraestructura avanzado (HU 5.3 final).
 - [x] **Coherence Drift Monitoring (HU 6.3)** — ✅ COMPLETADA (2 de Marzo, 2026)
   - Detector de divergencia Shadow vs Live execution (slippage + latencia)
