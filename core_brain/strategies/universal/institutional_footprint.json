@@ -1,0 +1,144 @@
+{
+  "strategy_id": "institutional_footprint",
+  "version": "1.0",
+  "description": "Institutional Footprint detection strategy using Fair Value Gaps and Order Blocks",
+  "author": "Aethelgard Trading System",
+  "published_date": "2026-03-02",
+  "trading_style": "Institutional Order Flow",
+  "indicators": {
+    "fvg": {
+      "type": "FVG",
+      "description": "Fair Value Gap detector (market imbalance zones)",
+      "timeframes": ["M15", "H1"]
+    },
+    "order_block_bullish": {
+      "type": "ORDER_BLOCK",
+      "description": "Bullish order block detection",
+      "lookback_bars": 20,
+      "min_body_ratio": 0.7
+    },
+    "order_block_bearish": {
+      "type": "ORDER_BLOCK",
+      "description": "Bearish order block detection",
+      "lookback_bars": 20,
+      "min_body_ratio": 0.7
+    },
+    "liquidity_cluster": {
+      "type": "LIQUIDITY_ZONES",
+      "description": "Previous swing highs/lows (liquidity levels)",
+      "lookback_periods": [50, 100]
+    },
+    "rsi": {
+      "type": "RSI",
+      "period": 14,
+      "source": "close"
+    },
+    "atr": {
+      "type": "ATR",
+      "period": 14
+    }
+  },
+  "entry_logic": {
+    "description": "Enter when FVG + Order Block align at liquidity level",
+    "conditions": [
+      {
+        "type": "AND",
+        "rules": [
+          {
+            "indicator": "fvg",
+            "operator": "has_bullish_imbalance",
+            "expected": true
+          },
+          {
+            "indicator": "order_block_bullish",
+            "operator": "is_present",
+            "expected": true
+          },
+          {
+            "indicator": "liquidity_cluster",
+            "operator": "price_touches_level",
+            "expected": true
+          },
+          {
+            "indicator": "rsi",
+            "operator": ">",
+            "threshold": 30,
+            "negate": false
+          }
+        ]
+      }
+    ],
+    "direction": "BUY",
+    "confidence": 0.85,
+    "position_sizing": {
+      "mode": "kelly_criterion",
+      "kelly_fraction": 0.25,
+      "base_risk_pct": 1.0
+    }
+  },
+  "exit_logic": {
+    "description": "Exit on FVG fill or ATR-based take profit",
+    "conditions": [
+      {
+        "type": "OR",
+        "rules": [
+          {
+            "indicator": "fvg",
+            "operator": "gap_filled",
+            "expected": true
+          },
+          {
+            "indicator": "rsi",
+            "operator": ">",
+            "threshold": 70,
+            "negate": false
+          }
+        ]
+      }
+    ],
+    "direction": "SELL",
+    "confidence": 0.70,
+    "take_profit_atr_multiplier": 2.0,
+    "stop_loss_atr_multiplier": 1.0
+  },
+  "risk_management": {
+    "max_leverage": 1.0,
+    "position_size_pct": 2.0,
+    "max_concurrent_trades": 3,
+    "max_daily_losses": 5.0,
+    "max_drawdown_pct": 10.0,
+    "stop_loss_mode": "atr_based",
+    "take_profit_mode": "atr_based"
+  },
+  "filters": {
+    "market_hours": {
+      "enabled": true,
+      "regions": ["LONDON", "NEW_YORK"]
+    },
+    "volatility_regime": {
+      "min_atr": 20,
+      "max_atr": 200,
+      "preferred_regime": "RANGE"
+    },
+    "liquidity_minimum": {
+      "trading_volume_threshold": 100000,
+      "bid_ask_spread_max_pips": 2.0
+    }
+  },
+  "backtesting": {
+    "min_profit_factor": 1.5,
+    "min_win_rate_pct": 55.0,
+    "max_consecutive_losses": 5,
+    "shadow_mode_duration_days": 30,
+    "promotion_to_live_criteria": {
+      "profit_factor_sustained": 1.8,
+      "win_rate_sustained": 60.0,
+      "max_drawdown_limit": 8.0
+    }
+  },
+  "audit": {
+    "trace_id_prefix": "INST_FOOTPRINT",
+    "log_all_decisions": true,
+    "shadow_tracking_enabled": true
+  }
+}

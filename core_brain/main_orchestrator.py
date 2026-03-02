@@ -1028,6 +1028,7 @@ async def main() -> None:
     from core_brain.notificator import get_notifier
     from core_brain.trade_closure_listener import TradeClosureListener
     from core_brain.edge_tuner import EdgeTuner
+    from core_brain.threshold_optimizer import ThresholdOptimizer
     
     print("=" * 50)
     print(">>> AETHELGARD ORCHESTRATOR STARTUP")
@@ -1127,14 +1128,57 @@ async def main() -> None:
     notifier = get_notifier()
     executor = OrderExecutor(risk_manager=risk_manager, storage=storage, notificator=notifier)
     
+    # ─────────────────────────────────────────────────────────────────
+    # HU 3.6 & 3.9: DUAL MOTOR INITIALIZATION
+    # ─────────────────────────────────────────────────────────────────
+    logger.info("🔄 Initializing Hybrid Runtime (MODE_LEGACY + MODE_UNIVERSAL)")
+    
+    # Import required components for dual-motor
+    from core_brain.legacy_strategy_executor import LegacyStrategyExecutor
+    from core_brain.universal_strategy_executor import UniversalStrategyExecutor
+    from core_brain.strategy_mode_selector import StrategyModeSelector, RuntimeMode
+    from core_brain.strategy_mode_adapter import StrategyModeAdapter
+    
+    # Get or initialize tenant ID (for now, "default_tenant")
+    tenant_id = "default_tenant"
+    
+    # Create executors
+    legacy_executor = LegacyStrategyExecutor(signal_factory=signal_factory)
+    universal_executor = UniversalStrategyExecutor(
+        indicator_provider=data_provider,
+        strategy_schemas_dir=None  # Uses default: core_brain/strategies/universal/
+    )
+    
+    # Create mode selector
+    mode_selector = StrategyModeSelector(
+        storage_manager=storage,
+        legacy_executor=legacy_executor,
+        universal_executor=universal_executor,
+        tenant_id=tenant_id,
+        trace_id="STARTUP-2026-001"
+    )
+    
+    # Initialize mode selector (loads tenant config from DB)
+    await mode_selector.initialize()
+    
+    logger.info(f"✅ Hybrid Runtime initialized | Current mode: {mode_selector.current_mode.value}")
+    
+    # Create adapter that makes StrategyModeSelector compatible with MainOrchestrator
+    strategy_adapter = StrategyModeAdapter(strategy_mode_selector=mode_selector)
+    
     # 3. Create Orchestrator
+    # Note: We pass strategy_adapter instead of signal_factory
+    # The adapter provides SignalFactory-like interface while delegating to StrategyModeSelector
     _orchestrator = MainOrchestrator(
         scanner=_scanner,
-        signal_factory=signal_factory,
+        signal_factory=strategy_adapter,  # Changed from signal_factory to strategy_adapter
         risk_manager=risk_manager,
         executor=executor,
         storage=storage
     )
+    
+    # Store references for API/control access
+    logger.info("🎛️  Strategy Mode Selector ready for hot-swap via API endpoint /api/tenant/config/strategy-mode")
     
     # 4. Start Scanner background thread (if needed by your architecture)
     # The ScannerEngine.run() usually runs in its own thread

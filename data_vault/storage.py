@@ -181,3 +181,119 @@ class StorageManager(
         finally:
             self._close_conn(conn)
 
+    async def get_tenant_config(self, tenant_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get tenant configuration from database (SSOT).
+        
+        Args:
+            tenant_id: Tenant identifier
+            
+        Returns:
+            Tenant config dict or None
+        """
+        try:
+            conn = self._get_conn()
+            cursor = conn.cursor()
+            
+            cursor.execute(
+                "SELECT value FROM system_state WHERE key = ?",
+                (f"tenant:{tenant_id}:config",)
+            )
+            row = cursor.fetchone()
+            
+            if row:
+                return json.loads(row[0]) if isinstance(row[0], str) else row[0]
+            
+            # Create default config if not found
+            default_config = {
+                "tenant_id": tenant_id,
+                "strategy_runtime_mode": "legacy"
+            }
+            await self.update_tenant_config(tenant_id, default_config)
+            return default_config
+        
+        except Exception as e:
+            logger.error(f"Error getting tenant config for '{tenant_id}': {e}")
+            return None
+        finally:
+            self._close_conn(conn)
+
+    async def update_tenant_config(self, tenant_id: str, updates: Dict[str, Any]) -> None:
+        """
+        Update tenant configuration in database (SSOT).
+        
+        Args:
+            tenant_id: Tenant identifier
+            updates: Dict with updates to apply
+        """
+        try:
+            conn = self._get_conn()
+            cursor = conn.cursor()
+            
+            # Get current config
+            cursor.execute(
+                "SELECT value FROM system_state WHERE key = ?",
+                (f"tenant:{tenant_id}:config",)
+            )
+            row = cursor.fetchone()
+            
+            if row:
+                current = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+            else:
+                current = {"tenant_id": tenant_id}
+            
+            # Merge updates
+            current.update(updates)
+            
+            # Persist
+            cursor.execute(
+                "INSERT OR REPLACE INTO system_state (key, value) VALUES (?, ?)",
+                (f"tenant:{tenant_id}:config", json.dumps(current))
+            )
+            conn.commit()
+            logger.info(f"Tenant config updated for '{tenant_id}'")
+        
+        except Exception as e:
+            logger.error(f"Error updating tenant config for '{tenant_id}': {e}")
+        finally:
+            self._close_conn(conn)
+
+    async def append_to_system_ledger(self, entry: Dict[str, Any]) -> None:
+        """
+        Append an entry to the system ledger (audit trail).
+        
+        Args:
+            entry: Event entry to log
+        """
+        try:
+            conn = self._get_conn()
+            cursor = conn.cursor()
+            
+            # Get current ledger
+            cursor.execute(
+                "SELECT value FROM system_state WHERE key = ?",
+                ("system_ledger",)
+            )
+            row = cursor.fetchone()
+            
+            if row:
+                ledger = json.loads(row[0]) if isinstance(row[0], str) else []
+            else:
+                ledger = []
+            
+            # Append entry
+            ledger.append(entry)
+            
+            # Persist
+            cursor.execute(
+                "INSERT OR REPLACE INTO system_state (key, value) VALUES (?, ?)",
+                ("system_ledger", json.dumps(ledger))
+            )
+            conn.commit()
+            logger.debug(f"Ledger entry appended: {entry.get('event_type', 'UNKNOWN')}")
+        
+        except Exception as e:
+            logger.error(f"Error appending to system ledger: {e}")
+        finally:
+            self._close_conn(conn)
+

@@ -76,6 +76,35 @@
   - Documentación: 06_STRATEGY_COHERENCE.md completada
   - Integración: RiskManager respeta veto; ExecutionService loguea shadow
   - Trace_ID: COHERENCE-DRIFT-2026-001
+- [x] **The Double Engine: Universal Strategy Runtime (HU 3.6 & HU 3.9)** — ✅ COMPLETADA (2 de Marzo, 2026)
+  - **HU 3.6: UniversalStrategyEngine** (Trace_ID: STRATEGY-GENESIS-2026-001)
+    - ✅ Intérprete de estrategias basado en Schema JSON (MODE_UNIVERSAL)
+    - ✅ Mapeo dinámico de indicadores (RSI, MA, FVG, etc.) vía IndicatorFunctionMapper
+    - ✅ Aislamiento total: fallos de lógica → STRATEGY_CRASH_VETO sin afectar sistema
+    - ✅ Memory-resident, 320 líneas (< 450 líneas)
+    - ✅ Validación de schema con StrategySchemaValidator
+    - ✅ Evaluación segura de condiciones con namespace aislado (safe eval)
+  - **HU 3.9: Hybrid Runtime Switch** (Trace_ID: STRATEGY-GENESIS-2026-001)
+    - ✅ StrategyModeSelector: alternar MODE_LEGACY vs MODE_UNIVERSAL
+    - ✅ Configuración por tenant en DB (SSOT: system_state) con strategy_runtime_mode
+    - ✅ Hot-swap capabil: switch_mode() con graceful shutdown y auditoría
+    - ✅ Forbid ambiguity: initialize() rechaza configs incompletas
+    - ✅ Ledger auditing: cada cambio de modo registrado en SYSTEM_LEDGER con timestamp
+  - **Componentes Integrados:**
+    - ✅ LegacyStrategyExecutor: wrapper para Python-based strategies (oliver_velez, etc.)
+    - ✅ UniversalStrategyExecutor: delegador de JSON schemas con discovery automático
+    - ✅ StrategyModeAdapter: mantiene compatibilidad MainOrchestrator (generate_signals_batch)
+    - ✅ StorageManager: métodos get_tenant_config(), update_tenant_config(), append_to_system_ledger()
+  - **Migración Espejo:**
+    - ✅ institutional_footprint.json: esquema universal completo con indicators, logic, risk management
+    - ✅ core_brain/strategies/universal/: directorio para JSON schemas
+  - **Validación:**
+    - ✅ validate_all.py: 14/14 módulos PASSED (Architecture, QA Guard, Core Tests)
+    - ✅ Line count: UniversalStrategyEngine = 320 líneas (< 450)
+    - ✅ Dependency Injection: verificado en StrategyModeSelector constructor
+    - ✅ SSOT database: tenant config y ledger en system_state (SQLite)
+    - ✅ MainOrchestrator integración: dual-motor activo en startup
+
 - [ ] **Confidence Threshold Adaptive (HU 7.1)** — EN DESARROLLO
   - Optimizer que ajusta el umbral de confianza dinámicamente según desempeño histórico.
   - Detección de rachas de pérdidas → incrementa exigencia automáticamente.
