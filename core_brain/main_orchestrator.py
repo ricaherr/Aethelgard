@@ -46,6 +46,7 @@ from core_brain.signal_expiration_manager import SignalExpirationManager
 from core_brain.position_manager import PositionManager
 from core_brain.regime import RegimeClassifier
 from core_brain.edge_tuner import EdgeTuner
+from core_brain.threshold_optimizer import ThresholdOptimizer
 from core_brain.trade_closure_listener import TradeClosureListener
 from core_brain.strategy_ranker import StrategyRanker
 
@@ -320,7 +321,8 @@ class MainOrchestrator:
             self.trade_closure_listener = TradeClosureListener(
                 storage=self.storage,
                 risk_manager=self.risk_manager,
-                edge_tuner=EdgeTuner(storage=self.storage)
+                edge_tuner=EdgeTuner(storage=self.storage),
+                threshold_optimizer=ThresholdOptimizer(storage=self.storage)
             )
         else:
             self.trade_closure_listener = listener
@@ -1107,15 +1109,19 @@ async def main() -> None:
     # EdgeTuner (Parameter auto-calibration)
     edge_tuner = EdgeTuner(storage=storage)
     
+    # ThresholdOptimizer (Confidence threshold adaptation - HU 7.1)
+    threshold_optimizer = ThresholdOptimizer(storage=storage)
+    
     # Trade Closure Listener (Autonomous feedback loop)
     trade_listener = TradeClosureListener(
         storage=storage,
         risk_manager=risk_manager,
         edge_tuner=edge_tuner,
+        threshold_optimizer=threshold_optimizer,
         max_retries=3,
         retry_backoff=0.5
     )
-    logger.info("✅ TradeClosureListener initialized with idempotent event handling")
+    logger.info("✅ TradeClosureListener initialized with idempotent event handling | ThresholdOptimizer HU 7.1 enabled")
     
     # Order Executor
     notifier = get_notifier()

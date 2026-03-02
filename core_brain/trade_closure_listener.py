@@ -6,7 +6,8 @@ Listens for broker trade closure events and:
 1. Saves trade results to DB (with retry logic for lock handling)
 2. Updates RiskManager (record_trade_result)
 3. Triggers EdgeTuner.adjust_parameters()
-4. Maintains audit trail
+4. Triggers ThresholdOptimizer (confidence_threshold adaptation)
+5. Maintains audit trail
 
 Principle: Broker-agnostic. Receives standardized BrokerTradeClosedEvent.
 """
@@ -19,6 +20,7 @@ import time
 from data_vault.storage import StorageManager
 from core_brain.risk_manager import RiskManager
 from core_brain.edge_tuner import EdgeTuner
+from core_brain.threshold_optimizer import ThresholdOptimizer
 from models.broker_event import BrokerTradeClosedEvent, BrokerEvent, BrokerEventType
 
 logger = logging.getLogger(__name__)
@@ -47,6 +49,7 @@ class TradeClosureListener:
         storage: StorageManager,
         risk_manager: RiskManager,
         edge_tuner: EdgeTuner,
+        threshold_optimizer: Optional[ThresholdOptimizer] = None,
         max_retries: int = 3,
         retry_backoff: float = 0.5
     ):
@@ -57,12 +60,14 @@ class TradeClosureListener:
             storage: StorageManager for DB persistence
             risk_manager: RiskManager for lockdown/risk tracking
             edge_tuner: EdgeTuner for parameter adjustment
+            threshold_optimizer: ThresholdOptimizer for adaptive confidence thresholds
             max_retries: How many times to retry on DB lock
             retry_backoff: Seconds to wait between retries
         """
         self.storage = storage
         self.risk_manager = risk_manager
         self.edge_tuner = edge_tuner
+        self.threshold_optimizer = threshold_optimizer
         self.max_retries = max_retries
         self.retry_backoff = retry_backoff
         
@@ -71,10 +76,12 @@ class TradeClosureListener:
         self.trades_saved = 0
         self.trades_failed = 0
         self.tuner_adjustments = 0
+        self.threshold_optimizations = 0
         
         logger.info(
             f"TradeClosureListener initialized: max_retries={max_retries}, "
-            f"retry_backoff={retry_backoff}s"
+            f"retry_backoff={retry_backoff}s | "
+            f"ThresholdOptimizer: {'enabled' if threshold_optimizer else 'disabled'}"
         )
     
     async def _is_trade_already_processed(self, trade: BrokerTradeClosedEvent) -> bool:
@@ -177,6 +184,13 @@ class TradeClosureListener:
         # Original parameter tuning (Legacy, periodic or on stress)
         if self.trades_saved % 5 == 0 or self.risk_manager.consecutive_losses >= 3:
             await self._trigger_tuner(trade_event)
+            
+            # === STEP 4.5: Trigger Threshold Optimization (HU 7.1) ===
+            if self.threshold_optimizer:
+                await self._trigger_threshold_optimizer(
+                    account_id=trade_event.account_id or "default",
+                    trace_id=f"ADAPTIVE-THRESHOLD-{datetime.now().strftime('%Y%m%d%H%M')}"
+                )
         
         # === STEP 5: Audit Log ===
         result_str = "WIN" if is_win else "LOSS"
@@ -316,6 +330,49 @@ class TradeClosureListener:
             logger.error(f"Error triggering tuner: {e}", exc_info=True)
             return False
     
+    async def _trigger_threshold_optimizer(
+        self, account_id: str, trace_id: str
+    ) -> bool:
+        """
+        Trigger ThresholdOptimizer to adaptively adjust confidence threshold.
+        
+        Activation Logic:
+        - Every 5 successful trades (periodic)
+        - When consecutive losses >= 3 (loss streak detection)
+        
+        Args:
+            account_id: Account to optimize
+            trace_id: Trace ID for observability
+        
+        Returns:
+            True if optimization triggered, False otherwise
+        """
+        if not self.threshold_optimizer:
+            return False
+        
+        try:
+            result = await self.threshold_optimizer.optimize_threshold(
+                account_id=account_id,
+                trace_id=trace_id
+            )
+            
+            if result.get("delta") and abs(result["delta"]) > 1e-6:
+                self.threshold_optimizations += 1
+                reason = result.get("reason", "UNKNOWN")
+                logger.info(
+                    f"[THRESHOLD_OPTIMIZER] Confidence threshold optimized: "
+                    f"{result['old_threshold']:.3f} → {result['new_threshold']:.3f} "
+                    f"(Δ={result['delta']:+.3f}) | Reason: {reason} | Trace_ID: {trace_id}"
+                )
+                return True
+            else:
+                logger.debug(f"[THRESHOLD_OPTIMIZER] No adjustment needed ({result.get('reason')})")
+                return False
+        
+        except Exception as e:
+            logger.error(f"Error triggering threshold optimizer: {e}", exc_info=True)
+            return False
+    
     def get_metrics(self) -> dict:
         """
         Get listener metrics for monitoring.
@@ -328,6 +385,7 @@ class TradeClosureListener:
             "trades_saved": self.trades_saved,
             "trades_failed": self.trades_failed,
             "tuner_adjustments": self.tuner_adjustments,
+            "threshold_optimizations": self.threshold_optimizations,
             "success_rate": (
                 self.trades_saved / self.trades_processed * 100
                 if self.trades_processed > 0 else 0.0
@@ -340,4 +398,5 @@ class TradeClosureListener:
         self.trades_saved = 0
         self.trades_failed = 0
         self.tuner_adjustments = 0
+        self.threshold_optimizations = 0
         logger.info("Listener metrics reset")

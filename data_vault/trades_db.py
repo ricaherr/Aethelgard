@@ -421,3 +421,77 @@ class TradesMixin(BaseRepository):
             logger.error(f"Error clearing ghost positions: {e}")
         finally:
             self._close_conn(conn)
+    def get_account_trades(self, account_id: str, limit: int = 20) -> List[Dict]:
+        """
+        Get recent trades for a specific account (for Equity Curve analysis).
+        
+        Args:
+            account_id: Account ID to retrieve trades for
+            limit: Maximum number of trades to return
+        
+        Returns:
+            List of trade dicts with normalized fields (is_win, pnl, etc.)
+        
+        Note: Currently returns recent trades since trade_results doesn't have account_id.
+              In future multi-tenant refactoring, this will filter by account_id.
+        """
+        # For now, use get_recent_trades as base
+        # TODO: Update when trade_results schema adds account_id column
+        trades = self.get_recent_trades(limit=limit)
+        return trades
+    
+    def log_threshold_adjustment(
+        self,
+        account_id: str,
+        old_threshold: float,
+        new_threshold: float,
+        reason: str,
+        governance_note: str = "",
+        win_rate: float = 0.0,
+        consecutive_losses: int = 0,
+        trace_id: str = ""
+    ) -> None:
+        """
+        Log a confidence threshold adjustment for auditability.
+        
+        Args:
+            account_id: Account that was adjusted
+            old_threshold: Previous threshold value
+            new_threshold: New threshold value
+            reason: Reason for adjustment (e.g., "LOSS_STREAK(4)")
+            governance_note: Safety Governor notes if applicable
+            win_rate: Win rate at time of adjustment
+            consecutive_losses: Consecutive loss count at time of adjustment
+            trace_id: Trace ID for observability (ADAPTIVE-THRESHOLD-2026-001)
+        """
+        import json
+        from datetime import datetime, timezone
+        
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            
+            adjustment_data = {
+                "account_id": account_id,
+                "old_threshold": old_threshold,
+                "new_threshold": new_threshold,
+                "delta": new_threshold - old_threshold,
+                "reason": reason,
+                "governance_note": governance_note,
+                "win_rate": win_rate,
+                "consecutive_losses": consecutive_losses,
+                "trace_id": trace_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            
+            cursor.execute("""
+                INSERT INTO tuning_adjustments (adjustment_data)
+                VALUES (?)
+            """, (json.dumps(adjustment_data),))
+            
+            conn.commit()
+            logger.debug(f"[THRESHOLD_ADJUSTMENT_LOG] Trade {trace_id}: {new_threshold - old_threshold:+.4f}")
+        except Exception as e:
+            logger.error(f"Error logging threshold adjustment: {e}")
+        finally:
+            self._close_conn(conn)

@@ -70,7 +70,12 @@
 - [ ] **Depredação de Contexto Optimizado**: Extensión del scanner inter-mercado con predicción (HU 2.2+).
 - [ ] **The Pulse (Advanced Feedback)**: Lazo de retroalimentación de infraestructura avanzado (HU 5.3 final).
 - [ ] **Coherence Drift Monitoring**: Divergencia modelo vs ejecución en vivo (HU 6.3).
-- [ ] **Confidence Threshold Adaptive**: Optimización dinámica por histórico reciente (HU 7.1).
+- [ ] **Confidence Threshold Adaptive (HU 7.1)** — EN DESARROLLO
+  - Optimizer que ajusta el umbral de confianza dinámicamente según desempeño histórico.
+  - Detección de rachas de pérdidas → incrementa exigencia automáticamente.
+  - Equity Curve Feedback Loop integrado.
+  - Safety Governor con límites de suavizado (Max 5% delta por ciclo de aprendizaje).
+  - Trace_ID: ADAPTIVE-THRESHOLD-2026-001
 - [ ] **Autonomous Heartbeat & Self-Healing**: Monitoreo vital continuo y auto-recuperación (HU 10.1).
 
 ---
