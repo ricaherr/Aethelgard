@@ -20,7 +20,7 @@ interface AethelgardContextType {
 const AethelgardContext = createContext<AethelgardContextType | undefined>(undefined);
 
 export function AethelgardProvider({ children }: { children: ReactNode }) {
-    const { token } = useAuthContext();
+    const { isAuthenticated } = useAuthContext();
     const { apiFetch } = useApi();
     const [regime, setRegime] = useState<MarketRegime>('NORMAL');
     const [signals, setSignals] = useState<Signal[]>([]);
@@ -88,13 +88,13 @@ export function AethelgardProvider({ children }: { children: ReactNode }) {
     }, []);
 
     const connect = useCallback(() => {
-        if (!token) return;
+        if (!isAuthenticated) return;
         if (ws.current?.readyState === WebSocket.OPEN || ws.current?.readyState === WebSocket.CONNECTING) return;
 
         // Determine WS URL (handling dev/prod)
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const host = window.location.hostname === 'localhost' ? 'localhost:8000' : window.location.host;
-        const wsUrl = `${protocol}//${host}/ws/GENERIC/dashboard_nextgen?token=${token}`;
+        const wsUrl = `${protocol}//${host}/ws/GENERIC/dashboard_nextgen`;
 
         console.log('🔌 [CONTEXT] Connecting to Brain WebSocket...');
         const socket = new WebSocket(wsUrl);
@@ -124,11 +124,11 @@ export function AethelgardProvider({ children }: { children: ReactNode }) {
         socket.onerror = (err) => {
             console.error('⚠️ [CONTEXT] WebSocket Error:', err);
         };
-    }, [token, handleIncomingData]);
+    }, [isAuthenticated, handleIncomingData]);
 
     // WebSocket Lifecycle
     useEffect(() => {
-        if (token) {
+        if (isAuthenticated) {
             connect();
         }
         return () => {
@@ -138,11 +138,11 @@ export function AethelgardProvider({ children }: { children: ReactNode }) {
             }
             if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
         };
-    }, [token, connect]);
+    }, [isAuthenticated, connect]);
 
     // Shared Status Polling
     useEffect(() => {
-        if (!token) return;
+        if (!isAuthenticated) return;
 
         const fetchSharedStatus = async () => {
             try {
@@ -161,7 +161,7 @@ export function AethelgardProvider({ children }: { children: ReactNode }) {
         fetchSharedStatus();
         const interval = setInterval(fetchSharedStatus, 20000);
         return () => clearInterval(interval);
-    }, [token, apiFetch]);
+    }, [isAuthenticated, apiFetch]);
 
     const sendCommand = useCallback((action: string, params: any = {}) => {
         if (ws.current?.readyState === WebSocket.OPEN) {

@@ -216,6 +216,12 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             enabled BOOLEAN DEFAULT 1,
             supports_data BOOLEAN DEFAULT 0,
             supports_exec BOOLEAN DEFAULT 0,
+            priority INTEGER DEFAULT 50,
+            requires_auth BOOLEAN DEFAULT 0,
+            api_key TEXT,
+            api_secret TEXT,
+            additional_config TEXT,
+            is_system BOOLEAN DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -410,9 +416,21 @@ def run_migrations(conn: sqlite3.Connection) -> None:
     # data_providers: add capability columns if missing
     cursor.execute("PRAGMA table_info(data_providers)")
     dp_cols = [r[1] for r in cursor.fetchall()]
-    for col, col_type in [("type", "TEXT DEFAULT 'api'"), ("supports_data", "BOOLEAN DEFAULT 0"), ("supports_exec", "BOOLEAN DEFAULT 0")]:
+    migrations_to_add = [
+        ("type", "TEXT DEFAULT 'api'"),
+        ("supports_data", "BOOLEAN DEFAULT 0"),
+        ("supports_exec", "BOOLEAN DEFAULT 0"),
+        ("priority", "INTEGER DEFAULT 50"),
+        ("requires_auth", "BOOLEAN DEFAULT 0"),
+        ("api_key", "TEXT"),
+        ("api_secret", "TEXT"),
+        ("additional_config", "TEXT"),
+        ("is_system", "BOOLEAN DEFAULT 0"),
+    ]
+    for col, col_type in migrations_to_add:
         if col not in dp_cols:
             cursor.execute(f"ALTER TABLE data_providers ADD COLUMN {col} {col_type}")
+            logger.info(f"Migration applied: data_providers.{col} added.")
 
     # broker_accounts: add capability columns if missing
     cursor.execute("PRAGMA table_info(broker_accounts)")

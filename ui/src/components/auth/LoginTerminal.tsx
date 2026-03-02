@@ -26,12 +26,15 @@ export function LoginTerminal() {
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
                 },
+                credentials: 'include',  // CRITICAL: Auto-attach & store HttpOnly cookies
                 body: formData.toString()
             });
 
             if (res.ok) {
                 const data = await res.json();
-                login(data.access_token);
+                // Token is now in HttpOnly cookie (auto-managed by browser)
+                // Set user context with returned data
+                login(data.user_id, data.tenant_id, data.email, data.role);
                 // The AuthGuard will automatically re-render and show the dashboard
             } else {
                 const errorData = await res.json();

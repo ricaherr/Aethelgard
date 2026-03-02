@@ -58,3 +58,48 @@ class AuthService:
             return None
         except Exception:
             return None
+    
+    def verify_token(self, token: str) -> Optional[TokenPayload]:
+        """
+        Alias for decode_token - verifies JWT signature and returns payload.
+        Used in SessionManager for token validation.
+        
+        Returns:
+            TokenPayload if valid, None if invalid/expired
+        """
+        return self.decode_token(token)
+    
+    def create_refresh_token(self, subject: str, tenant_id: str, expires_delta: Optional[timedelta] = None) -> str:
+        """
+        Create a refresh token (longer lifetime than access token).
+        
+        Refresh tokens:
+        - Expire in 30 days (vs 15 min for access tokens)
+        - Can be used to get new access tokens
+        - Stored in HttpOnly cookies
+        - Never exposed to JavaScript
+        
+        Args:
+            subject: User ID
+            tenant_id: Tenant identifier
+            expires_delta: Custom expiration (default: 30 days)
+            
+        Returns:
+            Encoded JWT refresh token
+        """
+        if expires_delta:
+            expire = datetime.now(timezone.utc) + expires_delta
+        else:
+            # 30 days for refresh tokens (much longer than access tokens)
+            expire = datetime.now(timezone.utc) + timedelta(days=30)
+        
+        payload = TokenPayload(
+            sub=subject,
+            tid=tenant_id,
+            exp=expire.timestamp(),
+            role="user",
+            token_type="refresh"  # Mark as refresh token
+        )
+        
+        encoded_jwt = jwt.encode(payload.model_dump(), self.secret_key, algorithm=ALGORITHM)
+        return encoded_jwt

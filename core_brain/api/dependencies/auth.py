@@ -1,8 +1,9 @@
 import os
-from fastapi import Depends, HTTPException, status, Request
+from fastapi import Depends, HTTPException, status, Request, Cookie
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from core_brain.services.auth_service import AuthService
 from models.auth import TokenPayload
+from typing import Optional
 
 security = HTTPBearer()
 
@@ -11,15 +12,26 @@ def get_auth_service() -> AuthService:
 
 async def get_current_active_user(
     request: Request,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    a_token: Optional[str] = Cookie(None),
     auth_service: AuthService = Depends(get_auth_service)
 ) -> TokenPayload:
     """
     El Guardia de Puerta (Auth Gateway).
-    Valida el JWT e inyecta el token (con el tenant_id) en el flujo de la petición.
+    Valida el JWT desde HttpOnly cookie.
+    Extrae el token de la cookie 'a_token' (access token).
     Rechaza inmediatamente con HTTP_401_UNAUTHORIZED si no es válido o expirado.
     """
-    token = credentials.credentials
+    
+    # 1. Leer token de cookie HttpOnly
+    token = a_token
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # 2. Validar y decodificar JWT
     token_data = auth_service.decode_token(token)
     
     if token_data is None:
@@ -29,7 +41,7 @@ async def get_current_active_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    # Inyectar tenant_id en el contexto HTTP para que StorageManager u otros puedan leerlo (Protocolo de Aislamiento)
+    # 3. Inyectar tenant_id en el contexto HTTP (Protocolo de Aislamiento)
     request.state.tenant_id = token_data.tid
     request.state.user_id = token_data.sub
     

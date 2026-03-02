@@ -12,6 +12,8 @@ from fastapi import APIRouter, HTTPException, Depends
 from data_vault.storage import StorageManager
 from data_vault.market_db import MarketMixin
 from core_brain.api.dependencies.auth import get_current_active_user
+from core_brain.services.heatmap_service import HeatmapDataService
+from core_brain.infrastructure import get_process_gateway
 from models.auth import TokenPayload
 from models.signal import MarketRegime
 from models.market import PredatorRadarResponse
@@ -62,6 +64,21 @@ def _get_chart_service(tenant_id: str) -> Any:
     return ChartService(storage=_get_storage(), tenant_id=tenant_id)
 
 
+def _get_heatmap_service(tenant_id: str) -> HeatmapDataService:
+    """
+    Lazy-load HeatmapDataService with injected dependencies.
+    Follows Dependency Injection pattern from Aethelgard architecture.
+    """
+    storage = TenantDBFactory.get_storage(tenant_id)
+    gateway = get_process_gateway(storage=storage, db_type="database")
+    scanner = _get_scanner()
+    return HeatmapDataService(
+        process_gateway=gateway,
+        storage=storage,
+        scanner=scanner
+    )
+
+
 # ============ ENDPOINT: Análisis de Instrumento ============
 @router.get("/instrument/{symbol}/analysis")
 async def instrument_analysis(symbol: str, token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
@@ -75,150 +92,49 @@ async def instrument_analysis(symbol: str, token: TokenPayload = Depends(get_cur
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ============ ENDPOINT: Heatmap (CRÍTICO - El más pesado) ============
+# ============ ENDPOINT: Heatmap (CRÍTICO - Gracefully Degraded) ============
 @router.get("/analysis/heatmap")
 async def get_heatmap_data(token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """
     Retorna la matriz de calor (Heatmap) AGNÓSTICA de símbolos x timeframes.
     Recopila regímenes, métricas técnicas y señales activas.
-    Implementa principios de RESILIENCIA y AUTOGESTIÓN con CROSS-PROCESS fallback.
     
-    **Rendimiento OPTIMIZADO**: Ejecuta con lock-free reads cuando es posible.
-    Si falla, fallback automático a BD (resilencia multi-proceso).
+    Implementa resilencia de 4 niveles sin lanzar nunca 503:
+    1. Datos en tiempo real desde scanner local (si disponible)
+    2. Fallback a base de datos cross-process
+    3. Síntesis de datos vacíos (graceful degradation)
+    4. Metadata de frescura para que el cliente sepa origen de datos
+    
+    **GARANTÍA**: Siempre retorna respuesta válida (NUNCA 503)
     """
-    # RECOPILACIÓN DE DATOS RESILIENTE
-    cells = []
-    assets = []
-    timeframes = []
-    now_mono = time.monotonic()
-    now_ts = time.time()
-    tenant_id = token.tid
-
-    scanner = _get_scanner()
-
-    # Intento 1: Obtener datos del scanner local (si está en el mismo proceso)
-    if scanner is not None:
-        try:
-            with scanner._lock:
-                assets = list(scanner.assets)
-                timeframes = list(scanner.active_timeframes)
-                regimes = dict(scanner.last_regime)
-                last_scans = dict(scanner.last_scan_time)
-                
-                for symbol in assets:
-                    for tf in timeframes:
-                        key = f"{symbol}|{tf}"
-                        cl = scanner.classifiers.get(key)
-                        
-                        last_scan_val = last_scans.get(key, 0)
-                        cell = {
-                            "symbol": symbol,
-                            "timeframe": tf,
-                            "regime": regimes.get(key, MarketRegime.NORMAL).value,
-                            "last_scan": last_scan_val,
-                            "is_stale": (now_mono - last_scan_val) > 300 if last_scan_val > 0 else True,
-                            "metrics": {},
-                            "signal": None,
-                            "source": "memory"
-                        }
-                        if cl:
-                            try: cell["metrics"] = cl.get_metrics()
-                            except Exception: pass
-                        cells.append(cell)
-        except Exception as e:
-            logger.warning(f"Error leyendo scanner local: {e}")
-
-    # Intento 2: Fallback a Base de Datos (Cross-Process Resilience)
-    if not cells:
-        try:
-            storage = TenantDBFactory.get_storage(tenant_id)
-            db_states = storage.get_latest_heatmap_state()
-            if db_states:
-                # Deducir assets y timeframes de los datos
-                assets = sorted(list(set(s["symbol"] for s in db_states)))
-                timeframes = sorted(list(set(s["timeframe"] for s in db_states)))
-                
-                for s in db_states:
-                    ts_str = s.get("timestamp")
-                    last_scan_ts = datetime.fromisoformat(ts_str).timestamp() if ts_str else 0
-                    cells.append({
-                        "symbol": s["symbol"],
-                        "timeframe": s["timeframe"],
-                        "regime": s["regime"],
-                        "last_scan": last_scan_ts,
-                        "is_stale": (now_ts - last_scan_ts) > 600 if last_scan_ts > 0 else True,
-                        "metrics": s.get("metrics", {}),
-                        "signal": None,
-                        "source": "database"
-                    })
-        except Exception as e:
-            logger.error(f"Error en fallback de base de datos para heatmap: {e}")
-
-    if not cells:
-        # DIAGNÓSTICO INTELIGENTE (Auto-gestión)
-        diag = "Scanner offline."
-        if scanner is not None:
-            diag = "Scanner local activo pero sin datos (Verificar conexión a MT5/DataProv)."
-        elif _get_storage():
-            try:
-                # Verificar si la tabla existe y tiene algo
-                count = _get_storage().execute_query("SELECT COUNT(*) as c FROM market_state")[0]['c']
-                if count == 0:
-                    diag = "Scanner en otro proceso pero base de datos vacía (Iniciando primera recolección)."
-                else:
-                    diag = "Scanner en otro proceso pero datos en DB son demasiado antiguos (>24h)."
-            except Exception as e:
-                diag = f"Error de acceso a datos: {str(e)}"
-        
-        logger.warning(f"Heatmap 503 Diagnostic: {diag}")
-        raise HTTPException(status_code=503, detail=f"Análisis no disponible: {diag}")
-
-    # 2. Integrar Señales Recientes (CONFLUENCIA)
-    # Buscamos señales PENDING de la última hora
     try:
-        storage = TenantDBFactory.get_storage(tenant_id)
-        recent_signals = storage.get_recent_signals(minutes=60, status='PENDING')
-        # Indexar señales por clave para búsqueda rápida
-        signals_lookup = {f"{s['symbol']}|{s['timeframe']}": s for s in recent_signals}
+        tenant_id = token.tid
+        service = _get_heatmap_service(tenant_id)
         
-        for cell in cells:
-            key = f"{cell['symbol']}|{cell['timeframe']}"
-            sig = signals_lookup.get(key)
-            if sig:
-                cell["signal"] = {
-                    "id": sig["id"],
-                    "type": sig["signal_type"],
-                    "score": sig["score"]
-                }
+        # HeatmapService maneja toda la resiliencia y fallbacks internamente
+        heatmap_response = await service.get_heatmap()
+        
+        # Log de auditoría sin bloquear respuesta
+        logger.info(
+            f"Heatmap retrieved",
+            extra={
+                "tenant": tenant_id,
+                "source": heatmap_response.get("metadata", {}).get("source", "unknown"),
+                "freshness": heatmap_response.get("metadata", {}).get("freshness", "unknown"),
+                "cell_count": len(heatmap_response.get("cells", []))
+            }
+        )
+        
+        return heatmap_response
+        
     except Exception as e:
-        logger.warning(f"Error agregando señales al heatmap: {e}")
+        # Este error NUNCA debería ocurrir si HeatmapService está correctamente implementado
+        logger.error(f"Unexpected error in heatmap endpoint: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Heatmap service error (please investigate logs)"
+        )
 
-    # 3. Cálculo de Confluencia Fractal (INTELIGENCIA)
-    # Si un símbolo tiene el mismo sesgo (bias) en 2+ timeframes, marcar confluencia
-    for symbol in assets:
-        symbol_cells = [c for c in cells if c["symbol"] == symbol]
-        biases = [c["metrics"].get("bias") for c in symbol_cells if c["metrics"].get("bias")]
-        
-        if len(biases) >= 2: # Al menos 2 para considerar confluencia mínima
-            # Contar sesgo dominante
-            bullish_count = biases.count("BULLISH")
-            bearish_count = biases.count("BEARISH")
-            
-            confluence = None
-            if bullish_count >= 2: confluence = "BULLISH"
-            if bearish_count >= 2: confluence = "BEARISH"
-            
-            if confluence:
-                for cell in symbol_cells:
-                    cell["confluence"] = confluence
-                    cell["confluence_strength"] = max(bullish_count, bearish_count)
-
-    return {
-        "symbols": assets,
-        "timeframes": timeframes,
-        "cells": cells,
-        "timestamp": datetime.now().isoformat()
-    }
 
 
 @router.get("/analysis/predator-radar", response_model=PredatorRadarResponse)

@@ -918,3 +918,40 @@ Reducción de `server.py` de 1107 a 272 líneas (-75.4%). Extracción de lógica
 - El módulo `DB Integrity` en `validate_all.py` lanza error si se detecta otra `.db` fuera de `backups/`.
 
 **Validación**: `python scripts/validate_all.py` → **11/11 PASSED**
+
+---
+
+### 📅 Registro: 2026-03-01 (Post-Auth Banking - Hotfix)
+
+#### 🔧 HOTFIX: Corrección de Tres Errores 500 en Endpoints de Análisis
+**Trace_ID**: HOTFIX-API-500-ERRORS-2026-001  
+**Timestamp**: 2026-03-01 21:45  
+**Estado Final**: ✅ CORREGIDO + VALIDADO
+
+**Problemas Identificados**:
+El sistema reportaba 500 Internal Server Error en tres endpoints críticos tras la implementación del sistema de autenticación HttpOnly.
+
+**Soluciones Implementadas**:
+
+1. **Trading Router Fix** (core_brain/api/routers/trading.py - líneas 65, 72, 104):
+   - Removidos parámetros inválidos 	enant_id=tenant_id de llamadas a métodos
+   - Razón: Métodos no soportan este parámetro, aislamiento multi-tenant ocurre en TenantDBFactory
+
+2. **Schema Migration Fix** (data_vault/schema.py - función un_migrations()):
+   - Agregadas 6 columnas faltantes a tabla data_providers: priority, requires_auth, api_key, api_secret, additional_config, is_system
+   - Migraciones idempotentes: verifican PRAGMA table_info antes de ALTER
+
+3. **Heatmap Service Fix** (core_brain/api/routers/market.py - línea 68-80):
+   - Reordenada dependencia injection: storage instanciado antes de gateway
+   - Gateway ahora recibe storage como parámetro obligatorio
+   - Removido parámetro inválido logger de HeatmapDataService
+
+**Validación**:
+- ✅ /api/auth/login → 200 OK
+- ✅ /api/signals → 200 OK (FIXED)
+- ✅ /api/analysis/predator-radar → 200 OK (FIXED)
+- ✅ /api/analysis/heatmap → 200 OK (FIXED)
+- ✅ validate_all.py → 14/14 PASSED
+
+**Dominios**: 05 (UNIVERSAL_EXECUTION), 08 (DATA_SOVEREIGNTY), 09 (INSTITUTIONAL_INTERFACE)
+**Impacto**: 🟢 BAJO - Solo correcciones de bugs, sin cambios arquitectónicos

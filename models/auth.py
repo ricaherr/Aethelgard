@@ -10,6 +10,7 @@ class TokenPayload(BaseModel):
     tid: str        # Tenant ID
     exp: float      # Expiration
     role: str       # User role
+    token_type: Optional[str] = "access"  # 'access' or 'refresh' (Phase 3 security upgrade)
 
 class TokenResponse(BaseModel):
     access_token: str

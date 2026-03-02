@@ -1,74 +1,88 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { jwtDecode } from 'jwt-decode';
-
-interface DecodedToken {
-    sub: string;
-    tid: string; // Backend uses 'tid' for tenant_id
-    role?: string;
-    exp: number;
-}
 
 interface AuthContextType {
-    token: string | null;
+    userId: string | null;
+    email: string | null;
     tenantId: string | null;
+    role: string | null;
     isAuthenticated: boolean;
     isLoading: boolean;
-    login: (newToken: string) => void;
-    logout: () => void;
+    login: (userId: string, tenantId: string, email: string, role: string) => void;
+    logout: () => Promise<void>;
+    checkAuth: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-    const [token, setToken] = useState<string | null>(localStorage.getItem('aethelgard_token'));
+    const [userId, setUserId] = useState<string | null>(null);
+    const [email, setEmail] = useState<string | null>(null);
     const [tenantId, setTenantId] = useState<string | null>(null);
+    const [role, setRole] = useState<string | null>(null);
     const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
     const [isLoading, setIsLoading] = useState<boolean>(true);
 
+    // On mount, check if user has valid HttpOnly cookie session
     useEffect(() => {
-        validateToken(token);
-    }, [token]);
+        checkAuth();
+    }, []);
 
-    const validateToken = (currentToken: string | null) => {
-        if (!currentToken) {
-            setIsAuthenticated(false);
-            setTenantId(null);
-            setIsLoading(false);
-            return;
-        }
-
+    const checkAuth = async () => {
         try {
-            const decoded = jwtDecode<DecodedToken>(currentToken);
-            const isExpired = decoded.exp * 1000 < Date.now();
+            const res = await fetch('/api/auth/me', {
+                credentials: 'include',  // Critical: send HttpOnly cookies
+            });
 
-            if (isExpired) {
-                console.warn('⚠️ Session expired.');
-                logout();
-            } else {
-                setTenantId(decoded.tid);
+            if (res.ok) {
+                const data = await res.json();
+                setUserId(data.user_id);
+                setEmail(data.email);
+                setTenantId(data.tenant_id);
+                setRole(data.role);
                 setIsAuthenticated(true);
+            } else {
+                // No valid session
+                setIsAuthenticated(false);
+                setUserId(null);
+                setEmail(null);
+                setTenantId(null);
+                setRole(null);
             }
         } catch (error) {
-            console.error('❌ Session corrupted:', error);
-            logout();
+            console.error('❌ Auth check failed:', error);
+            setIsAuthenticated(false);
+        } finally {
+            setIsLoading(false);
         }
-        setIsLoading(false);
     };
 
-    const login = (newToken: string) => {
-        localStorage.setItem('aethelgard_token', newToken);
-        setToken(newToken);
+    const login = (userId: string, tenantId: string, email: string, role: string) => {
+        setUserId(userId);
+        setEmail(email);
+        setTenantId(tenantId);
+        setRole(role);
+        setIsAuthenticated(true);
     };
 
-    const logout = () => {
-        localStorage.removeItem('aethelgard_token');
-        setToken(null);
-        setTenantId(null);
-        setIsAuthenticated(false);
+    const logout = async () => {
+        try {
+            await fetch('/api/auth/logout', {
+                method: 'POST',
+                credentials: 'include',  // Critical: send HttpOnly cookies for revocation
+            });
+        } catch (error) {
+            console.error('❌ Logout failed:', error);
+        } finally {
+            setIsAuthenticated(false);
+            setUserId(null);
+            setEmail(null);
+            setTenantId(null);
+            setRole(null);
+        }
     };
 
     return (
-        <AuthContext.Provider value={{ token, tenantId, isAuthenticated, isLoading, login, logout }}>
+        <AuthContext.Provider value={{ userId, email, tenantId, role, isAuthenticated, isLoading, login, logout, checkAuth }}>
             {children}
         </AuthContext.Provider>
     );

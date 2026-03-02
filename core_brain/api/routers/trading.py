@@ -65,12 +65,11 @@ async def get_signals(
             limit=limit,
             symbol=symbols,
             timeframe=timeframes,
-            status=status,
-            tenant_id=tenant_id
+            status=status
         )
         
         # Obtener estados de mercado para flag has_chart
-        market_state = storage.get_all_market_states(tenant_id=tenant_id) or {}
+        market_state = storage.get_all_market_states() or {}
         
         # Filter results in memory for metadata-based fields
         filtered = all_signals
@@ -102,7 +101,7 @@ async def get_signals(
         if signal_ids:
             placeholders = ','.join(['?'] * len(signal_ids))
             trace_query = f"SELECT DISTINCT signal_id FROM signal_pipeline WHERE signal_id IN ({placeholders})"
-            trace_results = storage.execute_query(trace_query, tuple(signal_ids), tenant_id=tenant_id)
+            trace_results = storage.execute_query(trace_query, tuple(signal_ids))
             has_trace_set = {r['signal_id'] for r in trace_results}
 
         # Format signals for frontend
@@ -134,7 +133,7 @@ async def get_signals(
             # Augmentar con info de trades si están EXECUTED
             if sig_status == 'EXECUTED':
                 # Buscar en trade_results
-                result = storage.get_trade_result_by_signal_id(sig_id, tenant_id=tenant_id)
+                result = storage.get_trade_result_by_signal_id(sig_id)
                 if result:
                     formatted['live_status'] = 'CLOSED'
                     formatted['pnl'] = result.get('profit')
