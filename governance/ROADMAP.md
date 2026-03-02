@@ -69,7 +69,13 @@
 
 - [ ] **Depredação de Contexto Optimizado**: Extensión del scanner inter-mercado con predicción (HU 2.2+).
 - [ ] **The Pulse (Advanced Feedback)**: Lazo de retroalimentación de infraestructura avanzado (HU 5.3 final).
-- [ ] **Coherence Drift Monitoring**: Divergencia modelo vs ejecución en vivo (HU 6.3).
+- [x] **Coherence Drift Monitoring (HU 6.3)** — ✅ COMPLETADA (2 de Marzo, 2026)
+  - Detector de divergencia Shadow vs Live execution (slippage + latencia)
+  - CoherenceService: Cálculo de coherencia 0-100% con veto automático
+  - Tests: 14/14 PASSED | Configuración desde BD (SSOT)
+  - Documentación: 06_STRATEGY_COHERENCE.md completada
+  - Integración: RiskManager respeta veto; ExecutionService loguea shadow
+  - Trace_ID: COHERENCE-DRIFT-2026-001
 - [ ] **Confidence Threshold Adaptive (HU 7.1)** — EN DESARROLLO
   - Optimizer que ajusta el umbral de confianza dinámicamente según desempeño histórico.
   - Detección de rachas de pérdidas → incrementa exigencia automáticamente.

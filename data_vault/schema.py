@@ -574,6 +574,11 @@ def _seed_system_state(cursor: sqlite3.Cursor) -> None:
             "global_log_level": "INFO",
             "performance_mode": 0,
             "auto_start_mt5": 1
+        },
+        "coherence_config": {
+            "min_coherence_threshold": 0.80,
+            "max_performance_degradation": 0.15,
+            "min_executions_for_analysis": 5
         }
     }
 

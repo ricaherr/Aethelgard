@@ -44,30 +44,73 @@ class CoherenceService:
     def __init__(
         self,
         storage: StorageManager,
-        min_coherence_threshold: float = 0.80,  # 80% minimum coherence
-        max_performance_degradation: float = 0.15,  # 15% max allowed degradation
-        min_executions_for_analysis: int = 5,  # Minimum data points for statistical significance
+        min_coherence_threshold: Optional[float] = None,
+        max_performance_degradation: Optional[float] = None,
+        min_executions_for_analysis: Optional[int] = None,
     ):
         """
         Initialize CoherenceService with dependency injection.
+        Thresholds are loaded from system_state (SSOT) if available.
         
         Args:
-            storage: StorageManager for data access
-            min_coherence_threshold: Minimum coherence score (0-1) to allow new entries
-            max_performance_degradation: Max allowed degradation of Sharpe Ratio (0-1)
-            min_executions_for_analysis: Minimum executions required for reliable analysis
+            storage: StorageManager for data access (dependency injection)
+            min_coherence_threshold: Override default from DB (for testing)
+            max_performance_degradation: Override default from DB (for testing)
+            min_executions_for_analysis: Override default from DB (for testing)
         """
         self.storage = storage
-        self.min_coherence_threshold = min_coherence_threshold
-        self.max_performance_degradation = max_performance_degradation
-        self.min_executions_for_analysis = min_executions_for_analysis
         self.tenant_id = getattr(storage, "tenant_id", "default")
         
+        # Load configuration from DB (SSOT - Regla 14)
+        self._load_coherence_config()
+        
+        # Allow test overrides
+        if min_coherence_threshold is not None:
+            self.min_coherence_threshold = min_coherence_threshold
+        if max_performance_degradation is not None:
+            self.max_performance_degradation = max_performance_degradation
+        if min_executions_for_analysis is not None:
+            self.min_executions_for_analysis = min_executions_for_analysis
+        
         logger.info(
-            f"CoherenceService initialized: threshold={min_coherence_threshold*100:.0f}%, "
-            f"max_degradation={max_performance_degradation*100:.0f}%, "
-            f"min_executions={min_executions_for_analysis}"
+            f"CoherenceService initialized (SSOT): threshold={self.min_coherence_threshold*100:.0f}%, "
+            f"max_degradation={self.max_performance_degradation*100:.0f}%, "
+            f"min_executions={self.min_executions_for_analysis}"
         )
+    
+    def _load_coherence_config(self) -> None:
+        """
+        Load coherence thresholds from system_state (SSOT).
+        Uses sensible defaults if configuration doesn't exist yet.
+        """
+        try:
+            state = self.storage.get_system_state()
+            config = state.get("coherence_config", {})
+            
+            # Load from DB or use defaults
+            self.min_coherence_threshold = float(
+                config.get("min_coherence_threshold", 0.80)
+            )
+            self.max_performance_degradation = float(
+                config.get("max_performance_degradation", 0.15)
+            )
+            self.min_executions_for_analysis = int(
+                config.get("min_executions_for_analysis", 5)
+            )
+            
+            logger.debug(
+                f"Coherence config loaded from DB: "
+                f"threshold={self.min_coherence_threshold}, "
+                f"max_degradation={self.max_performance_degradation}, "
+                f"min_executions={self.min_executions_for_analysis}"
+            )
+            
+        except Exception as e:
+            # Fallback to defaults if DB read fails
+            logger.warning(f"Failed to load coherence_config from DB, using defaults: {e}")
+            self.min_coherence_threshold = 0.80
+            self.max_performance_degradation = 0.15
+            self.min_executions_for_analysis = 5
     
     def detect_drift(
         self,
