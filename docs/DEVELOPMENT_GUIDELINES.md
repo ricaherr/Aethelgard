@@ -4,11 +4,41 @@
 Establecer los estándares innegociables para el desarrollo del ecosistema Aethelgard, garantizando la escalabilidad SaaS, la integridad financiera y una experiencia de usuario de nivel institucional.
 
 ## 1. Backend Rules: La Fortaleza Asíncrona
-*   **Aislamiento (Multitenancy)**: El `tenant_id` es el átomo central. Ninguna función de base de datos o lógica de negocio puede ejecutarse sin la validación del contexto del usuario.
-*   **Agnosticismo de Datos**: El Core Brain no debe conocer detalles del broker (MT5/FIX). Debe trabajar solo con Unidades R y estructuras normalizadas. All connectors must translate broker-specific data to Aethelgard canonical forms.
-*   **Rigor de Tipado**:
-    *   Uso estricto de **Pydantic** para todos los esquemas de datos y validaciones de entrada/salida.
-    *   Uso obligatorio de `Decimal` para todos los cálculos financieros. **PROHIBIDO** el uso de `float` en lógica de dinero para evitar errores de redondeo IEEE 754.
+
+### 1.1 Aislamiento (Multitenancy)
+El `tenant_id` es el átomo central. Ninguna función de base de datos o lógica de negocio puede ejecutarse sin la validación del contexto del usuario. **Documentación completa**: Ver Dominio 01_IDENTITY_SECURITY.md (Sección "Tenant Isolation Protocol").
+
+**Patrón Obligatorio - RULE T1**:
+Si endpoint tiene `token: TokenPayload` en firma → DEBE usar `TenantDBFactory.get_storage(token.tid)`
+```python
+# ❌ PROHIBIDO:
+@router.get("/edge/history")
+async def get_edge_history(token: TokenPayload = Depends(...)):
+    storage = _get_storage()  # BD compartida, error de seguridad
+
+# ✅ OBLIGATORIO:
+@router.get("/edge/history")
+async def get_edge_history(token: TokenPayload = Depends(...)):
+    storage = TenantDBFactory.get_storage(token.tid)  # BD aislada del tenant
+```
+
+**Validación Automática**: 
+- `scripts/tenant_isolation_audit.py` valida que todos los 47 endpoints cumplan RULE T1
+- Ejecuta en cada invocación de `validate_all.py`
+- Resultado: **47/47 endpoints (100% compliant)**
+
+**Testing Obligatorio**:
+- Suite `tests/test_tenant_isolation_edge_history.py` (5 tests) valida aislamiento real de datos
+- Verifica que Alice no accede a datos de Bob (test_tenant_isolation_edge_history_alice_vs_bob)
+- Verifica que TenantDBFactory se usa correctamente
+- **Estado**: 5/5 PASSED
+
+### 1.2 Agnosticismo de Datos
+El Core Brain no debe conocer detalles del broker (MT5/FIX). Debe trabajar solo con Unidades R y estructuras normalizadas. All connectors must translate broker-specific data to Aethelgard canonical forms.
+
+### 1.3 Rigor de Tipado
+*   Uso estricto de **Pydantic** para todos los esquemas de datos y validaciones de entrada/salida.
+*   Uso obligatorio de `Decimal` para todos los cálculos financieros. **PROHIBIDO** el uso de `float` en lógica de dinero para evitar errores de redondeo IEEE 754.
 *   **1.4. Protocolo "Explorar antes de Crear"**: Antes de implementar cualquier nueva función o clase, el Ejecutor DEBE realizar una búsqueda semántica en el repositorio actual para verificar si ya existe una lógica similar. Se prohíbe la duplicación de código; en su lugar, se debe refactorizar la función existente para que sea reutilizable.
 *   **1.5. Higiene de Masa (Regla <30KB)**: Ningún archivo puede superar los 30KB o las 500 líneas. Si un componente crece por encima de este límite, su fragmentación en submódulos es obligatoria e inmediata.
 *   **1.6. Patrones Obligatorios**: Se exige el uso estricto de Repository Pattern para datos y Service Layer para lógica. Los Routers de FastAPI solo orquestan.
