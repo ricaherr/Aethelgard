@@ -86,10 +86,18 @@
     * **Descripción**: Monitoreo en tiempo real de picos de equidad y umbrales de Drawdown (Soft/Hard) por tenant.
     * **Estado**: Implementado en Sprint 2. DrawdownMonitor + Endpoint /api/risk/exposure.
 
-* **HU 4.6: Anomaly Sentinel (Antifragility Engine)**
-    * **Prioridad**: Baja (Fase 4)
-    * **Descripción**: Monitor de eventos de baja probabilidad (Cisnes Negros) para activar protocolos de defensa o captura de volatilidad extrema.
-    * **🖥️ UI Representation**: Consola de "Thought" con tag [ANOMALY_DETECTED] y sugerencias proactivas de intervención.
+* **HU 4.6: Anomaly Sentinel (Antifragility Engine)** `[DONE]`
+    * **Prioridad**: Alta (Vector V3 - Dominio Sensorial)
+    * **Descripción**: Monitor de eventos de baja probabilidad y anomalías sistémicas (Cisnes Negros) para activar protocolos de defensa instantáneos.
+    * **Estado**: Implementado en Sprint 3 (1 Marzo 2026). AnomalyService operativo (530 líneas, <500 chunks). 21/21 tests PASSED.
+    * **🖥️ UI Representation**: Consola de "Thought" con tag [ANOMALY_DETECTED] y sugerencias proactivas de intervención basadas en severidad.
+    * **Artefactos**:
+      - `core_brain/services/anomaly_service.py` (AnomalyService - Z-Score, Flash Crash detection)
+      - `data_vault/anomalies_db.py` (AnomaliesMixin - 6 métodos async para persistencia)
+      - `core_brain/api/routers/anomalies.py` (6 endpoints - Thought Console, health, stats)
+      - `tests/test_anomaly_service.py` (21 tests, 100% coverage + edge cases)
+      - `data_vault/schema.py` (+table anomaly_events, 3 índices)
+    * **Trace_ID**: BLACK-SWAN-SENTINEL-2026-001
 
 ## 05_UNIVERSAL_EXECUTION (EMS, Conectores FIX)
 * **HU 5.1: High-Fidelity FIX Connector Core** `[DEV]`

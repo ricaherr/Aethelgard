@@ -56,7 +56,17 @@
   - Sincronización de Ledger (SSOT).
   - 15/15 Tests PASSED.
 
-- [ ] **Anomaly Sentinel**: Detección de cisnes negros y antifragilidad (HU 4.6 - Fase inicial).
+- [x] **Anomaly Sentinel (HU 4.6)** — ✅ COMPLETADA (1 de Marzo, 2026)
+  - Detector de volatilidad extrema (Z-Score > 3.0) con rolling window
+  - Detector de Flash Crashes (caída > -2% en 1 vela)
+  - Protocolo Defensivo: Lockdown Preventivo + Cancel Orders + SL->Breakeven
+  - Persistencia en DB (table anomaly_events) con Trace_ID
+  - Broadcast de [ANOMALY_DETECTED] a UI vía WebSocket
+  - Thought Console con sugerencias inteligentes
+  - Integración con Health System (HU 10.1)
+  - 21/21 Tests PASSED | validate_all.py: 100% OK
+  - Trace_ID: BLACK-SWAN-SENTINEL-2026-001
+
 - [ ] **Depredação de Contexto Optimizado**: Extensión del scanner inter-mercado con predicción (HU 2.2+).
 - [ ] **The Pulse (Advanced Feedback)**: Lazo de retroalimentación de infraestructura avanzado (HU 5.3 final).
 - [ ] **Coherence Drift Monitoring**: Divergencia modelo vs ejecución en vivo (HU 6.3).

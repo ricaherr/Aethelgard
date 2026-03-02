@@ -12,6 +12,7 @@ from .market_db import MarketMixin
 from .system_db import SystemMixin
 from .strategy_ranking_db import StrategyRankingMixin
 from .execution_db import ExecutionMixin
+from .anomalies_db import AnomaliesMixin
 
 from .schema import (
     initialize_schema,
@@ -31,7 +32,8 @@ class StorageManager(
     MarketMixin,
     SystemMixin,
     StrategyRankingMixin,
-    ExecutionMixin
+    ExecutionMixin,
+    AnomaliesMixin
 ):
     """
     Centralized storage manager for Aethelgard.

@@ -233,15 +233,17 @@ def create_app() -> FastAPI:
     from core_brain.api.routers.system import router as system_router
     from core_brain.api.routers.notifications import router as notifications_router
     from core_brain.api.routers.auth import router as auth_router
+    from core_brain.api.routers.anomalies import router as anomalies_router
     
-    # Mount modular routers (Trading, Risk, Market, System, Notifications, Auth)
+    # Mount modular routers (Trading, Risk, Market, System, Notifications, Auth, Anomalies)
     app.include_router(trading_router, prefix="/api")
     app.include_router(risk_router, prefix="/api")
     app.include_router(market_router, prefix="/api")
     app.include_router(system_router, prefix="/api")
     app.include_router(notifications_router, prefix="/api")
     app.include_router(auth_router, prefix="/api")
-    logger.info("✅ Micro-ETI 3.1: All routers mounted. Trading logic delegated to TradingService.")
+    app.include_router(anomalies_router)
+    logger.info("✅ Micro-ETI 3.1: All routers mounted (+ Anomalies HU 4.6). Trading logic delegated to TradingService.")
 
     # Montar archivos estáticos de la nueva UI si existen
     ui_dist_path = os.path.join(os.getcwd(), "ui", "dist")

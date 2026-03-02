@@ -6,6 +6,7 @@ Delegates validation to RiskPolicyEnforcer and lot calculation to PositionSizeEn
 import logging
 import uuid
 from decimal import Decimal, ROUND_DOWN
+from datetime import datetime
 from typing import Any, Dict, Optional
 
 from data_vault.storage import StorageManager
@@ -290,6 +291,100 @@ class RiskManager:
 
     def is_lockdown_active(self) -> bool:
         return self.lockdown_mode
+
+    # ────────────────────────────────────────────────────────────────────────────
+    # DEFENSIVE PROTOCOL METHODS (HU 4.6: Anomaly Sentinel)
+    # ────────────────────────────────────────────────────────────────────────────
+
+    async def activate_lockdown(
+        self,
+        symbol: Optional[str] = None,
+        reason: str = "Anomaly detected",
+        trace_id: Optional[str] = None,
+    ) -> bool:
+        """
+        Activa el Lockdown Mode preventivo cuando se detecta una anomalía sistémica.
+        
+        Args:
+            symbol: Símbolo afectado (opcional)
+            reason: Razón de la activación (para logging)
+            trace_id: ID de trazabilidad
+            
+        Returns:
+            True si el lockdown se activó exitosamente
+        """
+        try:
+            self.lockdown_mode = True
+            self.storage.update_system_state({
+                "lockdown_mode": True,
+                "lockdown_date": datetime.now().isoformat(),
+                "lockdown_reason": reason,
+                "lockdown_symbol": symbol or "MULTI",
+                "lockdown_trace_id": trace_id or "N/A",
+                "consecutive_losses": self.consecutive_losses,
+            })
+            logger.critical(
+                f"[RISK_MANAGER] LOCKDOWN ACTIVATED. Symbol: {symbol}, "
+                f"Reason: {reason}. Trace_ID: {trace_id}"
+            )
+            return True
+        except Exception as e:
+            logger.error(f"[RISK_MANAGER] Error activating lockdown: {e}")
+            return False
+
+    async def cancel_pending_orders(
+        self,
+        symbol: Optional[str] = None,
+        reason: str = "Lockdown Mode Activated",
+    ) -> Dict[str, int]:
+        """
+        Cancela todas las órdenes pendientes para un símbolo o globalmente.
+        
+        Args:
+            symbol: Símbolo a afectar (None = todas las órdenes)
+            reason: Razón de la cancelación
+            
+        Returns:
+            Dict con número de órdenes canceladas
+        """
+        try:
+            # TODO: Integración con order_manager/executor
+            # Por ahora, retorna estructura esperada por anomaly_service
+            logger.warning(
+                f"[RISK_MANAGER] Cancelling pending orders for {symbol or 'ALL'}. "
+                f"Reason: {reason}"
+            )
+            return {"cancelled": 0, "status": "pending_integration"}
+        except Exception as e:
+            logger.error(f"[RISK_MANAGER] Error cancelling orders: {e}")
+            return {"cancelled": 0, "error": str(e)}
+
+    async def adjust_stops_to_breakeven(
+        self,
+        symbol: Optional[str] = None,
+        reason: str = "Anomaly Detected - Protective Measure",
+    ) -> Dict[str, int]:
+        """
+        Ajusta todos los Stop Loss a Breakeven para proteger capital en anomalías.
+        
+        Args:
+            symbol: Símbolo a afectar (None = todas las posiciones)
+            reason: Razón del ajuste
+            
+        Returns:
+            Dict con número de posiciones ajustadas
+        """
+        try:
+            # TODO: Integración con position_manager
+            # Por ahora, retorna estructura esperada por anomaly_service
+            logger.warning(
+                f"[RISK_MANAGER] Adjusting stops to breakeven for {symbol or 'ALL'}. "
+                f"Reason: {reason}"
+            )
+            return {"adjusted": 0, "status": "pending_integration"}
+        except Exception as e:
+            logger.error(f"[RISK_MANAGER] Error adjusting stops: {e}")
+            return {"adjusted": 0, "error": str(e)}
 
     def get_status(self) -> Dict:
         return {

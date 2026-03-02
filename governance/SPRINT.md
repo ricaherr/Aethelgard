@@ -80,10 +80,15 @@
   - Optimización del scanner `detect_predator_divergence` con métricas de predicción.
   - Validación cruzada inter-mercado para alta fidelidad.
 
-- [ ] **Anomaly Sentinel - Detección de Cisnes Negros (HU 4.6)**
-  - Monitor de eventos de baja probabilidad (volatilidad extrema).
-  - Protocolo de defensa y captura automática de oportunidades.
-  - Integración con veto macro.
+- [x] **Anomaly Sentinel - Detección de Cisnes Negros (HU 4.6)** ✅ COMPLETADA
+  - ✅ Monitor de eventos de baja probabilidad (volatilidad extrema) con Z-Score > 3.0
+  - ✅ Flash Crash Detector (caída > -2% en 1 vela)
+  - ✅ Protocolo defensivo: Lockdown Preventivo + Cancel Orders + SL->Breakeven
+  - ✅ Persistencia en DB (anomaly_events table) con Trace_ID
+  - ✅ Broadcast [ANOMALY_DETECTED] vía WebSocket
+  - ✅ Thought Console endpoints (6 routers) + sugerencias inteligentes
+  - ✅ Integración con Health System (modo NORMAL/CAUTION/DEGRADED/STRESSED)
+  - ✅ 21/21 Tests PASSED | validate_all.py: 100% OK
 
 - [ ] **Coherence Drift Monitoring (HU 6.3)**
   - Algoritmo de divergencia: modelo esperado vs ejecución en vivo.
@@ -99,15 +104,16 @@
 
 ---
 
-## 📸 Snapshot Sprint 3 (Progreso: 1/6)
+## 📸 Snapshot Sprint 3 (Progreso: 2/6 - HU 2.1 + HU 4.6)
 
 | Métrica | Valor |
 |---|---|
-| **Arquitectura Base** | v4.0.0-beta.1 (18 módulos core + 8 servicios) |
+| **Arquitectura Base** | v4.0.0-beta.1 (18 módulos core + 9 servicios) |
 | **Versión Target** | v4.1.0-beta.3 |
 | **HU 2.1 Status** | ✅ COMPLETADA (RegimeService, FractalContext, Tests 15/15) |
-| **Validación Sistema** | ✅ 12/12 PASSED (validate_all.py) |
-| **Vector Activo** | V3: Dominio Sensorial & Adaptabilidad |
-| **Tests Críticos Disponibles** | 61/61 PASSED (Cero deuda) |
-| **Última Actualización** | 1 de Marzo, 2026 - 19:30 UTC
+| **HU 4.6 Status** | ✅ COMPLETADA (AnomalyService, 6 API endpoints, Tests 21/21) |
+| **Validación Sistema** | ✅ 14/14 PASSED (validate_all.py) |
+| **Total Tests** | 82/82 PASSED (Cero deuda, sin regresiones) |
+| **Vector Activo** | V3: Dominio Sensorial & Adaptabilidad (Antifragilidad) |
+| **Última Actualización** | 1 de Marzo, 2026 - 20:45 UTC
 

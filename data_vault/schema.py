@@ -142,6 +142,25 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
         )
     """)
 
+    # ── 4.5 Anomaly Events (HU 4.6: Anomaly Sentinel) ──────────────────────
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS anomaly_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT NOT NULL,
+            anomaly_type TEXT NOT NULL,
+            z_score REAL,
+            confidence REAL,
+            drop_percentage REAL,
+            volume_spike_detected BOOLEAN,
+            trace_id TEXT NOT NULL UNIQUE,
+            details TEXT,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_anomaly_events_symbol ON anomaly_events (symbol)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_anomaly_events_type ON anomaly_events (anomaly_type)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_anomaly_events_timestamp ON anomaly_events (timestamp)")
+
     # ── 5. Accounts, Brokers & Providers ────────────────────────────────────
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS broker_accounts (
