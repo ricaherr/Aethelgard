@@ -13,7 +13,7 @@ EDGE learning optimizes confluence weights automatically.
 import logging
 import asyncio
 import json
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from collections import defaultdict
 
 import pandas as pd
@@ -28,6 +28,7 @@ from core_brain.module_manager import MembershipLevel
 from core_brain.confluence import MultiTimeframeConfluenceAnalyzer
 from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
 from core_brain.tech_utils import TechnicalAnalyzer
+from core_brain.services.fundamental_guard import FundamentalGuardService
 
 # Import strategies
 from core_brain.strategies.base_strategy import BaseStrategy
@@ -55,6 +56,7 @@ class SignalFactory:
         trifecta_analyzer: TrifectaAnalyzer,
         notification_service: Optional[NotificationService] = None,
         mt5_connector: Optional[Any] = None,
+        fundamental_guard: Optional[FundamentalGuardService] = None,
     ):
         """
         Inicializa la SignalFactory con inyección de dependencias estricta.
@@ -64,12 +66,24 @@ class SignalFactory:
             strategies: Lista de estrategias inyectadas.
             confluence_analyzer: Analizador de confluencia inyectado.
             trifecta_analyzer: Analizador de trifecta inyectado.
+            notification_service: Servicio de notificación opcional.
             mt5_connector: Opcional MT5 connector para reconciliación.
+            fundamental_guard: Opcional FundamentalGuardService para veto por noticias.
         """
         self.storage_manager = storage_manager
         self.notifier: Optional[NotificationEngine] = get_notifier()
         self.internal_notifier = notification_service
         self.mt5_connector = mt5_connector
+        
+        # Inyectar FundamentalGuardService o crear uno si no está disponible
+        if fundamental_guard is None:
+            try:
+                self.fundamental_guard = FundamentalGuardService(storage=storage_manager)
+            except Exception as e:
+                logger.warning(f"[SignalFactory] Failed to initialize FundamentalGuardService: {e}")
+                self.fundamental_guard = None
+        else:
+            self.fundamental_guard = fundamental_guard
         
         # Cargar parámetros generales desde DB (SSOT)
         self.config_data = self.storage_manager.get_dynamic_params()
@@ -86,7 +100,8 @@ class SignalFactory:
 
         logger.info(
             f"SignalFactory initialized with {len(self.strategies)} injected strategies. "
-            f"Confluence enabled: {self.confluence_analyzer.enabled}"
+            f"Confluence enabled: {self.confluence_analyzer.enabled} | "
+            f"FundamentalGuard: {'enabled' if self.fundamental_guard else 'disabled'}"
         )
 
     def set_mt5_connector(self, mt5_connector: Any) -> None:
@@ -182,6 +197,11 @@ class SignalFactory:
                     except Exception as fvg_err:
                         logger.debug(f"[{symbol}] FVG detection skipped: {fvg_err}")
                     
+                    # ──────────────────────────────────────────────────────────────────────────────────
+                    # ACCIÓN 2: Enriquecimiento con Reasoning y Affinity Score (UI Real-Time Feed)
+                    # ──────────────────────────────────────────────────────────────────────────────────
+                    await self._enrich_signal_with_metadata(signal, symbol, strategy)
+                    
                     generated_signals.append(signal)
             
             except Exception as e:
@@ -191,6 +211,107 @@ class SignalFactory:
                 )
 
         return generated_signals
+
+    async def _enrich_signal_with_metadata(
+        self, signal: Signal, symbol: str, strategy: BaseStrategy
+    ) -> None:
+        """
+        Enriquece la señal con metadata para UI Real-Time Feed.
+        
+        Responsabilidades:
+        1. Extraer affinity_score de la estrategia
+        2. Consultar FundamentalGuardService para veto por noticias
+        3. Construir reasoning detallado (por qué la señal fue aprobada/rechazada)
+        4. Enriquecer signal.metadata con estos datos
+        
+        Args:
+            signal: Señal a enriquecer
+            symbol: Símbolo del activo
+            strategy: Estrategia que generó la señal
+        
+        Returns:
+            None (modifica signal.metadata in-place)
+        """
+        try:
+            # ── 1. Extraer Affinity Score ────────────────────────────────────
+            affinity_score = 0.5  # Default
+            try:
+                strategy_scores = self.storage_manager.get_strategy_affinity_scores()
+                if strategy_scores and strategy.strategy_id in strategy_scores:
+                    affinity_by_symbol = strategy_scores[strategy.strategy_id]
+                    if isinstance(affinity_by_symbol, dict) and symbol in affinity_by_symbol:
+                        affinity_score = float(affinity_by_symbol[symbol])
+            except Exception as e:
+                logger.debug(f"[{symbol}] Failed to get affinity score: {e}")
+
+            signal.metadata["affinity_score"] = affinity_score
+
+            # ── 2. Consultar FundamentalGuardService ─────────────────────────
+            fundamental_safe = True
+            fundamental_reason = ""
+            
+            if self.fundamental_guard:
+                try:
+                    fundamental_safe, fundamental_reason = self.fundamental_guard.is_market_safe(symbol)
+                    if not fundamental_safe:
+                        logger.warning(
+                            f"🔴 [{symbol}] Signal vetoed by FundamentalGuard: {fundamental_reason}"
+                        )
+                except Exception as e:
+                    logger.warning(f"[{symbol}] FundamentalGuard check failed: {e}")
+                    fundamental_safe = True  # Fallback: assume safe
+
+            signal.metadata["fundamental_safe"] = fundamental_safe
+            signal.metadata["fundamental_reason"] = fundamental_reason
+
+            # ── 3. Construir Reasoning ───────────────────────────────────────
+            reasoning_parts = [
+                f"Strategy: {strategy.strategy_id}",
+                f"Affinity: {affinity_score:.2f}",
+                f"Confidence: {signal.confidence:.2f}",
+            ]
+
+            if not fundamental_safe:
+                reasoning_parts.append(f"🔴 Fundamental Veto: {fundamental_reason}")
+            else:
+                if fundamental_reason:
+                    reasoning_parts.append(f"🟠 {fundamental_reason}")
+                else:
+                    reasoning_parts.append("✅ No fundamental restrictions")
+
+            signal.metadata["reasoning"] = " | ".join(reasoning_parts)
+
+            # ── 4. Add WebSocket Payload ─────────────────────────────────────
+            # Estructura para envío directo a UI via WebSocket
+            signal.metadata["websocket_payload"] = {
+                "symbol": symbol,
+                "signal_type": signal.signal_type.value if hasattr(signal.signal_type, 'value') else str(signal.signal_type),
+                "timeframe": signal.timeframe or "M5",
+                "confidence": signal.confidence,
+                "affinity_score": affinity_score,
+                "entry_price": signal.entry_price,
+                "stop_loss": signal.stop_loss,
+                "take_profit": signal.take_profit,
+                "fundamental_safe": fundamental_safe,
+                "fundamental_reason": fundamental_reason,
+                "reasoning": signal.metadata.get("reasoning", ""),
+                "strategy_id": strategy.strategy_id,
+                "timestamp": signal.timestamp.isoformat(),
+                "status": "APPROVED" if fundamental_safe else "VETOED",
+            }
+
+            logger.debug(
+                f"[{symbol}] Signal enriched: "
+                f"affinity={affinity_score:.2f}, fundamental_safe={fundamental_safe}"
+            )
+
+        except Exception as e:
+            logger.error(f"[{symbol}] Error enriching signal metadata: {e}", exc_info=True)
+            # Fallback: ensure minimal metadata
+            signal.metadata["affinity_score"] = 0.5
+            signal.metadata["fundamental_safe"] = True
+            signal.metadata["fundamental_reason"] = ""
+            signal.metadata["reasoning"] = f"Error during enrichment: {str(e)}"
 
     def _is_duplicate_signal(self, signal: Signal) -> bool:
         """

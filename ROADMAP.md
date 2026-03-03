@@ -249,3 +249,277 @@
 
 **Actualizado por**: Quanteer (IA)  
 **Próxima Revisión**: Después de Fase 3
+
+---
+
+## 🚀 SPRINT: ALPHA_SCALPING_S003 — Estrategias de Baja Latencia y Continuidad Intraday
+
+**Inicio**: 2 de Marzo 2026  
+**TRACE_ID**: DOC-STRAT-SCALPING-SESSIONS-2026
+
+### Fase 1: DOCUMENTACIÓN (HANDSHAKE_TO_DOCUMENTER)
+
+#### ACCIÓN 1.1: Registro de Estrategia S-0004 (LIQ_SWEEP)
+- **Archivo**: `docs/strategies/LIQ_SWEEP_0001_SCALPING.md`
+- **Status**: ⏳ PLANIFICADA
+- **Descripción**:
+  - Detectar limpieza de máximos/mínimos de sesión Londres
+  - Entrar en reversión inmediata hacia Nueva York
+  - Smart Money Trap: Capturar el barrido de liquidez
+  - Matriz de afinidad: EUR/USD (0.95), GBP/USD (0.92)
+  - Timeframes: M5, M15 (baja latencia)
+  - SL = Extremo limpiado + 5 pips | TP = 50-100 pips (scalp)
+- **Criterio de Aceptación**:
+  - [ ] Documento con 8 secciones: Lógica, Configuración, Ejemplo, Risk/Reward, etc.
+  - [ ] Validación de patrones de limpieza (price action)
+  - [ ] Integración con sesiones de trading (London Open, NY Open)
+
+#### ACCIÓN 1.2: Registro de Estrategia S-0005 (SESS_EXT)
+- **Archivo**: `docs/strategies/SESS_EXT_0001_SESSION_EXTENSION.md`
+- **Status**: ⏳ PLANIFICADA
+- **Descripción**:
+  - Extensión del momentum intraday: Londres cierra fuerte → NY mantiene
+  - Buscar proyección 127% de Fibonacci del rango matutino
+  - "Session Extension": Continuidad de sesión
+  - Matriz de afinidad: GBP/JPY (0.88), EUR/JPY (0.82), GBP/USD (0.75)
+  - Timeframes: H1 (intraday)
+  - SL = Punto de entrada - 50 pips | TP = Extensión Fib 127%
+- **Criterio de Aceptación**:
+  - [ ] Documento con cálculo de extensiones Fibonacci
+  - [ ] Validación de momentum between sessions
+  - [ ] Correlación de cierres entre sesiones
+
+### Fase 2: IMPLEMENTACIÓN (HANDSHAKE_TO_EXECUTOR)
+- **Status**: ⏳ BACKLOG
+- **Acciones**:
+  - [ ] ACCIÓN 2.1: Crear sensor de limpieza de liquidez (`core_brain/sensors/liquidity_sweep_detector.py`)
+  - [ ] ACCIÓN 2.2: Crear sensor de extensiones Fibonacci (`core_brain/sensors/fibonacci_extension_detector.py`)
+  - [ ] ACCIÓN 2.3: Implementar LIQ_SWEEP_0001Strategy en `core_brain/strategies/`
+  - [ ] ACCIÓN 2.4: Implementar SESS_EXT_0001Strategy en `core_brain/strategies/`
+  - [ ] ACCIÓN 2.5: Registrar ambas estrategias en DB con affinity scores
+
+### Fase 3: VALIDACIÓN (validate_all.py)
+- **Status**: ⏳ PENDIENTE
+- **Checklist**:
+  - [ ] Architecture: Cero imports broker en core_brain
+  - [ ] QA Guard: DI correcta en ambas estrategias
+  - [ ] Tests TDD: Cobertura 100% de sensores
+  - [ ] DB Integrity: Ambas estrategias registradas sin conflictos
+  - [ ] Sistema operacional: start.py sin errores
+
+---
+
+## 🛡️ SPRINT: ALPHA_FUNDAMENTAL_S004 — Sistema de Veto Fundamental ("Escudo de Noticias")
+
+**Inicio**: 2 de Marzo 2026  
+**TRACE_ID**: EXEC-FUNDAMENTAL-GUARD-2026
+
+### Fase 1: DOCUMENTACIÓN (HANDSHAKE_TO_DOCUMENTER) ✅ COMPLETADA
+
+#### ACCIÓN 1.1: Especificación de FundamentalGuardService ✅
+- **Archivo**: `docs/infrastructure/FUNDAMENTAL_GUARD_SERVICE.md`
+- **Status**: ✅ COMPLETADA
+- **Descripción**:
+  - Integración de calendarios económicos (API externa)
+  - **Filtro ROJO (LOCKDOWN)**: 15 min antes y 15 min después de noticias alto impacto
+    - Eventos: CPI, FOMC, NFP, ECB Rate Decision, BOJ Statement
+    - Acción: **VETO TOTAL** de nuevas señales
+    - Log: "🔴 LOCKDOWN FUNDAMENTAL: CPI release +/- 15min"
+  - **Filtro NARANJA**: 30 min antes y 30 min después de impacto MEDIO
+    - Eventos: PMI, Jobless Claims, Retail Sales
+    - Acción: Solo estrategias **ANT_FRAG** permitidas + min_threshold += 0.15
+    - Log: "🟠 VOLATILITY FILTER: PMI release - restricciones activas"
+  - Integración con StrategyGatekeeper para rechazar señales
+
+#### ACCIÓN 1.2: Selección de Proveedor de Calendario Económico ⏳ TBD
+- **Status**: ⏳ PENDIENTE
+- **Opciones**:
+  - [ ] **Finnhub**: Datos de calendario económico
+  - [ ] **Alpha Vantage**: Cobertura limitada pero incluida
+  - [ ] **Investing.com API**: Cobertura completa, requiere registro
+
+### Fase 2: IMPLEMENTACIÓN ✅ COMPLETADA
+
+#### ACCIÓN 2.1: Implementar FundamentalGuardService ✅
+- **Archivo**: `core_brain/services/fundamental_guard.py`
+- **Status**: ✅ COMPLETADA
+- **Implementación**:
+  - [x] Clase `FundamentalGuardService` con inyección DI
+  - [x] Método `is_lockdown_period(symbol, current_time)` 
+  - [x] Método `is_volatility_period(symbol, current_time)`
+  - [x] Método `is_market_safe(symbol) -> (bool, str)` para SignalFactory
+  - [x] Caché in-memory de calendario económico (SSOT)
+  - [x] Logs estructurados con trace_id
+  - [x] Cero imports broker
+
+#### ACCIÓN 2.2: Refactorizar SignalFactory para enriquecimiento de señales ✅
+- **Archivo**: `core_brain/signal_factory.py`
+- **Status**: ✅ COMPLETADA
+- **Cambios**:
+  - [x] Inyectar `FundamentalGuardService` en __init__ (parámetro opcional, backward compatible)
+  - [x] Crear método `_enrich_signal_with_metadata(signal, symbol, strategy)`
+  - [x] Enriquecer Signal.metadata con:
+    - `affinity_score`: Score de eficiencia de estrategia en el activo
+    - `fundamental_safe`: bool (está el mercado seguro?)
+    - `fundamental_reason`: string (razón del veto si aplica)
+    - `reasoning`: string detallado con lógica de decisión
+    - `websocket_payload`: Dict listo para envío a UI vía WebSocket
+  - [x] Integración automática: error handling con fallback
+
+### Fase 3: VALIDACIÓN ✅ COMPLETADA
+
+#### ACCIÓN 3.1: Tests TDD Unitarios ✅
+- **Archivo**: `tests/test_fundamental_guard_service.py`
+- **Status**: ✅ COMPLETADA (17/17 tests PASSED)
+- **Cobertura**:
+  - [x] Inicialización con DI
+  - [x] LOCKDOWN period detection (HIGH impact events)
+  - [x] VOLATILITY period detection (MEDIUM impact events)
+  - [x] Ventanas de tiempo correctas (±15 min ROJO, ±30 min NARANJA)
+  - [x] is_market_safe() con razones
+  - [x] Integración con SignalFactory
+
+#### ACCIÓN 3.2: validate_all.py ✅
+- **Status**: ✅ COMPLETADA
+- **Resultados**:
+  - [x] Architecture: PASSED (cero imports broker en services/)
+  - [x] QA Guard: PASSED (DI correcta, storage inyectado)
+  - [x] Code Quality: PASSED (Type hints 100%)
+  - [x] Core Tests: PASSED (17 tests fundamentales + 30 tests trifecta)
+  - [x] DB Integrity: PASSED
+  - [x] **TOTAL**: 14/14 validaciones PASSED ✅
+  - [x] **TOTAL TIME**: 7.69s
+  - [x] **Status**: [SUCCESS] SYSTEM INTEGRITY GUARANTEED
+
+#### ACCIÓN 3.3: Sistema Operacional ✅
+- **Status**: ✅ COMPLETADA
+- **Validación**: start.py sin errores críticos
+- **Logs**: Inicialización correcta de FundamentalGuardService en SignalFactory
+
+### Fase 4: INTEGRACIÓN (BACKLOG)
+- **Status**: ⏳ PRÓXIMAS ACCIONES
+- **Acciones**:
+  - [ ] ACCIÓN 4.1: Integrar calendario económico desde proveedor externo (Finnhub/IEX)
+  - [ ] ACCIÓN 4.2: WebSocket consumer en UI para recibir payload enriquecido
+  - [ ] ACCIÓN 4.3: Página Analítica con log visual de razones de veto/aprobación
+  - [ ] ACCIÓN 4.4: Backtesting con restricciones fundamentales
+
+---
+
+## 💬 ACCIÓN 2: UI Real-Time Feed (Refactor para Muestra)
+
+**TRACE_ID**: EXEC-SIGNAL-ENRICHMENT-2026  
+**Status**: ✅ COMPLETADA (Fase 2 de Implementación ALPHA_FUNDAMENTAL_S004)
+
+### Descripción:
+Refactorización de SignalFactory para enviar payloads extendidos a la UI incluyendo Affinity_Score y Reasoning.
+
+### Implementación Completada:
+
+#### 1. Enriquecimiento de Signal.metadata ✅
+- **Método**: `SignalFactory._enrich_signal_with_metadata(signal, symbol, strategy)`
+- **Ubicación**: `core_brain/signal_factory.py` (líneas 215-307)
+- **Funcionalidad**:
+  - Extrae `affinity_score` desde DB (SSOT)
+  - Consulta FundamentalGuardService para vetos
+  - Construye `reasoning` con lógica de decisión
+  - Genera `websocket_payload` listo para envío a UI
+
+#### 2. Estructura del Payload WebSocket ✅
+```python
+signal.metadata["websocket_payload"] = {
+    "symbol": "EUR/USD",
+    "affinity_score": 0.88,           # NEW: Score de eficiencia en EUR/USD
+    "fundamental_safe": true,          # NEW: Veto fundamental?
+    "fundamental_reason": "...",       # NEW: Razón del veto si aplica
+    "reasoning": "Strategy: oliver_velez | Affinity: 0.88 | Confidence: 0.85 | ✅ No restrictions",
+    "status": "APPROVED"               # NEW: APPROVED | VETOED
+}
+```
+
+#### 3. Tests Implementados ✅
+- [x] 17 tests TDD para FundamentalGuardService (PASSED)
+- [x] Integration tests en validate_all.py (PASSED 14/14)
+- [x] Sistema operacional: start.py sin errores
+
+---
+
+## 🎨 SPRINT: ALPHA_UI_S005 — Refactorización a Terminal de Inteligencia (Bloomberg-Dark)
+
+**Inicio**: 2 de Marzo 2026  
+**TRACE_ID**: DOC-UI-TERMINAL-INTELLIGENCE-2026
+
+### Fase 1: DISEÑO & ESPECIFICACIÓN
+
+#### ACCIÓN 1.1: Página Trader Refactorizada ("Battlefield")
+- **Status**: ⏳ PLANIFICADA
+- **Requisitos**:
+  - [ ] Gráfico primario con pares EUR/USD, GBP/USD, etc.
+  - [ ] Capas superpuestas en tiempo real:
+    - SMA 20 (línea cian)
+    - SMA 200 (línea naranja)
+    - FVG (Fair Value Gaps): Sombreado azul claro
+    - Rejection Tails: Marcadores rojo/verde
+    - Elephant Candles: Puntos de mayor tamaño en gris brillante
+  - [ ] Controles: Timeframe selector (M5/M15/H1), pares, indicadores on/off
+  - [ ] **Estilo**: Fondo negro profundo (#050505), textos cian para datos +, rojo para alertas
+  - [ ] **Latencia**: Real-time WebSocket de broker
+
+#### ACCIÓN 1.2: Página Analítica (Real-Time Strategy Gatekeeper)
+- **Status**: ⏳ PLANIFICADA
+- **Requisitos**:
+  - [ ] Log visual: "GBP/USD descartado: Score 0.40 inferior al umbral 0.65"
+  - [ ] Tabla de señales generadas vs aprobadas vs ejecutadas
+  - [ ] Desglose de filtros: Volatility, Spread, Affinity, FundamentalGuard
+  - [ ] Historial de 30 min: Señales rechazadas + razón
+  - [ ] **Estilo**: Fondo #050505, textos cian para PASS, neón rojo para VETO
+  - [ ] **Latencia**: Real-time updates cada 100ms
+
+#### ACCIÓN 1.3: Satellite Link (Monitor de Latidos del Sistema)
+- **Status**: ⏳ PLANIFICADA
+- **Requisitos**:
+  - [ ] Health status: CPU, Memoria, Latencia broker, Conexión DB
+  - [ ] Gráficos mini: Latencia histórica (últimas 5 min)
+  - [ ] Indicador de "heartbeat" (LED pulsante verde/amarillo/rojo)
+  - [ ] Conexión a broker: Ping time, last quote, spread actual
+  - [ ] **Estilo**: Fondo #050505, LED verde = healthy, amarillo = caution, rojo = crítico
+  - [ ] **Latencia**: Updates cada 1 segundo
+
+### Fase 2: IMPLEMENTACIÓN (HANDSHAKE_TO_EXECUTOR)
+- **Status**: ⏳ BACKLOG
+- **Stack Tecnológico**:
+  - Frontend: React + TypeScript + Vite
+  - Gráficos: Chart.js o TradingView Lightweight Charts
+  - Real-time: WebSocket (FastAPI + uvicorn)
+  - Styling: Tailwind CSS + custom Bloomberg-Dark palette
+  - State: Zustand o Context API
+- **Acciones**:
+  - [ ] ACCIÓN 2.1: Crear componentes React para Trader page
+  - [ ] ACCIÓN 2.2: Crear componentes React para Analytics page
+  - [ ] ACCIÓN 2.3: Crear componentes React para Satellite Link
+  - [ ] ACCIÓN 2.4: Integrar WebSocket consumer en `core_brain/api/`
+  - [ ] ACCIÓN 2.5: Definir palette Bloomberg-Dark en Tailwind
+  - [ ] ACCIÓN 2.6: Tests E2E con Cypress/Playwright
+
+### Fase 3: VALIDACIÓN
+- **Status**: ⏳ PENDIENTE
+- **Checklist**:
+  - [ ] Diseño responsive: Desktop + Tablet
+  - [ ] Latencia UI < 200ms end-to-end
+  - [ ] Accesibilidad: WCAG A standard
+  - [ ] Tests E2E: Cobertura de flujos principales
+  - [ ] Performance: Lighthouse score >= 80
+
+---
+
+## 🔗 Referencias
+
+- **Gobernanza**: `.ai_rules.md`, `.ai_orchestration_protocol.md`
+- **Documentación**: `docs/strategies/CONV_STRIKE_0001_TRIFECTA.md`
+- **Implementación Existente**: `core_brain/strategies/oliver_velez.py`, `data_vault/strategies_db.py`
+- **Protocolo**: AETHELGARD_MANIFESTO.md (Sección 7: Reglas de Desarrollo)
+
+---
+
+**Actualizado por**: Quanteer (IA)  
+**Próxima Revisión**: Después de Fase 3
