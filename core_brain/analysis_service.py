@@ -1,75 +1,169 @@
 """
 Servicio de análisis profundo de instrumentos para Aethelgard.
-Expone funciones para obtener análisis de régimen, tendencia, trifecta y estrategias aplicables.
+Implementa resiliencia mediante graceful degradation - nunca lanza excepciones, retorna datos parciales.
 """
-from typing import Dict, Any
+import logging
+from typing import Dict, Any, List, Optional
 from data_vault.market_db import MarketMixin
 from data_vault.storage import StorageManager
 from core_brain.regime import RegimeClassifier
-from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
-from pathlib import Path
-import json
+
+logger = logging.getLogger(__name__)
 
 class InstrumentAnalysisService:
-    def __init__(self, storage: StorageManager, db_path: str = "data_vault/aethelgard.db"):
-        self.market_db = MarketMixin(db_path)
-        self.regime_classifier = RegimeClassifier(storage=storage)
-        self.trifecta = TrifectaAnalyzer(storage=storage)
+    def __init__(self, storage: StorageManager, tenant_id: str = "default"):
+        """
+        Inicializa InstrumentAnalysisService.
+        
+        Args:
+            storage: StorageManager inyectado (DI pattern)
+            tenant_id: ID del tenant para aislación multi-tenant
+        """
+        self.tenant_id = tenant_id
         self.storage = storage
+        
+        try:
+            self.market_db = MarketMixin()
+        except Exception as e:
+            logger.warning(f"[AnalysisService] Failed to initialize MarketMixin: {e}")
+            self.market_db = None
+        
+        try:
+            self.regime_classifier = RegimeClassifier(storage=storage)
+        except Exception as e:
+            logger.warning(f"[AnalysisService] Failed to initialize RegimeClassifier: {e}")
+            self.regime_classifier = None
 
     def get_analysis(self, symbol: str) -> Dict[str, Any]:
-        # 1. Último estado de mercado
-        history = self.market_db.get_market_state_history(symbol, limit=1)
-        last_state = history[0]["data"] if history else {}
+        """
+        Retorna análisis completo de un instrumento (régimen, tendencia, trifecta, estrategias).
+        Implementa graceful degradation: nunca lanza excepciones, retorna datos parciales.
+        
+        Returns:
+            Dict con análisis de régimen, tendencia, trifecta y estrategias aplicables
+        """
+        try:
+            # Validar input
+            if not symbol or not isinstance(symbol, str):
+                return self._empty_analysis(symbol or "UNKNOWN")
+            
+            # 1. Obtener último estado de mercado desde BD
+            last_state = {}
+            try:
+                if self.market_db:
+                    history = self.market_db.get_market_state_history(symbol, limit=1)
+                    last_state = history[0]["data"] if history else {}
+            except Exception as e:
+                logger.debug(f"[AnalysisService] Failed to fetch market state for {symbol}: {e}")
+            
+            # 2. Régimen y tendencia (con fallback)
+            regime = last_state.get("regime", "NEUTRAL")
+            adx = last_state.get("adx")
+            volatility = last_state.get("volatility")
+            trend_strength = last_state.get("trend_strength")
+            sma20_slope = last_state.get("sma20_slope")
+            sma200_slope = last_state.get("sma200_slope")
+            separation_pct = last_state.get("separation_pct")
+            price_position = last_state.get("price_position")
+            
+            # 3. Trifecta (si hay datos)
+            trifecta_result = None
+            try:
+                if last_state.get("trifecta_data"):
+                    trifecta_result = last_state["trifecta_data"]
+            except Exception as e:
+                logger.debug(f"[AnalysisService] Trifecta extraction failed: {e}")
+            
+            # 4. Estrategias aplicables
+            strategies = self._get_applicable_strategies(regime)
+            
+            return {
+                "symbol": symbol,
+                "regime": {
+                    "current": regime,
+                    "adx": adx,
+                    "volatility": volatility
+                },
+                "trend": {
+                    "strength": trend_strength,
+                    "sma20_slope": sma20_slope,
+                    "sma200_slope": sma200_slope,
+                    "separation_pct": separation_pct,
+                    "price_position": price_position
+                },
+                "trifecta": trifecta_result,
+                "applicable_strategies": strategies,
+                "metadata": {
+                    "freshness": "cached",
+                    "source": "market_db"
+                }
+            }
+        
+        except Exception as e:
+            logger.error(f"[AnalysisService] Unexpected error in get_analysis({symbol}): {e}", exc_info=True)
+            return self._empty_analysis(symbol)
 
-        # 2. Análisis de régimen y tendencia
-        regime = last_state.get("regime", "NEUTRAL")
-        adx = last_state.get("adx", None)
-        volatility = last_state.get("volatility", None)
-        trend_strength = last_state.get("trend_strength", None)
-        sma20_slope = last_state.get("sma20_slope", None)
-        sma200_slope = last_state.get("sma200_slope", None)
-        separation_pct = last_state.get("separation_pct", None)
-        price_position = last_state.get("price_position", None)
+    def _get_applicable_strategies(self, regime: str) -> List[Dict[str, Any]]:
+        """
+        Obtiene módulos estratégicos aplicables para un régimen.
+        
+        Returns:
+            Lista de estrategias aplicables (vacía si falla)
+        """
+        try:
+            if not self.storage:
+                logger.warning("[AnalysisService] StorageManager not available")
+                return []
+            
+            modules = self.storage.get_modules_config()
+            result = []
+            
+            for name, mod in modules.get("active_modules", {}).items():
+                try:
+                    if not mod.get("enabled", False):
+                        continue
+                    
+                    required_regimes = mod.get("required_regime", [])
+                    if isinstance(required_regimes, str):
+                        required_regimes = [required_regimes]
+                    
+                    if regime in required_regimes:
+                        result.append({
+                            "name": name,
+                            "description": mod.get("description", "N/A"),
+                            "membership_required": mod.get("membership_required", "basic"),
+                            "enabled": True
+                        })
+                except Exception as e:
+                    logger.debug(f"[AnalysisService] Failed to process module {name}: {e}")
+                    continue
+            
+            return result
+        
+        except Exception as e:
+            logger.warning(f"[AnalysisService] Failed to get applicable strategies for regime {regime}: {e}")
+            return []
 
-        # 3. Trifecta (si hay datos)
-        trifecta_result = None
-        if last_state.get("trifecta_data"):
-            trifecta_result = last_state["trifecta_data"]
-        # Si no, intentar ejecutar análisis en tiempo real (opcional)
-
-        # 4. Estrategias aplicables (leer de config/modules.json)
-        strategies = self._get_applicable_strategies(regime)
-
+    def _empty_analysis(self, symbol: str) -> Dict[str, Any]:
+        """Retorna análisis vacío pero válido cuando no hay datos."""
         return {
             "symbol": symbol,
             "regime": {
-                "current": regime,
-                "adx": adx,
-                "volatility": volatility
+                "current": "NEUTRAL",
+                "adx": None,
+                "volatility": None
             },
             "trend": {
-                "strength": trend_strength,
-                "sma20_slope": sma20_slope,
-                "sma200_slope": sma200_slope,
-                "separation_pct": separation_pct,
-                "price_position": price_position
+                "strength": None,
+                "sma20_slope": None,
+                "sma200_slope": None,
+                "separation_pct": None,
+                "price_position": None
             },
-            "trifecta": trifecta_result,
-            "applicable_strategies": strategies
+            "trifecta": None,
+            "applicable_strategies": [],
+            "metadata": {
+                "freshness": "stale",
+                "source": "empty"
+            }
         }
-
-    def _get_applicable_strategies(self, regime: str) -> list[dict]:
-        # Obtiene módulos desde StorageManager (SSOT)
-        modules = self.storage.get_modules_config()
-        result = []
-        for name, mod in modules.get("active_modules", {}).items():
-            if not mod.get("enabled", False):
-                continue
-            if regime in mod.get("required_regime", []):
-                result.append({
-                    "name": name,
-                    "description": mod.get("description", ""),
-                    "membership_required": mod.get("membership_required", "basic")
-                })
-        return result

@@ -94,8 +94,12 @@ class SocketService:
         if exclude is None:
             exclude = set()
         
+        # Create snapshot to avoid "dictionary changed size during iteration" error
+        # when clients disconnect while broadcasting
+        active_connections_snapshot = dict(self.active_connections)
+        
         disconnected = []
-        for client_id, websocket in self.active_connections.items():
+        for client_id, websocket in active_connections_snapshot.items():
             if client_id not in exclude:
                 try:
                     await websocket.send_json(message)

@@ -414,7 +414,11 @@ class UIDrawingFactory:
 
 
 class UITraderPageState:
-    """Estado global de la Página Trader con todos los elementos visuales."""
+    """Estado global de la Página Trader con todos los elementos visuales.
+    
+    EXEC-UI-VALIDATION-FIX: Diferencia datos de Análisis (prioridad alta)
+    de datos de Trader para renderizar en ambas pestañas simultáneamente.
+    """
     
     def __init__(self):
         self.elements: Dict[str, DrawingElement] = {}  # element_id -> DrawingElement
@@ -426,6 +430,9 @@ class UITraderPageState:
             LayerType.TARGETS
         }
         self.timestamp = datetime.now()
+        self.priority: str = "normal"  # "normal" o "high" para datos de Análisis
+        self.analysis_signals: Dict[str, Any] = {}  # Datos de análisis para pestaña Análisis
+        self.analysis_detected: bool = False  # Indica si hay datos detectados
     
     def add_element(self, element: DrawingElement) -> None:
         """Agrega elemento a la página."""
@@ -460,7 +467,10 @@ class UITraderPageState:
             "active_strategies": self.active_strategies,
             "visible_layers": [l.value for l in self.visible_layers],
             "elements": [e.to_dict() for e in self.get_visible_elements()],
-            "element_count": len(self.elements)
+            "element_count": len(self.elements),
+            "priority": self.priority,
+            "analysis_signals": self.analysis_signals,
+            "analysis_detected": self.analysis_detected
         }
 
 
@@ -489,33 +499,54 @@ class UIMappingService:
         logger.info("[UI_MAPPING] Service initialized")
     
     async def emit_trader_page_update(self) -> None:
-        """Emite actualización de página Trader vía WebSocket."""
-        if self.socket_service:
-            page_json = self.trader_page_state.to_json()
-            await self.socket_service.emit_trading_page_update(page_json)
+        """Emite actualización de página Trader vía WebSocket.
+        
+        EXEC-UI-VALIDATION-FIX: Emite con emit_event() correctamente,
+        con esquema JSON estándar y flag de prioridad para Análisis.
+        """
+        if not self.socket_service:
+            logger.warning("[UI_MAPPING] SocketService no inicializado")
+            return
+        
+        page_json = self.trader_page_state.to_json()
+        
+        # Emitir con prioridad alta si hay datos de análisis
+        event_type = "ANALYSIS_UPDATE" if self.trader_page_state.priority == "high" else "TRADER_PAGE_UPDATE"
+        
+        await self.socket_service.emit_event(
+            event_type=event_type,
+            payload=page_json
+        )
+        
+        logger.debug(
+            f"[UI_MAPPING] Emitted {event_type} with priority={page_json.get('priority')} "
+            f"analysis_signals={len(page_json.get('analysis_signals', {}))} "
+            f"elements={page_json.get('element_count')}"
+        )
     
     def add_structure_signal(self, asset: str, structure_data: Dict[str, Any]) -> None:
         """
-        Agrega elementos de estructura detectada.
+        Agrega elementos de estructura detectada (SEÑAL DE ANÁLISIS).
+        
+        EXEC-UI-VALIDATION-FIX: Esta es una señal de ANÁLISIS (prioridad alta).
+        Se registra en analysis_signals para mostrar en pestaña Análisis Y Trader.
         
         Args:
             asset: Par de divisas
             structure_data: Dict con HH/HL/LH/LL points, breaker, etc.
         """
         try:
-            # Crear líneas HH/HL
             hh_points = structure_data.get("hh_points", [])
             hl_points = structure_data.get("hl_points", [])
             
             if not hh_points and not hl_points:
-                logger.warning(f"[UI_MAPPING] No HH/HL points for {asset}, skipping")
+                logger.warning(f"[UI_MAPPING] No HH/HL points for {asset}")
                 return
             
             elements = self.factory.create_hh_hl_lines(hh_points, hl_points, f"{asset}_STRUCT")
             for elem in elements:
                 self.trader_page_state.add_element(elem)
             
-            # Crear Breaker Block
             breaker_high = structure_data.get("breaker_high")
             breaker_low = structure_data.get("breaker_low")
             if breaker_high and breaker_low:
@@ -527,14 +558,31 @@ class UIMappingService:
                 )
                 self.trader_page_state.add_element(breaker)
             
-            logger.info(f"[UI_MAPPING] Added structure signal for {asset}: {len(elements)} elements")
+            # EXEC-UI-VALIDATION-FIX: Marcar como ANÁLISIS - Prioridad Alta
+            self.trader_page_state.priority = "high"
+            self.trader_page_state.analysis_detected = True
+            self.trader_page_state.analysis_signals[f"{asset}_structure"] = {
+                "type": "structure",
+                "asset": asset,
+                "hh_points": len(hh_points),
+                "hl_points": len(hl_points),
+                "breaker_range": f"{breaker_high:.5f}-{breaker_low:.5f}" if breaker_high else None,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            logger.info(
+                f"[UI_MAPPING] Added ANALYSIS structure for {asset}: "
+                f"{len(elements)} elements | priority=HIGH"
+            )
         
         except Exception as e:
             logger.error(f"[UI_MAPPING] Exception in add_structure_signal({asset}): {str(e)}")
-            # No relanzar excepción - fallback seguro
     
     def add_target_signals(self, asset: str, tp1: float, tp2: float, start_idx: int, end_idx: int) -> None:
-        """Agrega líneas de objetivos (TP1, TP2)."""
+        """Agrega líneas de objetivos (TP1, TP2) - SEÑAL DE ANÁLISIS.
+        
+        EXEC-UI-VALIDATION-FIX: Prioridad alta, para Análisis y Trader.
+        """
         try:
             if not isinstance(tp1, (int, float)) or not isinstance(tp2, (int, float)):
                 logger.warning(f"[UI_MAPPING] Invalid TP values for {asset}: TP1={tp1}, TP2={tp2}")
@@ -546,13 +594,30 @@ class UIMappingService:
             self.trader_page_state.add_element(tp1_elem)
             self.trader_page_state.add_element(tp2_elem)
             
-            logger.info(f"[UI_MAPPING] Added targets for {asset}: TP1={tp1:.5f}, TP2={tp2:.5f}")
+            # EXEC-UI-VALIDATION-FIX: Marcar como ANÁLISIS - Prioridad Alta
+            self.trader_page_state.priority = "high"
+            self.trader_page_state.analysis_detected = True
+            self.trader_page_state.analysis_signals[f"{asset}_targets"] = {
+                "type": "targets",
+                "asset": asset,
+                "tp1": tp1,
+                "tp2": tp2,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            logger.info(
+                f"[UI_MAPPING] Added ANALYSIS targets for {asset}: "
+                f"TP1={tp1:.5f}, TP2={tp2:.5f} | priority=HIGH"
+            )
         
         except Exception as e:
             logger.error(f"[UI_MAPPING] Exception in add_target_signals({asset}): {str(e)}")
     
     def add_stop_loss(self, asset: str, sl_price: float, risk_pips: float, start_idx: int, end_idx: int) -> None:
-        """Agrega línea de Stop Loss."""
+        """Agrega línea de Stop Loss - SEÑAL DE ANÁLISIS.
+        
+        EXEC-UI-VALIDATION-FIX: Stop Loss es crítico, prioridad alta.
+        """
         try:
             if not isinstance(sl_price, (int, float)) or sl_price <= 0:
                 logger.warning(f"[UI_MAPPING] Invalid SL price for {asset}: {sl_price}")
@@ -561,7 +626,21 @@ class UIMappingService:
             sl_elem = self.factory.create_stop_loss_line(sl_price, start_idx, end_idx, risk_pips, f"{asset}_SL")
             self.trader_page_state.add_element(sl_elem)
             
-            logger.info(f"[UI_MAPPING] Added SL for {asset}: {sl_price:.5f} ({risk_pips:.0f} pips risk)")
+            # EXEC-UI-VALIDATION-FIX: Marcar como ANÁLISIS - Prioridad Alta
+            self.trader_page_state.priority = "high"
+            self.trader_page_state.analysis_detected = True
+            self.trader_page_state.analysis_signals[f"{asset}_stop_loss"] = {
+                "type": "stop_loss",
+                "asset": asset,
+                "sl_price": sl_price,
+                "risk_pips": risk_pips,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            logger.info(
+                f"[UI_MAPPING] Added ANALYSIS SL for {asset}: "
+                f"{sl_price:.5f} ({risk_pips:.0f} pips) | priority=HIGH"
+            )
         
         except Exception as e:
             logger.error(f"[UI_MAPPING] Exception in add_stop_loss({asset}): {str(e)}")
