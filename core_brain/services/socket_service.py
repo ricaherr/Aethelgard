@@ -122,6 +122,19 @@ class SocketService:
             "timestamp": datetime.now().isoformat()
         })
 
+    async def emit_reasoning_event(self, reasoning_event: dict) -> None:
+        """
+        Sends a strategy reasoning event to all connected clients.
+        
+        Used for S-0005 and other strategies to explain reasoning to UI.
+        Already formatted event from ReasoningEventBuilder.
+        
+        Args:
+            reasoning_event: Pre-formatted event dict with type, payload, timestamp
+        """
+        await self.broadcast(reasoning_event)
+        logger.debug(f"Reasoning event broadcast: {reasoning_event.get('payload', {}).get('strategy_id')}")
+
     def get_connection_count(self) -> int:
         """Returns the number of active connections"""
         return len(self.active_connections)
