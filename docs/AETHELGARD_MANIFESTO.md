@@ -918,6 +918,146 @@ Posiciones, órdenes, histórico de trades con coherence scores.
 
 ---
 
+### Manual de Identidad Visual: Sistema de Capas (Layers) — Página Trader 2.0
+
+La **Página Trader** (Battlefield) es la interfaz de trading primaria donde el operador visualiza activos, detecta oportunidades y monitorea ejecuciones en tiempo real. El sistema de **Capas (Layers)** permite al usuario activar/desactivar grupos de elementos visuales de forma independiente, proporcionando control granular sobre el ruido visual.
+
+#### Arquitectura de Capas Visuales
+
+Cada capa es un conjunto cohesivo de elementos que representa un concepto operativo diferente. El usuario puede toglear cada capa con un checkbox (sidebar izquierdo) o mediante atajos de teclado.
+
+| Capa | ID | Descripción | Elementos Principales | Ícono/Tecla | Activada por Defecto |
+|------|----|-----------|--------------------|------------|----------------------|
+| **[1] ESTRUCTURA** | `LAYER_STRUCTURE` | Arquitectura de precio: Máximos/Mínimos en tendencia, zonas de quiebre | HH/HL líneas, LH/LL líneas, Breaker Block sombreado, BOS neón | `S` | ✅ Sí |
+| **[2] LIQUIDEZ** | `LAYER_LIQUIDITY` | Zonas de absorción institucional, desbal ancios y Fair Value Gaps | FVG sombreado, Imbalance marcadores, LIQ insignias, Volumen zones | `L` | ✅ Sí |
+| **[3] MEDIAS MÓVILES** | `LAYER_MOVING_AVERAGES` | Indicadores de tendencia micro (SMA20) y macro (SMA200) | SMA 20 línea cian, SMA 200 línea naranja, cruces destacados, intersection labels | `M` | ✅ Sí |
+| **[4] PATRONES** | `LAYER_PATTERNS` | Patrones Price Action: Rejection Tails, Elephant Candles, Hammers, Pin Bars | Rejection Tail markers (gris brillante), Elephant Candle puntos grandes (verde/rojo), Pin Bar icons | `P` | ☐ No |
+| **[5] OBJETIVOS** | `LAYER_TARGETS` | Niveles de Take Profit y zonas de confluencia Fibonacci | TP1 (FIB 127%) línea cian oscuro, TP2 (FIB 618%) línea cian, zonas de confluencia sombreadas, tooltips de extensión | `T` | ✅ Sí |
+| **[6] RIESGO** | `LAYER_RISK` | Visualización de Stop Loss dinámico, tamaño de posición y razón Riesgo/Recompensa | SL línea rojo degradado, Caja de riesgo sombreada, Etiqueta "R:R", Número de pips en riesgo | `R` | ☐ No |
+
+#### Interacción de Capas por Estrategia
+
+Cuando el usuario selecciona o la plataforma detecta una estrategia activa, se resaltan automáticamente las capas más relevantes para esa estrategia:
+
+| Estrategia | Capas Primarias | Capas Secundarias | Descripción |
+|------------|-----------------|------------------|------------|
+| **S-0001: BRK_OPEN** | Liquidez, Objetivos | Estructura, Riesgo | Busca absorción en FVG + extensiones Fibonacci post-gap. Muestra zonas de liquidez + TP1/TP2 |
+| **S-0002: CONV_STRIKE** | Medias Móviles, Patrones | Liquidez, Estructura | Convergencia SMA20/200 + Rejection Tail. Destaca cruces y patrones de reversal |
+| **S-0003: MOM_BIAS** | Patrones, Liquidez | Medias Móviles | Momentum en pullbacks. Elephant Candles + Imbalance zones como gatillos |
+| **S-0005: SESS_EXT** | Objetivos, Liquidez | Estructura | Extensiones Fibonacci sobre rango Londres. TP1/TP2 = objetivos críticos |
+| **S-0006: STRUC_SHIFT** | Estructura, Riesgo | Objetivos, Liquidez | Ruptura y pullback a Breaker Block. SL crítico + HH/HL líneas como referencia |
+
+#### Paleta de Colores Institucional (Bloomberg Dark Inspired)
+
+La siguiente paleta asegura consistencia visual y máxima legibilidad en fondos oscuros:
+
+| Elemento | Color Nombre | Hex | RGB | Caso de Uso | Opacidad Estándar |
+|----------|-------------|-----|-----|---------|------------------|
+| **Fondo Primario** | Negro Profundo | #050505 | 5,5,5 | Canvas principal | 100% |
+| **HH/HL Líneas Alcista** | Cian Sólido | #00FFFF | 0,255,255 | Tendencias alcistas, máximos más altos | 100% |
+| **LH/LL Líneas Bajista** | Magenta Sólido | #FF00FF | 255,0,255 | Tendencias bajistas, mínimos más bajos | 100% |
+| **BOS (Break Alcista)** | Cian Discontinuo | #00FFFF | 0,255,255 | Ruptura alcista de estructura | 100% con patrón discontinuo |
+| **BOS (Break Bajista)** | Magenta Discontinuo | #FF00FF | 255,0,255 | Ruptura bajista de estructura | 100% con patrón discontinuo |
+| **Breaker Block Sombra** | Gris Oscuro | #2A2A2A | 42,42,42 | Zona de quiebre neutral | 50% opacidad |
+| **Fair Value Gap (FVG)** | Azul Claro Sombreado | #1E90FF | 30,144,255 | Zonas de desequilibrio a llenar | 30% opacidad |
+| **Imbalance Zones** | Naranja Tenue | #FF8C00 | 255,140,0 | Liquidez buscada (pullback zones) | 30% opacidad |
+| **SMA 20 (Soporte Dinámico)** | Cian Línea | #00FFFF | 0,255,255 | Media móvil de corto plazo | 100% |
+| **SMA 200 (Dirección Macro)** | Naranja Línea | #FF8C00 | 255,140,0 | Media móvil de largo plazo, define tendencia | 100% |
+| **Cruce SMA20/SMA200** | Blanco Brillante | #FFFFFF | 255,255,255 | Punto de intersección de medias | 100% (punto o pequeña esfera) |
+| **TP1 (Fibonacci 1.27R)** | Cian Oscuro | #1A9A9A | 26,154,154 | Objetivo de corto plazo, parcialización | 100% con patrón discontinuo |
+| **TP2 (Fibonacci 1.618R Golden Ratio)** | Cian Brillante | #00FFFF | 0,255,255 | Objetivo de largo plazo, full close | 100% con patrón discontinuo |
+| **Zona Confluencia TP1** | Cian Tenue Sombreado | #006666 | 0,102,102 | Rango de confluencia alrededor de TP1 | 20% opacidad |
+| **SL (Stop Loss)** | Rojo Gradiente | #FF3131 → #FF0000 | 255,49,49 → 255,0,0 | Riesgo definitivo, línea de cierre forzado | 100% con gradiente vertical |
+| **Rejection Tail Marker** | Gris Brillante | #E0E0E0 | 224,224,224 | Rechazo de precio (mecha > 50% rango vela) | 85% opacidad |
+| **Elephant Candle (Alcista)** | Verde Neón | #00FF00 | 0,255,0 | Volumen institucional comprador | 80% opacidad (punto grande) |
+| **Elephant Candle (Bajista)** | Rojo Neón | #FF3131 | 255,49,49 | Volumen institucional vendedor | 80% opacidad (punto grande) |
+| **Texto Datos** | Blanco Puro | #FFFFFF | 255,255,255 | Labels, precios, magnitudes | 100% |
+| **Texto Secundario / Hints** | Gris Claro | #CCCCCC | 204,204,204 | Etiquetas de contexto, tooltip descriptions | 70% opacidad |
+| **Alerta / Warning** | Amarillo Neón | #FFFF00 | 255,255,0 | Estado CAUTION (pre-evento), cambios de régimen | 90% opacidad |
+| **Crítico / Error** | Rojo Neón | #FF3131 | 255,49,49 | Estado LOCKDOWN, errores ejecución | 100% |
+| **Información / Confirmación** | Verde Neón | #00FF00 | 0,255,0 | Ejecución OK, confirmaciones de órdenes | 90% opacidad |
+
+#### Controles de Usuario
+
+**1. Sidebar Izquierdo (Layer Selector)**
+```
+┌─────────────────────────┐
+│ CAPAS VISUALES          │
+├─────────────────────────┤
+│ ☑️  Estructura          │ S
+│ ☑️  Liquidez            │ L
+│ ☑️  Medias Móviles      │ M
+│ ☐  Patrones            │ P
+│ ☑️  Objetivos           │ T
+│ ☐  Riesgo              │ R
+├─────────────────────────┤
+│ 🎯 ESTRATEGIA ACTIVA    │
+│ S-0006: STRUC_SHIFT    │
+│ (Estructura & Riesgo   │
+│  resaltadas)           │
+├─────────────────────────┤
+│ 📊 MODO VISTA           │
+│ ☉ Normal               │
+│ ○ Alto Contraste       │
+│ ○ Oscuro Total         │
+└─────────────────────────┘
+```
+
+**2. Atajos de Teclado**
+- `S` : Toggle capa ESTRUCTURA
+- `L` : Toggle capa LIQUIDEZ
+- `M` : Toggle capa MEDIAS MÓVILES
+- `P` : Toggle capa PATRONES
+- `T` : Toggle capa OBJETIVOS
+- `R` : Toggle capa RIESGO
+- `CTRL+L` : Toggle ALL layers
+- `CTRL+S` : Guardar configuración de layers custom
+
+**3. Contexto Sensible (Smart Highlighting)**
+
+Cuando se selecciona una estrategia o se detecta una señal activa:
+- Las capas relevantes se resaltan con borde cian (#00FFFF)
+- Las capas no relevantes se atenúan (opacidad -30%)
+- Tooltip muestra "Por qué esta capa es importante para S-XXXX"
+
+Ejemplo:
+```
+Usuario selecciona S-0006 (STRUC_SHIFT)
+  ↓
+Sistema resalta:
+  - ☑️  Estructura (borde cian, +50% opacity)
+  - ☑️  Riesgo (borde cian, +50% opacity)
+  
+  Y atenúa:
+  - Patrones (opacidad -30%, gris)
+  - Medias Móviles (opacidad -30%, gris)
+
+Tooltip:
+"S-0006 opera HH/HL (Estructura) con SL en
+ Breaker Block (Riesgo). Patrones y Medias
+ Móviles no son primarios para esta estrategia."
+```
+
+#### Renderizado de Capas (Orden Z-Index)
+
+Para evitar sobrecarga visual y mantener claridad, las capas se renderizan en orden de profundidad:
+
+1. **Fondos** (Z=10): FVG, Imbalance, Breaker Block (sombreados)
+2. **Líneas Base** (Z=20): SMA 20, SMA 200, HH/HL/LH/LL
+3. **Líneas de Acción** (Z=30): BOS neón, Rejection Tails, SL línea
+4. **Objetivos** (Z=40): TP1/TP2, zonas confluencia
+5. **Marcadores** (Z=50): Elephant Candles, Pin Bars, Cruces SMA
+6. **Animaciones y Tooltips** (Z=60): Pulsaciones, labels flotantes
+
+#### Optimización de Rendimiento
+
+- **Caching de capas**: Las capas computacionalmente costosas (HH/HL detection, FVG mapping) se cachean cada 5 velas
+- **Culling de elementos**: Elementos fuera del viewport visible se descartan (no renderizan)
+- **Reducción de resolución**: En timeframes mucho mayores (D1, W1), Elephant Candles y Rejection Tails se agrupan visualmente
+- **Throttling de animaciones**: Las animaciones (pulso BOS, interpolaciones) se limitan a 30 FPS
+
+---
+
 ## X. Biblioteca de Alphas y Firmas Operativas
 
 Registro institucional de todas las estrategias operativas bajo el Protocolo Quanter.
@@ -1054,6 +1194,540 @@ Detección de Quiebre de Estructura (BOS - Break of Structure) con continuación
 | STRUC_SHIFT_0001 | EUR/USD, USD/CAD | H1/H4 | 68-73% | >= 78% | 📋 Registrada |
 
 **Gobernanza Institucional**: Todas las estrategias requieren aprobación explícita antes de capital real. Shadow Mode es obligatorio para nuevas. Parámetros documentados en SYSTEM_LEDGER con razón técnica y fecha.
+
+---
+
+## XI. Gobernanza de Orquestación: Leyes de Exclusión Mutua
+
+El **MainOrchestrator** es el árbitro soberano de todas las señales entrantes. Su función es resolver conflictos estratégicos mediante una jerarquía de prioridades determinista que **evita el hedging accidental** (cobertura múltiple no intencional que drena capital en comisiones y slippage).
+
+### Principio Fundamental: Exclusión Mutua en Contexto Multihilo
+
+Cuando dos o más estrategias emiten señales contradictorias simultáneamente (ej. S-0004 con venta, S-0006 con compra en el mismo activo), el Orquestador elige ÚNICAMENTE la estrategia con mayor probabilidad de éxito según su **Asset Affinity Score** y la validación del régimen de mercado actual. El resto entra en estado **PENDING** (en espera) hasta que la posición ganadora se cierre o expire.
+
+**Objetivo Operativo**: Maximizar ROI por operación, reduciendo ruido de señales contradictorias y operaciones redundantes.
+
+### Jerarquía de Prioridades (Ley de Orquestación)
+
+#### Nivel 1: VETO ABSOLUTO — FundamentalGuard Service
+
+**Regla**: Si `FundamentalGuard.is_active() == True` y `FundamentalGuard.veto_level == ABSOLUTE`, **NINGUNA estrategia ejecuta**, sin excepciones.
+
+**Casos de Activación**:
+- Comunicado de banco central (FOMC, ECB, BOJ) con impacto macroscópico esperado
+- Datos macroeconómicos críticos (NFP USA, CPI, GDP) con volatilidad esperada > 300 pips
+- Cierre de mercado próximo (última 1 hora de sesión importante)
+- Evento geopolítico con riesgo sistémico
+- Gap esperado > 2% entre cierre y apertura siguiente
+
+**Mensaje al Usuario**: 
+```
+[LOCKDOWN] FundamentalGuard ACTIVO - Todas las estrategias bloqueadas
+Razón: Comunicado FOMC esperado en 28 minutos (evento ABSOLUTE veto)
+Reapertura: 14:30 EST
+```
+
+**Implementación en Código**:
+```python
+if self.fundamental_guard.is_active(current_time):
+    if self.fundamental_guard.veto_level == VetoLevel.ABSOLUTE:
+        self.logger.warning(f"LOCKDOWN: {self.fundamental_guard.reason}")
+        return ExecutionResult.BLOCKED_BY_FUNDAMENTAL_GUARD
+    # Si es CAUTION (nivel bajo), continuar a nivel 2
+```
+
+#### Nivel 2: AFINIDAD DE ACTIVO — Asset Affinity Score Dominante
+
+**Regla**: Entre todas las estrategias activas (que pasaron FundamentalGuard), ejecutar la que tenga el **Asset_Affinity_Score más alto** para el activo en cuestión.
+
+**Fórmula de Prioridad**:
+```
+Priority_Score = Asset_Affinity_Score * Signal_Confluence * Regime_Alignment_Factor
+```
+
+Donde:
+- `Asset_Affinity_Score`: Score de 0-1 definido en la matriz de estrategia (ej. BRK_OPEN en EUR/USD = 0.92)
+- `Signal_Confluence`: Fuerza de la señal (número de confirmadores múltiples: 0-1)
+- `Regime_Alignment_Factor`: Multiplier booleano (1 si régimen permite, 0 si bloquea)
+
+**Ejemplo Práctico**:
+```
+Hora: 09:15 EST (Apertura NY)
+Asset: EUR/USD
+
+S-0001 (BRK_OPEN):
+  - Affinity: 0.92 (PRIME)
+  - Signal Strength: HH detectado + FVG confirmado = 0.85 confluence
+  - Regime: TREND_UP detectado = 1.0 alignment
+  - Priority = 0.92 × 0.85 × 1.0 = 0.782
+
+S-0006 (STRUC_SHIFT):
+  - Affinity: 0.89 (PRIME)
+  - Signal Strength: Esperando Breaker Block = 0.60 confluence
+  - Regime: TREND_UP OK = 1.0 alignment
+  - Priority = 0.89 × 0.60 × 1.0 = 0.534
+
+WINNER: S-0001 (0.782 > 0.534)
+ACTION: Ejecutar entrada S-0001
+S-0006: Se ubica en modo STANDBY (monitorea, pero bloqueada para EUR/USD hasta cierre de S-0001)
+```
+
+#### Nivel 3: VALIDACIÓN DE RÉGIMEN — RegimeClassifier Gate
+
+**Regla**: Si el régimen de mercado actual no coincide con los requisitos de régimen de la estrategia, la estrategia se **VETA** (priority = -1).
+
+**Matriz de Compatibilidad**:
+
+| Régimen | Descripción | Estrategias PERMITIDAS | Estrategias BLOQUEADAS |
+|---------|-------------|----------------------|----------------------|
+| **TREND_UP** | Máximos y mínimos más altos; ATR > MA(ATR) | BRK_OPEN (HH/HL), STRUC_SHIFT, SESS_EXT | MOM_BIAS (necesita chop) |
+| **TREND_DOWN** | Mínimos y máximos más bajos; ATR > MA(ATR) | STRUC_SHIFT (LH/LL), CONV_STRIKE (en dirección) | Strategies bullish-only |
+| **RANGE (CHOP)** | Precio rebotando entre soporte/resistencia; ATR < MA(ATR) | MOM_BIAS, CONV_STRIKE (pullbacks) | BRK_OPEN (requiere tendencia clara) |
+| **VOLATILE (GAP)** | Gap >100 pips, ATR elevado; evento macroeconómico | BRK_OPEN, SESS_EXT (gap traders) | Strategies micro-timeframe (M5) |
+| **EXPANSION** | ATR crítico alto (>200 pips/hora); tendencia acelerada | BRK_OPEN (agresivo), SESS_EXT (extensiones) | Strategies conservadoras |
+| **CONTRACTION** | ATR bajo (squeeze); baja volatilidad; pre-breakout | MOM_BIAS (espera ruptura) | Cualquiera que requiera confirmación rápida |
+
+**Implementación**:
+```python
+regime = self.regime_classifier.analyze(market_data)
+
+for strategy in self.active_strategies:
+    if strategy.required_regimes and regime.type not in strategy.required_regimes:
+        strategy.priority = -1  # BLOQUEADA por régimen
+        self.logger.info(f"REGIME VETO: {strategy.name} requiere {strategy.required_regimes}, actual={regime.type}")
+        continue
+    
+    # Si pasó régimen, calcular prioridad normal
+    strategy.priority = self._compute_priority(strategy, regime)
+```
+
+#### Nivel 4: RIESGO DINÁMICO POR RÉGIMEN — Risk Scaling
+
+**Regla**: Una vez elegida la estrategia ganadora, ajustar el riesgo `risk_per_trade` según el régimen:
+
+| Régimen | Risk Adjustment | Razón |
+|---------|-----------------|-------|
+| **TREND (UP/DOWN)** | 1.0× (Normal: 1% equity) | Contexto claro, high probability |
+| **RANGE** | 0.75× (0.75% equity) | Menor tendencia, mayor probabilidad de falso break |
+| **VOLATILE** | 0.5× (0.5% equity) | Slippage + gaps impredecibles, reducir exposición |
+| **EXPANSION** | 0.5× (0.5% equity) | Volatilidad extrema, alto riesgo de ejecución fuera de precio |
+| **CONTRACTION** | 0.5× (0.5% equity) | Pre-breakout, esperar expansión antes de arriesgar |
+
+**Ejemplo**:
+```python
+if regime.type == RegimeType.TREND_UP:
+    risk_multiplier = 1.0
+elif regime.type == RegimeType.VOLATILE:
+    risk_multiplier = 0.5
+else:
+    risk_multiplier = 0.75
+
+final_risk = strategy.risk_per_trade * risk_multiplier
+self.logger.info(f"Risk Scaling: {strategy.name} | Base={strategy.risk_per_trade}% | Adjusted={final_risk}% | Regime={regime.type}")
+```
+
+### Algoritmo Completo de Orquestación
+
+```
+ALGORITHM: MainOrchestrator.ExecutionGatekeeper
+
+INPUT:
+  - signals: List[OutputSignal] (señales de todas las estrategias)
+  - market_data: MarketData (barras, precio actual, volumen)
+  - positions: List[OpenPosition] (posiciones abiertas)
+
+OUTPUT:
+  - execution_result: ExecutionResult (EXECUTED, BLOCKED, PENDING)
+
+PROCESS:
+  1. CHECK FundamentalGuard
+     IF fundamental_guard.is_active() AND veto_level == ABSOLUTE:
+         LOG "LOCKDOWN"
+         RETURN BLOCKED
+     ELSE IF veto_level == CAUTION:
+         FOR each strategy IN signals:
+             strategy.priority *= 0.5  // Reduce confianza
+  
+  2. ANALYZE REGIME
+     regime = regime_classifier.analyze(market_data)
+     LOG f"Current Regime: {regime.type} (ATR={regime.atr}, Volatility={regime.volatility}%)"
+  
+  3. FILTER BY REGIME
+     valid_strategies = []
+     FOR each strategy IN signals:
+         IF strategy.required_regimes.contains(regime.type):
+             valid_strategies.append(strategy)
+         ELSE:
+             LOG f"REGIME VETO: {strategy.name} bloqueada en {regime.type}"
+  
+  4. CHECK EXCLUSION MUTUA
+     FOR each open_position IN positions:
+         FOR each strategy IN valid_strategies:
+             IF strategy.asset == open_position.asset:
+                 // Excluir estrategias que conflictúen
+                 valid_strategies.remove(strategy)
+                 LOG f"EXCLUSION: {strategy.name} excluida (posición abierta {open_position.asset})"
+  
+  5. COMPUTE PRIORITIES
+     FOR each strategy IN valid_strategies:
+         strategy.priority = Asset_Affinity * Signal_Confluence * Regime_Alignment
+  
+  6. SELECT WINNER
+     IF valid_strategies.empty():
+         RETURN PENDING
+     ELSE:
+         winner = max(valid_strategies, key=strategy.priority)
+         LOG f"WINNER: {winner.name} | Priority={winner.priority}"
+  
+  7. APPLY RISK SCALING
+     risk_adjusted = winner.risk_per_trade * regime_risk_multiplier(regime)
+     LOG f"Risk Adjusted: {winner.risk_per_trade}% → {risk_adjusted}%"
+  
+  8. EXECUTE
+     result = executor.execute_signal(winner, risk_adjusted)
+     LOG f"EXECUTION: {result.status} | Precio={result.execution_price} | SL={result.sl} | TP1={result.tp1}"
+     RETURN EXECUTED
+
+END ALGORITHM
+```
+
+### Regla de Transición: Handoff Entre Estrategias
+
+Cuando una estrategia ganadora cierra su posición (SL hit, TP1, TP2, TP3 trailing), las estrategias en estado **PENDING** son reevaluadas inmediatamente:
+
+1. **Orquestador recalcula prioridades** de todas las estrategias PENDING
+2. **La siguiente con mayor prioridad entra** (si sigue cumpli
+ndo condiciones de régimen y FundamentalGuard)
+3. **EXCLUSION MUTUA**: Solo UNA estrategia ejecuta por activo en cualquier momento
+4. **Logging**: Cada transición registra TRACE_ID de handoff entre estrategias
+
+**Ejemplo de Flujo**:
+```
+10:15 - S-0001 (BRK_OPEN) EJECUTA entrada en EUR/USD
+10:20 - S-0006 (STRUC_SHIFT) detecta señal pero PENDING (exclusión mutua)
+
+10:45 - S-0001 hit TP1 (50% cierre)
+        >>> Orquestador reelvalúa S-0006 y otras PENDING
+
+10:46 - S-0006 ahora es GANADOR (priority recomputed = 0.85)
+        >>> S-0006 EJECUTA entrada en EUR/USD con risk scaling por régimen
+
+11:30 - S-0006 hit SL
+        >>> EUR/USD liberado, nuevas señales pueden entrar
+```
+
+### Auditoría y Compliance: TRACE_ID de Orquestación
+
+Toda decisión del Orquestador es registrada con un formato único:
+
+```
+[TRACE_ORCHESTRA_YYYYMMDD_HHMMSS_STRATEGYID]
+
+Ejemplo:
+[TRACE_ORCHESTRA_20260302_091500_BRK_OPEN_0001]
+  - FundamentalGuard: ACTIVE (FOMC en 25 min) → CAUTION (priority × 0.5)
+  - Regime: TREND_UP (ATR=85, SMA20 > SMA200)
+  - Candidates: [BRK_OPEN (0.92×0.85×1.0=0.782), STRUC_SHIFT (0.89×0.60×1.0=0.534)]
+  - Winner: BRK_OPEN
+  - Risk Scaling: 1.0× (regime TREND = normal)
+  - Execution: BUY 0.5 lot @ 1.0925 | SL=1.0910 | TP1=1.0945 | TP2=1.0970
+```
+
+**Criterio de Completitud**:
+- ✅ Jerarquía de 4 niveles documentada
+- ✅ Algoritmo pseudocódigo completo
+- ✅ Matriz de compatibilidad régimen-estrategia
+- ✅ Ejemplos operativos prácticos
+- ✅ TRACE_ID para auditoría
+
+---
+
+## XII. Guía de Integración EXEC-ORCHESTRA-001
+
+La integración de **ConflictResolver + UI_Mapping_Service + StrategyHeartbeatMonitor** en `MainOrchestrator` requiere 5 pasos clave de modificación.
+
+### Archivos Creados (NO modificar internamente, usar solo via DI)
+
+| Archivo | Líneas | Propósito |
+|---------|--------|----------|
+| `core_brain/conflict_resolver.py` | 440 | Resuelve conflictos entre señales de múltiples estrategias |
+| `core_brain/services/ui_mapping_service.py` | 650 | Transforma datos técnicos a JSON para UI (elementos visuales) |
+| `core_brain/services/strategy_heartbeat_monitor.py` | 450 | Monitorea salud de 6 estrategias con estado y métricas |
+
+### PASO 1: Inyección de Dependencias en `__init__()`
+
+**Ubicación**: `core_brain/main_orchestrator.py` línea ~240 (después de `self._init_broker_discovery()`)
+
+**Agregar estos imports**:
+```python
+from core_brain.conflict_resolver import ConflictResolver
+from core_brain.services.ui_mapping_service import UIMappingService
+from core_brain.services.strategy_heartbeat_monitor import (
+    StrategyHeartbeatMonitor, SystemHealthReporter
+)
+```
+
+**Agregar en `__init__()` después del inicializador del régimen**:
+```python
+# 7. Conflict Resolver (NEW)
+fundamental_guard = getattr(self.risk_manager, 'fundamental_guard', None)
+self.conflict_resolver = ConflictResolver(
+    storage=self.storage,
+    regime_classifier=self.regime_classifier,
+    fundamental_guard=fundamental_guard
+)
+logger.info("[ORCHESTRATOR] ConflictResolver initialized")
+
+# 8. UI Mapping Service (NEW)
+self.ui_mapping_service = UIMappingService(
+    socket_service=getattr(self, 'socket_service', None)
+)
+logger.info("[ORCHESTRATOR] UI_Mapping_Service initialized")
+
+# 9. Heartbeat Monitor + Health Reporter (NEW)
+self.heartbeat_monitor = StrategyHeartbeatMonitor(
+    storage=self.storage,
+    socket_service=getattr(self, 'socket_service', None)
+)
+self.health_reporter = SystemHealthReporter(
+    heartbeat_monitor=self.heartbeat_monitor,
+    storage=self.storage,
+    socket_service=getattr(self, 'socket_service', None)
+)
+logger.info("[ORCHESTRATOR] Heartbeat Monitor + Health Reporter initialized")
+```
+
+### PASO 2: Integración en `run_single_cycle()` - Conflict Resolution
+
+**Ubicación**: `core_brain/main_orchestrator.py` línea ~760 (después de `validated_signals = self.risk_manager.validate_signals(...)`)
+
+**Reemplazar** el bloque que valida señales sin resolver conflictos:
+
+```python
+# ANTES (eliminar):
+if not validated_signals:
+    logger.info("No signals passed risk validation")
+    self._active_signals.clear()
+    self.stats.cycles_completed += 1
+    return
+
+# DESPUÉS (reemplazar con):
+if not validated_signals:
+    logger.info("No signals passed risk validation")
+    self._active_signals.clear()
+    
+    # Update heartbeat: estrategias en IDLE
+    for strategy_id in self.heartbeat_monitor.STRATEGY_IDS:
+        self.heartbeat_monitor.update_heartbeat(
+            strategy_id, StrategyState.IDLE
+        )
+    
+    self.stats.cycles_completed += 1
+    return
+
+logger.info(f"{len(validated_signals)} signals passed risk validation")
+
+# ⭐ NEW: CONFLICT RESOLUTION STEP
+logger.info("[RESOLVER] Starting conflict resolution...")
+approved_signals, pending_signals = self.conflict_resolver.resolve_conflicts(
+    validated_signals,
+    self.current_regime,
+    trace_id=trace_id
+)
+
+if not approved_signals:
+    logger.warning("[RESOLVER] All signals rejected (FundamentalGuard or regime)")
+    
+    for strategy_id in self.heartbeat_monitor.STRATEGY_IDS:
+        state = (StrategyState.VETOED_BY_NEWS 
+                if self.conflict_resolver._is_fundamental_guard_blocking()
+                else StrategyState.VETO_BY_REGIME)
+        self.heartbeat_monitor.update_heartbeat(strategy_id, state)
+    
+    self.stats.cycles_completed += 1
+    return
+
+logger.info(f"[RESOLVER] Result: {len(approved_signals)} approved, "
+           f"{sum(len(v) for v in pending_signals.values())} pending")
+
+# Update heartbeat para aprobadas
+for signal in approved_signals:
+    strategy_id = getattr(signal, 'strategy', 'UNKNOWN')
+    self.heartbeat_monitor.update_heartbeat(
+        strategy_id,
+        state=StrategyState.SIGNAL_DETECTED,
+        asset=signal.symbol,
+        confidence=getattr(signal, 'confidence', 0.70)
+    )
+```
+
+### PASO 3: Integración en Loop de Ejecución (UI + Heartbeat)
+
+**Ubicación**: `core_brain/main_orchestrator.py` línea ~820 (bucle `for signal in approved_signals`)
+
+**En cada iteración de ejecución, DESPUÉS del try/except que ejecuta**:
+
+```python
+strategy_id = getattr(signal, 'strategy', 'UNKNOWN')
+
+# Update heartbeat: IN_EXECUTION
+self.heartbeat_monitor.update_heartbeat(
+    strategy_id,
+    state=StrategyState.IN_EXECUTION,
+    asset=signal.symbol
+)
+
+# ⭐ NEW: UI MAPPING - Agregar elementos visuales si existen
+if hasattr(signal, 'structure_data'):
+    self.ui_mapping_service.add_structure_signal(
+        signal.symbol,
+        signal.structure_data
+    )
+
+if hasattr(signal, 'tp1') and hasattr(signal, 'tp2'):
+    self.ui_mapping_service.add_target_signals(
+        signal.symbol,
+        signal.tp1, signal.tp2,
+        0, 10  # time indices
+    )
+
+if hasattr(signal, 'stop_loss'):
+    self.ui_mapping_service.add_stop_loss(
+        signal.symbol,
+        signal.stop_loss,
+        getattr(signal, 'risk_pips', 0),
+        0, 10
+    )
+
+# Emit UI update
+await self.ui_mapping_service.emit_trader_page_update()
+
+# Execute signal (existing code)
+success = await self.executor.execute_signal(signal)
+
+if success:
+    # Update heartbeat: POSITION_ACTIVE
+    self.heartbeat_monitor.update_heartbeat(
+        strategy_id,
+        state=StrategyState.POSITION_ACTIVE,
+        asset=signal.symbol,
+        position_open=True
+    )
+else:
+    # Update heartbeat: ERROR
+    self.heartbeat_monitor.update_heartbeat(
+        strategy_id,
+        state=StrategyState.ERROR,
+        error_message="Execution failed"
+    )
+```
+
+### PASO 4: Agregar Heartbeat Loop (Nuevo en `run()`)
+
+**Ubicación**: `core_brain/main_orchestrator.py` método `run()`
+
+**Reemplazar** el loop infinito actual con ejecución async concurrente:
+
+```python
+async def run(self) -> None:
+    """Main orchestrator loop with concurrent heartbeat reporting."""
+    
+    # Task 1: Main orchestrator cycle
+    main_task = asyncio.create_task(self._main_orchestrator_loop())
+    
+    # Task 2: Heartbeat reporter (NEW)
+    heartbeat_task = asyncio.create_task(self._heartbeat_reporting_loop())
+    
+    # Task 3: Health reporter (NEW)
+    health_task = asyncio.create_task(self._health_reporting_loop())
+    
+    try:
+        await asyncio.gather(main_task, heartbeat_task, health_task)
+    except KeyboardInterrupt:
+        main_task.cancel()
+        heartbeat_task.cancel()
+        health_task.cancel()
+
+
+async def _main_orchestrator_loop(self) -> None:
+    """Main cycle (código existente de run() se mueve aquí)."""
+    while not self._shutdown_requested:
+        try:
+            await self.run_single_cycle()
+            await asyncio.sleep(self._compute_adaptive_sleep())
+        except Exception as e:
+            logger.error(f"[MAIN] Cycle error: {e}")
+            await asyncio.sleep(5)
+
+
+async def _heartbeat_reporting_loop(self) -> None:
+    """Emite heartbeat cada 1 segundo."""
+    while not self._shutdown_requested:
+        try:
+            await self.heartbeat_monitor.emit_monitor_update()
+            
+            # Persist every 10 seconds
+            if int(datetime.now().timestamp()) % 10 == 0:
+                self.heartbeat_monitor.persist_heartbeats()
+            
+            await asyncio.sleep(1.0)
+        except Exception as e:
+            logger.error(f"[HEARTBEAT] Error: {e}")
+            await asyncio.sleep(1.0)
+
+
+async def _health_reporting_loop(self) -> None:
+    """Emite health report cada 10 segundos."""
+    while not self._shutdown_requested:
+        try:
+            await self.health_reporter.emit_health_report()
+            await asyncio.sleep(10.0)
+        except Exception as e:
+            logger.error(f"[HEALTH] Error: {e}")
+            await asyncio.sleep(10.0)
+```
+
+### PASO 5: Cierre de Posición - Limpieza
+
+**Ubicación**: `core_brain/main_orchestrator.py` método `_check_closed_positions()`
+
+**Después de actualizar el estado de la posición a "closed"**, agregar:
+
+```python
+# ⭐ NEW: Clear conflict resolver
+self.conflict_resolver.clear_active_signal(pos['symbol'])
+
+# ⭐ NEW: Update heartbeat - volver a IDLE
+strategy_id = pos.get('strategy_id', 'UNKNOWN')
+self.heartbeat_monitor.update_heartbeat(
+    strategy_id,
+    state=StrategyState.IDLE,
+    position_open=False
+)
+
+logger.info(f"[ORCHESTRATOR] Position closed: {pos['symbol']} → {strategy_id} IDLE")
+```
+
+### Imports Necesarios en MainOrchestrator
+
+```python
+from core_brain.conflict_resolver import ConflictResolver
+from core_brain.services.ui_mapping_service import UIMappingService
+from core_brain.services.strategy_heartbeat_monitor import (
+    StrategyHeartbeatMonitor, SystemHealthReporter, StrategyState
+)
+from datetime import datetime
+```
+
+### Testing Checklist
+
+- [ ] ConflictResolver resuelve múltiples señales por activo
+- [ ] UI_Mapping genera JSON serializable
+- [ ] Heartbeat emite JSON cada 1 segundo
+- [ ] Health report emite cada 10 segundos
+- [ ] Posición cerrada vuelve estrategia a IDLE
+- [ ] Conflict resolver limpiado en cierre
+- [ ] Async tasks (main + heartbeat + health) corren concurrentemente
 
 ---
 
