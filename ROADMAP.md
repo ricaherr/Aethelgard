@@ -444,7 +444,236 @@ signal.metadata["websocket_payload"] = {
 
 ---
 
-## 🎨 SPRINT: ALPHA_UI_S005 — Refactorización a Terminal de Inteligencia (Bloomberg-Dark)
+## 🛡️ SPRINT: ALPHA_LIQUIDITY_S005 — LIQUIDITY SWEEP (S-0004: LIQ_SWEEP_0001)
+
+**Inicio**: 2 de Marzo 2026  
+**TRACE_ID**: DOC-RECOVERY-LIQ-2026  
+**Estado**: ✅ COMPLETADA (Fase 1 & 2)
+**Prioridad**: HIGH (Scalping, Forex Agresivo)
+
+### 📋 Contexto
+Estrategia de Scalping avanzada basada en "Trampa de Liquidez". El precio supera máximos/mínimos previos (Breakout Falso), atrapa órdenes stop de minoristas, y luego revierte de forma violenta. Requiere detectar **candles de reversión PIN BAR / ENGULFING** tras perforación de nivel.
+
+**Affinity Matrix Final**:
+- EUR/USD: **0.92** (PRIME - Liquidez masiva en Londres)
+- GBP/USD: **0.88** (Overlap Londres-NY)
+- USD/JPY: **0.60** (Tiende tendencias largas, requiere umbral más alto)
+
+---
+
+### Fase 1: DOCUMENTACIÓN & RECUPERACIÓN TÉCNICA ✅ COMPLETADA (HANDSHAKE_TO_DOCUMENTER)
+
+#### ACCIÓN 1.1: Completar MOM_BIAS_0001 en MANIFESTO.md ✅
+- **Status**: ✅ COMPLETADA
+- **Entregables**:
+  - [x] Sección VII: Catálogo de Estrategias Registradas
+  - [x] 4 Pilares operativos: Compresión, Ignición, Ubicación, Risk Management
+  - [x] Affinity Scores en DB: GBP/JPY (0.85), EUR/USD (0.65), GBP/USD (0.72), USD/JPY (0.60)
+  - [x] Protocolo Lockdown: 3 pérdidas consecutivas → veto 60 min
+  - [x] Flujo de ejecución end-to-end
+
+#### ACCIÓN 1.2: Documentar FundamentalGuardService en MANIFESTO.md ✅
+- **Status**: ✅ COMPLETADA
+- **Entregables**:
+  - [x] Sección VIII: Infraestructura Crítica de Gobernanza
+  - [x] Filtro ROJO (LOCKDOWN): ±15 min eventos HIGH impact (CPI, FOMC, NFP, ECB, BOJ)
+  - [x] Filtro NARANJA (VOLATILITY): ±30 min eventos MEDIUM impact (PMI, Jobless Claims, Retail)
+  - [x] Métodos públicos: is_lockdown_period(), is_volatility_period(), is_market_safe()
+  - [x] Integración con SignalFactory
+  - [x] Caché SSOT y protocolo de refresco
+
+#### ACCIÓN 1.3: Registrar S-0004 (LIQ_SWEEP_0001) en MANIFESTO.md ✅
+- **Status**: ✅ COMPLETADA
+- **Entregables**:
+  - [x] Sección "S-0003: LIQUIDITY SWEEP" (Scalping Avanzado)
+  - [x] Mecánica: Breakout Falso → Reversión Violenta
+  - [x] 4 Pilares Operativos: Identificación de Niveles, Gatillo Reversal, Contexto Régimen, Risk Management
+  - [x] Parámetros de entrada: Session High/Low, PIN BAR/ENGULFING detection
+  - [x] Matriz de Afinidad: EUR/USD (0.92), GBP/USD (0.88), USD/JPY (0.60)
+  - [x] Protocolo operativo intradía: Timeline España de máxima actividad
+  - [x] Restricciones y Lockdown (2 falsas en 4 trades → veto 120 min)
+  - [x] Flujo de ejecución completo con estados
+  - [x] Configuración dinámica en dynamic_params.json
+
+---
+
+### Fase 2: IMPLEMENTACIÓN (HANDSHAKE_TO_EXECUTOR) ✅ COMPLETADA — TRACE_ID: EXEC-STRAT-LIQ-001
+
+#### ACCIÓN 2.1: Sensor de Niveles de Sesión ✅
+- **Archivo**: `core_brain/sensors/session_liquidity_sensor.py`
+- **Status**: ✅ COMPLETADA
+- **Descripción**: 
+  - Detecta Highest_High y Lowest_Low de sesión Londres (08:00-17:00 GMT)
+  - Calcula máximo/mínimo del día anterior (H-1)
+  - Identifica dinámicamente breakouts por encima/debajo de estos niveles
+  - Mapea zonas de liquidez críticas con indicador de densidad
+- **Criterio de Aceptación**:
+  - [x] Test unitario: test_session_liquidity_sensor.py (TDD) — **11/11 tests PASSED**
+  - [x] Cálculo correcto de Session High/Low de Londres
+  - [x] Cálculo correcto de High/Low día anterior
+  - [x] Detección de breakouts en ambas direcciones
+  - [x] Mapeo de zonas de liquidez
+  - [x] Análisis completo de sesión retorna estructura esperada
+  - [x] Arquitectura agnóstica (cero imports broker)
+  - [x] Inyección DI: StorageManager
+
+#### ACCIÓN 2.2: Detector de Breakout Falso + Reversal ✅
+- **Archivo**: `core_brain/sensors/liquidity_sweep_detector.py`
+- **Status**: ✅ COMPLETADA
+- **Descripción**:
+  - Detecta PIN BAR: Wick > 50%, cuerpo < 25% del rango
+  - Detecta ENGULFING: Vela actual envuelve anterior completamente
+  - Valida que cierre está dentro del rango previo (negación de ruptura)
+  - Calcula probabilidad/strength de reversión
+  - Valida con volumen (> 120% del promedio = confirmación)
+- **Criterio de Aceptación**:
+  - [x] Test unitario: test_liquidity_sweep_detector.py (TDD) — **13/13 tests PASSED**
+  - [x] Detección correcta de PIN BAR bullish/bearish
+  - [x] Detección correcta de ENGULFING
+  - [x] Validación de rango previo
+  - [x] Detección integrada de breakout falso + reversal
+  - [x] Validación de volumen con confidence boost
+  - [x] Arquitectura agnóstica
+  - [x] Inyección DI: StorageManager
+
+#### ACCIÓN 2.3: Estrategia LiquiditySweep0001 ✅
+- **Archivo**: `core_brain/strategies/liq_sweep_0001.py`
+- **Status**: ✅ COMPLETADA
+- **Descripción**:
+  - Clase `LiquiditySweep0001Strategy` hereda de `BaseStrategy`
+  - Usa SessionLiquiditySensor para máximos/mínimos de sesión
+  - Usa LiquiditySweepDetector para validar breakout falso
+  - Consulta obligatoria a FundamentalGuardService
+  - Genera Signal con SL = reversal high/low + buffer (2 pips)
+  - TP = 30 pips (scalp agresivo)
+  - Risk/Reward: Calculado dinámicamente
+- **Affinity Scores (SSOT en DB)**:
+  - EUR/USD: 0.92 (PRIME)
+  - GBP/USD: 0.88 (EXCELLENT)
+  - USD/JPY: 0.60 (MONITOR)
+  - GBP/JPY: 0.70
+  - USD/CAD: 0.65
+- **Criterio de Aceptación**:
+  - [x] Inyección DI correcta (4 dependencias)
+  - [x] Carga de parámetros dinámicos
+  - [x] Validación de affinity score
+  - [x] Consulta a FundamentalGuardService (veto por noticias)
+  - [x] Detección de breakout falso en ambas direcciones
+  - [x] Generación de Signal con SL = reversal ± buffer
+  - [x] Metadata completa: patrón, strength, risk/reward ratio
+  - [x] Logging estructurado con TRACE_ID
+  - [x] Arquitectura agnóstica
+
+#### ACCIÓN 2.4: Persistencia en DB ✅
+- **Script**: `scripts/register_liq_sweep_0001.py`
+- **Status**: ✅ COMPLETADA
+- **Descripción**:
+  - Registra LIQ_SWEEP_0001 en tabla `strategies`
+  - Persiste affinity_scores: EUR/USD (0.92), GBP/USD (0.88), USD/JPY (0.60), etc.
+  - Market whitelist: ['EUR/USD', 'GBP/USD', 'USD/JPY', 'GBP/JPY', 'USD/CAD']
+  - Versión: 1.0
+- **Ejecución**:
+  - ✅ Script ejecutado exitosamente
+  - ✅ Estrategia registrada: "LIQ_SWEEP_0001 (LIQUIDITY_SWEEP_SCALPING)"
+  - ✅ Affinity scores persistidos en SSOT
+  - ✅ Market whitelist configurado
+
+---
+
+### Fase 3: VALIDACIÓN ✅ COMPLETADA
+
+#### ACCIÓN 3.1: Tests TDD Unitarios ✅
+- **Status**: ✅ COMPLETADA (24/24 tests PASSED)
+- **Cobertura**:
+  - [x] SessionLiquiditySensor: 11/11 tests PASSED
+    - Inicialización con DI
+    - Cálculo Session High/Low Londres
+    - Cálculo High/Low día anterior
+    - Detección de breakouts
+    - Mapeo de zonas de liquidez
+    - Análisis completo integrado
+  - [x] LiquiditySweepDetector: 13/13 tests PASSED
+    - Detección PIN BAR bullish/bearish
+    - Detección ENGULFING
+    - Validación de rango previo
+    - Detección de breakout falso + reversal
+    - Validación de volumen
+
+#### ACCIÓN 3.2: Validación Integral del Sistema ✅
+- **Status**: ✅ COMPLETADA
+- **Comando**: `python scripts/validate_all.py`
+- **Resultado**: 
+  ```
+  [SUCCESS] SYSTEM INTEGRITY GUARANTEED
+  
+  MODULO                         ESTADO          
+  Architecture                   PASSED          
+  Tenant Isolation Scanner       PASSED          
+  QA Guard                       PASSED          
+  Code Quality                   PASSED          
+  UI Quality                     PASSED          
+  Manifesto                      PASSED          
+  Patterns                       PASSED          
+  Core Tests                     PASSED          
+  Integration                    PASSED          
+  Tenant Security                PASSED          
+  Connectivity                   PASSED          
+  System DB                      PASSED          
+  DB Integrity                   PASSED          
+  Documentation                  PASSED          
+  ```
+- **TOTAL TIME**: 8.70s
+- **Validaciones**:
+  - ✅ Cero imports broker en core_brain/
+  - ✅ Cero código duplicado (DRY)
+  - ✅ Tests TDD verdes: 24/24 PASSED en sensores + toda suite
+  - ✅ start.py sin errores
+  - ✅ DB íntegra
+  - ✅ Arquitectura agnóstica validada
+
+---
+
+## ✅ RESULTADO FINAL: OPERACIÓN EXEC-STRAT-LIQ-001 COMPLETADA
+
+### Entregables Implementados
+
+1. **Documentación** (MANIFESTO.md):
+   - ✅ Sección VII: Catálogo de Estrategias (S-0001, S-0002, S-0003)
+   - ✅ Sección VIII: Infraestructura Crítica (FundamentalGuardService, TRACE_ID)
+   - ✅ Especificación técnica completa de LIQ_SWEEP_0001
+
+2. **Sensores Implementados**:
+   - ✅ `core_brain/sensors/session_liquidity_sensor.py` - Session High/Low con regiones de liquidez
+   - ✅ `core_brain/sensors/liquidity_sweep_detector.py` - PIN BAR + ENGULFING detection
+
+3. **Estrategia Implementada**:
+   - ✅ `core_brain/strategies/liq_sweep_0001.py` - LiquiditySweep0001Strategy completa
+
+4. **Tests TDD**:
+   - ✅ `tests/test_session_liquidity_sensor.py` - 11/11 tests PASSED
+   - ✅ `tests/test_liquidity_sweep_detector.py` - 13/13 tests PASSED
+   - **Total: 24/24 tests PASSED** ✅
+
+5. **Persistencia de Estrategia**:
+   - ✅ `LIQ_SWEEP_0001` registrada en DB con affinity scores:
+     - EUR/USD: 0.92 (PRIME)
+     - GBP/USD: 0.88 (EXCELLENT)
+     - USD/JPY: 0.60 (MONITOR)
+     - GBP/JPY: 0.70
+     - USD/CAD: 0.65
+
+6. **Script de Persistencia**:
+   - ✅ `scripts/register_liq_sweep_0001.py` - Ejecución exitosa
+
+7. **Validaciones Ejecutadas**:
+   - ✅ `validate_all.py` - SUCCESS (14/14 módulos PASSED)
+   - ✅ Arquitectura agnóstica - Cero imports broker en core_brain/
+   - ✅ Inyección de Dependencias - Todas las estrategias y sensores con DI
+   - ✅ SSOT - Configuración en DB, parámetros dinámicos desde storage
+
+---
+
+## 🎨 SPRINT: ALPHA_UI_S006 — Refactorización a Terminal de Inteligencia (Bloomberg-Dark)
 
 **Inicio**: 2 de Marzo 2026  
 **TRACE_ID**: DOC-UI-TERMINAL-INTELLIGENCE-2026

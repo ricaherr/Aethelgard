@@ -390,5 +390,475 @@ El Gatekeeper se integra en:
 | **ThresholdOptimizer / Tuner** | Calcula scores nuevos, actualiza DB (llamado off-session) | sys_edge_tuner.py |
 
 ---
+
+## VII. Catálogo de Estrategias Registradas (Alpha Registry)
+
+### S-0001: TRIFECTA CONVERGENCE (CONV_STRIKE_0001)
+
+**Ubicación**: [docs/strategies/CONV_STRIKE_0001_TRIFECTA.md](../strategies/CONV_STRIKE_0001_TRIFECTA.md)
+
+**Filosofía**: Convergencia de 3 pilares: SMA institucionales (20/200), Rejection Tails (precio rechaza desde línea de media), contexto direccional.
+
+**Parámetros Configurables**:
+- SMA20 (M5/M15): Línea de soporte/resistencia rápida
+- SMA200 (H1): Contexto institucional de largo plazo
+- Rejection Tail: Mecha ≥ 50% del rango
+
+**Affinity Scores** (SSOT en DB):
+- EUR/USD: 0.88 (EXCELLENT)
+- USD/JPY: 0.75 (GOOD)
+- GBP/JPY: 0.45 (MONITOR)
+
+**Integración**: Sensores instalados en `core_brain/sensors/moving_average_sensor.py` y `core_brain/sensors/candlestick_pattern_detector.py`
+
+---
+
+### S-0003: LIQUIDITY SWEEP (LIQ_SWEEP_0001) — Scalping Avanzado
+
+**Ubicación**: [docs/strategies/LIQ_SWEEP_0001_SCALPING.md](../strategies/LIQ_SWEEP_0001_SCALPING.md)  
+**Status**: 🚀 Especificación Técnica (Implementación próxima)  
+**TRACE_ID**: DOC-RECOVERY-LIQ-2026  
+**Versión**: 1.0 (Refinamiento Institucional)
+
+#### El Concepto: "La Trampa de Liquidez"
+
+**Premisa Operativa**: Las instituciones financieras necesitan "limpiar" (sweep) las órdenes stop loss de retail traders colocadas en máximos/mínimos previos antes de mover el precio en la dirección real del traderion.
+
+**Mecánica**:
+1. **Falsa Ruptura**: El precio perfora un máximo o mínimo clave (Session High/Low de Londres)
+2. **Entrampa**: Atrapa a traders que compraron breaking out arriba o shorteaban breaking out abajo
+3. **Liquidación**: Los stops de estos traders son ejecutados (swept) a la institución
+4. **Reversión Violenta**: El precio invierte de forma rápida, muy por encima/abajo del punto de reversión
+
+#### 4 Pilares Operativos
+
+**1. Pilar Sensorial: Identificación de Niveles Críticos**
+- **Detección**: Session_High de Londres (08:00-17:00 GMT) o máximo/mínimo del día anterior
+- **Propósito**: Niveles donde instituciones saben que hay densidad de stops retail
+- **Validación**: Breakout debe ocurrir en los primeros 30 minutos post-session (peak liquidity)
+
+**2. Pilar de Gatillo: Vela de Reversión (PIN BAR / ENGULFING)**
+- **PIN BAR**: 
+  - Mecha (wick) > 60% del rango total
+  - Cuerpo pequeño: < 30% del rango total
+  - Cierre dentro del rango previo (negación de breakout)
+  - Ejemplo: Precio sube 50 pips, pero cierra 45 pips abajo (mecha rechaza)
+  
+- **ENGULFING**:
+  - Vela actual envuelve completamente la anterior (abre dentro, cierra afuera)
+  - Indica reversión de momentum de manera estructural
+  - Más bullish si cierre está en máximo histórico de los últimos N velas
+
+- **Validación Crítica**: El cierre DEBE estar **dentro del rango previo de 2 velas** (no puede continuar breakout)
+
+**3. Pilar de Contexto: Régimen de Mercado**
+- **Permitido**: RANGE, COMPRESSION (volatilidad baja favorece atrape)
+- **Rechazado**: STRONG_TREND (velas elefante rompen tendencias, no reversión)
+- **Óptimo**: Ruptura ocurre al final de sesión (cierre real) cuando hay transición de operadores
+
+**4. Pilar de Riesgo: Risk Management Escalado**
+- **Stop Loss**: High/Low de vela de reversión + 2 pips buffer (ajustado para FOREX 5 dec)
+- **Take Profit**: 1:2 ratio, máximo 30 pips de ganancia (scalp puro)
+- **Position Size**: 0.5% del capital por trade (ajustado a volatilidad normalizada)
+- **Max Daily Sweeps**: 3 operaciones máximo por símbolo (evitar sobre-trading)
+
+#### Affinity Matrix por Activo (SSOT en DB)
+
+| Símbolo | Score | Sesión | Razón Operativa |
+|---------|-------|--------|-----------------|
+| **EUR/USD** | 0.92 | Londres Open (08:00 GMT) | Liquidez masiva, densidad stops máxima, spreads tight |
+| **GBP/USD** | 0.88 | Overlap Londres-NY (13:00-17:00 GMT) | Pares correlacionados, volatilidad consistente |
+| **USD/JPY** | 0.60 | Tokyo-London Transition | Requiere umbral más alto (tiende tendencias no reversiones) |
+| **GBP/JPY** | 0.70 | London Session | Carry pairs, spreads amplios, menos ideal |
+| **USD/CAD** | 0.65 | NY Session | Commodities correlacionadas, ruido adicional |
+
+#### Protocolo de Operación Intradía
+
+**Sesión de Máxima Actividad**: Londres 08:00-17:00 GMT
+
+**Timeline Operativo**:
+```
+Hora    | Evento                    | Acción Sistema
+--------|---------------------------|----------------------------------
+07:50   | Pre-Londres               | Cargar Session_High anterior
+08:00   | Londres abre              | Monitorear breakouts primeros
+08:10   | Peak Liquidity            | ✓ Señales más probables
+08:30   | Estabilización temprana   | Validar reversión candle
+13:00   | Overlap NY comienza       | EUR/USD+GBP/USD volatilidad sube
+17:00   | Londres cierra            | ✓ Última oportunidad (transición)
+```
+
+**Restricciones Operativas**:
+- Máximo 30 minutos desde breakout hasta entrada (liquidez decae)
+- No operar últimos 5 min de sesión (deslippage)
+- No operar primeros 2 min (volatilidad extrema)
+
+#### Inteligencia de Liquidez
+
+**Señales de Confianza Elevada**:
+- Breakout ocurre exactamente a nivel Session_High/Low (no 1-2 pips antes)
+- PIN BAR tiene wick > 70% del rango (rechazo agresivo)
+- Cierre está en mitad inferior de rango previo (máxima negación de breakout)
+- Volumen en reversal > promedio 20 velas (confirmación)
+
+**Red Flags (VETO)**:
+- Breakout ocurre cuando banco central hace anuncio (evento fundamental)
+- Precio ya está 15+ pips dentro de breakout (trampa tardía, menos efectiva)
+- Régimen está en STRONG_TREND (velas no reversan, continúan)
+- Corredor de reversión (HIGH-LOW) > 60 pips (precio ya escapó, sin utilidad)
+
+#### Integración Técnica
+
+**Archivo de Sensores**:
+- Ubicación: `core_brain/sensors/liquidity_sweep_detector.py`
+- Métodos:
+  - `detect_false_breakout(current_candle, previous_candles, session_high, session_low)`
+  - `validate_reversal_pattern(candle) → Tuple[str, float]` (pattern type, strength)
+  - `is_within_range(price, range_low, range_high, tolerance=0.0002)`
+
+**Archivo de Estrategia**:
+- Ubicación: `core_brain/strategies/liq_sweep_0001.py`
+- Clase: `LiquiditySweep0001Strategy(BaseStrategy)`
+- Dependencias inyectadas:
+  - `liquidity_sweep_detector: LiquiditySweepDetector`
+  - `regime_service: RegimeService`
+  - `storage_manager: StorageManager`
+
+**Persistencia en DB**:
+- Tabla: `strategies`
+- Entry:
+  ```
+  class_id: "LIQ_SWEEP_0001"
+  mnemonic: "LIQUIDITY_SWEEP_SCALPING"
+  version: "1.0"
+  affinity_scores: {"EUR/USD": 0.92, "GBP/USD": 0.88, "USD/JPY": 0.60, ...}
+  market_whitelist: ["EUR/USD", "GBP/USD", "USD/JPY", "GBP/JPY", "USD/CAD"]
+  regime_filter: ["RANGE", "COMPRESSION"]  # Solo estos regímenes
+  membership_level: "PREMIUM"  # Solo operadores Premium+
+  ```
+
+#### Restricciones y Lockdown
+
+**Protocolo de Parada**:
+- **Trigger**: 2 reversiones falsas (breakout continúa a pesar de PIN BAR) en 4 operaciones
+- **Acción**: Lockdown 120 minutos (fin de sesión Londres)
+- **Razón**: PIN BARs perdieron efectividad, mercado en tendencia, no hay reversal
+
+**Validación Diaria**:
+- Si max_daily_sweeps (3) se alcanzan → Veto automático hasta próxima sesión
+- Win Rate < 50% sobre últimas 20 operaciones → Downgrade a SHADOW mode
+
+#### Flujo de Ejecución Completo
+
+```
+1. MainOrchestrator.run() inicia scanner
+2. TickHandler.on_tick(symbol="EUR/USD", candle) llega
+   ├─ RegimeService.detect_regime() → "RANGE" ✓
+   └─ RiskManager.max_trades_allow() → True ✓
+
+3. UniversalStrategyExecutor.generate_signals()
+   ├─ Inyecta LiquiditySweep0001Strategy
+   └─ strategy.analyze(symbol="EUR/USD", df, regime="RANGE")
+
+4. LiquiditySweep0001Strategy.analyze()
+   ├─ Step 1: Cargar Session_High(hoy) y Session_Low(ayer)
+   ├─ Step 2: detect_false_breakout() → (True, breakout_level, direction)
+   ├─ Step 3: validate_reversal_pattern() 
+   │  └─ Si PIN_BAR o ENGULFING → strength:float (0-1)
+   ├─ Step 4: is_within_range(close, prev_low, prev_high) → True ✓
+   └─ Step 5: _generate_sweep_signal() con entry, SL, TP, affinity=0.92
+
+5. Signal generada:
+   {
+     "symbol": "EUR/USD",
+     "signal_type": "SELL" (si breakout fue alcista, reversión es bajista),
+     "entry_price": 1.0925,
+     "stop_loss": 1.0920 + 0.0002 = 1.0922,  ← Buffer 2 pips
+     "take_profit": 1.0925 - 0.0030 = 1.0895,  ← 30 pips scalp
+     "confidence": 0.92,
+     "metadata": {
+       "pattern": "PIN_BAR",
+       "pattern_strength": 0.88,
+       "session_high": 1.0950,
+       "session_low": 1.0850,
+       "breakout_level": 1.0955,
+       "liquidity_indicator": "HIGH",
+       "regime": "RANGE"
+     }
+   }
+
+6. RiskManager.evaluate_signal() ✓
+
+7. Executor.execute_on_tick()
+   ├─ Abierta posición SHORT 1000 units EUR/USD
+   ├─ SL=1.0922, TP=1.0895
+   └─ Metadata incluida en trade
+
+8. TradeClosureListener monitorea
+   ├─ Si TP = +30 pips ganancia ✅
+   ├─ Si SL = -2 pips pérdida ❌
+   └─ Registra en strategy_performance_logs
+
+9. CoherenceService compara shadow vs live
+   └─ Ajusta affinity_scores para próxima sesión (SSOT update)
+```
+
+#### Configuración Dinámica (dynamic_params.json)
+
+```json
+{
+  "liq_sweep_enabled": true,
+  "liq_sweep_min_affinity": 0.75,
+  "liq_sweep_max_daily_trades": 3,
+  "liq_sweep_tp_pips": 30,
+  "liq_sweep_sl_buffer_pips": 2,
+  "liq_sweep_pin_bar_wick_threshold": 0.60,
+  "liq_sweep_min_breakout_duration_min": 5,
+  "liq_sweep_max_breakout_duration_min": 30,
+  "liq_sweep_allowed_sessions": ["LONDON"],
+  "liq_sweep_lockdown_threshold_losses": 2,
+  "liq_sweep_lockdown_window_minutes": 120
+}
+```
+
+---
+
+### S-0002: MOMENTUM STRIKE (MOM_BIAS_0001)
+
+**Ubicación**: [docs/strategies/MOM_BIAS_0001_MOMENTUM_STRIKE.md](../strategies/MOM_BIAS_0001_MOMENTUM_STRIKE.md)  
+**Implementación**: `core_brain/strategies/mom_bias_0001.py`  
+**Tests**: `tests/core_brain/test_elephant_candle_detector.py`, `tests/test_momentum_strike.py`  
+**TRACE_ID**: STRAT-MOM-BIAS-0001
+
+#### Mecánica Operativa
+
+**Definición**: Ruptura de compresión SMA20/SMA200 validada por Vela Elefante (Elephant Candle).
+
+**4 Pilares Operativos**:
+
+1. **Pilar Sensorial: Compresión SMA20/SMA200**
+   - Requisito: Distancia entre SMA20 y SMA200 ≤ 15 pips
+   - Alineación: Ambas en mismo nivel o muy cercanas (fusión institucional)
+   - Propósito: Indica zona de "punto de ignición" donde volatilidad está comprimida
+
+2. **Pilar de Ignición: Vela Elefante**
+   - Detectada por: ElephantCandleDetector.validate_ignition()
+   - Criterios:
+     - Cuerpo ≥ 50 pips (size absoluto para FOREX 5 decimales)
+     - Mecha small: < 20% del cuerpo
+     - Cierre/Apertura: Extremos opuestos del rango (máxima dirección)
+   - Propósito: Ruptura violenta que atrapa órdenes stop de minoristas
+   - Próximo paso: **VALIDAR UBICACIÓN** (Cierre)
+
+3. **Pilar de Ubicación: Reversal Closure**
+   - Validación: `current_close ≥ 2% del SMA20` (BULLISH) o `current_close ≤ 2% del SMA20` (BEARISH)
+   - Propósito: Confirmar que la vela elefante está **en contexto de media móvil**, no es falsa ruptura
+   - Acción: Si se valida → **GENERAR SEÑAL**
+
+4. **Pilar de Riesgo: Stop Loss = OPEN (Regla de Oro)**
+   - **CRÍTICO**: El Stop Loss se fija en el OPEN de la vela de ignición, NO en el Low/High
+   - Beneficio: Maximiza el aprovechamiento (lotaje) al tener SL más ajustado
+   - Cálculo Risk/Reward: 1:2 a 1:3 (configurable en dynamic_params)
+   - Ejemplo:
+     ```
+     Entry Price: 1.0850 (Close de Elephant)
+     Stop Loss:   1.0820 (Open de Elephant)  ← REGLA DE ORO
+     Risk Pips:   30
+     Reward Pips: 60 (1:2 ratio)
+     Take Profit: 1.0910
+     ```
+
+#### Affinity Scores por Activo (SSOT en DB)
+
+| Símbolo | Score | Estado | Razón |
+|---------|-------|--------|--------|
+| GBP/JPY | 0.85  | EXCELLENT | Yen Carry facilita reversiones rápidas |
+| EUR/USD | 0.65  | GOOD | Volatilidad media, compresiones regulares |
+| GBP/USD | 0.72  | GOOD | Correlación con sesiones de Londres |
+| USD/JPY | 0.60  | MONITOR | Tiende a seguir tendencias largas |
+
+#### Protocolo de Lockdown
+
+**Triggering Event**: 3 pérdidas consecutivas en mismo símbolo
+
+**Acción**:
+1. Sistema registra lockdown en `system_state` (DB)
+2. Veto temporal: LIQ_SWEEP + MOM_BIAS no generan nuevas señales (solo cierre SL/TP)
+3. Duración: Configurable (default 60 minutos)
+4. Recuperación: Automática tras ventana, o manual por operador
+
+#### Integración Técnica
+
+**Ubicación del Código**:
+- Estrategia: `core_brain/strategies/mom_bias_0001.py::MomentumBias0001Strategy`
+- Detector: `core_brain/sensors/elephant_candle_detector.py::ElephantCandleDetector`
+- Registro: `scripts/register_mom_bias_0001.py` (ejecutar post-deploy)
+
+**Flujo de Ejecución**:
+```
+1. MainOrchestrator.run() inicia MainHandler
+2. UniversalStrategyExecutor.generate_signals() 
+   ├─ Inyecta MomentumBias0001Strategy
+   ├─ Llama strategy.analyze(symbol, df, regime)
+   └─ MomentumBias0001Strategy.analyze():
+      ├─ Step 1: Cargar SMA20/200 vía MovingAverageSensor
+      ├─ Step 2: Detectar compresión SMA20/SMA200 (≤15 pips)
+      ├─ Step 3: Invocar ElephantCandleDetector.validate_ignition()
+      ├─ Step 4: Si válido → _generate_momentum_signal() con SL=OPEN
+      └─ Return Signal | None
+
+3. RiskManager.evaluate_signal() valida señal
+4. Executor.execute_on_tick() abre posición con SL=OPEN
+5. TradeClosureListener monitorea P&L
+6. CoherenceService validar shadow vs live
+```
+
+---
+
+## VIII. Infraestructura Crítica de Gobernanza
+
+### FundamentalGuardService — "Escudo de Noticias"
+
+**Ubicación**: `core_brain/services/fundamental_guard.py`  
+**Tests**: `tests/test_fundamental_guard_service.py` (17/17 PASSED)  
+**TRACE_ID**: EXEC-FUNDAMENTAL-GUARD-2026
+
+#### Responsabilidades Principales
+
+1. **Consulta de Calendario Económico**: Mantiene caché in-memory de eventos próximos
+2. **Detección LOCKDOWN**: Identifica ventanas de riesgo extremo (±15 min)
+3. **Detección VOLATILITY**: Identifica ventanas de volatilidad elevada (±30 min)
+4. **Integración con SignalFactory**: Veto a nuevas señales durante periodos críticos
+
+#### Filtro ROJO (LOCKDOWN) — ±15 minutos
+
+**Eventos de Alto Impacto**:
+- Inflación: `CPI`, `CORE CPI`, `PPI`, `CORE PPI`
+- Bancos Centrales: `FOMC`, `ECB Decision`, `BOE`, `BOJ Decision`, `RBA`, `CNB`
+- Empleo: `NFP`, `UNEMPLOYMENT RATE`, `JOBLESS CLAIMS`
+- Economía Macro: `GDP`, `MANUFACTURING`, `INDUSTRIAL PRODUCTION`
+
+**Ventana de Tiempo**:
+- Inicio: `event_time - 15 minutos`
+- Fin: `event_time + 15 minutos`
+- Total: 30 minutos de VETO TOTAL
+
+**Acción Operativa**:
+```
+🔴 LOCKDOWN FUNDAMENTAL: CPI release ±15min
+is_market_safe("EUR/USD") → (False, "FUNDAMENTAL_LOCKDOWN: CPI release")
+```
+- Nueva estrategia: **VETADA** (no genera señal)
+- Posición abierta: Respeta SL/TP normalmente (cierre permitido)
+- Logs: Trazar con trace_id único para auditoría
+
+#### Filtro NARANJA (VOLATILITY) — ±30 minutos
+
+**Eventos de Impacto Medio**:
+- Índices PMI: `PMI Manufacturing`, `PMI Services`, `Composite PMI`
+- Desempleo: `Initial Jobless Claims`, `Continuing Jobless Claims`
+- Ventas Minoristas: `Retail Sales`, `Core Retail Sales`
+- Construcción: `Housing Starts`, `Building Permits`
+- Ordenes: `Durable Orders`, `Factory Orders`, `New Orders`
+- Manufactura/Servicios: `ISM Manufacturing`, `ISM Non-Manufacturing`
+
+**Ventana de Tiempo**:
+- Inicio: `event_time - 30 minutos`
+- Fin: `event_time + 30 minutos`
+- Total: 60 minutos de RESTRICCIÓN
+
+**Acción Operativa**:
+```
+🟠 VOLATILITY FILTER: PMI release ±30min (only ANT_FRAG allowed)
+is_market_safe("GBP/USD") → (True, "VOLATILITY_FILTER: PMI")
+```
+- Nueva estrategia: **AUTORIZADA** pero min_threshold += 0.15 (más selectiva)
+- Estrategias permitidas: Solo `ANT_FRAG` (Anti-Fragility patterns, no MOM_BIAS)
+- Posición abierta: SL/TP normales
+- Log: Indicar restricción de score
+
+#### Métodos Públicos
+
+```python
+def is_lockdown_period(
+    symbol: str,
+    current_time: Optional[datetime] = None
+) -> bool:
+    """¿Está el mercado en LOCKDOWN (evento HIGH impact)? ±15 min"""
+
+def is_volatility_period(
+    symbol: str,
+    current_time: Optional[datetime] = None
+) -> bool:
+    """¿Está el mercado en VOLATILITY (evento MEDIUM impact)? ±30 min"""
+
+def is_market_safe(
+    symbol: str,
+    current_time: Optional[datetime] = None
+) -> Tuple[bool, str]:
+    """
+    ¿Es seguro operar?
+    
+    Returns:
+        (False, "FUNDAMENTAL_LOCKDOWN: CPI release")  # LOCKDOWN
+        (True, "VOLATILITY_FILTER: PMI (only ANT_FRAG allowed)")  # VOLATILITY
+        (True, "")  # Mercado seguro
+    """
+```
+
+#### Integración con SignalFactory
+
+**Ubicación**: `core_brain/signal_factory.py::SignalFactory._enrich_signal_with_metadata()`
+
+**Flujo**:
+```python
+# Dentro de generate_signals()
+is_safe, reason = fundamental_guard.is_market_safe(symbol, current_time)
+
+if not is_safe:
+    # VETO
+    signal.metadata["fundamental_veto"] = reason
+    # Signal rechazada por RiskManager
+    return []  # No Signal emitida
+
+if reason:  # VOLATILITY (but safe)
+    # Enriquecer
+    signal.metadata["fundamental_warning"] = reason
+    # Signal emitida pero con restricción de score
+```
+
+#### Caché SSOT (Single Source of Truth)
+
+**Fuente de Datos**: `storage_manager.get_economic_calendar()`
+
+**Refresco**:
+- Automático al llamar `is_market_safe()` (cada tick)
+- Fallback a caché anterior si error en storage
+- Logs de fallback para auditoría
+
+---
+
+### Estándar de Trazabilidad: TRACE_ID
+
+Toda operación en Aethelgard debe llevar un identificador único para auditoría:
+
+**Formato**:
+```
+{OPERATION_TYPE}-{CONTEXT}-{UNIQUE_ID}
+
+Ejemplos:
+- STRAT-MOM-BIAS-0001        (Estrategia MOM_BIAS)
+- EXEC-FUNDAMENTAL-GUARD-2026 (FundamentalGuardService)
+- DOC-RECOVERY-LIQ-2026       (Documentación LIQ_SWEEP)
+- SIGNAL-TRIFECTA-UUID        (Señal CONV_STRIKE_0001)
+```
+
+**Propagación**:
+- Generada en componente raíz (ej. Strategy, Service)
+- Propagada a todos los eventos subordinados (logs, DB records)
+- Visible en UI para operador (debugging + compliance)
+
+---
+
 > [!TIP]
 > Los detalles técnicos, diagramas de arquitectura y manuales de dominio se encuentran en la carpeta `docs/`. El historial cronológico de cambios técnicos reside en [SYSTEM_LEDGER.md](SYSTEM_LEDGER.md).
