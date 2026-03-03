@@ -2,7 +2,60 @@
 
 **Última Actualización**: 2 de Marzo 2026  
 **Estado General**: 🚀 En Ejecución  
-**Proyecto**: ALPHA_TRIFECTA_S002 - Trifecta Convergence (EUR/USD)
+**Proyecto Actual**: DOC-UNIFICATION-2026 - Consolidación Estrategias + UI Terminal
+
+---
+
+## 📋 SPRINT: DOC-UNIFICATION-2026 — Gobernanza Centralizada de Alphas
+
+### Objetivo
+**Opción A - Consolidación Total**: Migrar TODAS las estrategias documentadas (S-0001, S-0002, S-0003) al AETHELGARD_MANIFESTO.md como **Sección X: Biblioteca de Alphas**. Especificar **Sección VI: Terminal de Inteligencia** con estándares UI. Eliminar archivos estrategia individuales.
+
+### Actividad 1: Unificación de Gobernanza (Opción A)
+- ✅ **CREAR SECCIÓN X**: "Biblioteca de Alphas y Firmas Operativas"
+  - Status: ✅ COMPLETADA
+  - Contenido: S-0001 (BRK_OPEN_0001), S-0002 (CONV_STRIKE_0001), S-0003 (MOM_BIAS_0001), S-0005 (SESS_EXT_0001)
+  - Consolidación ISO en un único archivo (SSOT)
+  
+- ✅ **MIGRAR ESTRATEGIAS ANTERIORES**
+  - Status: ✅ COMPLETADA
+  - Archivos fuente: docs/strategies/BRK_OPEN_0001_NY_STRIKE.md, CONV_STRIKE_0001_TRIFECTA.md, MOM_BIAS_0001_MOMENTUM_STRIKE.md
+  - Destino: MANIFESTO.md Sección X (contenido consolidado)
+
+- ✅ **ELIMINAR ARCHIVOS INDIVIDUALES**
+  - Status: ✅ COMPLETADA
+  - Archivos eliminados: 3 estrategias de docs/strategies/
+  - Verificación: Directorio strategies/ ahora VACÍO (solo SSOT en MANIFESTO)
+
+- ✅ **DOCUMENTAR S-0005 (SESS_EXT_0001)**
+  - Status: ✅ COMPLETADA
+  - Contenido: Session Extension (Continuidad Daily) - Fibonacci 127%/161% del rango Londres
+  - Mercado: GBP/JPY (Affinity 0.90) + EUR/JPY (0.85)
+  - Pilares: Sensorial, Régimen, Coherencia, Multi-Tenant
+  
+### Actividad 2: Especificación de UI "Terminal de Inteligencia"
+- ✅ **CREAR SECCIÓN VI**: "Terminal de Inteligencia (Interfaz Visual Institucional)"
+  - Status: ✅ COMPLETADA
+  - Estándares de Color:
+    - Fondo: #050505 (Negro profundo)
+    - Acento Cian: #00FFFF (Seguridad/Confirmación)
+    - Acento Neón Rojo: #FF3131 (Crítico/Bloqueo)
+  
+  - Componentes:
+    1. **Widget Estado de Mercado**: Panel superior (SAFE/CAUTION/LOCKDOWN)
+    2. **Monitor Live Logic Reasoning**: Transparencia de decisiones de bloqueo
+    3. **Terminal Ejecución**: Posiciones, órdenes, histórico
+  
+  - Interactividad: Click en estado, OVERRIDE (Institutional), Click en posición
+
+### Validación y Cierre
+- ✅ **ARQUITECTURA VERIFICADA**
+  - Single Source of Truth: MANIFESTO.md contiene TODO
+  - Cero Redundancia: Files estrategia removidos
+  - Código Limpio: Workspace sin temporales
+  
+- ✅ **TRACE_ID**: DOC-UNIFICATION-2026
+- ✅ **Audit Trail**: SYSTEM_LEDGER.md actualizada
 
 ---
 

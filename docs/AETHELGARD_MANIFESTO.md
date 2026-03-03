@@ -860,5 +860,121 @@ Ejemplos:
 
 ---
 
+## VI. Terminal de Inteligencia (Interfaz Visual Institucional)
+
+La interfaz de usuario de Aethelgard es la **Capa Visual Institucional** donde el operador dialoga con el cerebro cuantitativo.
+
+### Estándares de Color
+- **Fondo**: #050505 (Negro profundo)
+- **Acento Seguridad**: #00FFFF (Cian)
+- **Acento Crítico**: #FF3131 (Neón Rojo)
+- **Texto**: #FFFFFF
+
+### Componentes Críticos
+
+#### Widget Estado de Mercado
+Panel superior: SAFE (Cian) | CAUTION (Amarillo) | LOCKDOWN (Rojo)
+
+#### Monitor Live Logic Reasoning
+Transparencia total: por qué el sistema bloqueó una señal.
+
+#### Terminal Ejecución
+Posiciones, órdenes, histórico de trades con coherence scores.
+
+---
+
+## X. Biblioteca de Alphas y Firmas Operativas
+
+Registro institucional de todas las estrategias operativas bajo el Protocolo Quanter.
+
+### S-0001: BRK_OPEN_0001 — NY Strike
+
+**Class ID**: BRK_OPEN_0001 | EUR/USD (0.92) | Premium+ | H1 | ✅ Operativa
+
+Opera retracción a Fair Value Gap en primeros 90 minutos post-apertura EST (08:00-09:30).
+
+**4 Pilares**: 
+1. Sensorial (FVG, RSI 14, MA20/MA50, ATR, Spread)
+2. Régimen (TREND_UP, EXPANSION permitidos)
+3. Coherencia (Shadow/Live, score >= 75%)
+4. Multi-Tenant (Basic no, Premium/Institutional sí)
+
+**Fases**: Pre-Apertura (07:00-08:00) → Apertura (08:00-08:15) → Entrada (08:15-09:30)
+
+**Riesgo**: SL dinámico + TP multi-escala (R2/R2/R1.5 trailing) + Risk <= 1% equity
+
+---
+
+### S-0002: CONV_STRIKE_0001 — Trifecta Convergence
+
+**Class ID**: CONV_STRIKE_0001 | EUR/USD (0.88) | Premium | M5/M15+H1 | ✅ Shadow
+
+Convergencia SMA20/SMA200 + Rejection Tail + contexto direccional.
+
+**Lógica**: Tendencia > Retroceso > Reversión (Hammer/Elephant) > Buy Stop
+
+**Gestión**: SL = 1 pip bajo cola | TP = 2.5R | Breakeven en 1R
+
+---
+
+### S-0003: MOM_BIAS_0001 — Momentum Strike
+
+**Class ID**: MOM_BIAS_0001 | EUR/USD | Premium | M5 | ✅ Operativa
+
+Ruptura de compresión SMA20/SMA200 validada por Vela Elefante (50+ pips).
+
+**Stop Loss (ORO)**: SL = OPEN de vela elefante (maximiza lotaje)
+
+**Risk/Reward**: 1% capital | Ratio 2:1 a 3:1
+
+---
+
+### S-0005: SESS_EXT_0001 — Session Extension
+
+**Class ID**: SESS_EXT_0001 | GBP/JPY (0.90) | Premium+ | H1/H4 | 📋 Registrada
+
+Session Extension captura continuidad cuando Londres establece dirección fuerte y NY abre sin retroceso. Objetivo: extensiones Fibonacci 127% y 161% del rango LDN.
+
+**Fundamento**: GBP/JPY y EUR/JPY muestran ~90% coherencia en extensiones sin pullbacks.
+
+**Pilares**:
+1. Sensorial: Rango Londres (>=100 pips), NY sin retroceso (>50%), Fib 127%/161%, Vela Elefante, ATR
+2. Régimen: TREND_CONTINUATION, MOMENTUM_EXPANSION, INSTITUTIONAL_ALIGNMENT (sí)
+3. Coherencia: Shadow/Live, score >= 80%
+4. Multi-Tenant: Basic (no), Premium (sí), Institutional (sí + custom)
+
+**Fases**:
+1. Evaluación Londres (8:00-17:00 GMT): Rango >= 100 pips
+2. Cálculo Fibonacci (17:00-17:05): Fib_127 = High/Low ± (Range × 1.27/1.618)
+3. Validación NY Opening (13:30 UTC): Retroceso <= 50%
+4. Confirmación Vela Elefante: 80+ pips, volumen >= promedio
+5. Entrada en Confluencia (09:30-11:00 EST): Entry + SL/TP1/TP2
+
+**Gestión de Riesgo**:
+- SL = Low_LDN - 10 pips (protección estructural)
+- TP1 (60% posición) = Fib 127%
+- TP2 (40% posición) = Fib 161%
+- Risk/Reward: Típicamente 1:1.65 a 1:2.10
+
+**Asset Affinity**: GBP/JPY (0.90 PRIME) | EUR/JPY (0.85 ACTIVE) | AUD/JPY (0.65 Monitor)
+
+**Terminal UI**: Fibonacci dibujados (blanca entrada, cian/cian-oscuro targets, neón-rojo SL)
+
+---
+
+### Matriz de Coherencia Multi-Estrategia
+
+| Estrategia | Asset | Timeframe | Hit Rate | Coherence | Status |
+|-----------|-------|-----------|---------|-----------|--------|
+| BRK_OPEN_0001 | EUR/USD | H1 | 65-70% | >= 75% | ✅ Operativa |
+| CONV_STRIKE_0001 | EUR/USD | M5/M15 | 60-65% | >= 75% | ✅ Shadow |
+| MOM_BIAS_0001 | EUR/USD | M5 | 58-62% | >= 70% | ✅ Operativa |
+| SESS_EXT_0001 | GBP/JPY | H1/H4 | 70-75% | >= 80% | 📋 Registrada |
+
+**Gobernanza Institucional**: Todas las estrategias requieren aprobación explícita antes de capital real. Shadow Mode es obligatorio para nuevas. Parámetros documentados en SYSTEM_LEDGER con razón técnica y fecha.
+
+---
+
 > [!TIP]
+
 > Los detalles técnicos, diagramas de arquitectura y manuales de dominio se encuentran en la carpeta `docs/`. El historial cronológico de cambios técnicos reside en [SYSTEM_LEDGER.md](SYSTEM_LEDGER.md).
