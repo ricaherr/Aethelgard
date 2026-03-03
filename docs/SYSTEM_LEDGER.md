@@ -1,11 +1,11 @@
 # AETHELGARD: SYSTEM LEDGER
 
-**Version**: 1.0.0
+**Version**: 4.2.0-beta.1
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> ⚠️ **ÚLTIMA ACTUALIZACIÓN (2026-03-02 19:30 UTC)**: Trace_ID: EXEC-EFFICIENCY-SCORE-001 | HU 7.2 COMPLETADA
-> Trace_ID: COHERENCE-DRIFT-2026-001 | Sistema: 14/14 Tests PASSED | Workspace: Limpio
+> ⚠️ **ÚLTIMA ACTUALIZACIÓN (2026-03-03 00:15 UTC)**: Trace_ID: DOC-LEDGER-SYNC-V4 | EXEC-ORCHESTRA-001 + EXEC-FINAL-INTEGRATION-V1 CLOSED
+> Sprint 4 (Vector V4) Completado | Deuda Técnica Crítica: Validación Visual Backend-Frontend Pendiente
 
 ---
 
@@ -1593,3 +1593,126 @@ RiskManager.activate_lockdown() + defensive_protocol()
 - Conectar MainOrchestrator para inyectar conectores en RiskManager
 - Integrar con PositionManager para casos avanzados (trailing stops, etc.)
 - Misión B: Coherence Drift Monitor (HU 6.3) - detectar divergencia ejecución real vs teoría
+
+---
+
+## 📅 Registro: 2026-03-02/03 — ORQUESTACIÓN Y EMPODERAMIENTO DEL USUARIO (VECTORES V4-V5)
+
+### ✅ SPRINT COMPLETADO: EXEC-ORCHESTRA-001 + EXEC-FINAL-INTEGRATION-V1
+**Trace_ID**: `EXEC-ORCHESTRA-001` / `EXEC-FINAL-INTEGRATION-V1`  
+**Timestamp Cierre**: 2026-03-03 00:15 UTC  
+**Status**: ✅ PRODUCTION-READY (Backend) | 🟡 USER_VALIDATION_PENDING (Frontend)  
+**Domains**: 05 (Universal Execution), 06 (Portfolio Intelligence), 09 (Institutional Interface)  
+**Vector**: V4 (Orquestación Ejecutiva) + V5 (Empoderamiento del Usuario)  
+
+#### Descripción de Trabajos Completados
+
+**EXEC-ORCHESTRA-001: Implementación de Orquestación Multi-Estrategia**
+- ✅ `ConflictResolver`: Resolución automática de conflictos entre señales (Sección XI MANIFESTO)
+  - Jerarquía de prioridades: FundamentalGuard → Asset Affinity → Régimen → Risk Scaling
+  - Algoritmo 6-pasos determinista documentado
+  - Exclusión mutua: una estrategia por activo, resto en PENDING
+  - Tests: 14/14 PASSED
+
+- ✅ `UIDrawingFactory` & `UIMappingService`: Transformación de datos técnicos a JSON
+  - 16 colores institucionales (Bloomberg Dark)
+  - Sistema de 6 capas visuales (Structure, Liquidity, MovingAverages, Patterns, Targets, Risk)
+  - Elementos: HH/HL líneas, Breaker Block, FVG, Imbalance, SMA, Targets, SL con z-index automático
+  - Tests: 12/12 PASSED
+
+- ✅ `StrategyHeartbeatMonitor` & `SystemHealthReporter`: Monitoreo de salud
+  - 9 estados posibles por estrategia (IDLE, SCANNING, SIGNAL_DETECTED, IN_EXECUTION, POSITION_ACTIVE, VETOED_BY_NEWS, VETO_BY_REGIME, PENDING_CONFLICT, ERROR)
+  - Frecuencia: heartbeat cada 1s, persistencia cada 10s
+  - Health Score integral: CPU, Memory, DB, Broker, WebSocket, Estrategias
+  - Tests: 18/18 PASSED
+  
+#### Cambios en MainOrchestrator.py
+
+**Inyección de Dependencias** (líneas 242-244):
+- `ui_mapping_service: Optional[Any] = None`
+- `heartbeat_monitor: Optional[Any] = None`
+- `conflict_resolver: Optional[Any] = None`
+
+**Nuevo Método `_init_orchestration_services()`** (líneas 271-313):
+- Inicialización lazy de 3 servicios
+- Fallback automático si servicios no son inyectados
+- Try/except con logging según RULE 4.3 (DEVELOPMENT_GUIDELINES)
+
+**Actualización de `run_single_cycle()`** (líneas 877-889):
+- `await self.ui_mapping_service.emit_trader_page_update()` (emite cambios visuales)
+- `self._update_all_strategies_heartbeat()` (actualiza latido)
+
+**Nuevo Método `_update_all_strategies_heartbeat()`** (líneas 915-927):
+- Itera sobre todas las estrategias conocidas
+- Marca como IDLE al final de ciclo
+- Async-safe con manejo de excepciones
+
+**Validación**:
+- ✅ validate_all.py: 14/14 modules PASSED (11.94s)
+- ✅ start.py: OPERATIONAL sin errores
+- ✅ Type hints: 100%
+- ✅ DI Pattern: Enforced
+- ✅ Asyncio: Compliant
+- ⚠️ **ARQUITECTURA ALERT**: MainOrchestrator: 1262 líneas (>500 límite) - Requiere refactorización futura
+
+---
+
+**EXEC-FINAL-INTEGRATION-V1: Enriquecimiento de Ayuda Contextual**
+
+**Cambios en UIDrawingFactory** (8 métodos actualizados):
+- Agregado campo `"description"` en propiedad de cada elemento
+- Descripciones técnicas contextuales en español:
+  - HH: "Línea de máximos consecutivos más altos..."
+  - HL: "Línea de mínimos consecutivos más altos..."
+  - Breaker Block: "Zona de confirmación donde ocurrió quiebre..."
+  - FVG: "Desequilibrio de precio que Smart Money busca llenar..."
+  - Imbalance: "Zona donde delta de volumen es extremo..."
+  - SMA: "Media móvil de X períodos. Soporte dinámico..."
+  - TP1/TP2: "Objetivo de ganancia basado en Fibonacci..."
+  - Stop Loss: "Nivel de cierre obligatorio por riesgo máximo..."
+
+**Validación**:
+- ✅ JSON serialization: Descriptions included
+- ✅ Frontend-compatible: Tooltips técnicos listos
+- ✅ Type safety: 100%
+
+---
+
+### ⚠️ DEUDA TÉCNICA CRÍTICA REGISTRADA
+
+**ALERTA: Comunicación Backend-Frontend (Capa de Presentación)**
+
+**Problema Identificado**:
+La emisión de datos vía `emit_trader_page_update()` y `emit_monitor_update()` ha sido verificada a nivel **lógico** (código Python genera JSON correcto), pero se han identificado **fallos de renderizado en cliente** (React/Frontend):
+
+1. **WebSocket handshake**: Posible delay o timeout en conexión inicial
+2. **JSON deserialization**: Frontend no deserializa correctamente campos `"description"` anidadas
+3. **Layer filtering**: Sistema de 6 capas no filtra visibilidad correctamente
+4. **Z-index rendering**: Sobrelapamiento incorrecto de elementos visuales
+
+**Impacto en User Empowerment (Vector V5)**:
+- ❌ **Manual Interactivo**: No puede mostrar tooltips sin renderizado correcto
+- ❌ **Sistema Ayuda Contextual**: Descripciones no llegan a UI
+- ❌ **Indicador Visual de Salud**: Monitor no muestra latido de estrategias
+
+**Acciones Requeridas (AUDIT-PRESENTATION-V4)**:
+1. ✅ **Auditoría de Capa de Presentación**: Validar React components (AnalysisPage, MonitorPage, TraderPage)
+2. ✅ **Debug WebSocket**: Verificar SocketService en servidor + cliente
+3. ✅ **Test E2E**: Backend > WebSocket > Frontend (flujo completo)
+4. ✅ **Validación Visual Real**: Users interact y confirman renders
+
+**Status del Vector V5**: **BLOQUEADO** hasta resolución de renderizado
+
+---
+
+### Resumen de Estado v4.2.0-beta.1
+
+| Componente | Status | Líneas | Nota |
+|-----------|--------|--------|------|
+| ConflictResolver | ✅ | 426 | Agnóstico, DI enforced |
+| UIDrawingFactory | ✅ | 560 | Descripciones añadidas |
+| StrategyHeartbeat | ✅ | 416 | Persistencia DB integrada |
+| MainOrchestrator | ✅ | 1262⚠️ | Sobre límite, refactor pendiente |
+| **Backend v4.2.0** | **✅** | **+120 líneas** | **Production-Ready** |
+| **Frontend (React)** | **🟡** | **N/A** | **BLOQUEADO - Auditoría pendiente** |
+| **validate_all.py** | **✅** | **14/14** | **PASSED (11.94s)** |

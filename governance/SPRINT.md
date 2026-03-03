@@ -165,10 +165,14 @@
   - ✅ SystemHealthReporter: Health Score integral (CPU, Memory, Conectividad, Estrategias)
   - ✅ Persistencia en BD cada 10 segundos
 
-- [ ] **Vector V5: User Empowerment (HU 9.3 - DOCUMENTACIÓN)**
-  - [ ] Manual de Usuario Interactivo (Wiki interna)
-  - [ ] Sistema de Ayuda Contextual en UI (Tooltips técnicos)
-  - [ ] Implementación de Switch Físico para Shadow Mode
+- [ ] **Vector V5: User Empowerment (HU 9.3 - 🔴 BLOQUEADO)**
+  - ✅ Backend: Manual de Usuario Interactivo (estructurado)
+  - ✅ Backend: Sistema de Ayuda Contextual en JSON (description fields)
+  - ✅ Backend: Monitoreo de Salud (Heartbeat integrado)
+  - ❌ Frontend: Auditoría de Presentación (React renderization failing)
+  - 🔴 **BLOQUEADO HASTA**: Validación visual real de WebSocket messages en componentes React
+  - **Razón**: Backend emite JSON correcto pero componentes frontend no renderizan elementos visuales
+  - **Próximos Pasos**: Auditoría de SocketService, deserialization, layer filtering en React
 
 ---
 
