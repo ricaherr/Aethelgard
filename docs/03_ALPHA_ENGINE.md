@@ -300,10 +300,11 @@ Patrón de "Ruptura de Apertura" que captura gaps micro-estructurales durante lo
 
 El Protocolo Quanter está listo para recibir firmas adicionales. Candidatos en evaluación pre-shadow:
 
-1. **S-0002: GBP/USD Morning Range Breakout** (Premium)
-   - Patrón: Breakout de rango matutino en Londres (08:00-10:00 GMT)
-   - Pilares: Rango contractivo + extremo de RSI + confirmación multi-escala
-   - Validación: Pendiente (shadow testing)
+1. **S-0002: TRIFECTA CONVERGENCE** (Premium)
+   - **ID**: `CONV_STRIKE_0001`
+   - **Patrón**: Reversión a la media (SMA 20) en tendencia mayor (SMA 200).
+   - **Pilares**: Ubicación Macro/Micro + Vela de Reversión + Asset Affinity Score.
+   - **Documentación**: CONV_STRIKE_0001_TRIFECTA.md
 
 2. **S-0003: Clean Sweep - Institucional Liquidation** (Institutional)
    - Patrón: Detección de microlitradación y absorción de liquidez antes de anuncios
