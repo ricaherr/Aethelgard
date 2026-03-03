@@ -137,7 +137,8 @@ class UIDrawingFactory:
                 properties={
                     "color": UIDrawingFactory.COLORS["hh_hl_bullish"],
                     "style": UIDrawingFactory.STYLES["solid"],
-                    "label": f"HH{len(hh_points)}"
+                    "label": f"HH{len(hh_points)}",
+                    "description": "Higher Highs: Línea de máximos consecutivos más altos. Confirma tendencia alcista institucional."
                 },
                 z_index=20  # Líneas base
             )
@@ -154,7 +155,8 @@ class UIDrawingFactory:
                 properties={
                     "color": UIDrawingFactory.COLORS["hh_hl_bullish"],
                     "style": UIDrawingFactory.STYLES["solid"],
-                    "label": f"HL{len(hl_points)}"
+                    "label": f"HL{len(hl_points)}",
+                    "description": "Higher Lows: Línea de mínimos consecutivos más altos. Valida fuerza de tendencia alcista."
                 },
                 z_index=20
             )
@@ -200,7 +202,8 @@ class UIDrawingFactory:
                 "opacity": 0.5,
                 "border_style": "dashed",
                 "border_color": "#FFFFFF",
-                "tooltip": f"Breaker Block: {breaker_high:.5f} - {breaker_low:.5f} [{abs(breaker_high - breaker_low) * 10000:.0f} pips]"
+                "tooltip": f"Breaker Block: {breaker_high:.5f} - {breaker_low:.5f} [{abs(breaker_high - breaker_low) * 10000:.0f} pips]",
+                "description": "Breaker Block: Zona de confirmación donde ocurrió el quiebre de estructura. Stop Loss crítico está aquí."
             },
             z_index=10  # Fondos
         )
@@ -240,7 +243,8 @@ class UIDrawingFactory:
             properties={
                 "color": UIDrawingFactory.COLORS["fvg"],
                 "opacity": 0.3,
-                "tooltip": f"Fair Value Gap: {fvg_high:.5f} - {fvg_low:.5f}"
+                "tooltip": f"Fair Value Gap: {fvg_high:.5f} - {fvg_low:.5f}",
+                "description": "Fair Value Gap (FVG): Desequilibrio de precio que el Smart Money busca llenar. Zona de absorción institucional."
             },
             z_index=10
         )
@@ -270,7 +274,8 @@ class UIDrawingFactory:
                 "color": UIDrawingFactory.COLORS["imbalance"],
                 "opacity": 0.3,
                 "label": "LIQ",
-                "tooltip": f"Imbalance Zone (seek liquidez)"
+                "tooltip": f"Imbalance Zone (seek liquidez)",
+                "description": "Imbalance (Desequilibrio): Zona donde el delta de volumen es extremo. Smart Money ejecuta liquidaciones aquí."
             },
             z_index=10
         )
@@ -301,7 +306,8 @@ class UIDrawingFactory:
             properties={
                 "color": color,
                 "style": UIDrawingFactory.STYLES["solid"],
-                "label": f"SMA{ma_period}"
+                "label": f"SMA{ma_period}",
+                "description": f"SMA{ma_period}: Media móvil de {ma_period} períodos. Soporte dinámico en pullbacks y reversal zones."
             },
             z_index=20
         )
@@ -339,7 +345,8 @@ class UIDrawingFactory:
             properties={
                 "color": color,
                 "style": UIDrawingFactory.STYLES["thick_dashed"],
-                "label": f"{target_type} {target_price:.5f}"
+                "label": f"{target_type} {target_price:.5f}",
+                "description": f"{target_type}: Objetivo de ganancia basado en extensión Fibonacci. TP1=127%, TP2=618% Golden Ratio."
             },
             z_index=40
         )
@@ -376,7 +383,8 @@ class UIDrawingFactory:
                 "color": UIDrawingFactory.COLORS["stop_loss"],
                 "style": {"pattern": "solid", "width": 2.0, "gradient": True},
                 "tooltip": f"SL: {sl_price:.5f} | Risk: {risk_pips:.0f} pips",
-                "animation": "none"
+                "animation": "none",
+                "description": "Stop Loss: Nivel de cierre obligatorio por riesgo máximo. Protege el 1% capital por operación."
             },
             z_index=30
         )

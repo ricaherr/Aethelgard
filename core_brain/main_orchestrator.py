@@ -237,7 +237,10 @@ class MainOrchestrator:
         regime_classifier: Optional[Any] = None,
         strategy_ranker: Optional[StrategyRanker] = None,
         thought_callback: Optional[Any] = None,
-        config_path: Optional[str] = None
+        config_path: Optional[str] = None,
+        ui_mapping_service: Optional[Any] = None,
+        heartbeat_monitor: Optional[Any] = None,
+        conflict_resolver: Optional[Any] = None
     ):
         """
         Initialize MainOrchestrator with backward-compatible Dependency Injection.
@@ -264,6 +267,9 @@ class MainOrchestrator:
 
         # 6. Broker Discovery and Status
         self._init_broker_discovery()
+
+        # 7. Orchestration & Reporting (NEW - Vector V4)
+        self._init_orchestration_services(ui_mapping_service, heartbeat_monitor, conflict_resolver)
 
     def _init_core_dependencies(self, scanner: Any, factory: Any, risk: Any, executor: Any, storage: Optional[Any], config_path: Optional[str], strategy_ranker: Optional[StrategyRanker] = None) -> None:
         """Initializes core engines and resolves storage/config."""
@@ -360,6 +366,51 @@ class MainOrchestrator:
         """Discovers and classifies available brokers from storage."""
         self.brokers = self._discover_brokers()
         self.broker_status = self._classify_brokers(self.brokers)
+
+    def _init_orchestration_services(self, ui_mapping: Optional[Any], heartbeat: Optional[Any], resolver: Optional[Any]) -> None:
+        """Initializes orchestration & reporting services (Vector V4)."""
+        # UI Mapping Service (NEW)
+        if ui_mapping is not None:
+            self.ui_mapping_service = ui_mapping
+        else:
+            try:
+                from core_brain.services.ui_mapping_service import UIMappingService
+                socket_svc = getattr(self, 'socket_service', None)
+                self.ui_mapping_service = UIMappingService(socket_service=socket_svc)
+                logger.info("[ORCHESTRATOR] UI_Mapping_Service initialized (default)")
+            except Exception as e:
+                logger.warning(f"[ORCHESTRATOR] Could not initialize UI_Mapping_Service: {e}")
+                self.ui_mapping_service = None
+        
+        # Strategy Heartbeat Monitor (NEW)
+        if heartbeat is not None:
+            self.heartbeat_monitor = heartbeat
+        else:
+            try:
+                from core_brain.services.strategy_heartbeat_monitor import StrategyHeartbeatMonitor
+                socket_svc = getattr(self, 'socket_service', None)
+                self.heartbeat_monitor = StrategyHeartbeatMonitor(storage=self.storage, socket_service=socket_svc)
+                logger.info("[ORCHESTRATOR] StrategyHeartbeatMonitor initialized (default)")
+            except Exception as e:
+                logger.warning(f"[ORCHESTRATOR] Could not initialize StrategyHeartbeatMonitor: {e}")
+                self.heartbeat_monitor = None
+        
+        # Conflict Resolver (NEW)
+        if resolver is not None:
+            self.conflict_resolver = resolver
+        else:
+            try:
+                from core_brain.conflict_resolver import ConflictResolver
+                fundamental_guard = getattr(self.risk_manager, 'fundamental_guard', None)
+                self.conflict_resolver = ConflictResolver(
+                    storage=self.storage,
+                    regime_classifier=self.regime_classifier,
+                    fundamental_guard=fundamental_guard
+                )
+                logger.info("[ORCHESTRATOR] ConflictResolver initialized (default)")
+            except Exception as e:
+                logger.warning(f"[ORCHESTRATOR] Could not initialize ConflictResolver: {e}")
+                self.conflict_resolver = None
 
     def _discover_brokers(self) -> List[Dict]:
         """Descubre todos los brokers registrados en la base de datos."""
@@ -833,12 +884,45 @@ class MainOrchestrator:
                             f"Coherence inconsistency: symbol={event.symbol}, stage={event.stage}, status={event.status}, reason={event.reason}, connector={event.connector_type}"
                         )
             
+            # NEW: Emit UI update (Vector V4 - Encendido Visual)
+            if self.ui_mapping_service:
+                try:
+                    await self.ui_mapping_service.emit_trader_page_update()
+                except Exception as e:
+                    logger.warning(f"[UI_MAPPING] Error emitting trader page update: {e}")
+            
+            # NEW: Update heartbeat for all strategies (Vector V4 - Monitor)
+            if self.heartbeat_monitor:
+                try:
+                    self._update_all_strategies_heartbeat()
+                except Exception as e:
+                    logger.warning(f"[HEARTBEAT] Error updating heartbeats: {e}")
+            
             logger.info(f"Cycle completed. Stats: {self.stats}")
             
         except Exception as e:
             logger.error(f"Error in cycle execution: {e}", exc_info=True)
             self.stats.errors_count += 1
             self.stats.cycles_completed += 1
+    
+    def _update_all_strategies_heartbeat(self) -> None:
+        """Update heartbeat for all strategies to reflect cycle end (Vector V4)."""
+        if not self.heartbeat_monitor:
+            return
+        
+        from core_brain.services.strategy_heartbeat_monitor import StrategyState
+        
+        # Mark all strategies as IDLE at end of cycle
+        for strategy_id in getattr(self.heartbeat_monitor, 'STRATEGY_IDS', []):
+            try:
+                self.heartbeat_monitor.update_heartbeat(
+                    strategy_id=strategy_id,
+                    state=StrategyState.IDLE,
+                    asset=None,
+                    position_open=False
+                )
+            except Exception as e:
+                logger.debug(f"[HEARTBEAT] Error updating {strategy_id}: {e}")
     
     def _persist_session_stats(self) -> None:
         """
