@@ -49,6 +49,8 @@ class ReasoningEventBuilder:
     ACTION_ACTIVE = "active"
     ACTION_SCOUTING = "scouting"
     ACTION_ENTRY_SPOTTED = "entry_spotted"
+    ACTION_STRUCTURE_DETECTED = "structure_detected"
+    ACTION_BOS_CONFIRMED = "bos_confirmed"
     
     @staticmethod
     def build_sess_ext_reasoning(
@@ -123,6 +125,96 @@ class ReasoningEventBuilder:
         logger.debug(
             f"[SESS_EXT_0001] Reasoning event built for {asset}: "
             f"action={action}, message={message}"
+        )
+        
+        return {
+            "type": "STRATEGY_REASONING",
+            "payload": payload,
+            "timestamp": datetime.now().isoformat()
+        }
+    
+    @staticmethod
+    def build_struc_shift_reasoning(
+        asset: str,
+        action: str,
+        structure_type: Optional[str] = None,
+        breaker_high: Optional[float] = None,
+        breaker_low: Optional[float] = None,
+        bos_direction: Optional[str] = None,
+        bos_strength: Optional[float] = None,
+        current_price: Optional[float] = None,
+        confidence: float = 0.85,
+        mode: str = "INSTITUTIONAL"
+    ) -> Dict[str, Any]:
+        """
+        Construye evento de razonamiento para S-0006 (STRUC_SHIFT_0001).
+        
+        Args:
+            asset: Par de divisas (e.g., "EUR/USD")
+            action: Acción (structure_detected, bos_confirmed, blocked, etc)
+            structure_type: Tipo de estructura (UPTREND, DOWNTREND)
+            breaker_high: Nivel alto del Breaker Block
+            breaker_low: Nivel bajo del Breaker Block
+            bos_direction: Dirección de ruptura (UP, DOWN)
+            bos_strength: Fuerza de ruptura (0-100%)
+            current_price: Precio actual
+            confidence: Confianza (0-1)
+            mode: Modo operativo
+            
+        Returns:
+            Dict con evento de razonamiento para WebSocket
+        """
+        
+        # Mapear acción a mensaje amigable
+        action_messages = {
+            ReasoningEventBuilder.ACTION_STRUCTURE_DETECTED:
+                f"S-0006: Estructura {structure_type} detectada en {asset}. "
+                f"Breaker Block: {breaker_low:.5f} - {breaker_high:.5f}",
+            ReasoningEventBuilder.ACTION_BOS_CONFIRMED:
+                f"S-0006: Ruptura de estructura confirmada en {asset}. "
+                f"Dirección: {bos_direction} | Fuerza: {bos_strength:.0f}% "
+                f"| Esperando pullback a zona {breaker_low:.5f} - {breaker_high:.5f}",
+            ReasoningEventBuilder.ACTION_BLOCKED:
+                f"S-0006 bloqueada en {asset}: Affinity insuficiente o estructura no válida",
+            ReasoningEventBuilder.ACTION_SCOUTING:
+                f"S-0006: Analizando estructura en {asset}. "
+                f"Precio: {current_price:.5f}",
+            ReasoningEventBuilder.ACTION_ENTRY_SPOTTED:
+                f"S-0006: Señal confluencia detectada en {asset} @ {current_price:.5f}. "
+                f"Entrada en zona Breaker Block"
+        }
+        
+        message = action_messages.get(action, f"S-0006: Acción {action} en {asset}")
+        
+        # Construir parámetros
+        parameters = {}
+        if structure_type:
+            parameters['structure_type'] = structure_type
+        if breaker_high is not None:
+            parameters['breaker_high'] = breaker_high
+        if breaker_low is not None:
+            parameters['breaker_low'] = breaker_low
+        if bos_direction:
+            parameters['bos_direction'] = bos_direction
+        if bos_strength is not None:
+            parameters['bos_strength'] = bos_strength
+        if current_price is not None:
+            parameters['current_price'] = current_price
+        
+        payload = {
+            "strategy_id": "STRUC_SHIFT_0001",
+            "strategy_name": "STRUCTURE BREAK SHIFT",
+            "asset": asset,
+            "action": action,
+            "message": message,
+            "parameters": parameters,
+            "confidence": min(max(confidence, 0.0), 1.0),
+            "mode": mode
+        }
+        
+        logger.debug(
+            f"[STRUC_SHIFT_0001] Reasoning event built for {asset}: "
+            f"action={action}, structure={structure_type}, bos_direction={bos_direction}"
         )
         
         return {

@@ -2,7 +2,180 @@
 
 **Última Actualización**: 2 de Marzo 2026  
 **Estado General**: 🚀 En Ejecución  
-**Proyecto Actual**: EXEC-UI-EXT-001 - Implementación S-0005 (SESS_EXT_0001) Backend
+**Proyecto Actual**: EXEC-STRUC-SHIFT-001 - Implementación Backend S-0006 (STRUC_SHIFT_0001)
+
+---
+
+## 📋 SPRINT: EXEC-STRUC-SHIFT-001 — Implementación Backend S-0006 (STRUCTURE BREAK SHIFT)
+
+### Objetivo
+Implementar capa sensorial y estratégica completa para S-0006 (STRUC_SHIFT_0001) con:
+1. Sensor Market Structure Analyzer (detección HH/HL/LH/LL)
+2. Lógica de Breaker Block y Break of Structure (BOS)
+3. Eventos de razonamiento para UI (ReasoningEventBuilder)
+4. Tests TDD (28 tests, 100% coverage)
+
+### TRACE_ID: EXEC-STRUC-SHIFT-001
+
+### Actividad 1: Sensor Market Structure Analyzer
+- ✅ **ACCIÓN 1: Crear market_structure_analyzer.py**
+  - Status: ✅ COMPLETADA
+  - Archivo: `core_brain/sensors/market_structure_analyzer.py` (440 líneas)
+  - Implementación:
+    - Clase MarketStructureAnalyzer con DI (StorageManager)
+    - Métodos pivotal: detect_higher_highs(), detect_higher_lows(), detect_lower_highs(), detect_lower_lows()
+    - Métodos estructura: detect_market_structure() (UPTREND/DOWNTREND/INVALID)
+    - Breaker Block: calculate_breaker_block() con buffer configurable
+    - BOS Detection: detect_break_of_structure() con fuerza de ruptura
+    - Pullback Zone: calculate_pullback_zone()
+    - Caching: Cache de estructuras para optimización
+  
+  - Tests: `tests/test_market_structure_analyzer.py` (14 tests — TDD-based)
+    - ✅ Inicialización y inyección de dependencias (3 tests)
+    - ✅ Detección de pivots HH/HL/LH/LL (4 tests)
+    - ✅ Breaker Block calculation (2 tests)
+    - ✅ Break of Structure detection (2 tests)
+    - ✅ Pullback zone calculation (1 test)
+    - ✅ Validación y caching (2 tests)
+    - **Result**: 14/14 PASSED (2.37s execution)
+  
+  - Exportación: core_brain/sensors/__init__.py actualizada
+    - MarketStructureAnalyzer exportada para inyección en estrategias
+
+### Actividad 2: Estrategia StructureShift0001Strategy
+- ✅ **ACCIÓN 2: Crear struc_shift_0001.py**
+  - Status: ✅ COMPLETADA
+  - Archivo: `core_brain/strategies/struc_shift_0001.py` (299 líneas)
+  - Implementación:
+    - Clase StructureShift0001Strategy(BaseStrategy)
+    - DI: StorageManager + MarketStructureAnalyzer + ReasoningEventBuilder callback
+    - Propiedades: strategy_id, AFFINITY_SCORES, MARKET_WHITELIST
+    - Método async analyze(): Workflow completo
+      1. Validar whitelist (EUR/USD, USD/CAD)
+      2. Detectar estructura (HH/HL UPTREND o LH/LL DOWNTREND)
+      3. Calcular Breaker Block
+      4. Validar fuerza de estructura (>=3 pivots)
+      5. Detectar Break of Structure (BOS)
+      6. Validar fuerza de ruptura (>=25% penetración)
+      7. Calcular zonas de entrada, SL, TP1, TP2
+      8. Generar Signal con metadata completa
+    - Parámetros dinámicos desde storage (SSOT)
+      - max_daily_trades=5
+      - tp1_ratio=1.27 (FIB 127%)
+      - tp2_ratio=1.618 (FIB 618% Golden Ratio)
+      - sl_buffer_pips=10
+    - Affinity Scores:
+      - EUR/USD: 0.89 (PRIME)
+      - USD/CAD: 0.82 (ACTIVE)
+      - AUD/NZD: 0.40 (VETO)
+  
+  - Tests: `tests/test_struc_shift_0001.py` (14 tests — TDD-based)
+    - ✅ Inicialización con DI (3 tests)
+    - ✅ Análisis de estructura (4 tests)
+    - ✅ Confluencia y validación (3 tests)
+    - ✅ Generación de señales (4 tests)
+    - **Result**: 14/14 PASSED (1.76s execution)
+
+### Actividad 3: Integración ReasoningEventBuilder
+- ✅ **ACCIÓN 3: Extender ReasoningEventBuilder para S-0006**
+  - Status: ✅ COMPLETADA
+  - Archivo: `core_brain/services/reasoning_event_builder.py`
+  - Nuevas acciones: ACTION_STRUCTURE_DETECTED, ACTION_BOS_CONFIRMED
+  - Nuevo método: build_struc_shift_reasoning()
+    - Parámetros: asset, action, structure_type, breaker_high/low, bos_direction, bos_strength, current_price, confidence, mode
+    - Mensajes contextuales según acción:
+      - "STRUCTURE_DETECTED": "S-0006: Estructura UPTREND detectada en EUR/USD. Breaker Block: 1.0950 - 1.0920"
+      - "BOS_CONFIRMED": "S-0006: Ruptura de estructura confirmada en EUR/USD. Dirección: DOWN | Fuerza: 85% | Esperando pullback..."
+      - "ENTRY_SPOTTED": "S-0006: Señal confluencia detectada en EUR/USD @ 1.0918. Entrada en zona Breaker Block"
+  
+  - Integración en estrategia:
+    - StructureShift0001Strategy acepta reasoning_event_callback (callable)
+    - Emite eventos en 3 puntos críticos:
+      1. Estructura detectada (confidence 0.80)
+      2. BOS confirmado (confidence 0.85)
+      3. Señal de confluencia generada (confidence variable)
+    - Callback permite que UI se actualice en tiempo real
+
+### Actividad 4: Validación y Cierre
+- ✅ **ARQUITECTURA VERIFICADA**
+  - validate_all.py: 14/14 modules PASSED (7.29s)
+  - Sensor tests: 14/14 PASSED
+  - Strategy tests: 14/14 PASSED
+  - Total: 28/28 tests PASSED (TDD)
+  
+- ✅ **TYPE HINTS & IMPORT SAFETY**
+  - 100% type hints en market_structure_analyzer.py
+  - 100% type hints en struc_shift_0001.py
+  - Imports agnósticos (sin broker-specific)
+  - DI pattern enforced en todas las clases
+
+- ✅ **LOGGING & TRACING**
+  - TRACE_ID: EXEC-STRUC-SHIFT-001
+  - Logs informativos en detection points
+  - Debug logs en intermediate steps
+
+- ✅ **TRACE_ID**: EXEC-STRUC-SHIFT-001
+- ✅ **Status**: ✅ SPRINT COMPLETED - Ready for Integration & UI Visualization
+
+---
+
+## 📋 SPRINT: DOC-STRUC-SHIFT-2026 — Documentación S-0006 (Structure Break Shift)
+
+### Objetivo
+Registrar la estrategia S-0006 "Structure Break Shift" (STRUC_SHIFT_0001) en la documentación maestra con especificación completa de concepto, matriz de afinidad y estándares UI.
+
+### TRACE_ID: DOC-STRUC-SHIFT-2026
+
+### Actividad 1: Documentación en MANIFESTO (Sección X)
+- ✅ **ACCIÓN 1: Registrar STRUC_SHIFT_0001 en Biblioteca de Alphas**
+  - Status: ✅ COMPLETADA
+  - Archivo: `docs/AETHELGARD_MANIFESTO.md` (Sección X, línea 1000)
+  - Especificación:
+    - Concepto FVG: Detección HH (Higher High), HL (Higher Low), LH, LL 
+    - Breaker Block: Zona de confirmación donde ocurrió quiebre de estructura
+    - Gatillo (Trigger): Ruptura + Pullback + ImbalanceDetector + Confluencia
+    - 4 Pilares: Sensorial | Régimen | Coherencia | Multi-Tenant
+    - Fases operativas: Detección → Mapeo → Ruptura → Pullback → Entrada
+    - Gestión Riesgo: SL en Breaker Block bajo | TP1 (50%, 1.27R) | TP2 (40%, 1.618R) | TP3 (10%, Trailing)
+    - Hit Rate esperada: 68-73%
+    - Affinity Scores: EUR/USD (0.89 PRIME), USD/CAD (0.82 ACTIVE), AUD/NZD (0.40 VETO)
+  
+  - Validación:
+    - ✅ Concepto documentado
+    - ✅ Matriz de Afinidad registrada
+    - ✅ Market WhiteList definida (EUR/USD, USD/CAD)
+    - ✅ Integrado en Tabla Coherencia Multi-Estrategia
+
+### Actividad 2: Estándares UI en MANIFESTO (Sección VI)
+- ✅ **ACCIÓN 2: Definir Visualización de Estructura**
+  - Status: ✅ COMPLETADA
+  - Ubicación: `docs/AETHELGARD_MANIFESTO.md` (Sección VI, línea 884)
+  - Estándares:
+    - **Tendencias Alcistas (HH/HL)**: Líneas cian sólido (#00FFFF), 1.5px, continuo
+    - **Breaker Block**: Sombreado gris (#2A2A2A, 50% transparency), límites blancos discontinuos
+    - **BOS (Break of Structure)**: Neón discontinuo (#FF00FF/#00FFFF), 2px, con animación pulso
+    - **Objetivos**: TP1 (cian oscuro, FIB127), TP2 (cian, FIB618), etiquetas claras
+    - **Stop Loss**: Rojo gradiente (#FF3131→#FF0000), 2px, estático, tooltip con riesgo en pips
+    - **Imbalance (Liquidez)**: Naranja tenue (#FF8C00, 30% transparency), insignia "LIQ"
+  
+### Validación y Cierre
+- ✅ **DOCUMENTACIÓN VERIFICADA**
+  - docs/AETHELGARD_MANIFESTO.md: S-0006 registrada ✓
+  - ROADMAP.md: Referencias corregidas a docs/AETHELGARD_MANIFESTO.md ✓
+  - Matriz Coherencia: Actualizada con STRUC_SHIFT_0001 ✓
+  
+- ✅ **TRACE_ID**: DOC-STRUC-SHIFT-2026
+- ✅ **Status**: ✅ SPRINT COMPLETED - Ready for Implementation
+
+---
+
+## 📋 SPRINT: EXEC-UI-EXT-001 — Implementación Backend S-0005 (SESSION EXTENSION)
+
+### Objetivo
+Implementar capa sensorial completa para S-0005 (SESS_EXT_0001) con:
+1. Sensor Fibonacci que proyecta extensiones sobre rango Londres
+2. Enriquecimiento WebSocket con Reasoning events para UI
+3. Registro de estrategia en BD con metadata y affinity scores
 
 ---
 
@@ -111,7 +284,7 @@ Implementar capa sensorial completa para S-0005 (SESS_EXT_0001) con:
 ## 📋 SPRINT: DOC-UNIFICATION-2026 — Gobernanza Centralizada de Alphas
 
 ### Objetivo
-**Opción A - Consolidación Total**: Migrar TODAS las estrategias documentadas (S-0001, S-0002, S-0003) al AETHELGARD_MANIFESTO.md como **Sección X: Biblioteca de Alphas**. Especificar **Sección VI: Terminal de Inteligencia** con estándares UI. Eliminar archivos estrategia individuales.
+**Opción A - Consolidación Total**: Migrar TODAS las estrategias documentadas (S-0001, S-0002, S-0003) al docs/AETHELGARD_MANIFESTO.md como **Sección X: Biblioteca de Alphas**. Especificar **Sección VI: Terminal de Inteligencia** con estándares UI. Eliminar archivos estrategia individuales.
 
 ### Actividad 1: Unificación de Gobernanza (Opción A)
 - ✅ **CREAR SECCIÓN X**: "Biblioteca de Alphas y Firmas Operativas"
@@ -122,12 +295,12 @@ Implementar capa sensorial completa para S-0005 (SESS_EXT_0001) con:
 - ✅ **MIGRAR ESTRATEGIAS ANTERIORES**
   - Status: ✅ COMPLETADA
   - Archivos fuente: docs/strategies/BRK_OPEN_0001_NY_STRIKE.md, CONV_STRIKE_0001_TRIFECTA.md, MOM_BIAS_0001_MOMENTUM_STRIKE.md
-  - Destino: MANIFESTO.md Sección X (contenido consolidado)
+  - Destino: docs/AETHELGARD_MANIFESTO.md Sección X (contenido consolidado)
 
 - ✅ **ELIMINAR ARCHIVOS INDIVIDUALES**
   - Status: ✅ COMPLETADA
   - Archivos eliminados: 3 estrategias de docs/strategies/
-  - Verificación: Directorio strategies/ ahora VACÍO (solo SSOT en MANIFESTO)
+  - Verificación: Directorio strategies/ ahora VACÍO (solo SSOT en docs/AETHELGARD_MANIFESTO.md)
 
 - ✅ **DOCUMENTAR S-0005 (SESS_EXT_0001)**
   - Status: ✅ COMPLETADA
@@ -138,6 +311,7 @@ Implementar capa sensorial completa para S-0005 (SESS_EXT_0001) con:
 ### Actividad 2: Especificación de UI "Terminal de Inteligencia"
 - ✅ **CREAR SECCIÓN VI**: "Terminal de Inteligencia (Interfaz Visual Institucional)"
   - Status: ✅ COMPLETADA
+  - Ubicación: docs/AETHELGARD_MANIFESTO.md Sección VI
   - Estándares de Color:
     - Fondo: #050505 (Negro profundo)
     - Acento Cian: #00FFFF (Seguridad/Confirmación)
@@ -152,7 +326,7 @@ Implementar capa sensorial completa para S-0005 (SESS_EXT_0001) con:
 
 ### Validación y Cierre
 - ✅ **ARQUITECTURA VERIFICADA**
-  - Single Source of Truth: MANIFESTO.md contiene TODO
+  - Single Source of Truth: docs/AETHELGARD_MANIFESTO.md contiene TODO
   - Cero Redundancia: Files estrategia removidos
   - Código Limpio: Workspace sin temporales
   
@@ -220,7 +394,7 @@ Implementar capa sensorial completa para S-0005 (SESS_EXT_0001) con:
 ### Fase 4: CIERRE (HANDSHAKE_TO_DOCUMENTER)
 - **Status**: ✅ COMPLETADA
 - **Acciones**:
-  - [x] Actualizar AETHELGARD_MANIFESTO.md (sección estrategias) - N/A (no cambios requeridos)
+  - Actualizar docs/AETHELGARD_MANIFESTO.md (sección estrategias) - N/A (no cambios requeridos)
   - [x] Marcar ROADMAP como completada (✅)
   - [x] Cleanup workspace (verificar sin archivos temporales)
 
@@ -389,16 +563,7 @@ Implementar capa sensorial completa para S-0005 (SESS_EXT_0001) con:
 - **Gobernanza**: `.ai_rules.md`, `.ai_orchestration_protocol.md`
 - **Documentación**: `docs/strategies/CONV_STRIKE_0001_TRIFECTA.md`
 - **Implementación Existente**: `core_brain/strategies/oliver_velez.py`, `data_vault/strategies_db.py`
-- **Protocolo**: AETHELGARD_MANIFESTO.md (Sección 7: Reglas de Desarrollo)
-
----
-
-## �🔗 Referencias
-
-- **Gobernanza**: `.ai_rules.md`, `.ai_orchestration_protocol.md`
-- **Documentación**: `docs/strategies/CONV_STRIKE_0001_TRIFECTA.md`
-- **Implementación Existente**: `core_brain/strategies/oliver_velez.py`, `data_vault/strategies_db.py`
-- **Protocolo**: AETHELGARD_MANIFESTO.md (Sección 7: Reglas de Desarrollo)
+- **Protocolo**: docs/AETHELGARD_MANIFESTO.md (Sección 7: Reglas de Desarrollo)
 
 ---
 

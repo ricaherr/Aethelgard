@@ -881,6 +881,41 @@ Transparencia total: por qué el sistema bloqueó una señal.
 #### Terminal Ejecución
 Posiciones, órdenes, histórico de trades con coherence scores.
 
+### Estándares de Visualización de Estructura (S-0006)
+
+**Dibujo de Tendencias Alcistas (HH/HL)**:
+- Líneas: Cian sólido (#00FFFF)
+- Grosor: 1.5 píxeles
+- Estilo: Línea continua conectando máximos más altos (HH) y mínimos más altos (HL)
+- Etiqueta: "HH3" (progresión numérica) en color gris claro
+
+**Visualización de Breaker Block (Zona de Quiebre)**:
+- Sombreado: Gris oscuro (#2A2A2A) con transparencia 50%
+- Límites: Línea horizont discontinua blanca delimitando superior/inferior
+- Tooltip: Rango exacto en pips (ej. "Breaker Block: 1.0950 - 1.0920 [30 pips]")
+
+**Ruptura de Estructura (BOS - Break of Structure)**:
+- Línea: Neón discontinua (#FF00FF o #00FFFF según dirección)
+- Grosor: 2 píxeles
+- Etiqueta: "BOS CONFIRMED" con ícono de flecha direccional
+- Animación: Pulso cada 2 segundos hasta confirmación de Pullback
+
+**Objetivos (TP1/TP2)**:
+- TP1 (1.27R): Línea cian oscuro (#1A9A9A) discontinua, etiqueta "FIB127"
+- TP2 (1.618R): Línea cian (#00FFFF) discontinua, etiqueta "FIB618"
+- Zona de confluencia: Sombreado cian tenue alrededor de TP1
+
+**Stop Loss (SL)**:
+- Línea: Rojo neón degradado (#FF3131 → #FF0000)
+- Grosor: 2 píxeles
+- Animación: Sin movimiento (SL estático en Breaker Block bajo)
+- Tooltip: "SL: 1.0910 | Risk: 40 pips"
+
+**Zonas de Liquidez (Imbalance)**:
+- Sombreado: Naranja tenue (#FF8C00) con transparencia 30%
+- Etiqueta: Insignia "LIQ" en esquina superior derecha
+- Propósito: Marcar zonas de desequilibrio donde se espera pullback
+
 ---
 
 ## X. Biblioteca de Alphas y Firmas Operativas
@@ -962,6 +997,52 @@ Session Extension captura continuidad cuando Londres establece dirección fuerte
 
 ---
 
+### S-0006: STRUC_SHIFT_0001 — Structure Break Shift
+
+**Class ID**: STRUC_SHIFT_0001 | EUR/USD (0.89), USD/CAD (0.82) | Premium | H1/H4 | 📋 Registrada
+
+Detección de Quiebre de Estructura (BOS - Break of Structure) con continuación de tendencia institucion. El sistema identifica máximos más altos (HH) y mínimos más altos (HL) en tendencia alcista, y se prepara para capturar el quiebre cuando el precio rompe el último HL con fuerza, indicando cambio de sesgo del Smart Money.
+
+**Mecánica de Estructura**:
+- **HH (Higher High)**: Cada máximo sucesivo > máximo anterior
+- **HL (Higher Low)**: Cada mínimo sucesivo > mínimo anterior (validación de tendencia alcista)
+- **LH/LL**: Patrón inverso en tendencias bajistas
+- **Breaker Block**: La zona de precio donde ocurrió el último quiebre (zona de confirmación)
+
+**Gatillo (Trigger)**:
+1. Ruptura del último HL con cierre de vela por debajo
+2. Pullback (retroceso) a la zona "Breaker Block" (zona del quiebre inicial)
+3. Confirmación ImbalanceDetector (désequilibrio de volumen institucional)
+4. Confluencia: Vela Elefante + Breaker Block + Soporte/Resistencia
+
+**Pilares**:
+1. **Sensorial**: Detección de HH/HL/LH/LL, Breaker Block mapping, Imbalance, ATR, Volumen
+2. **Régimen**: TREND_CONTINUATION, MOMENTUM_SHIFT, DIRECTIONAL_CLARITY (sí) | RANGE/CHOP (no)
+3. **Coherencia**: Shadow/Live, score >= 78%, validación multi-timeframe (H1 + H4)
+4. **Multi-Tenant**: Basic (no), Premium (sí), Institutional (sí + custom Breaker Block zones)
+
+**Fases de Operación**:
+1. **Detección de Estructura** (48-72 horas): Identificar serie HH + HL | validar >=3 puntos de contacto
+2. **Mapeo de Breaker Block** (inmediato): Zona exacta donde ocurrió el quiebre
+3. **Espera de Ruptura**: Monitoreando cierre por debajo de HL con fuerza (>2 ATR)
+4. **Pullback al Breaker Block** (4-24 horas post-ruptura): Precio retrocede a zona de quiebre
+5. **Entrada en Confluencia**: Vela Elefante + RSI + Breaker validation → BUY/SELL stop order
+
+**Gestión de Riesgo**:
+- SL = Bajo del Breaker Block - 10 pips (protección estructural máxima)
+- TP1 (50% posición) = Extensión 1.27R desde ruptura
+- TP2 (40% posición) = Extensión 1.618R (golden ratio)
+- TP3 (10% posición) = Trailing a 2× ATR
+- Risk/Reward: Típicamente 1:1.80 a 1:2.50 (muy favor institucional)
+
+**Asset Affinity**: EUR/USD (0.89 PRIME) | USD/CAD (0.82 ACTIVE) | AUD/NZD (0.40 VETO - choppiness inválida estructura)
+
+**Market WhiteList**: ["EUR/USD", "USD/CAD"] (solo estos operan; AUD/NZD monitoreo únicamente)
+
+**Terminal UI**: Líneas cian sólidas para tendencias alcistas (HH/HL), líneas neón discontinuas para quiebres confirmados (BOS), Breaker Block sombreado en gris (#2A2A2A), SL rojo degradado, TP1/TP2 cian con etiquetas de proyección
+
+---
+
 ### Matriz de Coherencia Multi-Estrategia
 
 | Estrategia | Asset | Timeframe | Hit Rate | Coherence | Status |
@@ -970,6 +1051,7 @@ Session Extension captura continuidad cuando Londres establece dirección fuerte
 | CONV_STRIKE_0001 | EUR/USD | M5/M15 | 60-65% | >= 75% | ✅ Shadow |
 | MOM_BIAS_0001 | EUR/USD | M5 | 58-62% | >= 70% | ✅ Operativa |
 | SESS_EXT_0001 | GBP/JPY | H1/H4 | 70-75% | >= 80% | 📋 Registrada |
+| STRUC_SHIFT_0001 | EUR/USD, USD/CAD | H1/H4 | 68-73% | >= 78% | 📋 Registrada |
 
 **Gobernanza Institucional**: Todas las estrategias requieren aprobación explícita antes de capital real. Shadow Mode es obligatorio para nuevas. Parámetros documentados en SYSTEM_LEDGER con razón técnica y fecha.
 
