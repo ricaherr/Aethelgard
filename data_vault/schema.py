@@ -349,6 +349,43 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_strategy_ranking_mode ON strategy_ranking (execution_mode)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_strategy_ranking_profit_factor ON strategy_ranking (profit_factor DESC)")
 
+    # ── 14. Strategies (Strategy Metadata & Affinity Scoring) ──────────────────
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS strategies (
+            class_id TEXT PRIMARY KEY,
+            mnemonic TEXT NOT NULL,
+            version TEXT DEFAULT '1.0',
+            affinity_scores TEXT DEFAULT '{}',
+            market_whitelist TEXT DEFAULT '[]',
+            description TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_strategies_mnemonic ON strategies (mnemonic)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_strategies_version ON strategies (version)")
+
+    # ── 14.1. Strategy Performance Logs (Asset Efficiency Learning) ───────────
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS strategy_performance_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            strategy_id TEXT NOT NULL,
+            asset TEXT NOT NULL,
+            pnl REAL DEFAULT 0.0,
+            trades_count INTEGER DEFAULT 0,
+            win_rate REAL DEFAULT 0.0,
+            profit_factor REAL DEFAULT 0.0,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            trace_id TEXT,
+            FOREIGN KEY (strategy_id) REFERENCES strategies (class_id),
+            UNIQUE(strategy_id, asset, timestamp)
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_perf_logs_strategy_id ON strategy_performance_logs (strategy_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_perf_logs_asset ON strategy_performance_logs (asset)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_perf_logs_timestamp ON strategy_performance_logs (timestamp DESC)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_perf_logs_trace_id ON strategy_performance_logs (trace_id)")
+
     # ── 15. Execution Shadow Logs (Shadow Reporting / Slippage) ────────────────
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS execution_shadow_logs (

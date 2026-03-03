@@ -11,6 +11,7 @@ from .accounts_db import AccountsMixin
 from .market_db import MarketMixin
 from .system_db import SystemMixin
 from .strategy_ranking_db import StrategyRankingMixin
+from .strategies_db import StrategiesMixin
 from .execution_db import ExecutionMixin
 from .anomalies_db import AnomaliesMixin
 
@@ -32,6 +33,7 @@ class StorageManager(
     MarketMixin,
     SystemMixin,
     StrategyRankingMixin,
+    StrategiesMixin,
     ExecutionMixin,
     AnomaliesMixin
 ):

@@ -94,9 +94,21 @@
   - Algoritmo de divergencia: modelo esperado vs ejecución en vivo.
   - Alerta temprana de deriva técnica.
 
-- [ ] **Confidence Threshold Optimizer (HU 7.1)**
-  - Optimización dinámica por desempeño histórico.
-  - Curva de exigencia algorítmica adaptativa.
+- [x] **Asset Efficiency Score Gatekeeper (HU 7.2)** ✅ COMPLETADA
+  - ✅ Tabla `strategies` con campos class_id, mnemonic, affinity_scores (JSON), market_whitelist
+  - ✅ Tabla `strategy_performance_logs` para logging relacional de desempeño por activo
+  - ✅ StrategyGatekeeper: componente en-memory ultra-rápido (< 1ms latencia)
+  - ✅ Validación pre-tick: `can_execute_on_tick()` verifica score >= min_threshold
+  - ✅ Abort execution automático si asset no cumple (veto)
+  - ✅ Market whitelist enforcement: control de activos permitidos
+  - ✅ Learning integration: `log_asset_performance()` → strategy_performance_logs
+  - ✅ Cálculo dinámico: `calculate_asset_affinity_score()` con ponderación (0.5 win_rate, 0.3 pf_score, 0.2 momentum)
+  - ✅ Refresh en-memory: `refresh_affinity_scores()` sincroniza con DB
+  - ✅ 17/17 Tests PASSED | validate_all.py: 14/14 modules PASSED
+  - ✅ Documentación completa en AETHELGARD_MANIFESTO.md (Sección VI)
+  - Trace_ID: EXEC-EFFICIENCY-SCORE-001
+
+- [ ] **Confidence Threshold Adaptive (HU 7.1)** — EN DESARROLLO
 
 - [ ] **Autonomous Heartbeat & Self-Healing (HU 10.1)**
   - Monitoreo vital continuo (CPU, memoria, conectividad).

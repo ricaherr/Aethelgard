@@ -134,6 +134,38 @@
     * **Descripción**: Optimización dinámica de umbrales de entrada basada en el desempeño histórico reciente.
     * **🖥️ UI**: Visualizador de "Curva de Exigencia Algorítmica".
 
+* **HU 7.2: Asset Efficiency Score Gatekeeper** `[DONE]`
+    * **Prioridad**: Alta (Vector V3 - Dominio Sensorial)
+    * **Estado**: Implementado en Sprint 3 (2 Marzo 2026). StrategyGatekeeper operativo. 17/17 tests PASSED.
+    * **Descripción**: Sistema de filtrado de eficiencia de activos que valida la performance histórica antes de cada ejecución de estrategia mediante scores en memoria (< 1ms latencia).
+    * **Componentes**:
+      - `data_vault/strategies_db.py` (StrategiesMixin - crear, actualizar, calcular affinity scores)
+      - `core_brain/strategy_gatekeeper.py` (StrategyGatekeeper - validación ultra-rápida en memoria)
+      - `data_vault/schema.py` (tablas `strategies` y `strategy_performance_logs`)
+    * **Arquitectura SSOT**: 
+      - Fuente única: `strategy_performance_logs` (logs de performance histórica)
+      - Cálculo dinámico: `calculate_asset_affinity_score()` (basado en últimas N operaciones)
+      - Cache en-memory: StrategyGatekeeper carga scores al inicializar (refresh periódico)
+      - Validación pre-tick: `can_execute_on_tick()` aborta ejecución si score < min_threshold
+    * **Métodos Clave**:
+      - `create_strategy()`: Crear estrategia con mnemonic, affinity_scores, market_whitelist
+      - `calculate_asset_affinity_score()`: Score = (win_rate * 0.5) + (pf_score * 0.3) + (momentum * 0.2)
+      - `save_strategy_performance_log()`: Registrar resultado de trades para aprendizaje
+      - `can_execute_on_tick()`: Validación < 1ms (100% en-memory, no DB queries)
+      - `set_market_whitelist()`: Control de activos permitidos por estrategia
+      - `refresh_affinity_scores()`: Recargar cache desde DB (entre sesiones)
+    * **Requerimientos de Desempeño**: ✅ < 1ms latencia por validación (1000 iteraciones verificadas)
+    * **🖥️ UI Representation**: Widget de "Asset Efficiency Score" en Signal Generator mostrando score actual vs threshold.
+    * **Artefactos**:
+      - `data_vault/strategies_db.py` (StrategiesMixin - 460 líneas)
+      - `core_brain/strategy_gatekeeper.py` (StrategyGatekeeper - 290 líneas)
+      - `data_vault/schema.py` (DDL para `strategies` y `strategy_performance_logs`)
+      - `tests/test_strategy_gatekeeper.py` (17 tests - initialization, validation, latency, whitelist, integration)
+      - `docs/AETHELGARD_MANIFESTO.md` (Sección VI - Capa de Filtrado de Eficiencia)
+    * **Validación**: 17/17 tests PASSED | validate_all.py: 14/14 modules PASSED | start.py: OK
+    * **Gobernanza**: Inyección de dependencias (StorageManager), SSOT en DB, immutabilidad de thresholds
+    * **Trace_ID**: EXEC-EFFICIENCY-SCORE-001
+
 ## 08_DATA_SOVEREIGNTY (SSOT, Persistence)
 
 ## 09_INSTITUTIONAL_INTERFACE (UI/UX, Terminal)

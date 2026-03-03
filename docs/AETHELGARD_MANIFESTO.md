@@ -52,6 +52,7 @@ Aethelgard está diseñado para la escala, la privacidad y el rendimiento comerc
 2. **Multi-tenancy & Isolation**: Arquitectura orientada al aislamiento total de datos y ejecución por cliente, garantizando la privacidad de las estrategias y la integridad del capital.
 3. **Ética del Dato**: Priorización del aprendizaje de calidad. El sistema depura y calibra su memoria histórica para alimentar un cerebro eficiente y resiliente al ruido del mercado.
 4. **Excelencia en la Construcción**: Todo desarrollo debe seguir estrictamente la [Guía de Estilo y Desarrollo](DEVELOPMENT_GUIDELINES.md). El aislamiento multi-tenant y el agnosticismo de datos son dogmas innegociables que garantizan la integridad sistémica.
+5. **Principio de Filtrado en el Edge (Edge Filtering)**: El sistema implementa una capa de filtrado en el perímetro de ingesta de datos que rechaza o desestima instrumentos cuyo **Score de Afinidad** cae por debajo del umbral de confianza configurado. Este mecanismo garantiza que solo los activos con señales estadísticamente significativas acceden al pipeline de cálculo (CoherenceService, RiskManager, Executor), reduciendo carga computacional y minimizando ruido de mercado. El **Edge Filter** valida tanto la compatibilidad del instrumento con estrategias activas (regime alignment, volatilidad normalizada) como la disponibilidad de datos suficientes (lookback histórico). Instrumentos rechazados se registran en `system_health.filtered_instruments` para auditoría y posterior revisión.
 
 #### Estándar de Identidad de Alpha (Trazabilidad Institucional)
 Cada estrategia/firma operativa genera su propia **Identidad Digital de Alpha** inmutable para garantizar trazabilidad entre el Core Brain, la Data Vault y los Logs del sistema.
@@ -236,6 +237,157 @@ Este estándar se aplica a:
 - ✅ `data_vault/execution_db.py` - Comparaciones de ventanas temporales en shadow logs
 - ✅ `tests/test_coherence_service.py` - Fixtures de test con timestamps
 - ✅ Todo nuevo módulo que maneje timestamps después de esta versión
+
+---
+
+## VI. Capa de Filtrado de Eficiencia por Score de Activo (EXEC-EFFICIENCY-SCORE-001)
+
+Aethelgard implementa un sistema de **Score de Eficiencia de Activos** que valida la performance histórica antes de ejecución de cada estrategia.
+
+### Principio Fundamental: SSOT en Performance Logs
+
+La **fuente única de verdad (SSOT)** para los affinity scores son los logs de performance perseguidos en la tabla `strategy_performance_logs`:
+
+```
+strategy_performance_logs (id, strategy_id, asset, pnl, trades_count, win_rate, profit_factor, timestamp, trace_id)
+    ↓ (Agregación dinámica)
+strategies.affinity_scores (JSON: {"EUR/USD": 0.92, "GBP/USD": 0.85, ...})
+    ↓ (Carga en memoria)
+StrategyGatekeeper.asset_scores (Dict en-memory, ultra-fast lookup)
+```
+
+**Garantía**: Ningún score se hardcodea o se persiste en archivos JSON. El sistema aprende únicamente de datos reales en DB.
+
+### Arquitectura de Dos Componentes
+
+#### 1. **strategies_db.py (Persistencia SSOT)**
+
+Métodos clave en StrategiesMixin:
+
+- `create_strategy(class_id, mnemonic, version, affinity_scores, market_whitelist)`
+  - Define una nueva estrategia con scores iniciales y lista de mercados permitidos
+  
+- `update_strategy_affinity_scores(class_id, affinity_scores)`
+  - Actualiza scores después de agregar logs de performance (sistema de aprendizaje)
+  
+- `calculate_asset_affinity_score(strategy_id, asset, lookback_trades=50)`
+  - Calcula score para un activo basándose en últimas N operaciones
+  - Fórmula: `(avg_win_rate * 0.5) + (pf_score * 0.3) + (momentum * 0.2)`
+    - **avg_win_rate**: Tasa de ganancia ponderada
+    - **pf_score**: Profit Factor normalizado (capped at 2.0 → 1.0)
+    - **momentum**: Tendencia reciente vs histórica
+  
+- `save_strategy_performance_log(strategy_id, asset, pnl, trades_count, win_rate, profit_factor, trace_id)`
+  - Registra cada trade/batch para alimentar el cálculo de scores
+  - Auditable con trace_id para trazabilidad completa
+
+#### 2. **StrategyGatekeeper (In-Memory Guard)**
+
+Componente ultra-rápido que valida tickets **antes** de procesar la lógica de estrategia:
+
+```python
+# Dentro de UniversalStrategyExecutor.generate_signals()
+can_execute = gatekeeper.can_execute_on_tick(
+    asset='EUR/USD',
+    min_threshold=0.80,  # Script decide este umbral
+    strategy_id='BRK_OPEN_0001'
+)
+if not can_execute:
+    logger.debug(f"[VETO] Abort execution for {asset}: score below threshold")
+    return []  # No signal generated
+```
+
+**Requisitos de Rendimiento**:
+- ✅ Latencia < 1ms por validación (100% en-memory)
+- ✅ Sin accesos a DB durante ejecución de tick
+- ✅ Refresh periódico de cache desde DB (entre sesiones)
+
+**Métodos Públicos**:
+
+- `can_execute_on_tick(asset, min_threshold, strategy_id) → bool`
+  - Validación rápida: whitelist check + score comparison
+  - Returns True si OK, False si veto
+  
+- `set_market_whitelist(strategy_id, whitelist: List[str])`
+  - Define activos permitidos para una estrategia (ej: solo Forex, no crypto)
+  
+- `log_asset_performance(...pnl, trades_count, win_rate, profit_factor...)`
+  - Registra resultado de operaciones desde executor
+  - Persiste en DB vía StorageManager
+  
+- `refresh_affinity_scores()`
+  - Recarga cache desde DB (entre sesiones)
+  - Idempotent y thread-safe (en contexto de asyncio)
+
+### Flujo Completo: Operación + Aprendizaje
+
+```
+1. [OPERACIÓN]
+   Tick llega → UniversalStrategyExecutor.generate_signals()
+   ↓
+   StrategyGatekeeper.can_execute_on_tick()
+   - ¿EUR/USD en whitelist? ✅
+   - ¿Score (0.92) >= min_threshold (0.80)? ✅
+   → ALLOW → Generar señal
+   
+2. [TRADE EXECUTION]
+   Señal ejecutada → Trade cierra con P&L
+   ↓
+   ExecutionManager.close_trade() registra resultado
+   
+3. [LEARNING]
+   End-of-day script agrega logs:
+   StrategyGatekeeper.log_asset_performance(
+       strategy_id='BRK_OPEN_0001',
+       asset='EUR/USD',
+       pnl=250.00,
+       trades_count=5,
+       win_rate=0.80,
+       profit_factor=1.5
+   )
+   
+4. [SCORE UPDATE]
+   Sistema de Tuning (ThresholdOptimizer) calcula nuevo score:
+   new_score = calculate_asset_affinity_score('BRK_OPEN_0001', 'EUR/USD', lookback=50)
+   → 0.92 + momentum adjustment = 0.94
+   
+   Actualiza en DB:
+   StorageManager.update_strategy_affinity_scores('BRK_OPEN_0001', {'EUR/USD': 0.94, ...})
+   
+5. [CACHE REFRESH]
+   Next session: StrategyGatekeeper.refresh_affinity_scores()
+   → Carga nuevos scores en memoria
+   → Operaciones de siguiente sesión ya benefician del aprendizaje
+```
+
+### Gobernanza y Seguridad
+
+**Regla 8: Immutabilidad de Umbrales en Producción**
+- min_threshold es especificado por el strategy JSON schema (inmutable)
+- NO puede ser relelajado por el sistema (Safety Governor veto)
+- Si un asset tiene score 0.70 y threshold es 0.80 → BLOCK SIEMPRE
+
+**Regla 15: SSOT Único en DB**
+- No hay archivos JSON con scores hardcodeados
+- No hay caching en Redis o memcached sin DB sync
+- Affinity_scores en JSON dentro de `strategies` table es caché legible, source de verdad es `strategy_performance_logs`
+
+**Regla 9: Documentación Completa**
+- Este apartado es documentación única oficial
+- Cambios siempre se documentan AQUÍ, no en READMEs separados
+- Trace_ID: EXEC-EFFICIENCY-SCORE-001 linked desde ROADMAP
+
+### Integración Sistémica
+
+El Gatekeeper se integra en:
+
+| Componente | Integración | Responsable |
+|-----------|-------------|-------------|
+| **UniversalStrategyExecutor** | Llamada a `gatekeeper.can_execute_on_tick()` antes de `generate_signals()` | MainOrchestrator (inyecta gatekeeper) |
+| **ExecutionManager** | Llama `gatekeeper.log_asset_performance()` cuando trade cierra | RiskManager/Executor |
+| **MainOrchestrator** | Crea StrategyGatekeeper, lo inyecta en executor | Constructor StrategyGatekeeper(storage) |
+| **StorageManager** | Proveedor de affinity_scores (StrategiesMixin) | StorageManager.get_strategy_affinity_scores() |
+| **ThresholdOptimizer / Tuner** | Calcula scores nuevos, actualiza DB (llamado off-session) | sys_edge_tuner.py |
 
 ---
 > [!TIP]

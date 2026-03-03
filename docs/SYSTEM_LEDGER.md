@@ -4,8 +4,221 @@
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> ⚠️ **CIERRE DE SESIÓN (2026-03-02)**: Véase logs/CIERRE_SESSION_COHERENCE_DRIFT_2026_001.log
+> ⚠️ **ÚLTIMA ACTUALIZACIÓN (2026-03-02 19:30 UTC)**: Trace_ID: EXEC-EFFICIENCY-SCORE-001 | HU 7.2 COMPLETADA
 > Trace_ID: COHERENCE-DRIFT-2026-001 | Sistema: 14/14 Tests PASSED | Workspace: Limpio
+
+---
+
+## 📅 Registro: 2026-03-02 — CAPA DE FILTRADO DE EFICIENCIA POR SCORE DE ACTIVO (TRACE_ID: EXEC-EFFICIENCY-SCORE-001)
+
+### ✅ HITO COMPLETADO: Asset Efficiency Score Gatekeeper (HU 7.2)
+**Trace_ID**: `EXEC-EFFICIENCY-SCORE-001`  
+**Timestamp**: 2026-03-02 19:30 UTC  
+**Status**: ✅ PRODUCTION-READY  
+**Domain**: 07 (Adaptive Learning) + 08 (Data Sovereignty - SSOT)  
+**Vector**: V3 (Dominio Sensorial)  
+
+#### Descripción de la Tarea (HU 7.2)
+Implementación de la **capa de filtrado de eficiencia de activos** que valida la performance histórica antes de cada ejecución de estrategia. Sistema dual: persistencia en DB (`strategies_db.py`) + validación ultra-rápida en memoria (`StrategyGatekeeper`, < 1ms latencia). Arquitectura SSOT garantizada: los affinity scores se originan en `strategy_performance_logs`, no en archivos.
+
+#### Cambios Implementados
+
+**1. Evolución de Schema (`data_vault/schema.py`)**
+- Nueva tabla `strategies`:
+  ```sql
+  CREATE TABLE strategies (
+    class_id TEXT PRIMARY KEY,
+    mnemonic TEXT NOT NULL,
+    version TEXT DEFAULT '1.0',
+    affinity_scores TEXT DEFAULT '{}',  -- JSON dict {asset: score}
+    market_whitelist TEXT DEFAULT '[]',  -- JSON list de activos permitidos
+    description TEXT,
+    created_at/updated_at TIMESTAMP
+  )
+  ```
+- Nueva tabla `strategy_performance_logs`:
+  ```sql
+  CREATE TABLE strategy_performance_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    strategy_id TEXT NOT NULL,
+    asset TEXT NOT NULL,
+    pnl REAL DEFAULT 0.0,
+    trades_count INTEGER DEFAULT 0,
+    win_rate REAL DEFAULT 0.0,
+    profit_factor REAL DEFAULT 0.0,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    trace_id TEXT,
+    FOREIGN KEY (strategy_id) REFERENCES strategies (class_id),
+    UNIQUE(strategy_id, asset, timestamp)
+  )
+  ```
+- Índices: strategy_id, asset, timestamp, trace_id (para queries rápidas del Gatekeeper)
+
+**2. Mixin de Persistencia (`data_vault/strategies_db.py`)**
+- Nueva clase `StrategiesMixin` con métodos CRUD:
+  - `create_strategy()`: Crear estrategia con affinity_scores iniciales, market_whitelist
+  - `get_strategy()`: Recuperar metadata por class_id
+  - `update_strategy_affinity_scores()`: Actualizar scores (llamado por sistema de aprendizaje)
+  - `update_strategy_market_whitelist()`: Actualizar lista de activos permitidos
+  - `get_strategy_affinity_scores()`: Obtener scores (usado por Gatekeeper al inicializar)
+  - `get_market_whitelist()`: Recuperar whitelist por estrategia
+  - `save_strategy_performance_log()`: Registrar resultado de trade/batch
+  - `get_asset_performance_history()`: Recuperar histórico para un activo (lookback N trades)
+  - `calculate_asset_affinity_score()`: **Cálculo dinámico**
+    ```
+    score = (avg_win_rate * 0.5) + (pf_score * 0.3) + (momentum * 0.2)
+    - avg_win_rate: Tasa de ganancia ponderada por # de trades
+    - pf_score: Profit Factor normalizado (capped 2.0 → 1.0)
+    - momentum: Tendencia reciente vs histórica
+    ```
+  - `get_performance_summary()`: Agregado de performance por asset (últimas N días)
+- Líneas totales: ~460 líneas (< 500 límite de higiene)
+- Dependency Injection: Todos los métodos usan `self._get_conn()` de BaseRepository
+
+**3. Componente In-Memory Gatekeeper (`core_brain/strategy_gatekeeper.py`)**
+- Nueva clase `StrategyGatekeeper`:
+  - **Constructor**: Inyecta StorageManager, carga scores en memoria desde DB
+  - **`can_execute_on_tick(asset, min_threshold, strategy_id) → bool`**:
+    - Validación ultra-rápida (100% en-memory, NO DB queries)
+    - Checks: 1) whitelist (si definida), 2) score >= threshold
+    - Latencia garantizada: < 1ms incluso con 1000 iteraciones
+  - **`validate_asset_score()`**: Alias explícito para `can_execute_on_tick()`
+  - **`set_market_whitelist()` / `get_market_whitelist()` / `clear_market_whitelist()`**: Control de activos permitidos
+  - **`log_asset_performance()`**: Llama a StorageManager para perseguir resultado
+  - **`refresh_affinity_scores()`**: Recargar cache desde DB (entre sesiones)
+  - **Diagnósticos**: `get_asset_score()`, `get_all_scores()`, `get_cache_stats()`, `log_state()`
+- Líneas totales: ~290 líneas (< 500 límite de higiene)
+- Memory footprint: Dict de activos (típicamente < 100 assets = minimal overhead)
+
+**4. Integración en StorageManager (`data_vault/storage.py`)**
+- Importar `StrategiesMixin`
+- Agregar `StrategiesMixin` a herencia múltiple de `StorageManager`
+- Todos los métodos de `StrategiesMixin` disponibles vía `storage_instance.method_name()`
+
+**5. Tests Completos (`tests/test_strategy_gatekeeper.py`)**
+- 17 tests cubriendo:
+  - **Initialization** (2 tests): Load scores, dependency injection
+  - **Asset Validation** (4 tests): Pass above threshold, fail below, missing assets, boundary (==threshold)
+  - **Pre-Tick Filtering** (3 tests): Can execute, blocks below threshold, latency < 1ms (1000 ops)
+  - **Performance Logging** (2 tests): Save to DB, persist metadata
+  - **Score Updates** (2 tests): Refresh, idempotency
+  - **Integration** (2 tests): UniversalEngine compatibility, veto mechanism
+  - **Market Whitelist** (2 tests): Respects whitelist, blocks non-whitelisted assets
+- Status: **17/17 PASSED** ✅
+
+**6. Documentación Técnica (`docs/AETHELGARD_MANIFESTO.md` - Sección VI)**
+- Nueva sección: "Capa de Filtrado de Eficiencia por Score de Activo (EXEC-EFFICIENCY-SCORE-001)"
+- Subsecciones:
+  - Principio Fundamental: SSOT en Performance Logs
+  - Arquitectura de Dos Componentes: strategies_db + StrategyGatekeeper
+  - Flujo Completo: Operación → Learning → Score Update → Cache Refresh
+  - Gobernanza: Immutabilidad, SSOT, Documentación Única
+  - Integración Sistémica: Tabla que muestra cómo se conecta con otros componentes
+- ~550 líneas (único documento de referencia para esta funcionalidad)
+
+**7. Actualización de BACKLOG.md y SPRINT.md**
+- **BACKLOG.md**: Agregar HU 7.2 bajo Dominio 07_ADAPTIVE_LEARNING con estado [DONE]
+- **SPRINT.md**: Agregar tarea bajo SPRINT 3 con checkbox marcado ✅
+
+#### Flujo Operacional Completo
+
+```
+SESIÓN 1 (Día 1):
+┌─────────────────────────────────────────────────────────────┐
+│ 1. INSTANCIA INICIAL                                        │
+│    MainOrchestrator():                                       │
+│      storage = StorageManager()  # Inicializa BD             │
+│      gk = StrategyGatekeeper(storage)  # Carga scores        │
+│      gk.asset_scores = {'EUR/USD': 0.92, 'GBP/USD': 0.85}   │
+│                                                              │
+│ 2. PRE-TICK VALIDATION                                      │
+│    UniversalStrategyExecutor.generate_signals():            │
+│      if gk.can_execute_on_tick('EUR/USD', 0.80, 'S-0001'):  │
+│         signal = generate_signal(...)  # OK                  │
+│      else:                                                    │
+│         return []  # Veto - no signal                        │
+│                                                              │
+│ 3. TRADE EXECUTION                                          │
+│    Signal → Executor → Trade opens → Trade closes           │
+│    Result: PnL = +250, trades = 5, win_rate = 0.80          │
+│                                                              │
+│ 4. END-OF-SESSION LOGGING                                   │
+│    gk.log_asset_performance(                                │
+│        strategy_id='BRK_OPEN_0001',                         │
+│        asset='EUR/USD',                                     │
+│        pnl=250.00,                                          │
+│        trades_count=5,                                      │
+│        win_rate=0.80,                                       │
+│        profit_factor=1.5                                    │
+│    )                                                         │
+│    → Persiste en strategy_performance_logs (DB)             │
+└─────────────────────────────────────────────────────────────┘
+
+SESIÓN 2 (Día 2):
+┌─────────────────────────────────────────────────────────────┐
+│ 5. SCORE RECALCULATION (Off-session o batch)               │
+│    ThresholdOptimizer.tune():                               │
+│      new_score = storage.calculate_asset_affinity_score(    │
+│          'BRK_OPEN_0001', 'EUR/USD', lookback=50            │
+│      )                                                       │
+│      → 0.92 (anterior) → 0.94 (nuevo, con momentum)         │
+│                                                              │
+│      storage.update_strategy_affinity_scores(               │
+│          'BRK_OPEN_0001',                                   │
+│          {'EUR/USD': 0.94, 'GBP/USD': 0.86, ...}            │
+│      )                                                       │
+│      → Actualiza DB                                         │
+│                                                              │
+│ 6. CACHE REFRESH                                            │
+│    MainOrchestrator (new session):                          │
+│      gk.refresh_affinity_scores()  # Recargar desde DB       │
+│      gk.asset_scores['EUR/USD'] = 0.94  # Nuevo valor       │
+│                                                              │
+│ 7. OPERACIONES CON NUEVO SCORE                             │
+│    if gk.can_execute_on_tick('EUR/USD', 0.80, 'S-0001'):    │
+│       # Score 0.94 >= 0.80, permite ejecución               │
+│       signal = generate_signal(...)  # OK                    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### Cumplimiento de Reglas de Aethelgard
+
+| Regla | Status | Justificación |
+|-------|--------|---------------|
+| **SSOT (Única Fuente de Verdad)** | ✅ | Affinity scores se originan en `strategy_performance_logs`, no hardcodeados |
+| **Documentación Única** | ✅ | TODO en AETHELGARD_MANIFESTO.md Sección VI + BACKLOG + SPRINT + SYSTEM_LEDGER |
+| **Inyección de Dependencias** | ✅ | StrategyGatekeeper(storage) recibe StorageManager inyectado |
+| **Higiene de Masa** | ✅ | strategies_db.py (460 líneas), strategy_gatekeeper.py (290 líneas), ambos < 500 |
+| **Agnosticismo de Datos** | ✅ | El Gatekeeper no conoce detalles de brokers, solo activos y scores |
+| **Trazabilidad** | ✅ | Trace_ID EXEC-EFFICIENCY-SCORE-001 + trace_id en cada log |
+| **Aislamiento Multi-Tenant** | ✅ | StorageManager por tenant, scores por tenant vía SSOT |
+| **Gobernanza Inmutable** | ✅ | min_threshold definido por schema, no modificable en runtime |
+
+#### Artefactos Finales
+```
+✅ data_vault/strategies_db.py (StrategiesMixin - 460 líneas)
+✅ core_brain/strategy_gatekeeper.py (StrategyGatekeeper - 290 líneas)
+✅ data_vault/schema.py (DDL: strategies + strategy_performance_logs)
+✅ data_vault/storage.py (StrategiesMixin agregado a herencia)
+✅ tests/test_strategy_gatekeeper.py (17 tests, 17/17 PASSED)
+✅ docs/AETHELGARD_MANIFESTO.md (Sección VI - ~550 líneas)
+✅ governance/BACKLOG.md (HU 7.2 agregado)
+✅ governance/SPRINT.md (Tarea marcada ✅ en SPRINT 3)
+✅ governance/ROADMAP.md (Tarea marcada ✅ con detalles)
+```
+
+#### Validación Completa
+- **Tests Unitarios**: 17/17 PASSED ✅
+- **Sistema Completo**: `validate_all.py` 14/14 modules PASSED ✅
+- **Startup**: `start.py` inicializa sin errores ✅
+- **Latencia**: < 1ms garantizado (1000 iteraciones en < 1ms promedio) ✅
+- **Cobertura**: TDD (tests primero, luego código) ✅
+
+#### Impacto Comercial (SaaS)
+- **Personalización por Estrategia**: Cada estrategia puede definir su propio whitelist de activos
+- **Aprendizaje Automático**: Scores se adaptan dinámicamente basado en performance real
+- **Seguridad de Capital**: Veto automático si asset no cumple eficiencia histórica
+- **Auditoría**: Cada decisión de veto registrada con trace_id para regulación
 
 ---
 

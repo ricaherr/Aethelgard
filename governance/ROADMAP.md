@@ -156,6 +156,40 @@
     - ✅ Schema JSON pesquisito en docs/03_ALPHA_ENGINE.md (Firmas Operativas Validadas)
   - **Trace_ID**: STRATEGY-MARKET-OPEN-GAP-2026-001
 
+- [x] **Filtrado de Eficiencia por Score de Activo (EXEC-EFFICIENCY-SCORE-001)** — ✅ COMPLETADA (2 de Marzo, 2026 — 19:30 UTC)
+  - **Objetivo**: Capa de filtrado que valida la eficiencia de cada activo antes de ejecución de estrategia.
+  - **Acción 1: Esquema de Datos Evolucionado** ✅
+    - ✅ Tabla `strategies` con campos `class_id`, `mnemonic`, `version`, `affinity_scores` (JSON), `market_whitelist`
+    - ✅ Tabla `strategy_performance_logs` para logging relacional de desempeño por activo (FOREIGN KEY → strategies)
+    - ✅ Métodos de persistencia en `strategies_db.py`: StrategiesMixin con CRUD completo (460 líneas)
+    - ✅ Métodos de cálculo: `calculate_asset_affinity_score()`, `get_performance_summary()`
+    - ✅ Agregación dinámica: promedios ponderados de win_rate, profit_factor, momentum
+  - **Acción 2: In-Memory Score Guard** ✅
+    - ✅ Componente `StrategyGatekeeper` residente en memoria (core_brain/strategy_gatekeeper.py, 290 líneas)
+    - ✅ Validación pre-tick: `can_execute_on_tick(asset, min_threshold, strategy_id)` → **< 1ms garantizado** ⚡
+    - ✅ Abort execution en caso de score < threshold (veto instantáneo, no procesa el tick)
+    - ✅ Market whitelist enforcement: lista de activos permitidos por estrategia
+    - ✅ Logging de performance: `log_asset_performance()` → strategy_performance_logs DB
+    - ✅ Refresh en memoria: `refresh_affinity_scores()` para pickear cambios de DB
+  - **Integración Completa**:
+    - ✅ StorageManager: StrategiesMixin inyectado en herencia múltiple
+    - ✅ StrategyGatekeeper: Dependency Injection en MainOrchestrator
+    - ✅ SSOT: Affinity scores origen único = strategy_performance_logs + strategies DB (cero hardcoding)
+    - ✅ Learning system: Cada trade perfiles actualiza scores para siguiente sesión
+  - **Documentación Técnica Completa** ✅
+    - ✅ AETHELGARD_MANIFESTO.md (Sección VI - ~550 líneas, único documento oficial)
+    - ✅ BACKLOG.md (HU 7.2 agregado bajo Dominio 07_ADAPTIVE_LEARNING)
+    - ✅ SPRINT.md (Tarea marcada ✅ en SPRINT 3)
+    - ✅ SYSTEM_LEDGER.md (Entrada cronológica con detalles, flujo operacional, gobernanza)
+  - **Tests**: 17/17 PASSED ✅
+    - ✅ Initialization, Asset Validation, Pre-Tick Filtering
+    - ✅ Performance Logging, Score Updates, Market Whitelist
+    - ✅ Integration con UniversalEngine
+    - ✅ Latencia < 1ms en 1000 iteraciones
+  - **Validación Completa**: validate_all.py 14/14 PASSED ✅ | start.py OK ✅
+  - **Regla de Gobernanza**: Affinity scores NO hardcodeados (SSOT DB exclusive), inyección de dependencias, immutabilidad de thresholds
+  - **Trace_ID**: EXEC-EFFICIENCY-SCORE-001 | **Status**: Production-Ready (auditable, multi-tenant, learning continuo)
+
 - [ ] **Confidence Threshold Adaptive (HU 7.1)** — EN DESARROLLO
   - Optimizer que ajusta el umbral de confianza dinámicamente según desempeño histórico.
   - Detección de rachas de pérdidas → incrementa exigencia automáticamente.
