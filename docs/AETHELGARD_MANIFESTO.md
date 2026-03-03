@@ -1197,6 +1197,161 @@ Detección de Quiebre de Estructura (BOS - Break of Structure) con continuación
 
 ---
 
+### Backlog de Investigación (S-0007 a S-0011) — Estrategias Propuestas
+
+Este registro contiene estrategias propuestas en la fase de investigación. Ninguna ha sido implementada en código; representan conceptos validados a nivel teórico que requieren investigación experimental antes de ser promovidas a estado "Shadow" o "Operativa".
+
+#### S-0007: ICT_BREAKER_0001 — ICT Breaker Blocks & Mitigations
+
+**Concepto**: Inner Circle Trading (ICT) framework aplicado a detección de Breaker Blocks y mitigation zones en flujo institucional.
+
+**Mecánica**:
+- Identificar Breaker Blocks (ORBs - Opening Range Breakouts) en primeras 2 horas
+- Mapear Mitigation Zones (zonas donde Smart Money ejecuta liquidaciones)
+- Esperar segundo encuentro del precio a mitigation zone
+- Entry en confluencia: Vela Elefante + Volume Profile + Imbalance
+
+**Pilares Candidatos**:
+1. Sensorial: ORB detection (H1), Volume profile clustering, Imbalance
+2. Régimen: EXPANSION, MOMENTUM_SHIFT (no RANGE)
+3. Coherencia: 75%+ (requiere validación histórica)
+4. Multi-Tenant: Premium (sí), Institutional (sí con custom zones)
+
+**Asset Affinity (CANDIDATO)**:
+- GBP/USD (0.88 - institucional fuerte)
+- EUR/USD (0.82 - popularidad)
+- Cable: 0.75 (Monitor)
+
+**Status**: 📋 BACKLOG_RESEARCH | Requiere: ORB sensor + Volume Profile integración
+
+---
+
+#### S-0008: ATR_EXPANSION_0001 — ATR Breakout Continuation
+
+**Concepto**: Capiturar continuaciones post-expansión de volatilidad (ATR 50%+ arriba de media).
+
+**Mecánica**:
+- Monitores ATR vs MA(20, ATR)
+- Cuando ATR cruza 130% de MA(ATR) → señal EXPANSION detectada
+- Esperar vela de confirmación (close arriba de High anterior si bullish)
+- Entry con SL en EMA8, TP en extensión ATR 2.5×
+
+**Pilares Candidatos**:
+1. Sensorial: ATR momentum, EMA8 dinámico, volatility clustering
+2. Régimen: VOLATILE, EXPANSION obligatorio
+3. Coherencia: 72%+ esperado
+4. Multi-Tenant: Basic (sí, simple), Premium (sí, optimizado)
+
+**Asset Affinity (CANDIDATO)**:
+- USD/JPY (0.90 - institutional carry)
+- EUR/JPY (0.85 - volatility profile)
+- AUD/USD (0.80 - binary trades)
+
+**Status**: 📋 BACKLOG_RESEARCH | Requiere: ATR momentum sensor
+
+---
+
+#### S-0009: CONV_GRID_0001 — Convergence Grid Scalping
+
+**Concepto**: Grid trading basado en convergencia de 3 medias móviles (SMA8, SMA20, SMA50).
+
+**Mecánica**:
+- Cuando SMA8 converge a SMA20 (< 5 pips) y ambas cerca de SMA50 (< 10 pips) → COMPRESSION ZONE
+- Deploy grid de 5 órdenes buy/sell alternas, 8-10 pips apart
+- Objetivos parciales cada 5-7 pips
+- Max 3 grillas activas simultáneamente para controlar exposición
+
+**Pilares Candidatos**:
+1. Sensorial: MA convergence clustering, grid position tracking
+2. Régimen: RANGE, CONTRACTION (explosiones post-squeeze)
+3. Coherencia: 68%+ esperado (grid volatility)
+4. Multi-Tenant: Premium (sí), Institutional (posible, risk control estricto)
+
+**Asset Affinity (CANDIDATO)**:
+- GBP/JPY (0.86 - stable grid) 
+- EUR/GBP (0.82 - tight spreads)
+- Cable (0.75 - volume support)
+
+**Status**: 📋 BACKLOG_RESEARCH | Requiere: MA grid engine + position manager refactor
+
+---
+
+#### S-0010: VOLATILITY_MEAN_REVERSION_0001 — Vol Reversal Scalper
+
+**Concepto**: Mean reversion de volatilidad inversa (opuesto a ATR_EXPANSION).
+
+**Mecánica**:
+- Cuando ATR cae 60% bajo MA(ATR) → squeeze extremo
+- Post-squeeze (cuando ATR empieza a recuperarse <10% expansión) → señal MEAN_REVERSION
+- Entry en dirección contraria a cierre anterior (apuesta a reversión)
+- SL = ATR × 1.5, TP = ATR × 1.0
+
+**Pilares Candidatos**:
+1. Sensorial: Z-Score denormalized ATR, inflection detection
+2. Régimen: CONTRACTION seguido de EXPANSION (timing crítico)
+3. Coherencia: 65%+ (especulativo, requiere timing perfecto)
+4. Multi-Tenant: Premium (sí, educational), Institutional (no)
+
+**Asset Affinity (CANDIDATO)**:
+- USD/JPY (0.88 - carry carry reversals)
+- EUR/USD (0.79 - liquid reversals)
+
+**Status**: 📋 BACKLOG_RESEARCH | Requiere: Z-Score ATM sensor, timing engine
+
+---
+
+#### S-0011: SMART_MONEY_FOOTPRINT_0001 — Order Flow Imbalance Interpreter
+
+**Concepto**: Análisis de "pisada inteligente" mediante delta direccional de volumen (ticks en bid vs ask).
+
+**Mecánica**:
+- Recolectar tick data: cada tick en BID (venta institucional) vs ASK (compra institucional)
+- Calcular skew: (ASK_ticks - BID_ticks) / Total_ticks en ventanas de 20 ticks
+- Cuando skew > 65% sostenido 3+ velas → probabilidad compra Smart Money
+- Entry en dirección del skew bias con TP = next S/R, SL = Breaker Block
+
+**Pilares Candidatos**:
+1. Sensorial: Tick flow analysis, bid/ask imbalance, order clustering
+2. Régimen: ALL REGIMES (universal, pero mejor en RANGE → breakout)
+3. Coherencia: 70%+ esperado (institucional proxy, alta fidelidad)
+4. Multi-Tenant: Institutional ONLY (requiere datos premium de broker)
+
+**Asset Affinity (CANDIDATO)**:
+- EUR/USD (0.92 - máxima data availability)
+- GBP/USD (0.88 - good data)
+- Cualquier par EURUSD: liquidity tier 1
+
+**Requisitos Críticos**:
+- ✅ Acceso a tick data completo (5 dígitos décimas)
+- ✅ Sincronización con tick server (MT5 OnTick callbacks)
+- ✅ Persistencia de sesiones diarias de flow
+
+**Status**: 📋 BACKLOG_RESEARCH | Requiere: tick data infrastructure, broker API refactor
+
+---
+
+### Criterio de Promoción: De Backlog a Shadow Strategy
+
+Una estrategia del Backlog puede ser promovida a **Shadow Mode** (trading paper con métricas reales) cuando cumple:
+
+1. ✅ **Concepto Validado**: Documento técnico con 4 pilares definidos claramente
+2. ✅ **Sensores Implementados**: Todos los componentes sensoriales coding-ready (TDD)
+3. ✅ **Backtesting Positivo**: Hit rate > 60% en histórico > 100 trades
+4. ✅ **Risk Management**: SL y TP documentados, ratio riesgo/recompensa > 1:1.5
+5. ✅ **Arquitectura Compliance**: Agnóstica de broker, DI enforced, tests 100% pass
+6. ✅ **Documentación Sección X**: Registro en Manifesto con TRACE_ID
+
+**Proceso de Promoción**:
+```
+BACKLOG_RESEARCH
+    ↓ (Implementación en código)
+SHADOW_MODE (Requiere >= 1.5 Profit Factor)
+    ↓ (Validación en vivo 21+ días)
+OPERATIVE (Aprobación humana + credenciales reales)
+```
+
+---
+
 ## XI. Gobernanza de Orquestación: Leyes de Exclusión Mutua
 
 El **MainOrchestrator** es el árbitro soberano de todas las señales entrantes. Su función es resolver conflictos estratégicos mediante una jerarquía de prioridades determinista que **evita el hedging accidental** (cobertura múltiple no intencional que drena capital en comisiones y slippage).

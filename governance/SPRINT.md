@@ -129,3 +129,58 @@
 | **Vector Activo** | V3: Dominio Sensorial & Adaptabilidad (Antifragilidad) |
 | **Última Actualización** | 1 de Marzo, 2026 - 20:45 UTC
 
+---
+
+# SPRINT 4: INTEGRACIÓN SENSORIAL Y ORQUESTACIÓN — [ACTIVO]
+
+**Inicio**: 2 de Marzo, 2026  
+**Objetivo**: Integrar la capa sensorial completa con orquestación centralizada y expandir capacidades de usuario hacia empoderamiento operativo.  
+**Versión Target**: v4.2.0-beta.1  
+**Dominios**: 02, 03, 05, 06, 09  
+**Estado**: 🚀 ACTIVO  
+
+---
+
+## 📋 Tareas del Sprint 4
+
+- [x] **Market Structure Analyzer Sensorial (HU 3.3)** ✅ COMPLETADA (DOC-STRUC-SHIFT-2026)
+  - ✅ Sensor de detección HH/HL/LH/LL con caching optimizado
+  - ✅ Breaker Block mapping y Break of Structure (BOS) detection
+  - ✅ Pullback zone calculation con tolerancia configurable
+  - ✅ 14/14 Tests PASSED | Integración en StructureShift0001Strategy
+
+- [x] **Orquestación Conflict Resolver (HU 5.2, 6.2)** ✅ COMPLETADA (EXEC-ORCHESTRA-001)
+  - ✅ ConflictResolver: Resolución automática de conflictos multi-estrategia
+  - ✅ Jerarquía de prioridades: FundamentalGuard → Asset Affinity → Régimen Alignment
+  - ✅ Risk Scaling dinámico según régimen (1.0× a 0.5×)
+
+- [x] **UI Mapping Service & Terminal 2.0 (HU 9.1, 9.2)** ✅ COMPLETADA (EXEC-ORCHESTRA-001)
+  - ✅ UIDrawingFactory con paleta Bloomberg Dark (16 colores)
+  - ✅ Sistema de 6 capas (Layers): Structure, Targets, Liquidity, MovingAverages, RiskZones, Labels
+  - ✅ Elemento visual base (DrawingElement) con z-index automático
+  - ✅ Emisión en tiempo real vía WebSocket a UI
+
+- [x] **Strategy Heartbeat Monitor (HU 10.1)** ✅ COMPLETADA (EXEC-ORCHESTRA-001)
+  - ✅ StrategyHeartbeat: Monitoreo individual de 6 estrategias (IDLE, SCANNING, POSITION_ACTIVE, etc)
+  - ✅ SystemHealthReporter: Health Score integral (CPU, Memory, Conectividad, Estrategias)
+  - ✅ Persistencia en BD cada 10 segundos
+
+- [ ] **Vector V5: User Empowerment (HU 9.3 - DOCUMENTACIÓN)**
+  - [ ] Manual de Usuario Interactivo (Wiki interna)
+  - [ ] Sistema de Ayuda Contextual en UI (Tooltips técnicos)
+  - [ ] Implementación de Switch Físico para Shadow Mode
+
+---
+
+## 📸 Snapshot Sprint 4 (Progreso: 4/5 - Implementación completada, documentación en progreso)
+
+| Métrica | Valor |
+|---|---|
+| **Arquitectura Base** | v4.1.0-beta.3 (94 tests, 99.8% compliance) |
+| **Versión Target** | v4.2.0-beta.1 |
+| **Implementación Status** | ✅ 4/4 Componentes Backend COMPLETADOS |
+| **Testing** | ✅ 82/82 PASSED (sin regresiones) |
+| **Validación Sistema** | ✅ 14/14 módulos PASSED (validate_all.py) |
+| **Vector Activo** | V3-V5: Sensorial → Orquestación → Empoderamiento |
+| **Última Actualización** | 2 de Marzo, 2026 - 15:30 UTC
+

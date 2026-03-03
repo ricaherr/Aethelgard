@@ -6,6 +6,45 @@
 
 ---
 
+## 🎯 VECTORES DE EVOLUCIÓN (Hoja de Ruta Tecnológica)
+
+Los **Vectores** representan los ejes de evolución del sistema agrupados por ciclo de Sprint. Cada Vector integra múltiples dominios y capacidades del sistema.
+
+### Vector V1: Gobernanza y Seguridad (Sprint 1)
+- ✅ **Status**: COMPLETADO
+- **Componentes**: SaaS multi-tenant, Autenticación Bcrypt, Aislamiento de datos
+- **Dominios Afectados**: 01 (Identity), 04 (Risk Governance)
+- **Hito**: Fundación segura para escalabilidad comercial
+
+### Vector V2: Coherencia Sensorial (Sprint 2)
+- ✅ **Status**: COMPLETADO  
+- **Componentes**: RegimeClassifier, Multi-Scale Vectorizer, Anomaly Sentinel
+- **Dominios Afectados**: 02 (Context Intelligence), 04 (Risk)
+- **Hito**: Detección de anomalías y contextualización fractal
+
+### Vector V3: Depredación de Mercado y Sentimiento (Sprint 2-3)
+- ✅ **Status**: EN PRODUCCIÓN
+- **Componentes**: SentimentService (API + fallback institucional), Predator Radar, Liquidity Detection
+- **Dominios Afectados**: 02 (Context), 03 (Alpha Signal)
+- **Hito**: Huella institucional mapeada en tiempo real
+
+### Vector V4: Orquestación y Coherencia Ejecutiva (Sprint 4)
+- 🚀 **Status**: EN AVANCE
+- **Componentes**: ConflictResolver, UIMapping Service, StrategyHeartbeat Monitor
+- **Dominios Afectados**: 05 (Execution), 06 (Portfolio), 09 (Interface)
+- **Hito**: Resolución automática de conflictos multi-estrategia, Terminal 2.0 operativa
+
+### Vector V5: User Empowerment & Autonomía (Sprint 4-5) ⭐ NUEVO
+- 📋 **Status**: EN DOCUMENTACIÓN
+- **Componentes**:
+  - **Manual de Usuario Interactivo (Wiki interna)**: Documentación viva sobre operatoria de cada estrategia
+  - **Sistema de Ayuda Contextual en UI (Tooltips técnicos)**: Asistencia en tiempo real para traders
+  - **Implementación de Switch Físico para Shadow Mode**: Soberanía de control para activar/desactivar modo demostración
+- **Dominios Afectados**: 09 (Institutional Interface), 07 (Adaptive Learning)
+- **Hito**: Trader humano empoderado con herramientas de auto-educación y control granular
+
+---
+
 ## 📋 SPRINT: EXEC-STRUC-SHIFT-001 — Implementación Backend S-0006 (STRUCTURE BREAK SHIFT)
 
 ### Objetivo
