@@ -1,15 +1,16 @@
 """
-Candlestick Pattern Detector - Rejection Tails & Hammer Patterns
-==================================================================
+Candlestick Pattern Detector - Rejection Tails, Hammer & Momentum Strike
+==========================================================================
 
 Responsabilidades:
 1. Detectar "Rejection Tails" (Cola de Piso: tail >= 50% del rango)
 2. Detectar "Hammer" patterns (Vela Elefante - reversión bullish)
-3. Validar proporción cuerpo/mecha
-4. Generar señales de reversión basadas en patterns
+3. Detectar "Momentum Strike" (MOM_BIAS_0001): Vela elefante + ubicación geométrica
+4. Validar proporción cuerpo/mecha y confluencia de medias
+5. Generar señales de entrada con SL = OPEN (para Momentum)
 
 Arquitectura Agnóstica: Ningún import de broker
-Inyección de Dependencias: storage por constructor
+Inyección de Dependencias: storage + moving_average_sensor por constructor
 
 TRACE_ID: SENSOR-CANDLESTICK-001
 """
@@ -24,47 +25,64 @@ logger = logging.getLogger(__name__)
 
 class CandlestickPatternDetector:
     """
-    Detector de patrones candlestick para estrategia Trifecta.
+    Detector de patrones candlestick para estrategias Trifecta y Momentum.
     
     Enfoque:
     1. Colas de rechazo (Rejection Tails): Defensa en SMA 20
     2. Velas Elefante (Hammer): Estructura de reversión clave
+    3. Momentum Strike (MOM_BIAS_0001): Ruptura de compresión SMA20/SMA200
     """
     
     def __init__(
         self,
         storage: Any,
+        moving_average_sensor: Any = None,
         trace_id: str = None
     ):
         """
         Args:
             storage: StorageManager (SSOT para configuración)
+            moving_average_sensor: MovingAverageSensor (para SMA20/SMA200 en Momentum)
             trace_id: Request trace ID para auditoría
         """
         self.storage = storage
-        self.trace_id = trace_id
+        self.moving_average_sensor = moving_average_sensor
+        self.trace_id = trace_id or "CANDLESTICK-001"
         
         # Parámetros de detección
         self._load_config()
         
         logger.info(
             f"[{self.trace_id}] CandlestickPatternDetector initialized. "
-            f"Rejection_tail_threshold={self.rejection_tail_threshold}"
+            f"Rejection_tail_threshold={self.rejection_tail_threshold}, "
+            f"MOM_BIAS_closure_threshold={self.mom_bias_closure_threshold}"
         )
     
     
     def _load_config(self) -> None:
-        """Carga configuración desde DB (SSOT)."""
+        """Carga configuración desde DB (SSOT) para ambas estrategias."""
         try:
             params = self.storage.get_dynamic_params()
+            # Parámetros Trifecta (Rejection Tails & Hammer)
             self.rejection_tail_threshold = params.get('rejection_tail_threshold', 0.5)
             self.hammer_body_max_pct = params.get('hammer_body_max_pct', 0.3)
             self.min_tail_pips = params.get('min_tail_pips', 5)
+            
+            # Parámetros MOM_BIAS_0001 (Momentum Strike)
+            self.mom_bias_closure_threshold = params.get('mom_bias_closure_threshold', 0.02)  # 2%
+            self.mom_bias_sma_compression_pips = params.get('mom_bias_sma_compression_pips', 15)  # pips
+            self.mom_bias_volume_multiplier = params.get('mom_bias_volume_multiplier', 1.0)  # >= promedio
+            
         except Exception as e:
             logger.warning(f"Failed to load config from storage: {e}. Using defaults.")
-            self.rejection_tail_threshold = 0.5  # 50% del rango
-            self.hammer_body_max_pct = 0.3  # Máx 30% del rango
+            # Defaults Trifecta
+            self.rejection_tail_threshold = 0.5
+            self.hammer_body_max_pct = 0.3
             self.min_tail_pips = 5
+            # Defaults MOM_BIAS
+            self.mom_bias_closure_threshold = 0.02
+            self.mom_bias_sma_compression_pips = 15
+            self.mom_bias_volume_multiplier = 1.0
     
     
     def calculate_body_size(self, candle: Dict[str, float]) -> float:
@@ -352,39 +370,215 @@ class CandlestickPatternDetector:
             return None
     
     
+    def detect_momentum_strike(
+        self,
+        current_candle: Dict[str, float],
+        previous_candles: List[Dict[str, float]],
+        sma20: float,
+        sma200: float,
+        symbol: str = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Detecta patrón de Momentum Strike (MOM_BIAS_0001).
+        
+        Lógica de Ubicación (Filtro de Ignición):
+        1. Vela cierra 2%+ por encima/debajo de máximo previo O SMA20
+        2. SMA20 y SMA200 están en compresión (≤15 pips)
+        3. Confluencia: SMA20 cruzando O comprimida
+        
+        Args:
+            current_candle: Dict con OHLC de vela actual
+            previous_candles: Lista de dicts OHLC previos (últimas 5)
+            sma20: Valor actual de SMA20
+            sma200: Valor actual de SMA200
+            symbol: Símbolo del activo (para logging)
+            
+        Returns:
+            Dict con detalles si momentum strike detectado, None si no
+        """
+        try:
+            if not self.moving_average_sensor:
+                logger.warning(f"[{self.trace_id}] moving_average_sensor no inyectado. Skipping MOM_BIAS_0001")
+                return None
+            
+            # Validar inputs
+            if not previous_candles or len(previous_candles) < 2:
+                logger.debug(f"[{self.trace_id}] No hay velas previas suficientes")
+                return None
+            
+            symbol_tag = f" [{symbol}]" if symbol else ""
+            
+            # ========================
+            # PASO 1: Validar Compresión SMA20/SMA200
+            # ========================
+            compression_pips = abs(sma20 - sma200)
+            is_compressed = compression_pips <= self.mom_bias_sma_compression_pips
+            
+            if not is_compressed:
+                logger.debug(
+                    f"[{self.trace_id}] {symbol_tag} SMA20/200 no en compresión. "
+                    f"Dist: {compression_pips:.1f} pips (max: {self.mom_bias_sma_compression_pips})"
+                )
+                return None
+            
+            logger.debug(
+                f"[{self.trace_id}] {symbol_tag} SMA20/200 EN COMPRESIÓN: {compression_pips:.1f} pips"
+            )
+            
+            # ========================
+            # PASO 2: Validar Dirección y Cierre 2%+ Lejos
+            # ========================
+            is_bullish_close = current_candle['close'] > current_candle['open']
+            candle_range = self.calculate_candle_range(current_candle)
+            
+            # Máximo de consolidación previa (últimas 5 velas)
+            prev_high = max([c.get('high', 0) for c in previous_candles])
+            prev_low = min([c.get('low', float('inf')) for c in previous_candles])
+            
+            # Calcular threshold 2% en pips (ej: para EUR/USD 1.0700 -> 214 pips)
+            avg_price = (sma20 + sma200) / 2
+            closure_threshold_pips = avg_price * self.mom_bias_closure_threshold * 10000  # Convertir a pips
+            
+            # Caso BULLISH: Cierre debe estar 2% por encima
+            if is_bullish_close:
+                distance_above_sma20 = (current_candle['close'] - sma20) * 10000  # En pips
+                distance_above_prev_high = (current_candle['close'] - prev_high) * 10000
+                
+                bullish_ignition = (
+                    distance_above_sma20 >= closure_threshold_pips or
+                    distance_above_prev_high >= closure_threshold_pips
+                )
+                
+                if not bullish_ignition:
+                    logger.debug(
+                        f"[{self.trace_id}] {symbol_tag} BULLISH no cumple 2% cierre. "
+                        f"Dist SMA20: {distance_above_sma20:.1f} pips (min: {closure_threshold_pips:.1f})"
+                    )
+                    return None
+                
+                direction = 'BUY'
+                logger.debug(
+                    f"[{self.trace_id}] {symbol_tag} BULLISH IGNITION! Cierre {distance_above_sma20:.1f} pips arriba de SMA20"
+                )
+            
+            # Caso BEARISH: Cierre debe estar 2% por debajo
+            else:
+                distance_below_sma20 = (sma20 - current_candle['close']) * 10000  # En pips
+                distance_below_prev_low = (prev_low - current_candle['close']) * 10000
+                
+                bearish_ignition = (
+                    distance_below_sma20 >= closure_threshold_pips or
+                    distance_below_prev_low >= closure_threshold_pips
+                )
+                
+                if not bearish_ignition:
+                    logger.debug(
+                        f"[{self.trace_id}] {symbol_tag} BEARISH no cumple 2% cierre. "
+                        f"Dist SMA20: {distance_below_sma20:.1f} pips (min: {closure_threshold_pips:.1f})"
+                    )
+                    return None
+                
+                direction = 'SELL'
+                logger.debug(
+                    f"[{self.trace_id}] {symbol_tag} BEARISH IGNITION! Cierre {distance_below_sma20:.1f} pips bajo de SMA20"
+                )
+            
+            # ========================
+            # PASO 3: Validar Volumen (Confirmación)
+            # ========================
+            current_vol = current_candle.get('volume', 0)
+            prev_volumes = [c.get('volume', 0) for c in previous_candles[-20:] if c.get('volume', 0) > 0]
+            
+            if prev_volumes:
+                avg_volume = np.mean(prev_volumes)
+                vol_ratio = current_vol / avg_volume if avg_volume > 0 else 0
+                
+                if vol_ratio < self.mom_bias_volume_multiplier:
+                    logger.debug(
+                        f"[{self.trace_id}] {symbol_tag} Volumen bajo: {vol_ratio:.2f}x "
+                        f"(min: {self.mom_bias_volume_multiplier}x)"
+                    )
+                    # Nota: No es requisito hard, solo confirmación
+            else:
+                vol_ratio = 1.0
+            
+            # ========================
+            # PASO 4: Construir respuesta
+            # ========================
+            momentum_strike = {
+                'detected': True,
+                'direction': direction,
+                'symbol': symbol,
+                'current_price': current_candle['close'],
+                'sma20': sma20,
+                'sma200': sma200,
+                'compression_pips': compression_pips,
+                'open_price': current_candle['open'],  # SL para MOM_BIAS_0001
+                'volume_ratio': vol_ratio,
+                'candle_range': candle_range,
+                'timestamp': current_candle.get('timestamp', datetime.now().isoformat()),
+            }
+            
+            logger.info(
+                f"[{self.trace_id}] {symbol_tag} 🚀 MOMENTUM STRIKE DETECTED! "
+                f"Dir={direction}, Price={current_candle['close']:.5f}, SL={current_candle['open']:.5f}"
+            )
+            
+            return momentum_strike
+            
+        except Exception as e:
+            logger.error(
+                f"[{self.trace_id}] Error detecting momentum strike: {e}",
+                exc_info=True
+            )
+            return None
+    
+    
     def generate_signal(
         self,
         candle: Dict[str, float],
         symbol: str,
-        direction: Literal['BUY', 'SELL']
+        direction: Literal['BUY', 'SELL'],
+        strategy_type: Literal['TRIFECTA', 'MOMENTUM'] = 'TRIFECTA'
     ) -> Optional[Dict[str, Any]]:
         """
         Genera señal de entrada/salida basada en patrón detectado.
         
-        Implementa Pilar Multi-tenant: riesgo 1% del capital
+        Soporta dos estrategias:
+        1. TRIFECTA: SL = LOW/HIGH (máximo riesgo, máxima confirmación)
+        2. MOMENTUM: SL = OPEN (menor riesgo, mayor lotaje)
         
         Args:
             candle: Vela que generó el patrón
             symbol: Símbolo del activo
             direction: BUY o SELL
+            strategy_type: TRIFECTA (default) o MOMENTUM
             
         Returns:
-            Dict con detalles de entrada/stop/tp
+            Dict con detalles de entrada/stop/tp/risk/reward
         """
         try:
-            if direction == 'BUY':
-                # Entry: Por encima del máximo + 1 pip
-                entry_price = candle['high'] + 0.0001
-                # Stop Loss: Por debajo del mínimo - 1 pip
-                stop_loss = candle['low'] - 0.0001
-                tp_ratio = 2.5  # Risk/Reward de 1:2.5
-                
-            else:  # SELL
-                # Entry: Por debajo del mínimo - 1 pip
-                entry_price = candle['low'] - 0.0001
-                # Stop Loss: Por encima del máximo + 1 pip
-                stop_loss = candle['high'] + 0.0001
-                tp_ratio = 2.5
+            if strategy_type == 'MOMENTUM':
+                # MOM_BIAS_0001: SL = OPEN de la vela
+                if direction == 'BUY':
+                    entry_price = candle['high'] + 0.0001  # Entry encima del máximo
+                    stop_loss = candle['open']  # SL en OPEN (regla de ORO)
+                    tp_ratio = 2.0  # Risk/Reward 1:2 (conservador)
+                else:  # SELL
+                    entry_price = candle['low'] - 0.0001  # Entry bajo del mínimo
+                    stop_loss = candle['open']  # SL en OPEN
+                    tp_ratio = 2.0
+                    
+            else:  # TRIFECTA (default)
+                # Estrategia Trifecta: SL = LOW/HIGH
+                if direction == 'BUY':
+                    entry_price = candle['high'] + 0.0001
+                    stop_loss = candle['low'] - 0.0001  # Por debajo del mínimo
+                    tp_ratio = 2.5  # Risk/Reward 1:2.5
+                else:  # SELL
+                    entry_price = candle['low'] - 0.0001
+                    stop_loss = candle['high'] + 0.0001  # Por encima del máximo
+                    tp_ratio = 2.5
             
             risk = abs(entry_price - stop_loss)
             take_profit = entry_price + (risk * tp_ratio) if direction == 'BUY' else entry_price - (risk * tp_ratio)
@@ -392,6 +586,7 @@ class CandlestickPatternDetector:
             signal = {
                 'symbol': symbol,
                 'direction': direction,
+                'strategy_type': strategy_type,
                 'entry_price': round(entry_price, 5),
                 'stop_loss': round(stop_loss, 5),
                 'take_profit': round(take_profit, 5),
@@ -402,7 +597,7 @@ class CandlestickPatternDetector:
             }
             
             logger.debug(
-                f"[{self.trace_id}] Signal generated for {symbol} {direction}: "
+                f"[{self.trace_id}] Signal generated [{strategy_type}] {symbol} {direction}: "
                 f"Entry={signal['entry_price']}, SL={signal['stop_loss']}, TP={signal['take_profit']}"
             )
             
