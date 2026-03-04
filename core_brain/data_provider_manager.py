@@ -172,6 +172,11 @@ class DataProviderManager:
         # Cache of initialized provider instances
         self._instances: Dict[str, Any] = {}
         
+        # Provider selection cache - selected ONCE at startup
+        self._selected_provider: Optional[Any] = None
+        self._selected_provider_name: Optional[str] = None
+        self._provider_selection_initialized: bool = False
+        
         # PHASE 3: Sync broker_accounts to data_providers FIRST (auto-provisioning)
         # This enables MT5 automatically if credentials exist in broker_accounts
         # IMPORTANT: Must execute BEFORE _load_configuration() to sync DB before read
@@ -612,7 +617,25 @@ class DataProviderManager:
             return None
     
     def get_best_provider(self) -> Optional[Any]:
-        """Get best available provider based on priority"""
+        """
+        Get best available provider based on priority.
+        Selection is cached at startup - only changes on failure (fallback).
+        This prevents repeated log messages and ensures deterministic behavior.
+        """
+        # First call: perform selection and cache it
+        if not self._provider_selection_initialized:
+            self._select_best_provider_once()
+        
+        # Return cached selection
+        return self._selected_provider
+    
+    def _select_best_provider_once(self) -> None:
+        """
+        Perform the provider selection ONCE at startup.
+        Logs the selected provider and caches it.
+        """
+        self._provider_selection_initialized = True
+        
         # Get active providers sorted by priority
         active = self.get_active_providers()
         
@@ -639,12 +662,15 @@ class DataProviderManager:
             # Try to get instance
             instance: Any | None = self._get_provider_instance(name)
             if instance:
-                logger.info(f"Selected provider: {name} (priority: {config.priority})")
-                return instance
+                # Cache the selection and log it ONCE
+                self._selected_provider = instance
+                self._selected_provider_name = name
+                logger.info(f"[STARTUP] Selected primary provider: {name} (priority: {config.priority})")
+                return
         
         # FALLBACK: Try yahoo directly if no other provider worked
         if "yahoo" in self.providers:
-            logger.info("No configured providers available - forcing Yahoo fallback")
+            logger.info("[STARTUP] No configured providers available - forcing Yahoo fallback")
             # Temporarily enable yahoo for fallback (don't save to DB)
             yahoo_was_enabled: bool = self.providers["yahoo"].enabled
             self.providers["yahoo"].enabled = True
@@ -652,14 +678,17 @@ class DataProviderManager:
             try:
                 instance: Any | None = self._get_provider_instance("yahoo")
                 if instance:
-                    logger.info("Yahoo fallback activated successfully")
-                    return instance
+                    self._selected_provider = instance
+                    self._selected_provider_name = "yahoo"
+                    logger.info("[STARTUP] Yahoo fallback activated successfully")
+                    return
             finally:
                 # Restore original state (in memory only)
                 self.providers["yahoo"].enabled = yahoo_was_enabled
         
-        logger.warning("No available providers found (all fallbacks exhausted)")
-        return None
+        logger.warning("[STARTUP] No available providers found (all fallbacks exhausted)")
+        self._selected_provider = None
+        self._selected_provider_name = None
     
     def get_provider_for_symbol(self, symbol: str) -> Optional[Any]:
         """Get best provider for a specific symbol type"""
@@ -677,6 +706,20 @@ class DataProviderManager:
                     return instance
         
         # Fallback to best general provider
+        return self.get_best_provider()
+    
+    def force_reselect_provider(self) -> Optional[Any]:
+        """
+        Force reselection of provider (used when current provider fails).
+        Resets cache and performs selection again.
+        
+        Returns:
+            New selected provider instance or None
+        """
+        logger.warning(f"[FALLBACK] Current provider ({self._selected_provider_name}) failed. Reselecting...")
+        self._provider_selection_initialized = False
+        self._selected_provider = None
+        self._selected_provider_name = None
         return self.get_best_provider()
     
     def _detect_symbol_type(self, symbol: str) -> str:
