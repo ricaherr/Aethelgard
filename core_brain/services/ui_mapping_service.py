@@ -505,7 +505,7 @@ class UIMappingService:
         con esquema JSON estándar y flag de prioridad para Análisis.
         """
         if not self.socket_service:
-            logger.warning("[UI_MAPPING] SocketService no inicializado")
+            logger.error("[UI_MAPPING] SocketService is None. Cannot emit trader page update.")
             return
         
         page_json = self.trader_page_state.to_json()
@@ -513,16 +513,23 @@ class UIMappingService:
         # Emitir con prioridad alta si hay datos de análisis
         event_type = "ANALYSIS_UPDATE" if self.trader_page_state.priority == "high" else "TRADER_PAGE_UPDATE"
         
-        await self.socket_service.emit_event(
-            event_type=event_type,
-            payload=page_json
+        logger.info(
+            f"[UI_MAPPING] EMITTING {event_type} | "
+            f"priority={page_json.get('priority')} | "
+            f"analysis_detected={page_json.get('analysis_detected')} | "
+            f"analysis_signals={len(page_json.get('analysis_signals', {}))} | "
+            f"elements={page_json.get('element_count')} | "
+            f"payload_size={len(str(page_json))} bytes"
         )
         
-        logger.debug(
-            f"[UI_MAPPING] Emitted {event_type} with priority={page_json.get('priority')} "
-            f"analysis_signals={len(page_json.get('analysis_signals', {}))} "
-            f"elements={page_json.get('element_count')}"
-        )
+        try:
+            await self.socket_service.emit_event(
+                event_type=event_type,
+                payload=page_json
+            )
+            logger.debug(f"[UI_MAPPING][✅] {event_type} emitted successfully to {self.socket_service.get_connection_count()} clients")
+        except Exception as e:
+            logger.error(f"[UI_MAPPING] Exception in emit_event: {type(e).__name__}: {e}", exc_info=True)
     
     def add_structure_signal(self, asset: str, structure_data: Dict[str, Any]) -> None:
         """
@@ -533,30 +540,31 @@ class UIMappingService:
         
         Args:
             asset: Par de divisas
-            structure_data: Dict con HH/HL/LH/LL points, breaker, etc.
+            structure_data: Dict con HH/HL/LH/LL points/indices, structure_type, etc.
         """
         try:
-            hh_points = structure_data.get("hh_points", [])
-            hl_points = structure_data.get("hl_points", [])
+            # Support both old format (hh_points) and new format (hh_indices)
+            hh_indices = structure_data.get("hh_indices", [])
+            hl_indices = structure_data.get("hl_indices", [])
+            lh_indices = structure_data.get("lh_indices", [])
+            ll_indices = structure_data.get("ll_indices", [])
+            structure_type = structure_data.get("structure_type", "UNKNOWN")
+            confidence = structure_data.get("confidence", "unknown")
+            is_valid = structure_data.get("is_valid", False)
             
-            if not hh_points and not hl_points:
-                logger.warning(f"[UI_MAPPING] No HH/HL points for {asset}")
+            # Check if we have any pivot data
+            has_pivots = any([hh_indices, hl_indices, lh_indices, ll_indices])
+            
+            if not has_pivots:
+                logger.warning(f"[UI_MAPPING] No pivots detected for {asset}")
                 return
             
-            elements = self.factory.create_hh_hl_lines(hh_points, hl_points, f"{asset}_STRUCT")
-            for elem in elements:
-                self.trader_page_state.add_element(elem)
-            
-            breaker_high = structure_data.get("breaker_high")
-            breaker_low = structure_data.get("breaker_low")
-            if breaker_high and breaker_low:
-                breaker = self.factory.create_breaker_block(
-                    breaker_high, breaker_low,
-                    structure_data.get("breaker_start_index", 0),
-                    structure_data.get("breaker_end_index", 10),
-                    f"{asset}_BREAKER"
-                )
-                self.trader_page_state.add_element(breaker)
+            # Log the structure signal details
+            logger.debug(
+                f"[UI_MAPPING] Structure signal: {asset} {structure_type} "
+                f"(HH={len(hh_indices)}, HL={len(hl_indices)}, "
+                f"LH={len(lh_indices)}, LL={len(ll_indices)}, confidence={confidence})"
+            )
             
             # EXEC-UI-VALIDATION-FIX: Marcar como ANÁLISIS - Prioridad Alta
             self.trader_page_state.priority = "high"
@@ -564,19 +572,20 @@ class UIMappingService:
             self.trader_page_state.analysis_signals[f"{asset}_structure"] = {
                 "type": "structure",
                 "asset": asset,
-                "hh_points": len(hh_points),
-                "hl_points": len(hl_points),
-                "breaker_range": f"{breaker_high:.5f}-{breaker_low:.5f}" if breaker_high else None,
+                "structure_type": structure_type,
+                "hh_count": len(hh_indices),
+                "hl_count": len(hl_indices),
+                "lh_count": len(lh_indices),
+                "ll_count": len(ll_indices),
+                "valid": is_valid,
+                "confidence": confidence,
                 "timestamp": datetime.now().isoformat()
             }
             
-            logger.info(
-                f"[UI_MAPPING] Added ANALYSIS structure for {asset}: "
-                f"{len(elements)} elements | priority=HIGH"
-            )
+            logger.info(f"[UI_MAPPING] Added structure signal for {asset}: {structure_type} ({confidence})")
         
         except Exception as e:
-            logger.error(f"[UI_MAPPING] Exception in add_structure_signal({asset}): {str(e)}")
+            logger.error(f"[UI_MAPPING] Error adding structure signal: {e}", exc_info=True)
     
     def add_target_signals(self, asset: str, tp1: float, tp2: float, start_idx: int, end_idx: int) -> None:
         """Agrega líneas de objetivos (TP1, TP2) - SEÑAL DE ANÁLISIS.

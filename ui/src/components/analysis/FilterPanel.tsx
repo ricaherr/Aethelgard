@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Filter, ChevronDown } from 'lucide-react';
+import { Filter, ChevronDown, X } from 'lucide-react';
 
 interface FilterPanelProps {
     activeFilters: {
@@ -130,13 +130,18 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     const activeCount = Object.values(activeFilters).flat().length;
 
     return (
-        <div className="bg-gray-800 rounded-lg border border-gray-700">
-            <div className="flex items-center justify-between p-4 border-b border-gray-700">
-                <div className="flex items-center gap-2">
-                    <Filter className="w-5 h-5 text-blue-400" />
-                    <h3 className="font-semibold text-white">Filters</h3>
+        <div className="bg-gradient-to-b from-gray-900/80 to-gray-900/40 rounded-xl border border-gray-800/60 backdrop-blur-md shadow-lg hover:border-gray-700/60 transition-border duration-300">
+            <div className="flex items-center justify-between p-5 border-b border-gray-800/40">
+                <div className="flex items-center gap-3">
+                    <div className="p-2 bg-blue-500/15 rounded-lg backdrop-blur-sm border border-blue-500/20">
+                        <Filter className="w-5 h-5 text-blue-400" />
+                    </div>
+                    <div>
+                        <h3 className="font-bold text-white text-sm tracking-wide">Filters</h3>
+                        <p className="text-[11px] text-gray-500 mt-0.5">Refine signals</p>
+                    </div>
                     {activeCount > 0 && (
-                        <span className="px-2 py-0.5 bg-blue-600 text-white text-xs rounded-full">
+                        <span className="ml-2 px-2.5 py-1 bg-gradient-to-r from-blue-600 to-blue-500 text-white text-xs font-bold rounded-full shadow-lg shadow-blue-500/20">
                             {activeCount}
                         </span>
                     )}
@@ -145,35 +150,36 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     {activeCount > 0 && (
                         <button
                             onClick={clearAllFilters}
-                            className="text-xs text-gray-400 hover:text-white transition-colors"
+                            className="text-xs text-gray-400 hover:text-red-400 transition-colors duration-200 font-semibold flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-red-500/10"
                         >
-                            Clear All
+                            <X className="w-3.5 h-3.5" />
+                            Clear
                         </button>
                     )}
                     <button
                         onClick={() => setIsExpanded(!isExpanded)}
-                        className="text-gray-400 hover:text-white transition-colors"
+                        className={`text-gray-400 hover:text-white transition-all duration-300 p-1.5 rounded-lg hover:bg-gray-800/50 ${isExpanded ? 'text-blue-400' : ''}`}
                     >
-                        {isExpanded ? '−' : '+'}
+                        <ChevronDown className={`w-5 h-5 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />
                     </button>
                 </div>
             </div>
 
             {isExpanded && (
-                <div className="p-4 space-y-4">
+                <div className="p-5 space-y-6 animate-in fade-in slide-in-from-top-2 duration-300">
                     {/* Status */}
-                    <div>
-                        <label className="text-xs font-semibold text-gray-400 mb-2 block">
-                            🚦 SIGNAL STATUS
+                    <div className="space-y-3">
+                        <label className="text-xs font-bold text-gray-300 mb-2 block uppercase tracking-wide">
+                            🚦 Signal Status
                         </label>
                         <div className="flex flex-wrap gap-2">
                             {FILTER_OPTIONS.status.map(option => (
                                 <button
                                     key={option.value}
                                     onClick={() => toggleFilter('status', option.value)}
-                                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${activeFilters.status?.includes(option.value)
-                                        ? `${option.color} text-white`
-                                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                                    className={`px-3 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${activeFilters.status?.includes(option.value)
+                                        ? `${option.color} text-white shadow-lg scale-105`
+                                        : 'bg-gray-800/60 text-gray-300 hover:bg-gray-700/80 border border-gray-700/40'
                                         }`}
                                 >
                                     {option.label}
@@ -183,18 +189,18 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     </div>
 
                     {/* Probability */}
-                    <div>
-                        <label className="text-xs font-semibold text-gray-400 mb-2 block">
-                            🎯 PROBABILITY
+                    <div className="space-y-3">
+                        <label className="text-xs font-bold text-gray-300 mb-2 block uppercase tracking-wide">
+                            🎯 Probability
                         </label>
                         <div className="flex flex-wrap gap-2">
                             {FILTER_OPTIONS.probability.map(option => (
                                 <button
                                     key={option.value}
                                     onClick={() => toggleFilter('probability', option.value)}
-                                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${activeFilters.probability?.includes(option.value)
-                                        ? `${option.color} text-white`
-                                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                                    className={`px-3 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${activeFilters.probability?.includes(option.value)
+                                        ? `${option.color} text-white shadow-lg scale-105`
+                                        : 'bg-gray-800/60 text-gray-300 hover:bg-gray-700/80 border border-gray-700/40'
                                         }`}
                                 >
                                     {option.label}
@@ -204,18 +210,18 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     </div>
 
                     {/* Time */}
-                    <div>
-                        <label className="text-xs font-semibold text-gray-400 mb-2 block">
-                            ⏱️ TIME
+                    <div className="space-y-3">
+                        <label className="text-xs font-bold text-gray-300 mb-2 block uppercase tracking-wide">
+                            ⏱️ Time
                         </label>
                         <div className="flex flex-wrap gap-2">
                             {FILTER_OPTIONS.time.map(option => (
                                 <button
                                     key={option.value}
                                     onClick={() => toggleFilter('time', option.value)}
-                                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${activeFilters.time?.includes(option.value)
-                                        ? 'bg-blue-600 text-white'
-                                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                                    className={`px-3 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${activeFilters.time?.includes(option.value)
+                                        ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg scale-105'
+                                        : 'bg-gray-800/60 text-gray-300 hover:bg-gray-700/80 border border-gray-700/40'
                                         }`}
                                 >
                                     {option.label}
@@ -225,18 +231,18 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     </div>
 
                     {/* Regime */}
-                    <div>
-                        <label className="text-xs font-semibold text-gray-400 mb-2 block">
-                            📊 REGIME
+                    <div className="space-y-3">
+                        <label className="text-xs font-bold text-gray-300 mb-2 block uppercase tracking-wide">
+                            📊 Regime
                         </label>
                         <div className="flex flex-wrap gap-2">
                             {FILTER_OPTIONS.regime.map(option => (
                                 <button
                                     key={option.value}
                                     onClick={() => toggleFilter('regime', option.value)}
-                                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${activeFilters.regime?.includes(option.value)
-                                        ? 'bg-purple-600 text-white'
-                                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                                    className={`px-3 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${activeFilters.regime?.includes(option.value)
+                                        ? 'bg-gradient-to-r from-purple-600 to-purple-500 text-white shadow-lg scale-105'
+                                        : 'bg-gray-800/60 text-gray-300 hover:bg-gray-700/80 border border-gray-700/40'
                                         }`}
                                 >
                                     {option.icon} {option.label}
@@ -246,18 +252,18 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     </div>
 
                     {/* Strategy */}
-                    <div>
-                        <label className="text-xs font-semibold text-gray-400 mb-2 block">
-                            🎲 STRATEGY
+                    <div className="space-y-3">
+                        <label className="text-xs font-bold text-gray-300 mb-2 block uppercase tracking-wide">
+                            🎲 Strategy
                         </label>
                         <div className="flex flex-wrap gap-2">
                             {FILTER_OPTIONS.strategy.map(option => (
                                 <button
                                     key={option.value}
                                     onClick={() => toggleFilter('strategy', option.value)}
-                                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${activeFilters.strategy?.includes(option.value)
-                                        ? 'bg-indigo-600 text-white'
-                                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                                    className={`px-3 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${activeFilters.strategy?.includes(option.value)
+                                        ? 'bg-gradient-to-r from-indigo-600 to-indigo-500 text-white shadow-lg scale-105'
+                                        : 'bg-gray-800/60 text-gray-300 hover:bg-gray-700/80 border border-gray-700/40'
                                         }`}
                                 >
                                     {option.label}
@@ -267,11 +273,11 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     </div>
 
                     {/* Symbols - Hierarchical */}
-                    <div>
-                        <label className="text-xs font-semibold text-gray-400 mb-2 block">
-                            💱 SYMBOLS
+                    <div className="space-y-3">
+                        <label className="text-xs font-bold text-gray-300 mb-2 block uppercase tracking-wide">
+                            💱 Symbols
                         </label>
-                        <div className="space-y-2">
+                        <div className="space-y-2 max-h-64 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-gray-800">
                             {Object.entries(SYMBOL_CATEGORIES).map(([key, category]) => {
                                 const categorySymbols = category.symbols;
                                 const selectedInCategory = categorySymbols.filter(sym =>
@@ -281,18 +287,18 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                 const someSelected = selectedInCategory > 0 && !allSelected;
 
                                 return (
-                                    <div key={key} className="border border-gray-700 rounded-lg">
+                                    <div key={key} className="bg-gray-800/40 border border-gray-700/60 rounded-lg overflow-hidden hover:border-gray-600/80 transition-border duration-200">
                                         <button
                                             onClick={() => setExpandedCategory(expandedCategory === key ? null : key)}
-                                            className="w-full flex items-center justify-between p-2 hover:bg-gray-750 rounded-lg transition-colors"
+                                            className="w-full flex items-center justify-between p-3 hover:bg-gray-800/60 rounded-lg transition-colors duration-200"
                                         >
                                             <div className="flex items-center gap-2">
-                                                <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${expandedCategory === key ? 'rotate-180' : ''
+                                                <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-300 ${expandedCategory === key ? 'rotate-180' : ''
                                                     }`} />
-                                                <span className="text-sm font-medium text-white">{category.label}</span>
+                                                <span className="text-sm font-semibold text-white">{category.label}</span>
                                                 {selectedInCategory > 0 && (
-                                                    <span className="px-1.5 py-0.5 bg-cyan-600 text-white text-xs rounded">
-                                                        {selectedInCategory}
+                                                    <span className="px-2 py-0.5 bg-cyan-600/30 text-cyan-300 text-xs rounded-full border border-cyan-500/30 font-bold">
+                                                        {selectedInCategory}/{categorySymbols.length}
                                                     </span>
                                                 )}
                                             </div>
@@ -301,11 +307,11 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                                     e.stopPropagation();
                                                     toggleCategory(key);
                                                 }}
-                                                className={`px-2 py-1 rounded text-xs font-medium transition-all ${allSelected
-                                                    ? 'bg-cyan-600 text-white'
+                                                className={`px-3 py-1.5 rounded text-xs font-bold transition-all duration-200 ${allSelected
+                                                    ? 'bg-gradient-to-r from-cyan-600 to-cyan-500 text-white shadow-lg shadow-cyan-500/20'
                                                     : someSelected
-                                                        ? 'bg-cyan-600/50 text-white'
-                                                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                                                        ? 'bg-cyan-600/60 text-cyan-100 border border-cyan-500/40'
+                                                        : 'bg-gray-700/50 text-gray-300 hover:bg-gray-600/60 border border-gray-600/40'
                                                     }`}
                                             >
                                                 {allSelected ? 'All' : someSelected ? 'Some' : 'None'}
@@ -313,14 +319,14 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                         </button>
 
                                         {expandedCategory === key && (
-                                            <div className="p-2 pt-0 grid grid-cols-2 gap-1">
+                                            <div className="p-3 pt-2 grid grid-cols-2 gap-2 bg-gray-900/40 border-t border-gray-700/40 animate-in slide-in-from-top-1 duration-200">
                                                 {categorySymbols.map(symbol => (
                                                     <button
                                                         key={symbol}
                                                         onClick={() => toggleFilter('symbols', symbol)}
-                                                        className={`px-2 py-1 rounded text-xs font-medium transition-all ${activeFilters.symbols?.includes(symbol)
-                                                            ? 'bg-cyan-600 text-white'
-                                                            : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 ${activeFilters.symbols?.includes(symbol)
+                                                            ? 'bg-gradient-to-r from-cyan-600 to-cyan-500 text-white shadow-lg shadow-cyan-500/20 scale-105'
+                                                            : 'bg-gray-700/60 text-gray-300 hover:bg-gray-600/80 border border-gray-600/40 hover:border-gray-500/60'
                                                             }`}
                                                     >
                                                         {symbol}
@@ -335,18 +341,18 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     </div>
 
                     {/* Timeframes */}
-                    <div>
-                        <label className="text-xs font-semibold text-gray-400 mb-2 block">
-                            ⏰ TIMEFRAMES
+                    <div className="space-y-3">
+                        <label className="text-xs font-bold text-gray-300 mb-2 block uppercase tracking-wide">
+                            ⏰ Timeframes
                         </label>
                         <div className="flex flex-wrap gap-2">
                             {FILTER_OPTIONS.timeframes.map(option => (
                                 <button
                                     key={option.value}
                                     onClick={() => toggleFilter('timeframes', option.value)}
-                                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${activeFilters.timeframes?.includes(option.value)
-                                        ? 'bg-teal-600 text-white'
-                                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                                    className={`px-3 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${activeFilters.timeframes?.includes(option.value)
+                                        ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-lg scale-105'
+                                        : 'bg-gray-800/60 text-gray-300 hover:bg-gray-700/80 border border-gray-700/40'
                                         }`}
                                 >
                                     {option.label}
@@ -354,19 +360,20 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                             ))}
                         </div>
                     </div>
+
                     {/* Limit */}
-                    <div>
-                        <label className="text-xs font-semibold text-gray-400 mb-2 block">
-                            🔢 LIMIT
+                    <div className="space-y-3 pb-2">
+                        <label className="text-xs font-bold text-gray-300 mb-2 block uppercase tracking-wide">
+                            🔢 Result Limit
                         </label>
                         <div className="flex flex-wrap gap-2">
                             {[100, 200, 500, 1000].map(limit => (
                                 <button
                                     key={limit}
                                     onClick={() => onFiltersChange({ ...activeFilters, limit: limit })}
-                                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${activeFilters.limit === limit
-                                        ? 'bg-blue-600 text-white'
-                                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                                    className={`px-3 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${activeFilters.limit === limit
+                                        ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg scale-105'
+                                        : 'bg-gray-800/60 text-gray-300 hover:bg-gray-700/80 border border-gray-700/40'
                                         }`}
                                 >
                                     {limit}

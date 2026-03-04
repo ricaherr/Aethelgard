@@ -63,7 +63,7 @@ export const SignalCard: React.FC<SignalCardProps> = ({
     };
 
     return (
-        <div className="bg-gray-800 rounded-lg border border-gray-700 hover:border-gray-600 transition-all p-4">
+        <div className="bg-white/5 rounded-lg border border-white/10 hover:border-white/20 transition-all p-4">
             {/* Header */}
             <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-3">

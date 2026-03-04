@@ -29,6 +29,7 @@ import asyncio
 import json
 import logging
 import signal
+import time
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
@@ -271,6 +272,10 @@ class MainOrchestrator:
         # 7. Orchestration & Reporting (NEW - Vector V4)
         self._init_orchestration_services(ui_mapping_service, heartbeat_monitor, conflict_resolver)
 
+        # 8. Market Analysis & UI Integration (EXEC-UI-DATA-INTEGRATION)
+        self._init_market_analysis_services()
+
+
     def _init_core_dependencies(self, scanner: Any, factory: Any, risk: Any, executor: Any, storage: Optional[Any], config_path: Optional[str], strategy_ranker: Optional[StrategyRanker] = None) -> None:
         """Initializes core engines and resolves storage/config."""
         self.scanner = scanner
@@ -350,6 +355,10 @@ class MainOrchestrator:
         self._shutdown_requested = False
         self._active_signals = []
         self._last_checked_deal_ticket = 0
+        
+        # Health check: Track consecutive cycles with 0 structures detected
+        self._consecutive_empty_structure_cycles = 0
+        self._max_consecutive_empty_cycles = 3  # Trigger alert after this many
 
     def _init_loop_intervals(self) -> None:
         """Sets up the intervals for the main orchestrator loop based on regimes."""
@@ -372,14 +381,22 @@ class MainOrchestrator:
         # UI Mapping Service (NEW)
         if ui_mapping is not None:
             self.ui_mapping_service = ui_mapping
+            logger.info("[ORCHESTRATOR] UI_Mapping_Service injected from parameter")
         else:
             try:
                 from core_brain.services.ui_mapping_service import UIMappingService
-                socket_svc = getattr(self, 'socket_service', None)
+                from core_brain.services.socket_service import get_socket_service
+                
+                socket_svc = get_socket_service()  # Get singleton instance
+                logger.debug(f"[ORCHESTRATOR] SocketService obtained: {socket_svc}")
+                
                 self.ui_mapping_service = UIMappingService(socket_service=socket_svc)
-                logger.info("[ORCHESTRATOR] UI_Mapping_Service initialized (default)")
+                logger.info("[ORCHESTRATOR][✅] UI_Mapping_Service initialized successfully")
+            except ImportError as e:
+                logger.error(f"[ORCHESTRATOR] ImportError initializing UI_Mapping_Service: {e}", exc_info=True)
+                self.ui_mapping_service = None
             except Exception as e:
-                logger.warning(f"[ORCHESTRATOR] Could not initialize UI_Mapping_Service: {e}")
+                logger.error(f"[ORCHESTRATOR] Exception initializing UI_Mapping_Service: {e}", exc_info=True)
                 self.ui_mapping_service = None
         
         # Strategy Heartbeat Monitor (NEW)
@@ -411,6 +428,16 @@ class MainOrchestrator:
             except Exception as e:
                 logger.warning(f"[ORCHESTRATOR] Could not initialize ConflictResolver: {e}")
                 self.conflict_resolver = None
+
+    def _init_market_analysis_services(self) -> None:
+        """Initializes market structure analyzer for UI integration (EXEC-UI-DATA-INTEGRATION)."""
+        try:
+            from core_brain.sensors.market_structure_analyzer import MarketStructureAnalyzer
+            self.market_structure_analyzer = MarketStructureAnalyzer(storage=self.storage)
+            logger.info("[ORCHESTRATOR] MarketStructureAnalyzer initialized for UI data feed")
+        except Exception as e:
+            logger.warning(f"[ORCHESTRATOR] Could not initialize MarketStructureAnalyzer: {e}")
+            self.market_structure_analyzer = None
 
     def _discover_brokers(self) -> List[Dict]:
         """Descubre todos los brokers registrados en la base de datos."""
@@ -753,6 +780,101 @@ class MainOrchestrator:
             self._update_regime_from_scan(scan_results)
             self.storage.update_module_heartbeat("scanner")
             
+            # EXEC-UI-DATA-INTEGRATION: Analyze market structure and populate UI mapping
+            # (Always run, even if no trading signals are generated)
+            if self.market_structure_analyzer and self.ui_mapping_service:
+                # Defensive check: if too many snapshots lack data, wait a bit
+                snapshots_with_data = sum(
+                    1 for s in price_snapshots.values() 
+                    if s.df is not None and len(s.df) > 0
+                )
+                if snapshots_with_data == 0:
+                    logger.warning(f"[UI_MAPPING] All {len(price_snapshots)} snapshots have df=None, waiting for data...")
+                    await asyncio.sleep(0.5)  # Brief wait for scanner to populate data
+                    # Re-fetch after wait
+                    scan_results_with_data = await asyncio.to_thread(self.scanner.get_scan_results_with_data)
+                    for key, data in scan_results_with_data.items():
+                        if key in price_snapshots and data.get("df") is not None:
+                            price_snapshots[key].df = data["df"]
+                    snapshots_with_data = sum(
+                        1 for s in price_snapshots.values() 
+                        if s.df is not None and len(s.df) > 0
+                    )
+                
+                available_pct = (snapshots_with_data / len(price_snapshots) * 100) if price_snapshots else 0
+                logger.info(f"[UI_MAPPING][GATE PASSED] analyzer=✅ service=✅ | Starting structure analysis for {len(price_snapshots)} price snapshots ({available_pct:.1f}% with data)")
+                structure_count = 0
+                try:
+                    for key, snapshot in price_snapshots.items():
+                        if snapshot.df is not None and len(snapshot.df) > 0:
+                            # Detect market structure (HH/HL/LH/LL, breakers, etc.)
+                            structure_result = self.market_structure_analyzer.detect_market_structure(snapshot.df)
+                            
+                            if structure_result:
+                                # Flexibilize: emit even if is_valid=False, as long as we have some pivots
+                                has_some_pivots = (
+                                    structure_result.get('hh_count', 0) > 0 or 
+                                    structure_result.get('hl_count', 0) > 0 or 
+                                    structure_result.get('lh_count', 0) > 0 or 
+                                    structure_result.get('ll_count', 0) > 0
+                                )
+                                
+                                if structure_result.get('is_valid') or has_some_pivots:
+                                    # Provide structure data to UI mapping service
+                                    self.ui_mapping_service.add_structure_signal(
+                                        asset=snapshot.symbol,
+                                        structure_data={
+                                            'hh_indices': structure_result.get('hh_indices', []),
+                                            'hl_indices': structure_result.get('hl_indices', []),
+                                            'lh_indices': structure_result.get('lh_indices', []),
+                                            'll_indices': structure_result.get('ll_indices', []),
+                                            'structure_type': structure_result.get('type', 'UNKNOWN'),
+                                            'is_valid': structure_result.get('is_valid', False),
+                                            'confidence': 'high' if structure_result.get('is_valid') else 'partial'
+                                        }
+                                    )
+                                    structure_count += 1
+                                    struct_status = "✅ valid" if structure_result.get('is_valid') else "⚠️ partial"
+                                    logger.info(
+                                        f"[UI_MAPPING] {struct_status} Added structure for {snapshot.symbol}: "
+                                        f"{structure_result.get('type')} "
+                                        f"(HH={structure_result.get('hh_count')}, "
+                                        f"HL={structure_result.get('hl_count')}, "
+                                        f"LH={structure_result.get('lh_count')}, "
+                                        f"LL={structure_result.get('ll_count')})"
+                                    )
+                    
+                    logger.info(f"[UI_MAPPING] Structure analysis complete: {structure_count} structures detected out of {len(price_snapshots)}")
+                    
+                    # HEALTH CHECK: Monitor for consecutive empty structure cycles
+                    if structure_count == 0:
+                        self._consecutive_empty_structure_cycles += 1
+                        if self._consecutive_empty_structure_cycles == self._max_consecutive_empty_cycles:
+                            logger.critical(
+                                f"[HEALTH_CHECK] ⚠️ ALERT: {self._consecutive_empty_structure_cycles} consecutive cycles with 0 structures detected. "
+                                f"This indicates a potential data flow issue (e.g., DataFrames still None, analyzer bug, or timing problem). "
+                                f"Check scanner status, market data providers, and MarketStructureAnalyzer logs."
+                            )
+                        elif self._consecutive_empty_structure_cycles > self._max_consecutive_empty_cycles:
+                            # Keep alerting every cycle if still broken
+                            logger.error(f"[HEALTH_CHECK] ⚠️ PERSISTENT: {self._consecutive_empty_structure_cycles} cycles with 0 structures. System may be degraded.")
+                    else:
+                        # Reset counter if we detect structures
+                        if self._consecutive_empty_structure_cycles > 0:
+                            logger.info(f"[HEALTH_CHECK] ✅ Recovery: Structures detected after {self._consecutive_empty_structure_cycles} empty cycles")
+                        self._consecutive_empty_structure_cycles = 0
+
+                except Exception as e:
+                    logger.error(f"[UI_MAPPING] Error analyzing structure: {type(e).__name__}: {e}", exc_info=True)
+                
+                # Emit UI update (Vector V4 - Encendido Visual)
+                try:
+                    logger.debug(f"[UI_MAPPING] About to emit trader page update. socket_service={bool(self.ui_mapping_service.socket_service)}")
+                    await self.ui_mapping_service.emit_trader_page_update()
+                    logger.debug(f"[UI_MAPPING][✅] emit_trader_page_update() completed successfully")
+                except Exception as e:
+                    logger.error(f"[UI_MAPPING] Error emitting trader page update: {type(e).__name__}: {e}", exc_info=True)
+            
             # Generate unique trace ID for this cycle
             trace_id = str(uuid.uuid4())
             logger.debug(f"Starting cycle with trace_id: {trace_id}")
@@ -884,13 +1006,6 @@ class MainOrchestrator:
                             f"Coherence inconsistency: symbol={event.symbol}, stage={event.stage}, status={event.status}, reason={event.reason}, connector={event.connector_type}"
                         )
             
-            # NEW: Emit UI update (Vector V4 - Encendido Visual)
-            if self.ui_mapping_service:
-                try:
-                    await self.ui_mapping_service.emit_trader_page_update()
-                except Exception as e:
-                    logger.warning(f"[UI_MAPPING] Error emitting trader page update: {e}")
-            
             # NEW: Update heartbeat for all strategies (Vector V4 - Monitor)
             if self.heartbeat_monitor:
                 try:
@@ -1010,11 +1125,44 @@ class MainOrchestrator:
         - Adaptive heartbeat (faster with active signals)
         - Graceful shutdown on SIGINT/SIGTERM
         - Session persistence after each cycle
+        - Scanner warmup phase to ensure data is available
         """
         logger.info("MainOrchestrator starting event loop...")
         
         # Register signal handlers for graceful shutdown
         self._register_signal_handlers()
+        
+        # WARMUP PHASE: Wait for scanner to have data ready
+        # This prevents "0 structures detected" on first cycles
+        logger.info("[WARMUP] Waiting for scanner to populate initial data...")
+        warmup_timeout = 30  # seconds
+        warmup_start = time.time()
+        has_data = False
+        
+        while not has_data and (time.time() - warmup_start) < warmup_timeout:
+            scan_results = await asyncio.to_thread(self.scanner.get_scan_results_with_data)
+            # Check if at least 50% of snapshots have data
+            if scan_results:
+                snapshots_with_data = sum(
+                    1 for data in scan_results.values() 
+                    if data.get("df") is not None and len(data.get("df", [])) > 0
+                )
+                available_pct = (snapshots_with_data / len(scan_results)) * 100 if scan_results else 0
+                
+                if available_pct >= 50:
+                    has_data = True
+                    logger.info(f"[WARMUP] ✅ Scanner ready: {snapshots_with_data}/{len(scan_results)} snapshots with data ({available_pct:.1f}%)")
+                else:
+                    logger.debug(f"[WARMUP] Data loading: {snapshots_with_data}/{len(scan_results)} snapshots ({available_pct:.1f}%)")
+                    await asyncio.sleep(0.5)
+            else:
+                logger.debug("[WARMUP] Waiting for first scan results...")
+                await asyncio.sleep(0.5)
+        
+        if not has_data:
+            logger.warning(f"[WARMUP] Timeout after {warmup_timeout}s, proceeding with partial data (may see 0 structures initially)")
+        
+        logger.info("[WARMUP] ✅ Scanner warmup complete, entering main loop")
         
         try:
             while not self._shutdown_requested:

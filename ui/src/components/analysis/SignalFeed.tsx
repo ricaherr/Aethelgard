@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { RefreshCw, TrendingUp } from 'lucide-react';
 import { SignalCard } from './SignalCard';
+import { useAnalysisWebSocket } from '../../hooks/useAnalysisWebSocket';
 
 interface Signal {
     id: string;
@@ -44,6 +45,9 @@ export const SignalFeed: React.FC<SignalFeedProps> = ({
     const [loading, setLoading] = useState(true);
     const [autoRefresh, setAutoRefresh] = useState(true);
     const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
+    
+    // Use analysis WebSocket for real-time data
+    const { connected: wsConnected, analysisData } = useAnalysisWebSocket();
 
     // Expose fetchSignals to parent via callback
     useEffect(() => {
@@ -53,17 +57,46 @@ export const SignalFeed: React.FC<SignalFeedProps> = ({
         }
     }, [onRefreshNeeded]);
 
+    // Consume real-time analysis data from WebSocket
     useEffect(() => {
-        fetchSignals();
+        if (analysisData && analysisData.analysis_signals) {
+            console.log('📡 [SIGNAL FEED] Received analysis signals from WebSocket:', analysisData.analysis_signals);
+            
+            // Convert analysis_signals to Signal format
+            const wsSignals: Signal[] = Object.entries(analysisData.analysis_signals).map(([key, signalData]: [string, any]) => ({
+                id: signalData.id || key,
+                symbol: signalData.symbol || signalData.asset || '',
+                direction: signalData.direction || 'BUY',
+                score: signalData.confidence || signalData.score || 0.5,
+                timeframe: signalData.timeframe || 'H1',
+                strategy: signalData.strategy || 'Market Structure',
+                entry_price: signalData.entry_price || 0,
+                sl: signalData.sl || 0,
+                tp: signalData.tp || 0,
+                r_r: signalData.r_r || 0,
+                regime: signalData.regime || 'UNKNOWN',
+                timestamp: signalData.timestamp || new Date().toISOString(),
+                status: signalData.status || 'ACTIVE',
+                has_trace: false,
+                confluences: signalData.confluences || [],
+            }));
+            
+            setSignals(wsSignals);
+            setLastUpdate(new Date());
+            setLoading(false);
+        }
+    }, [analysisData]);
 
-        if (autoRefresh) {
+    useEffect(() => {
+        // Only fetch from REST if WebSocket not connected and autoRefresh is on
+        if (!wsConnected && autoRefresh) {
+            fetchSignals();
             const interval = setInterval(() => {
                 fetchSignals();
             }, 30000);
-
             return () => clearInterval(interval);
         }
-    }, [autoRefresh, filters]);
+    }, [autoRefresh, filters, wsConnected]);
 
     const fetchSignals = async () => {
         try {
@@ -165,6 +198,11 @@ export const SignalFeed: React.FC<SignalFeedProps> = ({
                     <span className="px-2 py-1 bg-gray-700 text-gray-300 text-sm rounded">
                         {signals.length} signals
                     </span>
+                    {/* WebSocket status indicator */}
+                    <div className={`flex items-center gap-1 px-2 py-1 rounded text-xs ${wsConnected ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
+                        <div className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-400 animate-pulse' : 'bg-yellow-400'}`} />
+                        {wsConnected ? 'Live' : 'Polling'}
+                    </div>
                 </div>
                 <div className="flex items-center gap-3">
                     <div className="flex items-center gap-2">

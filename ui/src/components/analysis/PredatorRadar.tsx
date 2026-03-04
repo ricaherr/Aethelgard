@@ -21,17 +21,17 @@ interface PredatorSnapshot {
 }
 
 const stateClasses: Record<string, string> = {
-    DORMANT: 'text-gray-400 border-gray-700/70 bg-gray-900/60',
+    DORMANT: 'text-white/50 border-white/20 bg-white/5',
     TRACKING: 'text-yellow-300 border-yellow-700/60 bg-yellow-950/20',
     PREDATOR_ACTIVE: 'text-rose-300 border-rose-700/60 bg-rose-950/20',
-    UNMAPPED: 'text-gray-400 border-gray-700/70 bg-gray-900/60',
-    OFFLINE: 'text-gray-500 border-gray-800 bg-gray-900/40'
+    UNMAPPED: 'text-white/50 border-white/20 bg-white/5',
+    OFFLINE: 'text-white/40 border-white/10 bg-white/3'
 };
 
 const biasClasses: Record<string, string> = {
     BUY: 'text-emerald-300',
     SELL: 'text-rose-300',
-    NEUTRAL: 'text-gray-300'
+    NEUTRAL: 'text-aethelgard-cyan'
 };
 
 const PredatorRadar: React.FC<PredatorRadarProps> = ({ symbol = 'EURUSD', timeframe = 'M5' }) => {
@@ -76,18 +76,18 @@ const PredatorRadar: React.FC<PredatorRadarProps> = ({ symbol = 'EURUSD', timefr
                         content="Fuerza de divergencia inter-mercado (SmT). Detecta barrido de liquidez en mercado correlacionado con estancamiento del activo base."
                     />
                 </div>
-                {snapshot?.detected ? <AlertTriangle className="w-3.5 h-3.5 text-rose-300" /> : <Eye className="w-3.5 h-3.5 text-gray-500" />}
+                {snapshot?.detected ? <AlertTriangle className="w-3.5 h-3.5 text-rose-300" /> : <Eye className="w-3.5 h-3.5 text-white/40" />}
             </div>
 
             <div className="flex items-end justify-between mb-2">
                 <div>
-                    <p className="text-[10px] text-gray-400 uppercase tracking-wider">
+                    <p className="text-[10px] text-white/50 uppercase tracking-wider">
                         {snapshot?.symbol || symbol} vs {snapshot?.anchor || 'N/A'}
                     </p>
                     <p className="text-xs font-bold text-white">{state.replace('_', ' ')}</p>
                 </div>
                 <div className="text-right">
-                    <p className="text-[10px] text-gray-500 uppercase">Bias</p>
+                    <p className="text-[10px] text-white/40 uppercase">Bias</p>
                     <p className={`text-sm font-bold ${biasClasses[bias] || biasClasses.NEUTRAL}`}>{bias}</p>
                 </div>
             </div>
@@ -100,7 +100,7 @@ const PredatorRadar: React.FC<PredatorRadarProps> = ({ symbol = 'EURUSD', timefr
             </div>
 
             <div className="flex items-center justify-between">
-                <p className="text-[10px] text-gray-400 truncate max-w-[190px]">{snapshot?.message || (loading ? 'Sincronizando radar...' : 'Sin señal de divergencia')}</p>
+                <p className="text-[10px] text-white/50 truncate max-w-[190px]">{snapshot?.message || (loading ? 'Sincronizando radar...' : 'Sin señal de divergencia')}</p>
                 <p className="text-xs font-mono text-white">{strength.toFixed(1)}</p>
             </div>
         </div>

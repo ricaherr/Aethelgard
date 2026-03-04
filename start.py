@@ -161,45 +161,6 @@ async def main() -> None:
         global_config = system_state.get("global_config", {})
         dynamic_params = storage.get_dynamic_params()
 
-        # Símbolos a monitorear - FOREX MAJORS + MINORS + EXOTICS
-        symbols = [
-            # === MAJORS (6 pares - 85% del volumen forex) ===
-            "EURUSD",  # Euro/USD
-            "GBPUSD",  # Libra/USD
-            "USDJPY",  # USD/Yen
-            "AUDUSD",  # Dólar australiano/USD
-            "USDCAD",  # USD/Dólar canadiense
-            "USDCHF",  # USD/Franco suizo
-            
-            # === MINORS (6 pares - cruces sin USD) ===
-            "EURGBP",  # Euro/Libra
-            "EURJPY",  # Euro/Yen
-            "GBPJPY",  # Libra/Yen
-            "EURCHF",  # Euro/Franco suizo
-            "EURAUD",  # Euro/Dólar australiano
-            "GBPAUD",  # Libra/Dólar australiano
-            
-            # === COMMODITY CURRENCIES (4 pares) ===
-            "NZDUSD",  # Dólar neozelandés/USD
-            "AUDJPY",  # Dólar australiano/Yen
-            "CADJPY",  # Dólar canadiense/Yen
-            "NZDJPY",  # Dólar neozelandés/Yen
-            
-            # === EXOTICS (6 pares - alta volatilidad) ===
-            "USDMXN",  # USD/Peso mexicano
-            "USDZAR",  # USD/Rand sudafricano
-            "USDTRY",  # USD/Lira turca
-            "USDBRL",  # USD/Real brasileño
-            "USDRUB",  # USD/Rublo ruso
-            "USDCNH",  # USD/Yuan chino offshore
-            
-            # === SCANDINAVIAN (2 pares) ===
-            "USDSEK",  # USD/Corona sueca
-            "USDNOK",  # USD/Corona noruega
-        ]
-        logger.info(f"   Símbolos: {len(symbols)} pares forex")
-        logger.info(f"   - Majors: 6 | Minors: 6 | Commodities: 4 | Exotics: 6 | Scandinavian: 2")
-        
         # === FUNCIONES AUXILIARES EDGE ===
         async def run_edge_tuner_loop(edge_tuner: EdgeTuner, signal_factory: SignalFactory) -> None:
             """
@@ -247,6 +208,24 @@ async def main() -> None:
         
         from core_brain.instrument_manager import InstrumentManager
         instrument_manager = InstrumentManager(storage=storage)
+        
+        # === SÍMBOLOS A MONITOREAR - LEER DE BD (SSOT) ===
+        # En lugar de hardcodear, obtener solo los HABILITADOS en BD via InstrumentManager
+        enabled_symbols = instrument_manager.get_enabled_symbols(market='FOREX')
+        if enabled_symbols:
+            symbols = enabled_symbols
+            logger.info(f"   Símbolos configurados (desde DB): {len(symbols)} pares forex habilitados")
+            logger.info(f"   - Símbolos: {', '.join(symbols)}")
+        else:
+            # Fallback a defaults si no hay símbolos habilitados en DB
+            logger.warning("[WARN] No hay símbolos habilitados en BD, usando defaults...")
+            symbols = [
+                "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF",
+                "EURGBP", "EURJPY", "GBPJPY", "EURCHF", "EURAUD", "GBPAUD",
+                "NZDUSD", "AUDJPY", "CADJPY", "NZDJPY"
+            ]
+            logger.info(f"   Símbolos default (fallback): {len(symbols)} pares forex")
+        
         risk_manager = RiskManager(
             storage=storage,
             initial_capital=10000.0, # TODO: Leer de la DB o inyectar

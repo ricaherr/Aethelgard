@@ -172,6 +172,11 @@ class DataProviderManager:
         # Cache of initialized provider instances
         self._instances: Dict[str, Any] = {}
         
+        # PHASE 3: Sync broker_accounts to data_providers FIRST (auto-provisioning)
+        # This enables MT5 automatically if credentials exist in broker_accounts
+        # IMPORTANT: Must execute BEFORE _load_configuration() to sync DB before read
+        self._sync_broker_accounts_to_providers()
+        
         self._load_configuration()
 
     def register_provider_instance(self, name: str, instance: Any) -> None:
@@ -201,25 +206,45 @@ class DataProviderManager:
                     name = p_data['name']
                     config_data = p_data.get('config', {})
                     
-                    # Handle additional_config - might be string or dict
-                    additional_config = config_data.get('additional_config', {})
+                    # Handle additional_config - read from top-level of p_data (not nested in config)
+                    # get_data_providers() returns both config{} and additional_config{} at top level
+                    additional_config = p_data.get('additional_config', {})
                     if isinstance(additional_config, str):
                         try:
                             additional_config = json.loads(additional_config) if additional_config else {}
                         except (json.JSONDecodeError, TypeError):
                             additional_config = {}
                     
+                    # CRITICAL: Use DEFAULT_PROVIDERS as fallback for priority
+                    # This ensures code changes to priorities take effect immediately
+                    # WITHOUT being overridden by old DB values
+                    # SPECIAL CASE: Yahoo is always fallback priority (50)
+                    # MT5 is always highest priority (100) if connected
+                    default_config = self.DEFAULT_PROVIDERS.get(name, {})
+                    
+                    if name == "yahoo":
+                        # Yahoo is ALWAYS fallback priority, never override
+                        priority = 50
+                    elif name == "mt5":
+                        # MT5 is ALWAYS highest priority when available
+                        priority = 100
+                    else:
+                        # For other providers, allow DB to override but use default as fallback
+                        db_priority = config_data.get('priority')
+                        priority = db_priority if db_priority is not None else default_config.get('priority', 50)
+                    
                     self.providers[name] = ProviderConfig(
                         name=name,
                         enabled=bool(p_data['enabled']),
-                        priority=config_data.get('priority', 50),
+                        priority=priority,
                         requires_auth=bool(config_data.get('requires_auth', False)),
                         api_key=config_data.get('api_key'),
                         api_secret=config_data.get('api_secret'),
                         additional_config=additional_config,
                         is_system=bool(config_data.get('is_system', 0))
                     )
-                logger.info(f"Loaded {len(self.providers)} providers from database")
+                logger.info(f"Loaded {len(self.providers)} providers from database with priority defaults from code")
+                logger.info(f"[PROVIDER PRIORITY] MT5: {self.providers.get('mt5', ProviderConfig('mt5', False, 0, False, None, None, {})).priority} | Yahoo: {self.providers.get('yahoo', ProviderConfig('yahoo', False, 0, False, None, None, {})).priority}")
             else:
                 # No DB config - initialize with defaults
                 logger.info("No provider configuration in DB - initializing with defaults")
@@ -253,6 +278,80 @@ class DataProviderManager:
             )
         
         logger.info("Initialized default provider configurations in database")
+    
+    def _sync_broker_accounts_to_providers(self) -> None:
+        """
+        PHASE 3: Auto-sync broker_accounts to data_providers in DB
+        
+        Automatically enables MT5 in data_providers if:
+        1. broker_accounts has an enabled MT5 account with credentials
+        2. data_providers MT5 entry exists
+        
+        Architecture: Maintains separation but syncs credentials for convenience.
+        - broker_accounts: Operational accounts (execute trades)
+        - data_providers: Data sources (fetch market data) [SSOT for providers]
+        
+        NOTE: This runs BEFORE _load_configuration(), so it updates DB only.
+        The in-memory providers dict is updated when _load_configuration() reads the DB.
+        """
+        try:
+            # Get all MT5 broker accounts that are enabled
+            all_accounts = self.storage.get_broker_accounts()
+            mt5_broker_accounts = [
+                acc for acc in all_accounts 
+                if acc.get('platform_id') == 'mt5' and acc.get('enabled', False)
+            ]
+            
+            if not mt5_broker_accounts:
+                logger.debug("No enabled MT5 broker accounts found. MT5 provider sync skipped.")
+                return
+            
+            # Use most recent account (sorted by updated_at DESC)
+            mt5_broker_accounts.sort(key=lambda x: x.get('updated_at', ''), reverse=True)
+            mt5_account = mt5_broker_accounts[0]
+            
+            # Get credentials from storage
+            account_id = mt5_account.get('account_id')
+            if not account_id:
+                logger.warning("MT5 broker account missing account_id. Sync skipped.")
+                return
+            
+            credentials = self.storage.get_credentials(account_id) or {}
+            
+            # Extract MT5 credentials
+            login = mt5_account.get('login') or mt5_account.get('account_number')
+            server = mt5_account.get('server')
+            password = credentials.get('password', '')
+            
+            if not login or not server:
+                logger.warning(f"MT5 account incomplete: login={bool(login)}, server={bool(server)}. Sync skipped.")
+                return
+            
+            # Persist MT5 credentials to data_providers in DB
+            # This updates the DB entry; _load_configuration() will read these values afterward
+            self.storage.save_data_provider(
+                name='mt5',
+                enabled=True,
+                priority=100,
+                requires_auth=True,
+                api_key='',
+                api_secret='',
+                additional_config={
+                    'login': str(login),
+                    'server': str(server),
+                    'password': str(password) if password else ""
+                },
+                is_system=True
+            )
+            
+            logger.info(
+                f"[SYNC] MT5 provider synced to database "
+                f"(Account: {mt5_account.get('account_name')}, "
+                f"Login: {login}, Server: {server})"
+            )
+            
+        except Exception as e:
+            logger.error(f"Error syncing broker_accounts to data_providers: {e}", exc_info=True)
     
     def save_configuration(self) -> None:
         """Save current provider configuration to DB"""

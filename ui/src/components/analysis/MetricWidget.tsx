@@ -23,20 +23,20 @@ const MetricWidget: React.FC<MetricWidgetProps> = ({ data, loading }) => {
     const avgADX = data.cells.reduce((acc, c) => acc + (c.metrics?.adx || 0), 0) / totalCells;
 
     return (
-        <div className="flex flex-wrap items-center gap-4 animate-in fade-in slide-in-from-top-4 duration-500 bg-gray-900/40 backdrop-blur-md border border-gray-800/50 p-2 px-4 rounded-xl">
+        <div className="flex flex-wrap items-center gap-4 animate-in fade-in slide-in-from-top-4 duration-500 bg-white/5 backdrop-blur-md border border-white/10 p-2 px-4 rounded-xl">
             {/* Market Sentiment */}
-            <div className="flex items-center gap-3 pr-4 border-r border-gray-800/50">
+            <div className="flex items-center gap-3 pr-4 border-r border-white/10">
                 <div className="flex flex-col">
                     <div className="flex items-center">
-                        <p className="text-[9px] text-gray-500 font-bold uppercase tracking-wider">Sentiment</p>
+                        <p className="text-[9px] text-white/40 font-bold uppercase tracking-wider">Sentiment</p>
                         <InfoTooltip
                             title="Market Sentiment"
                             content="Porcentaje de sesgo alcista detectado en todos los instrumentos y temporalidades escaneadas. >50% indica optimismo general."
                         />
                     </div>
-                    <h3 className="text-sm font-bold text-white">{sentiment.toFixed(0)}% <span className="text-[10px] text-gray-400 font-normal uppercase">Bull</span></h3>
+                    <h3 className="text-sm font-bold text-white">{sentiment.toFixed(0)}% <span className="text-[10px] text-white/50 font-normal uppercase">Bull</span></h3>
                 </div>
-                <div className="w-12 h-1 bg-gray-800 rounded-full overflow-hidden relative">
+                <div className="w-12 h-1 bg-white/10 rounded-full overflow-hidden relative">
                     <div
                         className="absolute h-full bg-emerald-500 transition-all duration-1000"
                         style={{ width: `${sentiment}%` }}
