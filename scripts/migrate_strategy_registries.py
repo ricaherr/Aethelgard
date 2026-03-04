@@ -13,12 +13,19 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def migrate_strategy_registries():
-    """Crea tabla y migra datos del JSON a DB."""
+    """Crea tabla y migra datos del JSON a DB.
+    
+    NOTA: Este script es LEGACY. La migración automática se hace en:
+    - StorageManager._bootstrap_from_json() → ejecuta UNA SOLA VEZ (idempotent)
+    - Ubicación canonical: data_vault/seed/strategy_registry.json
+    
+    Este script es FALLBACK para casos manual debug.
+    """
     
     # Rutas
     project_root = Path(__file__).parent.parent
-    db_path = project_root / "aethelgard.db"
-    json_path = project_root / "config" / "strategy_registry.json"
+    db_path = project_root / "data_vault" / "aethelgard.db"  # UBICACIÓN CORRECTA: data_vault/
+    json_path = project_root / "data_vault" / "seed" / "strategy_registry.json"  # UBICACIÓN CORRECTA: seed/
     
     if not json_path.exists():
         logger.error(f"❌ {json_path} no existe")

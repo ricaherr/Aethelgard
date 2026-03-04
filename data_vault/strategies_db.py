@@ -451,3 +451,70 @@ class StrategiesMixin(BaseRepository):
             return summary
         finally:
             self._close_conn(conn)
+    # ── Readiness Status (SSOT: Strategy Registry in BD) ─────────────────────
+    # Trace_ID: EXEC-UNIVERSAL-ENGINE-REAL | CORRECTION: Soberanía de Persistencia
+
+    def get_strategies_by_readiness(self, readiness: str) -> List[Dict[str, Any]]:
+        """
+        Retrieve all strategies with a specific readiness status.
+        
+        Args:
+            readiness: Status to filter by (e.g., 'READY_FOR_ENGINE', 'LOGIC_PENDING')
+            
+        Returns:
+            List of strategy dicts matching the readiness status
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM strategies
+                WHERE readiness = ?
+                ORDER BY created_at DESC
+            """, (readiness,))
+            rows = cursor.fetchall()
+            
+            results = []
+            for row in rows:
+                result = dict(row)
+                result['affinity_scores'] = json.loads(result.get('affinity_scores', '{}'))
+                result['market_whitelist'] = json.loads(result.get('market_whitelist', '[]'))
+                results.append(result)
+            return results
+        finally:
+            self._close_conn(conn)
+
+    def update_strategy_readiness(
+        self,
+        class_id: str,
+        readiness: str,
+        readiness_notes: Optional[str] = None
+    ) -> bool:
+        """
+        Update readiness status for a strategy.
+        
+        Args:
+            class_id: Strategy identifier
+            readiness: New readiness status (READY_FOR_ENGINE, LOGIC_PENDING, etc.)
+            readiness_notes: Optional description of readiness status
+            
+        Returns:
+            True if successful
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE strategies
+                SET readiness = ?, readiness_notes = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE class_id = ?
+            """, (readiness, readiness_notes, class_id))
+            
+            conn.commit()
+            logger.info(f"Readiness updated for {class_id}: {readiness}")
+            return True
+        except Exception as e:
+            logger.error(f"Error updating readiness for {class_id}: {e}")
+            return False
+        finally:
+            self._close_conn(conn)

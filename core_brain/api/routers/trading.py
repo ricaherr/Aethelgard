@@ -401,7 +401,7 @@ async def toggle_auto_trading(request: Request, token: TokenPayload = Depends(ge
 
 @router.get("/strategies/library")
 async def get_strategies_library(token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
-    """Returns the strategy library: registered strategies from DB + educational catalog."""
+    """Returns the strategy library: registered strategies from DB + registry (SSOT) + educational catalog."""
     try:
         # SECURITY: Get tenant-isolated storage using TenantDBFactory
         storage = TenantDBFactory.get_storage(token.tid)
@@ -420,6 +420,21 @@ async def get_strategies_library(token: TokenPayload = Depends(get_current_activ
             }
             for r in rankings
         ]
+
+        # Registry: Strategy metadata from DB (SSOT: strategies table)
+        # Trace_ID: SSOT-CORRECTION-REGISTRY-V2
+        all_strategies = storage.get_all_strategies()
+        registry = [
+            {
+                "id": s.get("class_id"),
+                "name": s.get("mnemonic"),
+                "readiness": s.get("readiness", "UNKNOWN"),
+                "affinity_scores": s.get("affinity_scores") or {},
+                "market_whitelist": s.get("market_whitelist") or [],
+            }
+            for s in all_strategies
+        ]
+        logger.info(f"Loaded {len(registry)} strategies from registry (SSOT: DB strategies table)")
 
         # Educational catalog (static reference data)
         educational = [
@@ -443,7 +458,7 @@ async def get_strategies_library(token: TokenPayload = Depends(get_current_activ
             },
         ]
 
-        return {"registered": registered, "educational": educational}
+        return {"registered": registered, "registry": registry, "educational": educational}
     except Exception as e:
         logger.error(f"Error getting strategies library: {e}")
         raise HTTPException(status_code=500, detail=str(e))

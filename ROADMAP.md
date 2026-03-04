@@ -1,6 +1,6 @@
 # 🛣️ ROADMAP.md - Aethelgard Alpha Training
 
-**Última Actualización**: 3 de Marzo 2026  
+**Última Actualización**: 4 de Marzo 2026 (14:45 UTC)  
 **Estado General**: � PARADA TOTAL Y RECONSTRUCCIÓN  
 **Proyecto Actual**: SPRINT-5-QUANTUM-LEAP - Unified Universal Strategy Engine (Sistema Modular de Firmas Operativas)
 
@@ -183,6 +183,65 @@ Cada firma (estrategia) debe pasar estos ANTES de generar una señal:
   - ✅ Limpieza: Archivos temporales eliminados, workspace limpio ✅
   - ✅ **Validación: validate_all.py 14/14 PASSED** ✅
 
+#### ACTIVIDAD 7: SSOT Correction v2 - RegistryLoader + StorageManager DI
+- **Status**: ✅ **COMPLETADA** (4 de Marzo 14:45 UTC)
+- **Trace_ID**: EXEC-UNIVERSAL-ENGINE-REAL
+- **Contexto**: Corrección de violación de Soberanía de Persistencia en Quantum Leap v1
+  - ❌ Problema: RegistryLoader leía `config/strategy_registry.json` en runtime (violaba SSOT)
+  - ✅ Solución: Refactorizar a StorageManager DI, leer desde BD
+  - ✅ Impacto: aethelgard.db es ÚNICA fuente de verdad en runtime
+
+- **Cambios Implementados**:
+  - [x] ✅ Schema DB Extension: Tabla `strategies` + campos readiness, readiness_notes
+  - [x] ✅ RegistryLoader Refactor: `def __init__(self, storage)` con StorageManager DI
+  - [x] ✅ UniversalStrategyEngine Refactor: Inyecta storage a RegistryLoader
+  - [x] ✅ Eliminación de hardcoding: `strategies=[]` (dinámico desde Registry)
+  - [x] ✅ Test Suite Refactored: 16/16 tests PASSED (BD-based mocks)
+
+- **Validación Completada**:
+  - ✅ TestRegistryLoader: 5/5 PASSED
+  - ✅ TestStrategyReadinessValidator: 3/3 PASSED
+  - ✅ TestUniversalStrategyEngineQuantum: 6/6 PASSED
+  - ✅ TestNoOliverVelezHardcoding: 2/2 PASSED
+  - ✅ `validate_all.py`: 14/14 VECTORS PASSED
+
+#### ACTIVIDAD 8: UI Dinámicas de Estrategias & Registry v2 Display
+- **Status**: ✅ **COMPLETADA** (4 de Marzo 2026 15:30 UTC)
+- **Trace_ID**: SSOT-CORRECTION-REGISTRY-V2
+- **Descripción**: Post refactor de SSOT Correction - añadir nuevo endpoint key "registry" con 6 estrategias del DB
+- **Cambios Implementados**:
+  - [x] Endpoint: GET `/api/strategies/library` modificado
+  - [x] Nuevo key `"registry"` agregado al response (además de "registered" y "educational")
+  - [x] Cada estrategia retorna: id, name, readiness (✅ READY_FOR_ENGINE o ⏳ LOGIC_PENDING), affinity_scores, market_whitelist
+  - [x] Usa `storage.get_all_strategies()` (SSOT: strategies table en BD)
+  - [x] Mantiene aislamiento de tenant via TenantDBFactory
+  - [x] Try/except con logging de trazabilidad
+- **Validación Ejecutada**:
+  - ✅ `validate_all.py`: 14/14 VECTORS PASSED (7.45s)
+  
+**Response Esperado**:
+```json
+{
+  "registered": [...],             // Existente (performance stats)
+  "registry": [                    // NUEVO
+    {
+      "id": "MOM_BIAS_0001",
+      "name": "MOM_BIAS_MOMENTUM_STRIKE",
+      "readiness": "READY_FOR_ENGINE",
+      "affinity_scores": { "GBP/JPY": 0.85, "EUR/USD": 0.65, ... },
+      "market_whitelist": ["GBP/JPY", "EUR/USD", "GBP/USD", "USD/JPY"]
+    },
+    ...
+  ],
+  "educational": [...]             // Existente
+}
+```
+
+#### ACTIVIDAD 9: PRÓXIMAS FASES (Queued)
+- ⏳ Integración de Sensor Completion Validation
+- ⏳ 4-Pillar Protocol enforcement en runtime
+- ⏳ UI Panel de Control para Dinámicas de Estrategias (React/TypeScript)
+
 ### ⚠️ IMPACTO A SPRINTS PREVIOS
 
 **Los siguientes sprints se DETIENEN hasta que Sprint 5 esté completo**:
@@ -194,7 +253,7 @@ Cada firma (estrategia) debe pasar estos ANTES de generar una señal:
 - ❌ ALPHA_FUNDAMENTAL_S004
 - ❌ ALPHA_UI_S006
 
-**Razón**: Todos asumen modelo de "estrategias heredadas en clases Python". Con Sprint 5, el modelo es "plugins universales".
+**Razón**: Todos asumen modelo de "estrategias heredadas en clases Python". Con Sprint 5, el modelo es "plugins universales con SSOT enforcement".
 
 ---
 

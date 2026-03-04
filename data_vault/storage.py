@@ -74,7 +74,11 @@ class StorageManager(
 
     def _bootstrap_from_json(self, conn: sqlite3.Connection) -> None:
         """
-        One-time migration logic for JSON configuration.
+        One-time migration logic for JSON configuration files.
+        Loads seed data from data_vault/seed/ directory into database on first initialization.
+        
+        SSOT NOTE: This is idempotent (runs once, flag stored in system_state).
+        After bootstrap, database is the ONLY source of truth (aethelgard.db).
         """
         cursor = conn.cursor()
         
@@ -84,10 +88,10 @@ class StorageManager(
         if row and row[0] == "true":
             return
             
-        logger.info("[BOOTSTRAP] Starting one-time JSON to SQLite migration...")
+        logger.info("[BOOTSTRAP] Starting one-time JSON→SQLite migration...")
         
         try:
-            # Seed symbols
+            # Seed symbols from config/
             instruments_path = os.path.join("config", "instruments.json")
             if os.path.exists(instruments_path):
                 try:
@@ -97,11 +101,11 @@ class StorageManager(
                         if symbols:
                             cursor.execute("INSERT OR REPLACE INTO system_state (key, value) VALUES (?, ?)", 
                                            ('auto_trading_symbols', json.dumps(symbols)))
-                            logger.info(f"Seeded {len(symbols)} symbols from config.")
+                            logger.info(f"[BOOTSTRAP] Seeded {len(symbols)} symbols from config/instruments.json")
                 except Exception as e:
-                    logger.warning(f"Failed to load instruments.json for bootstrap: {e}")
+                    logger.warning(f"[BOOTSTRAP] Failed to load instruments.json for bootstrap: {e}")
             
-            # Seed risk parameters
+            # Seed risk parameters from config/
             params_path = os.path.join("config", "dynamic_params.json")
             if os.path.exists(params_path):
                 try:
@@ -110,15 +114,41 @@ class StorageManager(
                         if params:
                             cursor.execute("INSERT OR REPLACE INTO system_state (key, value) VALUES (?, ?)", 
                                            ('dynamic_params', json.dumps(params)))
-                            logger.info("Seeded dynamic_params from config.")
+                            logger.info("[BOOTSTRAP] Seeded dynamic_params from config/dynamic_params.json")
                 except Exception as e:
-                    logger.warning(f"Failed to load dynamic_params.json for bootstrap: {e}")
+                    logger.warning(f"[BOOTSTRAP] Failed to load dynamic_params.json for bootstrap: {e}")
+            
+            # Seed strategies from data_vault/seed/ (SSOT location for strategy registry)
+            seed_strategies_path = os.path.join("data_vault", "seed", "strategy_registry.json")
+            if os.path.exists(seed_strategies_path):
+                try:
+                    with open(seed_strategies_path, "r", encoding="utf-8") as f:  # IMPORTANTE: especificar utf-8
+                        registry = json.load(f)
+                        strategies = registry.get("strategies", [])
+                        if strategies:
+                            for strat in strategies:
+                                cursor.execute("""
+                                    INSERT OR REPLACE INTO strategies 
+                                    (class_id, mnemonic, version, affinity_scores, market_whitelist, readiness, readiness_notes)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                                """, (
+                                    strat.get("strategy_id"),
+                                    strat.get("mnemonic"),
+                                    strat.get("version", "1.0"),
+                                    json.dumps(strat.get("affinity_scores", {})),
+                                    json.dumps(strat.get("market_whitelist", [])),
+                                    strat.get("readiness", "UNKNOWN"),
+                                    strat.get("readiness_notes")
+                                ))
+                            logger.info(f"[BOOTSTRAP] Seeded {len(strategies)} strategies from data_vault/seed/strategy_registry.json")
+                except Exception as e:
+                    logger.warning(f"[BOOTSTRAP] Failed to load strategy_registry.json for bootstrap: {e}")
                     
-            # Mark as done
+            # Mark bootstrap as done (idempotent flag)
             cursor.execute("INSERT OR REPLACE INTO system_state (key, value) VALUES (?, ?)", 
                            (JSON_BOOTSTRAP_DONE_KEY, "true"))
             conn.commit()
-            logger.info("[BOOTSTRAP] JSON migration completed.")
+            logger.info("[BOOTSTRAP] JSON→SQLite migration completed (SSOT: database is now canonical).")
         except Exception as e:
             logger.error(f"[BOOTSTRAP] Migration failed: {e}")
             conn.rollback()

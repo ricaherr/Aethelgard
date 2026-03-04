@@ -267,11 +267,8 @@ async def main() -> None:
         
         # 5. Signal Factory - FASE DI (Regla 1)
         logger.info("[INIT] Inicializando Signal Factory (DI)...")
-        from core_brain.strategies.oliver_velez import OliverVelezStrategy
         from core_brain.confluence import MultiTimeframeConfluenceAnalyzer
         from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
-        
-        ov_strategy = OliverVelezStrategy(dynamic_params, instrument_manager)
         
         confluence_config = dynamic_params.get("confluence", {})
         confluence_analyzer = MultiTimeframeConfluenceAnalyzer(
@@ -287,7 +284,7 @@ async def main() -> None:
         
         signal_factory = SignalFactory(
             storage_manager=storage,
-            strategies=[ov_strategy],
+            strategies=[],  # REFACTOR: Estrategias ahora se cargan dinámicamente desde Registry via UniversalStrategyEngine
             confluence_analyzer=confluence_analyzer,
             trifecta_analyzer=trifecta_analyzer,
             notification_service=notification_service,

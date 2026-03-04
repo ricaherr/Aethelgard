@@ -1,0 +1,194 @@
+{
+  "_WARNING": "⚠️ SEED/MIGRATION ONLY - NOT FOR RUNTIME CONFIG. Runtime source is aethelgard.db (strategies table). Per .ai_rules.md 'Soberanía de Persistencia': DB is the ONLY source of truth at execution time. JSON files are forbidden as runtime state/config. This file is used ONLY by StorageManager._bootstrap_from_json() on first initialization.",
+  "_usage": "StorageManager._bootstrap_from_json() reads this file on first DB initialization to populate strategies table. After that, all reads come from DB (aethelgard.db strategies table).",
+  "version": "1.0",
+  "trace_id": "STRATEGY-REGISTRY-QUANTER-2026",
+  "description": "Registry de 6 Firmas Operativas (S-0001...S-0006) para UniversalStrategyEngine",
+  "last_updated": "2026-03-04T12:35:00Z",
+  "strategies": [
+    {
+      "strategy_id": "BRK_OPEN_0001",
+      "mnemonic": "BRK_OPEN_NY_STRIKE",
+      "display_name": "S-0001: Break Open NY Strike",
+      "version": "1.0",
+      "type": "JSON_SCHEMA",
+      "description": "Market Open Gap Strategy - NY Session Pre-Market Detection (FVG + Imbalance)",
+      "author": "Aethelgard Trading System",
+      "published_date": "2026-03-02",
+      "readiness": "LOGIC_PENDING",
+      "readiness_notes": "JSON schema refinement required. Sensores disponibles pero logica requiere validacion.",
+      "schema_file": "strategies/universal/BRK_OPEN_0001.json",
+      "affinity_scores": {
+        "EUR/USD": 0.92,
+        "GBP/USD": 0.88,
+        "USD/JPY": 0.60,
+        "GBP/JPY": 0.65
+      },
+      "market_whitelist": ["EUR/USD", "GBP/USD", "USD/JPY", "GBP/JPY"],
+      "regime_requirements": ["TREND_UP", "TREND_DOWN"],
+      "membership_tier": "FREE",
+      "required_sensors": ["ImbalanceDetector", "MarketSessionService"],
+      "status": "OPERATIVE",
+      "tags": ["breakout", "institutional", "session-based"]
+    },
+    {
+      "strategy_id": "institutional_footprint",
+      "mnemonic": "INST_FOOTPRINT_ORDER_FLOW",
+      "display_name": "S-0002: Institutional Footprint Detection",
+      "version": "1.0",
+      "type": "JSON_SCHEMA",
+      "description": "Institutional Order Flow using Fair Value Gaps and Order Blocks",
+      "author": "Aethelgard Trading System",
+      "published_date": "2026-03-02",
+      "readiness": "LOGIC_PENDING",
+      "readiness_notes": "Sensorial completeness: FVGDetector, OrderBlockDetector requieren validacion en tiempo real.",
+      "schema_file": "strategies/universal/institutional_footprint.json",
+      "affinity_scores": {
+        "EUR/USD": 0.85,
+        "GBP/USD": 0.82,
+        "USD/JPY": 0.70,
+        "GBP/JPY": 0.75
+      },
+      "market_whitelist": ["EUR/USD", "GBP/USD", "USD/JPY", "GBP/JPY"],
+      "regime_requirements": ["ANY"],
+      "membership_tier": "PREMIUM",
+      "required_sensors": ["FVGDetector", "OrderBlockDetector", "LiquidityZones"],
+      "status": "OPERATIVE",
+      "tags": ["institutional", "order-flow", "confluence"]
+    },
+    {
+      "strategy_id": "MOM_BIAS_0001",
+      "mnemonic": "MOM_BIAS_MOMENTUM_STRIKE",
+      "display_name": "S-0003: Momentum Bias (Compresión SMA)",
+      "version": "1.0",
+      "type": "PYTHON_CLASS",
+      "class_file": "core_brain/strategies/mom_bias_0001.py",
+      "class_name": "MomentumBias0001Strategy",
+      "description": "Momentum Strike - Detección de velas elefante con compresión SMA20/SMA200",
+      "author": "Aethelgard Trading System",
+      "published_date": "2026-03-02",
+      "readiness": "READY_FOR_ENGINE",
+      "readiness_notes": "Logica comprobada. Sensores disponibles. Lista para UniversalStrategyEngine.",
+      "affinity_scores": {
+        "GBP/JPY": 0.85,
+        "EUR/USD": 0.65,
+        "GBP/USD": 0.72,
+        "USD/JPY": 0.60
+      },
+      "market_whitelist": ["GBP/JPY", "EUR/USD", "GBP/USD", "USD/JPY"],
+      "regime_requirements": ["VOLATILITY", "EXPANSION"],
+      "membership_tier": "STANDARD",
+      "required_sensors": ["ElephantCandleDetector", "MovingAverageSensor"],
+      "status": "OPERATIVE",
+      "tags": ["momentum", "price-action", "compression"]
+    },
+    {
+      "strategy_id": "LIQ_SWEEP_0001",
+      "mnemonic": "LIQ_SWEEP_SCALPING_REVERSAL",
+      "display_name": "S-0004: Liquidity Sweep (Breakout Falso)",
+      "version": "1.0",
+      "type": "PYTHON_CLASS",
+      "class_file": "core_brain/strategies/liq_sweep_0001.py",
+      "class_name": "LiquiditySweep0001Strategy",
+      "description": "Liquidity Sweep - Detección de breakout falso y reversión violenta (PIN BAR + ENGULFING)",
+      "readiness": "READY_FOR_ENGINE",
+      "readiness_notes": "Logica comprobada. Sensores disponibles. Lista para UniversalStrategyEngine.",
+      "author": "Aethelgard Trading System",
+      "published_date": "2026-03-02",
+      "affinity_scores": {
+        "EUR/USD": 0.92,
+        "GBP/USD": 0.88,
+        "USD/JPY": 0.60,
+        "GBP/JPY": 0.70,
+        "USD/CAD": 0.65
+      },
+      "market_whitelist": ["EUR/USD", "GBP/USD", "USD/JPY", "GBP/JPY", "USD/CAD"],
+      "regime_requirements": ["VOLATILITY", "TREND_UP", "TREND_DOWN"],
+      "membership_tier": "PREMIUM",
+      "required_sensors": ["SessionLiquiditySensor", "LiquiditySweepDetector"],
+      "status": "SHADOW",
+      "tags": ["scalping", "breakout", "reversal", "session-based"]
+    },
+    {
+      "strategy_id": "SESS_EXT_0001",
+      "mnemonic": "SESS_EXT_SESSION_EXTENSION",
+      "display_name": "S-0005: Session Extension (Fibonacci Continuidad)",
+      "version": "1.0",
+      "type": "PYTHON_CLASS",
+      "class_file": "core_brain/strategies/session_extension.py",
+      "readiness": "LOGIC_PENDING",
+      "readiness_notes": "Fibonacci implementation en progreso. Sensores parcialmente disponibles. Requiere revision de logica.",
+      "class_name": "SessionExtensionStrategy",
+      "description": "Session Extension - Proyección Fibonacci 127%/161% del rango Londres hacia Nueva York",
+      "author": "Aethelgard Trading System",
+      "published_date": "2026-03-02",
+      "affinity_scores": {
+        "GBP/JPY": 0.90,
+        "EUR/JPY": 0.85,
+        "AUD/JPY": 0.65,
+        "GBP/USD": 0.70
+      },
+      "market_whitelist": ["GBP/JPY", "EUR/JPY", "AUD/JPY", "GBP/USD"],
+      "regime_requirements": ["TREND_UP", "TREND_DOWN"],
+      "membership_tier": "PREMIUM",
+      "required_sensors": ["FibonacciExtender", "MarketSessionService"],
+      "status": "SHADOW",
+      "tags": ["fibonacci", "session-extension", "momentum"]
+    },
+    {
+      "strategy_id": "STRUC_SHIFT_0001",
+      "mnemonic": "STRUC_SHIFT_STRUCTURE_BREAK",
+      "display_name": "S-0006: Structure Shift (Quiebre de Estructura)",
+      "version": "1.0",
+      "type": "PYTHON_CLASS",
+      "class_file": "core_brain/strategies/struc_shift_0001.py",
+      "readiness": "READY_FOR_ENGINE",
+      "readiness_notes": "Logica comprobada. Sensores disponibles. Lista para UniversalStrategyEngine.",
+      "class_name": "StructureShift0001Strategy",
+      "description": "Structure Break Shift - Detección HH/HL/LH/LL + Breaker Block + Break of Structure",
+      "author": "Aethelgard Trading System",
+      "published_date": "2026-03-02",
+      "affinity_scores": {
+        "EUR/USD": 0.89,
+        "USD/CAD": 0.82,
+        "GBP/JPY": 0.78,
+        "USD/JPY": 0.65
+      },
+      "market_whitelist": ["EUR/USD", "USD/CAD", "GBP/JPY", "USD/JPY"],
+      "regime_requirements": ["TREND_UP", "TREND_DOWN"],
+      "membership_tier": "FREE",
+      "required_sensors": ["MarketStructureAnalyzer"],
+      "status": "SHADOW",
+      "tags": ["structure", "breakout", "confluence", "institutional"]
+    }
+  ],
+  "validation_protocol": {
+    "name": "Protocolo Quanter",
+    "pillars": [
+      {
+        "order": 1,
+        "name": "Sensorial",
+        "description": "¿El sensor está listo? (Datos frescos, no NULL)",
+        "failure_action": "REJECT"
+      },
+      {
+        "order": 2,
+        "name": "Régimen",
+        "description": "¿El régimen de mercado permite esta estrategia?",
+        "failure_action": "REJECT"
+      },
+      {
+        "order": 3,
+        "name": "Multi-Tenant",
+        "description": "¿La membresía del usuario permite acceso?",
+        "failure_action": "BLOCK"
+      },
+      {
+        "order": 4,
+        "name": "Coherencia",
+        "description": "¿La señal es coherente? (Confluence, no conflictos)",
+        "failure_action": "REJECT"
+      }
+    ]
+  }
+}

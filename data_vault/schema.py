@@ -487,6 +487,18 @@ def run_migrations(conn: sqlite3.Connection) -> None:
         logger.info("Migration applied: regime_configs.tenant_id added.")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_regime_configs_tenant_id ON regime_configs (tenant_id)")
 
+    # strategies: add readiness & readiness_notes (SSOT: Strategy Registry moved from JSON to BD)
+    # TRACE_ID: EXEC-UNIVERSAL-ENGINE-REAL | CORRECTION: Soberanía de Persistencia
+    cursor.execute("PRAGMA table_info(strategies)")
+    strat_cols = [r[1] for r in cursor.fetchall()]
+    if "readiness" not in strat_cols:
+        cursor.execute("ALTER TABLE strategies ADD COLUMN readiness TEXT DEFAULT 'UNKNOWN'")
+        logger.info("Migration applied: strategies.readiness added.")
+    if "readiness_notes" not in strat_cols:
+        cursor.execute("ALTER TABLE strategies ADD COLUMN readiness_notes TEXT DEFAULT NULL")
+        logger.info("Migration applied: strategies.readiness_notes added.")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_strategies_readiness ON strategies (readiness)")
+
     # instruments_config: seed only when key is absent (never overwrite existing data)
     cursor.execute("SELECT 1 FROM system_state WHERE key = ?", ("instruments_config",))
     if cursor.fetchone() is None:

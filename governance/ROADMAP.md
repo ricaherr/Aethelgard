@@ -2,8 +2,8 @@
 
 "ESTÁNDAR DE EDICIÓN: El Roadmap se organiza en Vectores de Valor (V1, V2...). Cada hito debe estar vinculado a uno de los 10 dominios del BACKLOG."
 
-**Versión Log**: v4.1.0-beta.3 (V3: Dominio Sensorial - EVOLUCIÓN)
-**Última Actualización**: 1 de Marzo, 2026 (08:45)
+**Versión Log**: v4.2.0-beta.1 (V3: Dominio Sensorial - QUANTUM LEAP COMPLETADO)
+**Última Actualización**: 4 de Marzo, 2026 (12:45 UTC)
 
 <!-- REGLA DE ARCHIVADO: Cuando TODOS los items de un milestone estén [x], -->
 <!-- migrar automáticamente a docs/SYSTEM_LEDGER.md con el formato existente -->
@@ -135,6 +135,67 @@
     - ✅ Dependency Injection: verificado en StrategyModeSelector constructor
     - ✅ SSOT database: tenant config y ledger en system_state (SQLite)
     - ✅ MainOrchestrator integración: dual-motor activo en startup
+
+- [x] **QUANTUM LEAP: Universal Strategy Engine Refactored (SALTO CUÁNTICO)** — ✅ COMPLETADA (4 de Marzo, 2026)
+  - **Trace_ID**: DOC-STRATEGY-REANALYZE | EXEC-UNIVERSAL-ENGINE-REAL
+  - **Misión**: Forzar el Salto Cuántico para eliminar hardcodeo de OliverVelezStrategy y hacer el engine verdaderamente agnóstico
+  - **Cambios Arquitectónicos Críticos**:
+    - ✅ **PASO 1: Saneamiento del Registry**
+      - ✅ Actualización SYSTEM_LEDGER.md: Detección de Inconsistencia Crítica (OliverVelezStrategy hardcodeado vs no existe en Registry)
+      - ✅ Clasificación de estrategias con campo `readiness`:
+        - **READY_FOR_ENGINE** (3): MOM_BIAS_0001, LIQ_SWEEP_0001, STRUC_SHIFT_0001
+        - **LOGIC_PENDING** (3): BRK_OPEN_0001, institutional_footprint, SESS_EXT_0001
+      - ✅ Documentación: SYSTEM_LEDGER.md + governance/ROADMAP.md sincronizados
+    - ✅ **PASO 2: Refactor del Engine Real**
+      - ✅ **RegistryLoader**: Lee dinámicamente config/strategy_registry.json (zero hardcoding)
+      - ✅ **StrategyReadinessValidator**: Valida `readiness` (READY_FOR_ENGINE vs LOGIC_PENDING)
+      - ✅ **execute_from_registry()**: Nuevo método agnóstico
+        - Paso 1: Cargar metadata del Registry
+        - Paso 2: Validar readiness (bloquea LOGIC_PENDING)
+        - Paso 3: Cargar schema
+        - Paso 4: Ejecutar lógica
+      - ✅ Mantiene compatibilidad hacia atrás con `execute(schema, ...)`
+      - ✅ Nuevo ExecutionMode: READINESS_BLOCKED, NOT_FOUND
+    - ✅ **PASO 3: Eliminación de Hardcode**
+      - ✅ Removido: `from core_brain.strategies.oliver_velez import OliverVelezStrategy`
+      - ✅ Removido: `ov_strategy = OliverVelezStrategy(...)` instantiation
+      - ✅ Actualizado SignalFactory: `strategies=[]` (carga dinámica vía Registry)
+      - ✅ Principio Zero Assumptions: Si no está en Registry → no existe
+    - ✅ **PASO 4: Test de Validación**
+      - ✅ 15/15 tests PASSED (test_universal_strategy_engine_quantum.py)
+      - ✅ **TestRegistryLoader** (4 tests):
+        - Carga estrategias del JSON
+        - Cachea el Registry
+        - Obtiene metadata
+        - Retorna None para desconocidas
+      - ✅ **TestStrategyReadinessValidator** (3 tests):
+        - Valida READY_FOR_ENGINE
+        - Bloquea LOGIC_PENDING
+        - Maneja estados desconocidos
+      - ✅ **TestUniversalStrategyEngineQuantum** (6 tests):
+        - Inicialización correcta
+        - Encuentra estrategia en Registry
+        - BLOQUEA estrategias LOGIC_PENDING
+        - Retorna NOT_FOUND para inexistentes
+        - get_ready_strategies() retorna solo READY (3 estrategias)
+        - RegistryLoader accesible desde engine
+      - ✅ **TestNoOliverVelezHardcoding** (2 tests):
+        - NO hay imports de OliverVelezStrategy en engine
+        - Registry es Single Source of Truth
+  - **Impacto Arquitectónico**:
+    - ✅ Motor verdaderamente agnóstico: Lectura dinámica, sin imports hardcodeados
+    - ✅ Escalabilidad garantizada: Nuevas estrategias = agregar al Registry (no modificar código)
+    - ✅ Zero Assumptions: Motor no asume estrategias, las descubre
+    - ✅ SSOT: Registry JSON es la única fuente de verdad
+    - ✅ Seguridad: Bloquea estrategias en desarrollo (LOGIC_PENDING)
+  - **Archivos Modificados**:
+    - ✅ core_brain/universal_strategy_engine.py (650+ líneas refactorizadas)
+    - ✅ config/strategy_registry.json (readiness + readiness_notes agregados a 6 estrategias)
+    - ✅ start.py (imports de OliverVelez removidos, strategies=[] en SignalFactory)
+    - ✅ docs/SYSTEM_LEDGER.md (DOC-STRATEGY-REANALYZE registrado)
+  - **Tests Validación**: 15/15 PASSED ✅ | validate_all.py: 100% OK
+  - **Status**: ✅ PRODUCTION-READY | Base para futuras integraciones agnósticas
+  - **Siguiente Paso**: Implementar schemas JSON para estrategias READY_FOR_ENGINE
 
 - [x] **Firma Operativa: Market Open Gap (Forex Edition) — ✅ COMPLETADA (2 de Marzo, 2026)**
   - **Mercado**: EUR/USD (Forex)
