@@ -31,7 +31,7 @@ import logging
 import signal
 import time
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Optional, Any, List
 import uuid
@@ -457,6 +457,10 @@ class MainOrchestrator:
             MarketRegime.SHOCK: orchestrator_config.get("loop_interval_shock", 60)
         }
         logger.info(f"MainOrchestrator heartbeat: MIN={self.MIN_SLEEP_INTERVAL}s")
+        
+        # Initialize ranking cycle timing (PHASE 4: StrategyRanker integration)
+        self._last_ranking_cycle = datetime.now(timezone.utc) - timedelta(minutes=10)  # Force first eval
+        self._ranking_interval = 300  # 5 minutes in seconds
 
     def _init_broker_discovery(self) -> None:
         """Discovers and classifies available brokers from storage."""
@@ -1079,6 +1083,39 @@ class MainOrchestrator:
             
             # Step 6: Check for closed positions and update signal status
             await self._check_closed_positions()
+            
+            # PHASE 4: Strategy Ranking Cycle (every 5 minutes)
+            # Evaluate all strategies for mode transitions (SHADOW->LIVE, LIVE->QUARANTINE, etc.)
+            time_since_last_ranking = datetime.now(timezone.utc) - self._last_ranking_cycle
+            if time_since_last_ranking.total_seconds() >= self._ranking_interval:
+                try:
+                    logger.info(f"[RANKER] Starting ranking cycle (interval: 5 minutes)")
+                    ranking_results = self.strategy_ranker.evaluate_all_strategies()
+                    
+                    # Log transitions
+                    for strategy_id, result in ranking_results.items():
+                        action = result.get('action')
+                        if action == 'promoted':
+                            logger.critical(
+                                f"[RANKER] ✅ PROMOTION: {strategy_id} SHADOW→LIVE "
+                                f"(Trace: {result.get('trace_id')})"
+                            )
+                        elif action == 'degraded':
+                            logger.critical(
+                                f"[RANKER] ⚠️ DEGRADATION: {strategy_id} LIVE→QUARANTINE "
+                                f"(Reason: {result.get('reason')}, Trace: {result.get('trace_id')})"
+                            )
+                        elif action == 'recovered':
+                            logger.critical(
+                                f"[RANKER] 🔄 RECOVERY: {strategy_id} QUARANTINE→SHADOW "
+                                f"(Trace: {result.get('trace_id')})"
+                            )
+                    
+                    self._last_ranking_cycle = datetime.now(timezone.utc)
+                    
+                except Exception as e:
+                    logger.error(f"[RANKER] Error in ranking cycle (non-blocking): {e}", exc_info=False)
+                    # Don't re-raise - ranking errors should not block trading
             
             # Step 7: Clear active signals after execution and update cycle count
             self._active_signals.clear()

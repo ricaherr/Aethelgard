@@ -136,7 +136,13 @@ class StrategyEngineFactory:
         strategy_type = strategy_spec.get("type", "UNKNOWN")
         readiness = strategy_spec.get("readiness", "UNKNOWN")
         
-        # Validación 1: ¿Está lista?
+        # Validación 1: ¿Está lista? (Jerarquía: LOGIC_PENDING BLOQUEA TODO)
+        if readiness == "LOGIC_PENDING":
+            logger.warning(
+                f"[FACTORY] ⊘ {strategy_id}: readiness=LOGIC_PENDING (código no validado) → BLOQUEADO per § 7.2"
+            )
+            raise ValueError(f"Strategy {strategy_id} blocked: readiness=LOGIC_PENDING (code not validated yet)")
+        
         if readiness != "READY_FOR_ENGINE":
             logger.warning(
                 f"[FACTORY] ⊘ {strategy_id}: readiness={readiness} (esperado READY_FOR_ENGINE)"
@@ -148,7 +154,17 @@ class StrategyEngineFactory:
             logger.warning(f"[FACTORY] ⊘ {strategy_id}: type={strategy_type} inválido")
             raise ValueError(f"Unknown strategy type: {strategy_type}")
         
-        # Validación 3: ¿Dependencias disponibles? (Solo para PYTHON_CLASS)
+        # Validación 3: ¿Execution_mode es válido? (Lee de strategy_ranking)
+        execution_mode = self._get_execution_mode(strategy_id)
+        if execution_mode not in ["SHADOW", "LIVE", "QUARANTINE"]:
+            logger.warning(
+                f"[FACTORY] ⊘ {strategy_id}: execution_mode={execution_mode} inválido"
+            )
+            raise ValueError(f"Unknown execution_mode for {strategy_id}: {execution_mode}")
+        
+        logger.debug(f"[FACTORY] {strategy_id}: execution_mode={execution_mode}")
+        
+        # Validación 4: ¿Dependencias disponibles? (Solo para PYTHON_CLASS)
         # JSON_SCHEMA strategies se cargan dinámicamente sin validación previa de sensores
         if strategy_type == "PYTHON_CLASS":
             required_sensors = strategy_spec.get("required_sensors", [])
@@ -168,9 +184,29 @@ class StrategyEngineFactory:
         else:
             raise ValueError(f"Unknown strategy type: {strategy_type}")
         
+        # Fase 5: Aplicar execution_mode flags (QUARANTINE = trading deshabilitado)
+        if execution_mode == "QUARANTINE":
+            # Marcar estrategia como en cuarentena (no enviar órdenes)
+            if hasattr(engine, 'no_send_orders'):
+                engine.no_send_orders = True
+            engine.execution_mode = "QUARANTINE"
+            logger.info(f"[FACTORY] 🔒 {strategy_id}: QUARANTINE mode activated (no_send_orders=True)")
+        elif execution_mode == "LIVE":
+            # Modo LIVE = trading habilitado
+            if hasattr(engine, 'no_send_orders'):
+                engine.no_send_orders = False
+            engine.execution_mode = "LIVE"
+            logger.info(f"[FACTORY] ✓ {strategy_id}: LIVE mode (orders enabled)")
+        elif execution_mode == "SHADOW":
+            # Modo SHADOW = testing sin enviar órdenes
+            if hasattr(engine, 'no_send_orders'):
+                engine.no_send_orders = True
+            engine.execution_mode = "SHADOW"
+            logger.info(f"[FACTORY] 👁️  {strategy_id}: SHADOW mode (testing, no live orders)")
+        
         # Guardar en Dict
         self.active_engines[strategy_id] = engine
-        logger.info(f"[FACTORY] ✓ {strategy_id} compilada a memoria (type={strategy_type})")
+        logger.info(f"[FACTORY] ✓ {strategy_id} compilada a memoria (type={strategy_type}, mode={execution_mode})")
     
     def _validate_dependencies(
         self,
@@ -207,6 +243,35 @@ class StrategyEngineFactory:
                 logger.debug(f"[FACTORY] ✓ {strategy_id}: Sensor disponible={sensor_name}")
         
         return missing
+    
+    def _get_execution_mode(self, strategy_id: str) -> str:
+        """
+        Obtiene execution_mode de strategy_ranking para una estrategia.
+        
+        Args:
+            strategy_id: Identificador de la estrategia
+            
+        Returns:
+            execution_mode (SHADOW | LIVE | QUARANTINE) o 'SHADOW' como default
+            
+        Note: Consulta BD via storage.get_strategy_ranking()
+              Si no está en ranking (bug), retorna SHADOW como safe default
+        """
+        try:
+            ranking = self.storage.get_strategy_ranking(strategy_id)
+            if ranking and 'execution_mode' in ranking:
+                return ranking['execution_mode']
+            
+            # Si no está en ranking (puede pasar si bootstrap_strategy_ranking.py no se ejecutó)
+            logger.warning(
+                f"[FACTORY] ⊘ {strategy_id}: No encontrado en strategy_ranking, "
+                f"usando SHADOW como default (ejecute bootstrap_strategy_ranking.py)"
+            )
+            return 'SHADOW'  # Safe default
+            
+        except Exception as e:
+            logger.error(f"[FACTORY] ✗ {strategy_id}: Error al leer execution_mode: {e}")
+            return 'SHADOW'  # Safe default on error
     
     def _instantiate_python_strategy(self, strategy_spec: Dict[str, Any]) -> Any:
         """

@@ -487,3 +487,50 @@ class StrategyRanker:
     def get_quarantine_strategies(self) -> list:
         """Get all strategies currently in QUARANTINE mode."""
         return self.storage.get_strategies_by_mode('QUARANTINE')
+    
+    def evaluate_all_strategies(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Evaluate ALL strategies (SHADOW + LIVE + QUARANTINE) in a single batch.
+        
+        Called by MainOrchestrator every 5 minutes from run_single_cycle for
+        continuous monitoring and mode transitions.
+        
+        Returns:
+            Dictionary mapping strategy_id to evaluation result
+            
+        Example:
+            {
+                'BRK_OPEN_0001': {'action': 'promoted', 'from_mode': 'SHADOW', 'to_mode': 'LIVE', 'trace_id': 'RANK-xxx'},
+                'MOM_BIAS_0001': {'action': 'no_change', 'current_mode': 'LIVE'},
+                'LIQ_SWEEP_0001': {'action': 'degraded', 'from_mode': 'LIVE', 'to_mode': 'QUARANTINE', 'trace_id': 'RANK-yyy'}
+            }
+        """
+        try:
+            # Get all strategies by mode
+            shadow_strategies = self.get_shadow_strategies()
+            live_strategies = self.get_live_strategies()
+            quarantine_strategies = self.get_quarantine_strategies()
+            
+            # Aggregate all strategies
+            all_strategy_ids = shadow_strategies + live_strategies + quarantine_strategies
+            
+            logger.info(
+                f"[RANKER] Evaluating all strategies: "
+                f"SHADOW={len(shadow_strategies)}, LIVE={len(live_strategies)}, QUARANTINE={len(quarantine_strategies)}"
+            )
+            
+            # Batch evaluate
+            results = self.batch_evaluate(all_strategy_ids)
+            
+            # Log summary
+            transitions_count = sum(1 for r in results.values() if r.get('action') in ['promoted', 'degraded', 'recovered'])
+            logger.info(
+                f"[RANKER] Evaluation complete: {len(results)} strategies evaluated, "
+                f"{transitions_count} transitions detected"
+            )
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"[RANKER] Error in evaluate_all_strategies: {e}", exc_info=True)
+            return {}

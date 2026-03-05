@@ -1,7 +1,7 @@
-# AETHELGARD MANIFESTO v2.0
+# AETHELGARD MANIFESTO v2.1
 ## El Salto Cuántico: Archivo de Verdad para Arquitectura Basada en 4 Pilares de Validación
 
-**Status**: 🚀 ACTIVO | **Version**: 2.0 | **TRACE_ID**: MANIFESTO-v2-SPRINT5 | **Fecha**: 2026-03-03
+**Status**: 🚀 ACTIVO | **Version**: 2.1 | **TRACE_ID**: MANIFESTO-v2-SPRINT5 | **Fecha**: 2026-03-05
 
 ---
 
@@ -375,7 +375,66 @@ Ejemplos:
 
 ---
 
-## VII. Integración en MainOrchestrator
+## VII. Ciclo de Vida de Soberanía Estratégica
+
+Para garantizar la excelencia institucional, una estrategia debe navegar un **sistema de doble aduana**. La coherencia entre el estado de desarrollo (Readiness) y el estado operativo (Execution) es **innegociable**.
+
+### 7.1 Matriz de Estados de Doble Capa
+
+| Capa | Estado (Key) | Descripción | Requisito de Salida |
+|------|--------------|-------------|---------------------|
+| **I. Readiness** (Desarrollo) | **LOGIC_PENDING** | Código incompleto, sensores no vinculados o firma JSON inválida | Estructura 100% conforme a guías de desarrollo |
+| **I. Readiness** (Desarrollo) | **READY_FOR_ENGINE** | Código auditado y validado. Aprobada para carga en memoria | Superar `validate_all.py` (Integridad técnica) |
+| **II. Execution** (Operación) | **SHADOW** (Default) | Operación espejo sin riesgo. Genera métricas de confianza | Alcanzar Score de Promoción (PF ≥ 1.5, WR ≥ 50%, 50+ Trades) |
+| **II. Execution** (Operación) | **LIVE** | Ejecución real con capital institucional | Mantener métricas sobre umbral de salud |
+| **II. Execution** (Operación) | **QUARANTINE** | Aislamiento por fallo métrico o anomalía (Circuit Break) | Enfriamiento (15 min) + Rectificación de métricas |
+
+### 7.2 Matriz de Intersección (Lógica de Operatividad)
+
+El sistema de control debe aplicar estas **reglas de combinación** para evitar estados inválidos:
+
+| Readiness | Execution | Comportamiento del Sistema |
+|-----------|-----------|---------------------------|
+| **LOGIC_PENDING** | Cualquiera | **BLOQUEO TOTAL**: El motor no instancia la estrategia. No hay logs de ejecución. Es un ente inerte |
+| **READY_FOR_ENGINE** | **SHADOW** | **ACTIVA (Testing)**: Carga en memoria, procesa señales, pero el conector es interceptado (Paper/Shadow log) |
+| **READY_FOR_ENGINE** | **LIVE** | **ACTIVA (Real)**: Flujo completo de capital. El SovereignGovernor valida cada trade |
+| **READY_FOR_ENGINE** | **QUARANTINE** | **SUSPENDIDA**: La estrategia procesa datos pero tiene el interruptor de envío de órdenes en OFF |
+
+**📌 REGLA JERÁRQUICA CRÍTICA**: Si una estrategia está en estado **LOGIC_PENDING**, su **Execution Mode es irrelevante** y debe ser **ignorado por el Orquestador**. LOGIC_PENDING tiene prioridad absoluta: la estrategia **NO SE INSTANCIA**.
+
+### 7.3 Casos de Retroceso (Downgrade de Readiness)
+
+Una estrategia puede volver de **READY_FOR_ENGINE** a **LOGIC_PENDING** en los siguientes escenarios:
+
+1. **Modificación de Firma**: Si el archivo JSON de configuración cambia sus parámetros base, el estado vuelve a LOGIC_PENDING hasta que el Auditor valide la nueva coherencia.
+
+2. **Falla de Inyección**: Si un Sensor dependiente es eliminado o renombrado, el sistema degrada la estrategia automáticamente para proteger la integridad.
+
+3. **Refactorización Obligatoria**: Si el Guardián de Arquitectura detecta que el archivo superó los límites de complejidad (>30KB) o introdujo "hardcodeo", revoca el estado READY.
+
+### 7.4 Protocolos de Movimiento
+
+**Promoción Automática** (`SHADOW ➔ LIVE`):
+- Ejecutada por el **StrategyRanker** al cumplir:
+  - ≥ 50 trades completados
+  - Profit Factor (PF) ≥ 1.5
+  - Win Rate (WR) ≥ 50%
+
+**Degradación Automática** (`LIVE ➔ QUARANTINE`):
+- Ejecutada por el **CircuitBreaker** si:
+  - Max Drawdown > 3%
+  - ≥ 3 pérdidas consecutivas
+
+### 7.5 Vinculación con Dominio 05 (Ejecución Universal)
+
+Esta sección representa el **corazón operativo** del Backlog Dominio 05 (EXECUTION_UNIVERSAL):
+- **Readiness**: Valida coherencia lógica (responsabilidad de Desarrollo)
+- **Execution**: Orquesta los modos operativos (responsabilidad de Operaciones)
+- **Ciclo de Vida**: Define transiciones automáticas y manual overrides
+
+---
+
+## VIII. Integración en MainOrchestrator
 
 **Cambios Requeridos**:
 
@@ -427,7 +486,7 @@ for signal in approved:
 
 ---
 
-## VIII. Reglas Constitucionales Inmutables
+## IX. Reglas Constitucionales Inmutables
 
 1. ✅ **Agnosis Absoluta**: Cero imports de broker en core_brain. Solo en connectors/.
 2. ✅ **DI Obligatorio**: Todas las clases reciben dependencias en __init__, no las crean.
@@ -442,7 +501,7 @@ for signal in approved:
 
 ---
 
-## IX. Próximas Tareas (Sprint 5: SALTO CUÁNTICO)
+## X. Próximas Tareas (Sprint 5: SALTO CUÁNTICO)
 
 - [ ] ✅ Crear strategy_validator_quanter.py (4 Pilares) — **COMPLETADO**
 - [ ] ✅ Crear strategy_registry.json (6 firmas) — **COMPLETADO**
@@ -455,7 +514,7 @@ for signal in approved:
 
 ---
 
-## X. Referencia: Los 4 Pilares En Detalle
+## XI. Referencia: Los 4 Pilares En Detalle
 
 ### Pilar Sensorial - PillarStatus: PASSED | FAILED | BLOCKED
 
@@ -547,6 +606,6 @@ class CoherencePillar(ValidationPillar):
 ---
 
 **Fecha de Creación**: 2026-03-03  
-**Versión**: 2.0  
-**Última Actualización**: 2026-03-03  
-**Status**: 🚀 ACTIVO — SPRINT 5: SALTO CUÁNTICO EN EJECUCIÓN
+**Versión**: 2.1  
+**Última Actualización**: 2026-03-05  
+**Status**: 🚀 ACTIVO — CICLO DE VIDA DE SOBERANÍA ESTRATÉGICA IMPLEMENTADO
