@@ -149,6 +149,7 @@ async def main():
         run_audit_module("Manifesto", ["python", "scripts/manifesto_enforcer.py"], workspace),
         run_audit_module("Patterns", ["python", "scripts/enforce_patterns.py"], workspace),
         run_audit_module("Core Tests", ["python", "-m", "pytest", "tests/test_signal_deduplication.py", "tests/test_risk_manager.py", "-q"], workspace),
+        run_audit_module("SPRINT S007", ["python", "-m", "pytest", "tests/test_bootstrap_strategy_ranking.py", "tests/test_strategy_ranker.py", "tests/test_strategy_engine_factory_phase3.py", "tests/test_main_orchestrator_phase4.py", "tests/test_circuit_breaker_phase5.py", "tests/test_executor_circuit_breaker_integration.py", "tests/test_qa_phase_integration.py", "-q"], workspace),
         run_audit_module("Integration", ["python", "-m", "pytest", "tests/test_executor_metadata_integration.py", "-q"], workspace),
         run_audit_module("Tenant Security", ["python", "-m", "pytest", "tests/test_tenant_isolation_edge_history.py", "-q"], workspace),
         run_audit_module("Connectivity", ["python", "scripts/utilities/check_connectivity_health.py"], workspace),
