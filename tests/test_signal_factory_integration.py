@@ -51,7 +51,7 @@ async def test_generate_signals_batch_creates_tasks():
     trifecta = TrifectaAnalyzer(storage=storage, config_data={"enabled": False})
     factory = SignalFactory(
         storage_manager=storage,
-        strategies=[DummyStrategy({})],
+        strategy_engines={'dummy': DummyStrategy({})},
         confluence_analyzer=confluence,
         trifecta_analyzer=trifecta,
         mt5_connector=None
@@ -70,7 +70,7 @@ async def test_generate_signals_batch_no_tasks_logs_warning(caplog):
     trifecta = TrifectaAnalyzer(storage=storage, config_data={"enabled": False})
     factory = SignalFactory(
         storage_manager=storage,
-        strategies=[DummyStrategy({})],
+        strategy_engines={'dummy': DummyStrategy({})},
         confluence_analyzer=confluence,
         trifecta_analyzer=trifecta,
         mt5_connector=None

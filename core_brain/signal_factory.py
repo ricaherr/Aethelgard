@@ -51,7 +51,7 @@ class SignalFactory:
     def __init__(
         self,
         storage_manager: StorageManager,
-        strategies: List[BaseStrategy],
+        strategy_engines: Dict[str, Any],
         confluence_analyzer: MultiTimeframeConfluenceAnalyzer,
         trifecta_analyzer: TrifectaAnalyzer,
         notification_service: Optional[NotificationService] = None,
@@ -63,7 +63,7 @@ class SignalFactory:
 
         Args:
             storage_manager: Instancia del gestor de persistencia.
-            strategies: Lista de estrategias inyectadas.
+            strategy_engines: Dict[strategy_id: engine] compiladas por StrategyEngineFactory.
             confluence_analyzer: Analizador de confluencia inyectado.
             trifecta_analyzer: Analizador de trifecta inyectado.
             notification_service: Servicio de notificación opcional.
@@ -88,8 +88,8 @@ class SignalFactory:
         # Cargar parámetros generales desde DB (SSOT)
         self.config_data = self.storage_manager.get_dynamic_params()
         
-        # Estrategias inyectadas
-        self.strategies = strategies
+        # Motores de estrategia inyectados (Dict en memoria - compilados una sola vez)
+        self.strategy_engines = strategy_engines
         
         # Analizadores inyectados
         self.confluence_analyzer = confluence_analyzer
@@ -99,7 +99,7 @@ class SignalFactory:
             logger.warning("NotificationEngine no está configurado o no tiene canales activos.")
 
         logger.info(
-            f"SignalFactory initialized with {len(self.strategies)} injected strategies. "
+            f"SignalFactory initialized with {len(self.strategy_engines)} injected engines. "
             f"Confluence enabled: {self.confluence_analyzer.enabled} | "
             f"FundamentalGuard: {'enabled' if self.fundamental_guard else 'disabled'}"
         )
@@ -117,14 +117,8 @@ class SignalFactory:
         return self.storage_manager.get_dynamic_params()
 
     def _register_default_strategies(self) -> None:
-        """Registra las estrategias por defecto."""
-        # En el futuro, esto podría ser dinámico o vía plugin
-        try:
-            ov_strategy = OliverVelezStrategy(self.config_data)
-            self.strategies.append(ov_strategy)
-            logger.info(f"Strategy registered: {ov_strategy.strategy_id}")
-        except Exception as e:
-            logger.error(f"Failed to register OliverVelezStrategy: {e}", exc_info=True)
+        """DEPRECATED: Todas las estrategias se cargan dinámicamente desde StrategyEngineFactory."""
+        logger.debug("[DEPRECATED] _register_default_strategies() is now obsolete")
 
     async def generate_signal(
         self, symbol: str, df: pd.DataFrame, regime: MarketRegime, timeframe: Optional[str] = None, 
@@ -144,10 +138,10 @@ class SignalFactory:
         """
         generated_signals = []
         
-        for strategy in self.strategies:
+        for strategy_id, engine in self.strategy_engines.items():
             try:
-                # Delegar análisis a la estrategia
-                signal = await strategy.analyze(symbol, df, regime)
+                # Delegar análisis al motor compilado
+                signal = await engine.analyze(symbol, df, regime)
                 
                 if signal:
                     # Set timeframe in signal if provided
@@ -515,10 +509,10 @@ class SignalFactory:
             logger.info(f"DEBUG: generate_signals_batch called with {len(scan_results)} items")
             tasks = []
             
-            if not self.strategies:
-                logger.error("DEBUG: No strategies registered in SignalFactory!")
+            if not self.strategy_engines:
+                logger.error("DEBUG: No strategy engines in SignalFactory!")
                 return []
-            logger.info(f"DEBUG: Strategies available: {[s.strategy_id for s in self.strategies]}")
+            logger.info(f"DEBUG: Engines available: {list(self.strategy_engines.keys())}")
 
             for key, data in scan_results.items():
                 regime = data.get("regime")

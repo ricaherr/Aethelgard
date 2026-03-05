@@ -34,6 +34,7 @@ from core_brain.executor import OrderExecutor
 from core_brain.monitor import ClosingMonitor
 from core_brain.edge_tuner import EdgeTuner
 from core_brain.edge_monitor import EdgeMonitor
+from core_brain.services.strategy_engine_factory import StrategyEngineFactory
 from data_vault.storage import StorageManager
 from data_vault.backup_manager import DatabaseBackupManager
 from connectors.paper_connector import PaperConnector
@@ -282,9 +283,23 @@ async def main() -> None:
             auto_enable_tfs=True
         )
         
+        # Load strategies dynamically from database via StrategyEngineFactory
+        logger.info("[INIT] Cargando estrategias dinámicamente desde DB...")
+        try:
+            strategy_factory = StrategyEngineFactory(
+                storage=storage,
+                config=dynamic_params,
+                available_sensors={}
+            )
+            active_engines = strategy_factory.instantiate_all_strategies()
+            logger.info(f"[INIT] {len(active_engines)} estrategias cargadas exitosamente")
+        except Exception as e:
+            logger.warning(f"[INIT] Error cargando estrategias: {e}. SignalFactory operará con Dict vacío")
+            active_engines = {}
+        
         signal_factory = SignalFactory(
             storage_manager=storage,
-            strategies=[],  # REFACTOR: Estrategias ahora se cargan dinámicamente desde Registry via UniversalStrategyEngine
+            strategy_engines=active_engines,  # Poblado dinámicamente desde DB
             confluence_analyzer=confluence_analyzer,
             trifecta_analyzer=trifecta_analyzer,
             notification_service=notification_service,

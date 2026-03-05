@@ -59,7 +59,7 @@ def signal_factory(mock_storage_manager, mock_notifier, monkeypatch):
     
     factory = SignalFactory(
         storage_manager=mock_storage_manager,
-        strategies=[ov_strategy],
+        strategy_engines={'oliver_velez': ov_strategy},
         confluence_analyzer=confluence_analyzer,
         trifecta_analyzer=trifecta_analyzer
     )

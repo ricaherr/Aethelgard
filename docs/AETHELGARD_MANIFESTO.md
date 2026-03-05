@@ -152,52 +152,72 @@ else:
 
 ---
 
-### 2.3 StrategyRegistry - SSOT Dinámica (config/strategy_registry.json)
+### 2.3 StrategyRegistry - SSOT Dinámica Implementation (COMPLETADA 4-Mar-2026)
 
-**Responsabilidad**: Single Source of Truth de todas las firmas operativas. Permite carga dinámica.
+**Status**: ✅ **IMPLEMENTADO** - Fase v2.0 Dynamic Loading completa (TRACE_ID: FACTORY-STRATEGY-ENGINES-COMPLETE-2026)
 
-**Estructura**:
-```json
-{
-  "version": "1.0",
-  "last_updated": "2026-03-03T15:00:00.000Z",
-  "strategies": [
-    {
-      "strategy_id": "S-0001",
-      "class_id": "BRK_OPEN_0001",
-      "mnemonic": "NY_STRIKE_OPEN_GAP",
-      "type": "JSON_SCHEMA",
-      "affinity_scores": {
-        "EUR/USD": 0.92,
-        "GBP/USD": 0.88,
-        "USD/JPY": 0.60
-      },
-      "regime_requirements": ["TREND_UP", "EXPANSION"],
-      "membership_tier": "Premium",
-      "required_sensors": [
-        "FVGDetector",
-        "MovingAverageSensor",
-        "ImbalanceDetector",
-        "RegimeClassifier"
-      ],
-      "status": "OPERATIVE",
-      "schema_version": "1.0"
-    },
-    ... (5 más: S-0002 a S-0006)
-  ]
-}
+**Responsabilidad**: Single Source of Truth de todas las firmas operativas. Permite carga dinámica SIN hardcoding.
+
+**Implementación Real**:
+
+1. **StrategyEngineFactory** (`core_brain/services/strategy_engine_factory.py` - NUEVO)
+   - Lee todas las estrategias desde BD tabla `strategies` (SSOT)
+   - Valida readiness (READY_FOR_ENGINE vs LOGIC_PENDING)
+   - Valida dependencias (sensores requeridos disponibles)
+   - Instancia dinámicamente cada estrategia una sola vez
+   - Retorna Dict[strategy_id: engine] en memoria para O(1) lookup
+   - Graceful degradation: falta dependencia = skip, no bloquea otras
+
+2. **MainOrchestrator** (`core_brain/main_orchestrator.py` - REFACTORIZADO)
+   - Línea 1328-1330: Ya NO hardcodea `OliverVelezStrategy` solamente
+   - Ahora: `factory = StrategyEngineFactory(...); active_engines = factory.instantiate_all_strategies()`
+   - Resultado: 2-4+ estrategias en memoria, dinámicamente cargadas
+
+3. **SignalFactory** (`core_brain/signal_factory.py` - REFACTORIZADO)
+   - Parámetro constructor: `strategies: List` → `strategy_engines: Dict[str, Any]`
+   - Itera sobre Dict en lugar de List: `for strategy_id, engine in self.strategy_engines.items()`
+   - Benefit: O(1) lookup en lugar de O(n) iteración
+
+**Estructura BD (SSOT)**:
+```sql
+CREATE TABLE strategies (
+    class_id TEXT PRIMARY KEY,           -- BRK_OPEN_0001, MOM_BIAS_0001, etc.
+    mnemonic TEXT NOT NULL,              -- NY_STRIKE_OPEN_GAP, MOMENTUM_STRIKE, etc.
+    version TEXT DEFAULT '1.0',
+    affinity_scores TEXT DEFAULT '{}',   -- JSON con scores
+    market_whitelist TEXT DEFAULT '[]',  -- JSON con símbolos permitidos
+    readiness TEXT,                      -- READY_FOR_ENGINE | LOGIC_PENDING
+    readiness_notes TEXT,
+    ...
+)
 ```
 
-**6 Firmas Operativas Registradas**:
+**Carga Dinámica en Runtime**:
+```python
+# MainOrchestrator.__init__() línea 1328
+factory = StrategyEngineFactory(storage=storage, config=dynamic_params)
+active_engines = factory.instantiate_all_strategies()
+# Result: {"BRK_OPEN_0001": engine1, "MOM_BIAS_0001": engine2, ...}
 
-| ID | Nombre | Tipo | Tier | Affinity EUR/USD | Status |
-|----|--------|------|------|------------------|--------|
-| S-0001 | BRK_OPEN_0001 | JSON | Premium | 0.92 | ✅ OPERATIVE |
-| S-0002 | institutional_footprint | JSON | Premium | 0.85 | ✅ OPERATIVE |
-| S-0003 | MOM_BIAS_0001 | Python | Standard | 0.82 | ✅ OPERATIVE |
-| S-0004 | LIQ_SWEEP_0001 | Python | Premium | 0.92 | 📋 SHADOW |
-| S-0005 | SESS_EXT_0001 | Python | Premium | 0.89 | 📋 SHADOW |
-| S-0006 | STRUC_SHIFT_0001 | Python | Free | 0.89 | 📋 SHADOW |
+# SignalFactory recibe Dict, no List
+signal_factory = SignalFactory(strategy_engines=active_engines, ...)
+```
+
+**6 Firmas Operativas Registradas en BD**:
+
+| class_id | mnemonic | type | readiness | affinity EUR/USD |
+|----------|----------|------|-----------|-----------------|
+| BRK_OPEN_0001 | NY_STRIKE_OPEN_GAP | JSON_SCHEMA | READY_FOR_ENGINE | 0.92 |
+| institutional_footprint | INST_FOOTPRINT | JSON_SCHEMA | READY_FOR_ENGINE | 0.85 |
+| MOM_BIAS_0001 | MOMENTUM_STRIKE | PYTHON_CLASS | READY_FOR_ENGINE | 0.82 |
+| LIQ_SWEEP_0001 | LIQUIDITY_SWEEP_SCALPING | PYTHON_CLASS | READY_FOR_ENGINE | 0.92 |
+| SESS_EXT_0001 | SESSION_EXTENSION | PYTHON_CLASS | LOGIC_PENDING | 0.89 |
+| STRUC_SHIFT_0001 | STRUCTURE_SHIFT | PYTHON_CLASS | READY_FOR_ENGINE | 0.89 |
+
+**Gobernanza**:
+- ✅ SSOT = BD (data_vault/aethelgard.db tabla strategies)
+- ✅ DEVELOPMENT_GUIDELINES 1.6 (Service Layer)
+- ✅ DEVELOPMENT_GUIDELINES 1.4 (Explora antes de crear)
 
 **Carga Dinámica**:
 ```python

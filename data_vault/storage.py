@@ -66,6 +66,8 @@ class StorageManager(
             
             # Default asset profiles required for tests and normalization
             self.seed_initial_assets()
+            
+            self._close_conn(conn)
         except Exception as e:
             logger.error(f"Error during schema initialization: {e}")
             raise

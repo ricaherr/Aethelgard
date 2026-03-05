@@ -16,6 +16,10 @@ from .candlestick_pattern_detector import CandlestickPatternDetector
 from .session_liquidity_sensor import SessionLiquiditySensor
 from .fibonacci_extender import FibonacciExtender, initialize_fibonacci_extender
 from .market_structure_analyzer import MarketStructureAnalyzer
+from .elephant_candle_detector import ElephantCandleDetector
+from .liquidity_sweep_detector import LiquiditySweepDetector
+from .session_state_detector import SessionStateDetector
+from .reasoning_event_builder import ReasoningEventBuilder
 
 __all__ = [
     "ImbalanceDetector",
@@ -23,6 +27,10 @@ __all__ = [
     "CandlestickPatternDetector",
     "SessionLiquiditySensor",
     "FibonacciExtender",
+    "ElephantCandleDetector",
+    "LiquiditySweepDetector",
+    "SessionStateDetector",
+    "ReasoningEventBuilder",
     "initialize_fibonacci_extender",
     "MarketStructureAnalyzer",
 ]

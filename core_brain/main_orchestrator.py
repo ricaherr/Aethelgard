@@ -250,6 +250,9 @@ class MainOrchestrator:
         # 1. Base dependencies and config
         self._init_core_dependencies(scanner, signal_factory, risk_manager, executor, storage, config_path, strategy_ranker)
         
+        # 1.5 Load strategies dynamically from BD (MANIFESTO II.3-II.4)
+        self._load_dynamic_strategies()
+        
         # 2. Classifier and Position Management
         self.regime_classifier = regime_classifier or RegimeClassifier(storage=self.storage)
         if position_manager is None:
@@ -285,6 +288,90 @@ class MainOrchestrator:
         self.storage = _resolve_storage(storage)
         self.strategy_ranker = strategy_ranker or StrategyRanker(storage=self.storage)
         self.config = self._load_config(config_path)
+
+    def _load_dynamic_strategies(self) -> None:
+        """
+        Load all strategies dynamically from BD (MANIFESTO II.3-II.4).
+        Creates a new SignalFactory with populated strategy engines.
+        CUMPLE: DEVELOPMENT_GUIDELINES 1.6 (Service Layer) + Dynamic Registry.
+        """
+        try:
+            from core_brain.services.strategy_engine_factory import StrategyEngineFactory
+            from core_brain.signal_factory import SignalFactory
+            from core_brain.confluence import MultiTimeframeConfluenceAnalyzer
+            from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
+            from core_brain.services.fundamental_guard import FundamentalGuardService
+            from core_brain.sensors import (
+                MovingAverageSensor,
+                ElephantCandleDetector,
+                SessionLiquiditySensor,
+                LiquiditySweepDetector,
+                MarketStructureAnalyzer,
+                SessionStateDetector,
+                ReasoningEventBuilder,
+            )
+            
+            logger.info("[STRATEGIES] Initiating dynamic loading from BD (SSOT)...")
+            
+            # Load required dependencies
+            dynamic_params = self.storage.get_dynamic_params()
+            confluence_analyzer = MultiTimeframeConfluenceAnalyzer(storage=self.storage)
+            trifecta_analyzer = TrifectaAnalyzer(storage=self.storage)
+            
+            # Initialize all sensors (DI)
+            logger.info("[STRATEGIES] Initializing sensors...")
+            moving_avg_sensor = MovingAverageSensor(storage=self.storage)
+            elephant_detector = ElephantCandleDetector(
+                storage=self.storage, 
+                moving_average_sensor=moving_avg_sensor
+            )
+            liq_sensor = SessionLiquiditySensor(storage=self.storage)
+            liq_sweep_detector = LiquiditySweepDetector(storage=self.storage)
+            market_struct_analyzer = MarketStructureAnalyzer(storage=self.storage)
+            session_state = SessionStateDetector(storage=self.storage)
+            reasoning_builder = ReasoningEventBuilder(
+                storage=self.storage,
+                market_structure_analyzer=market_struct_analyzer
+            )
+            fundamental_guard = FundamentalGuardService(storage=self.storage)
+            
+            # Map sensors
+            available_sensors = {
+                "moving_average_sensor": moving_avg_sensor,
+                "elephant_candle_detector": elephant_detector,
+                "session_liquidity_sensor": liq_sensor,
+                "liquidity_sweep_detector": liq_sweep_detector,
+                "market_structure_analyzer": market_struct_analyzer,
+                "session_state_detector": session_state,
+                "reasoning_event_builder": reasoning_builder,
+                "fundamental_guard": fundamental_guard,
+            }
+            logger.info(f"[STRATEGIES] ✓ Sensors initialized: {list(available_sensors.keys())}")
+            
+            # Create factory and instantiate all strategies
+            strategy_factory = StrategyEngineFactory(
+                storage=self.storage,
+                config=dynamic_params,
+                available_sensors=available_sensors
+            )
+            active_engines = strategy_factory.instantiate_all_strategies()
+            stats = strategy_factory.get_stats()
+            
+            # Create new SignalFactory with loaded strategies
+            self.signal_factory = SignalFactory(
+                storage_manager=self.storage,
+                strategy_engines=active_engines,
+                confluence_analyzer=confluence_analyzer,
+                trifecta_analyzer=trifecta_analyzer
+            )
+            
+            logger.info(
+                f"[STRATEGIES] ✅ Dynamic loading complete: "
+                f"{stats['active_engines']} active, {stats['failed_loads']} skipped"
+            )
+        except Exception as e:
+            logger.error(f"[STRATEGIES] ⚠️  Failed to load strategies dynamically: {e}", exc_info=True)
+            logger.warning("[STRATEGIES] Continuing with existing SignalFactory (may have 0 engines)")
 
     def _init_position_management(self) -> None:
         """Initializes PositionManager with configuration mapping and connector resolution."""
@@ -1317,21 +1404,36 @@ async def main() -> None:
     # --- Strategies & Analyzers (DI) ---
     from core_brain.confluence import MultiTimeframeConfluenceAnalyzer
     from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
-    from core_brain.strategies.oliver_velez import OliverVelezStrategy
+    from core_brain.services.strategy_engine_factory import StrategyEngineFactory
     
     dynamic_params = storage.get_dynamic_params()
     
     confluence_analyzer = MultiTimeframeConfluenceAnalyzer(storage=storage)
     trifecta_analyzer = TrifectaAnalyzer(storage=storage)
     
-    # Initialize Strategies
-    ov_strategy = OliverVelezStrategy(config=dynamic_params, instrument_manager=instrument_mgr)
-    strategies = [ov_strategy]
+    # FASE 2: Load all strategies dynamically from BD (SSOT via StrategyEngineFactory)
+    # Cumple DEVELOPMENT_GUIDELINES 1.6 (Service Layer) + MANIFESTO II.3 (Dynamic Registry)
+    try:
+        strategy_factory = StrategyEngineFactory(
+            storage=storage,
+            config=dynamic_params,
+            available_sensors={}  # TODO: Populate when sensors are fully instantiated
+        )
+        active_engines = strategy_factory.instantiate_all_strategies()
+        stats = strategy_factory.get_stats()
+        logger.info(
+            f"[STRATEGIES] ✓ Dynamic loading from BD completed: "
+            f"{stats['active_engines']} active, {stats['failed_loads']} skipped"
+        )
+    except RuntimeError as e:
+        logger.error(f"[STRATEGIES] ✗ CRITICAL: {e}")
+        print(f"[CRITICAL] ABORTING STARTUP: {e}")
+        return
 
     # 2. Component Initialization (Signal Factory)
     signal_factory = SignalFactory(
         storage_manager=storage,
-        strategies=strategies,
+        strategy_engines=active_engines,
         confluence_analyzer=confluence_analyzer,
         trifecta_analyzer=trifecta_analyzer
     )
