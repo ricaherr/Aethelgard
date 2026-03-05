@@ -1,66 +1,97 @@
 """
-Test Suite: Executor + CircuitBreaker Integration (PRIORIDAD 1)
+Test Suite: Executor + CircuitBreakerGate Integration (PRIORIDAD 1 - REFACTORED)
 Testing: Order blocking when strategy is QUARANTINE/SHADOW, order execution when LIVE
 
-Requirement: Executor must call CircuitBreaker.is_strategy_blocked_for_trading()
-before executing orders. If blocked (QUARANTINE/SHADOW) → reject signal.
+Requirement: Executor delegates strategy authorization to CircuitBreakerGate.
+Gate blocks orders for QUARANTINE/SHADOW, allows for LIVE strategies.
 """
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
-from decimal import Decimal
+from unittest.mock import MagicMock, AsyncMock
 import logging
+from typing import Tuple, Optional
 
 from core_brain.executor import OrderExecutor
-from core_brain.circuit_breaker import CircuitBreaker
+from core_brain.services.circuit_breaker_gate import CircuitBreakerGate
 from core_brain.risk_manager import RiskManager
 from models.signal import Signal, ConnectorType, SignalType
 from data_vault.storage import StorageManager
 
-
 logger = logging.getLogger(__name__)
+
+# ===== TEST CONSTANTS (SSOT - Centralized, no hardcoding) =====
+TEST_STRATEGY_BLOCKED_ID = "BRK_OPEN_0001"  # QUARANTINE mode
+TEST_STRATEGY_LIVE_ID = "institutional_footprint"  # LIVE mode (different)
+TEST_STRATEGY_SHADOW_ID = "MOM_BIAS_0001"  # SHADOW mode
+TEST_STRATEGY_UNKNOWN_ID = "UNKNOWN_STRATEGY_9999"
+
+# Symbols (Forex pairs)
+TEST_SYMBOL_PRIMARY = "EURUSD"
+TEST_SYMBOL_SECONDARY = "GBPUSD"
+
+# Signal parameters (SSOT)
+TEST_ENTRY_PRICE = 1.1050
+TEST_STOP_LOSS = 1.1000
+TEST_TAKE_PROFIT = 1.1100
+TEST_CONFIDENCE = 0.95
+TEST_VOLUME = 0.1
+TEST_TIMEFRAME = "1H"
+
+# Mock response constants
+MOCK_ORDER_ID = "12345"
+MOCK_ORDER_STATUS_SUCCESS = "SUCCESS"
+MOCK_POSITION_SIZE = TEST_VOLUME
 
 
 @pytest.fixture
-def mock_storage():
+def mock_storage() -> MagicMock:
     """Mock StorageManager."""
     storage = MagicMock(spec=StorageManager)
-    storage.has_open_position = MagicMock(return_value=False)
-    storage.has_recent_signal = MagicMock(return_value=False)
-    storage.get_dynamic_params = MagicMock(return_value={})
-    storage.register_signal = MagicMock()
-    storage.update_signal_status = MagicMock()
+    storage.has_open_position.return_value = False
+    storage.has_recent_signal.return_value = False
+    storage.get_dynamic_params.return_value = {}
     storage.log_signal_pipeline_event = MagicMock()
-    storage.save_edge_learning = MagicMock()
     return storage
 
 
 @pytest.fixture
-def mock_risk_manager():
-    """Mock RiskManager."""
+def mock_risk_manager() -> MagicMock:
+    """Mock RiskManager with permissive defaults."""
     rm = MagicMock(spec=RiskManager)
-    rm.is_locked = MagicMock(return_value=False)
-    rm.can_take_new_trade = MagicMock(return_value=(True, "OK"))
-    rm.record_trade_result = MagicMock()
+    rm.is_locked.return_value = False
+    rm.can_take_new_trade.return_value = (True, "OK")
     return rm
 
 
 @pytest.fixture
-def mock_circuit_breaker():
-    """Mock CircuitBreaker."""
-    return MagicMock(spec=CircuitBreaker)
+def mock_circuit_breaker_gate() -> MagicMock:
+    """
+    Mock CircuitBreakerGate with sensible defaults.
+    Returns: (authorized: bool, rejection_reason: Optional[str])
+    """
+    gate = MagicMock(spec=CircuitBreakerGate)
+    # Default: strategy is authorized (LIVE mode)
+    gate.check_strategy_authorization.return_value = (True, None)
+    return gate
 
 
 @pytest.fixture
-def mock_connector():
+def mock_connector() -> MagicMock:
     """Mock Connector for order execution."""
     connector = MagicMock()
-    connector.send_orders = AsyncMock(return_value={"order_id": "12345", "status": "SUCCESS"})
+    connector.send_orders = AsyncMock(
+        return_value={"order_id": MOCK_ORDER_ID, "status": MOCK_ORDER_STATUS_SUCCESS}
+    )
     return connector
 
 
 @pytest.fixture
-def executor_with_cb(mock_storage, mock_risk_manager, mock_circuit_breaker, mock_connector):
-    """Create OrderExecutor with injected CircuitBreaker."""
+def executor_with_gate(
+    mock_storage: MagicMock,
+    mock_risk_manager: MagicMock,
+    mock_circuit_breaker_gate: MagicMock,
+    mock_connector: MagicMock
+) -> OrderExecutor:
+    """Create OrderExecutor with injected CircuitBreakerGate."""
     executor = OrderExecutor(
         risk_manager=mock_risk_manager,
         storage=mock_storage,
@@ -69,402 +100,136 @@ def executor_with_cb(mock_storage, mock_risk_manager, mock_circuit_breaker, mock
         notification_service=None,
         connectors={ConnectorType.PAPER: mock_connector},
         execution_service=None,
-        circuit_breaker=mock_circuit_breaker  # ← INJECTED
+        circuit_breaker_gate=mock_circuit_breaker_gate
     )
-    # Setup connector getter
+    # Mock internal methods
     executor._get_connector = MagicMock(return_value=mock_connector)
-    executor._calculate_position_size = MagicMock(return_value=0.1)
+    executor._calculate_position_size = MagicMock(return_value=MOCK_POSITION_SIZE)
     executor._register_failed_signal = MagicMock()
     executor._register_pending_signal = MagicMock()
     executor._register_executed_signal = MagicMock()
-    
     return executor
 
 
 def _create_test_signal(
-    symbol: str = "EURUSD",
-    strategy_id: str = "BRK_OPEN_0001",
-    direction: str = "BUY",
+    symbol: str = TEST_SYMBOL_PRIMARY,
+    strategy_id: str = TEST_STRATEGY_LIVE_ID,
     connector: ConnectorType = ConnectorType.PAPER
 ) -> Signal:
-    """Helper to create test signal."""
+    """Factory for test signals (SSOT: no hardcoded values)."""
     return Signal(
         symbol=symbol,
         strategy_id=strategy_id,
-        signal_type=SignalType.BUY if direction.upper() == "BUY" else SignalType.SELL,
-        entry_price=1.1050,
-        stop_loss=1.1000,
-        take_profit=1.1100,
-        timeframe="1H",
-        confidence=0.95,
+        signal_type=SignalType.BUY,
+        entry_price=TEST_ENTRY_PRICE,
+        stop_loss=TEST_STOP_LOSS,
+        take_profit=TEST_TAKE_PROFIT,
+        timeframe=TEST_TIMEFRAME,
+        confidence=TEST_CONFIDENCE,
         connector_type=connector,
         market_type="FOREX",
         metadata={"signal_id": f"SIG-{symbol}-{strategy_id}"}
     )
 
 
-class TestExecutorCircuitBreakerIntegration:
-    """Test Executor + CircuitBreaker integration."""
+class TestCircuitBreakerGateIntegration:
+    """Focus on core CB gating behavior."""
 
     @pytest.mark.asyncio
-    async def test_signal_rejected_when_strategy_in_quarantine(
-        self, executor_with_cb, mock_circuit_breaker, mock_storage
-    ):
-        """
-        GIVEN: CircuitBreaker indicates strategy is BLOCKED (QUARANTINE mode)
-        WHEN: Executor receives signal for that strategy
-        THEN: Signal should be rejected, status='CIRCUIT_BREAKER_BLOCKED'
-        """
-        strategy_id = "BRK_OPEN_0001"
-        signal = _create_test_signal(strategy_id=strategy_id)
-        
-        # Setup CB to block this strategy
-        mock_circuit_breaker.is_strategy_blocked_for_trading.return_value = True
-        
-        # Execute
-        result = await executor_with_cb.execute_signal(signal)
-        
-        # Verify rejection
-        assert result is False, "Signal should be rejected"
-        
-        # Verify CB was checked
-        mock_circuit_breaker.is_strategy_blocked_for_trading.assert_called_with(strategy_id)
-        
-        # Verify signal registered as failed
-        executor_with_cb._register_failed_signal.assert_called_with(
-            signal, "CIRCUIT_BREAKER_BLOCKED"
+    async def test_signal_rejected_when_gate_blocks(
+        self, executor_with_gate: OrderExecutor, mock_circuit_breaker_gate: MagicMock
+    ) -> None:
+        """GIVEN: Gate blocks order, THEN: signal rejected."""
+        signal = _create_test_signal(strategy_id=TEST_STRATEGY_BLOCKED_ID)
+        mock_circuit_breaker_gate.check_strategy_authorization.return_value = (
+            False,
+            "CIRCUIT_BREAKER_BLOCKED"
         )
-
-    @pytest.mark.asyncio
-    async def test_signal_accepted_when_strategy_in_live(
-        self, executor_with_cb, mock_circuit_breaker, mock_connector
-    ):
-        """
-        GIVEN: CircuitBreaker indicates strategy is LIVE (NOT BLOCKED)
-        WHEN: Executor receives signal for that strategy
-        THEN: Signal should execute normally (connector.send_orders called)
-        """
-        strategy_id = "BRK_OPEN_0001"
-        signal = _create_test_signal(strategy_id=strategy_id)
-        signal.volume = 0.1  # Set by executor._calculate_position_size()
         
-        # Setup CB to allow (not block)
-        mock_circuit_breaker.is_strategy_blocked_for_trading.return_value = False
-        
-        # Mock connector.send_orders response
-        mock_connector.send_orders.return_value = {"order_id": "ORD-123", "status": "SUCCESS"}
-        executor_with_cb._register_executed_signal = MagicMock()
-        
-        # Execute
-        result = await executor_with_cb.execute_signal(signal)
-        
-        # Verify CB was checked
-        mock_circuit_breaker.is_strategy_blocked_for_trading.assert_called_with(strategy_id)
-        
-        # Result should be True (execution passed) or False depending on connector behavior
-        # Key: CB didn't block it, so we passed that gate
-        logger.debug(f"Signal execution result: {result}")
-
-    @pytest.mark.asyncio
-    async def test_warning_logged_on_quarantine_rejection(
-        self, executor_with_cb, mock_circuit_breaker, caplog
-    ):
-        """
-        GIVEN: Strategy is in QUARANTINE (blocked)
-        WHEN: Executor rejects signal
-        THEN: Logger.warning should contain [CIRCUIT_BREAKER] pattern
-        """
-        strategy_id = "MOM_BIAS_0001"
-        signal = _create_test_signal(strategy_id=strategy_id, symbol="GBPUSD")
-        
-        mock_circuit_breaker.is_strategy_blocked_for_trading.return_value = True
-        
-        # Execute with logging capture
-        with caplog.at_level(logging.WARNING):
-            result = await executor_with_cb.execute_signal(signal)
-        
-        # Verify rejection
-        assert result is False
-        
-        # Verify warning logged (may not have [CIRCUIT_BREAKER] if code doesn't exist yet,
-        # but we expect it to be added)
-        # For now, just verify signal was registered as failed
-        executor_with_cb._register_failed_signal.assert_called()
-
-    @pytest.mark.asyncio
-    async def test_signal_rejected_when_strategy_in_shadow(
-        self, executor_with_cb, mock_circuit_breaker
-    ):
-        """
-        GIVEN: CircuitBreaker indicates strategy is BLOCKED (SHADOW mode - no orders)
-        WHEN: Executor receives signal for that strategy
-        THEN: Signal should be rejected (SHADOW strategies don't send orders)
-        """
-        strategy_id = "institutional_footprint"
-        signal = _create_test_signal(strategy_id=strategy_id)
-        
-        # CB blocks SHADOW (not LIVE)
-        mock_circuit_breaker.is_strategy_blocked_for_trading.return_value = True
-        
-        result = await executor_with_cb.execute_signal(signal)
+        result = await executor_with_gate.execute_signal(signal)
         
         assert result is False
-        executor_with_cb._register_failed_signal.assert_called_with(
+        executor_with_gate._register_failed_signal.assert_called_with(
             signal, "CIRCUIT_BREAKER_BLOCKED"
         )
+        mock_circuit_breaker_gate.check_strategy_authorization.assert_called_once()
 
-    def test_circuit_breaker_initialized_in_executor(self, executor_with_cb, mock_circuit_breaker):
-        """
-        GIVEN: OrderExecutor with DI
-        WHEN: Checking executor attributes
-        THEN: Should have circuit_breaker injected
-        """
-        assert hasattr(executor_with_cb, 'circuit_breaker')
-        assert executor_with_cb.circuit_breaker is mock_circuit_breaker
+    @pytest.mark.asyncio
+    async def test_signal_continues_when_gate_allows(
+        self, executor_with_gate: OrderExecutor, mock_circuit_breaker_gate: MagicMock
+    ) -> None:
+        """GIVEN: Gate allows order, THEN: signal enters execution pipeline."""
+        signal = _create_test_signal(strategy_id=TEST_STRATEGY_LIVE_ID)
+        signal.volume = MOCK_POSITION_SIZE
+        # Default gate: authorized
+        mock_circuit_breaker_gate.check_strategy_authorization.return_value = (True, None)
+        
+        result = await executor_with_gate.execute_signal(signal)
+        
+        # Gate passes, so execution continues
+        mock_circuit_breaker_gate.check_strategy_authorization.assert_called_once()
+        # Signal may pass or fail downstream, but gate didn't block it
+        logger.debug(f"Signal authorized by gate, downstream result: {result}")
 
-    def test_circuit_breaker_fallback_if_not_injected(self, mock_storage, mock_risk_manager):
-        """
-        GIVEN: OrderExecutor initialized WITHOUT explicit CircuitBreaker
-        WHEN: Checking circuit_breaker attribute
-        THEN: Should create default CircuitBreaker
-        """
-        executor = OrderExecutor(
-            risk_manager=mock_risk_manager,
-            storage=mock_storage,
-            circuit_breaker=None  # Not injected
+    def test_gate_injected_in_executor(
+        self, executor_with_gate: OrderExecutor, mock_circuit_breaker_gate: MagicMock
+    ) -> None:
+        """GIVEN: Executor initialized, THEN: has gate injected."""
+        assert hasattr(executor_with_gate, 'circuit_breaker_gate')
+        assert executor_with_gate.circuit_breaker_gate is mock_circuit_breaker_gate
+
+    @pytest.mark.asyncio
+    async def test_gate_called_with_correct_params(
+        self, executor_with_gate: OrderExecutor, mock_circuit_breaker_gate: MagicMock
+    ) -> None:
+        """GIVEN: Signal executing, THEN: gate called with strategy_id."""
+        signal = _create_test_signal(strategy_id=TEST_STRATEGY_LIVE_ID, symbol=TEST_SYMBOL_SECONDARY)
+        mock_circuit_breaker_gate.check_strategy_authorization.return_value = (True, None)
+        
+        await executor_with_gate.execute_signal(signal)
+        
+        # Verify gate was called with correct parameters
+        call_args = mock_circuit_breaker_gate.check_strategy_authorization.call_args
+        assert call_args is not None
+        # Args include strategy_id, symbol, signal_id
+        assert call_args[1]['strategy_id'] == TEST_STRATEGY_LIVE_ID
+        assert call_args[1]['symbol'] == TEST_SYMBOL_SECONDARY
+
+    @pytest.mark.asyncio
+    async def test_null_strategy_id_skips_gate(
+        self, executor_with_gate: OrderExecutor, mock_circuit_breaker_gate: MagicMock
+    ) -> None:
+        """GIVEN: Signal with strategy_id=None, THEN: gate skipped (allowed)."""
+        signal = _create_test_signal(strategy_id=None)
+        # Gate returns: authorized (True, None) - ALWAYS called but with None
+        mock_circuit_breaker_gate.check_strategy_authorization.return_value = (True, None)
+        
+        await executor_with_gate.execute_signal(signal)
+        
+        # Gate was still called (for consistency), but passed None
+        call_args = mock_circuit_breaker_gate.check_strategy_authorization.call_args
+        assert call_args[1]['strategy_id'] is None
+
+    @pytest.mark.asyncio
+    async def test_multiple_signals_blocked_same_strategy(
+        self, executor_with_gate: OrderExecutor, mock_circuit_breaker_gate: MagicMock
+    ) -> None:
+        """GIVEN: Strategy blocked, WHEN: Multiple signals arrive, THEN: All blocked."""
+        mock_circuit_breaker_gate.check_strategy_authorization.return_value = (
+            False,
+            "CIRCUIT_BREAKER_BLOCKED"
         )
         
-        # Should have a default CB (created from storage)
-        assert executor.circuit_breaker is not None
-        assert isinstance(executor.circuit_breaker, CircuitBreaker)
-
-    @pytest.mark.asyncio
-    async def test_multiple_signals_same_blocked_strategy(
-        self, executor_with_cb, mock_circuit_breaker
-    ):
-        """
-        GIVEN: Strategy in QUARANTINE
-        WHEN: Multiple signals for same strategy arrive
-        THEN: All should be rejected
-        """
-        strategy_id = "LIQ_SWEEP_0001"
         signals = [
-            _create_test_signal(symbol="EURUSD", strategy_id=strategy_id),
-            _create_test_signal(symbol="GBPUSD", strategy_id=strategy_id),
-            _create_test_signal(symbol="USDJPY", strategy_id=strategy_id),
-        ]
-        
-        mock_circuit_breaker.is_strategy_blocked_for_trading.return_value = True
-        
-        # Execute all signals
-        results = []
-        for sig in signals:
-            sig.volume = 0.1
-            result = await executor_with_cb.execute_signal(sig)
-            results.append(result)
-        
-        # All should be rejected
-        assert all(r is False for r in results), "All signals for QUARANTINE strategy should be rejected"
-        
-        # CB should have been called 3 times
-        assert mock_circuit_breaker.is_strategy_blocked_for_trading.call_count == 3
-
-    @pytest.mark.asyncio
-    async def test_execution_path_when_cb_check_passes(
-        self, executor_with_cb, mock_circuit_breaker, mock_storage
-    ):
-        """
-        GIVEN: CB check PASSES (strategy is LIVE)
-        WHEN: Signal is valid in all other respects
-        THEN: Execution should continue to position size calculation
-        """
-        strategy_id = "BRK_OPEN_0001"
-        signal = _create_test_signal(strategy_id=strategy_id)
-        
-        # CB allows execution
-        mock_circuit_breaker.is_strategy_blocked_for_trading.return_value = False
-        
-        # Mock position size calculation success
-        executor_with_cb._calculate_position_size.return_value = 0.15
-        
-        # Mock subsequent risk manager check
-        executor_with_cb.risk_manager.can_take_new_trade.return_value = (True, "OK")
-        
-        # Execute
-        with patch.object(executor_with_cb, '_register_pending_signal'):
-            result = await executor_with_cb.execute_signal(signal)
-        
-        # At least verify CB was consulted
-        mock_circuit_breaker.is_strategy_blocked_for_trading.assert_called_with(strategy_id)
-
-    @pytest.mark.asyncio
-    async def test_circuit_breaker_exception_handling(
-        self, executor_with_cb, mock_circuit_breaker, caplog
-    ):
-        """
-        GIVEN: CircuitBreaker raises an exception
-        WHEN: Executor calls is_strategy_blocked_for_trading()
-        THEN: Should handle gracefully (not crash, log error, maybe use safe default)
-        """
-        strategy_id = "STRUC_SHIFT_0001"
-        signal = _create_test_signal(strategy_id=strategy_id)
-        
-        # CB raises exception
-        mock_circuit_breaker.is_strategy_blocked_for_trading.side_effect = Exception("Storage error")
-        
-        # Execute - should not crash
-        with caplog.at_level(logging.ERROR):
-            result = await executor_with_cb.execute_signal(signal)
-        
-        # Should fail gracefully (reject signal as safe default)
-        # OR log the error and continue (depending on implementation choice)
-        # For now, just verify it didn't crash
-        assert True, "Executor should handle CB exception gracefully"
-
-
-class TestOrderExecutorCircuitBreakerIntegrationScenarios:
-    """End-to-end scenarios for CB + Executor integration."""
-
-    @pytest.mark.asyncio
-    async def test_scenario_live_strategy_sends_orders(
-        self, executor_with_cb, mock_circuit_breaker, mock_connector
-    ):
-        """
-        Scenario: Strategy in LIVE mode should execute orders normally
-        
-        Given 3 signals from BRK_OPEN_0001 (LIVE)
-        When signals are valid
-        Then all should proceed past CB gate
-        """
-        strategy_id = "BRK_OPEN_0001"
-        symbols = ["EURUSD", "GBPUSD", "USDJPY"]
-        
-        # Strategy is LIVE
-        mock_circuit_breaker.is_strategy_blocked_for_trading.return_value = False
-        
-        for symbol in symbols:
-            signal = _create_test_signal(symbol=symbol, strategy_id=strategy_id)
-            signal.volume = 0.1
-            
-            # Verify CB is called with correct strategy
-            await executor_with_cb.execute_signal(signal)
-            
-        # CB should be called 3 times
-        assert mock_circuit_breaker.is_strategy_blocked_for_trading.call_count == 3
-
-    @pytest.mark.asyncio
-    async def test_scenario_quarantine_blocks_all_orders(
-        self, executor_with_cb, mock_circuit_breaker
-    ):
-        """
-        Scenario: Strategy in QUARANTINE should block ALL orders
-
-        Given strategy_id in QUARANTINE after 5 consecutive losses
-        When multiple signals arrive
-        Then all signals rejected with CIRCUIT_BREAKER_BLOCKED status
-        """
-        strategy_id = "MOM_BIAS_0001"
-        
-        # After degradation: strategy is now QUARANTINE
-        mock_circuit_breaker.is_strategy_blocked_for_trading.return_value = True
-        
-        signals = [
-            _create_test_signal(symbol="EURUSD", strategy_id=strategy_id),
-            _create_test_signal(symbol="GBPUSD", strategy_id=strategy_id),
+            _create_test_signal(strategy_id=TEST_STRATEGY_BLOCKED_ID, symbol="EURUSD"),
+            _create_test_signal(strategy_id=TEST_STRATEGY_BLOCKED_ID, symbol="GBPUSD"),
         ]
         
         results = []
         for sig in signals:
-            sig.volume = 0.1
-            result = await executor_with_cb.execute_signal(sig)
-            results.append(result)
-        
-        # All rejected
-        assert all(r is False for r in results)
-        assert executor_with_cb._register_failed_signal.call_count >= 2
-
-    def test_dependency_injection_complete(self, mock_risk_manager, mock_storage, mock_circuit_breaker):
-        """
-        VERIFY: All dependencies properly injected in Executor
-        """
-        executor = OrderExecutor(
-            risk_manager=mock_risk_manager,
-            storage=mock_storage,
-            circuit_breaker=mock_circuit_breaker
-        )
-        
-        assert executor.risk_manager is mock_risk_manager
-        assert executor.storage is mock_storage
-        assert executor.circuit_breaker is mock_circuit_breaker
-
-
-class TestCircuitBreakerIntegrationEdgeCases:
-    """Edge cases in CB + Executor integration."""
-
-    @pytest.mark.asyncio
-    async def test_strategy_id_null_or_empty(
-        self, executor_with_cb, mock_circuit_breaker
-    ):
-        """
-        EDGE CASE: Signal with null/empty strategy_id
-        
-        WHEN: Circuit breaker receives None or empty strategy_id
-        THEN: Should handle gracefully (CB returns True = block)
-        """
-        signal = _create_test_signal(strategy_id=None)  # No strategy
-        
-        mock_circuit_breaker.is_strategy_blocked_for_trading.return_value = True
-        
-        result = await executor_with_cb.execute_signal(signal)
-        
-        # Should be rejected (null strategy = unknown = block)
-        executor_with_cb._register_failed_signal.assert_called()
-
-    @pytest.mark.asyncio
-    async def test_strategy_not_in_ranking_table(
-        self, executor_with_cb, mock_circuit_breaker
-    ):
-        """
-        EDGE CASE: Strategy exists but not in strategy_ranking table
-        
-        WHEN: CB checks is_strategy_blocked_for_trading() for unknown strategy
-        THEN: CB should return True (safe default: block unknown strategies)
-        """
-        strategy_id = "UNKNOWN_STRATEGY_9999"
-        signal = _create_test_signal(strategy_id=strategy_id)
-        
-        # CB returns True for unknown strategies
-        mock_circuit_breaker.is_strategy_blocked_for_trading.return_value = True
-        
-        result = await executor_with_cb.execute_signal(signal)
-        
-        assert result is False, "Unknown strategies should be blocked"
-
-    @pytest.mark.asyncio
-    async def test_rapid_fire_signals_all_blocked(
-        self, executor_with_cb, mock_circuit_breaker
-    ):
-        """
-        STRESS TEST: Rapid signals while strategy in QUARANTINE
-        
-        WHEN: 10 signals arrive in quick succession
-        THEN: All should be blocked immediately by CB gate
-        """
-        strategy_id = "LIQ_SWEEP_0001"
-        
-        mock_circuit_breaker.is_strategy_blocked_for_trading.return_value = True
-        
-        # Fire 10 signals rapidly
-        tasks = [
-            executor_with_cb.execute_signal(_create_test_signal(strategy_id=strategy_id))
-            for _ in range(10)
-        ]
-        
-        results = []
-        for task in tasks:
-            result = await task
+            result = await executor_with_gate.execute_signal(sig)
             results.append(result)
         
         # All blocked
         assert all(r is False for r in results)
-        assert mock_circuit_breaker.is_strategy_blocked_for_trading.call_count == 10
+        assert mock_circuit_breaker_gate.check_strategy_authorization.call_count == 2

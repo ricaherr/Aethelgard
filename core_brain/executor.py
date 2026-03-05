@@ -17,6 +17,8 @@ from core_brain.multi_timeframe_limiter import MultiTimeframeLimiter
 from data_vault.storage import StorageManager
 from core_brain.notification_service import NotificationService, NotificationCategory
 from core_brain.services.execution_service import ExecutionService
+from core_brain.services.circuit_breaker_gate import CircuitBreakerGate
+from core_brain.services.signal_lifecycle_manager import SignalLifecycleManager
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +46,9 @@ class OrderExecutor:
         notificator: Optional[Any] = None,
         notification_service: Optional[NotificationService] = None,
         connectors: Optional[Dict[ConnectorType, Any]] = None,
-        execution_service: Optional[ExecutionService] = None
+        execution_service: Optional[ExecutionService] = None,
+        circuit_breaker_gate: Optional[CircuitBreakerGate] = None,
+        lifecycle_manager: Optional[SignalLifecycleManager] = None
     ):
         """
         Initialize OrderExecutor with Dependency Injection.
@@ -63,6 +67,19 @@ class OrderExecutor:
             self.storage = StorageManager()
         else:
             self.storage = storage
+        
+        # Initialize CircuitBreakerGate for strategy execution authorization
+        if circuit_breaker_gate is None:
+            logger.debug("OrderExecutor: CircuitBreakerGate not injected, creating default")
+            from core_brain.circuit_breaker import CircuitBreaker
+            cb = CircuitBreaker(storage=self.storage)
+            self.circuit_breaker_gate = CircuitBreakerGate(
+                circuit_breaker=cb,
+                storage=self.storage,
+                notificator=notification_service
+            )
+        else:
+            self.circuit_breaker_gate = circuit_breaker_gate
             
         self.notificator = notificator
         self.internal_notifier = notification_service
@@ -84,8 +101,6 @@ class OrderExecutor:
         else:
             self.execution_service = execution_service
             
-        self.persists_signals = True
-        
         # Initialize RiskCalculator for universal risk computation
         self.risk_calculator = None
         if self.connectors:
@@ -93,14 +108,24 @@ class OrderExecutor:
             mt5_conn = self.connectors.get(ConnectorType.METATRADER5)
             calc_connector = mt5_conn if mt5_conn else list(self.connectors.values())[0]
             self.risk_calculator = RiskCalculator(calc_connector)
-            logger.info(f"RiskCalculator initialized with {type(calc_connector).__name__}")
+        
+        # Initialize SignalLifecycleManager for signal state transitions
+        if lifecycle_manager is None:
+            logger.debug("OrderExecutor: SignalLifecycleManager not injected, creating default")
+            self.lifecycle_manager = SignalLifecycleManager(
+                storage=self.storage,
+                risk_calculator=self.risk_calculator
+            )
+        else:
+            self.lifecycle_manager = lifecycle_manager
+            
+        self.persists_signals = True
         
         logger.info(
             f"OrderExecutor initialized with {len(self.connectors)} injected connectors: "
             f"{[ct.value for ct in self.connectors.keys()]}"
         )
-    
-    
+        
         # Track last rejection reason for better error reporting
         self.last_rejection_reason = None
     
@@ -146,6 +171,23 @@ class OrderExecutor:
                     context={"symbol": signal.symbol, "status": "REJECTED", "reason": "Invalid data"}
                 )
             return False
+        
+        # Step 1.2: CircuitBreaker Gate Check - Verify strategy authorization
+        # Delegate to CircuitBreakerGate for clean separation of concerns
+        strategy_id = signal.metadata.get('strategy_id', signal.strategy_id)
+        signal_id = signal.metadata.get('signal_id', signal.symbol)
+        
+        is_authorized, rejection_reason = self.circuit_breaker_gate.check_strategy_authorization(
+            strategy_id=strategy_id,
+            symbol=signal.symbol,
+            signal_id=signal_id
+        )
+        
+        if not is_authorized:
+            self.last_rejection_reason = f"[CIRCUIT_BREAKER] {rejection_reason}"
+            self._register_failed_signal(signal, rejection_reason)
+            return False
+        
 
         # Step 1.5: Legacy lockdown check (backward compatibility with existing tests)
         if hasattr(self.risk_manager, "is_locked") and self.risk_manager.is_locked():
@@ -508,156 +550,22 @@ class OrderExecutor:
             return 0.01  # Fallback
     
     def _register_pending_signal(self, signal: Signal) -> None:
-        """Register signal with PENDING status in data_vault."""
-        signal_record = {
-            "timestamp": datetime.now().isoformat(),
-            "symbol": signal.symbol,
-            "signal_type": signal.signal_type.value if hasattr(signal.signal_type, 'value') else signal.signal_type,
-            "confidence": signal.confidence,
-            "connector_type": signal.connector_type.value,
-            "status": "PENDING",
-            "entry_price": signal.entry_price,
-            "stop_loss": signal.stop_loss,
-            "take_profit": signal.take_profit,
-            "volume": signal.volume
-        }
-        
-        self.storage.update_system_state({
-            "pending_signals": [signal_record]
-        })
-        
-        logger.debug(f"Signal registered as PENDING: {signal.symbol}")
+        """Register signal with PENDING status in data_vault (delegated to lifecycle manager)."""
+        self.lifecycle_manager.register_pending(signal)
     
     def _register_successful_signal(self, signal: Signal, result: Dict) -> None:
-        """Update signal to EXECUTED status (signal already saved by SignalFactory)."""
-        # Extract signal ID assigned by SignalFactory
-        signal_id = signal.metadata.get('signal_id')
-        if not signal_id:
-            logger.error(f"Signal missing ID from SignalFactory: {signal.symbol}. Cannot update status.")
-            return
-        
-        # Extract ticket from result (supports both formats)
-        ticket = result.get('ticket') or result.get('order_id')
-        
-        # Build metadata update with execution details AND critical trade params
-        metadata_update = {
-            'ticket': ticket,
-            'execution_price': result.get('price'),
-            'execution_time': datetime.now().isoformat(),
-            'connector': signal.connector_type.value if hasattr(signal.connector_type, 'value') else str(signal.connector_type),
-            'reason': f"Executed successfully. Ticket={ticket}",
-            # Critical trade parameters (for audit & recovery)
-            'stop_loss': signal.stop_loss,
-            'take_profit': signal.take_profit,
-            'lot_size': signal.volume if hasattr(signal, 'volume') else None
-        }
-        
-        # Update existing signal to EXECUTED status with complete execution details
-        self.storage.update_signal_status(signal_id, 'EXECUTED', metadata_update)
-        
-        logger.debug(f"Signal updated to EXECUTED: {signal.symbol}, Ticket: {ticket}, SL: {signal.stop_loss}, TP: {signal.take_profit}")
+        """Update signal to EXECUTED status (delegated to lifecycle manager)."""
+        self.lifecycle_manager.register_successful(signal, result)
     
     def _register_failed_signal(self, signal: Signal, reason: str) -> None:
-        """Update signal to REJECTED status (signal already saved by SignalFactory)."""
-        # Extract signal ID assigned by SignalFactory
-        signal_id = signal.metadata.get('signal_id')
-        if not signal_id:
-            logger.warning(f"Signal missing ID from SignalFactory: {signal.symbol}. Skipping rejection update.")
-            return
-        
-        # Update existing signal to REJECTED status with reason
-        self.storage.update_signal_status(signal_id, 'REJECTED', {
-            'reason': reason
-        })
-        
-        signal_record = {
-            "timestamp": datetime.now().isoformat(),
-            "symbol": signal.symbol,
-            "signal_type": signal.signal_type.value if hasattr(signal.signal_type, 'value') else signal.signal_type,
-            "confidence": signal.confidence,
-            "status": "REJECTED",
-            "reason": reason,
-            "connector_type": signal.connector_type.value if signal.connector_type else "UNKNOWN"
-        }
-        
-        self.storage.update_system_state({
-            "rejected_signals": [signal_record]
-        })
+        """Update signal to REJECTED status (delegated to lifecycle manager)."""
+        self.lifecycle_manager.register_failed(signal, reason)
     
     def _save_position_metadata(self, signal: Signal, result: Dict, ticket: int) -> None:
         """
-        Save position metadata for PositionManager monitoring.
-        
-        FASE 2.3: Metadata persistence on position open.
-        
-        Args:
-            signal: Original signal executed
-            result: Execution result from connector
-            ticket: Order ticket/ID from broker
+        Save position metadata for PositionManager monitoring (delegated to lifecycle manager).
         """
-        try:
-            # Calculate initial risk in USD
-            entry_price = result.get('entry_price', signal.entry_price)
-            sl = result.get('sl', signal.stop_loss)
-            tp = result.get('tp', signal.take_profit)
-            volume = result.get('volume', signal.volume)
-            
-            # Get regime from signal metadata
-            regime_str = signal.metadata.get('regime', 'NEUTRAL')
-            if hasattr(regime_str, 'value'):
-                regime_str = regime_str.value
-            
-            # Calculate initial risk using RiskCalculator (universal, multi-asset)
-            if self.risk_calculator:
-                try:
-                    initial_risk_usd = self.risk_calculator.calculate_initial_risk_usd(
-                        symbol=signal.symbol,
-                        entry_price=entry_price,
-                        stop_loss=sl,
-                        volume=volume
-                    )
-                except Exception as calc_error:
-                    logger.warning(
-                        "[METADATA] RiskCalculator failed (%s). Using fallback risk estimation.",
-                        calc_error
-                    )
-                    pips_risked = abs(float(entry_price) - float(sl))
-                    initial_risk_usd = pips_risked * float(volume) * 10.0
-            else:
-                # Fallback if RiskCalculator not available (shouldn't happen in production)
-                logger.warning("[METADATA] RiskCalculator not available, using fallback")
-                pips_risked = abs(entry_price - sl)
-                initial_risk_usd = pips_risked * volume * 10.0  # Simplified fallback
-            
-            # Build metadata dict
-            metadata = {
-                'ticket': ticket,
-                'symbol': signal.symbol,
-                'entry_price': entry_price,
-                'direction': signal.signal_type.value,  # BUY or SELL from signal_type enum
-                'sl': sl,
-                'tp': tp,
-                'initial_risk_usd': float(initial_risk_usd),
-                'entry_time': datetime.now().isoformat(),
-                'entry_regime': regime_str,
-                'timeframe': signal.timeframe or 'M5',
-                'strategy': signal.strategy_id or 'RSI_MACD',
-                'volume': volume
-            }
-            
-            # Save to database
-            success = self.storage.update_position_metadata(ticket, metadata)
-            
-            if success:
-                logger.info(
-                    f"[METADATA] Saved position metadata for ticket {ticket}: "
-                    f"{signal.symbol}, initial_risk=${initial_risk_usd:.2f}, regime={regime_str}"
-                )
-            else:
-                logger.warning(f"[METADATA] Failed to save metadata for ticket {ticket}")
-                
-        except Exception as e:
-            logger.error(f"[METADATA] Error saving position metadata for ticket {ticket}: {e}", exc_info=True)
+        self.lifecycle_manager.save_position_metadata(signal, result, ticket)
     
     def _reconcile_positions(self, symbol: str) -> bool:
         """

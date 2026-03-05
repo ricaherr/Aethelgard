@@ -1,0 +1,220 @@
+/* StrategyMonitor.tsx - Bloomberg-Dark Theme */
+
+.strategy-monitor {
+  background: linear-gradient(135deg, #050505 0%, #0a0a0a 100%);
+  border: 1px solid #1a1a2e;
+  border-radius: 12px;
+  padding: 20px;
+  color: #e0e0e0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+}
+
+.monitor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #1a1a2e;
+}
+
+.monitor-header h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #00d9ff;
+  letter-spacing: 0.5px;
+}
+
+.connection-status {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.connection-status .connected {
+  color: #00ff41;
+}
+
+.connection-status .disconnected {
+  color: #ff3333;
+}
+
+.error-banner {
+  background-color: rgba(255, 51, 51, 0.1);
+  border-left: 3px solid #ff3333;
+  padding: 12px 15px;
+  border-radius: 4px;
+  margin-bottom: 15px;
+}
+
+.error-banner p {
+  margin: 0;
+  color: #ff6b6b;
+  font-size: 13px;
+}
+
+.loading,
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: #888;
+  font-size: 14px;
+}
+
+.metrics-table {
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid #1a1a2e;
+}
+
+.metrics-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.metrics-table thead {
+  background: linear-gradient(90deg, #0f0f1e 0%, #1a1a2e 100%);
+  border-bottom: 2px solid #00d9ff;
+}
+
+.metrics-table th {
+  padding: 12px 10px;
+  text-align: left;
+  font-weight: 600;
+  color: #00d9ff;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
+.metrics-table tbody tr {
+  border-bottom: 1px solid #1a1a2e;
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.metrics-table tbody tr:hover {
+  background-color: rgba(0, 217, 255, 0.05);
+  box-shadow: inset 0 0 8px rgba(0, 217, 255, 0.1);
+}
+
+.metrics-table td {
+  padding: 10px;
+  vertical-align: middle;
+}
+
+/* Status Row Colors */
+.metrics-table tr.status-live {
+  border-left: 3px solid #00ff41;
+}
+
+.metrics-table tr.status-quarantine {
+  border-left: 3px solid #ff3333;
+  background-color: rgba(255, 51, 51, 0.05);
+}
+
+.metrics-table tr.status-shadow {
+  border-left: 3px solid #ffaa00;
+  background-color: rgba(255, 170, 0, 0.05);
+}
+
+.metrics-table tr.status-unknown {
+  border-left: 3px solid #666;
+}
+
+/* Column Styles */
+.strategy-id code {
+  background: rgba(0, 217, 255, 0.1);
+  padding: 4px 8px;
+  border-radius: 4px;
+  color: #00ffff;
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.status {
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+.dd-pct {
+  text-align: right;
+  color: #00d9ff;
+  font-weight: 500;
+}
+
+.dd-pct .warning {
+  color: #ffaa00;
+  font-weight: 700;
+}
+
+.consecutive-losses {
+  text-align: center;
+  color: #e0e0e0;
+}
+
+.consecutive-losses .alert {
+  color: #ff3333;
+  font-weight: 700;
+  background: rgba(255, 51, 51, 0.2);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.win-rate {
+  text-align: right;
+  color: #00ff41;
+  font-weight: 500;
+}
+
+.profit-factor {
+  text-align: right;
+  color: #00d9ff;
+  font-weight: 500;
+}
+
+.profit-factor .warning {
+  color: #ffaa00;
+  font-weight: 700;
+}
+
+.trades {
+  text-align: center;
+  color: #888;
+}
+
+.updated {
+  text-align: right;
+  color: #666;
+}
+
+.updated small {
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: 10px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .strategy-monitor {
+    padding: 15px;
+  }
+
+  .monitor-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .metrics-table {
+    font-size: 11px;
+  }
+
+  .metrics-table th,
+  .metrics-table td {
+    padding: 8px 6px;
+  }
+
+  .strategy-id code {
+    font-size: 10px;
+  }
+}
