@@ -38,6 +38,7 @@ class InstrumentConfig:
     max_spread: Optional[float] = None
     priority: int = 2
     instruments: List[str] = field(default_factory=list)
+    active: bool = True  # Individual symbol active/inactive status (respects actives dict)
     
     def __post_init__(self) -> None:
         # instruments ya tiene default_factory, no necesita validación
@@ -117,7 +118,7 @@ class InstrumentManager:
             return self._get_default_config()
 
     def _build_symbol_cache(self) -> None:
-        """Build cache of symbol -> InstrumentConfig mappings."""
+        """Build cache of symbol -> InstrumentConfig mappings, respecting individual actives."""
         if not isinstance(self.config, dict):
             logger.warning("Instrument config is not a dict. Resetting to defaults.")
             self.config = self._get_default_config()
@@ -132,21 +133,28 @@ class InstrumentManager:
                 if not isinstance(settings, dict):
                     continue
                 instruments = settings.get("instruments", [])
+                actives_dict = settings.get("actives", {})  # May be empty dict or have explicit True/False per symbol
                 
-                cfg = InstrumentConfig(
-                    category=market,
-                    subcategory=subcategory,
-                    enabled=settings.get("enabled", False),
-                    min_score=settings.get("min_score", 75.0),
-                    risk_multiplier=settings.get("risk_multiplier", 1.0),
-                    max_spread=settings.get("max_spread_pips") or settings.get("max_spread_bps"),
-                    priority=settings.get("priority", 2),
-                    instruments=instruments
-                )
+                category_enabled = settings.get("enabled", False)
                 
-                # Cache each symbol
+                # Cache each symbol with its individual active status
                 for symbol in instruments:
-                    self.symbol_cache[symbol.upper()] = cfg
+                    symbol_upper = symbol.upper()
+                    # If symbol explicitly set in actives, use that. Otherwise default to True (all symbols active by default)
+                    is_symbol_active = actives_dict.get(symbol_upper, True)
+                    
+                    cfg = InstrumentConfig(
+                        category=market,
+                        subcategory=subcategory,
+                        enabled=category_enabled,
+                        min_score=settings.get("min_score", 75.0),
+                        risk_multiplier=settings.get("risk_multiplier", 1.0),
+                        max_spread=settings.get("max_spread_pips") or settings.get("max_spread_bps"),
+                        priority=settings.get("priority", 2),
+                        instruments=instruments,
+                        active=is_symbol_active  # Per-symbol active status from actives dict
+                    )
+                    self.symbol_cache[symbol_upper] = cfg
     
     def _get_default_config(self) -> Dict:
         """Return built-in baseline instrument configuration (SSOT from data_vault)."""
@@ -268,12 +276,14 @@ class InstrumentManager:
             risk_multiplier=settings.get("risk_multiplier", 1.0),
             max_spread=settings.get("max_spread_pips") or settings.get("max_spread_bps"),
             priority=settings.get("priority", 2),
-            instruments=settings.get("instruments", [])
+            instruments=settings.get("instruments", []),
+            active=True  # Default: newly classified symbols are active by default
         )
     
     def is_enabled(self, symbol: str) -> bool:
         """
         Check if an instrument is enabled for trading.
+        Respects BOTH category-level and symbol-level active status.
         
         Args:
             symbol: Trading symbol
@@ -295,7 +305,8 @@ class InstrumentManager:
                 logger.warning(f"Unknown instrument {symbol} allowed (permissive policy)")
                 return True
         
-        return config.enabled
+        # Symbol is enabled if BOTH category AND symbol-level are enabled
+        return config.enabled and config.active
     
     def get_min_score(self, symbol: str) -> float:
         """
@@ -464,6 +475,11 @@ class InstrumentManager:
     def get_enabled_symbols(self, market: Optional[str] = None) -> List[str]:
         """
         Get list of all enabled symbols, optionally filtered by market.
+        Respects BOTH category-level and symbol-level active status.
+        
+        A symbol is enabled only if:
+        1. Its category is enabled (config.enabled = True)
+        2. The symbol itself is active (config.active = True)
         
         Args:
             market: Optional market filter (FOREX, CRYPTO, STOCKS, FUTURES)
@@ -477,7 +493,8 @@ class InstrumentManager:
             if market and config.category != market:
                 continue
             
-            if config.enabled:
+            # Symbol is enabled if BOTH category AND individual symbol are active
+            if config.enabled and config.active:
                 enabled.append(symbol)
         
         return sorted(enabled)

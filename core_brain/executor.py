@@ -174,19 +174,35 @@ class OrderExecutor:
         
         # Step 1.2: CircuitBreaker Gate Check - Verify strategy authorization
         # Delegate to CircuitBreakerGate for clean separation of concerns
+        # SHADOW mode: Will validate 4 Pillars before authorization
         strategy_id = signal.metadata.get('strategy_id', signal.strategy_id)
         signal_id = signal.metadata.get('signal_id', signal.symbol)
         
         is_authorized, rejection_reason = self.circuit_breaker_gate.check_strategy_authorization(
             strategy_id=strategy_id,
             symbol=signal.symbol,
-            signal_id=signal_id
+            signal_id=signal_id,
+            signal=signal  # Pass signal for 4-Pillar validation in SHADOW mode
         )
         
         if not is_authorized:
             self.last_rejection_reason = f"[CIRCUIT_BREAKER] {rejection_reason}"
             self._register_failed_signal(signal, rejection_reason)
             return False
+        
+        # Step 1.3: SHADOW Connector Injector - Force PAPER for SHADOW execution mode
+        # If strategy is in SHADOW mode, override connector type to PAPER
+        if strategy_id:
+            try:
+                ranking = self.storage.get_strategy_ranking(strategy_id)
+                if ranking and ranking.get('execution_mode') == 'SHADOW':
+                    signal.connector_type = ConnectorType.PAPER
+                    logger.info(
+                        f"[SHADOW_CONNECTOR_INJECTOR] Strategy {strategy_id} in SHADOW mode. "
+                        f"Connector forced to PAPER for safe execution."
+                    )
+            except Exception as e:
+                logger.warning(f"[SHADOW_CONNECTOR_INJECTOR] Error injecting PAPER connector: {e}")
         
 
         # Step 1.5: Legacy lockdown check (backward compatibility with existing tests)

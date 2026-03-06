@@ -69,7 +69,7 @@ class StrategySignalConverter:
                 symbol=symbol,
                 signal_type=signal_type_enum,
                 confidence=float(result.confidence) if hasattr(result, 'confidence') else 0.5,
-                connector_type=ConnectorType.UNIVERSAL_ENGINE,
+                connector_type=ConnectorType.GENERIC,
                 strategy_id=strategy_id,
                 timeframe=timeframe or "M5",
                 trace_id=trace_id,

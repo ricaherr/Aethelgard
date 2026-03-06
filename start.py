@@ -211,21 +211,26 @@ async def main() -> None:
         instrument_manager = InstrumentManager(storage=storage)
         
         # === SÍMBOLOS A MONITOREAR - LEER DE BD (SSOT) ===
-        # En lugar de hardcodear, obtener solo los HABILITADOS en BD via InstrumentManager
-        enabled_symbols = instrument_manager.get_enabled_symbols(market='FOREX')
+        # Obtener TODOS los símbolos habilitados sin filtrado por mercado
+        # (Agnóstico - respeta lo que esté activo en la BD, sin discriminar FOREX vs CRYPTO vs METALS)
+        enabled_symbols = instrument_manager.get_enabled_symbols(market=None)
         if enabled_symbols:
             symbols = enabled_symbols
-            logger.info(f"   Símbolos configurados (desde DB): {len(symbols)} pares forex habilitados")
-            logger.info(f"   - Símbolos: {', '.join(symbols)}")
+            enabled_by_market = {}
+            for sym in symbols:
+                cfg = instrument_manager.get_config(sym)
+                if cfg:
+                    market = cfg.category
+                    if market not in enabled_by_market:
+                        enabled_by_market[market] = []
+                    enabled_by_market[market].append(sym)
+            logger.info(f"   Símbolos configurados (desde DB): {len(symbols)} instrumentos habilitados")
+            for market, syms in sorted(enabled_by_market.items()):
+                logger.info(f"      - {market}: {len(syms)} ({', '.join(sorted(syms)[:5])}{'...' if len(syms) > 5 else ''})")
         else:
-            # Fallback a defaults si no hay símbolos habilitados en DB
-            logger.warning("[WARN] No hay símbolos habilitados en BD, usando defaults...")
-            symbols = [
-                "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF",
-                "EURGBP", "EURJPY", "GBPJPY", "EURCHF", "EURAUD", "GBPAUD",
-                "NZDUSD", "AUDJPY", "CADJPY", "NZDJPY"
-            ]
-            logger.info(f"   Símbolos default (fallback): {len(symbols)} pares forex")
+            # Si no hay NADA habilitado en la BD, abortar con mensaje claro
+            logger.critical("[CRITICAL] No hay símbolos habilitados en la BD. Configura al menos un instrumento en Settings.")
+            raise RuntimeError("No enabled symbols found in database. Cannot start trading.")
         
         risk_manager = RiskManager(
             storage=storage,
