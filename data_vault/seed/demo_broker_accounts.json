@@ -2,9 +2,9 @@
   "description": "Demo Broker Accounts - SEED DATA FOR INITIALIZATION",
   "note": "Demo accounts for system testing and signal generation. IC Markets serves as both BROKER account (execution) and DATA PROVIDER. Credentials encrypted at rest in credentials table via Fernet.",
   "recovery_summary": {
-    "ic_markets": "✅ Login 52716550 - Credentials recovered from backup 2026-02-26",
-    "xm": "⚠️ Login 100919522 - From git commit 23e64b0 (2026-01-30). Credentials lost in migration.",
-    "pepperstone": "❌ Never implemented. No historical records found."
+    "ic_markets": "[OK] Login 52716550 - Credentials recovered from backup 2026-02-26",
+    "xm": "[WARN] Login 100919522 - From git commit 23e64b0 (2026-01-30). Credentials lost in migration.",
+    "pepperstone": "[FAIL] Never implemented. No historical records found."
   },
   "accounts": [
     {

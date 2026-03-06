@@ -6,6 +6,7 @@ import logging
 import sys
 import json
 import os
+import uuid
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -18,18 +19,25 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def _generate_trace_id(prefix: str = "SEED") -> str:
+    """Generate unique trace ID for traceability"""
+    return f"{prefix}_{uuid.uuid4().hex[:8]}".upper()
+
+
 def seed_demo_broker_accounts():
     """Load demo broker accounts from seed"""
+    
+    trace_id = _generate_trace_id("SEED_BROKER_ACCOUNTS")
     
     seed_file = Path("data_vault/seed/demo_broker_accounts.json")
     
     if not seed_file.exists():
-        logger.warning(f"[SKIP] Seed file not found: {seed_file}")
+        logger.warning(f"[{trace_id}] [SKIP] Seed file not found: {seed_file}")
         return
     
-    logger.info("="*70)
-    logger.info("SEEDING DEMO BROKER ACCOUNTS")
-    logger.info("="*70)
+    logger.info(f"[{trace_id}] {'='*70}")
+    logger.info(f"[{trace_id}] SEEDING DEMO BROKER ACCOUNTS")
+    logger.info(f"[{trace_id}] {'='*70}")
     
     try:
         with open(seed_file, 'r', encoding='utf-8') as f:
@@ -38,7 +46,7 @@ def seed_demo_broker_accounts():
         storage = StorageManager()
         accounts = seed_data.get("accounts", [])
         
-        logger.info(f"\nFound {len(accounts)} accounts in seed")
+        logger.info(f"[{trace_id}] Found {len(accounts)} accounts in seed")
         
         for account_data in accounts:
             account_id = account_data.get("account_id")
@@ -48,7 +56,7 @@ def seed_demo_broker_accounts():
             existing = storage.get_account(account_id)
             
             if existing:
-                logger.info(f"\n[EXISTS] {broker_id}: {account_id}")
+                logger.info(f"[{trace_id}] [EXISTS] {broker_id}: {account_id}")
                 
                 # Update account_number and enabled status if changed in seed
                 new_account_number = account_data.get("account_number")
@@ -56,7 +64,7 @@ def seed_demo_broker_accounts():
                 
                 if (new_account_number and existing.get('account_number') != new_account_number) or \
                    (existing.get('enabled') != new_enabled):
-                    logger.info(f"[UPDATE] Updating account_number or enabled status for {account_id}")
+                    logger.info(f"[{trace_id}] [UPDATE] Updating account_number or enabled status for {account_id}")
                     # Use save_broker_account with INSERT OR REPLACE to update existing account
                     storage.save_broker_account(
                         account_id=account_id,
@@ -68,13 +76,13 @@ def seed_demo_broker_accounts():
                         account_type=account_data.get("account_type", "demo"),
                         enabled=new_enabled
                     )
-                    logger.info(f"  Updated to login: {new_account_number}, enabled: {new_enabled}")
+                    logger.info(f"[{trace_id}]   Updated to login: {new_account_number}, enabled: {new_enabled}")
                 
                 # Check if credentials need to be added
                 if account_data.get("credential_password"):
                     creds = storage.get_credentials(account_id)
                     if not creds or 'password' not in creds:
-                        logger.info(f"[UPDATE] Adding missing password for {account_id}")
+                        logger.info(f"[{trace_id}] [UPDATE] Adding missing password for {account_id}")
                         storage.update_credential(
                             account_id,
                             {'password': account_data['credential_password']}
@@ -82,7 +90,7 @@ def seed_demo_broker_accounts():
                 continue
             
             # Create new account
-            logger.info(f"\n[CREATE] {broker_id}: {account_id}")
+            logger.info(f"[{trace_id}] [CREATE] {broker_id}: {account_id}")
             
             storage.save_broker_account(
                 account_id=account_id,
@@ -95,9 +103,9 @@ def seed_demo_broker_accounts():
                 enabled=account_data.get("enabled", False)
             )
             
-            logger.info(f"  Number: {account_data.get('account_number')}")
-            logger.info(f"  Server: {account_data.get('server')}")
-            logger.info(f"  Enabled: {account_data.get('enabled')}")
+            logger.info(f"[{trace_id}]   Number: {account_data.get('account_number')}")
+            logger.info(f"[{trace_id}]   Server: {account_data.get('server')}")
+            logger.info(f"[{trace_id}]   Enabled: {account_data.get('enabled')}")
             
             # Add credentials if present
             if account_data.get("credential_password"):
@@ -105,29 +113,31 @@ def seed_demo_broker_accounts():
                     account_id,
                     {'password': account_data['credential_password']}
                 )
-                logger.info(f"  Password: *** (encrypted)")
+                logger.info(f"[{trace_id}]   Password: *** (encrypted)")
         
-        logger.info(f"\n{'='*70}")
-        logger.info("✅ Demo broker accounts seeded successfully")
+        logger.info(f"[{trace_id}] {'='*70}")
+        logger.info(f"[{trace_id}] ✅ Demo broker accounts seeded successfully")
         
     except Exception as e:
-        logger.error(f"[ERROR] Failed to seed accounts: {e}")
+        logger.error(f"[{trace_id}] [ERROR] Failed to seed accounts: {e}")
         import traceback
-        traceback.print_exc()
+        logger.error(f"[{trace_id}] Traceback: {traceback.format_exc()}")
 
 
 def seed_data_providers():
     """Load data providers from seed"""
     
+    trace_id = _generate_trace_id("SEED_DATA_PROVIDERS")
+    
     seed_file = Path("data_vault/seed/data_providers.json")
     
     if not seed_file.exists():
-        logger.warning(f"[SKIP] Seed file not found: {seed_file}")
+        logger.warning(f"[{trace_id}] [SKIP] Seed file not found: {seed_file}")
         return
     
-    logger.info("\n" + "="*70)
-    logger.info("SEEDING DATA PROVIDERS")
-    logger.info("="*70)
+    logger.info(f"[{trace_id}] {'='*70}")
+    logger.info(f"[{trace_id}] SEEDING DATA PROVIDERS")
+    logger.info(f"[{trace_id}] {'='*70}")
     
     try:
         with open(seed_file, 'r', encoding='utf-8') as f:
@@ -136,12 +146,12 @@ def seed_data_providers():
         storage = StorageManager()
         providers = seed_data.get("providers", [])
         
-        logger.info(f"\nFound {len(providers)} providers in seed")
+        logger.info(f"[{trace_id}] Found {len(providers)} providers in seed")
         
         for provider_data in providers:
             name = provider_data.get("name")
             
-            # Check if already exists
+            # Check if already exists - use StorageManager API
             try:
                 cursor = storage._get_conn().cursor()
                 cursor.execute("SELECT name FROM data_providers WHERE name = ?", (name,))
@@ -149,13 +159,13 @@ def seed_data_providers():
                 storage._close_conn(cursor.connection)
                 
                 if existing:
-                    logger.info(f"\n[EXISTS] {name}")
+                    logger.info(f"[{trace_id}] [EXISTS] {name}")
                     continue
-            except:
-                pass
+            except Exception as e:
+                logger.warning(f"[{trace_id}] Could not check existence of {name}: {str(e)[:50]}")
             
             # Create new provider
-            logger.info(f"\n[CREATE] {name}")
+            logger.info(f"[{trace_id}] [CREATE] {name}")
             
             try:
                 storage.save_data_provider(
@@ -168,14 +178,19 @@ def seed_data_providers():
                     additional_config=provider_data.get("additional_config", {})
                 )
                 
-                logger.info(f"  Type: {provider_data.get('type')}")
-                logger.info(f"  Enabled: {provider_data.get('enabled')}")
-                logger.info(f"  Requires Auth: {provider_data.get('requires_auth')}")
+                logger.info(f"[{trace_id}]   Type: {provider_data.get('type')}")
+                logger.info(f"[{trace_id}]   Enabled: {provider_data.get('enabled')}")
+                logger.info(f"[{trace_id}]   Requires Auth: {provider_data.get('requires_auth')}")
             except Exception as e:
-                logger.warning(f"  Could not save {name}: {str(e)[:50]}")
+                logger.warning(f"[{trace_id}] Could not save {name}: {str(e)[:50]}")
         
-        logger.info(f"\n{'='*70}")
-        logger.info("✅ Data providers seeded successfully")
+        logger.info(f"[{trace_id}] {'='*70}")
+        logger.info(f"[{trace_id}] ✅ Data providers seeded successfully")
+        
+    except Exception as e:
+        logger.error(f"[{trace_id}] [ERROR] Failed to seed providers: {e}")
+        import traceback
+        logger.error(f"[{trace_id}] Traceback: {traceback.format_exc()}")
         
     except Exception as e:
         logger.error(f"[ERROR] Failed to seed providers: {e}")
