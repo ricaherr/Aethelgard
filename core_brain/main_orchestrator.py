@@ -277,7 +277,9 @@ class MainOrchestrator:
 
         # 8. Market Analysis & UI Integration (EXEC-UI-DATA-INTEGRATION)
         self._init_market_analysis_services()
-
+        
+        # 9. Economic Calendar Veto Interface (PHASE 8: News-Based Trading Lockdown)
+        self._init_economic_integration()
 
     def _init_core_dependencies(self, scanner: Any, factory: Any, risk: Any, executor: Any, storage: Optional[Any], config_path: Optional[str], strategy_ranker: Optional[StrategyRanker] = None) -> None:
         """Initializes core engines and resolves storage/config."""
@@ -529,6 +531,39 @@ class MainOrchestrator:
         except Exception as e:
             logger.warning(f"[ORCHESTRATOR] Could not initialize MarketStructureAnalyzer: {e}")
             self.market_structure_analyzer = None
+    
+    def _init_economic_integration(self) -> None:
+        """
+        Initializes Economic Calendar Veto Interface (PHASE 8: News-Based Trading Lockdown).
+        
+        Responsibilities:
+        - Initialize EconomicIntegrationManager with scheduler
+        - Setup non-blocking fetch-persist job
+        - Preserve agnosis (MainOrchestrator never contacts providers directly)
+        """
+        try:
+            from core_brain.economic_integration import create_economic_integration
+            from connectors.economic_data_gateway import EconomicDataProviderRegistry
+            from core_brain.news_sanitizer import NewsSanitizer
+            
+            logger.info("[ECON-INTEGRATION] Initializing Economic Calendar Veto Interface...")
+            
+            # Create integration manager with all dependencies
+            self.economic_integration = create_economic_integration(
+                gateway=EconomicDataProviderRegistry(),
+                sanitizer=NewsSanitizer(),
+                storage=self.storage,
+                scheduler_config=None  # Use defaults
+            )
+            
+            # Setup and start scheduler asynchronously (non-blocking)
+            # Note: Scheduled as asyncio task in the main event loop
+            
+            logger.info("[ECON-INTEGRATION] ✅ Economic integration ready for use")
+        
+        except Exception as e:
+            logger.warning(f"[ECON-INTEGRATION] ⚠️ Could not initialize: {e}")
+            self.economic_integration = None
 
     def _discover_brokers(self) -> List[Dict]:
         """Descubre todos los brokers registrados en la base de datos."""
@@ -970,6 +1005,87 @@ class MainOrchestrator:
             trace_id = str(uuid.uuid4())
             logger.debug(f"Starting cycle with trace_id: {trace_id}")
             
+            # ════════════════════════════════════════════════════════════════════════════════════
+            # PHASE 8: Economic Veto Check (News-Based Trading Lockdown)
+            # ════════════════════════════════════════════════════════════════════════════════════
+            # Before generating signals, verify trading is allowed by economic calendar.
+            # If HIGH impact event: block new positions, move SL to Break-Even.
+            # If MEDIUM impact event: allow with CAUTION (unit R @ 50%).
+            # Agnosis: MainOrchestrator never knows provider sources.
+            
+            if self.economic_integration:
+                try:
+                    current_time = datetime.now(timezone.utc)
+                    
+                    # Check each symbol in scan results for economic veto
+                    veto_symbols = set()  # Symbols that should NOT have new positions opened
+                    caution_symbols = set()  # Symbols with MEDIUM impact (reduced size)
+                    
+                    for symbol in scan_results.keys():
+                        status = await self.economic_integration.get_trading_status(symbol, current_time)
+                        
+                        if not status.get("is_tradeable", True):
+                            veto_symbols.add(symbol)
+                            reason = status.get("reason", "Economic veto")
+                            logger.warning(
+                                f"[ECON-VETO] ❌ {symbol}: {reason} "
+                                f"(Next: {status.get('next_event')} @ {status.get('time_to_event', 0):.0f}s)"
+                            )
+                            
+                            # HIGH impact: Prepare position management
+                            if status.get("restriction_level") == "BLOCK":
+                                logger.warning(f"[ECON-VETO] HIGH IMPACT: Adjusting open positions for {symbol} to Break-Even")
+                                # Will be handled in position manager below
+                        
+                        elif status.get("restriction_level") == "CAUTION":
+                            caution_symbols.add(symbol)
+                            logger.info(
+                                f"[ECON-VETO] ⚠️ {symbol}: MEDIUM impact (unit R @ 50%). "
+                                f"Next: {status.get('next_event')}"
+                            )
+                    
+                    # If ALL symbols are vetoed: enter SLEEP mode until buffer ends
+                    if veto_symbols and len(veto_symbols) == len(scan_results):
+                        # Find earliest buffer end time
+                        earliest_recovery = None
+                        for symbol in veto_symbols:
+                            status = await self.economic_integration.get_trading_status(symbol, current_time)
+                            if status.get("time_to_event") is not None:
+                                # Calculate when we can resume trading
+                                post_buffer_secs = (status.get("buffer_post_minutes", 0) * 60)
+                                time_to_tradeable = status.get("time_to_event", 0) + post_buffer_secs
+                                if earliest_recovery is None or time_to_tradeable < earliest_recovery:
+                                    earliest_recovery = time_to_tradeable
+                        
+                        if earliest_recovery and earliest_recovery > 0:
+                            sleep_duration = min(earliest_recovery, 60)  # Cap at 60s per cycle
+                            logger.info(
+                                f"[ECON-VETO] SYSTEM_IDLE: All symbols vetoed. "
+                                f"Sleeping {sleep_duration:.0f}s until buffer ends."
+                            )
+                            if self.thought_callback:
+                                await self.thought_callback(
+                                    f"⏸️ Pausa prevista por evento económico. Reanudando en {int(sleep_duration)}s.",
+                                    module="ECON",
+                                    level="info"
+                                )
+                            await asyncio.sleep(min(sleep_duration, self.MIN_SLEEP_INTERVAL))
+                            self.stats.cycles_completed += 1
+                            return
+                    
+                    # Store veto and caution symbols for use in signal generation
+                    self._econ_veto_symbols = veto_symbols
+                    self._econ_caution_symbols = caution_symbols
+                
+                except Exception as e:
+                    logger.error(f"[ECON-VETO] Error in economic check: {e}", exc_info=True)
+                    # Fail-open: continue trading if check fails
+                    self._econ_veto_symbols = set()
+                    self._econ_caution_symbols = set()
+            else:
+                self._econ_veto_symbols = set()
+                self._econ_caution_symbols = set()
+            
             # Step 2: Generate signals WITH DataFrames
             logger.debug("Generating signals from scan results with data...")
             signals = await self.signal_factory.generate_signals_batch(scan_results_with_data, trace_id)
@@ -1043,6 +1159,51 @@ class MainOrchestrator:
             # Step 4: Check risk manager lockdown (additional check)
             if self.risk_manager.is_lockdown_active():
                 logger.warning("Lockdown mode active. Skipping signal execution.")
+                self.stats.cycles_completed += 1
+                return
+            
+            # ════════════════════════════════════════════════════════════════════════════════════
+            # PHASE 8: Filter signals vetoed by economic calendar
+            # ════════════════════════════════════════════════════════════════════════════════════
+            
+            # Remove signals for symbols under economic veto
+            econ_veto_symbols = getattr(self, '_econ_veto_symbols', set())
+            filtered_signals = []
+            for signal in validated_signals:
+                if signal.symbol in econ_veto_symbols:
+                    logger.info(
+                        f"[ECON-VETO-EXEC] Signal for {signal.symbol} blocked: "
+                        f"Economic veto active"
+                    )
+                    self.stats.signals_vetoed += 1
+                    
+                    # HIGH impact: Adjust open positions to Break-Even
+                    try:
+                        current_status = await self.economic_integration.get_trading_status(
+                            signal.symbol,
+                            datetime.now(timezone.utc)
+                        )
+                        if current_status.get("restriction_level") == "BLOCK":
+                            logger.warning(
+                                f"[ECON-VETO-EXEC] HIGH IMPACT: Adjusting positions for {signal.symbol} to Break-Even"
+                            )
+                            breakeven_result = await self.risk_manager.adjust_stops_to_breakeven(
+                                symbol=signal.symbol,
+                                reason=f"HIGH impact economic event: {current_status.get('next_event', 'UNKNOWN')}"
+                            )
+                            if breakeven_result.get("adjusted", 0) > 0:
+                                logger.info(
+                                    f"[ECON-VETO-EXEC] ✅ Adjusted {breakeven_result['adjusted']} positions to Break-Even"
+                                )
+                    except Exception as e:
+                        logger.error(f"[ECON-VETO-EXEC] Error adjusting SL to Break-Even: {e}")
+                else:
+                    filtered_signals.append(signal)
+            
+            validated_signals = filtered_signals
+            
+            if not validated_signals:
+                logger.info("All signals filtered by economic veto")
                 self.stats.cycles_completed += 1
                 return
             

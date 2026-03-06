@@ -79,3 +79,88 @@ from core_brain.news_sanitizer import VALID_COUNTRY_CODES
 
 # Import impact normalizer
 from core_brain.news_sanitizer import IMPACT_NORMALIZER
+
+# ============================================================================
+# ECONOMIC VETO INTERFACE TEST CONSTANTS (SSOT - Single Source of Truth)
+# ============================================================================
+from datetime import datetime, timedelta
+
+# Economic calendar parameters (SSOT for all tests)
+ECON_CACHE_TTL_SECONDS = 60
+ECON_MAX_LATENCY_MS = 50
+ECON_BUFFER_HIGH_PRE_MINUTES = 15
+ECON_BUFFER_HIGH_POST_MINUTES = 10
+ECON_BUFFER_MEDIUM_PRE_MINUTES = 5
+ECON_BUFFER_MEDIUM_POST_MINUTES = 3
+ECON_BUFFER_LOW_PRE_MINUTES = 0
+ECON_BUFFER_LOW_POST_MINUTES = 0
+
+# Default event symbol mapping (NOT imported from economic_integration to avoid circular imports)
+# This is test-specific SSOT for default events used in testing
+DEFAULT_EVENT_SYMBOL_MAPPING = {
+    # NFP (Non-Farm Payroll) - USA
+    "NFP": ["USD", "EURUSD", "GBPUSD", "USDCAD", "AUDUSD"],
+    "UNEMPLOYMENT": ["USD", "EURUSD", "GBPUSD"],
+    "INITIAL_CLAIMS": ["USD", "EURUSD"],
+    "RETAIL_SALES": ["USD", "EURUSD", "GBPUSD"],
+    "CPI": ["USD", "EURUSD", "GBPUSD"],
+    "PPI": ["USD", "EURUSD"],
+    "FOMC": ["USD", "EURUSD", "GBPUSD", "USDCAD", "AUDUSD"],
+    "FED_RATE": ["USD", "EURUSD", "GBPUSD", "USDCAD", "AUDUSD"],
+    
+    # ECB (European Central Bank)
+    "ECB": ["EUR", "EURUSD", "EURGBP", "EURJPY", "EURCHF"],
+    "ECB_RATE": ["EUR", "EURUSD", "EURGBP", "EURJPY"],
+    "EUROZONE_CPI": ["EUR", "EURUSD", "EURGBP"],
+    
+    # BOE (Bank of England)
+    "BOE": ["GBP", "GBPUSD", "EURGBP", "GBPJPY", "GBPCHF"],
+    "BOE_RATE": ["GBP", "GBPUSD", "EURGBP", "GBPJPY"],
+    "UK_CPI": ["GBP", "GBPUSD", "EURGBP"],
+    
+    # RBA (Reserve Bank of Australia)
+    "RBA": ["AUD", "AUDUSD", "EURAUD", "AUDJPY", "GBPAUD"],
+    "RBA_RATE": ["AUD", "AUDUSD", "EURAUD", "AUDJPY"],
+    "AUSTRALIA_CPI": ["AUD", "AUDUSD"],
+    
+    # BOJ (Bank of Japan)
+    "BOJ": ["JPY", "USDJPY", "EURJPY", "GBPJPY", "AUDJPY"],
+    "BOJ_RATE": ["JPY", "USDJPY", "EURJPY", "GBPJPY"],
+    "JAPAN_CPI": ["JPY", "USDJPY", "EURJPY"],
+}
+
+
+@pytest.fixture
+def econ_test_now():
+    """Fixture providing current test time. Ensures consistent datetime."""
+    return datetime(2026, 3, 5, 10, 0, 0)
+
+
+@pytest.fixture
+def econ_test_event_high_impact(econ_test_now):
+    """Fixture providing HIGH impact economic event (NFP)."""
+    return {
+        "event_id": "evt_nfp_20260305",
+        "event_name": "NFP",
+        "country": "USA",
+        "impact": "HIGH",
+        "event_time_utc": econ_test_now,
+        "currency": "USD",
+        "forecast": "100K",
+        "previous": "85K",
+    }
+
+
+@pytest.fixture
+def econ_test_event_medium_impact(econ_test_now):
+    """Fixture providing MEDIUM impact economic event (PMI)."""
+    return {
+        "event_id": "evt_pmi_20260305",
+        "event_name": "PMI Manufacturing",
+        "country": "Eurozone",
+        "impact": "MEDIUM",
+        "event_time_utc": econ_test_now + timedelta(hours=2),
+        "currency": "EUR",
+        "forecast": "52.5",
+        "previous": "51.8",
+    }

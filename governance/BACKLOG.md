@@ -99,6 +99,54 @@
       - `data_vault/schema.py` (+table anomaly_events, 3 índices)
     * **Trace_ID**: BLACK-SWAN-SENTINEL-2026-001
 
+* **HU 4.7: Economic Calendar Veto Filter (News-Based Trading Lockdown)** `[TODO]`
+    * **Prioridad**: Alta (Vector V3 - Dominio Sensorial)
+    * **Descripción**: Implementación del filtro de veto por calendario económico. El sistema bloquea automáticamente nuevas posiciones durante eventos de alto impacto (NFP, decisiones de bancos centrales) basado en buffers pre/post evento (HIGH: 15m/10m, MEDIUM: 5m/3m, LOW: 0/0).
+    * **Propósito**: Evitar pérdidas catastróficas por volatilidad extrema en eventos macroeconómicos sin intervención manual. Preservar agnosis: MainOrchestrator NO conoce proveedores de datos.
+    * **Contrato**:
+      - Método: `async get_trading_status(symbol: str, current_time: datetime) -> Dict`
+      - Retorna: `{"is_tradeable": bool, "reason": str, "restriction_level": "BLOCK|CAUTION|NORMAL", ...}`
+      - Latencia: < 100 ms
+      - Degradación graciosa si calendar DB está down (fail-open)
+    * **Mapeo de Eventos**:
+      - NFP → USD (USD/JPY, EUR/USD, GBP/USD, AUD/USD)
+      - ECB News → EUR (EUR/USD, GBP/EUR, EUR/JPY)
+      - BOE News → GBP (GBP/USD, EUR/GBP, GBP/JPY)
+      - RBA News → AUD (AUD/USD, EUR/AUD, AUD/JPY)
+      - BOJ Policy → JPY (USD/JPY, EUR/JPY, GBP/JPY)
+    * **Integración con RiskManager**:
+      - Pilar 4.5 (Pre-RiskManager): EconomicVetoInterface bloquea ANTES de validación de riesgo
+      - HIGH impact: `is_tradeable = False` (cierre de posiciones permitido)
+      - MEDIUM impact: `is_tradeable = True` pero `reduction_level = "CAUTION"` (unit R escalado al 50%)
+      - Position Management: Si HIGH impact, mover SL a Break-Even automáticamente
+    * **Dependencias Ya Implementadas**:
+      - ✅ `migrations/030_economic_calendar.sql` (schema tabla economic_calendar)
+      - ✅ `connectors/economic_adapters.py` (InvestingAdapter, BloombergAdapter, ForexFactoryAdapter)
+      - ✅ `connectors/economic_data_gateway.py` (factory pattern)
+      - ✅ `core_brain/economic_scheduler.py` (EDGE scheduler, non-blocking)
+      - ✅ `core_brain/economic_fetch_persist.py` (atomic pipeline)
+      - ✅ `core_brain/economic_integration.py` (lifecycle manager)
+      - ✅ `docs/INTERFACE_CONTRACTS.md` (Contract 2: EconomicVetoInterface)
+      - ✅ `docs/AETHELGARD_MANIFESTO.md` (Section VIII: Veto por Calendario)
+    * **Tareas Pendientes**:
+      - [ ] Ejecutar migración DML: `030_economic_calendar.sql` (crear tabla en DB)
+      - [ ] Implementar `get_trading_status()` en `EconomicIntegrationManager` (core_brain/economic_integration.py)
+      - [ ] Agregar tests: `test_economic_veto_interface.py` (buffer timing, symbol mapping, latency, graceful degradation)
+      - [ ] Integrar `EconomicIntegrationManager` en `MainOrchestrator.__init__()` (inyección de dependencias)
+      - [ ] Agregar pre-trade check en `MainOrchestrator.run_single_cycle()` (llamar `get_trading_status()`)
+      - [ ] Agregar position management logic para HIGH impact (Break-Even mover, cierre parcial notificación)
+      - [ ] Validar con `validate_all.py` (sin regressions)
+    * **🖥️ UI Representation**: Indicator de "Economic Risk Status" en el header mostrando próximo evento y restricción activa (🔴HIGH/🟡MEDIUM/🟢NORMAL). Notificaciones toast si evento inminente.
+    * **Artefactos** (Post-Implementación):
+      - `core_brain/economic_integration.py` (+method `get_trading_status()`, caching logic)
+      - `tests/test_economic_veto_interface.py` (target: 20+ tests covering buffers, symbols, latency, degradation)
+      - `core_brain/main_orchestrator.py` (línea ~_: agregar pre-trade check)
+      - `core_brain/position_manager.py` (método `move_sl_to_breakeven()` si no existe)
+      - `docs/INTERFACE_CONTRACTS.md` (Contract 2 - REFERENCE)
+      - `docs/AETHELGARD_MANIFESTO.md` (Section VIII - REFERENCE)
+    * **Trace_ID**: ECON-VETO-FILTER-2026-001
+    * **Gobernanza**: Agnosis obligatoria (no imports de brokers), DI obligatorio, SSOT (DB única fuente), degradación graciosa, <100ms latencia, auditoría vía TRACE_ID.
+
 ## 05_UNIVERSAL_EXECUTION (EMS, Conectores FIX)
 * **HU 5.1: High-Fidelity FIX Connector Core** `[DEV]`
     * **Prioridad**: Media (Vector V3)

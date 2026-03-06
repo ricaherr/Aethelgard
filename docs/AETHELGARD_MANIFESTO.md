@@ -559,7 +559,168 @@ Esta sección representa el **corazón operativo** del Backlog Dominio 05 (EXECU
 
 ---
 
-## VIII. Integración en MainOrchestrator
+## VIII. Veto por Calendario: Gobernanza Fundamental de Eventos Económicos
+
+**Purpose**: Single source of truth para decisiones de trading basadas en calendarios económicos. El sistema debe **bloquear, restringir o permitir posiciones** según el impacto de eventos macroeconómicos inminentes.
+
+**Filosofía**:
+La volatilidad extrema alrededor de eventos de alto impacto (NFP, BCE, Bancos Centrales) requiere una **gobernanza automática y agnóstica** que no dependa de decisiones humanas. El sistema debe saber "¿es seguro tradear ahora en EUR?" sin conocer de dónde viene esa información (Investing.com, Bloomberg, ForexFactory).
+
+### 8.1 Concepto: Los Tres Impactos
+
+Toda noticia económica debe clasificarse en **3 niveles de impacto**, cada uno con **buffer pre/post** asociado:
+
+| **Impacto** | **Duración Pre** | **Duración Post** | **Acción en MainOrchestrator** | **Ejemplo** |
+|------------|-----------------|-----------------|-------------------------------|-----------|
+| **🔴 HIGH** | 15 minutos | 10 minutos | ❌ BLOQUEA completamente nuevas posiciones | NFP (USA), BCE Decisión de tasas, BOE Policy |
+| **🟡 MEDIUM** | 5 minutos | 3 minutos | ⚠️ CAUTION: Reduce unit R al 50%, permite entrada con confirmación extra | ISM PMI, Core PCE, Retail Sales |
+| **🟢 LOW** | 0 minutos | 0 minutos | ✅ Permite operación normal, sin restricciones | Jobless Claims, Conference Board |
+
+### 8.2 Mapeo de Eventos a Pares Operativos
+
+El sistema debe automatizar el **enrutamiento de restricciones por divisa**:
+
+```
+EVENT-TYPE  →  CURRENCY  →  SYMBOLS AFECTADOS
+─────────────────────────────────────────────
+NFP         →  USD       →  EUR/USD, GBP/USD, USD/JPY, AUD/USD
+ECB News    →  EUR       →  EUR/USD, GBP/EUR, EUR/JPY, EUR/GBP
+BOE News    →  GBP       →  GBP/USD, EUR/GBP, GBP/JPY, AUD/GBP
+RBA News    →  AUD       →  AUD/USD, EUR/AUD, AUD/JPY, GBP/AUD
+BOJ Policy  →  JPY       →  USD/JPY, EUR/JPY, GBP/JPY, AUD/JPY
+```
+
+**Implementación**: La tabla `economic_calendar` mantiene `country` y `event_name`, `EconomicVetoInterface` mapea internamente a símbolos afectados.
+
+### 8.3 Puertas de Veto (EconomicVetoInterface)
+
+**Contract Método**:
+```python
+async def get_trading_status(
+    symbol: str,
+    current_time: datetime
+) -> Dict[str, Any]:
+    """
+    Retorna: {
+        "is_tradeable": bool,           # ¿Puedo abrir posición nueva?
+        "reason": str,                   # "HIGH impact event in 8 min pre-window"
+        "next_event": str,              # "NFP - 2026-03-07 13:30 UTC"
+        "next_event_impact": str,       # "HIGH", "MEDIUM", "LOW"
+        "time_to_event": float,         # Segundos hasta evento
+        "restriction_level": str,       # "BLOCK" | "CAUTION" | "NORMAL"
+    }
+    """
+```
+
+**Reglas de Decisión**:
+
+1. **HIGH Impact Pre-Buffer (15 min antes)**: 
+   - `is_tradeable = False`
+   - MainOrchestrator NO abre posiciones nuevas
+   - **Acción si hay posición abierta**: Prepara Break-Even o cierre parcial
+
+2. **HIGH Impact Post-Buffer (10 min después)**:
+   - `is_tradeable = False` durante 10 minutos post-evento
+   - Permite CERRAR posiciones (SL/TP ejecutados normalmente)
+
+3. **MEDIUM Impact (5m pre / 3m post)**:
+   - `is_tradeable = True` pero `restriction_level = "CAUTION"`
+   - MainOrchestrator permite entrada CON VALIDACIÓN EXTRA (Coherence >= 0.80)
+   - Unit R escalado al 50% del normal
+
+4. **LOW Impact o Sin Evento**:
+   - `is_tradeable = True`
+   - Trading operación normal, sin restricciones
+
+### 8.4 Gestión de Posiciones Abiertas en Pre-Event
+
+**Escenario**: El usuario tiene EUR/USD abierto y NFP comienza en 10 minutos (HIGH impact).
+
+**Acciones del SovereignGovernor**:
+1. **Evaluación pre-trade**: `econ_manager.get_trading_status("EUR/USD")` → HIGH pre-buffer = no nuevas posiciones
+2. **Posiciones existentes**: Sin forzar cierre, pero:
+   - Si posición está en ganancia: Mover SL a Break-Even automáticamente
+   - Si posición en pérdida: Ofrecer cierre parcial voluntario (UI notificación)
+3. **Post-evento**: Esperar post-buffer (10 min), luego permitir nuevas posiciones
+
+**Pseudocódigo**:
+```python
+# En MainOrchestrator.run_single_cycle()
+
+status = await econ_manager.get_trading_status(symbol)
+
+if status["restriction_level"] == "BLOCK":
+    # ❌ No nuevas posiciones
+    signals_to_execute = [s for s in signals if s.symbol != symbol]
+    
+    # ⚠️ Gestionar posiciones abiertas
+    open_pos = await position_manager.get_open_position(symbol)
+    if open_pos and open_pos.pnl_pct > 0:
+        await position_manager.move_sl_to_breakeven(open_pos.trade_id)
+    
+elif status["restriction_level"] == "CAUTION":
+    # ⚠️ Permite entrada con validación extra
+    signals_to_execute = [
+        s for s in signals 
+        if s.symbol == symbol and s.coherence_score >= 0.80  # Threshold extra
+    ]
+    # Escalar unit R al 50%
+    for signal in signals_to_execute:
+        signal.unit_r = signal.unit_r * 0.5
+```
+
+### 8.5 Agnosis Preservado
+
+**REGLA CRÍTICA**: MainOrchestrator NUNCA conoce de dónde viene la información del calendario económico.
+
+- ❌ MainOrchestrator **NO importa** `InvestingAdapter`, `BloombergAdapter`, ni `ForexFactoryAdapter`
+- ✅ MainOrchestrator **SOLO consulta** `EconomicIntegrationManager.get_trading_status(symbol)`
+- ✅ El wrapper manager es **agnóstico**: oculta providers, expone solo interface de permisos
+
+**Beneficio**:
+- Cambiar provider de datos: Modifica `EconomicIntegrationManager`, no afecta trading logic
+- Testing: Mock `get_trading_status()` sin cargar providers reales
+- Escalabilidad: Agregar provider nuevo sin tocar MainOrchestrator
+
+### 8.6 Requisitos No Funcionales
+
+| Requisito | Especificación |
+|-----------|----------------|
+| **Latencia** | `get_trading_status()` debe retornar en <100 ms |
+| **Caching** | Cachear eventos por 60 segundos (TTL= 60s) |
+| **SLA** | Degradación graciosa si economic_calendar DB está down → retornar `is_tradeable=True` |
+| **Logging** | Todo veto debe loguear con TRACE_ID para auditoría |
+| **Tolerancia** | ±30 segundos en timing de buffers (permitido) |
+
+### 8.7 Integración con Risk Manager
+
+El **RiskManager** debe ser **agnóstico a calendarios económicos**. La puerta de veto ocurre ANTES:
+
+```
+Signal Flow:
+1. UniversalStrategyEngine.analyze() → OutputSignal
+2. StrategySignalValidator.validate() → ValidationReport
+3. StrategyGatekeeper.can_execute_on_tick() → ¿Histórico OK?
+4. 🆕 EconomicVetoInterface.get_trading_status() → ¿Evento económico? ← AQUÍ
+5. RiskManager.evaluate_signal() → ¿Capital suficiente?
+6. ConflictResolver.resolve_conflicts() → ¿Una estrategia por activo?
+7. Executor.execute_signal() → OPEN TRADE
+```
+
+El RiskManager NO necesita saber nada de calendarios; solo recibe señales que ya pasaron validación económica.
+
+### 8.8 Monitoreo de Precisión
+
+El sistema debe trackear:
+- **Eventos correctamente predichos**: Bloquearon posición antes del evento (✅)
+- **Falsos positivos**: Veto innecesario (⚠️ ajustar umbrales)
+- **Falsos negativos**: Posición abierta durante veto (❌ investigar causa)
+
+Métrica: `accuracy = (predicted_positive + predicted_negative) / total_events`
+
+---
+
+## IX. Integración en MainOrchestrator
 
 **Cambios Requeridos**:
 
@@ -611,7 +772,7 @@ for signal in approved:
 
 ---
 
-## IX. Reglas Constitucionales Inmutables
+## X. Reglas Constitucionales Inmutables
 
 1. ✅ **Agnosis Absoluta**: Cero imports de broker en core_brain. Solo en connectors/.
 2. ✅ **DI Obligatorio**: Todas las clases reciben dependencias en __init__, no las crean.
@@ -635,7 +796,7 @@ for signal in approved:
 
 ---
 
-## X. Próximas Tareas (Sprint 5: SALTO CUÁNTICO)
+## XI. Próximas Tareas (Sprint 5: SALTO CUÁNTICO)
 
 - [ ] ✅ Crear strategy_validator_quanter.py (4 Pilares) — **COMPLETADO**
 - [ ] ✅ Crear strategy_registry.json (6 firmas) — **COMPLETADO**

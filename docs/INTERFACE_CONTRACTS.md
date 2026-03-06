@@ -210,13 +210,92 @@ Before Executor implements NewsSanitizer:
 
 ---
 
+## � Contract 2: Economic Veto Interface (NEWS BUFFER GATE)
+
+**Purpose**: Provide trading system (MainOrchestrator) with single source of truth about whether it's safe to trade a given symbol, considering economic calendar events.
+
+**Scope**: All trading decisions in MainOrchestrator that involve currency pairs affected by economic news.
+
+**Responsibility**: EconomicIntegrationManager (via get_trading_status) consults economic_calendar and applies News Buffers.
+
+---
+
+### **Contract Definition: EconomicVetoInterface**
+
+```python
+class EconomicVetoInterface:
+    """
+    Trading system queries economic safety before opening/managing positions.
+    NOT about managing the scheduler - only about trading permission.
+    """
+    
+    async def get_trading_status(
+        self, 
+        symbol: str,  # e.g., "EURUSD", "GBPUSD", "USDJPY"
+        current_time: datetime = None
+    ) -> Dict[str, Any]:
+        """
+        Is it safe to trade this symbol RIGHT NOW?
+        
+        Returns:
+        {
+            'is_tradeable': bool,  # False if inside impact buffer
+            'reason': str,         # "HIGH impact news (NFP) in 10 min buffer"
+            'next_event': Dict,    # Upcoming event details (if blocked)
+            'affected_pairs': [str],    # [EURUSD, GBPUSD] if any
+            'buffer_start': datetime,   # When the buffer started
+            'buffer_end': datetime,     # When buffer ends
+            'impact_level': str    # HIGH|MEDIUM|LOW
+        }
+        """
+```
+
+### **Buffer Logic (Pre/Post News)**
+
+| Impact | Pre-Buffer | Post-Buffer | Action |
+|--------|-----------|------------|--------|
+| **HIGH** | 15 min before | 10 min after | ❌ NO new positions, manage existing (Break-Even or close) |
+| **MEDIUM** | 5 min before | 3 min after | ⚠️ CAUTION - reduce size 50% |  
+| **LOW** | 0 min before | 0 min after | ✅ Normal trading |
+
+### **Symbol Mapping**
+
+Economic events affect currencies. Mapping:
+- **NFP (US Jobs)** → `USD` pairs: EURUSD, GBPUSD, USDJPY, AUDUSD, USDCAD
+- **ECB Interest Rate** → `EUR` pairs: EURUSD, EURGBP, EURJPY
+- **BOE Decision** → `GBP` pairs: GBPUSD, EURGBP, GBPJPY
+- **RBA Statement** → `AUD` pairs: AUDUSD, EURADD
+- **BOJ News** → `JPY` pairs: USDJPY, EURJPY, GBPJPY
+
+### **Implementation Requirements**
+
+1. **Real-time Query**: `get_trading_status(symbol)` must run in < 100ms
+2. **Caching**: Cache results for 60 seconds to avoid repeated DB queries
+3. **Graceful Degradation**: If economic_calendar down, return `is_tradeable=True` (fail open, let trading continue)
+4. **Agnosis Maintained**: MainOrchestrator doesn't know about Investing.com; only asks manager
+5. **Logging**: Every veto decision logged with trace_id
+
+### **Success Criteria**
+
+| Criterion | Measurement |
+|-----------|-------------|
+| Correct symbol mapping | USD pairs blocked during HIGH US events |
+| Buffer timing | Pre/post buffers respected (±30 sec tolerance) |
+| Performance | Response time < 100ms |
+| Agnosis | MainOrchestrator zero knowledge of provider sources |
+| Graceful degradation | System continues if economic data unavailable |
+| Traceability | Every veto decision has trace_id |
+
+---
+
 ## 📍 References
 
 - **DEVELOPMENT_GUIDELINES.md**: Section 3 (Data Sanitization Rules)
-- **AETHELGARD_MANIFESTO.md**: Section IV.A (Gestión de Credenciales — applies immutability principle)
+- **AETHELGARD_MANIFESTO.md**: Section IV.A (Gestión de Credenciales — applies immutability principle) + Section VIII (Veto por Calendario)
 - **core_brain/services/fundamental_guard.py**: Consumer of economic_calendar data
+- **core_brain/economic_integration.py**: Implementation of EconomicVetoInterface
 - **SYSTEM_LEDGER.md**: Register any schema changes here
 
 ---
 
-**End of Contract v1.0**
+**End of Contracts v1.0**

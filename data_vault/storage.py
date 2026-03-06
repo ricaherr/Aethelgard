@@ -2,7 +2,8 @@ import logging
 import os
 import sqlite3
 import json
-from typing import Optional, Dict, Any, List
+from datetime import datetime
+from typing import Optional, Dict, Any, List, Union
 
 from .base_repo import BaseRepository
 from .signals_db import SignalsMixin, calculate_deduplication_window
@@ -532,6 +533,87 @@ class StorageManager(
             "use get_economic_calendar() instead"
         )
         return self.get_economic_calendar(days_back=days_back, country_filter=country_filter)
+
+    async def get_economic_events_by_window(
+        self,
+        symbol: str,
+        start_time: Union[datetime, str],
+        end_time: Union[datetime, str]
+    ) -> List[Dict[str, Any]]:
+        """
+        Get economic events within a time window for a specific symbol.
+        
+        PHASE 8: Economic Veto Interface requirement.
+        
+        Args:
+            symbol: Currency pair (e.g., 'EUR/USD', 'EURUSD')
+            start_time: Start of time window (datetime or ISO string)
+            end_time: End of time window (datetime or ISO string)
+        
+        Returns:
+            List of economic events in window, sorted by event_time_utc
+            Empty list if economic_calendar table doesn't exist (graceful degradation)
+        """
+        try:
+            # Convert datetime objects to ISO format strings if needed
+            from datetime import datetime
+            if isinstance(start_time, datetime):
+                start_str = start_time.isoformat()
+            else:
+                start_str = str(start_time)
+                
+            if isinstance(end_time, datetime):
+                end_str = end_time.isoformat()
+            else:
+                end_str = str(end_time)
+            
+            conn = self._get_conn()
+            cursor = conn.cursor()
+            
+            # Check if economic_calendar table exists
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='economic_calendar'"
+            )
+            if not cursor.fetchone():
+                logger.debug("[StorageManager] economic_calendar table not found (graceful degradation)")
+                return []
+            
+            # Query events in time window
+            # Note: This is a basic query - currency filtering would be done by caller
+            query = """
+                SELECT event_id, event_name, country, currency, impact_score,
+                       forecast, actual, previous, event_time_utc, created_at
+                FROM economic_calendar
+                WHERE event_time_utc >= ? AND event_time_utc <= ?
+                ORDER BY event_time_utc ASC
+                LIMIT 100
+            """
+            
+            cursor.execute(query, (start_str, end_str))
+            rows = cursor.fetchall()
+            
+            if not rows:
+                return []
+            
+            # Convert rows to dicts
+            events = []
+            col_names = [description[0] for description in cursor.description]
+            for row in rows:
+                event_dict = dict(zip(col_names, row))
+                events.append(event_dict)
+            
+            logger.debug(
+                f"[StorageManager] get_economic_events_by_window: "
+                f"symbol={symbol}, events={len(events)}, window={start_str} to {end_str}"
+            )
+            
+            return events
+            
+        except Exception as e:
+            logger.error(f"[StorageManager] Error querying economic events by window: {str(e)}")
+            return []  # Graceful degradation
+        finally:
+            self._close_conn(conn)
 
     def update_economic_event(self, event_id: str, updates: Dict[str, Any]) -> None:
         """

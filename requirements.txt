@@ -26,6 +26,9 @@ plotly>=5.18.0  # Para gráficos interactivos en el dashboard
 # Monitor de recursos (escáner proactivo)
 psutil==6.1.0
 
+# Job scheduling (EDGE scheduler for economic data)
+APScheduler==3.10.4
+
 # Development & Code Quality
 mypy==1.13.0  # Type hints validation (mypy --strict)
 pytest==8.3.4
