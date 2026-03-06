@@ -173,10 +173,87 @@ else:
    - Ahora: `factory = StrategyEngineFactory(...); active_engines = factory.instantiate_all_strategies()`
    - Resultado: 2-4+ estrategias en memoria, dinámicamente cargadas
 
-3. **SignalFactory** (`core_brain/signal_factory.py` - REFACTORIZADO)
+3. **SignalFactory** (`core_brain/signal_factory.py` - REFACTORIZADO FASE 2)
    - Parámetro constructor: `strategies: List` → `strategy_engines: Dict[str, Any]`
    - Itera sobre Dict en lugar de List: `for strategy_id, engine in self.strategy_engines.items()`
    - Benefit: O(1) lookup en lugar de O(n) iteración
+   - **FASE 2 Refactorización** (5-Mar-2026): Fragmentación para cumplir Limit of Mass (<30KB, <500 líneas)
+     - **Antes**: 37.94 KB, 782 líneas ❌ EXCEDE
+     - **Después FASE 2**: **21.12 KB, 437 líneas** ✅ CUMPLE
+     - Métodos extraídos a submódulos especializados:
+   
+   **Signal Processing Fragmentation (FASE 2) - COMPLETADA**:
+   
+   4a. **SignalDeduplicator** (`core_brain/signal_deduplicator.py` - NUEVO | 7.8 KB)
+       - **Responsabilidad**: Detección y prevención de señales duplicadas
+       - **Método público**: `is_duplicate(signal: Signal) -> bool`
+       - **Algoritmos**:
+         - Normalización de símbolos (Ej: "GBPUSD=X" → "GBPUSD")
+         - Verificación de posiciones abiertas (temporal + real)
+         - Reconciliación con MT5 (detección de ghost positions)
+         - Limpieza automática de posiciones fantasma
+       - **Integración**: Signal Factory lo inyecta en `__init__`, lo usa en `generate_signal()` línea 198
+       - **Gobernanza**: ✅ DI obligatorio, ✅ SSOT (StorageManager), ✅ Type Hints 100%
+   
+   4b. **SignalConflictAnalyzer** (`core_brain/signal_conflict_analyzer.py` - NUEVO | 3.6 KB)
+       - **Responsabilidad**: Análisis multi-timeframe de confluencia
+       - **Método público**: `apply_confluence(signals, scan_results) -> List[Signal]`
+       - **Lógica**:
+         - Agrupa regímenes por símbolo (excluyendo timeframe primario)
+         - Aplica bonus de confluencia si 2+ timeframes están en TREND
+         - Formula: `new_score = original_score * (1 + confluence_bonus)`
+       - **Integración**: Signal Factory lo inyecta en `__init__`, lo usa en `generate_signals_batch()` línea 395
+       - **Gobernanza**: ✅ Lazy initialization, ✅ Error handling, ✅ Logging [CONFLUENCE]
+   
+   4c. **SignalTrifectaOptimizer** (`core_brain/signal_trifecta_optimizer.py` - NUEVO | 5.2 KB)
+       - **Responsabilidad**: Filtrado Oliver Velez M2-M5-M15 multi-timeframe
+       - **Método público**: `optimize(signals, scan_results) -> List[Signal]`
+       - **Oliver Velez Logic**:
+         - M2 (dirección): tendencia corta
+         - M5 (confirmación): fuerza
+         - M15 (macro contexto): validez setup
+       - **Scoring**: `final_score = (original * 0.4) + (trifecta * 0.6)`, Filtro: >= 0.60
+       - **DEGRADED MODE**: Si faltan timeframes, pasar signal sin trifecta
+       - **Integración**: Signal Factory lo inyecta en `__init__`, lo usa en `generate_signals_batch()` línea 399
+       - **Gobernanza**: ✅ Graceful degradation, ✅ Try-except en analyze(), ✅ TRACE_ID logging
+   
+   **Compliance Alcanzado**:
+   - ✅ Limit of Mass: 21.12 KB < 30 KB, 437 líneas < 500 líneas
+   - ✅ Type Hints 100%: Todos los parámetros y retornos tipados
+   - ✅ DI Obligatorio: Todas las dependencias inyectadas en `__init__()`
+   - ✅ SSOT: Delegan a StorageManager, no duplican lógica
+   - ✅ Single Responsibility: Cada clase = una responsabilidad clara
+   - ✅ Validación: 16/16 módulos PASSED en validate_all.py
+
+**Estructura BD (SSOT)**:
+```sql
+CREATE TABLE strategies (
+    class_id TEXT PRIMARY KEY,           -- BRK_OPEN_0001, MOM_BIAS_0001, etc.
+    mnemonic TEXT NOT NULL,              -- NY_STRIKE_OPEN_GAP, MOMENTUM_STRIKE, etc.
+    version TEXT DEFAULT '1.0',
+    affinity_scores TEXT DEFAULT '{}',   -- JSON con scores
+    market_whitelist TEXT DEFAULT '[]',  -- JSON con símbolos permitidos
+    readiness TEXT,                      -- READY_FOR_ENGINE | LOGIC_PENDING
+    readiness_notes TEXT,
+    ...
+)
+```
+
+**Carga Dinámica en Runtime**:
+```python
+# MainOrchestrator.__init__() línea 1328
+factory = StrategyEngineFactory(storage=storage, config=dynamic_params)
+active_engines = factory.instantiate_all_strategies()
+# Result: {"BRK_OPEN_0001": engine1, "MOM_BIAS_0001": engine2, ...}
+
+# SignalFactory recibe Dict, no List + inyecta submódulos FASE 2
+signal_factory = SignalFactory(
+    strategy_engines=active_engines,
+    storage_manager=storage,
+    confluence_analyzer=analyzer,
+    mt5_connector=mt5
+)
+```
 
 **Estructura BD (SSOT)**:
 ```sql
@@ -323,13 +400,61 @@ for signal in active_signals:
 
 | Componente | Archivo/Tabla | Propósito |
 |-----------|---------------|----------|
-| **Estrategias** | config/strategy_registry.json | ✅ SSOT: Todas las firmas + affinity scores |
+| **Estrategias** | db.strategies o strategy_registry.json | ✅ SSOT: Todas las firmas + affinity scores |
 | **Coherencia** | db.strategies.coherence_score | ✅ SSOT: Health check validation |
 | **Membresías** | db.users.membership_tier | ✅ SSOT: Niveles de acceso |
-| **Configuración** | db.config | ✅ SSOT: Parámetros dinámicos |
+| **Configuración** | db.system_state | ✅ SSOT: Parámetros dinámicos |
 | **Performance Histórica** | db.strategy_performance_logs | ✅ SSOT: Logs de trades para affinity |
+| **Broker Accounts** | db.broker_accounts | ✅ SSOT: Cuentas DEMO y reales operativas |
+| **Credenciales Encriptadas** | db.credentials (encrypted_data) | ✅ SSOT: Passwords encriptados con Fernet |
+| **Data Providers** | db.data_providers | ✅ SSOT: Configuración de proveedores de datos |
 
-🚫 **PROHIBIDO**: Duplicar información en archivos .json, .env, o variables hardcodeadas. Única fuente = Base de datos o strategy_registry.json para descubrimiento dinámico.
+### IV.A Gestión de Credenciales - Arquitectura de Seguridad
+
+**Separación de Responsabilidades**:
+- **broker_accounts**: METADATOS (account_id, broker_id, account_name, server, account_number, enabled, balance)
+- **credentials**: DATOS SENSIBLES encriptados (encrypted_data = JSON encriptado con Fernet)
+- **data_providers**: PROVEEDORES DE DATOS (config para MT5, Finnhub, CCXT, etc.)
+
+**Flujo de Encriptación**:
+1. Cliente ingresa password (UI o setup_mt5_demo.py)
+2. StorageManager.save_broker_account() → crea en broker_accounts
+3. Si password presente → StorageManager.update_credential() → encripta con get_encryptor() → guarda en credentials.encrypted_data
+4. Lectura: get_credentials(account_id) → desencripta → retorna Dict
+
+**Reglas de Seguridad**:
+- ✅ Credenciales SOLO en DB encriptadas (Fernet symmetric encryption)
+- ❌ NO almacenar passwords en .env, .json, o código
+- ❌ NO loguear valores de credenciales (loguear solo "***")
+- ✅ Clave de encriptación en .encryption_key (gitignored, 0o600 permisos)
+
+### IV.B Seed Data - Inicialización Idempotente
+
+**Ubicación**: `data_vault/seed/` (SSOT para bootstrapping)
+
+**Archivos de Seed**:
+1. **strategy_registry.json**: Estrategias del sistema (migracion ONE-TIME)
+2. **demo_broker_accounts.json**: Cuentas DEMO para pruebas (NEW v2.1)
+3. **data_providers.json**: Proveedores de datos por defecto (NEW v2.1)
+
+**Reglas de Seed**:
+- ✅ Permitido: Seedear METADATOS no sensibles (broker_id, account_name, server)
+- ✅ Permitido: Seedear credenciales DEMO públicas (ej: login demo MT5 válido)
+- ❌ PROHIBIDO: Credenciales operativas REALES o API keys hardjcodeadas
+- ✅ Patrón: Usar { credential_password: "actualpassword" } en JSON, encriptarse al insertar
+- Idempotencia: Script `seed_demo_data.py` verifica si existen antes de insertar
+
+**Tablas Seedeadas en Startup**:
+```
+_bootstrap_from_json() {
+  1. Seeds de estrategias (strategy_registry.json)
+  2. Seeds de broker_accounts (demo_broker_accounts.json)
+  3. Seeds de data_providers (data_providers.json)
+  Flag: _json_bootstrap_done_v1 = true (solo corre 1 vez)
+}
+```
+
+🚫 **PROHIBIDO**: Duplicar información en archivos .json, .env, o variables hardcodeadas. Única fuente = Base de datos + seeds idempotentes.
 
 ---
 
@@ -497,7 +622,16 @@ for signal in approved:
 7. ✅ **Test Inmutables**: Si un test falla, corregir producción. Nunca relajar SL governor.
 8. ✅ **Exclusión Mutua**: Una estrategia por activo simultáneamente.
 9. ✅ **Escalabilidad**: Nueva estrategia = entrada registry. Sin redeploy.
-10. ✅ **Docuentación Única**: AQUÍ (MANIFESTO) = fuente de verdad técnica. No READMEs dispersos.
+10. ✅ **Type Hints 100% (OBLIGATORIO)**: Cobertura total de tipos en TODO el código Python.
+    - ✅ **SÍ**: Parámetros de función, retornos, variables locales complejas.
+    - ✅ **SÍ**: Usar enums (`SignalType`, `MarketRegime`, etc.) en lugar de strings.
+    - ❌ **PROHIBIDO**: `signal_type="BUY"` → ✅ **USAR**: `signal_type=SignalType.BUY`
+    - ❌ **PROHIBIDO**: Funciones sin tipo de retorno `def func():` → ✅ **USAR**: `def func() -> ReturnType:`
+    - **Razón**: Captura errores en tiempo de análisis estático, mejora legibilidad, facilita refactorización.
+    - **Validación**: `mypy --strict` se ejecuta en `scripts/code_quality_analyzer.py` como parte de `validate_all.py`
+    - **Configuración**: `mypy.ini` con patrones moderados (permite migración gradual)
+    - **Baseline**: 968 issues detectados (target: 0 en nuevo código, migración progresiva en legacy)
+11. ✅ **Documentación Única**: AQUÍ (MANIFESTO) = fuente de verdad técnica. No READMEs dispersos.
 
 ---
 

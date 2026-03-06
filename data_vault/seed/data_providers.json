@@ -1,0 +1,122 @@
+{
+  "description": "Data Providers - SEED DATA FOR INITIALIZATION",
+  "note": "System data providers for market data, signals, and instrument info. Some are auto-configured, others require API keys.",
+  "providers": [
+    {
+      "name": "mt5",
+      "type": "market_data",
+      "enabled": true,
+      "supports_data": true,
+      "supports_exec": true,
+      "priority": 100,
+      "requires_auth": true,
+      "is_system": true,
+      "additional_config": {
+        "description": "MetaTrader 5 Platform - Primary execution and market data",
+        "account_selection": "auto"
+      }
+    },
+    {
+      "name": "finnhub",
+      "type": "market_data",
+      "enabled": true,
+      "supports_data": true,
+      "supports_exec": false,
+      "priority": 80,
+      "requires_auth": true,
+      "is_system": false,
+      "api_key": "CONFIGURE_ME",
+      "additional_config": {
+        "description": "Finnhub - Real-time market data and news",
+        "base_url": "https://finnhub.io/api/v1"
+      }
+    },
+    {
+      "name": "alphavantagе",
+      "type": "market_data",
+      "enabled": false,
+      "supports_data": true,
+      "supports_exec": false,
+      "priority": 70,
+      "requires_auth": true,
+      "is_system": false,
+      "api_key": "CONFIGURE_ME",
+      "additional_config": {
+        "description": "AlphaVantage - Time series data",
+        "base_url": "https://www.alphavantage.co/query"
+      }
+    },
+    {
+      "name": "iex_cloud",
+      "type": "market_data",
+      "enabled": false,
+      "supports_data": true,
+      "supports_exec": false,
+      "priority": 75,
+      "requires_auth": true,
+      "is_system": false,
+      "api_key": "CONFIGURE_ME",
+      "additional_config": {
+        "description": "IEX Cloud - Stock market data",
+        "base_url": "https://cloud.iexapis.com"
+      }
+    },
+    {
+      "name": "polygon",
+      "type": "market_data",
+      "enabled": false,
+      "supports_data": true,
+      "supports_exec": false,
+      "priority": 85,
+      "requires_auth": true,
+      "is_system": false,
+      "api_key": "CONFIGURE_ME",
+      "additional_config": {
+        "description": "Polygon.io - Ticker data and fundamentals",
+        "base_url": "https://api.polygon.io"
+      }
+    },
+    {
+      "name": "ccxt",
+      "type": "market_data",
+      "enabled": true,
+      "supports_data": true,
+      "supports_exec": true,
+      "priority": 90,
+      "requires_auth": false,
+      "is_system": false,
+      "additional_config": {
+        "description": "CCXT - Cryptocurrency exchange connector",
+        "supports": ["binance", "coinbase", "kraken"]
+      }
+    },
+    {
+      "name": "yahoo_finance",
+      "type": "market_data",
+      "enabled": true,
+      "supports_data": true,
+      "supports_exec": false,
+      "priority": 65,
+      "requires_auth": false,
+      "is_system": false,
+      "additional_config": {
+        "description": "Yahoo Finance - Free market data (rate-limited)"
+      }
+    },
+    {
+      "name": "twelve_data",
+      "type": "market_data",
+      "enabled": false,
+      "supports_data": true,
+      "supports_exec": false,
+      "priority": 88,
+      "requires_auth": true,
+      "is_system": false,
+      "api_key": "CONFIGURE_ME",
+      "additional_config": {
+        "description": "Twelve Data - Real-time and historical market data",
+        "base_url": "https://api.twelvedata.com"
+      }
+    }
+  ]
+}

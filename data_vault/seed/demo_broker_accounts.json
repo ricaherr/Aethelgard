@@ -1,0 +1,53 @@
+{
+  "description": "Demo Broker Accounts - SEED DATA FOR INITIALIZATION",
+  "note": "Demo accounts for system testing and signal generation. IC Markets serves as both BROKER account (execution) and DATA PROVIDER. Credentials encrypted at rest in credentials table via Fernet.",
+  "recovery_summary": {
+    "ic_markets": "✅ Login 52716550 - Credentials recovered from backup 2026-02-26",
+    "xm": "⚠️ Login 100919522 - From git commit 23e64b0 (2026-01-30). Credentials lost in migration.",
+    "pepperstone": "❌ Never implemented. No historical records found."
+  },
+  "accounts": [
+    {
+      "account_id": "ic_markets_demo_10001",
+      "broker_id": "ic_markets",
+      "platform_id": "mt5",
+      "account_name": "IC Markets Demo Account",
+      "account_number": "52716550",
+      "server": "ICMarketsSC-Demo",
+      "account_type": "demo",
+      "enabled": true,
+      "supports_data": true,
+      "supports_exec": true,
+      "credential_password": "ml&4fgHDRfahe9",
+      "recovery_note": "Credentials recovered from backup 2026-02-26. Serves as both BROKER account (execution) and DATA PROVIDER (market data)."
+    },
+    {
+      "account_id": "xm_demo_30001",
+      "broker_id": "xm",
+      "platform_id": "mt5",
+      "account_name": "XM Global Demo Account",
+      "account_number": "100919522",
+      "server": "XMGlobal-Demo",
+      "account_type": "demo",
+      "enabled": false,
+      "supports_data": false,
+      "supports_exec": false,
+      "credential_password": null,
+      "recovery_note": "Login recovered from git commit 23e64b0 (2026-01-30). Credentials lost in migration. User must run scripts/utilities/setup_mt5_demo.py to restore."
+    },
+    {
+      "account_id": "pepperstone_demo_50001",
+      "broker_id": "pepperstone",
+      "platform_id": "mt5",
+      "account_name": "Pepperstone Demo Account",
+      "account_number": null,
+      "server": "Pepperstone-Demo",
+      "account_type": "demo",
+      "enabled": false,
+      "supports_data": false,
+      "supports_exec": false,
+      "credential_password": null,
+      "recovery_note": "NEVER IMPLEMENTED in production. No git history or backups found. User must create account manually at https://pepperstone.com/demo-account and run scripts/utilities/setup_mt5_demo.py"
+    }
+  ]
+}

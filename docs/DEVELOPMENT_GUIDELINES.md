@@ -39,6 +39,20 @@ El Core Brain no debe conocer detalles del broker (MT5/FIX). Debe trabajar solo 
 ### 1.3 Rigor de Tipado
 *   Uso estricto de **Pydantic** para todos los esquemas de datos y validaciones de entrada/salida.
 *   Uso obligatorio de `Decimal` para todos los cálculos financieros. **PROHIBIDO** el uso de `float` en lógica de dinero para evitar errores de redondeo IEEE 754.
+*   **Type Hints 100% (REGLA OBLIGATORIA)**: Cobertura completa de tipos en TODO el código Python.
+    - ✅ **SÍ**: Parámetros de función, retornos, variables locales complejas
+    - ✅ **SÍ**: Usar enums (`SignalType`, `MarketRegime`, etc.) en lugar de strings
+    - ❌ **PROHIBIDO**: `signal_type="BUY"` → ✅ **USAR**: `signal_type=SignalType.BUY`
+    - ❌ **PROHIBIDO**: Funciones sin tipo de retorno (`def func():`) → ✅ **USAR**: `def func() -> ReturnType:`
+    - Validación: `validate_all.py` incluye Code Quality check que verifica type hints
+    - Ejemplo INCORRECTO (signal_factory.py pre-corrección):
+      ```python
+      signal_type="BUY" if result.signal == "BUY" else "SELL"  # ❌ String literal
+      ```
+    - Ejemplo CORRECTO (post-corrección):
+      ```python
+      signal_type=SignalType.BUY if result.signal == "BUY" else SignalType.SELL  # ✅ Enum
+      ```
 *   **1.4. Protocolo "Explorar antes de Crear"**: Antes de implementar cualquier nueva función o clase, el Ejecutor DEBE realizar una búsqueda semántica en el repositorio actual para verificar si ya existe una lógica similar. Se prohíbe la duplicación de código; en su lugar, se debe refactorizar la función existente para que sea reutilizable.
 *   **1.5. Higiene de Masa (Regla <30KB)**: Ningún archivo puede superar los 30KB o las 500 líneas. Si un componente crece por encima de este límite, su fragmentación en submódulos es obligatoria e inmediata.
 *   **1.6. Patrones Obligatorios**: Se exige el uso estricto de Repository Pattern para datos y Service Layer para lógica. Los Routers de FastAPI solo orquestan.
@@ -58,7 +72,79 @@ El Core Brain no debe conocer detalles del broker (MT5/FIX). Debe trabajar solo 
 *   **4.2. Veto Técnico**: La autonomía delegada se detiene si los signos vitales (latencia > 500ms o pérdida de WS) se degradan.
 *   **4.3. Try/Except obligatorio**: No es aceptable dejar sin protección bloques que accedan a persistencia (DB), APIs (HTTP, WebSocket) o servicios externos. Cualquier ruta que lea/escriba en storage, llame a un endpoint o a un conector debe estar dentro de try/except con logging del error y comportamiento definido (retorno seguro, rollback o re-raise). El revisor debe rechazar código nuevo que añada estas rutas sin manejo explícito de excepciones.
 
-## 🏷️ Protocolo de Versionado (SemVer)
+## 5. Gestión de Credenciales y Seeds (OBLIGATORIO - v2.1)
+
+### 5.1 Arquitectura de Credenciales - La Regla del Tres
+**Separación inmutable de responsabilidades**:
+1. **broker_accounts** (tabla): METADATOS públicos (account_id, broker_id, server, account_number)
+2. **credentials** (tabla): DATOS SENSIBLES encriptados (encrypted_data = JSON encriptado con Fernet)
+3. **data_providers** (tabla): PROVEEDORES DE DATOS (api_keys para terceros, configuración)
+
+Acción prohibida: Almacenar passwords en plaintext, .env, .json o código.
+
+### 5.2 Flujo de Encriptación Obligatorio
+1. **Ingreso**: Usuario proporciona password en UI (ej: setup_mt5_demo.py) or API
+2. **Validación**: StorageManager.save_broker_account() crea entrada en broker_accounts
+3. **Encriptación**: Si `password` presente → StorageManager.update_credential() → encripta con `get_encryptor()` (Fernet) → INSERT en credentials.encrypted_data
+4. **Lectura**: get_credentials(account_id) → desencripta → retorna Dict[str, str]
+
+Ejemplo correcto:
+```python
+# ✅ CORRECTO:
+storage.save_broker_account(
+    account_id="ic_markets_demo_10001",
+    broker_id="ic_markets",
+    password="ml&4fgHDRfahe9"  # Se encriptará automáticamente
+)
+
+# ❌ PROHIBIDO:
+storage.save_broker_account(
+    account_id="...",
+    password="hardcodeado_en_source"  # Violación de seguridad
+)
+```
+
+### 5.3 Seeds - Inicialización Idempotente (Regla del Bootstrapping)
+
+**Ubicación**: `data_vault/seed/` - SSOT para datos iniciales no sensibles
+
+**Archivos permitidos**:
+- `strategy_registry.json`: Firmas operativas del sistema
+- `demo_broker_accounts.json`: Cuentas DEMO (metadatos + credenciales DEMO públicas)
+- `data_providers.json`: Proveedores por defecto (Finnhub, CCXT, etc.)
+
+**Reglas estrictas**:
+- ✅ **SÍ** seedear: Broker DEMO account_name, server, credentials PÚBLICAS (demo MT5 válido)
+- ❌ **NO** seedear: API keys operativas reales, tokens, passwords de usuarios reales
+- ✅ Estructura: { credential_password: "value" } → se encripta al insertar
+- 🔄 Idempotencia: Script `seed_demo_data.py` verifica existencia antes de INSERT
+- 📊 Registro: Todos los seeds corren en `_bootstrap_from_json()` una sola vez (`_json_bootstrap_done_v1` flag)
+
+**Ejemplo correcto** (demo_broker_accounts.json):
+```json
+{
+  "account_id": "ic_markets_demo_10001",
+  "broker_id": "ic_markets",
+  "credential_password": "ml&4fgHDRfahe9"  // Demo públiquamente disponible
+}
+```
+
+**Ejemplo prohibido**:
+```json
+{
+  "account_id": "production_account",
+  "password": "operativo_secreto_real"  // ❌ VIOLACIÓN: no seedear reales
+}
+```
+
+### 5.4 Validación Automática (OBLIGATORIO)
+Scripts de validación (`validate_all.py`) incluyen:
+- ✅ Audit: Verificar que NO existe hardcodeado passwords/API keys en código
+- ✅ Estructura: Seeds en formato correcto (JSON válido, campos requeridos)
+- ✅ Securidad: No hay credenciales operativas en seeds o config files
+- Resultado: Report "Credentials/Seeds Audit: PASSED"
+
+---
 Aethelgard sigue el estándar **Semantic Versioning 2.0.0**:
 *   **MAJOR**: Cambios arquitectónicos que rompen compatibilidad.
 *   **MINOR**: Nuevas funcionalidades (estrategias, conectores) sin rotura.

@@ -64,3 +64,18 @@ def storage(tmp_path):
     """
     db_path = tmp_path / "test_db.db"
     return StorageManager(db_path=str(db_path))
+
+
+# ============================================================================
+# NEWSSANITIZER TEST CONSTANTS (SSOT - Single Source of Truth)
+# ============================================================================
+
+# Provider sources (economic calendar data providers)
+TEST_PROVIDER_SOURCE = "INVESTING"
+VALID_PROVIDER_SOURCES = ["INVESTING", "BLOOMBERG", "FOREXFACTORY"]
+
+# Import country codes from source of truth
+from core_brain.news_sanitizer import VALID_COUNTRY_CODES
+
+# Import impact normalizer
+from core_brain.news_sanitizer import IMPACT_NORMALIZER

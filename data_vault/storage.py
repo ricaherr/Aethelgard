@@ -2,7 +2,7 @@ import logging
 import os
 import sqlite3
 import json
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 from .base_repo import BaseRepository
 from .signals_db import SignalsMixin, calculate_deduplication_window
@@ -145,6 +145,17 @@ class StorageManager(
                             logger.info(f"[BOOTSTRAP] Seeded {len(strategies)} strategies from data_vault/seed/strategy_registry.json")
                 except Exception as e:
                     logger.warning(f"[BOOTSTRAP] Failed to load strategy_registry.json for bootstrap: {e}")
+            
+            # Seed demo broker accounts and data providers from data_vault/seed/
+            try:
+                # Import here to avoid circular imports
+                from scripts.migrations.seed_demo_data import seed_demo_broker_accounts, seed_data_providers
+                
+                seed_demo_broker_accounts()
+                seed_data_providers()
+                logger.info("[BOOTSTRAP] Seeded demo broker accounts and data providers")
+            except Exception as e:
+                logger.warning(f"[BOOTSTRAP] Could not seed demo data: {str(e)[:100]}")
                     
             # Mark bootstrap as done (idempotent flag)
             cursor.execute("INSERT OR REPLACE INTO system_state (key, value) VALUES (?, ?)", 
@@ -330,4 +341,220 @@ class StorageManager(
             logger.error(f"Error appending to system ledger: {e}")
         finally:
             self._close_conn(conn)
+
+    def get_economic_calendar(
+        self, 
+        days_back: int = 30, 
+        country_filter: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Retrieve economic calendar events - UNIFIED PRIMARY METHOD.
+        
+        Consolidated from separate get_economic_calendar() and get_economic_events()
+        to eliminate duplication (SSOT: Single Source of Truth).
+        
+        Args:
+            days_back: Include events from last N days (default 30)
+            country_filter: Filter by country code (optional, e.g., "USA", "EUR")
+        
+        Returns:
+            List of economic events sorted by time DESC (newest first)
+            Empty list if table doesn't exist (graceful degradation)
+        """
+        try:
+            conn = self._get_conn()
+            cursor = conn.cursor()
+            
+            # Check if economic_calendar table exists
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='economic_calendar'"
+            )
+            if not cursor.fetchone():
+                logger.debug("[StorageManager] economic_calendar table not found (graceful degradation)")
+                return []
+            
+            # Build query with optional filters
+            query = """
+                SELECT event_id, event_name, country, currency, impact_score,
+                       forecast, actual, previous, event_time_utc, created_at
+                FROM economic_calendar
+                WHERE event_time_utc >= datetime('now', ? || ' days')
+            """
+            params: List[Any] = [f"-{days_back}"]
+            
+            if country_filter:
+                query += " AND country = ?"
+                params.append(country_filter)
+            
+            query += " ORDER BY event_time_utc DESC LIMIT 100"
+            
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            
+            if not rows:
+                return []
+            
+            # Convert rows to dicts
+            events = []
+            for row in rows:
+                events.append({
+                    "event_id": row[0],
+                    "event_name": row[1],
+                    "country": row[2],
+                    "currency": row[3],
+                    "impact_score": row[4],
+                    "forecast": row[5],
+                    "actual": row[6],
+                    "previous": row[7],
+                    "event_time_utc": row[8],
+                    "created_at": row[9],
+                })
+            
+            logger.debug(f"[StorageManager] Retrieved {len(events)} economic events")
+            return events
+        
+        except Exception as e:
+            logger.warning(f"[StorageManager] get_economic_calendar() failed: {e}")
+            return []
+        finally:
+            self._close_conn(conn)
+
+    def save_economic_event(self, event: Dict[str, Any]) -> str:
+        """
+        Persist a sanitized economic event to economic_calendar table.
+        
+        INTERFACE_CONTRACTS.md Compliance:
+        - Accepts ONLY sanitized events (from NewsSanitizer)
+        - Assigns generated event_id (not from provider)
+        - Enforces immutability: no updates allowed post-persistence
+        - Logs success with event_id and impact_score
+        
+        Args:
+            event: Sanitized event dict with keys:
+                - event_id (UUID, system-assigned)
+                - provider_source (BLOOMBERG, INVESTING, FOREXFACTORY)
+                - event_name, country, currency, impact_score
+                - event_time_utc (ISO format)
+                - forecast, actual, previous (numeric, nullable)
+                - created_at, data_version (system fields)
+        
+        Returns:
+            event_id (UUID string) on success
+        
+        Raises:
+            PersistenceError: If INSERT fails
+        """
+        from core_brain.news_errors import PersistenceError
+        
+        try:
+            conn = self._get_conn()
+            cursor = conn.cursor()
+            
+            # Ensure economic_calendar table exists
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS economic_calendar (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_id TEXT UNIQUE NOT NULL,
+                    provider_source TEXT NOT NULL,
+                    event_name TEXT NOT NULL,
+                    country TEXT NOT NULL,
+                    currency TEXT,
+                    impact_score TEXT,
+                    forecast REAL,
+                    actual REAL,
+                    previous REAL,
+                    event_time_utc TEXT NOT NULL,
+                    is_verified BOOLEAN DEFAULT 0,
+                    data_version INTEGER DEFAULT 1,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            
+            # INSERT sanitized event
+            cursor.execute("""
+                INSERT INTO economic_calendar (
+                    event_id, provider_source, event_name, country, currency,
+                    impact_score, forecast, actual, previous, event_time_utc,
+                    is_verified, data_version, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                event.get("event_id"),
+                event.get("provider_source"),
+                event.get("event_name"),
+                event.get("country"),
+                event.get("currency"),
+                event.get("impact_score"),
+                event.get("forecast"),
+                event.get("actual"),
+                event.get("previous"),
+                event.get("event_time_utc"),
+                event.get("is_verified", False),
+                event.get("data_version", 1),
+                event.get("created_at"),
+            ))
+            
+            conn.commit()
+            event_id = event.get("event_id")
+            
+            logger.info(
+                f"[StorageManager] SAVED economic event: "
+                f"event_id={event_id}, impact={event.get('impact_score')}, "
+                f"name={event.get('event_name')}"
+            )
+            
+            return event_id
+            
+        except Exception as e:
+            raise PersistenceError(f"Failed to save economic event: {str(e)}")
+        finally:
+            self._close_conn(conn)
+
+    def get_economic_events(
+        self,
+        days_back: int = 30,
+        country_filter: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        DEPRECATED: Use get_economic_calendar() instead.
+        
+        This method is maintained for backwards compatibility but delegates
+        to get_economic_calendar() to maintain single responsibility principle.
+        
+        Args:
+            days_back: Include events from last N days (default 30)
+            country_filter: Filter by country code (optional)
+        
+        Returns:
+            List of economic events (delegates to get_economic_calendar)
+        """
+        logger.debug(
+            "[StorageManager] get_economic_events() is deprecated, "
+            "use get_economic_calendar() instead"
+        )
+        return self.get_economic_calendar(days_back=days_back, country_filter=country_filter)
+
+    def update_economic_event(self, event_id: str, updates: Dict[str, Any]) -> None:
+        """
+        IMMUTABILITY ENFORCEMENT: Updates to economic records are PROHIBITED.
+        
+        INTERFACE_CONTRACTS.md Pilar 3:
+        - Once persisted, economic_calendar records are READ-ONLY
+        - Corrections must be new INSERTs with new event_id
+        - This method ALWAYS raises ImmutabilityViolation
+        
+        Args:
+            event_id: UUID of record (not updatable)
+            updates: Requested fields (not allowed)
+        
+        Raises:
+            ImmutabilityViolation: Always (by design)
+        """
+        from core_brain.news_errors import ImmutabilityViolation
+        
+        logger.error(f"[StorageManager] UPDATE BLOCKED on {event_id}: ImmutabilityViolation")
+        raise ImmutabilityViolation(
+            f"Update attempt on immutable economic record {event_id}. "
+            f"POST-PERSISTENCE UPDATES ARE FORBIDDEN. "
+            f"Corrections must be new INSERTs with new event_id."
+        )
 

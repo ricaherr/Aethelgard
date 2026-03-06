@@ -19,7 +19,7 @@ from collections import defaultdict
 import pandas as pd
 
 from models.signal import (
-    Signal, MarketRegime, MembershipTier, ConnectorType
+    Signal, SignalType, MarketRegime, MembershipTier, ConnectorType
 )
 from data_vault.storage import StorageManager
 from core_brain.notification_service import NotificationService, NotificationCategory
@@ -29,6 +29,11 @@ from core_brain.confluence import MultiTimeframeConfluenceAnalyzer
 from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
 from core_brain.tech_utils import TechnicalAnalyzer
 from core_brain.services.fundamental_guard import FundamentalGuardService
+from core_brain.signal_converter import StrategySignalConverter
+from core_brain.signal_enricher import SignalEnricher
+from core_brain.signal_deduplicator import SignalDeduplicator
+from core_brain.signal_conflict_analyzer import SignalConflictAnalyzer
+from core_brain.signal_trifecta_optimizer import SignalTrifectaOptimizer
 
 # Import strategies
 from core_brain.strategies.base_strategy import BaseStrategy
@@ -95,6 +100,25 @@ class SignalFactory:
         self.confluence_analyzer = confluence_analyzer
         self.trifecta_analyzer = trifecta_analyzer
         
+        # Inyectar Signal Converter y Enricher (NUEVA INFRAESTRUCTURA)
+        self.signal_converter = StrategySignalConverter()
+        self.signal_enricher = SignalEnricher(
+            storage_manager=storage_manager,
+            fundamental_guard=self.fundamental_guard
+        )
+        
+        # Inyectar módulos Phase 2 de fragmentación
+        self.signal_deduplicator = SignalDeduplicator(
+            storage_manager=storage_manager,
+            mt5_connector=mt5_connector
+        )
+        self.signal_conflict_analyzer = SignalConflictAnalyzer(
+            confluence_analyzer=confluence_analyzer
+        )
+        self.signal_trifecta_optimizer = SignalTrifectaOptimizer(
+            trifecta_analyzer=trifecta_analyzer
+        )
+        
         if not self.notifier or not self.notifier.is_configured():
             logger.warning("NotificationEngine no está configurado o no tiene canales activos.")
 
@@ -141,23 +165,37 @@ class SignalFactory:
         for strategy_id, engine in self.strategy_engines.items():
             try:
                 # Delegar análisis al motor compilado
-                signal = await engine.analyze(symbol, df, regime)
+                # Hay dos tipos: PYTHON_CLASS strategies (con .analyze) y JSON_SCHEMA (con .execute_from_registry)
+                # Chequear primero por execute_from_registry (específico de JSON_SCHEMA)
+                if hasattr(engine, 'execute_from_registry') and callable(getattr(engine, 'execute_from_registry', None)):
+                    # JSON_SCHEMA strategy: use UniversalStrategyEngine.execute_from_registry()
+                    result = await engine.execute_from_registry(strategy_id, symbol, df, regime)
+                    # Convertir StrategySignal → Signal usando StrategySignalConverter
+                    signal = StrategySignalConverter.convert_from_universal_engine(
+                        result, symbol, strategy_id, timeframe, trace_id, provider_source
+                    )
+                elif hasattr(engine, 'analyze') and callable(getattr(engine, 'analyze', None)):
+                    # PYTHON_CLASS strategy: directly call analyze()
+                    raw_signal = await engine.analyze(symbol, df, regime)
+                    # Procesar Signal directo usando StrategySignalConverter
+                    signal = StrategySignalConverter.convert_from_python_class(
+                        raw_signal, symbol, strategy_id, timeframe, trace_id, provider_source
+                    )
+                else:
+                    logger.warning(f"[{symbol}] Strategy engine {strategy_id} has neither analyze() nor execute_from_registry() method")
+                    continue
                 
                 if signal:
-                    # Set timeframe in signal if provided
+                    # Set metadata fields if provided
                     if timeframe:
                         signal.timeframe = timeframe
-                    
-                    # Set trace_id for pipeline tracking
                     if trace_id:
                         signal.trace_id = trace_id
-                    
-                    # Set provider_source for Closed-Loop Sync
                     if provider_source:
                         signal.provider_source = provider_source
                     
                     # Validar que no sea duplicado antes de procesar
-                    if self._is_duplicate_signal(signal):
+                    if self.signal_deduplicator.is_duplicate(signal):
                         logger.info(
                             f"[{symbol}] Señal {signal.signal_type} descartada: "
                             f"ya existe posición abierta o señal reciente"
@@ -194,225 +232,19 @@ class SignalFactory:
                     # ──────────────────────────────────────────────────────────────────────────────────
                     # ACCIÓN 2: Enriquecimiento con Reasoning y Affinity Score (UI Real-Time Feed)
                     # ──────────────────────────────────────────────────────────────────────────────────
-                    await self._enrich_signal_with_metadata(signal, symbol, strategy)
+                    await self.signal_enricher.enrich(signal, symbol, strategy_id)
                     
                     generated_signals.append(signal)
             
             except Exception as e:
                 logger.error(
-                    f"Error running strategy {strategy.strategy_id} on {symbol}: {e}", 
+                    f"Error running strategy {strategy_id} on {symbol}: {e}", 
                     exc_info=True
                 )
 
         return generated_signals
 
-    async def _enrich_signal_with_metadata(
-        self, signal: Signal, symbol: str, strategy: BaseStrategy
-    ) -> None:
-        """
-        Enriquece la señal con metadata para UI Real-Time Feed.
-        
-        Responsabilidades:
-        1. Extraer affinity_score de la estrategia
-        2. Consultar FundamentalGuardService para veto por noticias
-        3. Construir reasoning detallado (por qué la señal fue aprobada/rechazada)
-        4. Enriquecer signal.metadata con estos datos
-        
-        Args:
-            signal: Señal a enriquecer
-            symbol: Símbolo del activo
-            strategy: Estrategia que generó la señal
-        
-        Returns:
-            None (modifica signal.metadata in-place)
-        """
-        try:
-            # ── 1. Extraer Affinity Score ────────────────────────────────────
-            affinity_score = 0.5  # Default
-            try:
-                strategy_scores = self.storage_manager.get_strategy_affinity_scores()
-                if strategy_scores and strategy.strategy_id in strategy_scores:
-                    affinity_by_symbol = strategy_scores[strategy.strategy_id]
-                    if isinstance(affinity_by_symbol, dict) and symbol in affinity_by_symbol:
-                        affinity_score = float(affinity_by_symbol[symbol])
-            except Exception as e:
-                logger.debug(f"[{symbol}] Failed to get affinity score: {e}")
 
-            signal.metadata["affinity_score"] = affinity_score
-
-            # ── 2. Consultar FundamentalGuardService ─────────────────────────
-            fundamental_safe = True
-            fundamental_reason = ""
-            
-            if self.fundamental_guard:
-                try:
-                    fundamental_safe, fundamental_reason = self.fundamental_guard.is_market_safe(symbol)
-                    if not fundamental_safe:
-                        logger.warning(
-                            f"🔴 [{symbol}] Signal vetoed by FundamentalGuard: {fundamental_reason}"
-                        )
-                except Exception as e:
-                    logger.warning(f"[{symbol}] FundamentalGuard check failed: {e}")
-                    fundamental_safe = True  # Fallback: assume safe
-
-            signal.metadata["fundamental_safe"] = fundamental_safe
-            signal.metadata["fundamental_reason"] = fundamental_reason
-
-            # ── 3. Construir Reasoning ───────────────────────────────────────
-            reasoning_parts = [
-                f"Strategy: {strategy.strategy_id}",
-                f"Affinity: {affinity_score:.2f}",
-                f"Confidence: {signal.confidence:.2f}",
-            ]
-
-            if not fundamental_safe:
-                reasoning_parts.append(f"🔴 Fundamental Veto: {fundamental_reason}")
-            else:
-                if fundamental_reason:
-                    reasoning_parts.append(f"🟠 {fundamental_reason}")
-                else:
-                    reasoning_parts.append("✅ No fundamental restrictions")
-
-            signal.metadata["reasoning"] = " | ".join(reasoning_parts)
-
-            # ── 4. Add WebSocket Payload ─────────────────────────────────────
-            # Estructura para envío directo a UI via WebSocket
-            signal.metadata["websocket_payload"] = {
-                "symbol": symbol,
-                "signal_type": signal.signal_type.value if hasattr(signal.signal_type, 'value') else str(signal.signal_type),
-                "timeframe": signal.timeframe or "M5",
-                "confidence": signal.confidence,
-                "affinity_score": affinity_score,
-                "entry_price": signal.entry_price,
-                "stop_loss": signal.stop_loss,
-                "take_profit": signal.take_profit,
-                "fundamental_safe": fundamental_safe,
-                "fundamental_reason": fundamental_reason,
-                "reasoning": signal.metadata.get("reasoning", ""),
-                "strategy_id": strategy.strategy_id,
-                "timestamp": signal.timestamp.isoformat(),
-                "status": "APPROVED" if fundamental_safe else "VETOED",
-            }
-
-            logger.debug(
-                f"[{symbol}] Signal enriched: "
-                f"affinity={affinity_score:.2f}, fundamental_safe={fundamental_safe}"
-            )
-
-        except Exception as e:
-            logger.error(f"[{symbol}] Error enriching signal metadata: {e}", exc_info=True)
-            # Fallback: ensure minimal metadata
-            signal.metadata["affinity_score"] = 0.5
-            signal.metadata["fundamental_safe"] = True
-            signal.metadata["fundamental_reason"] = ""
-            signal.metadata["reasoning"] = f"Error during enrichment: {str(e)}"
-
-    def _is_duplicate_signal(self, signal: Signal) -> bool:
-        """
-        Verifica si la señal es un duplicado.
-        
-        Criterios de deduplicación (clave única: symbol + signal_type + timeframe):
-        - Ya existe una posición abierta para el símbolo
-        - Ya existe una señal reciente para el mismo (symbol, signal_type, timeframe)
-        
-        Esto permite señales del MISMO instrumento en DIFERENTES timeframes.
-        Ejemplo: EURUSD BUY en M5 (scalping) y EURUSD BUY en H4 (swing) son válidas simultáneamente.
-        
-        Args:
-            signal: Señal a validar
-        
-        Returns:
-            True si es duplicado, False si es válida
-        """
-        signal_type_str = signal.signal_type.value if hasattr(signal.signal_type, 'value') else str(signal.signal_type)
-        
-        # FASE 2.5 FIX: Normalize symbol BEFORE checking for duplicates
-        # Providers send 'GBPUSD=X', but we save 'GBPUSD'.
-        # We must check against the NORMALIZED symbol.
-        normalized_symbol = signal.symbol
-        if signal.connector_type == ConnectorType.METATRADER5:
-            try:
-                # Lazy import to avoid circular dependency
-                from connectors.mt5_connector import MT5Connector
-                normalized_symbol = MT5Connector.normalize_symbol(signal.symbol)
-            except ImportError:
-                # Fallback: simple replace if connector not available
-                normalized_symbol = signal.symbol.replace("=X", "")
-            except Exception as e:
-                logger.warning(f"Normalization failed in is_duplicate_signal: {e}")
-        
-        # Verificar posición abierta (filtrar por symbol + timeframe)
-        if self.storage_manager.has_open_position(normalized_symbol, signal.timeframe):
-            # Reconcilia directamente con MT5 reality
-            if self.mt5_connector:
-                logger.debug(f"[CHECK] Reconciling position for {signal.symbol} with MT5")
-                # Get open signal ID
-                open_signal_id = self.storage_manager.get_open_signal_id(signal.symbol)
-                if open_signal_id:
-                    # Check MT5 positions
-                    real_positions = self.mt5_connector.get_open_positions()
-                    if real_positions is not None:
-                        real_symbols = {pos.get('symbol') for pos in real_positions}
-                        if normalized_symbol not in real_symbols:
-                            # Ghost position detected - clear it
-                            self.storage_manager._clear_ghost_position_inline(normalized_symbol)
-                            logger.info(f"[CLEAN] Cleared ghost position for {normalized_symbol} (ID: {open_signal_id})")
-                            # EDGE Learning
-                            self.storage_manager.save_edge_learning(
-                                detection=f"Discrepancia DB vs MT5: {signal.symbol} tiene posición en DB pero no en MT5",
-                                action_taken="Limpieza de registros fantasma",
-                                learning="El delay de cierre en MT5 es de 200ms, ajustar timeout",
-                                details=f"Signal ID: {open_signal_id}"
-                            )
-                        else:
-                            # Position exists in MT5, keep as is
-                            pass
-                    else:
-                        logger.warning("Failed to get MT5 positions for reconciliation")
-                # Check again after reconciliation
-                if self.storage_manager.has_open_position(signal.symbol):
-                    # Volcado por excepción técnica: posición abierta
-                    score = signal.metadata.get('score', 0)
-                    lot_size = signal.volume
-                    risk_usd = abs(signal.entry_price - signal.stop_loss) * lot_size * 100000
-                    ghost_id = self.storage_manager.get_open_signal_id(signal.symbol)
-                    dump = {
-                        "Razón": "Posición abierta existente",
-                        "Score": score,
-                        "LotSize": lot_size,
-                        "Riesgo_$": round(risk_usd, 2),
-                        "ID_Posicion_Existente": ghost_id or "UNKNOWN"
-                    }
-                    logger.info(f"[DUMP] VOLCADO EXCEPCION: Señal descartada por posición abierta: {dump}")
-                    return True
-            else:
-                # Sin MT5, asumir existe
-                score = signal.metadata.get('score', 0)
-                lot_size = signal.volume
-                risk_usd = abs(signal.entry_price - signal.stop_loss) * lot_size * 100000
-                dump = {
-                    "Razón": "Posición abierta (sin MT5 para verificar)",
-                    "Score": score,
-                    "LotSize": lot_size,
-                    "Riesgo_$": round(risk_usd, 2),
-                    "ID_Posicion_Existente": "UNKNOWN"
-                }
-                logger.info(f"[DUMP] VOLCADO EXCEPCION: Señal descartada por posición abierta: {dump}")
-                return True
-        
-        # Check DB for recent duplicates using NORMALIZED symbol
-        if self.storage_manager.has_recent_signal(
-            normalized_symbol, 
-            signal_type_str, 
-            timeframe=signal.timeframe
-        ):
-            logger.info(
-                f"[DUPLICATE] Signal for {normalized_symbol} ({signal_type_str} {signal.timeframe}) "
-                f"skipped (Normalized from {signal.symbol})"
-            )
-            return True
-            
-        return False
 
     async def _process_valid_signal(self, signal: Signal) -> None:
         """Maneja persistencia y notificación de una señal válida."""
@@ -559,13 +391,12 @@ class SignalFactory:
             logger.info(f"DEBUG: Raw signals generated: {len(all_signals)}")
 
             # FASE 2.5: Apply Multi-Timeframe Confluence
-            # if all_signals and self.confluence_analyzer.enabled:
-            #     all_signals = self._apply_confluence(all_signals, scan_results)
+            if all_signals and self.confluence_analyzer.enabled:
+                all_signals = self.signal_conflict_analyzer.apply_confluence(all_signals, scan_results)
             
             # FASE 2.6: Apply Trifecta Optimization (Oliver Velez Multi-TF)
-            # FASE 2.6: Apply Trifecta Optimization
             if all_signals:
-                all_signals = self._apply_trifecta_optimization(all_signals, scan_results)
+                all_signals = self.signal_trifecta_optimizer.optimize(all_signals, scan_results)
 
             if all_signals:
                 logger.info(
@@ -578,153 +409,6 @@ class SignalFactory:
         except Exception as e:
             logger.error(f"CRITICAL ERROR in generate_signals_batch: {e}", exc_info=True)
             return []
-    
-    def _apply_confluence(
-        self, 
-        signals: List[Signal], 
-        scan_results: Dict[str, Dict]
-    ) -> List[Signal]:
-        """
-        Apply multi-timeframe confluence to signals.
-        
-        Groups signals by symbol, extracts regime from all timeframes,
-        and applies confluence analysis.
-        
-        Args:
-            signals: List of generated signals
-            scan_results: Original scan data (needed for regime context)
-        
-        Returns:
-            Signals with adjusted confidence based on confluence
-        """
-        # Group scan results by symbol to get regime context
-        symbol_regimes = defaultdict(dict)
-        for key, data in scan_results.items():
-            symbol = data.get("symbol")
-            timeframe = data.get("timeframe")
-            regime = data.get("regime")
-            
-            if symbol and timeframe and regime:
-                symbol_regimes[symbol][timeframe] = regime
-        
-        # Apply confluence to each signal
-        adjusted_signals = []
-        for signal in signals:
-            # Get timeframe regimes for this symbol
-            timeframe_regimes = symbol_regimes.get(signal.symbol, {})
-            
-            # Remove primary signal's timeframe (don't compare M5 to M5)
-            primary_timeframe = signal.timeframe
-            higher_timeframes = {
-                tf: regime 
-                for tf, regime in timeframe_regimes.items() 
-                if tf != primary_timeframe
-            }
-            
-            if higher_timeframes:
-                # Apply confluence
-                adjusted_signal = self.confluence_analyzer.analyze_confluence(
-                    signal, higher_timeframes
-                )
-                adjusted_signals.append(adjusted_signal)
-            else:
-                # No higher timeframes available, keep signal as-is
-                adjusted_signals.append(signal)
-        
-        return adjusted_signals
-
-    def _apply_trifecta_optimization(
-        self, 
-        signals: List[Signal], 
-        scan_results: Dict[str, Dict]
-    ) -> List[Signal]:
-        """
-        Apply Trifecta Logic (Oliver Velez 2m-5m-15m) to filter and score signals.
-        
-        Only applies to Oliver Velez strategy signals.
-        Recalculates score with 40% original + 60% trifecta.
-        Filters out signals with final score < 60.
-        
-        Args:
-            signals: List of generated signals
-            scan_results: Original scan data with DataFrames for M1, M5, M15
-        
-        Returns:
-            Filtered and re-scored signals
-        """
-        optimized_signals = []
-        
-        # Group market data by symbol for multi-timeframe analysis
-        # IMPORTANT: Normalize symbols to match signal.symbol format (remove Yahoo Finance suffix)
-        symbol_data = defaultdict(dict)
-        for key, data in scan_results.items():
-            if data.get("df") is not None:
-                # Normalize: "EURUSD=X" -> "EURUSD" to match signal.symbol
-                normalized_symbol = data["symbol"].replace("=X", "")
-                symbol_data[normalized_symbol][data["timeframe"]] = data["df"]
-
-        for signal in signals:
-            # Only apply to Oliver Velez strategy signals
-            strategy_id = str(signal.metadata.get("strategy_id", "")).lower()
-            if "oliver" in strategy_id:
-                market_data = symbol_data.get(signal.symbol, {})
-                
-                # Analyze Trifecta
-                analysis = self.trifecta_analyzer.analyze(signal.symbol, market_data)
-                
-                if analysis["valid"]:
-                    # Check if operating in DEGRADED MODE (fallback)
-                    is_degraded = analysis.get("metadata", {}).get("degraded_mode", False)
-                    
-                    if is_degraded:
-                        # HYBRID FALLBACK 2: Pass signal without Trifecta modification
-                        signal.metadata["trifecta_degraded"] = True
-                        signal.metadata["trifecta_missing_data"] = analysis["metadata"]["missing_timeframes"]
-                        
-                        logger.warning(
-                            f"[WARNING] [{signal.symbol}] Trifecta DEGRADED MODE: "
-                            f"Passing original signal without multi-TF filtering. "
-                            f"Missing: {analysis['metadata']['missing_timeframes']}"
-                        )
-                        
-                        # Keep original signal as-is (no score modification)
-                        optimized_signals.append(signal)
-                    else:
-                        # FULL TRIFECTA MODE: Apply scoring and filtering
-                        signal.metadata["trifecta_score"] = analysis["score"]
-                        signal.metadata["trifecta_data"] = analysis["metadata"]
-                        
-                        # Combine original score with Trifecta score (weighted average)
-                        original_score = signal.metadata.get("score", 50.0)
-                        final_score = (original_score * 0.4) + (analysis["score"] * 0.6)
-                        signal.metadata["score"] = final_score
-                        
-                        # Update signal confidence (0-1 scale)
-                        signal.confidence = final_score / 100.0
-                        
-                        # Filter: only keep signals with final score >= 60
-                        if final_score >= 60.0:
-                            optimized_signals.append(signal)
-                            logger.info(
-                                f"[OK] [{signal.symbol}] Trifecta APPROVED: "
-                                f"Original={original_score:.1f}, Trifecta={analysis['score']:.1f}, "
-                                f"Final={final_score:.1f}"
-                            )
-                        else:
-                            logger.info(
-                                f"[FILTER] [{signal.symbol}] Trifecta FILTERED: "
-                                f"Final score {final_score:.1f} < 60 threshold"
-                            )
-                else:
-                    # FULL REJECTION (not degraded mode, but failed validation)
-                    logger.info(
-                        f"[REJECT] [{signal.symbol}] Trifecta REJECTED: {analysis['reason']}"
-                    )
-            else:
-                # Pass non-Oliver strategies without changes
-                optimized_signals.append(signal)
-                
-        return optimized_signals
 
     async def process_scan_results(self, scan_results: Dict[str, MarketRegime]) -> List[Signal]:
         """

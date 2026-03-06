@@ -27,13 +27,17 @@ const INITIAL_STAGES: AuditStage[] = [
     { id: 'QA Guard', label: 'QA Integrity Guard', icon: <ShieldCheck size={14} />, status: 'PENDING' },
     { id: 'Code Quality', label: 'Complexity Density', icon: <FileCode size={14} />, status: 'PENDING' },
     { id: 'UI Quality', label: 'React Ecosystem', icon: <Zap size={14} />, status: 'PENDING' },
+    { id: 'UI Build', label: 'TypeScript Compilation', icon: <Zap size={14} />, status: 'PENDING' },
     { id: 'Manifesto', label: 'Aethelgard Manifesto', icon: <FileCode size={14} />, status: 'PENDING' },
     { id: 'Patterns', label: 'Design Patterns', icon: <ShieldCheck size={14} />, status: 'PENDING' },
     { id: 'Core Tests', label: 'Core Consensus Tests', icon: <Beaker size={14} />, status: 'PENDING' },
+    { id: 'SPRINT S007', label: 'Sprint S007 Integration', icon: <Beaker size={14} />, status: 'PENDING' },
     { id: 'Integration', label: 'Integration Bridges', icon: <Network size={14} />, status: 'PENDING' },
     { id: 'Tenant Security', label: 'Endpoint Authorization', icon: <Lock size={14} />, status: 'PENDING' },
     { id: 'Connectivity', label: 'Broker Uplink', icon: <Network size={14} />, status: 'PENDING' },
-    { id: 'System DB', label: 'Data Vault Integrity', icon: <Database size={14} />, status: 'PENDING' }
+    { id: 'System DB', label: 'Data Vault Integrity', icon: <Database size={14} />, status: 'PENDING' },
+    { id: 'DB Integrity', label: 'Database Uniqueness', icon: <Database size={14} />, status: 'PENDING' },
+    { id: 'Documentation', label: 'Documentation Audit', icon: <FileCode size={14} />, status: 'PENDING' }
 ];
 
 export function AuditLiveMonitor({ isOpen, onClose, thoughts, runRepair }: AuditLiveMonitorProps) {
