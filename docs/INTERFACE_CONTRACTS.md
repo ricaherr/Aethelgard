@@ -206,7 +206,7 @@ Before Executor implements NewsSanitizer:
 | Immutability maintained | Zero successful UPDATE operations on economic_calendar |
 | Agnosis preserved | Works with provider_source: BLOOMBERG, INVESTING, FOREXFACTORY |
 | Traceability | Every event logged with source, impact_score, event_id |
-| Performance | Batch processing < 100ms per event (latency check + schema validation) |
+| Performance | Batch processing < 50ms per event (latency check + schema validation) |
 
 ---
 
@@ -269,7 +269,7 @@ Economic events affect currencies. Mapping:
 
 ### **Implementation Requirements**
 
-1. **Real-time Query**: `get_trading_status(symbol)` must run in < 100ms
+1. **Real-time Query**: `get_trading_status(symbol)` must run in < 50ms
 2. **Caching**: Cache results for 60 seconds to avoid repeated DB queries
 3. **Graceful Degradation**: If economic_calendar down, return `is_tradeable=True` (fail open, let trading continue)
 4. **Agnosis Maintained**: MainOrchestrator doesn't know about Investing.com; only asks manager
@@ -281,7 +281,7 @@ Economic events affect currencies. Mapping:
 |-----------|-------------|
 | Correct symbol mapping | USD pairs blocked during HIGH US events |
 | Buffer timing | Pre/post buffers respected (±30 sec tolerance) |
-| Performance | Response time < 100ms |
+| Performance | Response time < 50ms |
 | Agnosis | MainOrchestrator zero knowledge of provider sources |
 | Graceful degradation | System continues if economic data unavailable |
 | Traceability | Every veto decision has trace_id |

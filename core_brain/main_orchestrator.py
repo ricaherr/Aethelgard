@@ -1035,6 +1035,16 @@ class MainOrchestrator:
                             # HIGH impact: Prepare position management
                             if status.get("restriction_level") == "BLOCK":
                                 logger.warning(f"[ECON-VETO] HIGH IMPACT: Adjusting open positions for {symbol} to Break-Even")
+                                # Activate RiskManager lockdown for BLOCK-level events
+                                try:
+                                    await self.risk_manager.activate_lockdown(
+                                        symbol=symbol,
+                                        reason=f'ECON_VETO: {status.get("next_event", "UNKNOWN")}',
+                                        trace_id=trace_id
+                                    )
+                                    logger.info(f"[ECON-VETO] Lockdown activated for {symbol} due to high-impact economic event")
+                                except Exception as e:
+                                    logger.error(f"[ECON-VETO] Failed to activate lockdown for {symbol}: {e}", exc_info=True)
                                 # Will be handled in position manager below
                         
                         elif status.get("restriction_level") == "CAUTION":
@@ -1187,6 +1197,17 @@ class MainOrchestrator:
                             logger.warning(
                                 f"[ECON-VETO-EXEC] HIGH IMPACT: Adjusting positions for {signal.symbol} to Break-Even"
                             )
+                            # Activate lockdown for this symbol due to BLOCK-level event
+                            try:
+                                await self.risk_manager.activate_lockdown(
+                                    symbol=signal.symbol,
+                                    reason=f'ECON_VETO: {current_status.get("next_event", "UNKNOWN")}',
+                                    trace_id=getattr(signal, 'trace_id', None)
+                                )
+                                logger.info(f"[ECON-VETO-EXEC] Lockdown activated for {signal.symbol}")
+                            except Exception as e:
+                                logger.error(f"[ECON-VETO-EXEC] Failed to activate lockdown: {e}", exc_info=True)
+                            
                             breakeven_result = await self.risk_manager.adjust_stops_to_breakeven(
                                 symbol=signal.symbol,
                                 reason=f"HIGH impact economic event: {current_status.get('next_event', 'UNKNOWN')}"
