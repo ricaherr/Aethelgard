@@ -67,6 +67,28 @@ def storage(tmp_path):
 
 
 # ============================================================================
+# PHASE D: EXECUTION MODE TEST CONSTANTS (SSOT - Single Source of Truth)
+# ============================================================================
+# Centralized constants for execution mode, provider, and account type tests.
+# These are imported from models.execution_mode for runtime use.
+
+from models.execution_mode import ExecutionMode, Provider, AccountType
+
+# SSOT constant definitions for tests (use these instead of hardcoded strings)
+TEST_EXECUTION_MODE_LIVE = ExecutionMode.LIVE.value
+TEST_EXECUTION_MODE_SHADOW = ExecutionMode.SHADOW.value
+TEST_EXECUTION_MODE_QUARANTINE = ExecutionMode.QUARANTINE.value
+
+TEST_PROVIDER_MT5 = Provider.MT5.value
+TEST_PROVIDER_NT = Provider.NT.value
+TEST_PROVIDER_FIX = Provider.FIX.value
+TEST_PROVIDER_INTERNAL = Provider.INTERNAL.value
+
+TEST_ACCOUNT_TYPE_REAL = AccountType.REAL.value
+TEST_ACCOUNT_TYPE_DEMO = AccountType.DEMO.value
+
+
+# ============================================================================
 # NEWSSANITIZER TEST CONSTANTS (SSOT - Single Source of Truth)
 # ============================================================================
 

@@ -15,6 +15,7 @@ TRACE_ID: STRAT-SESS-EXT-0001
 import logging
 from typing import Optional, Dict, Any
 from datetime import datetime
+from models.signal import Signal, SignalType, ConnectorType
 
 logger = logging.getLogger(__name__)
 
@@ -40,16 +41,17 @@ class SessionExtension0001Strategy:
         self.trace_id = "STRAT-SESS-EXT-0001"
         logger.info(f"[{self.trace_id}] SessionExtension0001Strategy initialized")
     
-    def analyze(self, symbol: str, df: Any) -> Dict[str, Any]:
+    async def analyze(self, symbol: str, df: Any, regime: Optional[str] = None) -> Optional[Signal]:
         """
         Analiza para señales de extensión de sesión.
         
         Args:
             symbol: Par de trading
             df: DataFrame OHLCV
+            regime: Régimen actual del mercado (TREND, RANGE, VOLATILE, SHOCK)
             
         Returns:
-            Dict con análisis: signal, direction, confidence, reason
+            Signal object si hay oportunidad, None en caso contrario
         """
         try:
             # Obtener estado de sesión actual
@@ -57,41 +59,43 @@ class SessionExtension0001Strategy:
             current_session = session_stats.get("session", "CLOSED")
             is_overlap = session_stats.get("is_overlap", False)
             
-            # Signal por defecto: sin señal
-            signal = {
-                "symbol": symbol,
-                "direction": None,
-                "confidence": 0.0,
-                "reason": "session_extension_analyze",
-                "session": current_session,
-                "is_overlap": is_overlap,
-                "timestamp": datetime.utcnow().isoformat(),
-                "trace_id": self.trace_id,
-            }
+            # Si no hay solapamiento, sin señal
+            if not is_overlap:
+                logger.debug(
+                    f"[{self.trace_id}] {symbol}: No session overlap detected. Skipping."
+                )
+                return None
             
-            # Si hay solapamiento, hay más volatilidad (oportunidad)
-            if is_overlap:
-                signal.update({
-                    "confidence": 0.5,
+            # Si hay solapamiento, generar Signal de oportunidad
+            signal = Signal(
+                symbol=symbol,
+                connector=ConnectorType.METATRADER5,
+                signal_type=SignalType.BUY,  # Session extension indicates potential continuation
+                entry_price=0.0,  # Will be filled by executor
+                stop_loss=0.0,    # Will be calculated by executor  
+                take_profit=0.0,  # Will be calculated by executor
+                direction="LONG" if current_session != "ASIA" else "SHORT",  # Simple heuristic
+                confidence=0.5,
+                timestamp=datetime.utcnow().isoformat(),
+                strategy="SESS_EXT_0001",
+                trace_id=self.trace_id,
+                metadata={
+                    "session": current_session,
+                    "is_overlap": is_overlap,
                     "reason": "session_overlap_detected",
-                })
+                }
+            )
             
             logger.debug(
-                f"[{self.trace_id}] {symbol}: Session={current_session}, "
-                f"Overlap={is_overlap}, Signal confidence={signal['confidence']}"
+                f"[{self.trace_id}] {symbol}: Session overlap detected. "
+                f"Overlap={is_overlap}, Direction={signal.direction}"
             )
             
             return signal
             
         except Exception as e:
             logger.error(f"[{self.trace_id}] Error analyzing {symbol}: {e}")
-            return {
-                "symbol": symbol,
-                "direction": None,
-                "confidence": 0.0,
-                "reason": f"error: {str(e)}",
-                "timestamp": datetime.utcnow().isoformat(),
-            }
+            return None
     
     def get_metadata(self) -> Dict[str, Any]:
         """Retorna metadatos de la estrategia."""

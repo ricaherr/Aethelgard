@@ -22,6 +22,7 @@ from core_brain.risk_manager import RiskManager
 from core_brain.edge_tuner import EdgeTuner
 from core_brain.threshold_optimizer import ThresholdOptimizer
 from models.broker_event import BrokerTradeClosedEvent, BrokerEvent, BrokerEventType
+from models.execution_mode import ExecutionMode, Provider, AccountType, BROKER_KEYWORDS_TO_PROVIDER, BROKER_KEYWORDS_TO_ACCOUNT_TYPE
 
 logger = logging.getLogger(__name__)
 
@@ -207,7 +208,7 @@ class TradeClosureListener:
     
     async def _save_trade_with_retry(self, trade: BrokerTradeClosedEvent) -> bool:
         """
-        Save trade to DB with exponential backoff retry on lock.
+        Save trade to DB with exponential backoff retry on lock. Includes execution_mode and provider metadata.
         
         Implements resilience: If DB is locked, retry instead of failing.
         
@@ -217,6 +218,11 @@ class TradeClosureListener:
         Returns:
             True if saved, False if failed after retries
         """
+        # FASE D: Determine execution_mode, provider, and account_type for audit trail
+        execution_mode = await self._get_execution_mode(trade.signal_id)
+        provider = self._map_broker_id_to_provider(trade.broker_id)
+        account_type = await self._get_account_type(trade.broker_id)
+        
         trade_data = {
             "id": trade.ticket,
             "signal_id": trade.signal_id,
@@ -229,7 +235,11 @@ class TradeClosureListener:
             "pips": trade.pips,
             "exit_reason": trade.exit_reason,
             "close_time": trade.exit_time.isoformat(),
-            "metadata": trade.metadata or {}
+            "metadata": trade.metadata or {},
+            # FASE D: New fields for routing & audit
+            "execution_mode": execution_mode,
+            "provider": provider,
+            "account_type": account_type
         }
         
         for attempt in range(self.max_retries):
@@ -260,6 +270,94 @@ class TradeClosureListener:
                     return False
         
         return False
+    
+    async def _get_execution_mode(self, signal_id: Optional[str]) -> str:
+        """Get execution_mode (LIVE/SHADOW) from strategy_ranking if signal linked.
+        
+        Args:
+            signal_id: Signal ID to lookup
+            
+        Returns:
+            ExecutionMode.LIVE if unknown or signal not linked, otherwise actual mode from strategy_ranking
+        """
+        if not signal_id:
+            return ExecutionMode.LIVE.value  # Default to LIVE if no signal link
+        
+        try:
+            signal = self.storage.get_signal_by_id(signal_id)
+            if not signal:
+                return ExecutionMode.LIVE.value
+            
+            # Extract strategy_id from signal metadata
+            metadata = signal.get('metadata')
+            if isinstance(metadata, str):
+                import json
+                try:
+                    metadata = json.loads(metadata)
+                except (ValueError, TypeError):
+                    metadata = {}
+            
+            strategy_id = metadata.get('strategy_id') if isinstance(metadata, dict) else None
+            if not strategy_id:
+                return ExecutionMode.LIVE.value
+            
+            # Query strategy_ranking for execution_mode
+            ranking = self.storage.get_strategy_ranking(strategy_id)
+            if ranking and 'execution_mode' in ranking:
+                mode = ranking.get('execution_mode', ExecutionMode.LIVE.value)
+                logger.debug(f"[ROUTING] Signal {signal_id} → Strategy {strategy_id} → Mode {mode}")
+                return mode
+            
+            return ExecutionMode.LIVE.value
+        except Exception as e:
+            logger.warning(f"Error getting execution_mode for signal {signal_id}: {e}")
+            return ExecutionMode.LIVE.value
+    
+    def _map_broker_id_to_provider(self, broker_id: str) -> str:
+        """Map broker_id to provider constants (MT5, NT, FIX, INTERNAL).
+        
+        Uses centralized keyword mapping from models/execution_mode.py to avoid duplication.
+        
+        Args:
+            broker_id: Broker identifier (MT5, NT8, etc.)
+            
+        Returns:
+            Provider name: 'MT5', 'NT', 'FIX', or 'INTERNAL'
+        """
+        broker_lower = broker_id.lower() if broker_id else 'unknown'
+        
+        # Check keyword-based mapping first
+        for keyword, provider in BROKER_KEYWORDS_TO_PROVIDER.items():
+            if keyword in broker_lower:
+                return provider.value
+        
+        # Default to MT5 for backward compatibility
+        return Provider.MT5.value
+    
+    async def _get_account_type(self, broker_id: str) -> str:
+        """Determine if account is REAL or DEMO based on broker_id.
+        
+        Uses centralized keyword mapping from models/execution_mode.py.
+        
+        Args:
+            broker_id: Broker identifier
+            
+        Returns:
+            'REAL' or 'DEMO'
+        """
+        try:
+            broker_lower = broker_id.lower() if broker_id else 'unknown'
+            
+            # Check keyword-based mapping first
+            for keyword, account_type in BROKER_KEYWORDS_TO_ACCOUNT_TYPE.items():
+                if keyword in broker_lower:
+                    return account_type.value
+            
+            # Default to REAL if not explicitly DEMO
+            return AccountType.REAL.value
+        except Exception as e:
+            logger.warning(f"Error determining account_type for {broker_id}: {e}")
+            return AccountType.REAL.value
     
     async def _process_edge_feedback(self, trade: BrokerTradeClosedEvent) -> None:
         """

@@ -244,7 +244,7 @@ class SystemMixin(BaseRepository):
         return heartbeats
 
     def get_statistics(self) -> Dict[str, Any]:
-        """Get system statistics for dashboard"""
+        """Get system statistics for dashboard (LIVE trades only for backward compatibility)"""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
@@ -252,13 +252,13 @@ class SystemMixin(BaseRepository):
             total_signals = cursor.fetchone()[0]
             cursor.execute("SELECT COUNT(*) FROM signals WHERE status = 'executed'")
             executed_signals_count = cursor.fetchone()[0]
-            cursor.execute("SELECT COUNT(*) FROM trade_results WHERE profit > 0")
+            cursor.execute("SELECT COUNT(*) FROM trades WHERE profit > 0 AND execution_mode = 'LIVE'")
             wins = cursor.fetchone()[0]
-            cursor.execute("SELECT COUNT(*) FROM trade_results WHERE profit < 0")
+            cursor.execute("SELECT COUNT(*) FROM trades WHERE profit < 0 AND execution_mode = 'LIVE'")
             losses = cursor.fetchone()[0]
             total_trades = wins + losses
             win_rate = (wins / total_trades) if total_trades > 0 else 0
-            cursor.execute("SELECT AVG(profit) FROM trade_results")
+            cursor.execute("SELECT AVG(profit) FROM trades WHERE execution_mode = 'LIVE'")
             avg_pnl_result = cursor.fetchone()[0]
             avg_pnl = float(avg_pnl_result) if avg_pnl_result else 0.0
             

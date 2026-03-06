@@ -361,7 +361,7 @@ class SignalsMixin(BaseRepository):
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT s.* FROM signals s
-                LEFT JOIN trade_results t ON s.id = t.signal_id
+                LEFT JOIN trades t ON s.id = t.signal_id
                 WHERE UPPER(s.status) = 'EXECUTED' 
                 AND t.signal_id IS NULL
                 ORDER BY s.timestamp DESC

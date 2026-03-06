@@ -4,14 +4,26 @@ import sqlite3
 from typing import Dict, List, Optional
 from datetime import date
 from .base_repo import BaseRepository
+from models.execution_mode import ExecutionMode, Provider, AccountType
 
 logger = logging.getLogger(__name__)
 
 class TradesMixin(BaseRepository):
-    """Mixin for Trade-related database operations."""
+    """Mixin for Trade-related database operations.
+    
+    Key Design Patterns:
+    - All query methods (get_*_profit, get_win_rate, etc.) default to execution_mode='LIVE'
+      to maintain backward compatibility and avoid contaminating metrics with paper trades.
+    - StrategyRanker must explicitly call get_trades(execution_mode='SHADOW') to analyze SHADOW trades.
+    - save_trade_result() accepts execution_mode, provider, account_type for full audit trail.
+    """
 
     def save_trade_result(self, trade_data: Dict) -> None:
-        """Save trade result to database"""
+        """Save trade result to database with execution_mode and provider metadata.
+        
+        Args:
+            trade_data: Dict with trade details including execution_mode, provider, account_type
+        """
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
@@ -20,10 +32,10 @@ class TradesMixin(BaseRepository):
             # Use provided ID (ticket from broker) or generate UUID as fallback
             trade_id = trade_data.get('id') or str(uuid.uuid4())
             cursor.execute("""
-                INSERT INTO trade_results (
+                INSERT INTO trades (
                     id, signal_id, symbol, entry_price, exit_price, 
-                    profit, exit_reason, close_time
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    profit, exit_reason, close_time, execution_mode, provider, account_type
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 trade_id,
                 trade_data.get('signal_id'),
@@ -32,7 +44,10 @@ class TradesMixin(BaseRepository):
                 trade_data.get('exit_price'),
                 profit,
                 trade_data.get('exit_reason'),
-                trade_data.get('close_time')
+                trade_data.get('close_time'),
+                trade_data.get('execution_mode', ExecutionMode.default()),
+                trade_data.get('provider', Provider.default()),
+                trade_data.get('account_type', AccountType.default())
             ))
             conn.commit()
         finally:
@@ -44,7 +59,7 @@ class TradesMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT 1 FROM trade_results WHERE id = ? LIMIT 1",
+                "SELECT 1 FROM trades WHERE id = ? LIMIT 1",
                 (ticket_id,)
             )
             result = cursor.fetchone()
@@ -53,26 +68,27 @@ class TradesMixin(BaseRepository):
             self._close_conn(conn)
 
     def get_trade_results(self, limit: int = 100) -> List[Dict]:
-        """Get trade results from database"""
+        """Get trade results from database (default: LIVE trades only for backward compatibility)"""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT * FROM trade_results 
+                SELECT * FROM trades 
+                WHERE execution_mode = ?
                 ORDER BY close_time DESC 
                 LIMIT ?
-            """, (limit,))
+            """, (ExecutionMode.LIVE.value, limit,))
             rows = cursor.fetchall()
             return [dict(row) for row in rows]
         finally:
             self._close_conn(conn)
 
     def get_trade_result_by_signal_id(self, signal_id: str) -> Optional[Dict]:
-        """Get a trade result by its signal ID"""
+        """Get a trade result by its signal ID (returns first match, any execution_mode)"""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM trade_results WHERE signal_id = ? LIMIT 1", (signal_id,))
+            cursor.execute("SELECT * FROM trades WHERE signal_id = ? LIMIT 1", (signal_id,))
             row = cursor.fetchone()
             if row:
                 res = dict(row)
@@ -106,7 +122,7 @@ class TradesMixin(BaseRepository):
                     WHERE symbol = ? 
                     AND timeframe = ?
                     AND UPPER(status) = 'EXECUTED'
-                    AND id NOT IN (SELECT signal_id FROM trade_results WHERE signal_id IS NOT NULL)
+                    AND id NOT IN (SELECT signal_id FROM trades WHERE signal_id IS NOT NULL)
                 """, (symbol, timeframe))
             else:
                 # Legacy behavior: check any timeframe (for backward compatibility)
@@ -114,7 +130,7 @@ class TradesMixin(BaseRepository):
                     SELECT COUNT(*) FROM signals 
                     WHERE symbol = ? 
                     AND UPPER(status) = 'EXECUTED'
-                    AND id NOT IN (SELECT signal_id FROM trade_results WHERE signal_id IS NOT NULL)
+                    AND id NOT IN (SELECT signal_id FROM trades WHERE signal_id IS NOT NULL)
                 """, (symbol,))
             count = cursor.fetchone()[0]
             # print(f"DEBUG DB: has_open_position({symbol}, {timeframe}) -> {count}")
@@ -124,17 +140,25 @@ class TradesMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_recent_trades(self, limit: int = 10) -> List[Dict]:
-        """Get recent trades"""
+    def get_recent_trades(self, limit: int = 10, execution_mode: Optional[str] = None) -> List[Dict]:
+        """Get recent trades, optionally filtered by execution_mode (default: LIVE for backward compat)
+        
+        Args:
+            limit: Number of recent trades to retrieve
+            execution_mode: Optional filter ('LIVE', 'SHADOW'). If None, defaults to 'LIVE'.
+        """
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
+            if execution_mode is None:
+                execution_mode = ExecutionMode.LIVE.value
             cursor.execute("""
-                SELECT * FROM trade_results 
+                SELECT * FROM trades 
                 WHERE profit IS NOT NULL
+                AND execution_mode = ?
                 ORDER BY created_at DESC 
                 LIMIT ?
-            """, (limit,))
+            """, (execution_mode, limit))
             rows = cursor.fetchall()
             trades = []
             for row in rows:
@@ -159,33 +183,49 @@ class TradesMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_total_profit(self, days: int = 30) -> float:
-        """Get total profit for the last N days"""
+    def get_total_profit(self, days: int = 30, execution_mode: Optional[str] = None) -> float:
+        """Get total profit for the last N days, optionally filtered by execution_mode (default: LIVE).
+        
+        Args:
+            days: Number of days lookback (default: 30)
+            execution_mode: Optional filter ('LIVE', 'SHADOW'). If None, defaults to 'LIVE'.
+        """
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
+            if execution_mode is None:
+                execution_mode = ExecutionMode.LIVE.value
             cursor.execute("""
                 SELECT COALESCE(SUM(profit), 0) 
-                FROM trade_results 
+                FROM trades 
                 WHERE created_at >= datetime('now', '-{} days', 'utc')
-            """.format(days))
+                AND execution_mode = ?
+            """.format(days), (execution_mode,))
             result = cursor.fetchone()[0]
             return float(result) if result else 0.0
         finally:
             self._close_conn(conn)
 
-    def get_win_rate(self, days: int = 30) -> float:
-        """Get win rate for the last N days"""
+    def get_win_rate(self, days: int = 30, execution_mode: Optional[str] = None) -> float:
+        """Get win rate for the last N days, optionally filtered by execution_mode (default: LIVE).
+        
+        Args:
+            days: Number of days lookback (default: 30)
+            execution_mode: Optional filter ('LIVE', 'SHADOW'). If None, defaults to 'LIVE'.
+        """
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
+            if execution_mode is None:
+                execution_mode = ExecutionMode.LIVE.value
             cursor.execute("""
                 SELECT 
                     COUNT(CASE WHEN profit > 0 THEN 1 END) as wins,
                     COUNT(CASE WHEN profit < 0 THEN 1 END) as losses
-                FROM trade_results 
+                FROM trades 
                 WHERE created_at >= datetime('now', '-{} days', 'utc')
-            """.format(days))
+                AND execution_mode = ?
+            """.format(days), (execution_mode,))
             row = row = cursor.fetchone()
             wins = row[0] if row[0] else 0
             losses = row[1] if row[1] else 0
@@ -194,33 +234,80 @@ class TradesMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_profit_by_symbol(self, days: int = 30) -> Dict[str, float]:
-        """Get total profit grouped by symbol for the last N days"""
+    def get_profit_by_symbol(self, days: int = 30, execution_mode: Optional[str] = None) -> Dict[str, float]:
+        """Get total profit grouped by symbol for the last N days, optionally filtered by execution_mode (default: LIVE).
+        
+        Args:
+            days: Number of days lookback (default: 30)
+            execution_mode: Optional filter ('LIVE', 'SHADOW'). If None, defaults to 'LIVE'.
+        """
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
+            if execution_mode is None:
+                execution_mode = ExecutionMode.LIVE.value
             cursor.execute("""
                 SELECT symbol, SUM(profit) as total_profit
-                FROM trade_results 
+                FROM trades 
                 WHERE created_at >= datetime('now', '-{} days', 'utc')
+                AND execution_mode = ?
                 GROUP BY symbol
                 ORDER BY total_profit DESC
-            """.format(days))
+            """.format(days), (execution_mode,))
             rows = cursor.fetchall()
             return {row[0]: float(row[1]) for row in rows}
         finally:
             self._close_conn(conn)
 
-    def get_all_trades(self, limit: int = 1000) -> List[Dict]:
-        """Get all trade results with optional limit"""
+    def get_all_trades(self, limit: int = 1000, execution_mode: Optional[str] = None) -> List[Dict]:
+        """Get all trade results with optional limit, optionally filtered by execution_mode (default: LIVE).
+        
+        Args:
+            limit: Maximum number of trades to retrieve (default: 1000)
+            execution_mode: Optional filter ('LIVE', 'SHADOW'). If None, defaults to 'LIVE'.
+        """
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
+            if execution_mode is None:
+                execution_mode = ExecutionMode.LIVE.value
             cursor.execute("""
-                SELECT * FROM trade_results 
+                SELECT * FROM trades 
+                WHERE execution_mode = ?
                 ORDER BY created_at DESC 
                 LIMIT ?
-            """, (limit,))
+            """, (execution_mode, limit))
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+        finally:
+            self._close_conn(conn)
+
+    # ── Unified Trades Query API ─────────────────────────────────────────────
+
+    def get_trades(self, execution_mode: Optional[str] = None, limit: int = 1000) -> List[Dict]:
+        """Unified method to query trades with optional execution_mode filter.
+        
+        CRITICAL: StrategyRanker MUST call this with execution_mode='SHADOW' for paper trading analysis.
+        Default (None) returns only LIVE trades to maintain backward compatibility.
+        
+        Args:
+            execution_mode: Optional filter ('LIVE', 'SHADOW', or None for 'LIVE'). 
+            limit: Maximum number of trades to retrieve.
+            
+        Returns:
+            List of trade records as dicts.
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            if execution_mode is None:
+                execution_mode = ExecutionMode.LIVE.value
+            cursor.execute("""
+                SELECT * FROM trades 
+                WHERE execution_mode = ?
+                ORDER BY created_at DESC 
+                LIMIT ?
+            """, (execution_mode, limit))
             rows = cursor.fetchall()
             return [dict(row) for row in rows]
         finally:

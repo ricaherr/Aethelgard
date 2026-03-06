@@ -71,7 +71,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
         )
     """)
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS trade_results (
+        CREATE TABLE IF NOT EXISTS trades (
             id TEXT PRIMARY KEY,
             signal_id TEXT,
             symbol TEXT,
@@ -80,6 +80,9 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             profit REAL,
             exit_reason TEXT,
             close_time TIMESTAMP,
+            execution_mode TEXT DEFAULT 'LIVE',
+            provider TEXT DEFAULT 'MT5',
+            account_type TEXT DEFAULT 'REAL',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (signal_id) REFERENCES signals (id)
         )
@@ -478,6 +481,35 @@ def run_migrations(conn: sqlite3.Connection) -> None:
 
     # Enable WAL mode for concurrency performance
     cursor.execute("PRAGMA journal_mode=WAL;")
+
+    # MIGRATION (FASE D): Rename trade_results to trades (one-time, safe)
+    # ──────────────────────────────────────────────────────────────────────
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='trade_results'")
+    if cursor.fetchone():
+        # Old table exists, rename to trades
+        try:
+            cursor.execute("ALTER TABLE trade_results RENAME TO trades")
+            logger.info("Migration applied: trade_results renamed to trades.")
+        except sqlite3.OperationalError as e:
+            # Trades table might already exist, skip if so
+            logger.debug(f"trade_results rename skipped: {e}")
+    
+    # MIGRATION (FASE D): Add execution_mode, provider, account_type to trades
+    # ──────────────────────────────────────────────────────────────────────
+    cursor.execute("PRAGMA table_info(trades)")
+    trades_cols = [r[1] for r in cursor.fetchall()]
+    trades_migrations = [
+        ("execution_mode", "TEXT DEFAULT 'LIVE'"),
+        ("provider", "TEXT DEFAULT 'MT5'"),
+        ("account_type", "TEXT DEFAULT 'REAL'"),
+    ]
+    for col, col_type in trades_migrations:
+        if col not in trades_cols:
+            cursor.execute(f"ALTER TABLE trades ADD COLUMN {col} {col_type}")
+            logger.info(f"Migration applied: trades.{col} added with default.")
+    
+    # Create index for efficient filtering by execution_mode
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_trades_execution_mode ON trades (execution_mode)")
 
     # regime_configs: add tenant_id for multi-tenant isolation (nullable for backward compat)
     cursor.execute("PRAGMA table_info(regime_configs)")
