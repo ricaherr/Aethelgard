@@ -30,12 +30,12 @@ class StrategyRanker:
     Evaluates strategy performance and manages execution mode transitions.
     
     Modes:
-    - SHADOW: Forward-testing phase, tracking metrics without real orders
+    - SHADOW: Forward-testing phase, tracking metrics without real usr_orders
     - LIVE: Strategy approved for real trading
     - QUARANTINE: Suspended due to risk threshold violations
     
     Promotion Logic (SHADOW -> LIVE):
-    - Profit Factor > 1.5 AND Win Rate > 50% in last 50 trades
+    - Profit Factor > 1.5 AND Win Rate > 50% in last 50 usr_trades
     
     Degradation Logic (LIVE -> QUARANTINE):
     - Drawdown >= 3% OR Consecutive Losses >= 5
@@ -45,9 +45,9 @@ class StrategyRanker:
     
     Weighted Scoring by Regime:
     - Introduced: Dynamic metric weighting based on market regime (TREND, RANGE, VOLATILE)
-    - Enables EDGE selection: High DD + High Sharpe strategies are rewarded in VOLATILE regimes
+    - Enables EDGE selection: High DD + High Sharpe usr_strategies are rewarded in VOLATILE regimes
     - Math: Score = Σ (Metric_n × Weight_n) where metrics normalized to [0, 1]
-    - Weights sourced from regime_configs table (SSOT principle)
+    - Weights sourced from sys_regime_configs table (SSOT principle)
     
     Example Weighting:
     - TREND: WR=25%, Sharpe=35%, PF=30%, DD=10% → favors consistent wins
@@ -83,7 +83,7 @@ class StrategyRanker:
             Dictionary with action, metrics, and trace_id if applicable
         """
         # Fetch current strategy data
-        ranking = self.storage.get_strategy_ranking(strategy_id)
+        ranking = self.storage.get_usr_performance(strategy_id)
         if not ranking:
             logger.warning(f"Strategy {strategy_id} not found in ranking table")
             return {'action': 'not_found', 'strategy_id': strategy_id}
@@ -108,7 +108,7 @@ class StrategyRanker:
         Promotion criteria:
         - Profit Factor > 1.5
         - Win Rate > 50%
-        - At least 50 completed trades in evaluation window
+        - At least 50 completed usr_trades in evaluation window
         """
         profit_factor = ranking.get('profit_factor', 0.0)
         win_rate = ranking.get('win_rate', 0.0)
@@ -121,15 +121,15 @@ class StrategyRanker:
         
         if not meets_trade_count:
             logger.info(
-                f"Strategy {strategy_id}: Insufficient trades for promotion "
+                f"Strategy {strategy_id}: Insufficient usr_trades for promotion "
                 f"({completed_last_50}/{self.MIN_TRADES_FOR_PROMOTION})"
             )
             return {
-                'action': 'insufficient_trades',
+                'action': 'insufficient_usr_trades',
                 'current_mode': 'SHADOW',
                 'profit_factor': profit_factor,
                 'win_rate': win_rate,
-                'completed_trades': completed_last_50,
+                'completed_usr_trades': completed_last_50,
                 'min_required': self.MIN_TRADES_FOR_PROMOTION
             }
         
@@ -144,7 +144,7 @@ class StrategyRanker:
                 'trace_id': trace_id,
                 'profit_factor': profit_factor,
                 'win_rate': win_rate,
-                'completed_trades': completed_last_50
+                'completed_usr_trades': completed_last_50
             }
         else:
             # No change
@@ -215,7 +215,7 @@ class StrategyRanker:
         Recovery conditions:
         - Drawdown < 3% AND
         - Consecutive Losses < 5
-        - At least 50 trades completed
+        - At least 50 usr_trades completed
         """
         drawdown_max = ranking.get('drawdown_max', 0.0)
         consecutive_losses = ranking.get('consecutive_losses', 0)
@@ -225,9 +225,9 @@ class StrategyRanker:
         # Check recovery conditions
         drawdown_recovered = drawdown_max < self.DRAWDOWN_THRESHOLD
         losses_recovered = consecutive_losses < self.CONSECUTIVE_LOSSES_THRESHOLD
-        has_enough_trades = completed_last_50 >= self.MIN_TRADES_FOR_PROMOTION
+        has_enough_usr_trades = completed_last_50 >= self.MIN_TRADES_FOR_PROMOTION
         
-        if drawdown_recovered and losses_recovered and has_enough_trades:
+        if drawdown_recovered and losses_recovered and has_enough_usr_trades:
             # RECOVERY to SHADOW
             trace_id = self._recover_strategy(strategy_id, ranking)
             logger.critical(
@@ -251,7 +251,7 @@ class StrategyRanker:
                 failing_checks.append(f"DD {drawdown_max:.2f}% >= {self.DRAWDOWN_THRESHOLD}%")
             if not losses_recovered:
                 failing_checks.append(f"CL {consecutive_losses} >= {self.CONSECUTIVE_LOSSES_THRESHOLD}")
-            if not has_enough_trades:
+            if not has_enough_usr_trades:
                 failing_checks.append(f"Trades {completed_last_50} < {self.MIN_TRADES_FOR_PROMOTION}")
             
             logger.debug(f"Strategy {strategy_id} remains QUARANTINE: {', '.join(failing_checks)}")
@@ -284,7 +284,7 @@ class StrategyRanker:
             metrics={
                 'profit_factor': ranking.get('profit_factor'),
                 'win_rate': ranking.get('win_rate'),
-                'total_trades': ranking.get('total_trades'),
+                'total_usr_trades': ranking.get('total_usr_trades'),
                 'completed_last_50': ranking.get('completed_last_50')
             }
         )
@@ -323,7 +323,7 @@ class StrategyRanker:
             metrics={
                 'drawdown_max': ranking.get('drawdown_max'),
                 'consecutive_losses': ranking.get('consecutive_losses'),
-                'total_trades': ranking.get('total_trades')
+                'total_usr_trades': ranking.get('total_usr_trades')
             }
         )
         
@@ -364,7 +364,7 @@ class StrategyRanker:
         
         where:
         - Metrics are normalized to [0, 1] range
-        - Weights vary by regime (from regime_configs table)
+        - Weights vary by regime (from sys_regime_configs table)
         - Drawdown is inverted (higher is worse, so we use 1 - normalized_dd)
         
         Args:
@@ -375,7 +375,7 @@ class StrategyRanker:
             Decimal score (0-1 range, 4+ decimal places precision)
         """
         # Fetch strategy ranking metrics
-        ranking = self.storage.get_strategy_ranking(strategy_id)
+        ranking = self.storage.get_usr_performance(strategy_id)
         if not ranking:
             logger.warning(f"Strategy {strategy_id} not found for weighted ranking")
             return Decimal('0.0')
@@ -458,7 +458,7 @@ class StrategyRanker:
     
     def batch_evaluate(self, strategy_ids: list) -> Dict[str, Dict[str, Any]]:
         """
-        Evaluate multiple strategies in batch.
+        Evaluate multiple usr_strategies in batch.
         
         Args:
             strategy_ids: List of strategy identifiers
@@ -476,21 +476,21 @@ class StrategyRanker:
         
         return results
     
-    def get_live_strategies(self) -> list:
-        """Get all strategies currently in LIVE mode."""
-        return self.storage.get_strategies_by_mode('LIVE')
+    def get_live_usr_strategies(self) -> list:
+        """Get all usr_strategies currently in LIVE mode."""
+        return self.storage.get_usr_strategies_by_mode('LIVE')
     
-    def get_shadow_strategies(self) -> list:
-        """Get all strategies currently in SHADOW mode."""
-        return self.storage.get_strategies_by_mode('SHADOW')
+    def get_shadow_usr_strategies(self) -> list:
+        """Get all usr_strategies currently in SHADOW mode."""
+        return self.storage.get_usr_strategies_by_mode('SHADOW')
     
-    def get_quarantine_strategies(self) -> list:
-        """Get all strategies currently in QUARANTINE mode."""
-        return self.storage.get_strategies_by_mode('QUARANTINE')
+    def get_quarantine_usr_strategies(self) -> list:
+        """Get all usr_strategies currently in QUARANTINE mode."""
+        return self.storage.get_usr_strategies_by_mode('QUARANTINE')
     
-    def evaluate_all_strategies(self) -> Dict[str, Dict[str, Any]]:
+    def evaluate_all_usr_strategies(self) -> Dict[str, Dict[str, Any]]:
         """
-        Evaluate ALL strategies (SHADOW + LIVE + QUARANTINE) in a single batch.
+        Evaluate ALL usr_strategies (SHADOW + LIVE + QUARANTINE) in a single batch.
         
         Called by MainOrchestrator every 5 minutes from run_single_cycle for
         continuous monitoring and mode transitions.
@@ -506,17 +506,17 @@ class StrategyRanker:
             }
         """
         try:
-            # Get all strategies by mode
-            shadow_strategies = self.get_shadow_strategies()
-            live_strategies = self.get_live_strategies()
-            quarantine_strategies = self.get_quarantine_strategies()
+            # Get all usr_strategies by mode
+            shadow_usr_strategies = self.get_shadow_usr_strategies()
+            live_usr_strategies = self.get_live_usr_strategies()
+            quarantine_usr_strategies = self.get_quarantine_usr_strategies()
             
-            # Aggregate all strategies
-            all_strategy_ids = shadow_strategies + live_strategies + quarantine_strategies
+            # Aggregate all usr_strategies
+            all_strategy_ids = shadow_usr_strategies + live_usr_strategies + quarantine_usr_strategies
             
             logger.info(
-                f"[RANKER] Evaluating all strategies: "
-                f"SHADOW={len(shadow_strategies)}, LIVE={len(live_strategies)}, QUARANTINE={len(quarantine_strategies)}"
+                f"[RANKER] Evaluating all usr_strategies: "
+                f"SHADOW={len(shadow_usr_strategies)}, LIVE={len(live_usr_strategies)}, QUARANTINE={len(quarantine_usr_strategies)}"
             )
             
             # Batch evaluate
@@ -525,12 +525,12 @@ class StrategyRanker:
             # Log summary
             transitions_count = sum(1 for r in results.values() if r.get('action') in ['promoted', 'degraded', 'recovered'])
             logger.info(
-                f"[RANKER] Evaluation complete: {len(results)} strategies evaluated, "
+                f"[RANKER] Evaluation complete: {len(results)} usr_strategies evaluated, "
                 f"{transitions_count} transitions detected"
             )
             
             return results
             
         except Exception as e:
-            logger.error(f"[RANKER] Error in evaluate_all_strategies: {e}", exc_info=True)
+            logger.error(f"[RANKER] Error in evaluate_all_usr_strategies: {e}", exc_info=True)
             return {}

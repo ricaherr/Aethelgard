@@ -11,7 +11,7 @@ Architecture:
   - Resides entirely in memory (Python dict cache)
   - No DB queries during tick processing (ultra-fast)
   - Periodic refresh from StorageManager for score updates
-  - Single Source of Truth (SSOT): scores originate from strategy_performance_logs in DB
+  - Single Source of Truth (SSOT): scores originate from usr_strategy_logs in DB
 
 Dependency Injection: StorageManager (provided by caller)
 
@@ -145,7 +145,7 @@ class StrategyGatekeeper:
         strategy_id: str,
         asset: str,
         pnl: float,
-        trades_count: int,
+        usr_trades_count: int,
         win_rate: float,
         profit_factor: float,
         trace_id: Optional[str] = None
@@ -160,7 +160,7 @@ class StrategyGatekeeper:
             strategy_id: Strategy class_id
             asset: Asset symbol
             pnl: Profit/Loss amount
-            trades_count: Number of trades in this batch
+            usr_trades_count: Number of usr_trades in this batch
             win_rate: Win rate (0-1)
             profit_factor: Profit Factor (wins / losses)
             trace_id: Optional trace ID for auditing
@@ -173,7 +173,7 @@ class StrategyGatekeeper:
                 strategy_id=strategy_id,
                 asset=asset,
                 pnl=pnl,
-                trades_count=trades_count,
+                usr_trades_count=usr_trades_count,
                 win_rate=win_rate,
                 profit_factor=profit_factor,
                 trace_id=trace_id
@@ -195,7 +195,7 @@ class StrategyGatekeeper:
         Refresh in-memory affinity scores from database.
         
         Called periodically (e.g., between trading sessions) to pick up
-        updated scores from strategy_performance_logs aggregation.
+        updated scores from usr_strategy_logs aggregation.
         
         Returns:
             True if successful
@@ -223,7 +223,7 @@ class StrategyGatekeeper:
         """Return cache state for diagnostics."""
         return {
             'cached_assets': len(self.asset_scores),
-            'whitelisted_strategies': len(self.market_whitelists),
+            'whitelisted_usr_strategies': len(self.market_whitelists),
             'total_whitelist_entries': sum(len(v) for v in self.market_whitelists.values())
         }
 

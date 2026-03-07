@@ -32,12 +32,12 @@ class EquityCurveAnalyzer:
     Analyzes recent equity curve (trade history) to detect patterns.
     
     Responsibilities:
-    - Calculate win rate from recent trades
+    - Calculate win rate from recent usr_trades
     - Detect consecutive loss streaks
     - Calculate maximum drawdown
     - Provide metrics for threshold optimization decision
     """
-    trades: List[Dict[str, Any]]
+    usr_trades: List[Dict[str, Any]]
     lookback: int = 20
     
     # Cached metrics
@@ -46,25 +46,25 @@ class EquityCurveAnalyzer:
     _max_drawdown: Optional[float] = field(default=None, init=False)
     
     @property
-    def total_trades(self) -> int:
-        """Total trades in history."""
-        return len(self.trades)
+    def total_usr_trades(self) -> int:
+        """Total usr_trades in history."""
+        return len(self.usr_trades)
     
     @property
     def win_rate(self) -> float:
         """
-        Win rate calculation: wins / total_trades.
-        Returns 0.0 if no trades.
+        Win rate calculation: wins / total_usr_trades.
+        Returns 0.0 if no usr_trades.
         """
         if self._win_rate is not None:
             return self._win_rate
         
-        if not self.trades:
+        if not self.usr_trades:
             self._win_rate = 0.0
             return 0.0
         
-        wins = sum(1 for trade in self.trades if trade.get("is_win", False))
-        self._win_rate = wins / len(self.trades)
+        wins = sum(1 for trade in self.usr_trades if trade.get("is_win", False))
+        self._win_rate = wins / len(self.usr_trades)
         return self._win_rate
     
     @property
@@ -76,14 +76,14 @@ class EquityCurveAnalyzer:
         if self._consecutive_losses is not None:
             return self._consecutive_losses
         
-        if not self.trades:
+        if not self.usr_trades:
             self._consecutive_losses = 0
             return 0
         
         max_streak = 0
         current_streak = 0
         
-        for trade in self.trades:
+        for trade in self.usr_trades:
             is_win = trade.get("is_win", False)
             if not is_win:
                 current_streak += 1
@@ -103,7 +103,7 @@ class EquityCurveAnalyzer:
         if self._max_drawdown is not None:
             return self._max_drawdown
         
-        if not self.trades:
+        if not self.usr_trades:
             self._max_drawdown = 0.0
             return 0.0
         
@@ -111,7 +111,7 @@ class EquityCurveAnalyzer:
         peak = 0.0
         max_dd = 0.0
         
-        for trade in self.trades:
+        for trade in self.usr_trades:
             pnl = trade.get("pnl", 0.0)
             cumulative += pnl
             
@@ -132,7 +132,7 @@ class ThresholdOptimizer:
     
     Responsibilities:
     1. Load current threshold and governance parameters from Storage (SSOT)
-    2. Analyze recent trades via EquityCurveAnalyzer
+    2. Analyze recent usr_trades via EquityCurveAnalyzer
     3. Detect loss streaks or recovery patterns
     4. Adjust threshold dynamically
     5. Apply Safety Governor (smoothing + bounds)
@@ -175,7 +175,7 @@ class ThresholdOptimizer:
         self.threshold_min = params.get("confidence_threshold_min", self.DEFAULT_THRESHOLD_MIN)
         self.threshold_max = params.get("confidence_threshold_max", self.DEFAULT_THRESHOLD_MAX)
         self.smoothing_max = params.get("confidence_smoothing_max", self.DEFAULT_SMOOTHING_MAX)
-        self.lookback_trades = params.get("equity_lookback_trades", self.DEFAULT_LOOKBACK_TRADES)
+        self.lookback_usr_trades = params.get("equity_lookback_usr_trades", self.DEFAULT_LOOKBACK_TRADES)
         self.loss_threshold = params.get(
             "consecutive_loss_threshold", 
             self.DEFAULT_CONSECUTIVE_LOSS_THRESHOLD
@@ -186,7 +186,7 @@ class ThresholdOptimizer:
             f"Current={self.current_threshold:.2f} | "
             f"Range=[{self.threshold_min:.2f}, {self.threshold_max:.2f}] | "
             f"Smoothing={self.smoothing_max:.2f} | "
-            f"Lookback={self.lookback_trades} trades | "
+            f"Lookback={self.lookback_usr_trades} usr_trades | "
             f"Loss threshold={self.loss_threshold}. "
             f"Trace_ID: ADAPTIVE-THRESHOLD-2026-001"
         )
@@ -200,7 +200,7 @@ class ThresholdOptimizer:
         Main optimization logic: analyze equity curve and adjust threshold.
         
         Workflow:
-        1. Load recent trades from Storage
+        1. Load recent usr_trades from Storage
         2. Analyze equity curve (win_rate, consecutive_losses, drawdown)
         3. Decide adjustment direction (increase/decrease/none)
         4. Apply Safety Governor (smoothing + bounds)
@@ -223,14 +223,14 @@ class ThresholdOptimizer:
         """
         trace_id = trace_id or "ADAPTIVE-THRESHOLD-2026-001"
         
-        # Step 1: Load recent trades
-        trades = self.storage.get_account_trades(
+        # Step 1: Load recent usr_trades
+        usr_trades = self.storage.get_account_usr_trades(
             account_id=account_id,
-            limit=self.lookback_trades
+            limit=self.lookback_usr_trades
         )
         
-        if not trades:
-            logger.debug(f"[THRESHOLD_OPTIMIZER] No trades to analyze for {account_id}")
+        if not usr_trades:
+            logger.debug(f"[THRESHOLD_OPTIMIZER] No usr_trades to analyze for {account_id}")
             return {
                 "old_threshold": self.current_threshold,
                 "new_threshold": self.current_threshold,
@@ -241,7 +241,7 @@ class ThresholdOptimizer:
             }
         
         # Step 2: Analyze equity curve
-        analyzer = EquityCurveAnalyzer(trades=trades, lookback=self.lookback_trades)
+        analyzer = EquityCurveAnalyzer(usr_trades=usr_trades, lookback=self.lookback_usr_trades)
         
         old_threshold = self.current_threshold
         adjustment_reason = "STABLE"

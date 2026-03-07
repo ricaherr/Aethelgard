@@ -7,7 +7,7 @@ Tests TDD (Red-Green-Refactor):
 1. Emergency close on max drawdown
 2. Adjust SL when regime changes (TREND → RANGE)
 3. Adjust TP when regime changes (RANGE → TREND)
-4. Time-based exit for stale positions
+4. Time-based exit for stale usr_positions
 5. Freeze level validation (EURUSD, GBPJPY)
 6. Cooldown between modifications
 7. Daily modification limits
@@ -54,7 +54,7 @@ def mock_connector():
     connector.get_symbol_info = Mock(return_value=symbol_info)
     
     # Positions mock
-    connector.get_open_positions = Mock(return_value=[])
+    connector.get_open_usr_positions = Mock(return_value=[])
     
     # Modification mock
     connector.modify_position = Mock(return_value={'success': True})
@@ -151,7 +151,7 @@ def test_emergency_close_max_drawdown(position_manager, mock_position, mock_conn
     """
     # Setup: Position with loss >= 2x initial risk
     mock_position['profit'] = -200.0
-    mock_connector.get_open_positions = Mock(return_value=[mock_position])
+    mock_connector.get_open_usr_positions = Mock(return_value=[mock_position])
     
     # Mock metadata with initial risk
     mock_storage.get_position_metadata = Mock(return_value={
@@ -162,7 +162,7 @@ def test_emergency_close_max_drawdown(position_manager, mock_position, mock_conn
     })
     
     # Execute
-    result = position_manager.monitor_positions()
+    result = position_manager.monitor_usr_positions()
     
     # Assert: Position closed
     mock_connector.close_position.assert_called_once_with(12345678, "MAX_DRAWDOWN")
@@ -181,7 +181,7 @@ def test_adjust_sl_trend_to_range(position_manager, mock_position, mock_connecto
     """
     # Setup: Position opened in TREND, now in RANGE
     mock_position['profit'] = -10.0  # Below max drawdown
-    mock_connector.get_open_positions = Mock(return_value=[mock_position])
+    mock_connector.get_open_usr_positions = Mock(return_value=[mock_position])
     
     # Mock metadata
     mock_storage.get_position_metadata = Mock(return_value={
@@ -198,7 +198,7 @@ def test_adjust_sl_trend_to_range(position_manager, mock_position, mock_connecto
     mock_regime_classifier.classify_regime = Mock(return_value=MarketRegime.RANGE)
     
     # Execute
-    result = position_manager.monitor_positions()
+    result = position_manager.monitor_usr_positions()
     
     # Assert: SL modified
     mock_connector.modify_position.assert_called()
@@ -217,7 +217,7 @@ def test_time_based_exit_range_4_hours(position_manager, mock_position, mock_con
     """
     # Setup: Position 5 hours old in RANGE
     mock_position['profit'] = -5.0
-    mock_connector.get_open_positions = Mock(return_value=[mock_position])
+    mock_connector.get_open_usr_positions = Mock(return_value=[mock_position])
     
     # Mock metadata - 5 hours ago
     mock_storage.get_position_metadata = Mock(return_value={
@@ -231,7 +231,7 @@ def test_time_based_exit_range_4_hours(position_manager, mock_position, mock_con
     mock_regime_classifier.classify_regime = Mock(return_value=MarketRegime.RANGE)
     
     # Execute
-    result = position_manager.monitor_positions()
+    result = position_manager.monitor_usr_positions()
     
     # Assert: Position closed
     mock_connector.close_position.assert_called_once_with(12345678, "STALE_POSITION")
@@ -250,7 +250,7 @@ def test_time_based_exit_trend_72_hours(position_manager, mock_position, mock_co
     """
     # Setup: Position 50 hours old in TREND
     mock_position['profit'] = -5.0
-    mock_connector.get_open_positions = Mock(return_value=[mock_position])
+    mock_connector.get_open_usr_positions = Mock(return_value=[mock_position])
     
     # Mock metadata - 50 hours ago
     mock_storage.get_position_metadata = Mock(return_value={
@@ -264,7 +264,7 @@ def test_time_based_exit_trend_72_hours(position_manager, mock_position, mock_co
     mock_regime_classifier.classify_regime = Mock(return_value=MarketRegime.TREND)
     
     # Execute
-    result = position_manager.monitor_positions()
+    result = position_manager.monitor_usr_positions()
     
     # Assert: Position NOT closed (no TIME_EXIT action)
     assert not any(action['action'] == 'TIME_EXIT' for action in result['actions'])
@@ -396,7 +396,7 @@ def test_rollback_on_modification_failure(position_manager, mock_position, mock_
 
 def test_full_monitor_cycle_integration(position_manager, mock_position, mock_connector, mock_storage, mock_regime_classifier):
     """
-    Integration test: Full monitor_positions() cycle.
+    Integration test: Full monitor_usr_positions() cycle.
     
     Scenario: System has 1 open position
     Expected: 
@@ -407,7 +407,7 @@ def test_full_monitor_cycle_integration(position_manager, mock_position, mock_co
     """
     # Setup: One healthy position
     mock_position['profit'] = -10.0  # Below max drawdown
-    mock_connector.get_open_positions = Mock(return_value=[mock_position])
+    mock_connector.get_open_usr_positions = Mock(return_value=[mock_position])
     
     # Mock metadata - recent position
     mock_storage.get_position_metadata = Mock(return_value={
@@ -419,11 +419,11 @@ def test_full_monitor_cycle_integration(position_manager, mock_position, mock_co
     })
     
     # Execute - should not raise exceptions
-    result = position_manager.monitor_positions()
+    result = position_manager.monitor_usr_positions()
     
     # Assert: Regime classifier was called
     mock_regime_classifier.classify_regime.assert_called_with('EURUSD')
     
     # Assert: Summary returned
-    assert 'total_positions' in result
-    assert result['total_positions'] == 1
+    assert 'total_usr_positions' in result
+    assert result['total_usr_positions'] == 1

@@ -30,8 +30,8 @@ class TestSignalTrifectaOptimizer:
         )
     
     @pytest.fixture
-    def oliver_strategy_signals(self) -> List[Signal]:
-        """Create signals with oliver strategy_id"""
+    def oliver_strategy_usr_signals(self) -> List[Signal]:
+        """Create usr_signals with oliver strategy_id"""
         return [
             Signal(
                 symbol="EURUSD",
@@ -58,8 +58,8 @@ class TestSignalTrifectaOptimizer:
         ]
     
     @pytest.fixture
-    def mixed_strategy_signals(self) -> List[Signal]:
-        """Create signals with mixed strategy_ids"""
+    def mixed_strategy_usr_signals(self) -> List[Signal]:
+        """Create usr_signals with mixed strategy_ids"""
         return [
             Signal(
                 symbol="EURUSD",
@@ -131,7 +131,7 @@ class TestSignalTrifectaOptimizer:
             }
         }
     
-    def test_optimize_empty_signals(self, trifecta_optimizer, full_market_data):
+    def test_optimize_empty_usr_signals(self, trifecta_optimizer, full_market_data):
         """Test optimize with empty signal list"""
         # Act
         result = trifecta_optimizer.optimize([], full_market_data)
@@ -139,20 +139,20 @@ class TestSignalTrifectaOptimizer:
         # Assert
         assert result == []
     
-    def test_optimize_no_market_data(self, trifecta_optimizer, oliver_strategy_signals):
+    def test_optimize_no_market_data(self, trifecta_optimizer, oliver_strategy_usr_signals):
         """Test optimize when market data is empty (degraded mode)"""
         # Act
-        result = trifecta_optimizer.optimize(oliver_strategy_signals, {})
+        result = trifecta_optimizer.optimize(oliver_strategy_usr_signals, {})
         
-        # Assert: signals returned unchanged
-        assert len(result) == len(oliver_strategy_signals)
+        # Assert: usr_signals returned unchanged
+        assert len(result) == len(oliver_strategy_usr_signals)
         assert result[0].confidence == 0.75
         assert result[1].confidence == 0.70
     
-    def test_optimize_only_oliver_strategy(self, trifecta_optimizer, mixed_strategy_signals, full_market_data):
+    def test_optimize_only_oliver_strategy(self, trifecta_optimizer, mixed_strategy_usr_signals, full_market_data):
         """Test that optimization only applies to oliver strategy"""
         # Act
-        result = trifecta_optimizer.optimize(mixed_strategy_signals, full_market_data)
+        result = trifecta_optimizer.optimize(mixed_strategy_usr_signals, full_market_data)
         
         # Assert: oliver signal optimized, scalper unchanged
         oliver_sig = next(s for s in result if s.metadata.get("strategy_id") == "oliver")
@@ -162,7 +162,7 @@ class TestSignalTrifectaOptimizer:
         assert scalper_sig.confidence == 0.70
         # Oliver might be changed (or same if below threshold)
     
-    def test_trifecta_score_calculation_formula(self, trifecta_optimizer, oliver_strategy_signals, full_market_data):
+    def test_trifecta_score_calculation_formula(self, trifecta_optimizer, oliver_strategy_usr_signals, full_market_data):
         """Test score calculation: final = (original * 0.4) + (trifecta * 0.6)"""
         # Arrange
         original_confidence = 0.75  # EURUSD signal
@@ -175,7 +175,7 @@ class TestSignalTrifectaOptimizer:
         }
         
         # Act
-        result = trifecta_optimizer.optimize(oliver_strategy_signals, full_market_data)
+        result = trifecta_optimizer.optimize(oliver_strategy_usr_signals, full_market_data)
         eurusd_result = next(s for s in result if s.symbol == "EURUSD")
         
         # Assert: final_score should use formula
@@ -184,8 +184,8 @@ class TestSignalTrifectaOptimizer:
         assert isinstance(eurusd_result.confidence, float)
         assert 0.0 <= eurusd_result.confidence <= 1.0
     
-    def test_filter_by_score_threshold(self, trifecta_optimizer, oliver_strategy_signals, full_market_data):
-        """Test that signals with final_score < 0.60 are filtered out"""
+    def test_filter_by_score_threshold(self, trifecta_optimizer, oliver_strategy_usr_signals, full_market_data):
+        """Test that usr_signals with final_score < 0.60 are filtered out"""
         # Arrange: mock very low trifecta scores
         trifecta_optimizer.trifecta_analyzer.analyze.return_value = {
             "M2": {"direction": "UP", "score": 0.20},
@@ -194,39 +194,39 @@ class TestSignalTrifectaOptimizer:
         }
         
         # Act: with low scores, final might be (0.75 * 0.4) + (0.25 * 0.6) = 0.45
-        result = trifecta_optimizer.optimize(oliver_strategy_signals, full_market_data)
+        result = trifecta_optimizer.optimize(oliver_strategy_usr_signals, full_market_data)
         
         # Assert: if score < 0.60, signal filtered out
         # This depends on actual calculation, but test the behavior
-        assert len(result) <= len(oliver_strategy_signals)
+        assert len(result) <= len(oliver_strategy_usr_signals)
     
-    def test_degraded_mode_passthrough(self, trifecta_optimizer, oliver_strategy_signals):
-        """Test that signals are passed through unmodified in degraded mode (no data)"""
+    def test_degraded_mode_passthrough(self, trifecta_optimizer, oliver_strategy_usr_signals):
+        """Test that usr_signals are passed through unmodified in degraded mode (no data)"""
         # Arrange
-        original_signals = oliver_strategy_signals.copy()
+        original_usr_signals = oliver_strategy_usr_signals.copy()
         
         # Act: call with empty market data = degraded mode
-        result = trifecta_optimizer.optimize(oliver_strategy_signals, {})
+        result = trifecta_optimizer.optimize(oliver_strategy_usr_signals, {})
         
-        # Assert: all signals returned with original confidence
-        assert len(result) == len(original_signals)
-        for orig, res in zip(original_signals, result):
+        # Assert: all usr_signals returned with original confidence
+        assert len(result) == len(original_usr_signals)
+        for orig, res in zip(original_usr_signals, result):
             assert res.confidence == orig.confidence
     
-    def test_non_oliver_strategies_passthrough(self, trifecta_optimizer, mixed_strategy_signals, full_market_data):
-        """Test that non-oliver strategies are passed through unchanged"""
+    def test_non_oliver_usr_strategies_passthrough(self, trifecta_optimizer, mixed_strategy_usr_signals, full_market_data):
+        """Test that non-oliver usr_strategies are passed through unchanged"""
         # Arrange
-        scalper_signal = next(s for s in mixed_strategy_signals if s.metadata.get("strategy_id") == "scalper")
+        scalper_signal = next(s for s in mixed_strategy_usr_signals if s.metadata.get("strategy_id") == "scalper")
         original_confidence = scalper_signal.confidence
         
         # Act
-        result = trifecta_optimizer.optimize(mixed_strategy_signals, full_market_data)
+        result = trifecta_optimizer.optimize(mixed_strategy_usr_signals, full_market_data)
         
         # Assert: scalper signal unchanged
         result_scalper = next(s for s in result if s.metadata.get("strategy_id") == "scalper")
         assert result_scalper.confidence == original_confidence
     
-    def test_missing_timeframe_data_handling(self, trifecta_optimizer, oliver_strategy_signals):
+    def test_missing_timeframe_data_handling(self, trifecta_optimizer, oliver_strategy_usr_signals):
         """Test graceful handling when some timeframes missing"""
         # Arrange: market data with missing M2
         incomplete_data = {
@@ -238,7 +238,7 @@ class TestSignalTrifectaOptimizer:
         }
         
         # Act: should handle gracefully
-        result = trifecta_optimizer.optimize(oliver_strategy_signals, incomplete_data)
+        result = trifecta_optimizer.optimize(oliver_strategy_usr_signals, incomplete_data)
         
         # Assert: returns something (either optimized or original)
         assert len(result) > 0
@@ -254,10 +254,10 @@ class TestSignalTrifectaOptimizer:
         assert "M5" in eurusd_data
         assert "M15" in eurusd_data
     
-    def test_trifecta_alignment_metadata_updated(self, trifecta_optimizer, oliver_strategy_signals, full_market_data):
+    def test_trifecta_alignment_metadata_updated(self, trifecta_optimizer, oliver_strategy_usr_signals, full_market_data):
         """Test that signal metadata is updated with trifecta results"""
         # Arrange
-        oliver_strategy_signals[0].metadata = {}
+        oliver_strategy_usr_signals[0].metadata = {}
         
         # Mock analyzer
         trifecta_optimizer.trifecta_analyzer.analyze.return_value = {
@@ -267,7 +267,7 @@ class TestSignalTrifectaOptimizer:
         }
         
         # Act
-        result = trifecta_optimizer.optimize(oliver_strategy_signals, full_market_data)
+        result = trifecta_optimizer.optimize(oliver_strategy_usr_signals, full_market_data)
         eurusd_result = next(s for s in result if s.symbol == "EURUSD")
         
         # Assert: metadata contains trifecta info
@@ -277,10 +277,10 @@ class TestSignalTrifectaOptimizer:
             assert "M5" in eurusd_result.metadata["trifecta_analysis"]
             assert "M15" in eurusd_result.metadata["trifecta_analysis"]
     
-    def test_oliver_conflicting_trifecta_rejection(self, trifecta_optimizer, oliver_strategy_signals, full_market_data):
-        """Test that conflicting trifecta signals are rejected or weakened"""
+    def test_oliver_conflicting_trifecta_rejection(self, trifecta_optimizer, oliver_strategy_usr_signals, full_market_data):
+        """Test that conflicting trifecta usr_signals are rejected or weakened"""
         # Arrange: strong signal but trifecta disagrees
-        oliver_strategy_signals[0].confidence = 0.90  # Very strong
+        oliver_strategy_usr_signals[0].confidence = 0.90  # Very strong
         
         # Mock: M2 UP, M5 DOWN, M15 DOWN = conflict
         trifecta_optimizer.trifecta_analyzer.analyze.return_value = {
@@ -290,7 +290,7 @@ class TestSignalTrifectaOptimizer:
         }
         
         # Act
-        result = trifecta_optimizer.optimize(oliver_strategy_signals, full_market_data)
+        result = trifecta_optimizer.optimize(oliver_strategy_usr_signals, full_market_data)
         
         # Assert: score should be reduced or filtered due to conflict
         eurusd_result = next((s for s in result if s.symbol == "EURUSD"), None)
@@ -300,15 +300,15 @@ class TestSignalTrifectaOptimizer:
             # If passed, should be different (not exactly 0.90) or at least not boosted
             assert eurusd_result.confidence <= 0.90  # At least not boosted
     
-    def test_optimize_preserves_other_signal_properties(self, trifecta_optimizer, oliver_strategy_signals, full_market_data):
+    def test_optimize_preserves_other_signal_properties(self, trifecta_optimizer, oliver_strategy_usr_signals, full_market_data):
         """Test that optimization preserves entry_price, stop_loss, take_profit"""
         # Arrange
-        original_entry = oliver_strategy_signals[0].entry_price
-        original_stop = oliver_strategy_signals[0].stop_loss
-        original_take = oliver_strategy_signals[0].take_profit
+        original_entry = oliver_strategy_usr_signals[0].entry_price
+        original_stop = oliver_strategy_usr_signals[0].stop_loss
+        original_take = oliver_strategy_usr_signals[0].take_profit
         
         # Act
-        result = trifecta_optimizer.optimize(oliver_strategy_signals, full_market_data)
+        result = trifecta_optimizer.optimize(oliver_strategy_usr_signals, full_market_data)
         eurusd_result = next(s for s in result if s.symbol == "EURUSD")
         
         # Assert: price levels unchanged
@@ -316,19 +316,19 @@ class TestSignalTrifectaOptimizer:
         assert eurusd_result.stop_loss == original_stop
         assert eurusd_result.take_profit == original_take
     
-    def test_exception_handling_in_analyzer(self, trifecta_optimizer, oliver_strategy_signals, full_market_data):
+    def test_exception_handling_in_analyzer(self, trifecta_optimizer, oliver_strategy_usr_signals, full_market_data):
         """Test graceful handling when trifecta analyzer raises exception"""
         # Arrange: mock to raise exception
         trifecta_optimizer.trifecta_analyzer.analyze.side_effect = Exception("Analyzer error")
         
-        # Act: should not raise, return signals unchanged
-        result = trifecta_optimizer.optimize(oliver_strategy_signals, full_market_data)
+        # Act: should not raise, return usr_signals unchanged
+        result = trifecta_optimizer.optimize(oliver_strategy_usr_signals, full_market_data)
         
-        # Assert: signals returned unchanged
-        assert len(result) == len(oliver_strategy_signals)
-        assert result[0].confidence == oliver_strategy_signals[0].confidence
+        # Assert: usr_signals returned unchanged
+        assert len(result) == len(oliver_strategy_usr_signals)
+        assert result[0].confidence == oliver_strategy_usr_signals[0].confidence
     
-    def test_multiple_symbols_independent_optimization(self, trifecta_optimizer, oliver_strategy_signals, full_market_data):
+    def test_multiple_symbols_independent_optimization(self, trifecta_optimizer, oliver_strategy_usr_signals, full_market_data):
         """Test that multiple symbols are optimized independently"""
         # Arrange: mock different analyzer results for each symbol
         call_count = [0]
@@ -351,7 +351,7 @@ class TestSignalTrifectaOptimizer:
         trifecta_optimizer.trifecta_analyzer.analyze.side_effect = mock_analyze_side_effect
         
         # Act
-        result = trifecta_optimizer.optimize(oliver_strategy_signals, full_market_data)
+        result = trifecta_optimizer.optimize(oliver_strategy_usr_signals, full_market_data)
         
         # Assert: each symbol processed separately
         assert len(result) > 0

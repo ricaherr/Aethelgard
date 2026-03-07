@@ -24,8 +24,8 @@ def mock_storage():
         "adx_range_exit_threshold": 18.0,
         "volatility_shock_multiplier": 5.0
     }
-    storage.set_system_state = MagicMock()
-    storage.get_system_state = MagicMock()
+    storage.set_sys_config = MagicMock()
+    storage.get_sys_config = MagicMock()
     return storage
 
 
@@ -257,9 +257,9 @@ class TestLedgerSynchronization:
 
         regime_service._sync_ledger()
 
-        # Verificar que set_system_state fue llamado
-        mock_storage.set_system_state.assert_called()
-        call_args = mock_storage.set_system_state.call_args
+        # Verificar que set_sys_config fue llamado
+        mock_storage.set_sys_config.assert_called()
+        call_args = mock_storage.set_sys_config.call_args
         assert call_args[1]["key"] == "regime_fractal_ledger"
         assert "m15_regime" in call_args[1]["value"]
         assert "h4_regime" in call_args[1]["value"]
@@ -285,9 +285,9 @@ class TestLedgerSynchronization:
         )
 
         # Verificar que ledger fue sincronizado
-        mock_storage.set_system_state.assert_called_with(
+        mock_storage.set_sys_config.assert_called_with(
             key="regime_fractal_ledger",
-            value=mock_storage.set_system_state.call_args[1]["value"]
+            value=mock_storage.set_sys_config.call_args[1]["value"]
         )
 
 

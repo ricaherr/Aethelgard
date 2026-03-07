@@ -94,7 +94,7 @@ class ScannerEngine:
         if config_data:
             cfg = config_data
         elif storage:
-            state = storage.get_system_state()
+            state = storage.get_sys_config()
             cfg = state.get("global_config", {}) if isinstance(state, dict) else {}
         elif config_path:
             try:
@@ -307,7 +307,7 @@ class ScannerEngine:
                     "metrics": metrics,
                     "timestamp": datetime.now().isoformat()
                 }
-                self.storage.log_market_state(state_data)
+                self.storage.log_sys_market_pulse(state_data)
             except Exception as e:
                 logger.error(f"Error persisting market state for {key}: {e}")
 
@@ -386,7 +386,7 @@ class ScannerEngine:
             config = {}
             # SSOT: Reload via StorageManager if available
             if self.storage:
-                state = self.storage.get_system_state()
+                state = self.storage.get_sys_config()
                 config = state.get("global_config", {}) or {}
             else:
                 return

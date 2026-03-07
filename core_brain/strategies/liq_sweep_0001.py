@@ -22,7 +22,7 @@ from datetime import datetime
 import pandas as pd
 
 from models.signal import Signal, SignalType, MarketRegime, ConnectorType
-from core_brain.strategies.base_strategy import BaseStrategy
+from core_brain.usr_strategies.base_strategy import BaseStrategy
 from core_brain.sensors.session_liquidity_sensor import SessionLiquiditySensor
 from core_brain.sensors.liquidity_sweep_detector import LiquiditySweepDetector
 from core_brain.services.fundamental_guard import FundamentalGuardService
@@ -86,7 +86,7 @@ class LiquiditySweep0001Strategy(BaseStrategy):
         
         logger.info(
             f"[{self.trace_id}] LiquiditySweep0001Strategy initialized for tenant {self.tenant_id}. "
-            f"Max daily trades: {self.max_daily_trades}, "
+            f"Max daily usr_trades: {self.max_daily_usr_trades}, "
             f"TP pips: {self.tp_pips}, SL buffer: {self.sl_buffer_pips}"
         )
     
@@ -95,14 +95,14 @@ class LiquiditySweep0001Strategy(BaseStrategy):
         """Carga parámetros desde storage (SSOT)."""
         try:
             params = self.storage_manager.get_dynamic_params()
-            self.max_daily_trades = params.get('liq_sweep_max_daily_trades', 3)
+            self.max_daily_usr_trades = params.get('liq_sweep_max_daily_usr_trades', 3)
             self.tp_pips = params.get('liq_sweep_tp_pips', 30)
             self.sl_buffer_pips = params.get('liq_sweep_sl_buffer_pips', 2)
             self.min_affinity = params.get('liq_sweep_min_affinity', 0.75)
             self.allowed_sessions = params.get('liq_sweep_allowed_sessions', ['LONDON'])
         except Exception as e:
             logger.warning(f"[{self.trace_id}] Failed to load parameters: {e}. Using defaults.")
-            self.max_daily_trades = 3
+            self.max_daily_usr_trades = 3
             self.tp_pips = 30
             self.sl_buffer_pips = 2
             self.min_affinity = 0.75

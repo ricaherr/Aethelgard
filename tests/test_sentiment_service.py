@@ -31,7 +31,7 @@ def test_sentiment_veto_blocks_high_confidence_buy_on_bearish_fed_news() -> None
     events = [
         {
             "source": "Bloomberg",
-            "headline": "Fed signals higher for longer policy and quantitative tightening",
+            "headline": "Fed usr_signals higher for longer policy and quantitative tightening",
             "published_at": _now_iso(),
         }
     ]

@@ -25,10 +25,10 @@ logger = logging.getLogger(__name__)
 
 
 class AssetNotNormalizedError(Exception):
-    """Raised when an asset is not found in asset_profiles."""
+    """Raised when an asset is not found in usr_assets_cfg."""
     def __init__(self, symbol: str):
         self.symbol = symbol
-        self.message = f"CRITICAL: Asset {symbol} is NOT normalized in asset_profiles. Trade aborted for safety."
+        self.message = f"CRITICAL: Asset {symbol} is NOT normalized in usr_assets_cfg. Trade aborted for safety."
         super().__init__(self.message)
 
 
@@ -96,10 +96,10 @@ class RiskManager:
         self.max_account_risk_pct = risk_settings.get("max_account_risk_pct", 5.0)
         self.max_r_per_trade = Decimal(str(risk_settings.get("max_r_per_trade", 2.0)))
 
-        system_state = self.storage.get_system_state()
-        self.lockdown_mode = system_state.get("lockdown_mode", False)
-        lockdown_date = system_state.get("lockdown_date")
-        lockdown_balance = system_state.get("lockdown_balance")
+        sys_config = self.storage.get_sys_config()
+        self.lockdown_mode = sys_config.get("lockdown_mode", False)
+        lockdown_date = sys_config.get("lockdown_date")
+        lockdown_balance = sys_config.get("lockdown_balance")
 
         if self.lockdown_mode:
             should_reset, reason = self._should_reset_lockdown(
@@ -107,7 +107,7 @@ class RiskManager:
             )
             if should_reset:
                 self.lockdown_mode = False
-                self.storage.update_system_state({
+                self.storage.update_sys_config({
                     "lockdown_mode": False,
                     "lockdown_date": None,
                     "lockdown_balance": None,
@@ -173,7 +173,7 @@ class RiskManager:
         logger.info("[%s] Starting Universal Risk Calculation for %s", trace_id, symbol)
         profile = self.storage.get_asset_profile(symbol, trace_id=trace_id)
         if not profile:
-            logger.critical("[%s] %s not in asset_profiles!", trace_id, symbol)
+            logger.critical("[%s] %s not in usr_assets_cfg!", trace_id, symbol)
             raise AssetNotNormalizedError(symbol)
         try:
             d_risk = Decimal(str(risk_amount_usd))
@@ -228,7 +228,7 @@ class RiskManager:
             from datetime import datetime, timezone
             now = datetime.now(timezone.utc).isoformat()
             self.lockdown_mode = True
-            self.storage.update_system_state({
+            self.storage.update_sys_config({
                 "lockdown_mode": True,
                 "lockdown_date": now,
                 "lockdown_balance": self.capital,
@@ -240,7 +240,7 @@ class RiskManager:
         if self.lockdown_mode:
             self.lockdown_mode = False
             self.consecutive_losses = 0
-            self.storage.update_system_state({
+            self.storage.update_sys_config({
                 "lockdown_mode": False,
                 "lockdown_date": None,
                 "lockdown_balance": None,
@@ -274,7 +274,7 @@ class RiskManager:
         try:
             conn = self.storage._get_conn()
             cursor = conn.cursor()
-            cursor.execute("SELECT MAX(timestamp) FROM trades WHERE timestamp > ?", (lockdown_date,))
+            cursor.execute("SELECT MAX(timestamp) FROM usr_trades WHERE timestamp > ?", (lockdown_date,))
             row = cursor.fetchone()
             last_trade = row[0] if row and row[0] else None
             conn.close()
@@ -320,7 +320,7 @@ class RiskManager:
         """
         try:
             self.lockdown_mode = True
-            self.storage.update_system_state({
+            self.storage.update_sys_config({
                 "lockdown_mode": True,
                 "lockdown_date": datetime.now().isoformat(),
                 "lockdown_reason": reason,
@@ -337,14 +337,14 @@ class RiskManager:
             logger.error(f"[RISK_MANAGER] Error activating lockdown: {e}")
             return False
 
-    async def cancel_pending_orders(
+    async def cancel_pending_usr_orders(
         self,
         symbol: Optional[str] = None,
         reason: str = "Lockdown Mode Activated",
     ) -> Dict[str, int]:
         """
         Cancela todas las órdenes pendientes para un símbolo o globalmente.
-        MISIÓN A: Integración real con conectores para cancelación de órdenes en brokers.
+        MISIÓN A: Integración real con conectores para cancelación de órdenes en sys_brokers.
         
         Args:
             symbol: Símbolo a afectar (None = todas las órdenes)
@@ -380,20 +380,20 @@ class RiskManager:
                     continue
                 
                 try:
-                    # Verificar si el conector tiene el método get_pending_orders
-                    if not hasattr(connector, 'get_pending_orders'):
-                        logger.debug(f"Connector {connector_type} does not support get_pending_orders")
+                    # Verificar si el conector tiene el método get_pending_usr_orders
+                    if not hasattr(connector, 'get_pending_usr_orders'):
+                        logger.debug(f"Connector {connector_type} does not support get_pending_usr_orders")
                         continue
                     
                     # Obtener órdenes pendientes
-                    pending_orders = connector.get_pending_orders(symbol=symbol)
+                    pending_usr_orders = connector.get_pending_usr_orders(symbol=symbol)
                     
-                    if pending_orders is None or not pending_orders:
-                        logger.info(f"No pending orders found on {connector_type} for {symbol or 'ALL'}")
+                    if pending_usr_orders is None or not pending_usr_orders:
+                        logger.info(f"No pending usr_orders found on {connector_type} for {symbol or 'ALL'}")
                         continue
                     
                     # Cancelar cada orden
-                    for order in pending_orders:
+                    for order in pending_usr_orders:
                         order_ticket = order.get('ticket')
                         if not order_ticket:
                             failed_count += 1
@@ -431,11 +431,11 @@ class RiskManager:
                 "cancelled": cancelled_count,
                 "failed": failed_count,
                 "status": status,
-                "message": f"Cancelled {cancelled_count} orders, {failed_count} failed"
+                "message": f"Cancelled {cancelled_count} usr_orders, {failed_count} failed"
             }
         
         except Exception as e:
-            logger.error(f"[ANOMALY_SENTINEL] Error in cancel_pending_orders: {e}")
+            logger.error(f"[ANOMALY_SENTINEL] Error in cancel_pending_usr_orders: {e}")
             return {
                 "cancelled": 0,
                 "failed": 0,
@@ -486,24 +486,24 @@ class RiskManager:
                     continue
                 
                 try:
-                    # Verificar si el conector tiene el método get_open_positions
-                    if not hasattr(connector, 'get_open_positions'):
-                        logger.debug(f"Connector {connector_type} does not support get_open_positions")
+                    # Verificar si el conector tiene el método get_open_usr_positions
+                    if not hasattr(connector, 'get_open_usr_positions'):
+                        logger.debug(f"Connector {connector_type} does not support get_open_usr_positions")
                         continue
                     
                     # Obtener posiciones abiertas
-                    positions = connector.get_open_positions()
+                    usr_positions = connector.get_open_usr_positions()
                     
-                    if positions is None or not positions:
-                        logger.info(f"No open positions found on {connector_type} for {symbol or 'ALL'}")
+                    if usr_positions is None or not usr_positions:
+                        logger.info(f"No open usr_positions found on {connector_type} for {symbol or 'ALL'}")
                         continue
                     
                     # Filtrar por símbolo si es necesario
                     if symbol:
-                        positions = [p for p in positions if p.get('symbol') == symbol]
+                        usr_positions = [p for p in usr_positions if p.get('symbol') == symbol]
                     
                     # Ajustar cada posición
-                    for position in positions:
+                    for position in usr_positions:
                         ticket = position.get('ticket')
                         current_price = position.get('price_current') or position.get('current_price')
                         pos_type = position.get('type')  # 0=BUY, 1=SELL
@@ -558,7 +558,7 @@ class RiskManager:
                 "adjusted": adjusted_count,
                 "failed": failed_count,
                 "status": status,
-                "message": f"Adjusted {adjusted_count} positions, {failed_count} failed"
+                "message": f"Adjusted {adjusted_count} usr_positions, {failed_count} failed"
             }
         
         except Exception as e:

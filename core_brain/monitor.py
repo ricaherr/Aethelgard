@@ -1,6 +1,6 @@
 """
 Closing Monitor (Feedback Loop)
-Monitors executed signals and updates database with real results from broker.
+Monitors executed usr_signals and updates database with real results from broker.
 Part of Aethelgard's autonomous learning system.
 """
 import asyncio
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 class ClosingMonitor:
     """
-    Monitors closed positions and updates database with real results.
+    Monitors closed usr_positions and updates database with real results.
     
     This component is critical for:
     - Feedback loop: real results feed into Tuner for parameter optimization
@@ -25,7 +25,7 @@ class ClosingMonitor:
     - Risk management: track consecutive losses
     
     Features:
-    - Periodic checking of executed signals
+    - Periodic checking of executed usr_signals
     - Connector-agnostic design (MT5, NT8, etc.)
     - Automatic PIP and profit calculation
     - Resilient error handling
@@ -43,7 +43,7 @@ class ClosingMonitor:
         Args:
             storage: StorageManager instance
             connectors: Dict of broker connectors (e.g., {'MT5': mt5_connector})
-            interval_seconds: Frequency to check for closed positions (default: 60s)
+            interval_seconds: Frequency to check for closed usr_positions (default: 60s)
         """
         self.storage = storage or StorageManager()
         self.connectors = connectors or {}
@@ -55,28 +55,28 @@ class ClosingMonitor:
             f"Connectors: {list(self.connectors.keys())}"
         )
     
-    def check_closed_positions(self) -> int:
+    def check_closed_usr_positions(self) -> int:
         """
-        Check all executed signals and update those that have closed.
+        Check all executed usr_signals and update those that have closed.
         
         Returns:
-            Number of signals updated
+            Number of usr_signals updated
         """
         try:
-            # Get all executed signals (not yet marked as closed)
-            executed_signals = self.storage.get_signals(status='EXECUTED')
+            # Get all executed usr_signals (not yet marked as closed)
+            executed_usr_signals = self.storage.get_usr_signals(status='EXECUTED')
             
-            if not executed_signals:
-                logger.debug("No executed signals to monitor")
+            if not executed_usr_signals:
+                logger.debug("No executed usr_signals to monitor")
                 return 0
             
             updates_count = 0
             
-            # Check each connector for closed positions
+            # Check each connector for closed usr_positions
             for connector_name, connector in self.connectors.items():
                 try:
-                    closed_positions = connector.get_closed_positions()
-                    for position in closed_positions:
+                    closed_usr_positions = connector.get_closed_usr_positions()
+                    for position in closed_usr_positions:
                         # 1. Intentar por signal_id explícito
                         signal_id = position.get('signal_id')
                         if signal_id:
@@ -84,14 +84,14 @@ class ClosingMonitor:
                         # 2. Fallback: ticket
                         if not signal_id:
                             ticket = position.get('ticket')
-                            matching_signal = self._find_signal_by_ticket(executed_signals, ticket)
+                            matching_signal = self._find_signal_by_ticket(executed_usr_signals, ticket)
                             if matching_signal:
                                 signal_id = matching_signal['id']
                                 logger.debug(f"[MATCH] por ticket: {ticket} → signal_id={signal_id}")
                         # 3. Fallback: order_id
                         if not signal_id:
                             order_id = position.get('order_id')
-                            for signal in executed_signals:
+                            for signal in executed_usr_signals:
                                 metadata = signal.get('metadata', {})
                                 if metadata.get('order_id') == order_id:
                                     signal_id = signal['id']
@@ -124,21 +124,21 @@ class ClosingMonitor:
                     logger.error(f"Error checking {connector_name}: {e}")
             
             if updates_count > 0:
-                logger.info(f"Updated {updates_count} closed positions")
+                logger.info(f"Updated {updates_count} closed usr_positions")
             
             return updates_count
         
         except Exception as e:
-            logger.error(f"Error in check_closed_positions: {e}")
+            logger.error(f"Error in check_closed_usr_positions: {e}")
             return 0
     
     def _find_signal_by_ticket(
         self, 
-        signals: List[Dict], 
+        usr_signals: List[Dict], 
         ticket: int
     ) -> Optional[Dict]:
         """Find signal matching a broker ticket number"""
-        for signal in signals:
+        for signal in usr_signals:
             metadata = signal.get('metadata', {})
             if metadata.get('ticket') == ticket:
                 return signal
@@ -242,7 +242,7 @@ class ClosingMonitor:
         
         while self.is_running:
             try:
-                self.check_closed_positions()
+                self.check_closed_usr_positions()
                 await asyncio.sleep(self.interval_seconds)
             except Exception as e:
                 logger.error(f"Error in monitoring loop: {e}")

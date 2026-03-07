@@ -17,12 +17,12 @@ class AccountsMixin(BaseRepository):
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            cursor.execute("PRAGMA table_info(brokers)")
+            cursor.execute("PRAGMA table_info(sys_brokers)")
             columns = [row[1] for row in cursor.fetchall()]
 
             if 'broker_id' in columns:
                 cursor.execute("""
-                    INSERT OR REPLACE INTO brokers (broker_id, name, type, website, platforms_available, 
+                    INSERT OR REPLACE INTO sys_brokers (broker_id, name, type, website, platforms_available, 
                                                    data_server, auto_provision_available, registration_url)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
@@ -41,7 +41,7 @@ class AccountsMixin(BaseRepository):
                     db_data['id'] = db_data['broker_id']
 
                 cursor.execute("""
-                    INSERT OR REPLACE INTO brokers (id, name, platform_id, config)
+                    INSERT OR REPLACE INTO sys_brokers (id, name, platform_id, config)
                     VALUES (?, ?, ?, ?)
                 """, (
                     db_data.get('id') or db_data.get('broker_id'),
@@ -55,7 +55,7 @@ class AccountsMixin(BaseRepository):
 
     def _get_broker_id_column(self, cursor: sqlite3.Cursor) -> str:
         """Detect broker identifier column for schema compatibility."""
-        cursor.execute("PRAGMA table_info(brokers)")
+        cursor.execute("PRAGMA table_info(sys_brokers)")
         columns = [row[1] for row in cursor.fetchall()]
         return "broker_id" if "broker_id" in columns else "id"
 
@@ -79,11 +79,11 @@ class AccountsMixin(BaseRepository):
         return broker
 
     def get_brokers(self) -> List[Dict]:
-        """Get all brokers"""
+        """Get all sys_brokers"""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM brokers")
+            cursor.execute("SELECT * FROM sys_brokers")
             rows = cursor.fetchall()
             return [self._normalize_broker_row(dict(row)) for row in rows]
         finally:
@@ -95,7 +95,7 @@ class AccountsMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             lookup_column = self._get_broker_id_column(cursor)
-            cursor.execute(f"SELECT * FROM brokers WHERE {lookup_column} = ?", (broker_id,))
+            cursor.execute(f"SELECT * FROM sys_brokers WHERE {lookup_column} = ?", (broker_id,))
             row = cursor.fetchone()
             if row:
                 return self._normalize_broker_row(dict(row))
@@ -109,7 +109,7 @@ class AccountsMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT OR REPLACE INTO platforms (id, name, type, config)
+                INSERT OR REPLACE INTO sys_platforms (id, name, type, config)
                 VALUES (?, ?, ?, ?)
             """, (
                 platform_data['id'],
@@ -122,20 +122,20 @@ class AccountsMixin(BaseRepository):
             self._close_conn(conn)
 
     def get_platforms(self) -> List[Dict]:
-        """Get all platforms"""
+        """Get all sys_platforms"""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM platforms")
+            cursor.execute("SELECT * FROM sys_platforms")
             rows = cursor.fetchall()
-            platforms = []
+            sys_platforms = []
             for row in rows:
                 platform = dict(row)
                 if 'config' in platform and platform['config']:
                     config = json.loads(platform['config']) if platform['config'] else {}
                     platform.update(config)
-                platforms.append(platform)
-            return platforms
+                sys_platforms.append(platform)
+            return sys_platforms
         finally:
             self._close_conn(conn)
 
@@ -166,7 +166,7 @@ class AccountsMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT OR REPLACE INTO broker_accounts 
+                INSERT OR REPLACE INTO sys_broker_accounts 
                 (account_id, broker_id, platform_id, account_name, account_number, server, account_type, enabled, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
@@ -190,12 +190,12 @@ class AccountsMixin(BaseRepository):
         
         return account_data['id']
 
-    def get_broker_accounts(self, enabled_only: bool = False, broker_id: Optional[str] = None, account_type: Optional[str] = None) -> List[Dict]:
+    def get_sys_broker_accounts(self, enabled_only: bool = False, broker_id: Optional[str] = None, account_type: Optional[str] = None) -> List[Dict]:
         """Get all broker accounts, optionally filtered by enabled status, broker_id, and account_type"""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            query = "SELECT * FROM broker_accounts WHERE 1=1"
+            query = "SELECT * FROM sys_broker_accounts WHERE 1=1"
             params = []
             if enabled_only:
                 query += " AND enabled = 1"
@@ -216,7 +216,7 @@ class AccountsMixin(BaseRepository):
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM broker_accounts WHERE account_id = ?", (account_id,))
+            cursor.execute("SELECT * FROM sys_broker_accounts WHERE account_id = ?", (account_id,))
             row = cursor.fetchone()
             return dict(row) if row else None
         finally:
@@ -244,20 +244,20 @@ class AccountsMixin(BaseRepository):
             cursor = conn.cursor()
             
             # Check if column exists (backwards compatibility)
-            cursor.execute("PRAGMA table_info(broker_accounts)")
+            cursor.execute("PRAGMA table_info(sys_broker_accounts)")
             columns = [row[1] for row in cursor.fetchall()]
             
             if 'modules_enabled' not in columns:
                 # Add column if missing (auto-migration)
                 cursor.execute("""
-                    ALTER TABLE broker_accounts 
+                    ALTER TABLE sys_broker_accounts 
                     ADD COLUMN modules_enabled TEXT DEFAULT '{}'
                 """)
                 conn.commit()
                 return {}
             
             cursor.execute(
-                "SELECT modules_enabled FROM broker_accounts WHERE account_id = ?",
+                "SELECT modules_enabled FROM sys_broker_accounts WHERE account_id = ?",
                 (account_id,)
             )
             row =cursor.fetchone()
@@ -291,17 +291,17 @@ class AccountsMixin(BaseRepository):
             cursor = conn.cursor()
             
             # Ensure column exists
-            cursor.execute("PRAGMA table_info(broker_accounts)")
+            cursor.execute("PRAGMA table_info(sys_broker_accounts)")
             columns = [row[1] for row in cursor.fetchall()]
             
             if 'modules_enabled' not in columns:
                 cursor.execute("""
-                    ALTER TABLE broker_accounts 
+                    ALTER TABLE sys_broker_accounts 
                     ADD COLUMN modules_enabled TEXT DEFAULT '{}'
                 """)
             
             cursor.execute(
-                "UPDATE broker_accounts SET modules_enabled = ? WHERE account_id = ?",
+                "UPDATE sys_broker_accounts SET modules_enabled = ? WHERE account_id = ?",
                 (json.dumps(modules), account_id)
             )
             conn.commit()
@@ -325,17 +325,17 @@ class AccountsMixin(BaseRepository):
             cursor = conn.cursor()
             
             # Ensure column exists
-            cursor.execute("PRAGMA table_info(broker_accounts)")
+            cursor.execute("PRAGMA table_info(sys_broker_accounts)")
             columns = [row[1] for row in cursor.fetchall()]
             
             if 'modules_enabled' not in columns:
                 cursor.execute("""
-                    ALTER TABLE broker_accounts 
+                    ALTER TABLE sys_broker_accounts 
                     ADD COLUMN modules_enabled TEXT DEFAULT '{}'
                 """)
             
             cursor.execute(
-                "UPDATE broker_accounts SET modules_enabled = ? WHERE account_id = ?",
+                "UPDATE sys_broker_accounts SET modules_enabled = ? WHERE account_id = ?",
                 (json.dumps(current_modules), account_id)
             )
             conn.commit()
@@ -347,7 +347,7 @@ class AccountsMixin(BaseRepository):
                                    password: Optional[str] = None, server: Optional[str] = None, 
                                    account_name: Optional[str] = None, account_type: Optional[str] = None,
                                    enabled: Optional[bool] = None) -> None:
-        """Update account credentials with explicit mapping and post-write verification."""
+        """Update account sys_credentials with explicit mapping and post-write verification."""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
@@ -377,17 +377,17 @@ class AccountsMixin(BaseRepository):
             
             if update_fields:
                 set_clause = ", ".join(update_fields)
-                cursor.execute(f"UPDATE broker_accounts SET {set_clause} WHERE account_id = ?", update_values)
+                cursor.execute(f"UPDATE sys_broker_accounts SET {set_clause} WHERE account_id = ?", update_values)
             
             if password is not None:
-                cursor.execute("DELETE FROM credentials WHERE broker_account_id = ?", (account_id,))
+                cursor.execute("DELETE FROM sys_credentials WHERE broker_account_id = ?", (account_id,))
                 encrypted_data = get_encryptor().encrypt(json.dumps({'password': password}))
-                cursor.execute("INSERT INTO credentials (broker_account_id, encrypted_data) VALUES (?, ?)", (account_id, encrypted_data))
+                cursor.execute("INSERT INTO sys_credentials (broker_account_id, encrypted_data) VALUES (?, ?)", (account_id, encrypted_data))
             
             conn.commit()
             
             # Post-write verification
-            cursor.execute("SELECT account_name, account_number, server, account_type, enabled FROM broker_accounts WHERE account_id = ?", (account_id,))
+            cursor.execute("SELECT account_name, account_number, server, account_type, enabled FROM sys_broker_accounts WHERE account_id = ?", (account_id,))
             row = cursor.fetchone()
             if not row:
                 raise ValueError(f"Account {account_id} not found after update")
@@ -398,12 +398,12 @@ class AccountsMixin(BaseRepository):
             self._close_conn(conn)
 
     def update_credential(self, account_id: str, credential_data: Dict) -> None:
-        """Update encrypted credentials for account"""
+        """Update encrypted sys_credentials for account"""
         encrypted_data = get_encryptor().encrypt(json.dumps(credential_data))
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            cursor.execute("INSERT OR REPLACE INTO credentials (broker_account_id, encrypted_data) VALUES (?, ?)", (account_id, encrypted_data))
+            cursor.execute("INSERT OR REPLACE INTO sys_credentials (broker_account_id, encrypted_data) VALUES (?, ?)", (account_id, encrypted_data))
             conn.commit()
         finally:
             self._close_conn(conn)
@@ -420,55 +420,55 @@ class AccountsMixin(BaseRepository):
     def get_credentials(self, account_id: str, credential_type: str) -> Optional[str]: ...
 
     def get_credentials(self, account_id: str, credential_type: Optional[str] = None) -> Optional[Union[Dict, str]]:
-        """Get decrypted credentials for account."""
+        """Get decrypted sys_credentials for account."""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT encrypted_data FROM credentials WHERE broker_account_id = ?", (account_id,))
+            cursor.execute("SELECT encrypted_data FROM sys_credentials WHERE broker_account_id = ?", (account_id,))
             row = cursor.fetchone()
             if row:
                 decrypted = get_encryptor().decrypt(row['encrypted_data'])
-                credentials = json.loads(decrypted)
-                return credentials.get(credential_type) if credential_type else credentials
+                sys_credentials = json.loads(decrypted)
+                return sys_credentials.get(credential_type) if credential_type else sys_credentials
             return None
         finally:
             self._close_conn(conn)
 
     def delete_credential(self, account_id: str) -> None:
-        """Delete credentials for account"""
+        """Delete sys_credentials for account"""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM credentials WHERE broker_account_id = ?", (account_id,))
+            cursor.execute("DELETE FROM sys_credentials WHERE broker_account_id = ?", (account_id,))
             conn.commit()
         finally:
             self._close_conn(conn)
 
     def delete_account(self, account_id: str) -> None:
-        """Delete broker account and associated credentials"""
+        """Delete broker account and associated sys_credentials"""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM credentials WHERE broker_account_id = ?", (account_id,))
-            cursor.execute("DELETE FROM broker_accounts WHERE account_id = ?", (account_id,))
+            cursor.execute("DELETE FROM sys_credentials WHERE broker_account_id = ?", (account_id,))
+            cursor.execute("DELETE FROM sys_broker_accounts WHERE account_id = ?", (account_id,))
             conn.commit()
         finally:
             self._close_conn(conn)
 
     def get_all_accounts(self) -> List[Dict]:
-        """Get all broker accounts (alias for get_broker_accounts)"""
-        return self.get_broker_accounts()
+        """Get all broker accounts (alias for get_sys_broker_accounts)"""
+        return self.get_sys_broker_accounts()
 
     def get_broker_provision_status(self) -> List[Dict]:
         """
         Get current broker provisioning status.
         Returns list of broker dicts with their associated accounts.
         """
-        brokers = self.get_brokers()
-        accounts = self.get_broker_accounts()
+        sys_brokers = self.get_brokers()
+        accounts = self.get_sys_broker_accounts()
         
-        for broker in brokers:
+        for broker in sys_brokers:
             broker['accounts'] = [acc for acc in accounts if acc['broker_id'] == broker['broker_id']]
             broker['account_count'] = len(broker['accounts'])
             
-        return brokers
+        return sys_brokers

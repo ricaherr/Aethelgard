@@ -12,7 +12,7 @@ Arquitectura:
 
 Uso:
     manager = SignalExpirationManager(storage)
-    stats = manager.expire_old_signals()
+    stats = manager.expire_old_usr_signals()
     # stats = {'total_expired': 5, 'by_timeframe': {'M5': 3, 'H1': 2}}
 """
 from datetime import datetime, timedelta
@@ -49,12 +49,12 @@ class SignalExpirationManager:
         """
         self.storage = storage
     
-    def expire_old_signals(self) -> Dict[str, int]:
+    def expire_old_usr_signals(self) -> Dict[str, int]:
         """
-        Mark PENDING signals as EXPIRED if they exceeded timeframe window.
+        Mark PENDING usr_signals as EXPIRED if they exceeded timeframe window.
         
         Process:
-        1. Get all PENDING signals
+        1. Get all PENDING usr_signals
         2. Calculate age for each signal
         3. Compare age vs timeframe window
         4. Mark as EXPIRED if age > window
@@ -72,17 +72,17 @@ class SignalExpirationManager:
         """
         stats = {'total_expired': 0, 'total_checked': 0, 'by_timeframe': {}}
         
-        # Get all PENDING signals (only these can be expired)
-        pending_signals = self.storage.get_signals(status='PENDING')
-        stats['total_checked'] = len(pending_signals)
+        # Get all PENDING usr_signals (only these can be expired)
+        pending_usr_signals = self.storage.get_usr_signals(status='PENDING')
+        stats['total_checked'] = len(pending_usr_signals)
         
-        if not pending_signals:
+        if not pending_usr_signals:
             return stats
         
         from datetime import timezone
         now = datetime.now(timezone.utc)
         
-        for signal in pending_signals:
+        for signal in pending_usr_signals:
             timeframe = signal.get('timeframe', 'H1')  # Default H1 if missing
             window_minutes = EXPIRATION_WINDOWS.get(timeframe, 60)  # Default 1h if unknown TF
             
@@ -135,10 +135,10 @@ class SignalExpirationManager:
                     f"(age: {age_minutes:.1f}min > window: {window_minutes}min)"
                 )
         
-        # Log summary if any signals expired
+        # Log summary if any usr_signals expired
         if stats['total_expired'] > 0:
             logger.info(
-                f"[EXPIRATION CYCLE] Expired {stats['total_expired']} signals: "
+                f"[EXPIRATION CYCLE] Expired {stats['total_expired']} usr_signals: "
                 f"{stats['by_timeframe']}"
             )
         

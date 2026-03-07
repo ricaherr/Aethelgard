@@ -79,7 +79,7 @@ class TestProductionMetadataHandling:
     # - StorageManager.update_position_metadata() crea nueva si no existe
     # - PositionManager skipea validaciones si metadata es None
     # 
-    # def test_manual_positions_without_metadata_handled_safely(self):
+    # def test_manual_usr_positions_without_metadata_handled_safely(self):
     #     """CRÍTICO: Posiciones manuales (sin metadata) NO deben crashear"""
     #     pass
     

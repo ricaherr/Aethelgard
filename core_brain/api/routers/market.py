@@ -203,7 +203,7 @@ async def regime_history(symbol: str, limit: int = 100, token: TokenPayload = De
     try:
         tenant_id = token.tid
         storage = TenantDBFactory.get_storage(tenant_id)
-        history = storage.get_market_state_history(symbol, limit=limit)
+        history = storage.get_sys_market_pulse_history(symbol, limit=limit)
         formatted = [
             {
                 "regime": h["data"].get("regime"),
@@ -250,9 +250,9 @@ async def get_regime(symbol: str, token: TokenPayload = Depends(get_current_acti
 
 
 # ============ ENDPOINT: Configuraciones de Régimen ============
-@router.get("/regime_configs")
-async def get_regime_configs(token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
-    """Retorna los pesos y configuraciones dinámicas de cada régimen (regime_configs table).
+@router.get("/sys_regime_configs")
+async def get_sys_regime_configs(token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
+    """Retorna los pesos y configuraciones dinámicas de cada régimen (sys_regime_configs table).
     Usado por UI para visualizar WeightedMetricsVisualizer (Darwinismo Algorítmico).
     
     Estructura respuesta:
@@ -265,8 +265,8 @@ async def get_regime_configs(token: TokenPayload = Depends(get_current_active_us
     try:
         tenant_id = token.tid
         storage = TenantDBFactory.get_storage(tenant_id)
-        # Obtener todos los regime_configs agrupados por régimen (por tenant o global)
-        all_configs = storage.get_all_regime_configs(tenant_id=tenant_id)
+        # Obtener todos los sys_regime_configs agrupados por régimen (por tenant o global)
+        all_configs = storage.get_all_sys_regime_configs(tenant_id=tenant_id)
         
         # Transformar formato: all_configs es Dict[regime -> Dict[metric_name -> weight]]
         regime_weights = {}
@@ -281,7 +281,7 @@ async def get_regime_configs(token: TokenPayload = Depends(get_current_active_us
             "description": "Dynamic regime-specific metric weights for strategy ranking (Darwinismo Algorítmico)"
         }
     except Exception as e:
-        logger.error(f"Error en get_regime_configs: {e}")
+        logger.error(f"Error en get_sys_regime_configs: {e}")
         raise HTTPException(status_code=500, detail=f"Error fetching regime configs: {str(e)}")
 
 
@@ -326,7 +326,7 @@ async def get_instruments(all: bool = False, token: TokenPayload = Depends(get_c
     try:
         tenant_id = token.tid
         storage = TenantDBFactory.get_storage(tenant_id)
-        state = storage.get_system_state()
+        state = storage.get_sys_config()
         instruments_config = state.get("instruments_config")
         # Solo sembrar cuando la clave NO existe (evitar borrar datos del usuario)
         if instruments_config is None:
@@ -334,7 +334,7 @@ async def get_instruments(all: bool = False, token: TokenPayload = Depends(get_c
                 "[EDGE] instruments_config missing in DB for tenant %s; seeding once and persisting.",
                 tenant_id,
             )
-            storage.update_system_state({"instruments_config": DEFAULT_INSTRUMENTS_CONFIG})
+            storage.update_sys_config({"instruments_config": DEFAULT_INSTRUMENTS_CONFIG})
             instruments_config = DEFAULT_INSTRUMENTS_CONFIG
         elif isinstance(instruments_config, str):
             try:
@@ -372,7 +372,7 @@ async def update_instruments(payload: dict, token: TokenPayload = Depends(get_cu
         if not (market and category and isinstance(data, dict)):
             raise HTTPException(status_code=400, detail="Faltan campos obligatorios: market, category, data")
 
-        state = storage.get_system_state()
+        state = storage.get_sys_config()
         instruments_config = state.get("instruments_config")
         
         # === CRITICAL VALIDATION (same as GET endpoint) ===
@@ -415,13 +415,13 @@ async def update_instruments(payload: dict, token: TokenPayload = Depends(get_cu
         
         # === PERSIST TO BOTH BDs: TENANT + GENERIC (SSOT sync) ===
         # 1. Write to tenant-isolated DB (primary)
-        storage.update_system_state({"instruments_config": instruments_config})
+        storage.update_sys_config({"instruments_config": instruments_config})
         logger.info(f"✅ Category {market}/{category} persisted to TENANT DB. enabled={data.get('enabled')}, actives={data.get('actives', {})}")
         
         # 2. CRITICAL: Also sync to generic DB (data_vault/aethelgard.db) for CLI/start.py consistency
         from data_vault.storage import StorageManager as GenericStorageManager
         generic_storage = GenericStorageManager()  # Uses default path: data_vault/aethelgard.db
-        generic_storage.update_system_state({"instruments_config": instruments_config})
+        generic_storage.update_sys_config({"instruments_config": instruments_config})
         logger.info(f"✅ Category {market}/{category} ALSO persisted to GENERIC DB (data_vault/aethelgard.db). SSOT sync complete.")
         
         # === BROADCAST UI UPDATE ===

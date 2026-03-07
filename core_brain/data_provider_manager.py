@@ -177,10 +177,10 @@ class DataProviderManager:
         self._selected_provider_name: Optional[str] = None
         self._provider_selection_initialized: bool = False
         
-        # PHASE 3: Sync broker_accounts to data_providers FIRST (auto-provisioning)
-        # This enables MT5 automatically if credentials exist in broker_accounts
+        # PHASE 3: Sync sys_broker_accounts to sys_sys_data_providers FIRST (auto-provisioning)
+        # This enables MT5 automatically if sys_credentials exist in sys_broker_accounts
         # IMPORTANT: Must execute BEFORE _load_configuration() to sync DB before read
-        self._sync_broker_accounts_to_providers()
+        self._sync_sys_broker_accounts_to_providers()
         
         self._load_configuration()
 
@@ -203,7 +203,7 @@ class DataProviderManager:
     def _load_configuration(self) -> None:
         """Load provider configuration from DB with fallback to JSON migration"""
         try:
-            db_providers = self.storage.get_data_providers()
+            db_providers = self.storage.get_sys_data_providers()
             
             if db_providers:
                 # Load from DB
@@ -212,7 +212,7 @@ class DataProviderManager:
                     config_data = p_data.get('config', {})
                     
                     # Handle additional_config - read from top-level of p_data (not nested in config)
-                    # get_data_providers() returns both config{} and additional_config{} at top level
+                    # get_sys_data_providers() returns both config{} and additional_config{} at top level
                     additional_config = p_data.get('additional_config', {})
                     if isinstance(additional_config, str):
                         try:
@@ -284,55 +284,55 @@ class DataProviderManager:
         
         logger.info("Initialized default provider configurations in database")
     
-    def _sync_broker_accounts_to_providers(self) -> None:
+    def _sync_sys_broker_accounts_to_providers(self) -> None:
         """
-        PHASE 3: Auto-sync broker_accounts to data_providers in DB
+        PHASE 3: Auto-sync sys_broker_accounts to sys_sys_data_providers in DB
         
-        Automatically enables MT5 in data_providers if:
-        1. broker_accounts has an enabled MT5 account with credentials
-        2. data_providers MT5 entry exists
+        Automatically enables MT5 in sys_sys_data_providers if:
+        1. sys_broker_accounts has an enabled MT5 account with sys_credentials
+        2. sys_sys_data_providers MT5 entry exists
         
-        Architecture: Maintains separation but syncs credentials for convenience.
-        - broker_accounts: Operational accounts (execute trades)
-        - data_providers: Data sources (fetch market data) [SSOT for providers]
+        Architecture: Maintains separation but syncs sys_credentials for convenience.
+        - sys_broker_accounts: Operational accounts (execute usr_trades)
+        - sys_sys_data_providers: Data sources (fetch market data) [SSOT for providers]
         
         NOTE: This runs BEFORE _load_configuration(), so it updates DB only.
         The in-memory providers dict is updated when _load_configuration() reads the DB.
         """
         try:
             # Get all MT5 broker accounts that are enabled
-            all_accounts = self.storage.get_broker_accounts()
-            mt5_broker_accounts = [
+            all_accounts = self.storage.get_sys_broker_accounts()
+            mt5_sys_broker_accounts = [
                 acc for acc in all_accounts 
                 if acc.get('platform_id') == 'mt5' and acc.get('enabled', False)
             ]
             
-            if not mt5_broker_accounts:
+            if not mt5_sys_broker_accounts:
                 logger.debug("No enabled MT5 broker accounts found. MT5 provider sync skipped.")
                 return
             
             # Use most recent account (sorted by updated_at DESC)
-            mt5_broker_accounts.sort(key=lambda x: x.get('updated_at', ''), reverse=True)
-            mt5_account = mt5_broker_accounts[0]
+            mt5_sys_broker_accounts.sort(key=lambda x: x.get('updated_at', ''), reverse=True)
+            mt5_account = mt5_sys_broker_accounts[0]
             
-            # Get credentials from storage
+            # Get sys_credentials from storage
             account_id = mt5_account.get('account_id')
             if not account_id:
                 logger.warning("MT5 broker account missing account_id. Sync skipped.")
                 return
             
-            credentials = self.storage.get_credentials(account_id) or {}
+            sys_credentials = self.storage.get_credentials(account_id) or {}
             
-            # Extract MT5 credentials
+            # Extract MT5 sys_credentials
             login = mt5_account.get('login') or mt5_account.get('account_number')
             server = mt5_account.get('server')
-            password = credentials.get('password', '')
+            password = sys_credentials.get('password', '')
             
             if not login or not server:
                 logger.warning(f"MT5 account incomplete: login={bool(login)}, server={bool(server)}. Sync skipped.")
                 return
             
-            # Persist MT5 credentials to data_providers in DB
+            # Persist MT5 sys_credentials to sys_sys_data_providers in DB
             # This updates the DB entry; _load_configuration() will read these values afterward
             self.storage.save_data_provider(
                 name='mt5',
@@ -356,7 +356,7 @@ class DataProviderManager:
             )
             
         except Exception as e:
-            logger.error(f"Error syncing broker_accounts to data_providers: {e}", exc_info=True)
+            logger.error(f"Error syncing sys_broker_accounts to sys_sys_data_providers: {e}", exc_info=True)
     
     def save_configuration(self) -> None:
         """Save current provider configuration to DB"""
@@ -488,7 +488,7 @@ class DataProviderManager:
     
     def configure_provider(self, name: str, **kwargs) -> bool:
         """
-        Configure provider with credentials/settings
+        Configure provider with sys_credentials/settings
         
         Args:
             name: Provider name
@@ -528,7 +528,7 @@ class DataProviderManager:
         # Check if provider is available
         available: bool = self._check_provider_availability(name)
         
-        # Check if credentials are configured
+        # Check if sys_credentials are configured
         credentials_configured = True
         if config.requires_auth:
             if name == "mt5":
@@ -642,7 +642,7 @@ class DataProviderManager:
         for provider_info in active:
             name = provider_info["name"]
             
-            # Check if credentials configured if required
+            # Check if sys_credentials configured if required
             config: ProviderConfig = self.providers[name]
             
             # Special check for MT5 or other complex providers
@@ -656,7 +656,7 @@ class DataProviderManager:
             is_injected = name in self.provider_instances
             
             if config.requires_auth and not has_creds and not is_injected:
-                logger.debug(f"Skipping {name}: credentials not configured")
+                logger.debug(f"Skipping {name}: sys_credentials not configured")
                 continue
             
             # Try to get instance
@@ -743,7 +743,7 @@ class DataProviderManager:
         return "stocks"
     
     def validate_provider(self, name: str) -> bool:
-        """Validate provider connection and credentials"""
+        """Validate provider connection and sys_credentials"""
         instance: Any | None = self._get_provider_instance(name)
         
         if not instance:

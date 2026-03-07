@@ -28,7 +28,7 @@ def mock_storage():
     # Simula el estado inicial del sistema leído desde la DB
 
     # Simula el estado inicial del sistema leído desde la DB
-    mock.get_system_state.return_value = {'lockdown_mode': False}
+    mock.get_sys_config.return_value = {'lockdown_mode': False}
     mock.get_risk_settings.return_value = {"max_account_risk_pct": 5.0}
     mock.get_dynamic_params.return_value = {"risk_per_trade": 0.01}
 
@@ -58,9 +58,9 @@ def mock_dynamic_params():
 def instrument_manager():
     from data_vault.storage import StorageManager
     storage = StorageManager(db_path=':memory:')
-    state = storage.get_system_state()
+    state = storage.get_sys_config()
     state["instruments_config"] = INSTRUMENTS_CONFIG_EXAMPLE
-    storage.update_system_state(state)
+    storage.update_sys_config(state)
     return InstrumentManager(storage=storage)
 
 
@@ -120,7 +120,7 @@ def test_lockdown_persistence_on_init(instrument_manager):
 
     mock_storage_in_lockdown = MagicMock()
     from datetime import datetime
-    mock_storage_in_lockdown.get_system_state.return_value = {
+    mock_storage_in_lockdown.get_sys_config.return_value = {
         'lockdown_mode': True,
         'lockdown_date': datetime.now().isoformat(),
         'lockdown_balance': 10000
@@ -214,7 +214,7 @@ def test_can_take_new_trade_rejects_if_exceeds_max_account_risk(instrument_manag
     # Setup: Mock connector
     mock_connector = Mock()
     mock_connector.get_account_balance = Mock(return_value=10000.0)
-    mock_connector.get_open_positions = Mock(return_value=[
+    mock_connector.get_open_usr_positions = Mock(return_value=[
         {
             "symbol": "EURUSD",
             "volume": 0.5,
@@ -256,7 +256,7 @@ def test_can_take_new_trade_approves_if_within_limit(instrument_manager):
     mock_storage.get_risk_settings.return_value = {"max_account_risk_pct": 5.0}
     mock_storage.get_dynamic_params.return_value = {"risk_per_trade": 0.01}
     
-    mock_storage.get_active_positions.return_value = [
+    mock_storage.get_active_usr_positions.return_value = [
         {
             "ticket": 111,
             "symbol": "EURUSD",
@@ -288,7 +288,7 @@ def test_can_take_new_trade_approves_if_within_limit(instrument_manager):
     
     mock_connector = Mock()
     mock_connector.get_account_balance = Mock(return_value=10000.0)
-    mock_connector.get_open_positions = Mock(return_value=[
+    mock_connector.get_open_usr_positions = Mock(return_value=[
         {
             "symbol": "EURUSD",
             "volume": 0.5,

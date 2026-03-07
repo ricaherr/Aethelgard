@@ -19,7 +19,7 @@ from enum import Enum
 
 
 class RuntimeMode(Enum):
-    """Runtime execution modes for strategies."""
+    """Runtime execution modes for usr_strategies."""
     MODE_LEGACY = "legacy"
     MODE_UNIVERSAL = "universal"
 
@@ -196,7 +196,7 @@ class TestHotSwapFunctionality:
     async def test_execution_continues_during_hot_swap_preparation(
         self, mock_storage, mock_legacy_executor, mock_universal_executor
     ):
-        """In-flight signals should complete before actual mode switch."""
+        """In-flight usr_signals should complete before actual mode switch."""
         # TODO: Implement when StrategyModeSelector is ready
         pass
 

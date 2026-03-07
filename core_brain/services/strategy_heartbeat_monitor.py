@@ -118,7 +118,7 @@ class StrategyHeartbeatMonitor:
                 state=StrategyState.IDLE
             )
         
-        logger.info(f"[HEARTBEAT] Monitor initialized for {len(self.STRATEGY_IDS)} strategies")
+        logger.info(f"[HEARTBEAT] Monitor initialized for {len(self.STRATEGY_IDS)} usr_strategies")
     
     def update_heartbeat(
         self,
@@ -188,7 +188,7 @@ class StrategyHeartbeatMonitor:
         {
           "type": "SYSTEM_HEARTBEAT",
           "timestamp": "2026-03-02T...",
-          "strategies": {
+          "usr_strategies": {
             "BRK_OPEN_0001": {...heartbeat...},
             ...
           },
@@ -210,7 +210,7 @@ class StrategyHeartbeatMonitor:
         payload = {
             "type": "SYSTEM_HEARTBEAT",
             "timestamp": datetime.now().isoformat(),
-            "strategies": heartbeat_dicts,
+            "usr_strategies": heartbeat_dicts,
             "summary": summary
         }
         
@@ -230,14 +230,14 @@ class StrategyHeartbeatMonitor:
         try:
             heartbeat_data = {
                 "timestamp": datetime.now().isoformat(),
-                "strategies": {
+                "usr_strategies": {
                     sid: hb.to_dict() for sid, hb in self.heartbeats.items()
                 },
                 "summary": self._compute_summary()
             }
             
-            # Guardar en system_state
-            self.storage.update_system_state({
+            # Guardar en sys_config
+            self.storage.update_sys_config({
                 "strategy_heartbeats": heartbeat_data
             })
             
@@ -325,7 +325,7 @@ class SystemHealthReporter:
             "broker_connection": "OK",
             "websocket": "OK"
           },
-          "strategies": {...},
+          "usr_strategies": {...},
           "health_score": 92
         }
         """
@@ -343,7 +343,7 @@ class SystemHealthReporter:
             "type": "SYSTEM_HEALTH",
             "timestamp": datetime.now().isoformat(),
             "system": system_health,
-            "strategies": {
+            "usr_strategies": {
                 sid: hb.to_dict() for sid, hb in all_heartbeats.items()
             },
             "strategy_summary": summary,
@@ -399,14 +399,14 @@ class SystemHealthReporter:
             conn_score = 0
         
         # Factor 3: Estrategias (50%)
-        total_strategies = sum(strategy_summary.values())
+        total_usr_strategies = sum(strategy_summary.values())
         error_count = strategy_summary.get("error", 0)
         veto_count = strategy_summary.get("vetoed", 0)
         
         strategy_score = 100
         if error_count > 0:
-            strategy_score = 100 - (error_count / total_strategies * 50)
-        if veto_count > total_strategies * 0.5:
+            strategy_score = 100 - (error_count / total_usr_strategies * 50)
+        if veto_count > total_usr_strategies * 0.5:
             strategy_score -= 25
         
         # Health score total (ponderado)

@@ -56,7 +56,7 @@ class ImmutabilityViolation(Exception):
     Raised when attempting to modify an immutable economic calendar record.
     
     Immutability Rule:
-    - Once economic_calendar row is persisted → NO UPDATES ALLOWED
+    - Once sys_economic_calendar row is persisted → NO UPDATES ALLOWED
     - Corrections = new INSERT with new event_id
     - Updates attempt → ImmutabilityViolation exception
     

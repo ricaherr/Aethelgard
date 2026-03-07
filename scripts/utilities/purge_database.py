@@ -149,11 +149,11 @@ def purge_database(db_path: str) -> dict:
             else:
                 print(f"❌ FAILED")
         
-        # Reset system_state keys
-        print(f"\n📋 Resetting system_state keys...")
+        # Reset sys_config keys
+        print(f"\n📋 Resetting sys_config keys...")
         for key in keys_to_reset:
             try:
-                conn.execute("DELETE FROM system_state WHERE key = ?", (key,))
+                conn.execute("DELETE FROM sys_config WHERE key = ?", (key,))
                 print(f"   ✅ {key} reset")
             except Exception as e:
                 print(f"   ⚠️  {key}: {e}")

@@ -1,5 +1,5 @@
 """
-Trading Service - Core business logic for signal processing and positions.
+Trading Service - Core business logic for signal processing and usr_positions.
 Micro-ETI 3.1: Extracted from server.py to centralize trading operations.
 HU 8.1 (SAAS-BACKBONE-2026-001): Tenant context blindaje — TradingService
 is agnostic of storage internals; it only passes tenant_id to the Factory.
@@ -112,7 +112,7 @@ class TradingService:
         if mt5:
             try:
                 balance = mt5.get_account_balance()
-                store.update_system_state({
+                store.update_sys_config({
                     "account_balance": balance,
                     "balance_source": "MT5_LIVE",
                     "balance_last_update": datetime.now().isoformat()
@@ -123,7 +123,7 @@ class TradingService:
 
         # Fallback to cached balance in DB
         try:
-            state = store.get_system_state()
+            state = store.get_sys_config()
             cached_balance = state.get("account_balance")
             if cached_balance:
                 return float(cached_balance)
@@ -132,7 +132,7 @@ class TradingService:
 
         # Final fallback (initial capital)
         logger.warning("Using default balance 10000.0 - MT5 not connected")
-        store.update_system_state({
+        store.update_sys_config({
             "account_balance": 10000.0,
             "balance_source": "DEFAULT",
             "balance_last_update": datetime.now().isoformat()
@@ -148,7 +148,7 @@ class TradingService:
         """
         store = self._resolve_storage(tenant_id)
         try:
-            state = store.get_system_state()
+            state = store.get_sys_config()
             return {
                 "source": state.get("balance_source", "UNKNOWN"),
                 "last_update": state.get("balance_last_update", datetime.now().isoformat()),
@@ -191,19 +191,19 @@ class TradingService:
 
     # ========== Open Positions ==========
 
-    async def get_open_positions(self, tenant_id: Optional[str] = None) -> Dict[str, Any]:
+    async def get_open_usr_positions(self, tenant_id: Optional[str] = None) -> Dict[str, Any]:
         """
-        Get open positions enriched with risk metadata.
+        Get open usr_positions enriched with risk metadata.
 
-        Combines real-time MT5 positions with DB-stored metadata.
+        Combines real-time MT5 usr_positions with DB-stored metadata.
         Uses StorageManager.get_position_metadata() instead of raw SQL.
         Uses classify_asset_type() and calculate_r_multiple() from market_ops.
 
         Returns:
-            Dict with positions list, total_risk_usd, and count.
+            Dict with usr_positions list, total_risk_usd, and count.
         """
         store = self._resolve_storage(tenant_id)
-        positions_list = []
+        usr_positions_list = []
         total_risk = 0.0
 
         mt5 = self.get_mt5_connector()
@@ -212,7 +212,7 @@ class TradingService:
                 # Update cached balance when we connect to MT5
                 try:
                     current_balance = mt5.get_account_balance()
-                    store.update_system_state({
+                    store.update_sys_config({
                         "account_balance": current_balance,
                         "balance_source": "MT5_LIVE",
                         "balance_last_update": datetime.now().isoformat()
@@ -220,11 +220,11 @@ class TradingService:
                 except Exception as e:
                     logger.debug(f"Could not update cached balance: {e}")
 
-                # Get open positions from MT5
-                mt5_positions = mt5.get_open_positions()
+                # Get open usr_positions from MT5
+                mt5_usr_positions = mt5.get_open_usr_positions()
 
-                if mt5_positions:
-                    for mt5_pos in mt5_positions:
+                if mt5_usr_positions:
+                    for mt5_pos in mt5_usr_positions:
                         ticket = mt5_pos['ticket']
 
                         # Get metadata from DB via StorageManager (no raw SQL)
@@ -263,13 +263,13 @@ class TradingService:
                             "strategy": strategy
                         }
 
-                        positions_list.append(position_data)
+                        usr_positions_list.append(position_data)
                         total_risk += risk
 
         return {
-            "positions": positions_list,
+            "usr_positions": usr_positions_list,
             "total_risk_usd": round(total_risk, 2),
-            "count": len(positions_list)
+            "count": len(usr_positions_list)
         }
 
     # ========== Signal Processing ==========
@@ -339,7 +339,7 @@ class TradingService:
 
                 # Save market state
                 try:
-                    store.log_market_state(state_data)
+                    store.log_sys_market_pulse(state_data)
                     logger.info(
                         f"Cambio de régimen detectado: {signal.symbol} "
                         f"{previous_regime.value if previous_regime else 'N/A'} -> {regime.value}"

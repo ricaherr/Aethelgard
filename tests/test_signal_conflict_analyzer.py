@@ -30,8 +30,8 @@ class TestSignalConflictAnalyzer:
         )
     
     @pytest.fixture
-    def sample_signals(self) -> List[Signal]:
-        """Create sample signals for testing"""
+    def sample_usr_signals(self) -> List[Signal]:
+        """Create sample usr_signals for testing"""
         return [
             Signal(
                 symbol="EURUSD",
@@ -89,7 +89,7 @@ class TestSignalConflictAnalyzer:
             }
         }
     
-    def test_apply_confluence_empty_signals(self, conflict_analyzer, sample_scan_results):
+    def test_apply_confluence_empty_usr_signals(self, conflict_analyzer, sample_scan_results):
         """Test apply_confluence with empty signal list"""
         # Act
         result = conflict_analyzer.apply_confluence([], sample_scan_results)
@@ -97,17 +97,17 @@ class TestSignalConflictAnalyzer:
         # Assert: should return empty list
         assert result == []
     
-    def test_apply_confluence_no_market_data(self, conflict_analyzer, sample_signals):
+    def test_apply_confluence_no_market_data(self, conflict_analyzer, sample_usr_signals):
         """Test apply_confluence when market data is empty"""
         # Act
-        result = conflict_analyzer.apply_confluence(sample_signals, {})
+        result = conflict_analyzer.apply_confluence(sample_usr_signals, {})
         
-        # Assert: should return signals unchanged
-        assert len(result) == len(sample_signals)
+        # Assert: should return usr_signals unchanged
+        assert len(result) == len(sample_usr_signals)
         assert result[0].confidence == 0.75
         assert result[1].confidence == 0.70
     
-    def test_apply_confluence_multi_trend_bonus(self, conflict_analyzer, sample_signals, sample_scan_results, mock_confluence_analyzer):
+    def test_apply_confluence_multi_trend_bonus(self, conflict_analyzer, sample_usr_signals, sample_scan_results, mock_confluence_analyzer):
         """Test confidence boost when multiple timeframes in TREND"""
         # Arrange: EURUSD has TREND on M5, M15, H1
         # Expected: original 0.75 * (1 + confluence_bonus)
@@ -115,9 +115,9 @@ class TestSignalConflictAnalyzer:
         scan_results = {"market_data": sample_scan_results}
         
         # Act
-        result = conflict_analyzer.apply_confluence(sample_signals, scan_results)
+        result = conflict_analyzer.apply_confluence(sample_usr_signals, scan_results)
         
-        # Assert: both signals should be boosted (same bonus applied to all)
+        # Assert: both usr_signals should be boosted (same bonus applied to all)
         eurusd_result = next(s for s in result if s.symbol == "EURUSD")
         gbpusd_result = next(s for s in result if s.symbol == "GBPUSD")
         
@@ -127,13 +127,13 @@ class TestSignalConflictAnalyzer:
         # GBPUSD: 0.70 * 1.15 = 0.805
         assert gbpusd_result.confidence == pytest.approx(0.70 * 1.15, rel=0.01)
     
-    def test_confluence_bonus_calculation_formula(self, conflict_analyzer, sample_signals, sample_scan_results):
+    def test_confluence_bonus_calculation_formula(self, conflict_analyzer, sample_usr_signals, sample_scan_results):
         """Test that confluence bonus follows formula: new = original * (1 + bonus)"""
         # Arrange
-        original_confidence = sample_signals[0].confidence
+        original_confidence = sample_usr_signals[0].confidence
         
         # Act
-        result = conflict_analyzer.apply_confluence(sample_signals, sample_scan_results)
+        result = conflict_analyzer.apply_confluence(sample_usr_signals, sample_scan_results)
         eurusd_result = next(s for s in result if s.symbol == "EURUSD")
         
         # Assert: new confidence should be between original and 1.0
@@ -170,40 +170,40 @@ class TestSignalConflictAnalyzer:
         # All should be TREND
         assert all(r == MarketRegime.TREND for r in eurusd_regimes)
     
-    def test_confluence_bonus_max_caps(self, conflict_analyzer, sample_signals, sample_scan_results):
+    def test_confluence_bonus_max_caps(self, conflict_analyzer, sample_usr_signals, sample_scan_results):
         """Test that confidence never exceeds 1.0"""
         # Arrange: signal with high initial confidence
-        sample_signals[0].confidence = 0.95
+        sample_usr_signals[0].confidence = 0.95
         
         # Act
-        result = conflict_analyzer.apply_confluence(sample_signals, sample_scan_results)
+        result = conflict_analyzer.apply_confluence(sample_usr_signals, sample_scan_results)
         eurusd_result = next(s for s in result if s.symbol == "EURUSD")
         
         # Assert: confidence capped at 1.0
         assert eurusd_result.confidence <= 1.0
     
-    def test_apply_confluence_exception_handling(self, conflict_analyzer, sample_signals, mock_confluence_analyzer):
+    def test_apply_confluence_exception_handling(self, conflict_analyzer, sample_usr_signals, mock_confluence_analyzer):
         """Test graceful handling when confluence analyzer raises exception"""
         # Arrange: mock to raise exception
         mock_confluence_analyzer.analyze.side_effect = Exception("Analyzer error")
         
-        # Act: should not raise, return signals unchanged
+        # Act: should not raise, return usr_signals unchanged
         result = conflict_analyzer.apply_confluence(
-            sample_signals,
+            sample_usr_signals,
             {"EURUSD": {"M5": {"regimes": []}}}
         )
         
-        # Assert: signals returned unchanged
-        assert len(result) == len(sample_signals)
-        assert result[0].confidence == sample_signals[0].confidence
+        # Assert: usr_signals returned unchanged
+        assert len(result) == len(sample_usr_signals)
+        assert result[0].confidence == sample_usr_signals[0].confidence
     
-    def test_apply_confluence_preserves_signal_metadata(self, conflict_analyzer, sample_signals, sample_scan_results):
+    def test_apply_confluence_preserves_signal_metadata(self, conflict_analyzer, sample_usr_signals, sample_scan_results):
         """Test that confluence analysis preserves signal metadata"""
         # Arrange: add custom metadata
-        sample_signals[0].metadata = {"source": "test", "version": 2}
+        sample_usr_signals[0].metadata = {"source": "test", "version": 2}
         
         # Act
-        result = conflict_analyzer.apply_confluence(sample_signals, sample_scan_results)
+        result = conflict_analyzer.apply_confluence(sample_usr_signals, sample_scan_results)
         eurusd_result = next(s for s in result if s.symbol == "EURUSD")
         
         # Assert: metadata preserved
@@ -211,10 +211,10 @@ class TestSignalConflictAnalyzer:
         assert eurusd_result.metadata.get("source") == "test"
         assert eurusd_result.metadata.get("version") == 2
     
-    def test_multiple_symbols_independent_processing(self, conflict_analyzer, sample_signals, sample_scan_results):
+    def test_multiple_symbols_independent_processing(self, conflict_analyzer, sample_usr_signals, sample_scan_results):
         """Test that confluence analysis for multiple symbols is independent"""
-        # Arrange: signals for different symbols
-        signals = [
+        # Arrange: usr_signals for different symbols
+        usr_signals = [
             Signal(
                 symbol="EURUSD",
                 signal_type=SignalType.BUY,
@@ -238,7 +238,7 @@ class TestSignalConflictAnalyzer:
         ]
         
         # Act
-        result = conflict_analyzer.apply_confluence(signals, sample_scan_results)
+        result = conflict_analyzer.apply_confluence(usr_signals, sample_scan_results)
         
         # Assert: each processed independently
         eurusd = next(s for s in result if s.symbol == "EURUSD")
@@ -247,8 +247,8 @@ class TestSignalConflictAnalyzer:
         # EURUSD should have stronger boost (3 TREND regimes) than GBPUSD (1 TREND regime)
         assert eurusd.confidence >= gbpusd.confidence
     
-    def test_confluence_low_confidence_signals(self, conflict_analyzer):
-        """Test confluence analysis on very low confidence signals"""
+    def test_confluence_low_confidence_usr_signals(self, conflict_analyzer):
+        """Test confluence analysis on very low confidence usr_signals"""
         # Arrange: very low confidence signal
         signal = Signal(
             symbol="AUDUSD",
@@ -291,13 +291,13 @@ class TestSignalConflictAnalyzer:
         # Assert: returns empty regime list for missing symbol
         assert grouped.get("XXXAAA", []) == []
     
-    def test_confluence_metadata_updated_with_analysis(self, conflict_analyzer, sample_signals, sample_scan_results):
+    def test_confluence_metadata_updated_with_analysis(self, conflict_analyzer, sample_usr_signals, sample_scan_results):
         """Test that metadata is updated with confluence analysis details"""
         # Arrange
-        sample_signals[0].metadata = {}
+        sample_usr_signals[0].metadata = {}
         
         # Act
-        result = conflict_analyzer.apply_confluence(sample_signals, sample_scan_results)
+        result = conflict_analyzer.apply_confluence(sample_usr_signals, sample_scan_results)
         eurusd_result = next(s for s in result if s.symbol == "EURUSD")
         
         # Assert: metadata contains confluence information

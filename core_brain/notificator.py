@@ -33,7 +33,7 @@ class NotificationEngine:
         Loads providers from database configuration.
         """
         try:
-            settings = self.storage.get_all_notification_settings()
+            settings = self.storage.get_all_usr_notification_settings()
             # Map of provider names to classes
             provider_classes = {
                 'telegram': TelegramProvider,
@@ -84,7 +84,7 @@ class NotificationEngine:
                                         membership: MembershipLevel = MembershipLevel.BASIC,
                                         strategy_details: Optional[Dict] = None) -> None:
         """
-        Broadcasts trading signals to all enabled channels.
+        Broadcasts trading usr_signals to all enabled channels.
         """
         stype = signal.signal_type.value if hasattr(signal.signal_type, 'value') else str(signal.signal_type)
         signal_emoji = "🟢" if stype == "BUY" else "🔴"

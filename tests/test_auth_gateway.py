@@ -41,7 +41,7 @@ def test_risk_status_with_invalid_token_rejected(client):
     headers = {"Authorization": "Bearer invalid_token_here"}
     response = client.get("/api/risk/status", headers=headers)
     assert response.status_code == 401
-    assert response.json()["detail"] == "Could not validate credentials"
+    assert response.json()["detail"] == "Could not validate sys_credentials"
 
 def test_risk_status_with_valid_token_accepted(client, auth_service, auth_repo):
     """

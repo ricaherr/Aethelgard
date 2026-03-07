@@ -6,8 +6,8 @@ Responsabilidad única: Convertir resultados de estrategias (StrategySignal)
 a objetos Signal normalizados para persistencia y ejecución.
 
 Soporta dos tipos de engines:
-1. JSON_SCHEMA strategies (UniversalStrategyEngine.execute_from_registry)
-2. PYTHON_CLASS strategies (.analyze method)
+1. JSON_SCHEMA usr_strategies (UniversalStrategyEngine.execute_from_registry)
+2. PYTHON_CLASS usr_strategies (.analyze method)
 """
 import logging
 from typing import Optional, Any

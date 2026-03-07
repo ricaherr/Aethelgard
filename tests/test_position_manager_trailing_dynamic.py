@@ -36,7 +36,7 @@ def mock_storage():
 def mock_connector():
     """Mock MT5Connector"""
     connector = Mock()
-    connector.get_open_positions = Mock(return_value=[])
+    connector.get_open_usr_positions = Mock(return_value=[])
     connector.get_symbol_info = Mock(return_value={
         'trade_stops_level': 50,
         'point': 0.00001,
@@ -386,7 +386,7 @@ def test_regime_change_updates_multiplier(
     }
     
     # Mock responses
-    mock_connector.get_open_positions.return_value = [position]
+    mock_connector.get_open_usr_positions.return_value = [position]
     mock_storage.get_position_metadata.return_value = metadata
     
     # CAMBIO DE RÉGIMEN: Ahora es VOLATILE (no TREND)
@@ -394,7 +394,7 @@ def test_regime_change_updates_multiplier(
     mock_regime_classifier.get_regime_data.return_value = {'atr': 0.00050}
     
     # Execute monitor cycle
-    result = position_manager.monitor_positions()
+    result = position_manager.monitor_usr_positions()
     
     # Assert: modify_position llamado
     assert mock_connector.modify_position.called

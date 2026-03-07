@@ -27,7 +27,7 @@ def mock_storage():
     """Mock de StorageManager."""
     storage = MagicMock()
     storage.get_dynamic_params.return_value = {}
-    storage.get_system_state = MagicMock(return_value={})
+    storage.get_sys_config = MagicMock(return_value={})
     return storage
 
 

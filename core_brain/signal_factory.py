@@ -26,7 +26,7 @@ from core_brain.notification_service import NotificationService, NotificationCat
 from core_brain.notificator import get_notifier, NotificationEngine
 from core_brain.module_manager import MembershipLevel
 from core_brain.confluence import MultiTimeframeConfluenceAnalyzer
-from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
+from core_brain.usr_strategies.trifecta_logic import TrifectaAnalyzer
 from core_brain.tech_utils import TechnicalAnalyzer
 from core_brain.services.fundamental_guard import FundamentalGuardService
 from core_brain.signal_converter import StrategySignalConverter
@@ -35,9 +35,9 @@ from core_brain.signal_deduplicator import SignalDeduplicator
 from core_brain.signal_conflict_analyzer import SignalConflictAnalyzer
 from core_brain.signal_trifecta_optimizer import SignalTrifectaOptimizer
 
-# Import strategies
-from core_brain.strategies.base_strategy import BaseStrategy
-from core_brain.strategies.oliver_velez import OliverVelezStrategy
+# Import usr_strategies
+from core_brain.usr_strategies.base_strategy import BaseStrategy
+from core_brain.usr_strategies.oliver_velez import OliverVelezStrategy
 
 logger = logging.getLogger(__name__)
 
@@ -140,9 +140,9 @@ class SignalFactory:
         """Deprecado: Usar storage_manager.get_dynamic_params() directamente."""
         return self.storage_manager.get_dynamic_params()
 
-    def _register_default_strategies(self) -> None:
+    def _register_default_usr_strategies(self) -> None:
         """DEPRECATED: Todas las estrategias se cargan dinámicamente desde StrategyEngineFactory."""
-        logger.debug("[DEPRECATED] _register_default_strategies() is now obsolete")
+        logger.debug("[DEPRECATED] _register_default_usr_strategies() is now obsolete")
 
     async def generate_signal(
         self, symbol: str, df: pd.DataFrame, regime: MarketRegime, timeframe: Optional[str] = None, 
@@ -160,12 +160,12 @@ class SignalFactory:
         Returns:
             Lista de señales generadas (puede estar vacía).
         """
-        generated_signals = []
+        generated_usr_signals = []
         
         for strategy_id, engine in self.strategy_engines.items():
             try:
                 # Delegar análisis al motor compilado
-                # Hay dos tipos: PYTHON_CLASS strategies (con .analyze) y JSON_SCHEMA (con .execute_from_registry)
+                # Hay dos tipos: PYTHON_CLASS usr_strategies (con .analyze) y JSON_SCHEMA (con .execute_from_registry)
                 # Chequear primero por execute_from_registry (específico de JSON_SCHEMA)
                 if hasattr(engine, 'execute_from_registry') and callable(getattr(engine, 'execute_from_registry', None)):
                     # JSON_SCHEMA strategy: use UniversalStrategyEngine.execute_from_registry()
@@ -234,7 +234,7 @@ class SignalFactory:
                     # ──────────────────────────────────────────────────────────────────────────────────
                     await self.signal_enricher.enrich(signal, symbol, strategy_id)
                     
-                    generated_signals.append(signal)
+                    generated_usr_signals.append(signal)
             
             except Exception as e:
                 logger.error(
@@ -242,7 +242,7 @@ class SignalFactory:
                     exc_info=True
                 )
 
-        return generated_signals
+        return generated_usr_signals
 
 
 
@@ -323,7 +323,7 @@ class SignalFactory:
         except Exception as e:
             logger.error(f"Error processing valid signal for {signal.symbol}: {e}")
 
-    async def generate_signals_batch(
+    async def generate_usr_signals_batch(
         self, scan_results: Dict[str, Dict], trace_id: Optional[str] = None
     ) -> List[Signal]:
         """
@@ -338,7 +338,7 @@ class SignalFactory:
             Lista plana de todas las señales generadas (con confluencia aplicada).
         """
         try:
-            logger.info(f"DEBUG: generate_signals_batch called with {len(scan_results)} items")
+            logger.info(f"DEBUG: generate_usr_signals_batch called with {len(scan_results)} items")
             tasks = []
             
             if not self.strategy_engines:
@@ -384,42 +384,42 @@ class SignalFactory:
             results = await asyncio.gather(*tasks)
             
             # Aplanar lista
-            all_signals = []
+            all_usr_signals = []
             for batch in results:
-                all_signals.extend(batch)
+                all_usr_signals.extend(batch)
 
-            logger.info(f"DEBUG: Raw signals generated: {len(all_signals)}")
+            logger.info(f"DEBUG: Raw usr_signals generated: {len(all_usr_signals)}")
 
             # FASE 2.5: Apply Multi-Timeframe Confluence
-            if all_signals and self.confluence_analyzer.enabled:
-                all_signals = self.signal_conflict_analyzer.apply_confluence(all_signals, scan_results)
+            if all_usr_signals and self.confluence_analyzer.enabled:
+                all_usr_signals = self.signal_conflict_analyzer.apply_confluence(all_usr_signals, scan_results)
             
             # FASE 2.6: Apply Trifecta Optimization (Oliver Velez Multi-TF)
-            if all_signals:
-                all_signals = self.signal_trifecta_optimizer.optimize(all_signals, scan_results)
+            if all_usr_signals:
+                all_usr_signals = self.signal_trifecta_optimizer.optimize(all_usr_signals, scan_results)
 
-            if all_signals:
+            if all_usr_signals:
                 logger.info(
-                    f"Batch completado. {len(all_signals)} señales generadas de "
+                    f"Batch completado. {len(all_usr_signals)} señales generadas de "
                     f"{len(scan_results)} instrumentos analizados (multi-timeframe)."
                 )
 
-            return all_signals
+            return all_usr_signals
             
         except Exception as e:
-            logger.error(f"CRITICAL ERROR in generate_signals_batch: {e}", exc_info=True)
+            logger.error(f"CRITICAL ERROR in generate_usr_signals_batch: {e}", exc_info=True)
             return []
 
     async def process_scan_results(self, scan_results: Dict[str, MarketRegime]) -> List[Signal]:
         """
         Método de compatibilidad/logging. 
-        MainOrchestrator ahora usa generate_signals_batch directamente con datos.
+        MainOrchestrator ahora usa generate_usr_signals_batch directamente con datos.
         """
         logger.debug("process_scan_results called (metadata only)")
         return []
 
     def filter_by_membership(
-        self, signals: List[Signal], user_tier: MembershipTier
+        self, usr_signals: List[Signal], user_tier: MembershipTier
     ) -> List[Signal]:
         """Filtra señales según el tier de membresía del usuario."""
         tier_order = {
@@ -430,7 +430,7 @@ class SignalFactory:
         user_level = tier_order.get(user_tier, 0)
 
         filtered = [
-            s for s in signals
+            s for s in usr_signals
             # Se asume que signal.membership_tier es un enum MembershipTier
             if tier_order.get(MembershipTier(s.metadata.get("membership_tier", "FREE")), 0) <= user_level
         ]

@@ -6,7 +6,7 @@ import pandas as pd
 from models.signal import (
     Signal, SignalType, MarketRegime, MembershipTier, ConnectorType
 )
-from core_brain.strategies.base_strategy import BaseStrategy
+from core_brain.usr_strategies.base_strategy import BaseStrategy
 from core_brain.instrument_manager import InstrumentManager
 from data_vault.storage import StorageManager
 
@@ -63,7 +63,7 @@ class OliverVelezStrategy(BaseStrategy):
         # Verificar MT5 vía DB (single source of truth)
         try:
             storage = StorageManager()
-            accounts = storage.get_broker_accounts(enabled_only=True)
+            accounts = storage.get_sys_broker_accounts(enabled_only=True)
             has_mt5_demo = any(
                 acc.get('platform_id') == 'mt5'
                 and str(acc.get('account_type', '')).lower() == 'demo'

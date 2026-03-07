@@ -39,14 +39,14 @@ class StrategyEngineFactory:
     Factory Service que instancia estrategias desde BD.
     
     Responsabilidades:
-    1. Leer todas las estrategias de tabla `strategies` (SSOT)
+    1. Leer todas las estrategias de tabla `usr_strategies` (SSOT)
     2. Filtrar por readiness (READY_FOR_ENGINE)
     3. Validar dependencias pre-instanciación
     4. Instanciar dinámicamente (BaseStrategy o UniversalStrategyEngine)
     5. Retornar Dict en memoria para lookup O(1)
     
     Inyección de Dependencias Obligatoria:
-    - storage: StorageManager (para leer tabla strategies)
+    - storage: StorageManager (para leer tabla usr_strategies)
     - config: Dict con parámetros dinámicos (dynamic_params)
     """
     
@@ -70,7 +70,7 @@ class StrategyEngineFactory:
         self.active_engines: Dict[str, Any] = {}
         self.load_errors: Dict[str, str] = {}
     
-    def instantiate_all_strategies(self) -> Dict[str, Any]:
+    def instantiate_all_usr_strategies(self) -> Dict[str, Any]:
         """
         Carga TODAS las estrategias desde BD e instancia aquellas que cumplan:
         1. readiness = READY_FOR_ENGINE (no LOGIC_PENDING)
@@ -85,20 +85,20 @@ class StrategyEngineFactory:
         logger.info("[FACTORY] Iniciando carga dinámica de estrategias desde BD...")
         
         try:
-            # Paso 1: Leer todas las estrategias desde tabla `strategies` (SSOT)
-            all_strategies = self.storage.get_all_strategies()
-            logger.info(f"[FACTORY] ✓ Leídas {len(all_strategies)} estrategias de BD")
+            # Paso 1: Leer todas las estrategias desde tabla `usr_strategies` (SSOT)
+            all_usr_strategies = self.storage.get_all_usr_strategies()
+            logger.info(f"[FACTORY] ✓ Leídas {len(all_usr_strategies)} estrategias de BD")
             
         except Exception as e:
-            logger.error(f"[FACTORY] ✗ Error al leer tabla strategies: {e}")
-            raise RuntimeError(f"[FACTORY] CRITICAL: No se pudo acceder a tabla strategies: {e}")
+            logger.error(f"[FACTORY] ✗ Error al leer tabla usr_strategies: {e}")
+            raise RuntimeError(f"[FACTORY] CRITICAL: No se pudo acceder a tabla usr_strategies: {e}")
         
-        if not all_strategies:
-            logger.error("[FACTORY] ✗ Tabla strategies vacía")
-            raise RuntimeError("[FACTORY] CRITICAL: Tabla strategies vacía")
+        if not all_usr_strategies:
+            logger.error("[FACTORY] ✗ Tabla usr_strategies vacía")
+            raise RuntimeError("[FACTORY] CRITICAL: Tabla usr_strategies vacía")
         
         # Paso 2: Filtrar, validar y instanciar cada estrategia
-        for strategy_spec in all_strategies:
+        for strategy_spec in all_usr_strategies:
             try:
                 self._load_single_strategy(strategy_spec)
             except Exception as e:
@@ -113,7 +113,7 @@ class StrategyEngineFactory:
                 f"[FACTORY] ✗ CRÍTICO: No se instanció ninguna estrategia. "
                 f"Errores: {self.load_errors}"
             )
-            raise RuntimeError("[FACTORY] CRITICAL: No strategies instantiated")
+            raise RuntimeError("[FACTORY] CRITICAL: No usr_strategies instantiated")
         
         logger.info(
             f"[FACTORY] ✓ Carga completada: {len(self.active_engines)} estrategias activas, "
@@ -154,7 +154,7 @@ class StrategyEngineFactory:
             logger.warning(f"[FACTORY] ⊘ {strategy_id}: type={strategy_type} inválido")
             raise ValueError(f"Unknown strategy type: {strategy_type}")
         
-        # Validación 3: ¿Execution_mode es válido? (Lee de strategy_ranking)
+        # Validación 3: ¿Execution_mode es válido? (Lee de usr_performance)
         execution_mode = self._get_execution_mode(strategy_id)
         if execution_mode not in ["SHADOW", "LIVE", "QUARANTINE"]:
             logger.warning(
@@ -165,7 +165,7 @@ class StrategyEngineFactory:
         logger.debug(f"[FACTORY] {strategy_id}: execution_mode={execution_mode}")
         
         # Validación 4: ¿Dependencias disponibles? (Solo para PYTHON_CLASS)
-        # JSON_SCHEMA strategies se cargan dinámicamente sin validación previa de sensores
+        # JSON_SCHEMA usr_strategies se cargan dinámicamente sin validación previa de sensores
         if strategy_type == "PYTHON_CLASS":
             required_sensors = strategy_spec.get("required_sensors", [])
             missing_sensors = self._validate_dependencies(strategy_id, required_sensors)
@@ -187,22 +187,22 @@ class StrategyEngineFactory:
         # Fase 5: Aplicar execution_mode flags (QUARANTINE = trading deshabilitado)
         if execution_mode == "QUARANTINE":
             # Marcar estrategia como en cuarentena (no enviar órdenes)
-            if hasattr(engine, 'no_send_orders'):
-                engine.no_send_orders = True
+            if hasattr(engine, 'no_send_usr_orders'):
+                engine.no_send_usr_orders = True
             engine.execution_mode = "QUARANTINE"
-            logger.info(f"[FACTORY] 🔒 {strategy_id}: QUARANTINE mode activated (no_send_orders=True)")
+            logger.info(f"[FACTORY] 🔒 {strategy_id}: QUARANTINE mode activated (no_send_usr_orders=True)")
         elif execution_mode == "LIVE":
             # Modo LIVE = trading habilitado
-            if hasattr(engine, 'no_send_orders'):
-                engine.no_send_orders = False
+            if hasattr(engine, 'no_send_usr_orders'):
+                engine.no_send_usr_orders = False
             engine.execution_mode = "LIVE"
-            logger.info(f"[FACTORY] ✓ {strategy_id}: LIVE mode (orders enabled)")
+            logger.info(f"[FACTORY] ✓ {strategy_id}: LIVE mode (usr_orders enabled)")
         elif execution_mode == "SHADOW":
             # Modo SHADOW = testing sin enviar órdenes
-            if hasattr(engine, 'no_send_orders'):
-                engine.no_send_orders = True
+            if hasattr(engine, 'no_send_usr_orders'):
+                engine.no_send_usr_orders = True
             engine.execution_mode = "SHADOW"
-            logger.info(f"[FACTORY] 👁️  {strategy_id}: SHADOW mode (testing, no live orders)")
+            logger.info(f"[FACTORY] 👁️  {strategy_id}: SHADOW mode (testing, no live usr_orders)")
         
         # Guardar en Dict
         self.active_engines[strategy_id] = engine
@@ -231,7 +231,7 @@ class StrategyEngineFactory:
         else:
             sensor_list = required_sensors or []
         
-        # JSON_SCHEMA strategies don't require sensors (they use indicator_provider)
+        # JSON_SCHEMA usr_strategies don't require sensors (they use indicator_provider)
         if not sensor_list:
             return []
         
@@ -246,7 +246,7 @@ class StrategyEngineFactory:
     
     def _get_execution_mode(self, strategy_id: str) -> str:
         """
-        Obtiene execution_mode de strategy_ranking para una estrategia.
+        Obtiene execution_mode de usr_performance para una estrategia.
         
         Args:
             strategy_id: Identificador de la estrategia
@@ -254,18 +254,18 @@ class StrategyEngineFactory:
         Returns:
             execution_mode (SHADOW | LIVE | QUARANTINE) o 'SHADOW' como default
             
-        Note: Consulta BD via storage.get_strategy_ranking()
+        Note: Consulta BD via storage.get_usr_performance()
               Si no está en ranking (bug), retorna SHADOW como safe default
         """
         try:
-            ranking = self.storage.get_strategy_ranking(strategy_id)
+            ranking = self.storage.get_usr_performance(strategy_id)
             if ranking and 'execution_mode' in ranking:
                 return ranking['execution_mode']
             
-            # Si no está en ranking (puede pasar si bootstrap_strategy_ranking.py no se ejecutó)
+            # Si no está en ranking (puede pasar si bootstrap_usr_performance.py no se ejecutó)
             logger.warning(
-                f"[FACTORY] ⊘ {strategy_id}: No encontrado en strategy_ranking, "
-                f"usando SHADOW como default (ejecute bootstrap_strategy_ranking.py)"
+                f"[FACTORY] ⊘ {strategy_id}: No encontrado en usr_performance, "
+                f"usando SHADOW como default (ejecute bootstrap_usr_performance.py)"
             )
             return 'SHADOW'  # Safe default
             

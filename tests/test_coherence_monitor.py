@@ -12,10 +12,10 @@ from models.signal import Signal, SignalType, ConnectorType
 
 def test_coherence_detects_unnormalized_and_missing_ticket():
     storage = StorageManager(db_path=':memory:')
-    # Limpiar tabla signals por si acaso
+    # Limpiar tabla usr_signals por si acaso
     with storage._get_conn() as conn:
         cur = conn.cursor()
-        cur.execute("DELETE FROM signals")
+        cur.execute("DELETE FROM usr_signals")
         conn.commit()
 
     from models.signal import ConnectorType
@@ -33,30 +33,30 @@ def test_coherence_detects_unnormalized_and_missing_ticket():
     # Set signal to EXECUTED status to trigger EXECUTED_WITHOUT_TICKET check
     storage.update_signal_status(signal_id, "EXECUTED")
 
-    # Debug: inspeccionar contenido real de la tabla signals
+    # Debug: inspeccionar contenido real de la tabla usr_signals
     with storage._get_conn() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT * FROM signals")
+        cur.execute("SELECT * FROM usr_signals")
         all_rows = cur.fetchall()
-        print(f"Contenido real en signals tras insert: {all_rows}")
+        print(f"Contenido real en usr_signals tras insert: {all_rows}")
         for row in all_rows:
             print(f"Row id={row['id']} timestamp={row['timestamp']}")
-        assert len(all_rows) > 0, "La tabla signals está vacía tras el insert."
+        assert len(all_rows) > 0, "La tabla usr_signals está vacía tras el insert."
         # Debug: mostrar timestamp insertado y resultado de consulta manual
-        cur.execute("SELECT timestamp FROM signals")
+        cur.execute("SELECT timestamp FROM usr_signals")
         ts_row = cur.fetchone()
         print(f"Timestamp insertado: {ts_row['timestamp']}")
         cur.execute("SELECT datetime('now')")
         now_row = cur.fetchone()
         print(f"SQLite datetime('now'): {now_row[0]}")
-        cur.execute("SELECT * FROM signals WHERE datetime(timestamp) >= datetime('now', '-120 minutes')")
+        cur.execute("SELECT * FROM usr_signals WHERE datetime(timestamp) >= datetime('now', '-120 minutes')")
         manual_rows = cur.fetchall()
         print(f"Resultado consulta manual: {manual_rows}")
 
     monitor = CoherenceMonitor(storage=storage, pending_timeout_minutes=15, lookback_minutes=120)
-    signals = storage.get_recent_signals(minutes=120)
+    usr_signals = storage.get_recent_usr_signals(minutes=120)
     # Validación funcional
-    assert signals, "No se recuperaron señales recientes."
+    assert usr_signals, "No se recuperaron señales recientes."
     events = monitor.run_once()
     assert events, "No se generaron eventos de coherencia."
     reasons = {e.reason for e in events}
@@ -67,10 +67,10 @@ def test_coherence_detects_unnormalized_and_missing_ticket():
 
 def test_coherence_detects_pending_timeout():
     storage = StorageManager(db_path=':memory:')
-    # Limpiar tabla signals por si acaso
+    # Limpiar tabla usr_signals por si acaso
     with storage._get_conn() as conn:
         cur = conn.cursor()
-        cur.execute("DELETE FROM signals")
+        cur.execute("DELETE FROM usr_signals")
         conn.commit()
 
     from models.signal import ConnectorType
@@ -90,13 +90,13 @@ def test_coherence_detects_pending_timeout():
     old_ts = to_utc(datetime.now(timezone.utc) - timedelta(minutes=10))
     with storage._get_conn() as conn:
         cur = conn.cursor()
-        cur.execute("UPDATE signals SET timestamp = ? WHERE id = ?", (old_ts, signal_id))
+        cur.execute("UPDATE usr_signals SET timestamp = ? WHERE id = ?", (old_ts, signal_id))
         conn.commit()
 
     monitor = CoherenceMonitor(storage=storage, pending_timeout_minutes=1, lookback_minutes=120)
-    signals = storage.get_recent_signals(minutes=120)
+    usr_signals = storage.get_recent_usr_signals(minutes=120)
     # Validación funcional
-    assert signals, "No se recuperaron señales recientes."
+    assert usr_signals, "No se recuperaron señales recientes."
     events = monitor.run_once()
     assert events, "No se generaron eventos de coherencia."
     reasons = {e.reason for e in events}

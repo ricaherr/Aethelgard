@@ -23,7 +23,7 @@ class UniversalStrategyExecutor:
     Features:
     - Loads strategy schemas from file system
     - Instantiates UniversalStrategyEngine per strategy
-    - Manages multiple concurrent JSON-based strategies
+    - Manages multiple concurrent JSON-based usr_strategies
     """
     
     def __init__(
@@ -36,7 +36,7 @@ class UniversalStrategyExecutor:
         Args:
             indicator_provider: Object with calculate_* async methods (RSI, MA, FVG, etc.)
             strategy_schemas_dir: Directory containing strategy JSON files
-                                 Defaults to: core_brain/strategies/universal/
+                                 Defaults to: core_brain/usr_strategies/universal/
             trace_id: Request trace ID for auditing
         """
         self.indicator_provider = indicator_provider
@@ -51,7 +51,7 @@ class UniversalStrategyExecutor:
     @staticmethod
     def _default_schemas_dir() -> str:
         """Returns default path for strategy schemas."""
-        return str(Path(__file__).parent.parent / "strategies" / "universal")
+        return str(Path(__file__).parent.parent / "usr_strategies" / "universal")
     
     async def execute(
         self,
@@ -74,18 +74,18 @@ class UniversalStrategyExecutor:
             Signal result or STRATEGY_CRASH_VETO on error
         """
         try:
-            # Load all available strategies if none specified
-            strategies_to_run = [strategy_id] if strategy_id else await self._discover_strategies()
+            # Load all available usr_strategies if none specified
+            usr_strategies_to_run = [strategy_id] if strategy_id else await self._discover_usr_strategies()
             
-            if not strategies_to_run:
+            if not usr_strategies_to_run:
                 logger.warning(
-                    f"No universal strategies found in {self.strategy_schemas_dir}"
+                    f"No universal usr_strategies found in {self.strategy_schemas_dir}"
                 )
                 return None
             
-            # Execute strategies and collect results
+            # Execute usr_strategies and collect results
             results = []
-            for strat_id in strategies_to_run:
+            for strat_id in usr_strategies_to_run:
                 engine = await self._get_or_create_engine(strat_id)
                 
                 if not engine:
@@ -183,7 +183,7 @@ class UniversalStrategyExecutor:
             logger.error(f"Failed to load strategy schema '{strategy_id}': {e}")
             return None
     
-    async def _discover_strategies(self) -> List[str]:
+    async def _discover_usr_strategies(self) -> List[str]:
         """
         Discover all available strategy JSON files.
         
@@ -197,14 +197,14 @@ class UniversalStrategyExecutor:
                 logger.warning(f"Schemas directory does not exist: {schemas_dir}")
                 return []
             
-            strategies = [
+            usr_strategies = [
                 f.stem for f in schemas_dir.glob("*.json")
                 if f.is_file()
             ]
             
-            logger.debug(f"Discovered {len(strategies)} universal strategies")
-            return sorted(strategies)
+            logger.debug(f"Discovered {len(usr_strategies)} universal usr_strategies")
+            return sorted(usr_strategies)
         
         except Exception as e:
-            logger.error(f"Failed to discover strategies: {e}")
+            logger.error(f"Failed to discover usr_strategies: {e}")
             return []

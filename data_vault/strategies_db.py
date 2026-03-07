@@ -2,8 +2,8 @@
 strategies_db.py — Strategy Metadata and Affinity Score Management
 
 Responsibility: CRUD operations for:
-  - strategies table (class_id, mnemonic, affinity_scores JSON, market_whitelist)
-  - strategy_performance_logs table (learning logs for asset efficiency)
+  - usr_strategies table (class_id, mnemonic, affinity_scores JSON, market_whitelist)
+  - usr_strategy_logs table (learning logs for asset efficiency)
 
 Dependency Injection: StorageManager (no direct DB connections)
 Single Source of Truth: All affinity_scores stored in DB (SSOT)
@@ -57,7 +57,7 @@ class StrategiesMixin(BaseRepository):
             whitelist_json = json.dumps(market_whitelist or [])
             
             cursor.execute("""
-                INSERT INTO strategies (
+                INSERT INTO usr_strategies (
                     class_id, mnemonic, version, affinity_scores,
                     market_whitelist, description
                 ) VALUES (?, ?, ?, ?, ?, ?)
@@ -92,7 +92,7 @@ class StrategiesMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT * FROM strategies WHERE class_id = ?
+                SELECT * FROM usr_strategies WHERE class_id = ?
             """, (class_id,))
             row = cursor.fetchone()
             if not row:
@@ -106,12 +106,12 @@ class StrategiesMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_all_strategies(self) -> List[Dict[str, Any]]:
-        """Retrieve all strategies with parsed JSON fields."""
+    def get_all_usr_strategies(self) -> List[Dict[str, Any]]:
+        """Retrieve all usr_strategies with parsed JSON fields."""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM strategies ORDER BY created_at DESC")
+            cursor.execute("SELECT * FROM usr_strategies ORDER BY created_at DESC")
             rows = cursor.fetchall()
             
             results = []
@@ -131,7 +131,7 @@ class StrategiesMixin(BaseRepository):
     ) -> bool:
         """
         Update affinity_scores for a strategy.
-        Called by learning system after strategy_performance_logs aggregation.
+        Called by learning system after usr_strategy_logs aggregation.
         
         Args:
             class_id: Strategy identifier
@@ -146,7 +146,7 @@ class StrategiesMixin(BaseRepository):
             affinity_json = json.dumps(affinity_scores)
             
             cursor.execute("""
-                UPDATE strategies
+                UPDATE usr_strategies
                 SET affinity_scores = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE class_id = ?
             """, (affinity_json, class_id))
@@ -181,7 +181,7 @@ class StrategiesMixin(BaseRepository):
             whitelist_json = json.dumps(market_whitelist)
             
             cursor.execute("""
-                UPDATE strategies
+                UPDATE usr_strategies
                 SET market_whitelist = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE class_id = ?
             """, (whitelist_json, class_id))
@@ -199,12 +199,12 @@ class StrategiesMixin(BaseRepository):
 
     def get_strategy_affinity_scores(self, class_id: Optional[str] = None) -> Dict[str, float]:
         """
-        Retrieve affinity scores for a strategy (or all strategies).
+        Retrieve affinity scores for a strategy (or all usr_strategies).
         Used by StrategyGatekeeper to load in-memory cache.
         
         Args:
             class_id: If provided, return scores for that strategy only.
-                     If None, aggregate scores across all strategies.
+                     If None, aggregate scores across all usr_strategies.
                      
         Returns:
             Dict mapping assets to average efficiency scores
@@ -215,15 +215,15 @@ class StrategiesMixin(BaseRepository):
             
             if class_id:
                 cursor.execute("""
-                    SELECT affinity_scores FROM strategies WHERE class_id = ?
+                    SELECT affinity_scores FROM usr_strategies WHERE class_id = ?
                 """, (class_id,))
                 row = cursor.fetchone()
                 if row:
                     return json.loads(row[0] or '{}')
                 return {}
             else:
-                # Aggregate: average affinity scores across all strategies
-                cursor.execute("SELECT affinity_scores FROM strategies")
+                # Aggregate: average affinity scores across all usr_strategies
+                cursor.execute("SELECT affinity_scores FROM usr_strategies")
                 rows = cursor.fetchall()
                 
                 aggregated = {}
@@ -250,7 +250,7 @@ class StrategiesMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT market_whitelist FROM strategies WHERE class_id = ?
+                SELECT market_whitelist FROM usr_strategies WHERE class_id = ?
             """, (class_id,))
             row = cursor.fetchone()
             if row:
@@ -266,20 +266,20 @@ class StrategiesMixin(BaseRepository):
         strategy_id: str,
         asset: str,
         pnl: float,
-        trades_count: int,
+        usr_trades_count: int,
         win_rate: float,
         profit_factor: float,
         trace_id: Optional[str] = None
     ) -> bool:
         """
         Log strategy performance for a specific asset.
-        Called after each trade or batch of trades.
+        Called after each trade or batch of usr_trades.
         
         Args:
             strategy_id: Strategy class_id
             asset: Asset symbol (e.g., 'EUR/USD')
             pnl: Profit/Loss amount
-            trades_count: Number of trades in this log
+            usr_trades_count: Number of usr_trades in this log
             win_rate: Win rate (0-1)
             profit_factor: Profit Factor (P&L wins / |P&L losses|)
             trace_id: Optional trace ID for auditing
@@ -292,15 +292,15 @@ class StrategiesMixin(BaseRepository):
             cursor = conn.cursor()
             
             cursor.execute("""
-                INSERT INTO strategy_performance_logs (
-                    strategy_id, asset, pnl, trades_count,
+                INSERT INTO usr_strategy_logs (
+                    strategy_id, asset, pnl, usr_trades_count,
                     win_rate, profit_factor, trace_id, timestamp
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             """, (
                 strategy_id,
                 asset,
                 pnl,
-                trades_count,
+                usr_trades_count,
                 win_rate,
                 profit_factor,
                 trace_id
@@ -336,7 +336,7 @@ class StrategiesMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT * FROM strategy_performance_logs
+                SELECT * FROM usr_strategy_logs
                 WHERE strategy_id = ? AND asset = ?
                 ORDER BY timestamp DESC
                 LIMIT ?
@@ -351,13 +351,13 @@ class StrategiesMixin(BaseRepository):
         self,
         strategy_id: str,
         asset: str,
-        lookback_trades: int = 50
+        lookback_usr_trades: int = 50
     ) -> float:
         """
         Calculate affinity score for an asset based on recent performance.
         
         Algorithm:
-            - Retrieve last N trades for this strategy-asset combination
+            - Retrieve last N usr_trades for this strategy-asset combination
             - Weight by: (win_rate * 0.5) + (profit_factor / 2.0 * 0.3) + (recent_momentum * 0.2)
             - Scale to 0-1 range
             
@@ -367,22 +367,22 @@ class StrategiesMixin(BaseRepository):
         logs = self.get_asset_performance_history(
             strategy_id=strategy_id,
             asset=asset,
-            limit=lookback_trades
+            limit=lookback_usr_trades
         )
         
         if not logs:
             return 0.5  # Neutral score for unknown assets
         
         # Aggregate metrics
-        total_trades = sum(log['trades_count'] for log in logs)
-        if total_trades == 0:
+        total_usr_trades = sum(log['usr_trades_count'] for log in logs)
+        if total_usr_trades == 0:
             return 0.5
         
         # Weighted average of win rates
-        avg_win_rate = sum(log['win_rate'] * log['trades_count'] for log in logs) / total_trades
+        avg_win_rate = sum(log['win_rate'] * log['usr_trades_count'] for log in logs) / total_usr_trades
         
         # Weighted average of profit factors
-        avg_profit_factor = sum(log['profit_factor'] * log['trades_count'] for log in logs) / total_trades
+        avg_profit_factor = sum(log['profit_factor'] * log['usr_trades_count'] for log in logs) / total_usr_trades
         
         # Normalize profit_factor to 0-1 (cap at 2.0 = 1.0 score)
         pf_score = min(avg_profit_factor / 2.0, 1.0)
@@ -424,10 +424,10 @@ class StrategiesMixin(BaseRepository):
             # Query recent logs
             cursor.execute("""
                 SELECT asset, SUM(pnl) as total_pnl,
-                       SUM(trades_count) as total_trades,
+                       SUM(usr_trades_count) as total_usr_trades,
                        AVG(win_rate) as avg_win_rate,
                        AVG(profit_factor) as avg_profit_factor
-                FROM strategy_performance_logs
+                FROM usr_strategy_logs
                 WHERE strategy_id = ? AND timestamp > datetime('now', '-' || ? || ' days')
                 GROUP BY asset
                 ORDER BY total_pnl DESC
@@ -439,14 +439,14 @@ class StrategiesMixin(BaseRepository):
                 'period_days': lookback_days,
                 'assets': {},
                 'total_pnl': 0.0,
-                'total_trades': 0
+                'total_usr_trades': 0
             }
             
             for row in rows:
                 asset_data = dict(row)
                 summary['assets'][asset_data['asset']] = asset_data
                 summary['total_pnl'] += asset_data['total_pnl'] or 0
-                summary['total_trades'] += asset_data['total_trades'] or 0
+                summary['total_usr_trades'] += asset_data['total_usr_trades'] or 0
             
             return summary
         finally:
@@ -454,9 +454,9 @@ class StrategiesMixin(BaseRepository):
     # ── Readiness Status (SSOT: Strategy Registry in BD) ─────────────────────
     # Trace_ID: EXEC-UNIVERSAL-ENGINE-REAL | CORRECTION: Soberanía de Persistencia
 
-    def get_strategies_by_readiness(self, readiness: str) -> List[Dict[str, Any]]:
+    def get_usr_strategies_by_readiness(self, readiness: str) -> List[Dict[str, Any]]:
         """
-        Retrieve all strategies with a specific readiness status.
+        Retrieve all usr_strategies with a specific readiness status.
         
         Args:
             readiness: Status to filter by (e.g., 'READY_FOR_ENGINE', 'LOGIC_PENDING')
@@ -468,7 +468,7 @@ class StrategiesMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT * FROM strategies
+                SELECT * FROM usr_strategies
                 WHERE readiness = ?
                 ORDER BY created_at DESC
             """, (readiness,))
@@ -505,7 +505,7 @@ class StrategiesMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                UPDATE strategies
+                UPDATE usr_strategies
                 SET readiness = ?, readiness_notes = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE class_id = ?
             """, (readiness, readiness_notes, class_id))

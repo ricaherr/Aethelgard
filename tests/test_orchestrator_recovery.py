@@ -6,9 +6,9 @@ Tests resilient recovery capabilities of MainOrchestrator.
 
 Validates that:
 1. SessionStats reconstructs from DB after restart
-2. Executed signals from today are not forgotten
+2. Executed usr_signals from today are not forgotten
 3. System can recover from crashes gracefully
-4. Adaptive heartbeat responds to active signals
+4. Adaptive heartbeat responds to active usr_signals
 
 Based on Gemini's audit recommendation for resilience testing.
 """
@@ -59,13 +59,13 @@ class MockScanner:
 
 
 class MockSignalFactory:
-    """Mock signal factory that generates test signals and saves them to DB"""
+    """Mock signal factory that generates test usr_signals and saves them to DB"""
     
     def __init__(self, should_generate: bool = True, storage: StorageManager = None):
         self.should_generate = should_generate
         self.storage = storage
     
-    async def generate_signals_batch(self, scan_results_with_data, trace_id=None):
+    async def generate_usr_signals_batch(self, scan_results_with_data, trace_id=None):
         """Nuevo método para generar señales desde scan_results con DataFrames"""
         if not self.should_generate:
             return []
@@ -133,12 +133,12 @@ class MockExecutor:
     def __init__(self, success: bool = True, storage: StorageManager = None):
         self.success = success
         self.storage = storage
-        self.executed_signals = []
-        self.persists_signals = True  # Tell Orchestrator we handle persistence (avoid duplicates)
+        self.executed_usr_signals = []
+        self.persists_usr_signals = True  # Tell Orchestrator we handle persistence (avoid duplicates)
     
     async def execute_signal(self, signal):
         """Execute signal and update DB status (mimics real Executor behavior)"""
-        self.executed_signals.append(signal)
+        self.executed_usr_signals.append(signal)
         await asyncio.sleep(0.01)  # Simulate async work
         
         # If successful, update signal status to EXECUTED (like real Executor does)
@@ -181,8 +181,8 @@ def test_session_stats_fresh_start(storage):
     stats = SessionStats.from_storage(storage)
     
     assert stats.date == date.today()
-    assert stats.signals_processed == 0
-    assert stats.signals_executed == 0
+    assert stats.usr_signals_processed == 0
+    assert stats.usr_signals_executed == 0
     assert stats.cycles_completed == 0
     assert stats.errors_count == 0
 
@@ -191,12 +191,12 @@ def test_session_stats_reconstruction_from_db(storage):
     """
     CRITICAL TEST: Verify SessionStats reconstructs from DB.
     
-    This ensures trades executed today are not forgotten after restart.
+    This ensures usr_trades executed today are not forgotten after restart.
     """
-    # Simulate signals executed earlier today
+    # Simulate usr_signals executed earlier today
     today = date.today()
     
-    # Create mock signals with status='executed' (simulating already executed signals)
+    # Create mock usr_signals with status='executed' (simulating already executed usr_signals)
     signal1 = Signal(
         symbol="EURUSD",
         signal_type="BUY",
@@ -223,27 +223,27 @@ def test_session_stats_reconstruction_from_db(storage):
         metadata={"regime": MarketRegime.TREND.value}
     )
     
-    # Persist signals
+    # Persist usr_signals
     storage.save_signal(signal1)
     storage.save_signal(signal2)
     
     # Also persist session stats
     session_data = {
         "date": today.isoformat(),
-        "signals_processed": 5,
-        "signals_executed": 2,
+        "usr_signals_processed": 5,
+        "usr_signals_executed": 2,
         "cycles_completed": 3,
         "errors_count": 0
     }
-    storage.update_system_state({"session_stats": session_data})
+    storage.update_sys_config({"session_stats": session_data})
     
     # RESTART SIMULATION: Create new SessionStats from storage
     recovered_stats = SessionStats.from_storage(storage)
     
     # Verify recovery
     assert recovered_stats.date == today
-    assert recovered_stats.signals_executed == 2  # From DB count
-    assert recovered_stats.signals_processed == 5
+    assert recovered_stats.usr_signals_executed == 2  # From DB count
+    assert recovered_stats.usr_signals_processed == 5
     assert recovered_stats.cycles_completed == 3
     assert recovered_stats.errors_count == 0
 
@@ -257,26 +257,26 @@ def test_session_stats_reconstruction_old_data(storage):
     # Store old session data
     old_session_data = {
         "date": yesterday.isoformat(),
-        "signals_processed": 10,
-        "signals_executed": 5,
+        "usr_signals_processed": 10,
+        "usr_signals_executed": 5,
         "cycles_completed": 8,
         "errors_count": 2
     }
-    storage.update_system_state({"session_stats": old_session_data})
+    storage.update_sys_config({"session_stats": old_session_data})
     
     # Reconstruct stats
     stats = SessionStats.from_storage(storage)
     
     # Should start fresh for today
     assert stats.date == date.today()
-    assert stats.signals_processed == 0
+    assert stats.usr_signals_processed == 0
     assert stats.cycles_completed == 0
 
 
 @pytest.mark.asyncio
 async def test_orchestrator_persistence_after_execution(storage):
     """
-    Test that orchestrator persists signals immediately after execution.
+    Test that orchestrator persists usr_signals immediately after execution.
     
     This ensures no data loss if system crashes after trade execution.
     """
@@ -299,14 +299,14 @@ async def test_orchestrator_persistence_after_execution(storage):
     await orchestrator.run_single_cycle()
     
     # Verify signal was persisted
-    executed_count = storage.count_executed_signals(date.today())
+    executed_count = storage.count_executed_usr_signals(date.today())
     assert executed_count == 1
     
-    # Verify signals in DB
-    signals_today = storage.get_signals_by_date(date.today())
-    assert len(signals_today) == 1
-    assert signals_today[0]["symbol"] == "EURUSD"
-    assert signals_today[0]["status"] == "EXECUTED"  # Uppercase (simplified STATUS)
+    # Verify usr_signals in DB
+    usr_signals_today = storage.get_usr_signals_by_date(date.today())
+    assert len(usr_signals_today) == 1
+    assert usr_signals_today[0]["symbol"] == "EURUSD"
+    assert usr_signals_today[0]["status"] == "EXECUTED"  # Uppercase (simplified STATUS)
 
 
 @pytest.mark.asyncio
@@ -315,7 +315,7 @@ async def test_orchestrator_recovery_after_crash(storage):
     RESILIENCE TEST: Simulate crash and recovery.
     
     Steps:
-    1. Execute signals
+    1. Execute usr_signals
     2. Simulate crash (create new orchestrator instance)
     3. Verify state is recovered correctly
     """
@@ -337,13 +337,13 @@ async def test_orchestrator_recovery_after_crash(storage):
     await orchestrator1.run_single_cycle()
     await orchestrator1.run_single_cycle()
     
-    initial_executed = orchestrator1.stats.signals_executed
+    initial_executed = orchestrator1.stats.usr_signals_executed
     assert initial_executed == 2
     
     # === PHASE 2: Simulate crash and restart ===
     # Create new orchestrator instance (simulates restart)
     scanner2 = MockScanner()
-    signal_factory2 = MockSignalFactory(should_generate=False, storage=storage)  # No new signals
+    signal_factory2 = MockSignalFactory(should_generate=False, storage=storage)  # No new usr_signals
     risk_manager2 = MockRiskManager(lockdown=False)
     executor2 = MockExecutor(success=True, storage=storage)
     
@@ -356,20 +356,20 @@ async def test_orchestrator_recovery_after_crash(storage):
     )
     
     # Verify stats were recovered
-    assert orchestrator2.stats.signals_executed == 2  # Recovered from DB
+    assert orchestrator2.stats.usr_signals_executed == 2  # Recovered from DB
     assert orchestrator2.stats.date == date.today()
     
-    # Verify DB still has signals
-    signals_today = storage.get_signals_by_date(date.today())
-    assert len(signals_today) == 2
+    # Verify DB still has usr_signals
+    usr_signals_today = storage.get_usr_signals_by_date(date.today())
+    assert len(usr_signals_today) == 2
 
 
 @pytest.mark.asyncio
-async def test_adaptive_heartbeat_with_signals(storage):
+async def test_adaptive_heartbeat_with_usr_signals(storage):
     """
     Test adaptive heartbeat (Latido de Guardia).
     
-    Verify that sleep interval reduces when signals are active.
+    Verify that sleep interval reduces when usr_signals are active.
     """
     scanner = MockScanner(regime=MarketRegime.RANGE)
     signal_factory = MockSignalFactory(should_generate=True)
@@ -384,7 +384,7 @@ async def test_adaptive_heartbeat_with_signals(storage):
         storage=storage
     )
     
-    # Manually set active signals to simulate mid-cycle state
+    # Manually set active usr_signals to simulate mid-cycle state
     from models.signal import Signal, ConnectorType
     test_signal = Signal(
         symbol="EURUSD",
@@ -395,7 +395,7 @@ async def test_adaptive_heartbeat_with_signals(storage):
         stop_loss=1.0950,
         take_profit=1.1100
     )
-    orchestrator._active_signals = [test_signal]
+    orchestrator._active_usr_signals = [test_signal]
     
     # Verify adaptive interval is reduced
     base_interval = orchestrator.intervals[MarketRegime.RANGE]
@@ -406,10 +406,10 @@ async def test_adaptive_heartbeat_with_signals(storage):
 
 
 @pytest.mark.asyncio
-async def test_adaptive_heartbeat_without_signals(storage):
-    """Test that heartbeat uses normal interval when no signals"""
+async def test_adaptive_heartbeat_without_usr_signals(storage):
+    """Test that heartbeat uses normal interval when no usr_signals"""
     scanner = MockScanner(regime=MarketRegime.RANGE)
-    signal_factory = MockSignalFactory(should_generate=False)  # No signals
+    signal_factory = MockSignalFactory(should_generate=False)  # No usr_signals
     risk_manager = MockRiskManager(lockdown=False)
     executor = MockExecutor(success=True)
     
@@ -421,11 +421,11 @@ async def test_adaptive_heartbeat_without_signals(storage):
         storage=storage
     )
     
-    # Run cycle (no signals)
+    # Run cycle (no usr_signals)
     await orchestrator.run_single_cycle()
     
-    # Verify no active signals
-    assert len(orchestrator._active_signals) == 0
+    # Verify no active usr_signals
+    assert len(orchestrator._active_usr_signals) == 0
     
     # Verify normal interval is used
     base_interval = orchestrator.intervals[MarketRegime.RANGE]
@@ -458,17 +458,17 @@ async def test_stats_persistence_after_each_cycle(storage):
     await orchestrator.run_single_cycle()
     
     # Verify stats were persisted to DB
-    system_state = storage.get_system_state()
-    session_stats = system_state.get("session_stats", {})
+    sys_config = storage.get_sys_config()
+    session_stats = sys_config.get("session_stats", {})
     
-    assert session_stats["signals_processed"] == 1
-    assert session_stats["signals_executed"] == 1
+    assert session_stats["usr_signals_processed"] == 1
+    assert session_stats["usr_signals_executed"] == 1
     assert session_stats["cycles_completed"] == 1
     assert "last_update" in session_stats
 
 
-def test_count_executed_signals_filters_by_date(storage):
-    """Test that count_executed_signals correctly filters by date"""
+def test_count_executed_usr_signals_filters_by_date(storage):
+    """Test that count_executed_usr_signals correctly filters by date"""
     from datetime import timedelta
     
     today = date.today()
@@ -521,7 +521,7 @@ def test_count_executed_signals_filters_by_date(storage):
     }
     
     cursor.execute("""
-        INSERT INTO signals 
+        INSERT INTO usr_signals 
         (id, symbol, signal_type, confidence, timestamp, metadata, connector_type, status)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, (
@@ -537,8 +537,8 @@ def test_count_executed_signals_filters_by_date(storage):
     conn.commit()
     
     # Verify counts
-    today_count = storage.count_executed_signals(today)
-    yesterday_count = storage.count_executed_signals(yesterday)
+    today_count = storage.count_executed_usr_signals(today)
+    yesterday_count = storage.count_executed_usr_signals(yesterday)
     
     assert today_count == 1
     assert yesterday_count == 1

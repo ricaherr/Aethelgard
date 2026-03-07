@@ -16,7 +16,7 @@ from datetime import datetime
 
 # Componentes a probar y mockear
 from core_brain.signal_factory import SignalFactory
-from core_brain.strategies.oliver_velez import OliverVelezStrategy
+from core_brain.usr_strategies.oliver_velez import OliverVelezStrategy
 from models.signal import Signal, MarketRegime, MembershipTier, SignalType, ConnectorType
 from data_vault.storage import StorageManager
 
@@ -27,7 +27,7 @@ def mock_storage_manager():
     """Mock del StorageManager para evitar accesos a la base de datos."""
     manager = MagicMock(spec=StorageManager)
     manager.save_signal.return_value = "signal_123"
-    # Deduplication queries should return False (no existing signals/positions)
+    # Deduplication queries should return False (no existing usr_signals/usr_positions)
     manager.has_recent_signal.return_value = False
     manager.has_open_position.return_value = False
     return manager
@@ -230,7 +230,7 @@ async def test_low_score_signal_does_not_trigger_notification(signal_factory, mo
     un score bajo y no disparar una notificación 'Premium'.
     """
     # Preparar la estrategia para el test
-    ov_strategy = next(s for s in signal_factory.strategies if isinstance(s, OliverVelezStrategy))
+    ov_strategy = next(s for s in signal_factory.usr_strategies if isinstance(s, OliverVelezStrategy))
 
     # Arrange: Crear una base de señal válida, pero con valores débiles.
     atr = 0.002

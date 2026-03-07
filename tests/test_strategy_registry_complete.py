@@ -28,7 +28,7 @@ class TestStrategyEngineFactoryBasics:
     def test_factory_initialization(self):
         """Verifica que el factory se inicializa correctamente."""
         mock_storage = Mock()
-        mock_storage.get_all_strategies.return_value = [
+        mock_storage.get_all_usr_strategies.return_value = [
             {
                 "class_id": "TEST_STRAT",
                 "type": "JSON_SCHEMA",
@@ -48,30 +48,30 @@ class TestStrategyEngineFactoryBasics:
         assert factory.active_engines == {}
         assert factory.load_errors == {}
 
-    def test_factory_instantiate_all_strategies_empty_bd(self):
+    def test_factory_instantiate_all_usr_strategies_empty_bd(self):
         """Verifica que factory reporta error si BD está vacía."""
         mock_storage = Mock()
-        mock_storage.get_all_strategies.return_value = []
+        mock_storage.get_all_usr_strategies.return_value = []
         
         factory = StrategyEngineFactory(storage=mock_storage)
         
-        with pytest.raises(RuntimeError, match="Tabla strategies vacía"):
-            factory.instantiate_all_strategies()
+        with pytest.raises(RuntimeError, match="Tabla usr_strategies vacía"):
+            factory.instantiate_all_usr_strategies()
 
     def test_factory_instantiate_all_strategies_db_error(self):
         """Verifica manejo de errores al acceder a BD."""
         mock_storage = Mock()
-        mock_storage.get_all_strategies.side_effect = Exception("DB connection failed")
+        mock_storage.get_all_usr_strategies.side_effect = Exception("DB connection failed")
         
         factory = StrategyEngineFactory(storage=mock_storage)
         
-        with pytest.raises(RuntimeError, match="No se pudo acceder a tabla strategies"):
-            factory.instantiate_all_strategies()
+        with pytest.raises(RuntimeError, match="No se pudo acceder a tabla usr_strategies"):
+            factory.instantiate_all_usr_strategies()
 
     def test_factory_validates_readiness(self):
-        """Verifica que strategies con readiness != READY_FOR_ENGINE se salten."""
+        """Verifica que usr_strategies con readiness != READY_FOR_ENGINE se salten."""
         mock_storage = Mock()
-        mock_storage.get_all_strategies.return_value = [
+        mock_storage.get_all_usr_strategies.return_value = [
             {
                 "class_id": "LOGIC_PENDING_STRAT",
                 "type": "JSON_SCHEMA",
@@ -89,15 +89,15 @@ class TestStrategyEngineFactoryBasics:
         factory = StrategyEngineFactory(storage=mock_storage)
         
         with patch("core_brain.services.strategy_engine_factory.logger"):
-            with pytest.raises(RuntimeError, match="No strategies instantiated"):
+            with pytest.raises(RuntimeError, match="No usr_strategies instantiated"):
                 # El segundo strategy no se puede instanciar porque UniversalStrategyEngine
                 # fallaría en esta prueba, pero el primero se saltaría correctamente
-                factory.instantiate_all_strategies()
+                factory.instantiate_all_usr_strategies()
 
     def test_factory_validates_dependencies(self):
         """Verifica validación de dependencias de sensores."""
         mock_storage = Mock()
-        mock_storage.get_all_strategies.return_value = [
+        mock_storage.get_all_usr_strategies.return_value = [
             {
                 "class_id": "NEEDS_SENSOR",
                 "type": "JSON_SCHEMA",
@@ -112,8 +112,8 @@ class TestStrategyEngineFactoryBasics:
         )
         
         with patch("core_brain.services.strategy_engine_factory.logger"):
-            with pytest.raises(RuntimeError, match="No strategies instantiated"):
-                factory.instantiate_all_strategies()
+            with pytest.raises(RuntimeError, match="No usr_strategies instantiated"):
+                factory.instantiate_all_usr_strategies()
 
     def test_factory_get_stats(self):
         """Verifica que stats() retorna información correcta."""
@@ -203,15 +203,15 @@ class TestSignalFactoryDictIntegration:
         df = pd.DataFrame({"close": [1.0, 2.0, 3.0]})
         
         from models.signal import MarketRegime
-        signals = await signal_factory.generate_signal("EUR/USD", df, MarketRegime.TREND)
+        usr_signals = await signal_factory.generate_signal("EUR/USD", df, MarketRegime.TREND)
         
         # Verificar que ambos motores fueron llamados
         engine_1.analyze.assert_called_once()
         engine_2.analyze.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_signal_factory_generate_signals_batch_with_dict(self):
-        """Verifica que generate_signals_batch() funciona con Dict engines."""
+    async def test_signal_factory_generate_usr_signals_batch_with_dict(self):
+        """Verifica que generate_usr_signals_batch() funciona con Dict engines."""
         mock_storage = Mock()
         mock_confluence = Mock()
         mock_confluence.enabled = False
@@ -243,9 +243,9 @@ class TestSignalFactoryDictIntegration:
             }
         }
         
-        signals = await signal_factory.generate_signals_batch(scan_results)
+        usr_signals = await signal_factory.generate_usr_signals_batch(scan_results)
         
-        assert isinstance(signals, list)
+        assert isinstance(usr_signals, list)
 
 
 class TestNOHardcodingOfStrategies:
@@ -264,25 +264,25 @@ class TestNOHardcodingOfStrategies:
         # Verificar que NO contiene: "ov_strategy = OliverVelezStrategy(...)"
         # Verificar que CONTIENE: "StrategyEngineFactory"
         
-        # find the strategies initialization section
-        match = re.search(r"# FASE 2.*?strategies.*?SignalFactory", content, re.DOTALL)
+        # find the usr_strategies initialization section
+        match = re.search(r"# FASE 2.*?usr_strategies.*?SignalFactory", content, re.DOTALL)
         
         if match:
             section = match.group(0)
-            assert "OliverVelezStrategy" not in section, "OliverVelezStrategy should not be hardcoded in strategies section"
+            assert "OliverVelezStrategy" not in section, "OliverVelezStrategy should not be hardcoded in usr_strategies section"
             assert "StrategyEngineFactory" in section, "StrategyEngineFactory should be used"
         else:
-            pytest.skip("Could not find strategies initialization section")
+            pytest.skip("Could not find usr_strategies initialization section")
 
     def test_signal_factory_constructor_signature(self):
-        """Verifica que SignalFactory recibe strategy_engines, no strategies."""
+        """Verifica que SignalFactory recibe strategy_engines, no usr_strategies."""
         import inspect
         
         sig = inspect.signature(SignalFactory.__init__)
         params = list(sig.parameters.keys())
         
         assert "strategy_engines" in params, "Constructor should have strategy_engines parameter"
-        assert "strategies" not in params, "Constructor should NOT have strategies parameter"
+        assert "usr_strategies" not in params, "Constructor should NOT have usr_strategies parameter"
 
 
 class TestDependencyValidation:

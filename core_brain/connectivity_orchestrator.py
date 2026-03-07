@@ -65,7 +65,7 @@ class ConnectivityOrchestrator:
         
         # 1. Load Data Providers
         try:
-            providers = self.storage.get_data_providers()
+            providers = self.storage.get_sys_data_providers()
             for p in providers:
                 if not p.get('enabled', False): continue
                 
@@ -102,7 +102,7 @@ class ConnectivityOrchestrator:
 
         # 2. Load Broker Accounts
         try:
-            accounts = self.storage.get_broker_accounts(enabled_only=True)
+            accounts = self.storage.get_sys_broker_accounts(enabled_only=True)
             for acc in accounts:
                 pid = acc['broker_id']
                 if pid in self.connectors: continue

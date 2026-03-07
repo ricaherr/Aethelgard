@@ -36,7 +36,7 @@ def mock_storage():
 def mock_connector():
     """Mock MT5Connector"""
     connector = Mock()
-    connector.get_open_positions = Mock(return_value=[])
+    connector.get_open_usr_positions = Mock(return_value=[])
     connector.get_symbol_info = Mock(return_value={
         'trade_stops_level': 50,
         'point': 0.00001,
@@ -382,7 +382,7 @@ def test_should_move_to_breakeven_rejects_insufficient_profit(position_manager):
     assert "insufficient" in reason.lower() or "distance" in reason.lower()
 
 
-def test_monitor_positions_moves_sl_to_breakeven_real(
+def test_monitor_usr_positions_moves_sl_to_breakeven_real(
     position_manager,
     mock_connector,
     mock_storage
@@ -428,11 +428,11 @@ def test_monitor_positions_moves_sl_to_breakeven_real(
     }
     
     # Mock connector responses
-    mock_connector.get_open_positions.return_value = [position]
+    mock_connector.get_open_usr_positions.return_value = [position]
     mock_storage.get_position_metadata.return_value = metadata
     
     # Execute monitor cycle
-    result = position_manager.monitor_positions()
+    result = position_manager.monitor_usr_positions()
     
     # Assert: Position modified
     assert mock_connector.modify_position.called

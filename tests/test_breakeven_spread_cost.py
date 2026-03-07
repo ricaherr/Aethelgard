@@ -23,7 +23,7 @@ from conftest import MockSymbolInfo
 def mock_connector():
     """Creates a mock connector with configurable symbol info"""
     connector = MagicMock()
-    connector.get_positions = MagicMock(return_value=[])
+    connector.get_usr_positions = MagicMock(return_value=[])
     connector.get_account_info = MagicMock(return_value=MagicMock(balance=10000.0))
     return connector
 
@@ -32,7 +32,7 @@ def mock_connector():
 def mock_storage():
     """Creates a mock storage manager"""
     storage = MagicMock()
-    storage.get_all_positions = MagicMock(return_value=[])
+    storage.get_all_usr_positions = MagicMock(return_value=[])
     return storage
 
 

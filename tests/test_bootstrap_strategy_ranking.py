@@ -1,9 +1,9 @@
 """
-Test Suite: Bootstrap strategy_ranking Table
+Test Suite: Bootstrap usr_performance Table
 Trace_ID: TEST-BOOTSTRAP-RANKING-S007-2026
 
 Validación que el script de bootstrap:
-1. Crea 5 filas en strategy_ranking (una por estrategia READY_FOR_ENGINE)
+1. Crea 5 filas en usr_performance (una por estrategia READY_FOR_ENGINE)
 2. Excluye SESS_EXT_0001 (LOGIC_PENDING)
 3. Todas las filas tienen execution_mode='SHADOW' (default)
 4. Es idempotente (rerun no duplica)
@@ -26,7 +26,7 @@ from data_vault.tenant_factory import TenantDBFactory
 
 
 class TestBootstrapStrategyRanking:
-    """Tests para bootstrap_strategy_ranking.py"""
+    """Tests para bootstrap_usr_performance.py"""
 
     @pytest.fixture
     def in_memory_db(self):
@@ -34,9 +34,9 @@ class TestBootstrapStrategyRanking:
         conn = sqlite3.connect(':memory:')
         cursor = conn.cursor()
         
-        # Crear tabla strategies
+        # Crear tabla usr_strategies
         cursor.execute('''
-            CREATE TABLE strategies (
+            CREATE TABLE usr_strategies (
                 class_id TEXT PRIMARY KEY,
                 mnemonic TEXT,
                 type TEXT,
@@ -46,16 +46,16 @@ class TestBootstrapStrategyRanking:
             )
         ''')
         
-        # Crear tabla strategy_ranking
+        # Crear tabla usr_performance
         cursor.execute('''
-            CREATE TABLE strategy_ranking (
+            CREATE TABLE usr_performance (
                 strategy_id TEXT PRIMARY KEY,
                 profit_factor REAL,
                 win_rate REAL,
                 drawdown_max REAL,
                 consecutive_losses INTEGER,
                 execution_mode TEXT,
-                total_trades INTEGER,
+                total_usr_trades INTEGER,
                 completed_last_50 INTEGER,
                 trace_id TEXT,
                 last_update_utc TIMESTAMP,
@@ -65,7 +65,7 @@ class TestBootstrapStrategyRanking:
         ''')
         
         # Insertar 6 estrategias (5 READY + 1 LOGIC_PENDING)
-        strategies = [
+        usr_strategies = [
             ('BRK_OPEN_0001', 'BRK_OPEN_NY_STRIKE', 'JSON_SCHEMA', 'READY_FOR_ENGINE'),
             ('institutional_footprint', 'INST_FOOTPRINT_ORDER_FLOW', 'JSON_SCHEMA', 'READY_FOR_ENGINE'),
             ('MOM_BIAS_0001', 'MOM_BIAS_MOMENTUM_STRIKE', 'PYTHON_CLASS', 'READY_FOR_ENGINE'),
@@ -74,9 +74,9 @@ class TestBootstrapStrategyRanking:
             ('STRUC_SHIFT_0001', 'STRUC_SHIFT_STRUCTURE_BREAK', 'PYTHON_CLASS', 'READY_FOR_ENGINE'),
         ]
         
-        for class_id, mnemonic, stype, readiness in strategies:
+        for class_id, mnemonic, stype, readiness in usr_strategies:
             cursor.execute(
-                'INSERT INTO strategies (class_id, mnemonic, type, readiness, created_at) VALUES (?, ?, ?, ?, ?)',
+                'INSERT INTO usr_strategies (class_id, mnemonic, type, readiness, created_at) VALUES (?, ?, ?, ?, ?)',
                 (class_id, mnemonic, stype, readiness, datetime.utcnow())
             )
         
@@ -89,26 +89,26 @@ class TestBootstrapStrategyRanking:
         """Mock StorageManager usando BD en memoria"""
         storage = Mock(spec=StorageManager)
         
-        def get_all_strategies():
+        def get_all_usr_strategies():
             cursor = in_memory_db.cursor()
-            cursor.execute('SELECT class_id, readiness FROM strategies')
+            cursor.execute('SELECT class_id, readiness FROM usr_strategies')
             return [
                 {"class_id": row[0], "readiness": row[1]}
                 for row in cursor.fetchall()
             ]
         
-        def create_strategy_ranking(strategy_id, execution_mode='SHADOW', **kwargs):
+        def create_usr_performance(strategy_id, execution_mode='SHADOW', **kwargs):
             # Verificar que no existe
             cursor = in_memory_db.cursor()
             cursor.execute(
-                'SELECT COUNT(*) FROM strategy_ranking WHERE strategy_id=?',
+                'SELECT COUNT(*) FROM usr_performance WHERE strategy_id=?',
                 (strategy_id,)
             )
             if cursor.fetchone()[0] == 0:
                 cursor.execute('''
-                    INSERT INTO strategy_ranking 
+                    INSERT INTO usr_performance 
                     (strategy_id, execution_mode, profit_factor, win_rate, drawdown_max, 
-                     consecutive_losses, total_trades, completed_last_50, created_at, updated_at)
+                     consecutive_losses, total_usr_trades, completed_last_50, created_at, updated_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     strategy_id, execution_mode, 0.0, 0.0, 0.0, 0, 0, 0,
@@ -118,32 +118,32 @@ class TestBootstrapStrategyRanking:
                 return True
             return False
         
-        def count_strategy_ranking():
+        def count_usr_performance():
             cursor = in_memory_db.cursor()
-            cursor.execute('SELECT COUNT(*) FROM strategy_ranking')
+            cursor.execute('SELECT COUNT(*) FROM usr_performance')
             return cursor.fetchone()[0]
         
-        def get_strategy_ranking_count_by_execution_mode(mode):
+        def get_usr_performance_count_by_execution_mode(mode):
             cursor = in_memory_db.cursor()
             cursor.execute(
-                'SELECT COUNT(*) FROM strategy_ranking WHERE execution_mode=?',
+                'SELECT COUNT(*) FROM usr_performance WHERE execution_mode=?',
                 (mode,)
             )
             return cursor.fetchone()[0]
         
-        def get_all_strategy_rankings():
+        def get_all_usr_performances():
             cursor = in_memory_db.cursor()
-            cursor.execute('SELECT strategy_id, execution_mode FROM strategy_ranking')
+            cursor.execute('SELECT strategy_id, execution_mode FROM usr_performance')
             return [
                 {"strategy_id": row[0], "execution_mode": row[1]}
                 for row in cursor.fetchall()
             ]
         
-        storage.get_all_strategies = get_all_strategies
-        storage.create_strategy_ranking = create_strategy_ranking
-        storage.count_strategy_ranking = count_strategy_ranking
-        storage.get_strategy_ranking_count_by_execution_mode = get_strategy_ranking_count_by_execution_mode
-        storage.get_all_strategy_rankings = get_all_strategy_rankings
+        storage.get_all_usr_strategies = get_all_usr_strategies
+        storage.create_usr_performance = create_usr_performance
+        storage.count_usr_performance = count_usr_performance
+        storage.get_usr_performance_count_by_execution_mode = get_usr_performance_count_by_execution_mode
+        storage.get_all_usr_performances = get_all_usr_performances
         
         return storage
 
@@ -151,15 +151,15 @@ class TestBootstrapStrategyRanking:
         """
         GIVEN: 6 estrategias (5 READY + 1 LOGIC_PENDING)
         WHEN: Bootstrap ejecuta
-        THEN: strategy_ranking contiene exactamente 5 filas (SESS_EXT_0001 excluida)
+        THEN: usr_performance contiene exactamente 5 filas (SESS_EXT_0001 excluida)
         """
         # Simular bootstrap
-        strategies = mock_storage.get_all_strategies()
+        usr_strategies = mock_storage.get_all_usr_strategies()
         created_count = 0
         
-        for strategy in strategies:
+        for strategy in usr_strategies:
             if strategy['readiness'] == 'READY_FOR_ENGINE':
-                result = mock_storage.create_strategy_ranking(
+                result = mock_storage.create_usr_performance(
                     strategy_id=strategy['class_id'],
                     execution_mode='SHADOW'
                 )
@@ -167,29 +167,29 @@ class TestBootstrapStrategyRanking:
                     created_count += 1
         
         # Verificar
-        total_count = mock_storage.count_strategy_ranking()
+        total_count = mock_storage.count_usr_performance()
         assert total_count == 5, f"Expected 5 rows, got {total_count}"
         assert created_count == 5, f"Expected to create 5 rows, created {created_count}"
 
     def test_bootstrap_all_entries_have_shadow_mode(self, mock_storage):
         """
         GIVEN: Bootstrap completado
-        WHEN: Consultamos strategy_ranking
+        WHEN: Consultamos usr_performance
         THEN: Todos los execution_mode = 'SHADOW'
         """
         # Simular bootstrap
-        strategies = mock_storage.get_all_strategies()
+        usr_strategies = mock_storage.get_all_usr_strategies()
         
-        for strategy in strategies:
+        for strategy in usr_strategies:
             if strategy['readiness'] == 'READY_FOR_ENGINE':
-                mock_storage.create_strategy_ranking(
+                mock_storage.create_usr_performance(
                     strategy_id=strategy['class_id'],
                     execution_mode='SHADOW'
                 )
         
         # Verificar
-        shadow_count = mock_storage.get_strategy_ranking_count_by_execution_mode('SHADOW')
-        total_count = mock_storage.count_strategy_ranking()
+        shadow_count = mock_storage.get_usr_performance_count_by_execution_mode('SHADOW')
+        total_count = mock_storage.count_usr_performance()
         
         assert shadow_count == 5, f"Expected 5 SHADOW entries, got {shadow_count}"
         assert shadow_count == total_count, "All entries should be SHADOW"
@@ -200,27 +200,27 @@ class TestBootstrapStrategyRanking:
         WHEN: Bootstrap ejecuta de nuevo
         THEN: No se crean duplicados (idempotente)
         """
-        strategies = mock_storage.get_all_strategies()
+        usr_strategies = mock_storage.get_all_usr_strategies()
         
         # Primera ejecución
-        for strategy in strategies:
+        for strategy in usr_strategies:
             if strategy['readiness'] == 'READY_FOR_ENGINE':
-                mock_storage.create_strategy_ranking(
+                mock_storage.create_usr_performance(
                     strategy_id=strategy['class_id'],
                     execution_mode='SHADOW'
                 )
         
-        count_after_first = mock_storage.count_strategy_ranking()
+        count_after_first = mock_storage.count_usr_performance()
         
         # Segunda ejecución (debe no cambiar nada)
-        for strategy in strategies:
+        for strategy in usr_strategies:
             if strategy['readiness'] == 'READY_FOR_ENGINE':
-                mock_storage.create_strategy_ranking(
+                mock_storage.create_usr_performance(
                     strategy_id=strategy['class_id'],
                     execution_mode='SHADOW'
                 )
         
-        count_after_second = mock_storage.count_strategy_ranking()
+        count_after_second = mock_storage.count_usr_performance()
         
         assert count_after_first == 5, f"First run: expected 5, got {count_after_first}"
         assert count_after_second == 5, f"Second run: expected 5 (no duplicates), got {count_after_second}"
@@ -229,43 +229,43 @@ class TestBootstrapStrategyRanking:
         """
         GIVEN: SESS_EXT_0001 con readiness=LOGIC_PENDING
         WHEN: Bootstrap ejecuta
-        THEN: SESS_EXT_0001 NO aparece en strategy_ranking
+        THEN: SESS_EXT_0001 NO aparece en usr_performance
         """
         # Simular bootstrap
-        strategies = mock_storage.get_all_strategies()
+        usr_strategies = mock_storage.get_all_usr_strategies()
         
-        for strategy in strategies:
+        for strategy in usr_strategies:
             if strategy['readiness'] == 'READY_FOR_ENGINE':
-                mock_storage.create_strategy_ranking(
+                mock_storage.create_usr_performance(
                     strategy_id=strategy['class_id'],
                     execution_mode='SHADOW'
                 )
         
         # Verificar que SESS_EXT_0001 no existe
-        all_rankings = mock_storage.get_all_strategy_rankings()
+        all_rankings = mock_storage.get_all_usr_performances()
         strategy_ids = [r['strategy_id'] for r in all_rankings]
         
         assert 'SESS_EXT_0001' not in strategy_ids, "SESS_EXT_0001 should be excluded (LOGIC_PENDING)"
-        assert len(strategy_ids) == 5, f"Expected 5 strategies, got {len(strategy_ids)}"
+        assert len(strategy_ids) == 5, f"Expected 5 usr_strategies, got {len(strategy_ids)}"
 
     def test_bootstrap_initializes_metrics_to_zero(self, mock_storage):
         """
         GIVEN: Bootstrap ejecutado
-        WHEN: Consultamos una fila de strategy_ranking
+        WHEN: Consultamos una fila de usr_performance
         THEN: Todas las métricas son == 0.0 (excepto execution_mode)
         """
-        strategies = mock_storage.get_all_strategies()
+        usr_strategies = mock_storage.get_all_usr_strategies()
         
-        for strategy in strategies:
+        for strategy in usr_strategies:
             if strategy['readiness'] == 'READY_FOR_ENGINE':
-                mock_storage.create_strategy_ranking(
+                mock_storage.create_usr_performance(
                     strategy_id=strategy['class_id'],
                     execution_mode='SHADOW'
                 )
         
         # Verificar métricas por DI (StorageManager)
         # Nota: En el mock, creamos con valores 0, pero deberíamos verificar
-        all_rankings = mock_storage.get_all_strategy_rankings()
+        all_rankings = mock_storage.get_all_usr_performances()
         
         for ranking in all_rankings:
             assert ranking['execution_mode'] == 'SHADOW'
@@ -276,7 +276,7 @@ class TestBootstrapIntegration:
 
     def test_bootstrap_with_real_db(self):
         """TEST SOLO PARA QA - Ejecutar con BD real después del bootstrap script"""
-        # Este test será ejecutado DESPUÉS de que bootstrap_strategy_ranking.py corra
+        # Este test será ejecutado DESPUÉS de que bootstrap_usr_performance.py corra
         # en la BD real aethelgard.db
         
         db_path = Path('data_vault/aethelgard.db')
@@ -287,14 +287,14 @@ class TestBootstrapIntegration:
         conn = sqlite3.connect(str(db_path))
         cursor = conn.cursor()
         
-        # Verificación 1: Al menos 5 filas (updated for FASE D: may have more strategies over time)
-        cursor.execute('SELECT COUNT(*) FROM strategy_ranking')
+        # Verificación 1: Al menos 5 filas (updated for FASE D: may have more usr_strategies over time)
+        cursor.execute('SELECT COUNT(*) FROM usr_performance')
         count = cursor.fetchone()[0]
-        assert count >= 5, f"Expected at least 5 strategy_ranking entries, got {count}"
+        assert count >= 5, f"Expected at least 5 usr_performance entries, got {count}"
         
         # Verificación 2: Todos en SHADOW
         cursor.execute(
-            'SELECT COUNT(*) FROM strategy_ranking WHERE execution_mode=?',
+            'SELECT COUNT(*) FROM usr_performance WHERE execution_mode=?',
             ('SHADOW',)
         )
         shadow_count = cursor.fetchone()[0]
@@ -302,15 +302,15 @@ class TestBootstrapIntegration:
         
         # Verificación 3: SESS_EXT_0001 debe existir si contamos >= 5 (fue agregado en posteriores iteraciones)
         cursor.execute(
-            'SELECT COUNT(*) FROM strategy_ranking WHERE strategy_id=?',
+            'SELECT COUNT(*) FROM usr_performance WHERE strategy_id=?',
             ('SESS_EXT_0001',)
         )
         sess_ext_count = cursor.fetchone()[0]
-        assert sess_ext_count == 1, "SESS_EXT_0001 should be in strategy_ranking"
+        assert sess_ext_count == 1, "SESS_EXT_0001 should be in usr_performance"
         
         # Verificación 4: Métricas iniciales en 0
         cursor.execute(
-            'SELECT profit_factor, win_rate, drawdown_max FROM strategy_ranking LIMIT 1'
+            'SELECT profit_factor, win_rate, drawdown_max FROM usr_performance LIMIT 1'
         )
         row = cursor.fetchone()
         assert row[0] == 0.0 and row[1] == 0.0 and row[2] == 0.0, "Initial metrics should be 0.0"

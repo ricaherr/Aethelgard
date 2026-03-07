@@ -58,12 +58,12 @@ class StrategyRegistry:
             db_path = str(root / "data_vault" / "aethelgard.db")
         
         self.db_path = db_path
-        self.strategies: Dict[str, StrategySpec] = {}
+        self.usr_strategies: Dict[str, StrategySpec] = {}
         self.version = "2.0"  # Actualizado a DB-backed
         self._load_registry()
 
     def _load_registry(self) -> None:
-        """Carga strategies desde DB."""
+        """Carga usr_strategies desde DB."""
         try:
             conn = sqlite3.connect(self.db_path)
             conn.row_factory = sqlite3.Row
@@ -115,35 +115,35 @@ class StrategyRegistry:
                     status=row["status"] or "SHADOW",
                     schema_version=row["version"] or "1.0"
                 )
-                self.strategies[strategy_id] = spec
+                self.usr_strategies[strategy_id] = spec
             
             conn.close()
             
-            logger.info(f"[REGISTRY] Loaded {len(self.strategies)} strategies from DB ({self.db_path})")
+            logger.info(f"[REGISTRY] Loaded {len(self.usr_strategies)} usr_strategies from DB ({self.db_path})")
         
         except sqlite3.OperationalError as e:
             logger.error(f"[REGISTRY] DB error loading registry: {e}")
-            self.strategies = {}
+            self.usr_strategies = {}
         except Exception as e:
             logger.error(f"[REGISTRY] Unexpected error loading registry: {e}")
-            self.strategies = {}
+            self.usr_strategies = {}
 
-    def get_all_strategies(self) -> List[StrategySpec]:
+    def get_all_usr_strategies(self) -> List[StrategySpec]:
         """Retorna todas las estrategias registradas."""
-        return list(self.strategies.values())
+        return list(self.usr_strategies.values())
 
-    def get_active_strategies(self) -> List[StrategySpec]:
+    def get_active_usr_strategies(self) -> List[StrategySpec]:
         """Retorna solo estrategias OPERATIVE (no SHADOW/QUARANTINE)."""
-        return [s for s in self.strategies.values() if s.status == "OPERATIVE"]
+        return [s for s in self.usr_strategies.values() if s.status == "OPERATIVE"]
 
     def get_by_class_id(self, class_id: str) -> Optional[StrategySpec]:
         """Obtiene una estrategia por class_id (fallback a strategy_id)."""
         # Buscar primero por class_id directo
-        spec = self.strategies.get(class_id)
+        spec = self.usr_strategies.get(class_id)
         if spec:
             return spec
-        # Fallback: buscar en all strategies por strategy_id
-        for spec in self.strategies.values():
+        # Fallback: buscar en all usr_strategies por strategy_id
+        for spec in self.usr_strategies.values():
             if spec.class_id == class_id or spec.strategy_id == class_id:
                 return spec
         return None
@@ -154,7 +154,7 @@ class StrategyRegistry:
         user_level = tier_hierarchy.get(membership_tier, 0)
         
         return [
-            s for s in self.strategies.values()
+            s for s in self.usr_strategies.values()
             if tier_hierarchy.get(s.membership_tier, 0) <= user_level
         ]
 
@@ -171,7 +171,7 @@ class StrategyRegistry:
         return user_level >= required_level
 
     def __repr__(self) -> str:
-        return f"StrategyRegistry(v{self.version}, strategies={len(self.strategies)})"
+        return f"StrategyRegistry(v{self.version}, usr_strategies={len(self.usr_strategies)})"
 
 
 class StrategyLoaderService:
@@ -188,9 +188,9 @@ class StrategyLoaderService:
             registry: StrategyRegistry instance (crea uno si no se proporciona)
         """
         self.registry = registry or StrategyRegistry()
-        logger.info(f"[LOADER] StrategyLoaderService initialized with {len(self.registry.strategies)} strategies")
+        logger.info(f"[LOADER] StrategyLoaderService initialized with {len(self.registry.usr_strategies)} usr_strategies")
 
-    def get_strategies_for_execution(
+    def get_usr_strategies_for_execution(
         self,
         user_membership: str = "Premium",
         filter_status: str = "OPERATIVE"
@@ -210,7 +210,7 @@ class StrategyLoaderService:
         if filter_status:
             specs = [s for s in specs if s.status == filter_status]
         
-        logger.info(f"[LOADER] Loaded {len(specs)} strategies for {user_membership} (filter={filter_status})")
+        logger.info(f"[LOADER] Loaded {len(specs)} usr_strategies for {user_membership} (filter={filter_status})")
         return specs
 
     def load_strategy_class(self, class_id: str) -> Optional[type]:
@@ -231,12 +231,12 @@ class StrategyLoaderService:
         try:
             # Mapeo de classes conocidas
             strategy_class_map = {
-                "BRK_OPEN_0001": "core_brain.strategies.brk_open_0001",
-                "institutional_footprint": "core_brain.strategies.institutional_footprint",
-                "MOM_BIAS_0001": "core_brain.strategies.mom_bias_0001",
-                "LIQ_SWEEP_0001": "core_brain.strategies.liq_sweep_0001",
-                "SESS_EXT_0001": "core_brain.strategies.sess_ext_0001",
-                "STRUC_SHIFT_0001": "core_brain.strategies.struc_shift_0001",
+                "BRK_OPEN_0001": "core_brain.usr_strategies.brk_open_0001",
+                "institutional_footprint": "core_brain.usr_strategies.institutional_footprint",
+                "MOM_BIAS_0001": "core_brain.usr_strategies.mom_bias_0001",
+                "LIQ_SWEEP_0001": "core_brain.usr_strategies.liq_sweep_0001",
+                "SESS_EXT_0001": "core_brain.usr_strategies.sess_ext_0001",
+                "STRUC_SHIFT_0001": "core_brain.usr_strategies.struc_shift_0001",
             }
             
             module_path = strategy_class_map.get(class_id)
@@ -244,7 +244,7 @@ class StrategyLoaderService:
                 logger.warning(f"[LOADER] No mapping for {class_id}, trying default heuristic")
                 # Heurística: convert class_id to module path
                 module_name = class_id.lower()
-                module_path = f"core_brain.strategies.{module_name}"
+                module_path = f"core_brain.usr_strategies.{module_name}"
             
             # Importar dinámicamente
             import importlib

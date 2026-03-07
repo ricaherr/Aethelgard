@@ -1,7 +1,7 @@
 """
 schema.py — Database Schema Initializer for Aethelgard.
 
-Responsibility: DDL-only. Creates all tables, indexes, seeds regime_configs
+Responsibility: DDL-only. Creates all tables, indexes, seeds sys_regime_configs
 and runs ALTER TABLE migrations. Called exclusively by StorageManager.__init__.
 
 Rules:
@@ -34,7 +34,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
 
     # ── 1. System State & Learning ──────────────────────────────────────────
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS system_state (
+        CREATE TABLE IF NOT EXISTS sys_config (
             key TEXT PRIMARY KEY,
             value TEXT,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -53,7 +53,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
 
     # ── 2. Signals & Trades ──────────────────────────────────────────────────
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS signals (
+        CREATE TABLE IF NOT EXISTS usr_signals (
             id TEXT PRIMARY KEY,
             symbol TEXT NOT NULL,
             signal_type TEXT NOT NULL,
@@ -71,7 +71,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
         )
     """)
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS trades (
+        CREATE TABLE IF NOT EXISTS usr_trades (
             id TEXT PRIMARY KEY,
             signal_id TEXT,
             symbol TEXT,
@@ -84,13 +84,13 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             provider TEXT DEFAULT 'MT5',
             account_type TEXT DEFAULT 'REAL',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (signal_id) REFERENCES signals (id)
+            FOREIGN KEY (signal_id) REFERENCES usr_signals (id)
         )
     """)
 
     # ── 3. Symbol Normalization (SSOT) ───────────────────────────────────────
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS symbol_mappings (
+        CREATE TABLE IF NOT EXISTS sys_symbol_mappings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             internal_symbol TEXT NOT NULL,
             provider_id TEXT NOT NULL,
@@ -102,7 +102,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
 
     # ── Position History ─────────────────────────────────────────────────────
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS position_history (
+        CREATE TABLE IF NOT EXISTS usr_position_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ticket INTEGER NOT NULL,
             symbol TEXT NOT NULL,
@@ -121,7 +121,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
 
     # ── 4. Market State & Coherence ──────────────────────────────────────────
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS market_state (
+        CREATE TABLE IF NOT EXISTS sys_market_pulse (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol TEXT NOT NULL,
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -129,7 +129,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
         )
     """)
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS coherence_events (
+        CREATE TABLE IF NOT EXISTS usr_coherence_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             signal_id TEXT,
             symbol TEXT NOT NULL,
@@ -147,7 +147,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
 
     # ── 4.5 Anomaly Events (HU 4.6: Anomaly Sentinel) ──────────────────────
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS anomaly_events (
+        CREATE TABLE IF NOT EXISTS usr_anomaly_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol TEXT NOT NULL,
             anomaly_type TEXT NOT NULL,
@@ -160,13 +160,13 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_anomaly_events_symbol ON anomaly_events (symbol)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_anomaly_events_type ON anomaly_events (anomaly_type)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_anomaly_events_timestamp ON anomaly_events (timestamp)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_anomaly_events_symbol ON usr_anomaly_events (symbol)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_anomaly_events_type ON usr_anomaly_events (anomaly_type)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_anomaly_events_timestamp ON usr_anomaly_events (timestamp)")
 
     # ── 5. Accounts, Brokers & Providers ────────────────────────────────────
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS broker_accounts (
+        CREATE TABLE IF NOT EXISTS sys_broker_accounts (
             account_id TEXT PRIMARY KEY,
             broker_id TEXT,
             platform_id TEXT NOT NULL,
@@ -185,7 +185,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
         )
     """)
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS brokers (
+        CREATE TABLE IF NOT EXISTS sys_brokers (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             platform_id TEXT NOT NULL,
@@ -194,7 +194,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
         )
     """)
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS platforms (
+        CREATE TABLE IF NOT EXISTS sys_platforms (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             type TEXT NOT NULL,
@@ -203,16 +203,16 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
         )
     """)
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS credentials (
+        CREATE TABLE IF NOT EXISTS sys_credentials (
             id TEXT PRIMARY KEY,
             broker_account_id TEXT,
             encrypted_data TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (broker_account_id) REFERENCES broker_accounts (account_id)
+            FOREIGN KEY (broker_account_id) REFERENCES sys_broker_accounts (account_id)
         )
     """)
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS data_providers (
+        CREATE TABLE IF NOT EXISTS sys_sys_data_providers (
             name TEXT PRIMARY KEY,
             type TEXT NOT NULL,
             config TEXT,
@@ -231,7 +231,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
 
     # ── 6. Tuning ────────────────────────────────────────────────────────────
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS tuning_adjustments (
+        CREATE TABLE IF NOT EXISTS usr_tuning_adjustments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             adjustment_data TEXT
@@ -240,7 +240,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
 
     # ── 7. Signal Pipeline Tracking (Auditoría de señales) ──────────────────
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS signal_pipeline (
+        CREATE TABLE IF NOT EXISTS usr_signal_pipeline (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             signal_id TEXT NOT NULL,
             stage TEXT NOT NULL,
@@ -248,31 +248,31 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             decision TEXT,
             reason TEXT,
             metadata TEXT,
-            FOREIGN KEY (signal_id) REFERENCES signals (id)
+            FOREIGN KEY (signal_id) REFERENCES usr_signals (id)
         )
     """)
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_signal_pipeline_signal_id ON signal_pipeline (signal_id)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_signal_pipeline_stage ON signal_pipeline (stage)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_signal_pipeline_signal_id ON usr_signal_pipeline (signal_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_signal_pipeline_stage ON usr_signal_pipeline (stage)")
 
     # ── 8. User Preferences ──────────────────────────────────────────────────
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS user_preferences (
+        CREATE TABLE IF NOT EXISTS usr_preferences (
             user_id TEXT PRIMARY KEY DEFAULT 'default',
             profile_type TEXT DEFAULT 'active_trader',
             auto_trading_enabled BOOLEAN DEFAULT 0,
             auto_trading_max_risk REAL DEFAULT 1.0,
             auto_trading_symbols TEXT,
-            auto_trading_strategies TEXT,
+            auto_trading_usr_strategies TEXT,
             auto_trading_timeframes TEXT,
-            notify_signals BOOLEAN DEFAULT 1,
-            notify_executions BOOLEAN DEFAULT 1,
+            notify_usr_signals BOOLEAN DEFAULT 1,
+            notify_usr_executions BOOLEAN DEFAULT 1,
             notify_risks BOOLEAN DEFAULT 1,
             notify_regime_changes BOOLEAN DEFAULT 1,
             notify_threshold_score REAL DEFAULT 0.85,
             default_view TEXT DEFAULT 'feed',
             active_filters TEXT,
             require_confirmation BOOLEAN DEFAULT 1,
-            max_daily_trades INTEGER DEFAULT 10,
+            max_daily_usr_trades INTEGER DEFAULT 10,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -280,7 +280,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
 
     # ── 9. Notification Settings ─────────────────────────────────────────────
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS notification_settings (
+        CREATE TABLE IF NOT EXISTS usr_notification_settings (
             provider TEXT PRIMARY KEY,
             enabled BOOLEAN DEFAULT 0,
             config TEXT,
@@ -308,7 +308,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
 
     # ── 11. Connector Control ────────────────────────────────────────────────
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS connector_settings (
+        CREATE TABLE IF NOT EXISTS usr_connector_settings (
             provider_id TEXT PRIMARY KEY,
             enabled BOOLEAN DEFAULT 1,
             last_manual_toggle TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -317,7 +317,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
 
     # ── 12. Asset Profiles (Universal Trading) ───────────────────────────────
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS asset_profiles (
+        CREATE TABLE IF NOT EXISTS usr_assets_cfg (
             symbol TEXT PRIMARY KEY,
             asset_class TEXT NOT NULL,
             tick_size REAL NOT NULL,
@@ -333,7 +333,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
 
     # ── 13. Strategy Ranking (Darwinismo Algorítmico) ────────────────────────
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS strategy_ranking (
+        CREATE TABLE IF NOT EXISTS usr_performance (
             strategy_id TEXT PRIMARY KEY,
             profit_factor REAL DEFAULT 0.0,
             win_rate REAL DEFAULT 0.0,
@@ -343,18 +343,18 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             execution_mode TEXT DEFAULT 'SHADOW',
             trace_id TEXT UNIQUE,
             last_update_utc TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            total_trades INTEGER DEFAULT 0,
+            total_usr_trades INTEGER DEFAULT 0,
             completed_last_50 INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_strategy_ranking_mode ON strategy_ranking (execution_mode)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_strategy_ranking_profit_factor ON strategy_ranking (profit_factor DESC)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_performance_mode ON usr_performance (execution_mode)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_performance_profit_factor ON usr_performance (profit_factor DESC)")
 
     # ── 14. Strategies (Strategy Metadata & Affinity Scoring) ──────────────────
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS strategies (
+        CREATE TABLE IF NOT EXISTS usr_strategies (
             class_id TEXT PRIMARY KEY,
             mnemonic TEXT NOT NULL,
             version TEXT DEFAULT '1.0',
@@ -365,33 +365,33 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_strategies_mnemonic ON strategies (mnemonic)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_strategies_version ON strategies (version)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_strategies_mnemonic ON usr_strategies (mnemonic)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_strategies_version ON usr_strategies (version)")
 
     # ── 14.1. Strategy Performance Logs (Asset Efficiency Learning) ───────────
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS strategy_performance_logs (
+        CREATE TABLE IF NOT EXISTS usr_strategy_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             strategy_id TEXT NOT NULL,
             asset TEXT NOT NULL,
             pnl REAL DEFAULT 0.0,
-            trades_count INTEGER DEFAULT 0,
+            usr_trades_count INTEGER DEFAULT 0,
             win_rate REAL DEFAULT 0.0,
             profit_factor REAL DEFAULT 0.0,
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             trace_id TEXT,
-            FOREIGN KEY (strategy_id) REFERENCES strategies (class_id),
+            FOREIGN KEY (strategy_id) REFERENCES usr_strategies (class_id),
             UNIQUE(strategy_id, asset, timestamp)
         )
     """)
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_perf_logs_strategy_id ON strategy_performance_logs (strategy_id)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_perf_logs_asset ON strategy_performance_logs (asset)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_perf_logs_timestamp ON strategy_performance_logs (timestamp DESC)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_perf_logs_trace_id ON strategy_performance_logs (trace_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_strategy_logs_strategy_id ON usr_strategy_logs (strategy_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_strategy_logs_asset ON usr_strategy_logs (asset)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_strategy_logs_timestamp ON usr_strategy_logs (timestamp DESC)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_strategy_logs_trace_id ON usr_strategy_logs (trace_id)")
 
     # ── 15. Execution Shadow Logs (Shadow Reporting / Slippage) ────────────────
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS execution_shadow_logs (
+        CREATE TABLE IF NOT EXISTS usr_execution_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             signal_id TEXT NOT NULL,
             symbol TEXT NOT NULL,
@@ -404,16 +404,16 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             trace_id TEXT NOT NULL,
             metadata TEXT,
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (signal_id) REFERENCES signals (id)
+            FOREIGN KEY (signal_id) REFERENCES usr_signals (id)
         )
     """)
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_execution_shadow_signal_id ON execution_shadow_logs (signal_id)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_execution_shadow_tenant_id ON execution_shadow_logs (tenant_id)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_execution_shadow_trace_id ON execution_shadow_logs (trace_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_execution_logs_signal_id ON usr_execution_logs (signal_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_execution_logs_tenant_id ON usr_execution_logs (tenant_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_execution_logs_trace_id ON usr_execution_logs (trace_id)")
 
     # ── 16. Regime Configurations (Metric Weighting) ─────────────────────────
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS regime_configs (
+        CREATE TABLE IF NOT EXISTS sys_regime_configs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             regime TEXT NOT NULL,
             metric_name TEXT NOT NULL,
@@ -423,16 +423,16 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             UNIQUE(regime, metric_name)
         )
     """)
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_regime_configs_regime ON regime_configs (regime)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_regime_configs_regime ON sys_regime_configs (regime)")
 
-    # Seed regime_configs with default weights (SSOT)
-    _seed_regime_configs(cursor)
+    # Seed sys_regime_configs with default weights (SSOT)
+    _seed_sys_regime_configs(cursor)
 
-    # Seed system_state with default configurations (Regla 14)
-    _seed_system_state(cursor)
+    # Seed sys_config with default configurations (Regla 14)
+    _seed_sys_config(cursor)
 
-    # Seed notification_settings
-    _seed_notification_settings(cursor)
+    # Seed usr_notification_settings
+    _seed_usr_notification_settings(cursor)
 
     conn.commit()
     logger.info("Schema initialized (all tables & indexes present).")
@@ -445,16 +445,16 @@ def run_migrations(conn: sqlite3.Connection) -> None:
     """
     cursor = conn.cursor()
 
-    # strategy_ranking: add sharpe_ratio if missing
-    cursor.execute("PRAGMA table_info(strategy_ranking)")
+    # usr_performance: add sharpe_ratio if missing
+    cursor.execute("PRAGMA table_info(usr_performance)")
     sr_cols = [r[1] for r in cursor.fetchall()]
     if "sharpe_ratio" not in sr_cols:
-        cursor.execute("ALTER TABLE strategy_ranking ADD COLUMN sharpe_ratio REAL DEFAULT 0.0")
-        logger.info("Migration applied: strategy_ranking.sharpe_ratio added.")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_strategy_ranking_sharpe ON strategy_ranking (sharpe_ratio DESC)")
+        cursor.execute("ALTER TABLE usr_performance ADD COLUMN sharpe_ratio REAL DEFAULT 0.0")
+        logger.info("Migration applied: usr_performance.sharpe_ratio added.")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_performance_sharpe ON usr_performance (sharpe_ratio DESC)")
 
-    # data_providers: add capability columns if missing
-    cursor.execute("PRAGMA table_info(data_providers)")
+    # sys_data_providers: add capability columns if missing
+    cursor.execute("PRAGMA table_info(sys_data_providers)")
     dp_cols = [r[1] for r in cursor.fetchall()]
     migrations_to_add = [
         ("type", "TEXT DEFAULT 'api'"),
@@ -469,86 +469,86 @@ def run_migrations(conn: sqlite3.Connection) -> None:
     ]
     for col, col_type in migrations_to_add:
         if col not in dp_cols:
-            cursor.execute(f"ALTER TABLE data_providers ADD COLUMN {col} {col_type}")
-            logger.info(f"Migration applied: data_providers.{col} added.")
+            cursor.execute(f"ALTER TABLE sys_data_providers ADD COLUMN {col} {col_type}")
+            logger.info(f"Migration applied: sys_data_providers.{col} added.")
 
-    # broker_accounts: add capability columns if missing
-    cursor.execute("PRAGMA table_info(broker_accounts)")
+    # sys_broker_accounts: add capability columns if missing
+    cursor.execute("PRAGMA table_info(sys_broker_accounts)")
     ba_cols = [r[1] for r in cursor.fetchall()]
     for col in ["supports_data", "supports_exec"]:
         if col not in ba_cols:
-            cursor.execute(f"ALTER TABLE broker_accounts ADD COLUMN {col} BOOLEAN DEFAULT 0")
+            cursor.execute(f"ALTER TABLE sys_broker_accounts ADD COLUMN {col} BOOLEAN DEFAULT 0")
 
     # Enable WAL mode for concurrency performance
     cursor.execute("PRAGMA journal_mode=WAL;")
 
-    # MIGRATION (FASE D): Rename trade_results to trades (one-time, safe)
+    # MIGRATION (FASE D): Rename trade_results to usr_trades (one-time, safe)
     # ──────────────────────────────────────────────────────────────────────
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='trade_results'")
     if cursor.fetchone():
-        # Old table exists, rename to trades
+        # Old table exists, rename to usr_trades
         try:
-            cursor.execute("ALTER TABLE trade_results RENAME TO trades")
-            logger.info("Migration applied: trade_results renamed to trades.")
+            cursor.execute("ALTER TABLE trade_results RENAME TO usr_trades")
+            logger.info("Migration applied: trade_results renamed to usr_trades.")
         except sqlite3.OperationalError as e:
             # Trades table might already exist, skip if so
             logger.debug(f"trade_results rename skipped: {e}")
     
-    # MIGRATION (FASE D): Add execution_mode, provider, account_type to trades
+    # MIGRATION (FASE D): Add execution_mode, provider, account_type to usr_trades
     # ──────────────────────────────────────────────────────────────────────
-    cursor.execute("PRAGMA table_info(trades)")
-    trades_cols = [r[1] for r in cursor.fetchall()]
-    trades_migrations = [
+    cursor.execute("PRAGMA table_info(usr_trades)")
+    usr_trades_cols = [r[1] for r in cursor.fetchall()]
+    usr_trades_migrations = [
         ("execution_mode", "TEXT DEFAULT 'LIVE'"),
         ("provider", "TEXT DEFAULT 'MT5'"),
         ("account_type", "TEXT DEFAULT 'REAL'"),
     ]
-    for col, col_type in trades_migrations:
-        if col not in trades_cols:
-            cursor.execute(f"ALTER TABLE trades ADD COLUMN {col} {col_type}")
-            logger.info(f"Migration applied: trades.{col} added with default.")
+    for col, col_type in usr_trades_migrations:
+        if col not in usr_trades_cols:
+            cursor.execute(f"ALTER TABLE usr_trades ADD COLUMN {col} {col_type}")
+            logger.info(f"Migration applied: usr_trades.{col} added with default.")
     
     # Create index for efficient filtering by execution_mode
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_trades_execution_mode ON trades (execution_mode)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_trades_execution_mode ON usr_trades (execution_mode)")
 
-    # regime_configs: add tenant_id for multi-tenant isolation (nullable for backward compat)
-    cursor.execute("PRAGMA table_info(regime_configs)")
+    # sys_regime_configs: add tenant_id for multi-tenant isolation (nullable for backward compat)
+    cursor.execute("PRAGMA table_info(sys_regime_configs)")
     rc_cols = [r[1] for r in cursor.fetchall()]
     if "tenant_id" not in rc_cols:
-        cursor.execute("ALTER TABLE regime_configs ADD COLUMN tenant_id TEXT DEFAULT NULL")
-        logger.info("Migration applied: regime_configs.tenant_id added.")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_regime_configs_tenant_id ON regime_configs (tenant_id)")
+        cursor.execute("ALTER TABLE sys_regime_configs ADD COLUMN tenant_id TEXT DEFAULT NULL")
+        logger.info("Migration applied: sys_regime_configs.tenant_id added.")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_regime_configs_tenant_id ON sys_regime_configs (tenant_id)")
 
-    # strategies: add readiness & readiness_notes (SSOT: Strategy Registry moved from JSON to BD)
+    # usr_strategies: add readiness & readiness_notes (SSOT: Strategy Registry moved from JSON to BD)
     # TRACE_ID: EXEC-UNIVERSAL-ENGINE-REAL | CORRECTION: Soberanía de Persistencia
-    cursor.execute("PRAGMA table_info(strategies)")
+    cursor.execute("PRAGMA table_info(usr_strategies)")
     strat_cols = [r[1] for r in cursor.fetchall()]
     if "readiness" not in strat_cols:
-        cursor.execute("ALTER TABLE strategies ADD COLUMN readiness TEXT DEFAULT 'UNKNOWN'")
-        logger.info("Migration applied: strategies.readiness added.")
+        cursor.execute("ALTER TABLE usr_strategies ADD COLUMN readiness TEXT DEFAULT 'UNKNOWN'")
+        logger.info("Migration applied: usr_strategies.readiness added.")
     if "readiness_notes" not in strat_cols:
-        cursor.execute("ALTER TABLE strategies ADD COLUMN readiness_notes TEXT DEFAULT NULL")
-        logger.info("Migration applied: strategies.readiness_notes added.")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_strategies_readiness ON strategies (readiness)")
+        cursor.execute("ALTER TABLE usr_strategies ADD COLUMN readiness_notes TEXT DEFAULT NULL")
+        logger.info("Migration applied: usr_strategies.readiness_notes added.")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_strategies_readiness ON usr_strategies (readiness)")
 
     # instruments_config: seed only when key is absent (never overwrite existing data)
-    cursor.execute("SELECT 1 FROM system_state WHERE key = ?", ("instruments_config",))
+    cursor.execute("SELECT 1 FROM sys_config WHERE key = ?", ("instruments_config",))
     if cursor.fetchone() is None:
         cursor.execute(
-            "INSERT OR IGNORE INTO system_state (key, value) VALUES (?, ?)",
+            "INSERT OR IGNORE INTO sys_config (key, value) VALUES (?, ?)",
             ("instruments_config", json.dumps(DEFAULT_INSTRUMENTS_CONFIG)),
         )
-        logger.info("Migration applied: system_state.instruments_config seeded.")
+        logger.info("Migration applied: sys_config.instruments_config seeded.")
 
     conn.commit()
     logger.debug("Migrations completed.")
 
 
-def seed_default_user_preferences(conn: sqlite3.Connection) -> None:
+def seed_default_usr_preferences(conn: sqlite3.Connection) -> None:
     """Insert the default user preferences row if it doesn't exist."""
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT OR IGNORE INTO user_preferences (user_id, profile_type)
+        INSERT OR IGNORE INTO usr_preferences (user_id, profile_type)
         VALUES ('default', 'active_trader')
     """)
     conn.commit()
@@ -595,7 +595,7 @@ def provision_tenant_db(db_path: str) -> None:
     try:
         initialize_schema(conn)
         run_migrations(conn)
-        seed_default_user_preferences(conn)
+        seed_default_usr_preferences(conn)
         bootstrap_symbol_mappings(conn)
         logger.info("[TENANT] DB provisioned: %s", db_path)
     except Exception as exc:
@@ -607,7 +607,7 @@ def provision_tenant_db(db_path: str) -> None:
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
-def _seed_regime_configs(cursor: sqlite3.Cursor) -> None:
+def _seed_sys_regime_configs(cursor: sqlite3.Cursor) -> None:
     """Seed default metric weights per market regime (SSOT)."""
     regime_data = [
         ("TREND",    "win_rate",       "0.25"),
@@ -625,13 +625,13 @@ def _seed_regime_configs(cursor: sqlite3.Cursor) -> None:
     ]
     for regime, metric, weight in regime_data:
         cursor.execute("""
-            INSERT OR IGNORE INTO regime_configs (regime, metric_name, weight)
+            INSERT OR IGNORE INTO sys_regime_configs (regime, metric_name, weight)
             VALUES (?, ?, ?)
         """, (regime, metric, weight))
 
 
-def _seed_system_state(cursor: sqlite3.Cursor) -> None:
-    """Seed default system configurations into system_state if missing."""
+def _seed_sys_config(cursor: sqlite3.Cursor) -> None:
+    """Seed default system configurations into sys_config if missing."""
     defaults = {
         "instruments_config": DEFAULT_INSTRUMENTS_CONFIG,
         "config_trading": {
@@ -659,18 +659,18 @@ def _seed_system_state(cursor: sqlite3.Cursor) -> None:
         "coherence_config": {
             "min_coherence_threshold": 0.80,
             "max_performance_degradation": 0.15,
-            "min_executions_for_analysis": 5
+            "min_usr_executions_for_analysis": 5
         }
     }
 
     for key, value in defaults.items():
         cursor.execute("""
-            INSERT OR IGNORE INTO system_state (key, value)
+            INSERT OR IGNORE INTO sys_config (key, value)
             VALUES (?, ?)
         """, (key, json.dumps(value)))
 
 
-def _seed_notification_settings(cursor: sqlite3.Cursor) -> None:
+def _seed_usr_notification_settings(cursor: sqlite3.Cursor) -> None:
     """Seed default notification providers."""
     providers = [
         ("telegram", 0, "{}"),
@@ -679,6 +679,6 @@ def _seed_notification_settings(cursor: sqlite3.Cursor) -> None:
     ]
     for provider, enabled, config in providers:
         cursor.execute("""
-            INSERT OR IGNORE INTO notification_settings (provider, enabled, config)
+            INSERT OR IGNORE INTO usr_notification_settings (provider, enabled, config)
             VALUES (?, ?, ?)
         """, (provider, enabled, config))

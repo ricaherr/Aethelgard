@@ -143,7 +143,7 @@ class SignalsMixin(BaseRepository):
             columns_str = ','.join(columns)
             
             cursor.execute(f"""
-                INSERT INTO signals ({columns_str})
+                INSERT INTO usr_signals ({columns_str})
                 VALUES ({placeholders})
             """, values)
             conn.commit()
@@ -151,12 +151,12 @@ class SignalsMixin(BaseRepository):
         self._execute_serialized(_save, signal_id)
         return signal_id
 
-    def get_signals(self, limit: int = 100, status: Optional[str] = None) -> List[Dict]:
-        """Get signals from database"""
+    def get_usr_signals(self, limit: int = 100, status: Optional[str] = None) -> List[Dict]:
+        """Get usr_signals from database"""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            query = "SELECT * FROM signals"
+            query = "SELECT * FROM usr_signals"
             params = []
             if status:
                 query += " WHERE status = ?"
@@ -166,12 +166,12 @@ class SignalsMixin(BaseRepository):
 
             cursor.execute(query, params)
             rows = cursor.fetchall()
-            signals = []
+            usr_signals = []
             for row in rows:
                 signal = dict(row)
                 signal['metadata'] = json.loads(signal['metadata']) if signal['metadata'] else {}
-                signals.append(signal)
-            return signals
+                usr_signals.append(signal)
+            return usr_signals
         finally:
             self._close_conn(conn)
 
@@ -180,7 +180,7 @@ class SignalsMixin(BaseRepository):
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM signals WHERE id = ?", (signal_id,))
+            cursor.execute("SELECT * FROM usr_signals WHERE id = ?", (signal_id,))
             row = cursor.fetchone()
             if row:
                 signal = dict(row)
@@ -190,19 +190,19 @@ class SignalsMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_signals_today(self, status: Optional[str] = None) -> List[Dict]:
+    def get_usr_signals_today(self, status: Optional[str] = None) -> List[Dict]:
         """Obtiene las señales del día actual."""
         from datetime import date
-        return self.get_signals_by_date(date.today(), status=status)
+        return self.get_usr_signals_by_date(date.today(), status=status)
 
-    def get_signals_by_date(self, target_date: date, status: Optional[str] = None) -> List[Dict]:
-        """Get all signals from a specific date"""
+    def get_usr_signals_by_date(self, target_date: date, status: Optional[str] = None) -> List[Dict]:
+        """Get all usr_signals from a specific date"""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
             start_utc, end_utc = self._local_date_bounds_utc(target_date)
             query = """
-                SELECT * FROM signals
+                SELECT * FROM usr_signals
                 WHERE (
                     (datetime(timestamp) >= datetime(?) AND datetime(timestamp) < datetime(?))
                     OR DATE(timestamp) = ?
@@ -217,12 +217,12 @@ class SignalsMixin(BaseRepository):
             query += " ORDER BY timestamp DESC"
             cursor.execute(query, params)
             rows = cursor.fetchall()
-            signals = []
+            usr_signals = []
             for row in rows:
                 signal = dict(row)
                 signal['metadata'] = json.loads(signal['metadata']) if signal['metadata'] else {}
-                signals.append(signal)
-            return signals
+                usr_signals.append(signal)
+            return usr_signals
         finally:
             self._close_conn(conn)
 
@@ -232,7 +232,7 @@ class SignalsMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             if metadata_update:
-                cursor.execute("SELECT metadata FROM signals WHERE id = ?", (signal_id,))
+                cursor.execute("SELECT metadata FROM usr_signals WHERE id = ?", (signal_id,))
                 row = cursor.fetchone()
                 if row:
                     current_metadata = json.loads(row['metadata']) if row['metadata'] else {}
@@ -244,14 +244,14 @@ class SignalsMixin(BaseRepository):
                 now = datetime.now(timezone.utc).replace(microsecond=0)
                 now_str = now.strftime('%Y-%m-%d %H:%M:%S')
                 cursor.execute("""
-                    UPDATE signals 
+                    UPDATE usr_signals 
                     SET status = ?, metadata = ?, updated_at = ?
                     WHERE id = ?
                 """, (status, json.dumps(current_metadata), now_str, signal_id))
 
                 if 'ticket' in metadata_update:
                     cursor.execute("""
-                        UPDATE signals 
+                        UPDATE usr_signals 
                         SET order_id = ?
                         WHERE id = ?
                     """, (str(metadata_update['ticket']), signal_id))
@@ -259,7 +259,7 @@ class SignalsMixin(BaseRepository):
                 now = datetime.now(timezone.utc).replace(microsecond=0)
                 now_str = now.strftime('%Y-%m-%d %H:%M:%S')
                 cursor.execute("""
-                    UPDATE signals 
+                    UPDATE usr_signals 
                     SET status = ?, updated_at = ?
                     WHERE id = ?
                 """, (status, now_str, signal_id))
@@ -276,10 +276,10 @@ class SignalsMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             
-            # Base query: Only consider PENDING or EXECUTED signals as duplicates
+            # Base query: Only consider PENDING or EXECUTED usr_signals as duplicates
             # Exclude REJECTED, CLOSED, etc. (only get PENDING and EXECUTED)
             query = """
-                SELECT COUNT(*) FROM signals 
+                SELECT COUNT(*) FROM usr_signals 
                 WHERE symbol = ? 
                 AND signal_type = ? 
                 AND datetime(timestamp) >= datetime('now', '-' || ? || ' minutes')
@@ -303,13 +303,13 @@ class SignalsMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_recent_signals(self, minutes: int = 60, limit: int = 100, symbol: str = None, timeframe: str = None, status: str = None) -> List[Dict]:
-        """Get recent signals within the last N minutes with optional filters"""
+    def get_recent_usr_signals(self, minutes: int = 60, limit: int = 100, symbol: str = None, timeframe: str = None, status: str = None) -> List[Dict]:
+        """Get recent usr_signals within the last N minutes with optional filters"""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
             
-            query = "SELECT * FROM signals WHERE datetime(timestamp) >= datetime('now', '-' || ? || ' minutes')"
+            query = "SELECT * FROM usr_signals WHERE datetime(timestamp) >= datetime('now', '-' || ? || ' minutes')"
             params = [minutes]
             
             if symbol:
@@ -338,7 +338,7 @@ class SignalsMixin(BaseRepository):
             
             cursor.execute(query, params)
             rows = cursor.fetchall()
-            signals = []
+            usr_signals = []
             for row in rows:
                 signal = dict(row)
                 metadata_raw = signal.get('metadata')
@@ -349,19 +349,19 @@ class SignalsMixin(BaseRepository):
                         signal['metadata'] = {}
                 else:
                     signal['metadata'] = {}
-                signals.append(signal)
-            return signals
+                usr_signals.append(signal)
+            return usr_signals
         finally:
             self._close_conn(conn)
 
     def get_open_operations(self) -> List[Dict]:
-        """Get signals that are executed but not closed (open operations)"""
+        """Get usr_signals that are executed but not closed (open operations)"""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT s.* FROM signals s
-                LEFT JOIN trades t ON s.id = t.signal_id
+                SELECT s.* FROM usr_signals s
+                LEFT JOIN usr_trades t ON s.id = t.signal_id
                 WHERE UPPER(s.status) = 'EXECUTED' 
                 AND t.signal_id IS NULL
                 ORDER BY s.timestamp DESC
@@ -377,8 +377,8 @@ class SignalsMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def count_executed_signals(self, date_filter: Optional[date] = None) -> int:
-        """Count executed signals, optionally filtered by date"""
+    def count_executed_usr_signals(self, date_filter: Optional[date] = None) -> int:
+        """Count executed usr_signals, optionally filtered by date"""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
@@ -386,7 +386,7 @@ class SignalsMixin(BaseRepository):
                 start_utc, end_utc = self._local_date_bounds_utc(date_filter)
                 target_date_str = date_filter.isoformat()
                 cursor.execute("""
-                    SELECT COUNT(*) FROM signals 
+                    SELECT COUNT(*) FROM usr_signals 
                     WHERE LOWER(status) = 'executed'
                     AND (
                         (datetime(timestamp) >= datetime(?) AND datetime(timestamp) < datetime(?))
@@ -396,7 +396,7 @@ class SignalsMixin(BaseRepository):
                 """, (start_utc, end_utc, target_date_str, target_date_str))
             else:
                 cursor.execute("""
-                    SELECT COUNT(*) FROM signals 
+                    SELECT COUNT(*) FROM usr_signals 
                     WHERE LOWER(status) = 'executed'
                 """)
             return cursor.fetchone()[0]
@@ -423,7 +423,7 @@ class SignalsMixin(BaseRepository):
             cursor = conn.cursor()
             metadata_json = json.dumps(metadata) if metadata else None
             cursor.execute("""
-                INSERT INTO signal_pipeline
+                INSERT INTO usr_signal_pipeline
                 (signal_id, stage, decision, reason, metadata)
                 VALUES (?, ?, ?, ?, ?)
             """, (signal_id, stage, decision, reason, metadata_json))
@@ -442,7 +442,7 @@ class SignalsMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT * FROM signal_pipeline
+                SELECT * FROM usr_signal_pipeline
                 ORDER BY timestamp DESC
                 LIMIT ?
             """, (limit,))
@@ -465,7 +465,7 @@ class SignalsMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT * FROM signal_pipeline
+                SELECT * FROM usr_signal_pipeline
                 WHERE signal_id = ?
                 ORDER BY timestamp ASC
             """, (signal_id,))

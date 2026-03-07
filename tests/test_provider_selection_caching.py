@@ -22,7 +22,7 @@ class TestProviderSelectionCaching:
         """
         with patch('core_brain.data_provider_manager.StorageManager') as mock_storage:
             # Mock DB response
-            mock_storage.return_value.get_data_providers.return_value = [
+            mock_storage.return_value.get_sys_data_providers.return_value = [
                 {
                     'name': 'mt5',
                     'enabled': True,
@@ -41,7 +41,7 @@ class TestProviderSelectionCaching:
                 }
             ]
             
-            mock_storage.return_value.get_broker_accounts.return_value = []
+            mock_storage.return_value.get_sys_broker_accounts.return_value = []
             
             manager = DataProviderManager()
             
@@ -63,7 +63,7 @@ class TestProviderSelectionCaching:
     def test_provider_cache_initialized_flag(self):
         """Test that selection is marked as initialized"""
         with patch('core_brain.data_provider_manager.StorageManager') as mock_storage:
-            mock_storage.return_value.get_data_providers.return_value = [
+            mock_storage.return_value.get_sys_data_providers.return_value = [
                 {
                     'name': 'yahoo',
                     'enabled': True,
@@ -73,7 +73,7 @@ class TestProviderSelectionCaching:
                     'config': {}
                 }
             ]
-            mock_storage.return_value.get_broker_accounts.return_value = []
+            mock_storage.return_value.get_sys_broker_accounts.return_value = []
             
             manager = DataProviderManager()
             
@@ -87,7 +87,7 @@ class TestProviderSelectionCaching:
     def test_force_reselect_provider_on_failure(self):
         """Test that force_reselect_provider resets cache"""
         with patch('core_brain.data_provider_manager.StorageManager') as mock_storage:
-            mock_storage.return_value.get_data_providers.return_value = [
+            mock_storage.return_value.get_sys_data_providers.return_value = [
                 {
                     'name': 'mt5',
                     'enabled': True,
@@ -105,7 +105,7 @@ class TestProviderSelectionCaching:
                     'config': {}
                 }
             ]
-            mock_storage.return_value.get_broker_accounts.return_value = []
+            mock_storage.return_value.get_sys_broker_accounts.return_value = []
             
             manager = DataProviderManager()
             
@@ -129,7 +129,7 @@ class TestProviderSelectionCaching:
         
         with patch('core_brain.data_provider_manager.StorageManager') as mock_storage:
             with patch('core_brain.data_provider_manager.logger') as mock_logger:
-                mock_storage.return_value.get_data_providers.return_value = [
+                mock_storage.return_value.get_sys_data_providers.return_value = [
                     {
                         'name': 'yahoo',
                         'enabled': True,
@@ -139,7 +139,7 @@ class TestProviderSelectionCaching:
                         'config': {}
                     }
                 ]
-                mock_storage.return_value.get_broker_accounts.return_value = []
+                mock_storage.return_value.get_sys_broker_accounts.return_value = []
                 
                 manager = DataProviderManager()
                 

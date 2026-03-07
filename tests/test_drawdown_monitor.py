@@ -20,8 +20,8 @@ from unittest.mock import MagicMock, patch
 def _make_storage() -> MagicMock:
     """Mock StorageManager that returns no existing system state by default."""
     mock = MagicMock()
-    mock.get_system_state.return_value = {}
-    mock.update_system_state.return_value = None
+    mock.get_sys_config.return_value = {}
+    mock.update_sys_config.return_value = None
     return mock
 
 

@@ -2,7 +2,7 @@
 Tests for MISIÓN A: Anomaly Sentinel - Real Order Cancellation Integration
 Validates the integration between AnomalyService and RiskManager for live order cancellation.
 
-HU 4.6: AnomalyService detects anomalies → RiskManager cancels orders → OrderManager executes
+HU 4.6: AnomalyService detects anomalies → RiskManager cancels usr_orders → OrderManager executes
 Trace_ID: MISION-A-ORDER-CANCELLATION-2026-001
 """
 
@@ -31,11 +31,11 @@ class TestAnomalySentinelOrderCancellation:
             "risk_per_trade": 0.005,
             "max_consecutive_losses": 3,
         }
-        storage.get_system_state.return_value = {
+        storage.get_sys_config.return_value = {
             "lockdown_mode": False,
             "consecutive_losses": 0,
         }
-        storage.update_system_state = Mock()
+        storage.update_sys_config = Mock()
         return storage
     
     @pytest.fixture
@@ -43,8 +43,8 @@ class TestAnomalySentinelOrderCancellation:
         """Create a mock MT5 connector with order cancellation support."""
         connector = Mock()
         
-        # Mock pending orders (3 orders to cancel)
-        connector.get_pending_orders = Mock(return_value=[
+        # Mock pending usr_orders (3 usr_orders to cancel)
+        connector.get_pending_usr_orders = Mock(return_value=[
             {
                 'ticket': 1001,
                 'symbol': 'EURUSD',
@@ -81,8 +81,8 @@ class TestAnomalySentinelOrderCancellation:
         
         connector.cancel_order = Mock(side_effect=cancel_side_effect)
         
-        # Mock open positions for stop adjustment
-        connector.get_open_positions = Mock(return_value=[
+        # Mock open usr_positions for stop adjustment
+        connector.get_open_usr_positions = Mock(return_value=[
             {
                 'ticket': 2001,
                 'symbol': 'EURUSD',
@@ -131,25 +131,25 @@ class TestAnomalySentinelOrderCancellation:
         return rm
     
     @pytest.mark.asyncio
-    async def test_cancel_pending_orders_with_mt5_connector(self, risk_manager_with_connectors):
+    async def test_cancel_pending_usr_orders_with_mt5_connector(self, risk_manager_with_connectors):
         """Test that AnomalyService can trigger real order cancellation on MT5."""
-        result = await risk_manager_with_connectors.cancel_pending_orders(
+        result = await risk_manager_with_connectors.cancel_pending_usr_orders(
             symbol=None,
             reason="Anomaly Detected - Z-Score > 3.0"
         )
         
         # Verify cancellation result
-        assert result.get('cancelled') == 3, "Should have cancelled 3 orders"
+        assert result.get('cancelled') == 3, "Should have cancelled 3 usr_orders"
         assert result.get('failed') == 0, "Should have no failures"
         assert result.get('status') == 'success', "Should report success"
         assert 'message' in result and '3' in result['message']
     
     @pytest.mark.asyncio
-    async def test_cancel_pending_orders_filtered_by_symbol(self, mock_storage):
-        """Test that only orders for a specific symbol are cancelled."""
+    async def test_cancel_pending_usr_orders_filtered_by_symbol(self, mock_storage):
+        """Test that only usr_orders for a specific symbol are cancelled."""
         # Create connector that returns filtered results
         mock_connector = Mock()
-        mock_connector.get_pending_orders = Mock(return_value=[
+        mock_connector.get_pending_usr_orders = Mock(return_value=[
             {
                 'ticket': 1001,
                 'symbol': 'EURUSD',
@@ -165,21 +165,21 @@ class TestAnomalySentinelOrderCancellation:
             connectors={"MT5": mock_connector}
         )
         
-        result = await rm.cancel_pending_orders(
+        result = await rm.cancel_pending_usr_orders(
             symbol="EURUSD",
             reason="Flash Crash Detected"
         )
         
         # Verify symbol filter was passed to connector
-        mock_connector.get_pending_orders.assert_called_with(symbol="EURUSD")
+        mock_connector.get_pending_usr_orders.assert_called_with(symbol="EURUSD")
         assert result.get('cancelled') == 1
     
     @pytest.mark.asyncio
-    async def test_cancel_orders_handles_partial_failures(self, mock_storage):
+    async def test_cancel_usr_orders_handles_partial_failures(self, mock_storage):
         """Test resilience when some order cancellations fail."""
         # Create connector with mixed success/failure
         mock_connector = Mock()
-        mock_connector.get_pending_orders = Mock(return_value=[
+        mock_connector.get_pending_usr_orders = Mock(return_value=[
             {'ticket': 1001, 'symbol': 'EURUSD'},
             {'ticket': 1002, 'symbol': 'GBPUSD'},
             {'ticket': 1003, 'symbol': 'EURJPY'},
@@ -194,7 +194,7 @@ class TestAnomalySentinelOrderCancellation:
         mock_connector.cancel_order = Mock(side_effect=cancel_side_effect)
         
         rm = RiskManager(storage=mock_storage, connectors={"MT5": mock_connector})
-        result = await rm.cancel_pending_orders(reason="Volatility Spike")
+        result = await rm.cancel_pending_usr_orders(reason="Volatility Spike")
         
         assert result.get('cancelled') == 2
         assert result.get('failed') == 1
@@ -209,15 +209,15 @@ class TestAnomalySentinelOrderCancellation:
         )
         
         # Verify stop adjustment result
-        assert result.get('adjusted') == 2, "Should have adjusted 2 positions"
+        assert result.get('adjusted') == 2, "Should have adjusted 2 usr_positions"
         assert result.get('failed') == 0, "Should have no failures"
         assert result.get('status') == 'success'
     
     @pytest.mark.asyncio
     async def test_adjust_stops_filters_by_symbol(self, mock_storage):
-        """Test that only positions for a specific symbol are adjusted."""
+        """Test that only usr_positions for a specific symbol are adjusted."""
         mock_connector = Mock()
-        mock_connector.get_open_positions = Mock(return_value=[
+        mock_connector.get_open_usr_positions = Mock(return_value=[
             {
                 'ticket': 2001,
                 'symbol': 'EURUSD',
@@ -247,12 +247,12 @@ class TestAnomalySentinelOrderCancellation:
         assert result.get('adjusted') == 1
     
     @pytest.mark.asyncio
-    async def test_cancel_orders_without_connectors(self, mock_storage):
+    async def test_cancel_usr_orders_without_connectors(self, mock_storage):
         """Test graceful degradation when no connectors are injected."""
         # RiskManager without connectors
         rm = RiskManager(storage=mock_storage, connectors={})
         
-        result = await rm.cancel_pending_orders(reason="Test")
+        result = await rm.cancel_pending_usr_orders(reason="Test")
         
         # Should return pending_integration status
         assert result.get('status') == 'pending_integration'
@@ -275,8 +275,8 @@ class TestAnomalySentinelOrderCancellation:
         # Get the mock connector
         connector = risk_manager_with_connectors.connectors.get("MT5")
         
-        # Call cancel_pending_orders
-        await risk_manager_with_connectors.cancel_pending_orders(
+        # Call cancel_pending_usr_orders
+        await risk_manager_with_connectors.cancel_pending_usr_orders(
             symbol="EURUSD",
             reason="VOLATILITY_ZSCORE_3.2"
         )
@@ -293,11 +293,11 @@ class TestAnomalySentinelOrderCancellation:
     
     @pytest.mark.asyncio
     async def test_stop_adjustment_with_mixed_position_types(self, mock_storage):
-        """Test SL adjustment for both BUY and SELL positions."""
+        """Test SL adjustment for both BUY and SELL usr_positions."""
         mock_connector = Mock()
         
-        # Mix of BUY (type=0) and SELL (type=1) positions
-        mock_connector.get_open_positions = Mock(return_value=[
+        # Mix of BUY (type=0) and SELL (type=1) usr_positions
+        mock_connector.get_open_usr_positions = Mock(return_value=[
             {
                 'ticket': 2001,
                 'symbol': 'EURUSD',
@@ -327,7 +327,7 @@ class TestAnomalySentinelOrderCancellation:
         rm = RiskManager(storage=mock_storage, connectors={"MT5": mock_connector})
         result = await rm.adjust_stops_to_breakeven()
         
-        # Both positions should be adjusted
+        # Both usr_positions should be adjusted
         assert result.get('adjusted') == 2
         
         # Verify SL was set to current_price (breakeven)
@@ -349,17 +349,17 @@ class TestAnomalyIntegrationEndToEnd:
             "max_r_per_trade": 2.0,
         }
         mock_storage.get_dynamic_params.return_value = {"risk_per_trade": 0.005}
-        mock_storage.get_system_state.return_value = {
+        mock_storage.get_sys_config.return_value = {
             "lockdown_mode": False,
             "consecutive_losses": 0,
         }
         
         # Setup connector with realistic data
         mock_connector = Mock()
-        mock_connector.get_pending_orders = Mock(return_value=[
+        mock_connector.get_pending_usr_orders = Mock(return_value=[
             {'ticket': 1001, 'symbol': 'EURUSD', 'type': 'BUY'},
         ])
-        mock_connector.get_open_positions = Mock(return_value=[
+        mock_connector.get_open_usr_positions = Mock(return_value=[
             {'ticket': 2001, 'symbol': 'EURUSD', 'type': 0, 'price_current': 1.1050, 'sl': 1.1000},
         ])
         mock_connector.cancel_order = Mock(return_value={'success': True, 'ticket': 1001})
@@ -380,8 +380,8 @@ class TestAnomalyIntegrationEndToEnd:
         )
         assert lockdown_result is True, "Lockdown should activate"
         
-        # PHASE 2: Anomaly service calls cancel_pending_orders
-        cancel_result = await rm.cancel_pending_orders(
+        # PHASE 2: Anomaly service calls cancel_pending_usr_orders
+        cancel_result = await rm.cancel_pending_usr_orders(
             symbol="EURUSD",
             reason="FLASH_CRASH_DETECTED"
         )
@@ -395,7 +395,7 @@ class TestAnomalyIntegrationEndToEnd:
         assert adjust_result.get('adjusted') >= 0, "Stop adjustment initiated"
         
         # Verify all connectors were called
-        assert mock_connector.get_pending_orders.called
-        assert mock_connector.get_open_positions.called
+        assert mock_connector.get_pending_usr_orders.called
+        assert mock_connector.get_open_usr_positions.called
         assert mock_connector.cancel_order.called or cancel_result.get('cancelled') == 0
         assert mock_connector.modify_order.called or adjust_result.get('adjusted') == 0

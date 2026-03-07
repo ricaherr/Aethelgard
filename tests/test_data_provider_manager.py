@@ -31,7 +31,7 @@ class TestProviderConfig:
         assert config.free_tier is True
     
     def test_provider_config_with_credentials(self):
-        """Test provider config with API credentials"""
+        """Test provider config with API sys_credentials"""
         config = ProviderConfig(
             name="alphavantage",
             enabled=True,
@@ -124,7 +124,7 @@ class TestDataProviderManager:
         assert provider is not None
     
     def test_configure_provider_credentials(self):
-        """Test setting API credentials for a provider"""
+        """Test setting API sys_credentials for a provider"""
         manager = DataProviderManager()
         
         result = manager.configure_provider(

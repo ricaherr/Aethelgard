@@ -1,6 +1,6 @@
 """
 Order Executor Module
-Executes trading signals with RiskManager validation and agnostic connector routing.
+Executes trading usr_signals with RiskManager validation and agnostic connector routing.
 Aligned with Aethelgard's principles: Autonomy, Resilience, Agnosticism, and Security.
 """
 import asyncio
@@ -29,12 +29,12 @@ class ConnectorDisabledError(Exception):
 
 class OrderExecutor:
     """
-    Executes trading signals with the following features:
+    Executes trading usr_signals with the following features:
     
     - RiskManager Validation: Checks lockdown mode before execution
-    - Factory Pattern: Routes signals to appropriate connector
+    - Factory Pattern: Routes usr_signals to appropriate connector
     - Resilience: Handles connector failures gracefully
-    - Audit Trail: Registers all signals in data_vault
+    - Audit Trail: Registers all usr_signals in data_vault
     - Notifications: Alerts via Telegram on failures
     """
     
@@ -119,7 +119,7 @@ class OrderExecutor:
         else:
             self.lifecycle_manager = lifecycle_manager
             
-        self.persists_signals = True
+        self.persists_usr_signals = True
         
         logger.info(
             f"OrderExecutor initialized with {len(self.connectors)} injected connectors: "
@@ -135,7 +135,7 @@ class OrderExecutor:
         
         Workflow:
         1. Validate signal data
-        2. Check for duplicate signals (recent or open position)
+        2. Check for duplicate usr_signals (recent or open position)
         3. Check RiskManager lockdown status
         4. Register signal as PENDING in data_vault
         5. Route to appropriate connector using Factory pattern
@@ -194,7 +194,7 @@ class OrderExecutor:
         # If strategy is in SHADOW mode, override connector type to PAPER
         if strategy_id:
             try:
-                ranking = self.storage.get_strategy_ranking(strategy_id)
+                ranking = self.storage.get_usr_performance(strategy_id)
                 if ranking and ranking.get('execution_mode') == 'SHADOW':
                     signal.connector_type = ConnectorType.PAPER
                     logger.info(
@@ -218,14 +218,14 @@ class OrderExecutor:
                 )
             return False
         
-        # Step 2: Check for duplicate signals (Standard & Advanced)
+        # Step 2: Check for duplicate usr_signals (Standard & Advanced)
         # Standard: Check if there's any open position for this symbol (Legacy compatibility)
         # Note: We check ANY timeframe if signal.timeframe is None, or specific if provided.
         if self.storage.has_open_position(signal.symbol, signal.timeframe):
-            # Attempt reconciliation with MT5 before rejecting (to clear ghost positions)
+            # Attempt reconciliation with MT5 before rejecting (to clear ghost usr_positions)
             # Only if it's a real broker connector (not Paper)
             if signal.connector_type != ConnectorType.PAPER:
-                if self._reconcile_positions(signal.symbol):
+                if self._reconcile_usr_positions(signal.symbol):
                     logger.info(f"[OK] Reconciliation cleared ghost position for {signal.symbol}, proceeding with signal")
                 else:
                     self.last_rejection_reason = f"Duplicate signal: already have an open position for {signal.symbol}"
@@ -251,7 +251,7 @@ class OrderExecutor:
             return False
             
         # Additional: Check for recently executed (within timeframe window)
-        # This prevents "double-execution" if two similar signals arrive 1 second apart
+        # This prevents "double-execution" if two similar usr_signals arrive 1 second apart
         # Support exclude_id to avoid self-collision when signal is already saved in DB
         signal_id = signal.metadata.get('signal_id')
         if self.storage.has_recent_signal(
@@ -548,7 +548,7 @@ class OrderExecutor:
                 regime_classifier=None  # TODO: inyectar RegimeClassifier cuando esté disponible
             )
             
-            # Memory dump for high-confidence signals (>90)
+            # Memory dump for high-confidence usr_signals (>90)
             if signal.confidence > 0.9 and position_size > 0:
                 account_balance = self.risk_manager._get_account_balance(connector)
                 memory_dump = {
@@ -583,18 +583,18 @@ class OrderExecutor:
         """
         self.lifecycle_manager.save_position_metadata(signal, result, ticket)
     
-    def _reconcile_positions(self, symbol: str) -> bool:
+    def _reconcile_usr_positions(self, symbol: str) -> bool:
         """
         Perform immediate reconciliation with MT5 reality.
         
-        Checks if MT5 actually has open positions. If not, clears any ghost
-        positions from DB and returns True to allow new trade.
+        Checks if MT5 actually has open usr_positions. If not, clears any ghost
+        usr_positions from DB and returns True to allow new trade.
         
         Args:
             symbol: Trading symbol to check
             
         Returns:
-            True if reconciliation cleared ghost positions, False if real position exists
+            True if reconciliation cleared ghost usr_positions, False if real position exists
         """
         try:
             # Get MT5 connector
@@ -603,16 +603,16 @@ class OrderExecutor:
                 logger.warning("MT5 connector not available for reconciliation")
                 return False
             
-            # Query real MT5 positions
-            positions = mt5_connector.get_open_positions()
-            if positions is None:
-                logger.error("Failed to query MT5 positions for reconciliation")
+            # Query real MT5 usr_positions
+            usr_positions = mt5_connector.get_open_usr_positions()
+            if usr_positions is None:
+                logger.error("Failed to query MT5 usr_positions for reconciliation")
                 return False
             
             # Check if symbol has real position
-            symbol_positions = [p for p in positions if p.get('symbol') == symbol]
+            symbol_usr_positions = [p for p in usr_positions if p.get('symbol') == symbol]
             
-            if symbol_positions:
+            if symbol_usr_positions:
                 # Real position exists, don't clear
                 logger.info(f"Real position confirmed in MT5 for {symbol}, rejecting duplicate")
                 return False

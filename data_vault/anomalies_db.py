@@ -49,7 +49,7 @@ class AnomaliesMixin(BaseRepository):
             details_json = json.dumps(details or {})
             
             cursor.execute("""
-                INSERT INTO anomaly_events (
+                INSERT INTO usr_anomaly_events (
                     symbol,
                     anomaly_type,
                     z_score,
@@ -105,7 +105,7 @@ class AnomaliesMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             
-            query = "SELECT * FROM anomaly_events WHERE 1=1"
+            query = "SELECT * FROM usr_anomaly_events WHERE 1=1"
             params: List[Any] = []
             
             if symbol:
@@ -161,7 +161,7 @@ class AnomaliesMixin(BaseRepository):
             cursor = conn.cursor()
             
             cursor.execute("""
-                SELECT * FROM anomaly_events
+                SELECT * FROM usr_anomaly_events
                 WHERE symbol = ?
                   AND timestamp > datetime('now', '-' || ? || ' hours')
                 ORDER BY timestamp DESC
@@ -207,7 +207,7 @@ class AnomaliesMixin(BaseRepository):
             cursor = conn.cursor()
             
             cursor.execute("""
-                SELECT * FROM anomaly_events
+                SELECT * FROM usr_anomaly_events
                 WHERE confidence >= ?
                   AND anomaly_type IN ('flash_crash', 'liquidation_cascade')
                 ORDER BY confidence DESC, timestamp DESC
@@ -253,7 +253,7 @@ class AnomaliesMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             
-            query = "SELECT COUNT(*) FROM anomaly_events WHERE 1=1"
+            query = "SELECT COUNT(*) FROM usr_anomaly_events WHERE 1=1"
             params: List[Any] = []
             
             if symbol:
@@ -289,7 +289,7 @@ class AnomaliesMixin(BaseRepository):
             # Total de anomalías por tipo
             cursor.execute("""
                 SELECT anomaly_type, COUNT(*) as count
-                FROM anomaly_events
+                FROM usr_anomaly_events
                 GROUP BY anomaly_type
             """)
             by_type = {row[0]: row[1] for row in cursor.fetchall()}
@@ -297,7 +297,7 @@ class AnomaliesMixin(BaseRepository):
             # Total de anomalías por símbolo
             cursor.execute("""
                 SELECT symbol, COUNT(*) as count
-                FROM anomaly_events
+                FROM usr_anomaly_events
                 GROUP BY symbol
                 ORDER BY count DESC
                 LIMIT 10
@@ -305,12 +305,12 @@ class AnomaliesMixin(BaseRepository):
             by_symbol = {row[0]: row[1] for row in cursor.fetchall()}
             
             # Confianza promedio
-            cursor.execute("SELECT AVG(confidence), MIN(confidence), MAX(confidence) FROM anomaly_events")
+            cursor.execute("SELECT AVG(confidence), MIN(confidence), MAX(confidence) FROM usr_anomaly_events")
             conf_row = cursor.fetchone()
             avg_confidence, min_confidence, max_confidence = conf_row if conf_row else (0, 0, 0)
             
             # Se z_score promedio
-            cursor.execute("SELECT AVG(z_score), MAX(z_score) FROM anomaly_events WHERE z_score IS NOT NULL")
+            cursor.execute("SELECT AVG(z_score), MAX(z_score) FROM usr_anomaly_events WHERE z_score IS NOT NULL")
             zscore_row = cursor.fetchone()
             avg_zscore, max_zscore = zscore_row if zscore_row else (0, 0)
             
@@ -370,7 +370,7 @@ class AnomaliesMixin(BaseRepository):
             )
             
             cursor.execute("""
-                INSERT INTO coherence_events
+                INSERT INTO usr_coherence_events
                 (signal_id, symbol, timeframe, strategy, stage, status, incoherence_type, reason, details, connector_type, timestamp)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (

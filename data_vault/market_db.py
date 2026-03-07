@@ -9,26 +9,26 @@ logger = logging.getLogger(__name__)
 class MarketMixin(BaseRepository):
     """Mixin for Market State and Coherence database operations."""
 
-    def log_market_state(self, state_data: Dict) -> None:
+    def log_sys_market_pulse(self, state_data: Dict) -> None:
         """Log market state data"""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT INTO market_state (symbol, data)
+                INSERT INTO sys_market_pulse (symbol, data)
                 VALUES (?, ?)
             """, (state_data.get('symbol'), json.dumps(state_data)))
             conn.commit()
         finally:
             self._close_conn(conn)
 
-    def get_market_state_history(self, symbol: str, limit: int = 100) -> List[Dict]:
+    def get_sys_market_pulse_history(self, symbol: str, limit: int = 100) -> List[Dict]:
         """Get market state history for a symbol"""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT * FROM market_state 
+                SELECT * FROM sys_market_pulse 
                 WHERE symbol = ? 
                 ORDER BY timestamp DESC 
                 LIMIT ?
@@ -51,7 +51,7 @@ class MarketMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT INTO coherence_events 
+                INSERT INTO usr_coherence_events 
                 (signal_id, symbol, timeframe, strategy, stage, status, incoherence_type, reason, details, connector_type)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (signal_id, symbol, timeframe, strategy, stage, status, incoherence_type, reason, details, connector_type))
@@ -67,12 +67,12 @@ class MarketMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                UPDATE signals 
+                UPDATE usr_signals 
                 SET status = 'CLOSED', 
                     metadata = json_set(COALESCE(metadata, '{}'), '$.exit_reason', 'REJECTED')
                 WHERE symbol = ? 
                 AND status = 'EXECUTED'
-                AND id NOT IN (SELECT signal_id FROM trades WHERE signal_id IS NOT NULL)
+                AND id NOT IN (SELECT signal_id FROM usr_trades WHERE signal_id IS NOT NULL)
             """, (symbol,))
             conn.commit()
         except Exception as e:
@@ -100,7 +100,7 @@ class MarketMixin(BaseRepository):
                             PARTITION BY symbol, json_extract(data, '$.timeframe') 
                             ORDER BY timestamp DESC
                         ) as rn
-                    FROM market_state
+                    FROM sys_market_pulse
                     WHERE timestamp > datetime('now', '-24 hours', 'utc')
                 )
                 SELECT symbol, data, timestamp
@@ -123,7 +123,7 @@ class MarketMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_all_market_states(self) -> Dict[str, Dict]:
+    def get_all_sys_market_pulses(self) -> Dict[str, Dict]:
         """
         Obtiene el último estado de mercado para cada símbolo.
         """
@@ -136,7 +136,7 @@ class MarketMixin(BaseRepository):
                 FROM (
                     SELECT symbol, data, timestamp,
                            ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY timestamp DESC) as rn
-                    FROM market_state
+                    FROM sys_market_pulse
                 )
                 WHERE rn = 1
             """)
@@ -162,7 +162,7 @@ class MarketMixin(BaseRepository):
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM asset_profiles WHERE symbol = ?", (symbol,))
+            cursor.execute("SELECT * FROM usr_assets_cfg WHERE symbol = ?", (symbol,))
             row = cursor.fetchone()
             if row:
                 profile = dict(row)
@@ -178,7 +178,7 @@ class MarketMixin(BaseRepository):
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM asset_profiles")
+            cursor.execute("SELECT COUNT(*) FROM usr_assets_cfg")
             if cursor.fetchone()[0] > 0:
                 return
 
@@ -191,7 +191,7 @@ class MarketMixin(BaseRepository):
             ]
             
             cursor.executemany("""
-                INSERT INTO asset_profiles 
+                INSERT INTO usr_assets_cfg 
                 (symbol, asset_class, tick_size, lot_step, contract_size, currency, golden_hour_start, golden_hour_end)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, initial_assets)

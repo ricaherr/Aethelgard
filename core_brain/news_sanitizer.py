@@ -9,7 +9,7 @@ Pilar 1: Schema Validation (mandatory fields, normalization)
 Pilar 2: Latency Validation (age window: NOW-30 to NOW+30 days)
 Pilar 3: Immutability Enforcement (no updates after persistence)
 
-Responsibility: Act as gate keeper before economic_calendar table persistence.
+Responsibility: Act as gate keeper before sys_economic_calendar table persistence.
 """
 import logging
 from datetime import datetime, timedelta
@@ -362,7 +362,7 @@ class NewsSanitizer:
         """
         Pilar 3: Immutability enforcement check.
         
-        Post-persistence, economic_calendar records are READ-ONLY.
+        Post-persistence, sys_economic_calendar records are READ-ONLY.
         
         Args:
             event_id: UUID of record to update

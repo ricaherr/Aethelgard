@@ -2,10 +2,10 @@
 Position Manager - Dynamic Position Management System
 FASE 1: Regime Management + Max Drawdown + Freeze Level Validation
 
-Manages open positions with:
+Manages open usr_positions with:
 - Emergency close on max drawdown
 - SL/TP adjustments based on regime changes
-- Time-based exits for stale positions
+- Time-based exits for stale usr_positions
 - Freeze level validation
 - Cooldown and daily limits
 - Metadata persistence and rollback
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 class PositionManager:
     """
-    Manages open positions with regime-aware adjustments and risk protection.
+    Manages open usr_positions with regime-aware adjustments and risk protection.
     
     Key Features (FASE 1):
     - Emergency close on max drawdown (2x initial risk)
@@ -66,7 +66,7 @@ class PositionManager:
         self.regime_adjustments = config.get('regime_adjustments', {})
         self.stale_thresholds = config.get('stale_thresholds_hours', {})
         
-        # Track orphan positions (without metadata) to avoid log spam
+        # Track orphan usr_positions (without metadata) to avoid log spam
         self._synced_orphans = set()  # Set of ticket numbers already synced
         
         # Track modification failures for alerts
@@ -98,30 +98,30 @@ class PositionManager:
                 logger.debug("InstrumentManager(storage=...) fallback due to invalid storage mock: %s", e)
         return InstrumentManager()
     
-    def monitor_positions(self) -> Dict[str, Any]:
+    def monitor_usr_positions(self) -> Dict[str, Any]:
         """
-        Main monitoring loop - checks all open positions and applies necessary adjustments.
+        Main monitoring loop - checks all open usr_positions and applies necessary adjustments.
         
         Returns:
             dict: Summary of actions taken
         """
         logger.debug("Starting position monitoring cycle")
         
-        # Get all open positions from connector
-        open_positions = self.connector.get_open_positions()
+        # Get all open usr_positions from connector
+        open_usr_positions = self.connector.get_open_usr_positions()
         
-        if not open_positions:
-            logger.debug("No open positions to monitor")
+        if not open_usr_positions:
+            logger.debug("No open usr_positions to monitor")
             return {"monitored": 0, "actions": []}
         
         actions = []
         
-        for position in open_positions:
+        for position in open_usr_positions:
             ticket = position.get('ticket')
             symbol = position.get('symbol')
             
             try:
-                # 0. Sync metadata for orphan positions (opened outside Aethelgard)
+                # 0. Sync metadata for orphan usr_positions (opened outside Aethelgard)
                 self._sync_orphan_position(position)
                 
                 # 1. Check for emergency close (max drawdown exceeded)
@@ -258,15 +258,15 @@ class PositionManager:
                 continue
         
         summary = {
-            'total_positions': len(open_positions),
-            'monitored': len(open_positions),
+            'total_usr_positions': len(open_usr_positions),
+            'monitored': len(open_usr_positions),
             'actions': actions,
             'timestamp': datetime.now(timezone.utc).isoformat()
         }
         
         logger.info(
             f"Position monitoring completed - "
-            f"{len(open_positions)} positions, "
+            f"{len(open_usr_positions)} usr_positions, "
             f"{len(actions)} actions taken"
         )
         
@@ -274,11 +274,11 @@ class PositionManager:
     
     def _sync_orphan_position(self, position: Dict[str, Any]) -> None:
         """
-        Auto-sync metadata for positions without it (orphan positions).
+        Auto-sync metadata for usr_positions without it (orphan usr_positions).
         
-        Orphan positions are those opened:
+        Orphan usr_positions are those opened:
         - Before metadata system was implemented
-        - Directly from MT5/broker (manual trades)
+        - Directly from MT5/broker (manual usr_trades)
         - From other systems/EAs
         
         Creates minimal metadata to enable monitoring. Initial risk is estimated
@@ -515,10 +515,10 @@ class PositionManager:
         initial_risk_usd = metadata.get('initial_risk_usd', 0)
         if initial_risk_usd <= 0:
             # DEBUG: Position without SL or orphan without risk calculation
-            # This is expected for manual positions or positions without SL
+            # This is expected for manual usr_positions or usr_positions without SL
             logger.debug(
                 f"Position {ticket} has no initial_risk_usd (value: {initial_risk_usd}) - "
-                f"Cannot validate max drawdown. This is normal for positions without SL."
+                f"Cannot validate max drawdown. This is normal for usr_positions without SL."
             )
             return False
         
@@ -699,7 +699,7 @@ class PositionManager:
         direction = metadata.get('direction', '')
         
         # FALLBACK: Get direction from MT5 position if not in metadata
-        # (for manual positions or positions opened before direction tracking)
+        # (for manual usr_positions or usr_positions opened before direction tracking)
         if not direction:
             type_value = position.get('type')
             if type_value is not None:
@@ -1040,13 +1040,13 @@ class PositionManager:
     
     def _get_event_type_from_reason(self, reason: str) -> str:
         """
-        Map modification reason to position_history event_type.
+        Map modification reason to usr_position_history event_type.
         
         Args:
             reason: Modification reason string
             
         Returns:
-            Event type string for position_history table
+            Event type string for usr_position_history table
         """
         reason_upper = reason.upper()
         
@@ -1370,7 +1370,7 @@ class PositionManager:
             # Calculate current profit in USD (explicit validation)
             current_profit_usd = float(position.get('profit', 0))
             if current_profit_usd <= 0:
-                return False, f"Position in loss (${current_profit_usd:.2f}) - breakeven only applies to winning trades"
+                return False, f"Position in loss (${current_profit_usd:.2f}) - breakeven only applies to winning usr_trades"
             
             # Get minimum distance - DYNAMIC based on ATR
             symbol_info = self.connector.get_symbol_info(symbol)

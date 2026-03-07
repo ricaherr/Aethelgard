@@ -201,8 +201,8 @@ class AnomalyService:
         """
         response = {
             "lockdown_activated": False,
-            "orders_cancelled": 0,
-            "positions_adjusted": 0,
+            "usr_orders_cancelled": 0,
+            "usr_positions_adjusted": 0,
             "trace_id": anomaly.trace_id,
         }
         
@@ -226,22 +226,22 @@ class AnomalyService:
             response["lockdown_activated"] = lockdown_result
             
             # 2. Cancelar órdenes pendientes
-            cancel_result = await self.risk_manager.cancel_pending_orders(
+            cancel_result = await self.risk_manager.cancel_pending_usr_orders(
                 symbol=symbol,
                 reason="Lockdown Mode Activated"
             )
-            response["orders_cancelled"] = cancel_result.get("cancelled", 0) if cancel_result else 0
+            response["usr_orders_cancelled"] = cancel_result.get("cancelled", 0) if cancel_result else 0
             
             # 3. Ajustar SL a Breakeven
             adjust_result = await self.risk_manager.adjust_stops_to_breakeven(
                 symbol=symbol,
                 reason="Anomaly Detected - Protective Measure"
             )
-            response["positions_adjusted"] = adjust_result.get("adjusted", 0) if adjust_result else 0
+            response["usr_positions_adjusted"] = adjust_result.get("adjusted", 0) if adjust_result else 0
             
             logger.critical(
-                f"[LOCKDOWN_COMPLETE] {symbol} - Órdenes canceladas: {response['orders_cancelled']}, "
-                f"Posiciones ajustadas: {response['positions_adjusted']}. Trace_ID: {anomaly.trace_id}"
+                f"[LOCKDOWN_COMPLETE] {symbol} - Órdenes canceladas: {response['usr_orders_cancelled']}, "
+                f"Posiciones ajustadas: {response['usr_positions_adjusted']}. Trace_ID: {anomaly.trace_id}"
             )
             
         except Exception as e:

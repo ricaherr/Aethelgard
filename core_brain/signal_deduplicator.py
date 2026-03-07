@@ -24,7 +24,7 @@ class SignalDeduplicator:
     1. Normalizar símbolos según connector type
     2. Verificar posiciones abiertas
     3. Reconciliar con MT5 reality
-    4. Detectar ghost positions
+    4. Detectar ghost usr_positions
     5. Filtrar señales recientes
     """
     
@@ -119,7 +119,7 @@ class SignalDeduplicator:
         """
         Maneja caso de posición abierta existente.
         
-        Intenta reconciliar con MT5, limpia ghost positions.
+        Intenta reconciliar con MT5, limpia ghost usr_positions.
         
         Returns:
             True si debe bloquearse la señal, False para permitir
@@ -138,14 +138,14 @@ class SignalDeduplicator:
         """
         Reconcilia posición en BD con realidad en MT5.
         
-        Detecta y limpia ghost positions.
+        Detecta y limpia ghost usr_positions.
         
         Returns:
             True si debe bloquearse, False para permitir
         """
         logger.debug(f"[CHECK] Reconciling position for {signal.symbol} with MT5")
         
-        # Obtener todas las operaciones abiertas (signals con status=EXECUTED)
+        # Obtener todas las operaciones abiertas (usr_signals con status=EXECUTED)
         open_ops = self.storage_manager.get_open_operations()
         matching_op = next(
             (op for op in open_ops if op.get('symbol') == normalized_symbol),
@@ -158,12 +158,12 @@ class SignalDeduplicator:
         open_signal_id = matching_op.get('id')
         
         # Obtener posiciones reales de MT5
-        real_positions = self.mt5_connector.get_open_positions()
-        if real_positions is None:
-            logger.warning("Failed to get MT5 positions for reconciliation")
+        real_usr_positions = self.mt5_connector.get_open_usr_positions()
+        if real_usr_positions is None:
+            logger.warning("Failed to get MT5 usr_positions for reconciliation")
             return True
         
-        real_symbols = {pos.get('symbol') for pos in real_positions}
+        real_symbols = {pos.get('symbol') for pos in real_usr_positions}
         
         if normalized_symbol not in real_symbols:
             # Ghost position detected - limpiar

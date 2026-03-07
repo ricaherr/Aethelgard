@@ -24,9 +24,9 @@ print(f"Status: {resp.status_code}")
 if resp.status_code != 200:
     print(f"Error: {resp.text[:200]}")
 
-# Test 2: signals
-print("\n[2] Testing /signals")
-resp = session.get(f"{BASE_URL}/signals?limit=10")
+# Test 2: usr_signals
+print("\n[2] Testing /usr_signals")
+resp = session.get(f"{BASE_URL}/usr_signals?limit=10")
 print(f"Status: {resp.status_code}")
 if resp.status_code != 200:
     print(f"Error: {resp.text[:200]}")

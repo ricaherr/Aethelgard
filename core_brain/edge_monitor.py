@@ -83,20 +83,20 @@ class EdgeMonitor(threading.Thread):
             
             # PASO 1: Reconciliar cierres pendientes (sincronizar DB con MT5)
             if self.trade_listener:
-                mt5.reconcile_closed_trades(self.trade_listener, hours_back=24)
+                mt5.reconcile_closed_usr_trades(self.trade_listener, hours_back=24)
             else:
                 logger.warning("[EDGE] TradeClosureListener not available - reconciliation skipped")
             
             # PASO 2: Obtener posiciones ABIERTAS de MT5 (ya sincronizadas)
-            mt5_positions = mt5.get_open_positions()
-            if mt5_positions is None:
+            mt5_usr_positions = mt5.get_open_usr_positions()
+            if mt5_usr_positions is None:
                 return
                 
             # PASO 3: Obtener operaciones activas del bot (ya actualizadas)
             bot_operations = self.storage.get_open_operations()
             
             # LOG DE DIAGNÓSTICO
-            logger.debug(f"🔍 MT5 Open: {len(mt5_positions)} | DB Open: {len(bot_operations)} (post-reconciliation)")
+            logger.debug(f"🔍 MT5 Open: {len(mt5_usr_positions)} | DB Open: {len(bot_operations)} (post-reconciliation)")
             
             bot_tickets = set()
             
@@ -108,7 +108,7 @@ class EdgeMonitor(threading.Thread):
                     bot_tickets.add(int(ticket))
             
             # PASO 4: Comparar posiciones MT5 con operaciones del bot
-            mt5_tickets = set(pos['ticket'] for pos in mt5_positions)
+            mt5_tickets = set(pos['ticket'] for pos in mt5_usr_positions)
             external_tickets = mt5_tickets - bot_tickets
             
             # Reportar operaciones externas detectadas
@@ -127,7 +127,7 @@ class EdgeMonitor(threading.Thread):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT COUNT(*) FROM edge_learning 
+                SELECT COUNT(*) FROM usr_edge_learning 
                 WHERE detection LIKE ? 
                 AND timestamp >= datetime('now', '-24 hours')
             """, (f"Operación manual externa detectada (Ticket: #{ticket})%",))
@@ -155,10 +155,10 @@ class EdgeMonitor(threading.Thread):
     def _check_inconsistencies(self) -> None:
         """Verificar inconsistencias entre módulos"""
         # Contar señales generadas en los últimos 60s
-        generated_count = self._count_recent_signals()
+        generated_count = self._count_recent_usr_signals()
         
         # Contar señales ejecutadas en los últimos 60s
-        executed_count = self._count_recent_executed_signals()
+        executed_count = self._count_recent_executed_usr_signals()
         
         # Si hay discrepancia significativa (>10% o >1), investigar
         if generated_count > executed_count + max(1, generated_count * 0.1):
@@ -167,9 +167,9 @@ class EdgeMonitor(threading.Thread):
     def _audit_signal_inconsistencies(self) -> None:
         """Auditoría específica: señales generadas vs órdenes ejecutadas"""
         # Obtener señales recientes que deberían haber sido ejecutadas
-        recent_signals = self._get_recent_pending_signals()
+        recent_usr_signals = self._get_recent_pending_usr_signals()
         
-        for signal in recent_signals:
+        for signal in recent_usr_signals:
             signal_id = signal['id']
             symbol = signal['symbol']
             
@@ -181,17 +181,17 @@ class EdgeMonitor(threading.Thread):
                         mt5.connect()
                     
                     # Buscar orden por símbolo y tiempo aproximado
-                    orders = mt5.get_orders()
-                    if orders:
+                    usr_orders = mt5.get_usr_orders()
+                    if usr_orders:
                         # Buscar órdenes recientes para este símbolo
                         signal_time = signal.get('timestamp')
-                        matching_orders = [
-                            order for order in orders 
+                        matching_usr_orders = [
+                            order for order in usr_orders 
                             if order.symbol == symbol and 
                             abs((order.time_setup - signal_time).total_seconds()) < 300  # 5 minutos de tolerancia
                         ]
                         
-                        if not matching_orders:
+                        if not matching_usr_orders:
                             # No hay orden correspondiente - investigar
                             self._investigate_missing_order(signal)
                             
@@ -199,13 +199,13 @@ class EdgeMonitor(threading.Thread):
                     logger.error(f"Error auditing signal {signal_id}: {e}")
                 # NOTE: NO disconnect MT5 here - connection is managed by start.py and shared across components
     
-    def _get_recent_pending_signals(self) -> List[Dict]:
+    def _get_recent_pending_usr_signals(self) -> List[Dict]:
         """Obtener señales recientes que deberían haber sido ejecutadas"""
         conn = self.storage._get_conn()
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT * FROM signals 
+                SELECT * FROM usr_signals 
                 WHERE status = 'PENDING' 
                 AND timestamp >= datetime('now', '-300 seconds')  -- Últimos 5 minutos
                 ORDER BY timestamp DESC
@@ -268,26 +268,26 @@ class EdgeMonitor(threading.Thread):
         
         logger.warning(f"[EDGE] Signal inconsistency: {detection}")
     
-    def _count_recent_signals(self) -> int:
+    def _count_recent_usr_signals(self) -> int:
         """Contar señales generadas en los últimos 60s"""
         conn = self.storage._get_conn()
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT COUNT(*) FROM signals 
+                SELECT COUNT(*) FROM usr_signals 
                 WHERE timestamp >= datetime('now', '-60 seconds')
             """)
             return cursor.fetchone()[0]
         finally:
             self.storage._close_conn(conn)
     
-    def _count_recent_executed_signals(self) -> int:
+    def _count_recent_executed_usr_signals(self) -> int:
         """Contar señales ejecutadas en los últimos 60s"""
         conn = self.storage._get_conn()
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT COUNT(*) FROM signals 
+                SELECT COUNT(*) FROM usr_signals 
                 WHERE status = 'EXECUTED' 
                 AND timestamp >= datetime('now', '-60 seconds')
             """)
@@ -319,12 +319,12 @@ class EdgeMonitor(threading.Thread):
 
     def _check_risk_behavior_patterns(self) -> None:
         """Check for emerging risk behavior patterns"""
-        # Get recent signals with vetoed status
-        recent_signals = self.storage.get_recent_signals(minutes=60)
+        # Get recent usr_signals with vetoed status
+        recent_usr_signals = self.storage.get_recent_usr_signals(minutes=60)
         
         # Group by symbol and count vetoed vs total
         symbol_stats = {}
-        for signal in recent_signals:
+        for signal in recent_usr_signals:
             symbol = signal.get('symbol', 'UNKNOWN')
             status = signal.get('status', None)
             

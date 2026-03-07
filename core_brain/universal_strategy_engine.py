@@ -79,18 +79,18 @@ class RegistryLoader:
         Carga el Registry directamente de BD (SSOT).
         
         Returns:
-            Dict with strategies list y validation_protocol
+            Dict with usr_strategies list y validation_protocol
         """
         if self._registry_cache is not None:
             return self._registry_cache
         
         try:
             # Leer TODAS las estrategias desde BD
-            strategies = self.storage.get_all_strategies()
+            usr_strategies = self.storage.get_all_usr_strategies()
             
             # Construir Registry
             registry = {
-                "strategies": strategies,
+                "usr_strategies": usr_strategies,
                 "validation_protocol": {
                     "name": "Protocolo Quanter",
                     "pillars": [
@@ -123,7 +123,7 @@ class RegistryLoader:
             }
             
             self._registry_cache = registry
-            logger.info(f"Registry cargado de BD: {len(strategies)} estrategias")
+            logger.info(f"Registry cargado de BD: {len(usr_strategies)} estrategias")
             return registry
         
         except Exception as e:
@@ -137,10 +137,10 @@ class RegistryLoader:
             logger.error(f"Error obteniendo metadata de estrategia {strategy_id}: {e}")
             return None
     
-    def get_ready_strategies(self) -> List[Dict[str, Any]]:
+    def get_ready_usr_strategies(self) -> List[Dict[str, Any]]:
         """Retorna solo estrategias con readiness=READY_FOR_ENGINE (desde BD)."""
         try:
-            return self.storage.get_strategies_by_readiness("READY_FOR_ENGINE")
+            return self.storage.get_usr_strategies_by_readiness("READY_FOR_ENGINE")
         except Exception as e:
             logger.error(f"Error obteniendo estrategias READY_FOR_ENGINE: {e}")
             return []
@@ -296,7 +296,7 @@ class UniversalStrategyEngine:
         self._function_mapper = IndicatorFunctionMapper(indicator_provider)
         self._registry_loader = RegistryLoader(storage)  # DI: storage instead of path
         self._storage = storage
-        self._schema_cache: Dict[str, Dict[str, Any]] = {}  # Cache strategies loaded
+        self._schema_cache: Dict[str, Dict[str, Any]] = {}  # Cache usr_strategies loaded
         
         logger.info("UniversalStrategyEngine inicializado (SSOT: Registry desde BD)")
     
@@ -558,6 +558,6 @@ class UniversalStrategyEngine:
         except Exception as e:
             raise ValueError(f"Logic evaluation failed: {str(e)}")
     
-    def get_ready_strategies(self) -> List[Dict[str, Any]]:
+    def get_ready_usr_strategies(self) -> List[Dict[str, Any]]:
         """Retorna lista de estrategias READY_FOR_ENGINE."""
-        return self._registry_loader.get_ready_strategies()
+        return self._registry_loader.get_ready_usr_strategies()

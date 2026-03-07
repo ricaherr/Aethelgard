@@ -26,8 +26,8 @@ def mock_storage():
         "anomaly_lookback_period": 50,
         "anomaly_persistence_candles": 3,
     }
-    storage.set_system_state = MagicMock()
-    storage.get_system_state = MagicMock(return_value={})
+    storage.set_sys_config = MagicMock()
+    storage.get_sys_config = MagicMock(return_value={})
     storage.persist_anomaly_event = AsyncMock()
     storage.get_anomaly_history = AsyncMock(return_value=[])
     return storage
@@ -38,7 +38,7 @@ def mock_risk_manager():
     """Mock de RiskManager con métodos de defensa."""
     risk_manager = MagicMock()
     risk_manager.activate_lockdown = AsyncMock(return_value=True)
-    risk_manager.cancel_pending_orders = AsyncMock(return_value={"cancelled": 2})
+    risk_manager.cancel_pending_usr_orders = AsyncMock(return_value={"cancelled": 2})
     risk_manager.adjust_stops_to_breakeven = AsyncMock(return_value={"adjusted": 1})
     return risk_manager
 
@@ -278,7 +278,7 @@ class TestLockdownActivation:
             mock_risk_manager.activate_lockdown.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_cancel_pending_orders_on_lockdown(
+    async def test_cancel_pending_usr_orders_on_lockdown(
         self, anomaly_service, mock_risk_manager, extreme_volatility_data
     ):
         """En Lockdown, cancela todas las órdenes pendientes."""
@@ -295,7 +295,7 @@ class TestLockdownActivation:
             )
             
             # Verificar que se intentó cancelar órdenes
-            mock_risk_manager.cancel_pending_orders.assert_called()
+            mock_risk_manager.cancel_pending_usr_orders.assert_called()
 
     @pytest.mark.asyncio
     async def test_adjust_stops_to_breakeven(

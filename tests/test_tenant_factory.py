@@ -70,7 +70,7 @@ class TestAutoProvisioning:
         """
         GIVEN: A brand-new tenant DB.
         WHEN:  get_storage() is called.
-        THEN:  The DB contains the expected core tables (signals, trades, system_state).
+        THEN:  The DB contains the expected core tables (usr_signals, usr_trades, sys_config).
         """
         storage = TenantDBFactory.get_storage("user_beta", base_path=str(tmp_path))
 
@@ -82,10 +82,10 @@ class TestAutoProvisioning:
         finally:
             storage._close_conn(conn)
 
-        assert "signals" in tables
+        assert "usr_signals" in tables
         assert "trade_results" in tables
-        assert "system_state" in tables
-        assert "user_preferences" in tables
+        assert "sys_config" in tables
+        assert "usr_preferences" in tables
 
 
 # ---------------------------------------------------------------------------
@@ -116,11 +116,11 @@ class TestTenantIsolation:
         }
         storage_a.save_trade_result(trade)
 
-        # Bob must see zero trades
-        bob_trades = storage_b.get_recent_trades(limit=10)
-        assert len(bob_trades) == 0, "Tenant B must NOT see Tenant A's trades"
+        # Bob must see zero usr_trades
+        bob_usr_trades = storage_b.get_recent_usr_trades(limit=10)
+        assert len(bob_usr_trades) == 0, "Tenant B must NOT see Tenant A's usr_trades"
 
-    def test_system_state_is_isolated_per_tenant(self, tmp_path):
+    def test_sys_config_is_isolated_per_tenant(self, tmp_path):
         """
         GIVEN: Two independent tenants.
         WHEN:  Tenant A sets lockdown_mode=True.
@@ -129,9 +129,9 @@ class TestTenantIsolation:
         storage_a = TenantDBFactory.get_storage("tenant_carol", base_path=str(tmp_path))
         storage_b = TenantDBFactory.get_storage("tenant_dave", base_path=str(tmp_path))
 
-        storage_a.update_system_state({"lockdown_mode": True})
+        storage_a.update_sys_config({"lockdown_mode": True})
 
-        state_b = storage_b.get_system_state()
+        state_b = storage_b.get_sys_config()
         assert not state_b.get("lockdown_mode", False), \
             "Tenant B's lockdown_mode must be unaffected by Tenant A"
 
@@ -238,8 +238,8 @@ class TestGlobalFallback:
         global_storage = StorageManager(db_path=str(tmp_path / "global.db"))
 
         # Perform a basic operation to verify it's fully functional
-        global_storage.update_system_state({"ping": "pong"})
-        state = global_storage.get_system_state()
+        global_storage.update_sys_config({"ping": "pong"})
+        state = global_storage.get_sys_config()
 
         assert state.get("ping") == "pong"
 
@@ -249,10 +249,10 @@ class TestGlobalFallback:
         THEN:  A separate global StorageManager is completely independent.
         """
         tenant_storage = TenantDBFactory.get_storage("tenant_iris", base_path=str(tmp_path))
-        tenant_storage.update_system_state({"tenant_key": "tenant_value"})
+        tenant_storage.update_sys_config({"tenant_key": "tenant_value"})
 
         global_storage = StorageManager(db_path=str(tmp_path / "global_aethelgard.db"))
-        global_state = global_storage.get_system_state()
+        global_state = global_storage.get_sys_config()
 
         assert "tenant_key" not in global_state, \
             "Global StorageManager must be unaffected by tenant writes"

@@ -1,6 +1,6 @@
 """
 Multi-Timeframe Confluence Analyzer
-Reinforces or penalizes signals based on alignment across multiple timeframes
+Reinforces or penalizes usr_signals based on alignment across multiple timeframes
 
 EDGE Integration: Weights are auto-learned via EdgeTuner based on backtest results
 """
@@ -27,7 +27,7 @@ class ConfluenceAnalysis:
 
 class MultiTimeframeConfluenceAnalyzer:
     """
-    Analyzes multi-timeframe alignment to reinforce or penalize signals.
+    Analyzes multi-timeframe alignment to reinforce or penalize usr_signals.
     
     Key Concepts:
     - Primary signal comes from lowest timeframe (M5)
@@ -233,7 +233,7 @@ class MultiTimeframeConfluenceAnalyzer:
             return -weight if is_buy else +weight
         
         elif regime == MarketRegime.CRASH:
-            # CRASH conflicts with BUY signals
+            # CRASH conflicts with BUY usr_signals
             return -weight if is_buy else +weight
         
         elif regime in [MarketRegime.RANGE, MarketRegime.NORMAL]:

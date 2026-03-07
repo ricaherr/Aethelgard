@@ -15,7 +15,7 @@ def test_risk_manager_vetoes_trade_when_sentiment_service_blocks() -> None:
     storage.get_dynamic_params.return_value = {
         "risk_per_trade": 0.01,
     }
-    storage.get_system_state.return_value = {"lockdown_mode": False}
+    storage.get_sys_config.return_value = {"lockdown_mode": False}
 
     risk_manager = RiskManager(
         storage=storage,
@@ -34,7 +34,7 @@ def test_risk_manager_vetoes_trade_when_sentiment_service_blocks() -> None:
 
     connector = MagicMock()
     connector.get_account_balance.return_value = 10000.0
-    connector.get_open_positions.return_value = []
+    connector.get_open_usr_positions.return_value = []
     connector.fetch_ohlc.return_value = pd.DataFrame()
 
     signal = Signal(

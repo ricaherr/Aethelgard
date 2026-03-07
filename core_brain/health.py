@@ -66,7 +66,7 @@ class HealthManager:
             tables: List[Any] = [r[0] for r in cursor.fetchall()]
             
             # Correct tables based on StorageManager schema
-            needed_tables: List[str] = ['system_state', 'signals', 'trades', 'market_states']
+            needed_tables: List[str] = ['sys_config', 'usr_signals', 'usr_trades', 'sys_market_pulses']
             for t in needed_tables:
                 if t not in tables:
                     results["status"] = "YELLOW"
@@ -91,10 +91,10 @@ class HealthManager:
         y lo corrige automáticamente.
         
         Criterio: Lockdown solo debe estar activo si hay 3+ pérdidas consecutivas
-        en el historial de trades cerrados.
+        en el historial de usr_trades cerrados.
         
         Args:
-            storage_manager: Para acceder a historial de trades
+            storage_manager: Para acceder a historial de usr_trades
             risk_manager: Para leer/modificar estado de lockdown directamente
         
         Returns:
@@ -113,7 +113,7 @@ class HealthManager:
                 results["lockdown_after"] = False
                 return results
             
-            # 2. Verificar historial de trades (últimos 10)
+            # 2. Verificar historial de usr_trades (últimos 10)
             conn = storage_manager._get_conn()
             cursor = conn.cursor()
             
@@ -134,7 +134,7 @@ class HealthManager:
                     break  # Primera ganancia rompe la racha
             
             # 4. Determinar si lockdown está justificado
-            max_consecutive_losses = system_state.get('config_risk', {}).get('max_consecutive_losses', 3)
+            max_consecutive_losses = sys_config.get('config_risk', {}).get('max_consecutive_losses', 3)
             
             if consecutive_losses < max_consecutive_losses:
                 # LOCKDOWN NO JUSTIFICADO - Auto-corregir
@@ -182,7 +182,7 @@ class HealthManager:
         Check MT5 installation, connection status and account information.
         
         Returns:
-            Dict with MT5 status, account info, and open positions
+            Dict with MT5 status, account info, and open usr_positions
         """
         results = {
             "status": "RED",
@@ -190,7 +190,7 @@ class HealthManager:
             "connected": False,
             "account_type": None,
             "account_info": {},
-            "open_positions": [],
+            "open_usr_positions": [],
             "details": []
         }
         
@@ -214,7 +214,7 @@ class HealthManager:
             # Check if MT5 accounts exist in database
             from data_vault.storage import StorageManager
             storage = StorageManager()
-            all_accounts = storage.get_broker_accounts()
+            all_accounts = storage.get_sys_broker_accounts()
             mt5_accounts = [acc for acc in all_accounts if acc.get('platform_id') == 'mt5' and acc.get('enabled', True)]
             
             if not mt5_accounts:
@@ -237,7 +237,7 @@ class HealthManager:
                 results["needs_config"] = True
                 return results
             
-            # Check if accounts have credentials
+            # Check if accounts have sys_credentials
             account_with_creds = None
             for acc in mt5_accounts:
                 creds: Optional[Dict[str, str]] = storage.get_credentials(acc['account_id'])
@@ -314,11 +314,11 @@ class HealthManager:
                             results["details"].append("")
                             results["details"].append("[WARNING] SIN AUTOTRADING NO SE PUEDEN EJECUTAR OPERACIONES AUTOMÁTICAS")
                     
-                    # Get open positions
-                    open_positions = connector.get_open_positions()
-                    results["open_positions"] = open_positions
-                    if len(open_positions) > 0:
-                        results["details"].append(f"[POS] {len(open_positions)} posición(es) abierta(s)")
+                    # Get open usr_positions
+                    open_usr_positions = connector.get_open_usr_positions()
+                    results["open_usr_positions"] = open_usr_positions
+                    if len(open_usr_positions) > 0:
+                        results["details"].append(f"[POS] {len(open_usr_positions)} posición(es) abierta(s)")
                     else:
                         results["details"].append(f"[OK] Conexión activa - Sin posiciones abiertas")
                     

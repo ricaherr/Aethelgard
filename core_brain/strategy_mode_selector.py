@@ -3,8 +3,8 @@ Strategy Mode Selector (HU 3.9)
 Trace_ID: STRATEGY-GENESIS-2026-001
 
 Hot-swap runtime selection between:
-- MODE_LEGACY: Python-based strategies in core_brain/strategies/
-- MODE_UNIVERSAL: JSON-based strategies via UniversalStrategyEngine
+- MODE_LEGACY: Python-based usr_strategies in core_brain/usr_strategies/
+- MODE_UNIVERSAL: JSON-based usr_strategies via UniversalStrategyEngine
 
 Features:
 - Tenant-specific configuration (SSOT: database)
@@ -216,7 +216,7 @@ class StrategyModeSelector:
         Args:
             target_mode: Destination RuntimeMode
             reason: Human-readable reason for switch (logged in ledger)
-            wait_for_in_flight: Wait for pending signals before switching
+            wait_for_in_flight: Wait for pending usr_signals before switching
             
         Raises:
             ValueError: If target mode is invalid
@@ -236,7 +236,7 @@ class StrategyModeSelector:
             return
         
         try:
-            # Optional: Wait for in-flight signals (implementation-specific)
+            # Optional: Wait for in-flight usr_signals (implementation-specific)
             if wait_for_in_flight:
                 await asyncio.sleep(0.1)  # Placeholder for graceful shutdown
             

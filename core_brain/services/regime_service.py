@@ -141,7 +141,7 @@ class RegimeService:
         try:
             context = self.get_fractal_context()
             if context:
-                # Persistir en system_state bajo clave "regime_fractal_ledger"
+                # Persistir en sys_config bajo clave "regime_fractal_ledger"
                 ledger_entry = {
                     "trace_id": self.trace_id,
                     "timestamp": datetime.now().isoformat(),
@@ -154,7 +154,7 @@ class RegimeService:
                 }
                 
                 # Usar storage para persisten (esta es la SSOT)
-                self.storage.set_system_state(
+                self.storage.set_sys_config(
                     key="regime_fractal_ledger",
                     value=ledger_entry
                 )

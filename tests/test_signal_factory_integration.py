@@ -2,7 +2,7 @@ import pytest
 import asyncio
 import tempfile
 from core_brain.signal_factory import SignalFactory
-from core_brain.strategies.base_strategy import BaseStrategy
+from core_brain.usr_strategies.base_strategy import BaseStrategy
 ## No importar clases con anotaciones de tipo no resueltas para evitar NameError
 from data_vault.storage import StorageManager
 
@@ -42,11 +42,11 @@ def make_scan_results():
     }
 
 @pytest.mark.asyncio
-async def test_generate_signals_batch_creates_tasks():
+async def test_generate_usr_signals_batch_creates_tasks():
     # Usar StorageManager con base de datos en memoria
     storage = StorageManager(db_path=':memory:')
     from core_brain.confluence import MultiTimeframeConfluenceAnalyzer
-    from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
+    from core_brain.usr_strategies.trifecta_logic import TrifectaAnalyzer
     confluence = MultiTimeframeConfluenceAnalyzer(storage=storage, enabled=False)
     trifecta = TrifectaAnalyzer(storage=storage, config_data={"enabled": False})
     factory = SignalFactory(
@@ -57,15 +57,15 @@ async def test_generate_signals_batch_creates_tasks():
         mt5_connector=None
     )
     scan_results = make_scan_results()
-    signals = await factory.generate_signals_batch(scan_results)
-    assert len(signals) == 2
-    assert all(hasattr(s, 'symbol') for s in signals)
+    usr_signals = await factory.generate_usr_signals_batch(scan_results)
+    assert len(usr_signals) == 2
+    assert all(hasattr(s, 'symbol') for s in usr_signals)
 
 @pytest.mark.asyncio
-async def test_generate_signals_batch_no_tasks_logs_warning(caplog):
+async def test_generate_usr_signals_batch_no_tasks_logs_warning(caplog):
     storage = StorageManager(db_path=':memory:')
     from core_brain.confluence import MultiTimeframeConfluenceAnalyzer
-    from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
+    from core_brain.usr_strategies.trifecta_logic import TrifectaAnalyzer
     confluence = MultiTimeframeConfluenceAnalyzer(storage=storage, enabled=False)
     trifecta = TrifectaAnalyzer(storage=storage, config_data={"enabled": False})
     factory = SignalFactory(
@@ -78,6 +78,6 @@ async def test_generate_signals_batch_no_tasks_logs_warning(caplog):
     # scan_results sin datos válidos
     scan_results = {"EURUSD|M5": {"regime": None, "df": None, "symbol": None, "timeframe": "M5"}}
     with caplog.at_level("WARNING"):
-        signals = await factory.generate_signals_batch(scan_results)
-    assert len(signals) == 0
+        usr_signals = await factory.generate_usr_signals_batch(scan_results)
+    assert len(usr_signals) == 0
     assert any("No tasks created" in r for r in caplog.text.splitlines())

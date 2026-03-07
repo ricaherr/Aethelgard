@@ -422,7 +422,7 @@ class UITraderPageState:
     
     def __init__(self):
         self.elements: Dict[str, DrawingElement] = {}  # element_id -> DrawingElement
-        self.active_strategies: Dict[str, str] = {}  # asset -> strategy_name
+        self.active_usr_strategies: Dict[str, str] = {}  # asset -> strategy_name
         self.visible_layers: set = {
             LayerType.STRUCTURE,
             LayerType.LIQUIDITY,
@@ -431,7 +431,7 @@ class UITraderPageState:
         }
         self.timestamp = datetime.now()
         self.priority: str = "normal"  # "normal" o "high" para datos de Análisis
-        self.analysis_signals: Dict[str, Any] = {}  # Datos de análisis para pestaña Análisis
+        self.analysis_usr_signals: Dict[str, Any] = {}  # Datos de análisis para pestaña Análisis
         self.analysis_detected: bool = False  # Indica si hay datos detectados
     
     def add_element(self, element: DrawingElement) -> None:
@@ -464,12 +464,12 @@ class UITraderPageState:
         """Serializa estado a JSON para WebSocket/API."""
         return {
             "timestamp": self.timestamp.isoformat(),
-            "active_strategies": self.active_strategies,
+            "active_usr_strategies": self.active_usr_strategies,
             "visible_layers": [l.value for l in self.visible_layers],
             "elements": [e.to_dict() for e in self.get_visible_elements()],
             "element_count": len(self.elements),
             "priority": self.priority,
-            "analysis_signals": self.analysis_signals,
+            "analysis_usr_signals": self.analysis_usr_signals,
             "analysis_detected": self.analysis_detected
         }
 
@@ -517,7 +517,7 @@ class UIMappingService:
             f"[UI_MAPPING] EMITTING {event_type} | "
             f"priority={page_json.get('priority')} | "
             f"analysis_detected={page_json.get('analysis_detected')} | "
-            f"analysis_signals={len(page_json.get('analysis_signals', {}))} | "
+            f"analysis_usr_signals={len(page_json.get('analysis_usr_signals', {}))} | "
             f"elements={page_json.get('element_count')} | "
             f"payload_size={len(str(page_json))} bytes"
         )
@@ -536,7 +536,7 @@ class UIMappingService:
         Agrega elementos de estructura detectada (SEÑAL DE ANÁLISIS).
         
         EXEC-UI-VALIDATION-FIX: Esta es una señal de ANÁLISIS (prioridad alta).
-        Se registra en analysis_signals para mostrar en pestaña Análisis Y Trader.
+        Se registra en analysis_usr_signals para mostrar en pestaña Análisis Y Trader.
         
         Args:
             asset: Par de divisas
@@ -569,7 +569,7 @@ class UIMappingService:
             # EXEC-UI-VALIDATION-FIX: Marcar como ANÁLISIS - Prioridad Alta
             self.trader_page_state.priority = "high"
             self.trader_page_state.analysis_detected = True
-            self.trader_page_state.analysis_signals[f"{asset}_structure"] = {
+            self.trader_page_state.analysis_usr_signals[f"{asset}_structure"] = {
                 "type": "structure",
                 "asset": asset,
                 "structure_type": structure_type,
@@ -587,7 +587,7 @@ class UIMappingService:
         except Exception as e:
             logger.error(f"[UI_MAPPING] Error adding structure signal: {e}", exc_info=True)
     
-    def add_target_signals(self, asset: str, tp1: float, tp2: float, start_idx: int, end_idx: int) -> None:
+    def add_target_usr_signals(self, asset: str, tp1: float, tp2: float, start_idx: int, end_idx: int) -> None:
         """Agrega líneas de objetivos (TP1, TP2) - SEÑAL DE ANÁLISIS.
         
         EXEC-UI-VALIDATION-FIX: Prioridad alta, para Análisis y Trader.
@@ -606,7 +606,7 @@ class UIMappingService:
             # EXEC-UI-VALIDATION-FIX: Marcar como ANÁLISIS - Prioridad Alta
             self.trader_page_state.priority = "high"
             self.trader_page_state.analysis_detected = True
-            self.trader_page_state.analysis_signals[f"{asset}_targets"] = {
+            self.trader_page_state.analysis_usr_signals[f"{asset}_targets"] = {
                 "type": "targets",
                 "asset": asset,
                 "tp1": tp1,
@@ -620,7 +620,7 @@ class UIMappingService:
             )
         
         except Exception as e:
-            logger.error(f"[UI_MAPPING] Exception in add_target_signals({asset}): {str(e)}")
+            logger.error(f"[UI_MAPPING] Exception in add_target_usr_signals({asset}): {str(e)}")
     
     def add_stop_loss(self, asset: str, sl_price: float, risk_pips: float, start_idx: int, end_idx: int) -> None:
         """Agrega línea de Stop Loss - SEÑAL DE ANÁLISIS.
@@ -638,7 +638,7 @@ class UIMappingService:
             # EXEC-UI-VALIDATION-FIX: Marcar como ANÁLISIS - Prioridad Alta
             self.trader_page_state.priority = "high"
             self.trader_page_state.analysis_detected = True
-            self.trader_page_state.analysis_signals[f"{asset}_stop_loss"] = {
+            self.trader_page_state.analysis_usr_signals[f"{asset}_stop_loss"] = {
                 "type": "stop_loss",
                 "asset": asset,
                 "sl_price": sl_price,

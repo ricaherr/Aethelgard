@@ -9,7 +9,7 @@ Test Coverage:
 1. CircuitBreakerGate accepts SHADOW with valid 4 Pillars
 2. CircuitBreakerGate rejects SHADOW with invalid 4 Pillars
 3. Executor injects PAPER connector for SHADOW execution mode
-4. SignalConverter doesn't filter SHADOW signals
+4. SignalConverter doesn't filter SHADOW usr_signals
 5. End-to-end SHADOW → PAPER flow completes successfully
 """
 import logging
@@ -127,7 +127,7 @@ class TestShadowValidation:
         - Expected: AUTHORIZED (True, None)
         """
         # Arrange
-        self.storage.get_strategy_ranking.return_value = {
+        self.storage.get_usr_performance.return_value = {
             'strategy_id': TEST_STRATEGY_ID,
             'execution_mode': 'SHADOW',
             'win_rate': 0.55
@@ -159,7 +159,7 @@ class TestShadowValidation:
         - Expected: REJECTED (False, reason)
         """
         # Arrange
-        self.storage.get_strategy_ranking.return_value = {
+        self.storage.get_usr_performance.return_value = {
             'strategy_id': TEST_STRATEGY_ID,
             'execution_mode': 'SHADOW'
         }
@@ -187,7 +187,7 @@ class TestShadowValidation:
         - Expected: REJECTED (False, reason)
         """
         # Arrange
-        self.storage.get_strategy_ranking.return_value = {
+        self.storage.get_usr_performance.return_value = {
             'strategy_id': TEST_STRATEGY_ID,
             'execution_mode': 'SHADOW'
         }
@@ -215,7 +215,7 @@ class TestShadowValidation:
         - Expected: REJECTED (False, reason)
         """
         # Arrange
-        self.storage.get_strategy_ranking.return_value = {
+        self.storage.get_usr_performance.return_value = {
             'strategy_id': TEST_STRATEGY_ID,
             'execution_mode': 'SHADOW'
         }
@@ -243,7 +243,7 @@ class TestShadowValidation:
         - Expected: REJECTED (False, reason)
         """
         # Arrange
-        self.storage.get_strategy_ranking.return_value = {
+        self.storage.get_usr_performance.return_value = {
             'strategy_id': TEST_STRATEGY_ID,
             'execution_mode': 'SHADOW'
         }
@@ -271,7 +271,7 @@ class TestShadowValidation:
         - Expected: AUTHORIZED (default lenient behavior)
         """
         # Arrange
-        self.storage.get_strategy_ranking.return_value = {
+        self.storage.get_usr_performance.return_value = {
             'strategy_id': TEST_STRATEGY_ID,
             'execution_mode': 'SHADOW'
         }
@@ -297,7 +297,7 @@ class TestShadowValidation:
         - Expected: AUTHORIZED (True, None)
         """
         # Arrange
-        self.storage.get_strategy_ranking.return_value = {
+        self.storage.get_usr_performance.return_value = {
             'strategy_id': TEST_STRATEGY_ID,
             'execution_mode': 'LIVE'
         }
@@ -339,7 +339,7 @@ class TestShadowConnectorInjection:
         )
         
         storage = Mock()
-        storage.get_strategy_ranking.return_value = {
+        storage.get_usr_performance.return_value = {
             'strategy_id': TEST_STRATEGY_ID,
             'execution_mode': 'SHADOW'
         }
@@ -347,7 +347,7 @@ class TestShadowConnectorInjection:
         # Act: Simulate the logic that would happen in executor
         # (This is what Step 1.3 does in the actual executor)
         strategy_id = TEST_STRATEGY_ID
-        ranking = storage.get_strategy_ranking(strategy_id)
+        ranking = storage.get_usr_performance(strategy_id)
         if ranking and ranking.get('execution_mode') == 'SHADOW':
             signal.connector_type = ConnectorType.PAPER
         
@@ -374,14 +374,14 @@ class TestShadowConnectorInjection:
         )
         
         storage = Mock()
-        storage.get_strategy_ranking.return_value = {
+        storage.get_usr_performance.return_value = {
             'strategy_id': TEST_STRATEGY_ID,
             'execution_mode': 'LIVE'
         }
         
         # Act: Simulate the logic
         strategy_id = TEST_STRATEGY_ID
-        ranking = storage.get_strategy_ranking(strategy_id)
+        ranking = storage.get_usr_performance(strategy_id)
         if ranking and ranking.get('execution_mode') == 'SHADOW':
             signal.connector_type = ConnectorType.PAPER
         
@@ -390,11 +390,11 @@ class TestShadowConnectorInjection:
 
 
 class TestSignalConverterShadow:
-    """Test suite for Signal Converter handling of SHADOW signals."""
+    """Test suite for Signal Converter handling of SHADOW usr_signals."""
     
-    def test_converter_accepts_shadow_signals_from_engine(self):
+    def test_converter_accepts_shadow_usr_signals_from_engine(self):
         """
-        Test: SignalConverter doesn't filter SHADOW signals.
+        Test: SignalConverter doesn't filter SHADOW usr_signals.
         
         Scenario:
         - StrategySignal from UniversalStrategyEngine
@@ -423,9 +423,9 @@ class TestSignalConverterShadow:
         assert signal.signal_type == SignalType.BUY
         assert signal.confidence == 0.75
     
-    def test_converter_accepts_shadow_signals_from_python_class(self):
+    def test_converter_accepts_shadow_usr_signals_from_python_class(self):
         """
-        Test: SignalConverter accepts SHADOW signals from Python class strategies.
+        Test: SignalConverter accepts SHADOW usr_signals from Python class usr_strategies.
         
         Scenario:
         - Signal from Python strategy (.analyze method)
@@ -500,7 +500,7 @@ class TestEndToEndShadowFlow:
         )
         
         # Setup storage to return SHADOW strategy
-        storage.get_strategy_ranking.return_value = {
+        storage.get_usr_performance.return_value = {
             'strategy_id': TEST_STRATEGY_ID,
             'execution_mode': 'SHADOW'
         }

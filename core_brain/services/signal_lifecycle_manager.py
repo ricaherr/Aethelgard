@@ -19,9 +19,9 @@ class SignalLifecycleManager:
     Manages signal state transitions and persistence.
     
     Responsibilities:
-    - Register pending signals
-    - Update successful executions
-    - Update failed/rejected signals
+    - Register pending usr_signals
+    - Update successful usr_executions
+    - Update failed/rejected usr_signals
     - Persist position metadata
     """
     
@@ -60,8 +60,8 @@ class SignalLifecycleManager:
             "volume": signal.volume
         }
         
-        self.storage.update_system_state({
-            "pending_signals": [signal_record]
+        self.storage.update_sys_config({
+            "pending_usr_signals": [signal_record]
         })
         
         logger.debug(f"[SIGNAL_LIFECYCLE] Signal registered as PENDING: {signal.symbol}")
@@ -123,8 +123,8 @@ class SignalLifecycleManager:
             "connector_type": self._extract_value(signal.connector_type) if signal.connector_type else "UNKNOWN"
         }
         
-        self.storage.update_system_state({
-            "rejected_signals": [signal_record]
+        self.storage.update_sys_config({
+            "rejected_usr_signals": [signal_record]
         })
         logger.debug(f"[SIGNAL_LIFECYCLE] Signal updated to REJECTED: {signal.symbol}, Reason: {reason}")
     

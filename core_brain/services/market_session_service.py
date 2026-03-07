@@ -330,7 +330,7 @@ class MarketSessionService:
         }
         
         try:
-            self.storage.set_system_state("market_session_state", state)
+            self.storage.set_sys_config("market_session_state", state)
             logger.debug(f"[{self.trace_id}] Ledger sincronizado: {active_sessions}")
         except Exception as e:
             logger.error(f"[{self.trace_id}] Error sincronizando ledger: {e}")

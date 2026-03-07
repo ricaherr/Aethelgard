@@ -22,7 +22,7 @@ class EdgeTuner:
     based on real-world performance feedback.
     
     Governance Rules (Milestone 6.2):
-    - No metric weight in regime_configs can be below 10% or above 50%.
+    - No metric weight in sys_regime_configs can be below 10% or above 50%.
     - Weight changes are capped at 2% per learning event (smoothing) to prevent
       erratic behavior from a single losing trade (anti-overfitting).
     """
@@ -43,7 +43,7 @@ class EdgeTuner:
 
     def process_trade_feedback(self, trade_result: Dict[str, Any], predicted_score: float, regime: str) -> Dict[str, Any]:
         """
-        Calculates Prediction Error (Delta) and adjusts metric weights in regime_configs.
+        Calculates Prediction Error (Delta) and adjusts metric weights in sys_regime_configs.
         
         Delta = Result - Predicted_Score
         Where Result is:
@@ -142,7 +142,7 @@ class EdgeTuner:
 
     def _adjust_regime_weights(self, regime: str, delta: float, drift_type: str) -> tuple[bool, str]:
         """
-        Adjusts weights in regime_configs table, enforcing governance limits.
+        Adjusts weights in sys_regime_configs table, enforcing governance limits.
 
         Returns:
             Tuple of (adjustment_made: bool, governance_note: str).
@@ -194,17 +194,17 @@ class EdgeTuner:
         self.storage.update_dynamic_params(config)
         logger.info("[OK] Dynamic config updated in DB (SSOT)")
     
-    def _calculate_stats(self, trades: List[Dict]) -> Dict:
+    def _calculate_stats(self, usr_trades: List[Dict]) -> Dict:
         """
         Calculates performance statistics for parameter tuning.
         """
-        if not trades:
-            return {"total_trades": 0, "win_rate": 0.0}
+        if not usr_trades:
+            return {"total_usr_trades": 0, "win_rate": 0.0}
         
-        wins = [t for t in trades if t.get("is_win", False)]
-        losses = [t for t in trades if not t.get("is_win", True)]
+        wins = [t for t in usr_trades if t.get("is_win", False)]
+        losses = [t for t in usr_trades if not t.get("is_win", True)]
         
-        win_rate = len(wins) / len(trades) if trades else 0.0
+        win_rate = len(wins) / len(usr_trades) if usr_trades else 0.0
         
         avg_pips_win = np.mean([t.get("pips", 0) for t in wins]) if wins else 0.0
         avg_pips_loss = abs(np.mean([t.get("pips", 0) for t in losses])) if losses else 0.0
@@ -217,7 +217,7 @@ class EdgeTuner:
         consecutive_losses = 0
         consecutive_wins = 0
         
-        for trade in trades:
+        for trade in usr_trades:
             if not trade.get("is_win", True):
                 consecutive_losses += 1
                 if consecutive_wins > 0:
@@ -228,7 +228,7 @@ class EdgeTuner:
                     break
         
         return {
-            "total_trades": len(trades),
+            "total_usr_trades": len(usr_trades),
             "wins": len(wins),
             "losses": len(losses),
             "win_rate": win_rate,
@@ -239,7 +239,7 @@ class EdgeTuner:
             "consecutive_wins": consecutive_wins
         }
     
-    def adjust_parameters(self, limit_trades: int = 100) -> Optional[Dict]:
+    def adjust_parameters(self, limit_usr_trades: int = 100) -> Optional[Dict]:
         """
         Analyzes recent results and adjusts technical parameters automatically.
         """
@@ -248,13 +248,13 @@ class EdgeTuner:
         if not config.get("tuning_enabled", False):
             return {"skipped_reason": "tuning_disabled"}
         
-        trades = self.storage.get_recent_trades(limit=limit_trades)
-        min_trades = config.get("min_trades_for_tuning", 20)
+        usr_trades = self.storage.get_recent_usr_trades(limit=limit_usr_trades)
+        min_usr_trades = config.get("min_usr_trades_for_tuning", 20)
         
-        if len(trades) < min_trades:
+        if len(usr_trades) < min_usr_trades:
             return {"skipped_reason": "insufficient_data"}
         
-        stats = self._calculate_stats(trades)
+        stats = self._calculate_stats(usr_trades)
         
         # Save current params for comparison
         old_params = {
@@ -430,7 +430,7 @@ class EdgeTuner:
         logger.info(f"[EDGE_TUNER] Starting auto-calibration with {limit} records...")
         current_config = self._load_config()
 
-        states = self.storage.get_market_states(limit=limit, symbol=symbol)
+        states = self.storage.get_sys_market_pulses(limit=limit, symbol=symbol)
         if len(states) < 100:
             logger.warning(
                 f"[EDGE_TUNER] Only {len(states)} records available. "

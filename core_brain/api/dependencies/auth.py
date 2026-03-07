@@ -37,7 +37,7 @@ async def get_current_active_user(
     if token_data is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
+            detail="Could not validate sys_credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
     

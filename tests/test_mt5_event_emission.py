@@ -12,8 +12,8 @@ class TestMT5EventEmission:
     """Test MT5 connector event emission and reconciliation"""
 
     @patch('connectors.mt5_connector.mt5')
-    def test_reconcile_closed_trades_processes_historical_closures(self, mock_mt5):
-        """Test that reconcile_closed_trades queries MT5 history and processes closures"""
+    def test_reconcile_closed_usr_trades_processes_historical_closures(self, mock_mt5):
+        """Test that reconcile_closed_usr_trades queries MT5 history and processes closures"""
         # Given
         connector = MT5Connector()
         connector.is_connected = True
@@ -47,7 +47,7 @@ class TestMT5EventEmission:
         mock_listener = Mock()
 
         # When
-        connector.reconcile_closed_trades(mock_listener, hours_back=24)
+        connector.reconcile_closed_usr_trades(mock_listener, hours_back=24)
 
         # Then
         mock_mt5.history_deals_get.assert_called_once()
@@ -60,8 +60,8 @@ class TestMT5EventEmission:
         assert event.data.signal_id == "abc123"
 
     @patch('connectors.mt5_connector.mt5')
-    def test_reconcile_closed_trades_handles_no_positions(self, mock_mt5):
-        """Test reconciliation when no closed positions exist"""
+    def test_reconcile_closed_usr_trades_handles_no_usr_positions(self, mock_mt5):
+        """Test reconciliation when no closed usr_positions exist"""
         # Given
         connector = MT5Connector()
         connector.is_connected = True
@@ -70,14 +70,14 @@ class TestMT5EventEmission:
         mock_listener = Mock()
 
         # When
-        connector.reconcile_closed_trades(mock_listener, hours_back=24)
+        connector.reconcile_closed_usr_trades(mock_listener, hours_back=24)
 
         # Then
         mock_listener.handle_trade_closed_event.assert_not_called()
 
     @patch('connectors.mt5_connector.mt5')
-    def test_reconcile_closed_trades_idempotent_with_existing_trades(self, mock_mt5):
-        """Test that reconciliation doesn't duplicate already processed trades"""
+    def test_reconcile_closed_usr_trades_idempotent_with_existing_usr_trades(self, mock_mt5):
+        """Test that reconciliation doesn't duplicate already processed usr_trades"""
         # Given
         connector = MT5Connector()
         connector.is_connected = True
@@ -112,7 +112,7 @@ class TestMT5EventEmission:
         mock_listener.handle_trade_closed_event.return_value = True  # Already processed
 
         # When
-        connector.reconcile_closed_trades(mock_listener, hours_back=24)
+        connector.reconcile_closed_usr_trades(mock_listener, hours_back=24)
 
         # Then
         mock_listener.handle_trade_closed_event.assert_called_once()

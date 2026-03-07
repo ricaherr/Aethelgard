@@ -27,7 +27,7 @@ class CoherenceEvent:
 
 class CoherenceMonitor:
     """
-    Detects inconsistencies between signals and execution.
+    Detects inconsistencies between usr_signals and execution.
 
     Rules implemented:
     - EXECUTED without ticket/order_id (MT5)
@@ -47,11 +47,11 @@ class CoherenceMonitor:
 
     def run_once(self) -> List[CoherenceEvent]:
         events: List[CoherenceEvent] = []
-        recent_signals = self.storage.get_recent_signals(minutes=self.lookback_minutes)
+        recent_usr_signals = self.storage.get_recent_usr_signals(minutes=self.lookback_minutes)
 
         from datetime import timezone
         now = datetime.now(timezone.utc)
-        for sig in recent_signals:
+        for sig in recent_usr_signals:
             signal_id = sig.get("id")
             symbol = sig.get("symbol") or "UNKNOWN"
             status = (sig.get("status") or "").upper()

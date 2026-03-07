@@ -19,7 +19,7 @@ class StrategyModeAdapter:
     This maintains backward compatibility with MainOrchestrator
     while enabling the dual-motor architecture.
     
-    Implements generate_signals_batch() which is what MainOrchestrator uses.
+    Implements generate_usr_signals_batch() which is what MainOrchestrator uses.
     """
     
     def __init__(self, strategy_mode_selector: Any):
@@ -29,13 +29,13 @@ class StrategyModeAdapter:
         """
         self.selector = strategy_mode_selector
     
-    async def generate_signals_batch(
+    async def generate_usr_signals_batch(
         self,
         scan_results: Dict[str, Dict],
         trace_id: Optional[str] = None
     ) -> List[Any]:
         """
-        Generate signals from batch scan results (SignalFactory interface).
+        Generate usr_signals from batch scan results (SignalFactory interface).
         
         Delegates to StrategyModeSelector which routes to legacy or universal executor.
         
@@ -49,7 +49,7 @@ class StrategyModeAdapter:
         try:
             from models.signal import Signal, ConnectorType, SignalType, MarketRegime
             
-            signals = []
+            usr_signals = []
             
             for key, data in scan_results.items():
                 symbol = data.get("symbol")
@@ -92,12 +92,12 @@ class StrategyModeAdapter:
                             "regime": regime
                         }
                     )
-                    signals.append(signal)
+                    usr_signals.append(signal)
             
-            return signals
+            return usr_signals
         
         except Exception as e:
-            logger.error(f"Error in StrategyModeAdapter.generate_signals_batch(): {e}", exc_info=True)
+            logger.error(f"Error in StrategyModeAdapter.generate_usr_signals_batch(): {e}", exc_info=True)
             return []
     
     # Legacy method for backward compatibility

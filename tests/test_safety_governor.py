@@ -48,7 +48,7 @@ def _make_storage(max_r: float = 1.0, risk_per_trade: float = 0.01) -> MagicMock
         "max_r_per_trade": max_r,
     }
     mock.get_dynamic_params.return_value = {"risk_per_trade": risk_per_trade}
-    mock.get_system_state.return_value = {"lockdown_mode": False}
+    mock.get_sys_config.return_value = {"lockdown_mode": False}
     mock.get_asset_profile.return_value = {
         "contract_size": 100000,
         "lot_step": 0.01,
@@ -61,7 +61,7 @@ def _make_connector(balance: float = 10000.0) -> MagicMock:
     """Mock broker connector with configurable account balance."""
     mock = MagicMock()
     mock.get_account_balance.return_value = balance
-    mock.get_open_positions.return_value = []
+    mock.get_open_usr_positions.return_value = []
 
     symbol_info = MagicMock()
     symbol_info.trade_contract_size = 100000
@@ -83,7 +83,7 @@ def _make_risk_manager(storage: MagicMock) -> "RiskManager":
 # ─── HU 4.4: Veto by R-Unit ───────────────────────────────────────────────────
 
 class TestSafetyGovernorVeto:
-    """Verify that can_take_new_trade() rejects orders exceeding the R limit."""
+    """Verify that can_take_new_trade() rejects usr_orders exceeding the R limit."""
 
     def test_veto_when_r_exceeds_limit(self):
         """

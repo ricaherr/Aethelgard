@@ -22,7 +22,7 @@ class SignalConflictAnalyzer:
     - Agrupar regímenes por símbolo (excluyendo timeframe primario)
     - Aplicar lógica de confluencia: si 2+ timeframes están en TREND, 
       amplificar la señal
-    - Solo modifica signals que pasan validación fundamental
+    - Solo modifica usr_signals que pasan validación fundamental
     """
     
     def __init__(self, confluence_analyzer: Any):
@@ -36,7 +36,7 @@ class SignalConflictAnalyzer:
     
     def apply_confluence(
         self,
-        signals: List[Signal],
+        usr_signals: List[Signal],
         scan_results: Dict[str, Any]
     ) -> List[Signal]:
         """
@@ -46,7 +46,7 @@ class SignalConflictAnalyzer:
         Si hay 2+ timeframes en TREND, amplifica confianza.
         
         Args:
-            signals: Lista de señales procesadas
+            usr_signals: Lista de señales procesadas
             scan_results: Datos de escaneo con market_data[symbol][timeframe].regime
         
         Returns:
@@ -54,12 +54,12 @@ class SignalConflictAnalyzer:
         """
         if not scan_results or not scan_results.get('market_data'):
             logger.debug("[CONFLUENCE] No market_data in scan_results")
-            return signals
+            return usr_signals
         
         market_data = scan_results['market_data']
-        symbol_regimes = self._group_regimes_by_symbol(market_data, signals)
+        symbol_regimes = self._group_regimes_by_symbol(market_data, usr_signals)
         
-        for signal in signals:
+        for signal in usr_signals:
             if signal.symbol not in symbol_regimes:
                 continue
             
@@ -87,12 +87,12 @@ class SignalConflictAnalyzer:
                 logger.warning(f"[CONFLUENCE] Error analyzing {signal.symbol}: {e}")
                 # Mantener score original si hay error
         
-        return signals
+        return usr_signals
     
     @staticmethod
     def _group_regimes_by_symbol(
         market_data: Dict[str, Dict[str, Any]],
-        signals: List[Signal]
+        usr_signals: List[Signal]
     ) -> Dict[str, List[MarketRegime]]:
         """
         Agrupa regímenes por símbolo, excluyendo timeframe primario de cada signal.
@@ -104,13 +104,13 @@ class SignalConflictAnalyzer:
         
         Args:
             market_data: {symbol: {timeframe: {regime, ...}}}
-            signals: Lista de señales (para obtener timeframe primario)
+            usr_signals: Lista de señales (para obtener timeframe primario)
         
         Returns:
             {symbol: [MarketRegime, ...]}
         """
         symbol_regimes = defaultdict(list)
-        primary_timeframes = {signal.symbol: signal.timeframe for signal in signals}
+        primary_timeframes = {signal.symbol: signal.timeframe for signal in usr_signals}
         
         for symbol, timeframes_data in market_data.items():
             if not isinstance(timeframes_data, dict):

@@ -3,7 +3,7 @@ Test Suite: Executor + CircuitBreakerGate Integration (PRIORIDAD 1 - REFACTORED)
 Testing: Order blocking when strategy is QUARANTINE/SHADOW, order execution when LIVE
 
 Requirement: Executor delegates strategy authorization to CircuitBreakerGate.
-Gate blocks orders for QUARANTINE/SHADOW, allows for LIVE strategies.
+Gate blocks usr_orders for QUARANTINE/SHADOW, allows for LIVE usr_strategies.
 """
 import pytest
 from unittest.mock import MagicMock, AsyncMock
@@ -78,7 +78,7 @@ def mock_circuit_breaker_gate() -> MagicMock:
 def mock_connector() -> MagicMock:
     """Mock Connector for order execution."""
     connector = MagicMock()
-    connector.send_orders = AsyncMock(
+    connector.send_usr_orders = AsyncMock(
         return_value={"order_id": MOCK_ORDER_ID, "status": MOCK_ORDER_STATUS_SUCCESS}
     )
     return connector
@@ -116,7 +116,7 @@ def _create_test_signal(
     strategy_id: str = TEST_STRATEGY_LIVE_ID,
     connector: ConnectorType = ConnectorType.PAPER
 ) -> Signal:
-    """Factory for test signals (SSOT: no hardcoded values)."""
+    """Factory for test usr_signals (SSOT: no hardcoded values)."""
     return Signal(
         symbol=symbol,
         strategy_id=strategy_id,
@@ -211,22 +211,22 @@ class TestCircuitBreakerGateIntegration:
         assert call_args[1]['strategy_id'] is None
 
     @pytest.mark.asyncio
-    async def test_multiple_signals_blocked_same_strategy(
+    async def test_multiple_usr_signals_blocked_same_strategy(
         self, executor_with_gate: OrderExecutor, mock_circuit_breaker_gate: MagicMock
     ) -> None:
-        """GIVEN: Strategy blocked, WHEN: Multiple signals arrive, THEN: All blocked."""
+        """GIVEN: Strategy blocked, WHEN: Multiple usr_signals arrive, THEN: All blocked."""
         mock_circuit_breaker_gate.check_strategy_authorization.return_value = (
             False,
             "CIRCUIT_BREAKER_BLOCKED"
         )
         
-        signals = [
+        usr_signals = [
             _create_test_signal(strategy_id=TEST_STRATEGY_BLOCKED_ID, symbol="EURUSD"),
             _create_test_signal(strategy_id=TEST_STRATEGY_BLOCKED_ID, symbol="GBPUSD"),
         ]
         
         results = []
-        for sig in signals:
+        for sig in usr_signals:
             result = await executor_with_gate.execute_signal(sig)
             results.append(result)
         

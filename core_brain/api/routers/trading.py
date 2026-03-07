@@ -38,29 +38,29 @@ async def _broadcast_thought(message: str, module: str = "TRADING", level: str =
     await broadcast_thought(message, module=module, level=level, metadata=metadata)
 
 
-@router.get("/signals")
-async def get_signals(
+@router.get("/usr_signals")
+async def get_usr_signals(
     limit: int = 100, 
     minutes: int = 10080,
     symbols: str = None,  # Comma-separated: "EURUSD,GBPUSD"
     timeframes: str = None,  # Comma-separated: "M1,M5"
     regimes: str = None,  # Comma-separated: "TREND,RANGE"
-    strategies: str = None,  # Comma-separated: "Trifecta,Oliver Velez"
-    status: str = 'PENDING,EXECUTED,EXPIRED',  # Default to recent signals
+    usr_strategies: str = None,  # Comma-separated: "Trifecta,Oliver Velez"
+    status: str = 'PENDING,EXECUTED,EXPIRED',  # Default to recent usr_signals
     token: TokenPayload = Depends(get_current_active_user)
 ) -> Dict[str, Any]:
     """
-    Get recent signals from database with optional filters
-    Includes live trade status and P/L for executed signals.
+    Get recent usr_signals from database with optional filters
+    Includes live trade status and P/L for executed usr_signals.
     """
     try:
-        logger.info(f"GET /api/signals: limit={limit}, minutes={minutes}, symbols={symbols}, status={status}")
+        logger.info(f"GET /api/usr_signals: limit={limit}, minutes={minutes}, symbols={symbols}, status={status}")
         
         storage = _get_storage()
         tenant_id = token.tid
         
-        # Get signals from DB with SQL-level filtering
-        all_signals = storage.get_recent_signals(
+        # Get usr_signals from DB with SQL-level filtering
+        all_usr_signals = storage.get_recent_usr_signals(
             minutes=minutes, 
             limit=limit,
             symbol=symbols,
@@ -69,10 +69,10 @@ async def get_signals(
         )
         
         # Obtener estados de mercado para flag has_chart
-        market_state = storage.get_all_market_states() or {}
+        sys_market_pulse = storage.get_all_sys_market_pulses() or {}
         
         # Filter results in memory for metadata-based fields
-        filtered = all_signals
+        filtered = all_usr_signals
         
         # Regime filter
         if regimes and regimes.strip():
@@ -84,8 +84,8 @@ async def get_signals(
                 ]
         
         # Strategy filter
-        if strategies and strategies.strip():
-            strategy_list = [s.strip() for s in strategies.split(',') if s.strip()]
+        if usr_strategies and usr_strategies.strip():
+            strategy_list = [s.strip() for s in usr_strategies.split(',') if s.strip()]
             if strategy_list:
                 filtered = [
                     sig for sig in filtered 
@@ -100,12 +100,12 @@ async def get_signals(
         has_trace_set = set()
         if signal_ids:
             placeholders = ','.join(['?'] * len(signal_ids))
-            trace_query = f"SELECT DISTINCT signal_id FROM signal_pipeline WHERE signal_id IN ({placeholders})"
+            trace_query = f"SELECT DISTINCT signal_id FROM usr_signal_pipeline WHERE signal_id IN ({placeholders})"
             trace_results = storage.execute_query(trace_query, tuple(signal_ids))
             has_trace_set = {r['signal_id'] for r in trace_results}
 
-        # Format signals for frontend
-        formatted_signals = []
+        # Format usr_signals for frontend
+        formatted_usr_signals = []
         for signal in filtered:
             sig_id = signal.get('id')
             sig_symbol = signal.get('symbol')
@@ -126,11 +126,11 @@ async def get_signals(
                 'timestamp': signal.get('timestamp'),
                 'status': sig_status,
                 'has_trace': sig_id in has_trace_set,
-                'has_chart': sig_symbol in market_state,
+                'has_chart': sig_symbol in sys_market_pulse,
                 'confluences': signal.get('metadata', {}).get('confluences', []) if isinstance(signal.get('metadata'), dict) else []
             }
             
-            # Augmentar con info de trades si están EXECUTED
+            # Augmentar con info de usr_trades si están EXECUTED
             if sig_status == 'EXECUTED':
                 # Buscar en trade_results
                 result = storage.get_trade_result_by_signal_id(sig_id)
@@ -142,19 +142,19 @@ async def get_signals(
                 else:
                     formatted['live_status'] = 'OPEN'
             
-            formatted_signals.append(formatted)
+            formatted_usr_signals.append(formatted)
         
         return {
-            "signals": formatted_signals, 
-            "count": len(formatted_signals)
+            "usr_signals": formatted_usr_signals, 
+            "count": len(formatted_usr_signals)
         }
         
     except Exception as e:
-        logger.error(f"Error in /api/signals: {e}")
+        logger.error(f"Error in /api/usr_signals: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/signals/execute")
+@router.post("/usr_signals/execute")
 async def execute_signal_manual(data: dict, token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """
     Manually execute a signal by ID (triggered from UI Execute button).
@@ -279,19 +279,19 @@ async def execute_signal_manual(data: dict, token: TokenPayload = Depends(get_cu
         }
 
 
-@router.get("/positions/open")
-async def get_open_positions(token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
+@router.get("/usr_positions/open")
+async def get_open_usr_positions(token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """
-    Get open positions with risk metadata.
-    Returns positions with initial_risk_usd, r_multiple, asset_type.
+    Get open usr_positions with risk metadata.
+    Returns usr_positions with initial_risk_usd, r_multiple, asset_type.
     Delegates to TradingService (Micro-ETI 3.1).
     """
     try:
         trading_service = _get_trading_service()
-        return await trading_service.get_open_positions(tenant_id=token.tid)
+        return await trading_service.get_open_usr_positions(tenant_id=token.tid)
     except Exception as e:
-        logger.error(f"Error getting open positions: {e}")
-        return {"positions": [], "total_risk_usd": 0.0, "count": 0}
+        logger.error(f"Error getting open usr_positions: {e}")
+        return {"usr_positions": [], "total_risk_usd": 0.0, "count": 0}
 
 
 @router.get("/edge/history")
@@ -387,7 +387,7 @@ async def toggle_auto_trading(request: Request, token: TokenPayload = Depends(ge
         tenant_id = token.tid
         storage = TenantDBFactory.get_storage(tenant_id)
         # user_id "default" scoped to tenant DB (preferences row per tenant)
-        success = storage.update_user_preferences("default", {"auto_trading_enabled": enabled})
+        success = storage.update_usr_preferences("default", {"auto_trading_enabled": enabled})
         if success:
             status = "enabled" if enabled else "disabled"
             logger.info(f"Auto-trading {status} for tenant {tenant_id}")
@@ -399,13 +399,13 @@ async def toggle_auto_trading(request: Request, token: TokenPayload = Depends(ge
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/strategies/library")
-async def get_strategies_library(token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
-    """Returns the strategy library: registered strategies from DB + registry (SSOT) + educational catalog."""
+@router.get("/usr_strategies/library")
+async def get_usr_strategies_library(token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
+    """Returns the strategy library: registered usr_strategies from DB + registry (SSOT) + educational catalog."""
     try:
         # SECURITY: Get tenant-isolated storage using TenantDBFactory
         storage = TenantDBFactory.get_storage(token.tid)
-        rankings = storage.get_all_strategy_rankings()
+        rankings = storage.get_all_usr_performances()
 
         registered = [
             {
@@ -415,15 +415,15 @@ async def get_strategies_library(token: TokenPayload = Depends(get_current_activ
                 "profit_factor": r.get("profit_factor", 0.0),
                 "win_rate": r.get("win_rate", 0.0),
                 "sharpe_ratio": r.get("sharpe_ratio", 0.0),
-                "total_trades": r.get("total_trades", 0),
+                "total_usr_trades": r.get("total_usr_trades", 0),
                 "drawdown_max": r.get("drawdown_max", 0.0),
             }
             for r in rankings
         ]
 
-        # Registry: Strategy metadata from DB (SSOT: strategies table)
+        # Registry: Strategy metadata from DB (SSOT: usr_strategies table)
         # Trace_ID: SSOT-CORRECTION-REGISTRY-V2
-        all_strategies = storage.get_all_strategies()
+        all_usr_strategies = storage.get_all_usr_strategies()
         registry = [
             {
                 "id": s.get("class_id"),
@@ -432,9 +432,9 @@ async def get_strategies_library(token: TokenPayload = Depends(get_current_activ
                 "affinity_scores": s.get("affinity_scores") or {},
                 "market_whitelist": s.get("market_whitelist") or [],
             }
-            for s in all_strategies
+            for s in all_usr_strategies
         ]
-        logger.info(f"Loaded {len(registry)} strategies from registry (SSOT: DB strategies table)")
+        logger.info(f"Loaded {len(registry)} usr_strategies from registry (SSOT: DB usr_strategies table)")
 
         # Educational catalog (static reference data)
         educational = [
@@ -460,5 +460,5 @@ async def get_strategies_library(token: TokenPayload = Depends(get_current_activ
 
         return {"registered": registered, "registry": registry, "educational": educational}
     except Exception as e:
-        logger.error(f"Error getting strategies library: {e}")
+        logger.error(f"Error getting usr_strategies library: {e}")
         raise HTTPException(status_code=500, detail=str(e))

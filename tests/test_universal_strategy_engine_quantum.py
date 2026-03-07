@@ -10,12 +10,12 @@ Validación que el motor:
 5. NO instancia OliverVelezStrategy
 
 Pruebas:
-- test_registry_loader_loads_strategies
+- test_registry_loader_loads_usr_strategies
 - test_readiness_validator_blocks_pending
 - test_execute_from_registry_finds_strategy
 - test_execute_from_registry_blocks_logic_pending
 - test_execute_from_registry_not_found
-- test_ready_strategies_returns_only_ready
+- test_ready_usr_strategies_returns_only_ready
 """
 import pytest
 import json
@@ -48,7 +48,7 @@ def mock_storage():
     storage = Mock()
     
     # Strategy data from BD
-    strategies_from_db = [
+    usr_strategies_from_db = [
         {
             "class_id": "MOM_BIAS_0001",
             "strategy_id": "MOM_BIAS_0001",
@@ -87,12 +87,12 @@ def mock_storage():
         },
     ]
     
-    storage.get_all_strategies.return_value = strategies_from_db
+    storage.get_all_usr_strategies.return_value = usr_strategies_from_db
     storage.get_strategy.side_effect = lambda strategy_id: next(
-        (s for s in strategies_from_db if s.get("class_id") == strategy_id), None
+        (s for s in usr_strategies_from_db if s.get("class_id") == strategy_id), None
     )
-    storage.get_strategies_by_readiness.side_effect = lambda readiness: [
-        s for s in strategies_from_db if s.get("readiness") == readiness
+    storage.get_usr_strategies_by_readiness.side_effect = lambda readiness: [
+        s for s in usr_strategies_from_db if s.get("readiness") == readiness
     ]
     
     return storage
@@ -101,17 +101,17 @@ def mock_storage():
 class TestRegistryLoader:
     """Tests for RegistryLoader class (BBDD-based, not JSON file)."""
     
-    def test_registry_loader_loads_strategies_from_bd(self, mock_storage):
+    def test_registry_loader_loads_usr_strategies_from_bd(self, mock_storage):
         """Verifica que RegistryLoader carga estrategias DESDE BD, no de JSON."""
         loader = RegistryLoader(mock_storage)
         registry = loader.load_registry()
         
         assert registry is not None
-        assert "strategies" in registry
-        assert len(registry["strategies"]) == 4  # 4 estrategias en BD mock
+        assert "usr_strategies" in registry
+        assert len(registry["usr_strategies"]) == 4  # 4 estrategias en BD mock
         
         # Verificar que hay estrategias READY_FOR_ENGINE
-        strategy_ids = [s.get("class_id") for s in registry["strategies"]]
+        strategy_ids = [s.get("class_id") for s in registry["usr_strategies"]]
         assert "MOM_BIAS_0001" in strategy_ids
         assert "LIQ_SWEEP_0001" in strategy_ids
         assert "STRUC_SHIFT_0001" in strategy_ids
@@ -125,8 +125,8 @@ class TestRegistryLoader:
         
         # Debe retornar la misma instancia (cache)
         assert registry1 is registry2
-        # Verificar que solo llamó una vez a get_all_strategies (por el cache)
-        assert mock_storage.get_all_strategies.call_count == 1
+        # Verificar que solo llamó una vez a get_all_usr_strategies (por el cache)
+        assert mock_storage.get_all_usr_strategies.call_count == 1
     
     def test_get_strategy_metadata_found(self, mock_storage):
         """Verifica que se puede obtener metadata de una estrategia conocida."""
@@ -147,23 +147,23 @@ class TestRegistryLoader:
         
         assert metadata is None
     
-    def test_get_ready_strategies_filters_by_readiness(self, mock_storage):
-        """Verifica que get_ready_strategies retorna solo READY_FOR_ENGINE desde BD."""
+    def test_get_ready_usr_strategies_filters_by_readiness(self, mock_storage):
+        """Verifica que get_ready_usr_strategies retorna solo READY_FOR_ENGINE desde BD."""
         loader = RegistryLoader(mock_storage)
         
-        ready_strategies = loader.get_ready_strategies()
+        ready_usr_strategies = loader.get_ready_usr_strategies()
         
         # Debe haber 3 estrategias READY_FOR_ENGINE en el mock
-        assert len(ready_strategies) == 3
+        assert len(ready_usr_strategies) == 3
         
         # Verificar que son las correctas
-        ready_ids = [s.get("class_id") for s in ready_strategies]
+        ready_ids = [s.get("class_id") for s in ready_usr_strategies]
         assert "MOM_BIAS_0001" in ready_ids
         assert "LIQ_SWEEP_0001" in ready_ids
         assert "STRUC_SHIFT_0001" in ready_ids
         
         # Verificar que NO hay LOGIC_PENDING
-        for strategy in ready_strategies:
+        for strategy in ready_usr_strategies:
             assert strategy.get("readiness") == "READY_FOR_ENGINE"
 
 
@@ -285,23 +285,23 @@ class TestUniversalStrategyEngineQuantum:
         
         assert result.execution_mode == ExecutionMode.NOT_FOUND
     
-    def test_get_ready_strategies_returns_only_ready(self, mock_indicator_provider, mock_storage):
-        """Verifica que get_ready_strategies retorna solo READY_FOR_ENGINE desde BD."""
+    def test_get_ready_usr_strategies_returns_only_ready(self, mock_indicator_provider, mock_storage):
+        """Verifica que get_ready_usr_strategies retorna solo READY_FOR_ENGINE desde BD."""
         engine = UniversalStrategyEngine(mock_indicator_provider, mock_storage)
         
-        ready_strategies = engine.get_ready_strategies()
+        ready_usr_strategies = engine.get_ready_usr_strategies()
         
         # Debe haber 3 estrategias READY_FOR_ENGINE
-        assert len(ready_strategies) == 3
+        assert len(ready_usr_strategies) == 3
         
         # Verificar que son las correctas
-        ready_ids = [s.get("class_id") for s in ready_strategies]
+        ready_ids = [s.get("class_id") for s in ready_usr_strategies]
         assert "MOM_BIAS_0001" in ready_ids
         assert "LIQ_SWEEP_0001" in ready_ids
         assert "STRUC_SHIFT_0001" in ready_ids
         
         # Verificar que NO hay LOGIC_PENDING
-        for strategy in ready_strategies:
+        for strategy in ready_usr_strategies:
             assert strategy.get("readiness") == "READY_FOR_ENGINE"
     
     def test_registry_loader_uses_storage_not_json(self, mock_indicator_provider, mock_storage):
@@ -315,13 +315,13 @@ class TestUniversalStrategyEngineQuantum:
         assert hasattr(loader, 'storage')
         assert loader.storage is mock_storage
         
-        # Llamar load_registry debe invocar storage.get_all_strategies()
+        # Llamar load_registry debe invocar storage.get_all_usr_strategies()
         registry = loader.load_registry()
-        mock_storage.get_all_strategies.assert_called()
+        mock_storage.get_all_usr_strategies.assert_called()
         
         # Verificar que load_registry retorna estrategias desde BD
-        assert "strategies" in registry
-        assert len(registry["strategies"]) > 0
+        assert "usr_strategies" in registry
+        assert len(registry["usr_strategies"]) > 0
 
 
 class TestNoOliverVelezHardcoding:
@@ -349,18 +349,18 @@ class TestNoOliverVelezHardcoding:
         registry = loader.load_registry()
         
         # Contar estrategias en Registry (obtenidas de BD)
-        num_strategies = len(registry.get("strategies", []))
+        num_usr_strategies = len(registry.get("usr_strategies", []))
         
         # Verificar que es > 0
-        assert num_strategies > 0
+        assert num_usr_strategies > 0
         
         # Verificar que cada estrategia tiene readiness definido
-        for strategy in registry["strategies"]:
+        for strategy in registry["usr_strategies"]:
             assert "readiness" in strategy
             assert strategy["readiness"] in ["READY_FOR_ENGINE", "LOGIC_PENDING"]
         
         # Verificar que StorageManager fue llamado (no JSON fue leído)
-        mock_storage.get_all_strategies.assert_called_once()
+        mock_storage.get_all_usr_strategies.assert_called_once()
 
 
 if __name__ == "__main__":

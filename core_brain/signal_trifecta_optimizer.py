@@ -41,7 +41,7 @@ class SignalTrifectaOptimizer:
     
     def optimize(
         self,
-        signals: List[Signal],
+        usr_signals: List[Signal],
         scan_results: Dict[str, Any]
     ) -> List[Signal]:
         """
@@ -57,7 +57,7 @@ class SignalTrifectaOptimizer:
             e. Filtrar: si score < 60 → eliminar
         
         Args:
-            signals: Lista de señales
+            usr_signals: Lista de señales
             scan_results: {market_data: {symbol: {timeframe: {...}}}}
         
         Returns:
@@ -65,24 +65,24 @@ class SignalTrifectaOptimizer:
         """
         if not scan_results or not scan_results.get('market_data'):
             logger.debug("[TRIFECTA] No market_data in scan_results")
-            return signals
+            return usr_signals
         
         market_data = scan_results['market_data']
         symbol_data = self._build_symbol_data(market_data)
         
-        optimized_signals = []
+        optimized_usr_signals = []
         
-        for signal in signals:
+        for signal in usr_signals:
             # Solo aplicar trifecta a estrategia "oliver"
             strategy_id = signal.metadata.get('strategy_id', 'unknown')
             
             if strategy_id != 'oliver':
-                optimized_signals.append(signal)
+                optimized_usr_signals.append(signal)
                 continue
             
             if signal.symbol not in symbol_data:
                 logger.debug(f"[TRIFECTA] No market data for {signal.symbol}")
-                optimized_signals.append(signal)
+                optimized_usr_signals.append(signal)
                 continue
             
             # Obtener datos trifecta
@@ -93,7 +93,7 @@ class SignalTrifectaOptimizer:
             
             if not trifecta_result:
                 logger.warning(f"[TRIFECTA] Failed to analyze {signal.symbol}")
-                optimized_signals.append(signal)
+                optimized_usr_signals.append(signal)
                 continue
             
             # Calcular score final
@@ -123,9 +123,9 @@ class SignalTrifectaOptimizer:
                 f"{original_score:.2f} + {trifecta_score:.2f} → {final_score:.2f}"
             )
             
-            optimized_signals.append(signal)
+            optimized_usr_signals.append(signal)
         
-        return optimized_signals
+        return optimized_usr_signals
     
     @staticmethod
     def _build_symbol_data(market_data: Dict[str, Dict[str, Any]]) -> Dict[str, Dict]:

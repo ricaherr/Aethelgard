@@ -1,6 +1,6 @@
 """
 Test Suite for Closing Monitor (Feedback Loop)
-TDD: Tests first approach for monitoring closed trades
+TDD: Tests first approach for monitoring closed usr_trades
 """
 import pytest
 import asyncio
@@ -25,10 +25,10 @@ class TestClosingMonitor:
     
     @pytest.fixture
     def mock_mt5_connector(self):
-        """Mock MT5 connector with closed orders"""
+        """Mock MT5 connector with closed usr_orders"""
         connector = Mock()
         # Will be configured per test
-        connector.get_closed_positions = Mock(return_value=[])
+        connector.get_closed_usr_positions = Mock(return_value=[])
         return connector
     
     @pytest.fixture
@@ -44,14 +44,14 @@ class TestClosingMonitor:
         assert monitor.connectors is not None
         assert monitor.is_running is False
     
-    def test_check_closed_positions_empty(self, monitor, storage):
-        """Test checking closed positions when none exist"""
-        # Setup: No executed signals
-        result = monitor.check_closed_positions()
+    def test_check_closed_usr_positions_empty(self, monitor, storage):
+        """Test checking closed usr_positions when none exist"""
+        # Setup: No executed usr_signals
+        result = monitor.check_closed_usr_positions()
         assert result == 0  # No updates
     
-    def test_check_closed_positions_updates_db(self, monitor, storage, mock_mt5_connector):
-        """Test that closed positions update the database"""
+    def test_check_closed_usr_positions_updates_db(self, monitor, storage, mock_mt5_connector):
+        """Test that closed usr_positions update the database"""
         # Setup: Create executed signal
         signal_id = storage.save_signal(Signal(
             symbol='EURUSD',
@@ -66,12 +66,12 @@ class TestClosingMonitor:
         # Update signal to EXECUTED status with ticket
         storage.update_signal_status(signal_id, 'EXECUTED', {'ticket': 123456})
 
-        # Verify order_id persisted in signals table
+        # Verify order_id persisted in usr_signals table
         updated = storage.get_signal_by_id(signal_id)
         assert updated['order_id'] == "123456"
         
         # Configure mock to return a closed position matching our signal
-        mock_mt5_connector.get_closed_positions.return_value = [
+        mock_mt5_connector.get_closed_usr_positions.return_value = [
             {
                 'ticket': 123456,
                 'symbol': 'EURUSD',
@@ -84,14 +84,14 @@ class TestClosingMonitor:
         ]
         
         # Execute monitor check
-        updates = monitor.check_closed_positions()
+        updates = monitor.check_closed_usr_positions()
         
         # Verify update occurred
         assert updates == 1
         
         # Verify database was updated
-        signals = storage.get_signals()
-        updated_signal = next(s for s in signals if s['id'] == signal_id)
+        usr_signals = storage.get_usr_signals()
+        updated_signal = next(s for s in usr_signals if s['id'] == signal_id)
         assert updated_signal['status'] == 'CLOSED'
     
     def test_calculate_pips_correctly(self, monitor):
@@ -130,10 +130,10 @@ class TestClosingMonitor:
         )
         
         # Verify trade was saved
-        trades = storage.get_recent_trades()
-        assert len(trades) == 1
-        assert trades[0]['is_win'] is True
-        assert trades[0]['profit'] == 50.0
+        usr_trades = storage.get_recent_usr_trades()
+        assert len(usr_trades) == 1
+        assert usr_trades[0]['is_win'] is True
+        assert usr_trades[0]['profit'] == 50.0
     
     def test_update_trade_result_loss(self, monitor, storage):
         """Test updating a losing trade"""
@@ -156,10 +156,10 @@ class TestClosingMonitor:
         )
         
         # Verify trade was saved
-        trades = storage.get_recent_trades()
-        assert len(trades) == 1
-        assert trades[0]['is_win'] is False
-        assert trades[0]['profit'] == -50.0
+        usr_trades = storage.get_recent_usr_trades()
+        assert len(usr_trades) == 1
+        assert usr_trades[0]['is_win'] is False
+        assert usr_trades[0]['profit'] == -50.0
     
     @pytest.mark.asyncio
     async def test_run_monitoring_loop(self, monitor):
@@ -180,8 +180,8 @@ class TestClosingMonitor:
     def test_connector_failure_handling(self, monitor, mock_mt5_connector):
         """Test graceful handling of connector failures"""
         # Simulate connector error
-        mock_mt5_connector.get_closed_positions.side_effect = Exception("Connection lost")
+        mock_mt5_connector.get_closed_usr_positions.side_effect = Exception("Connection lost")
         
         # Should not raise, should log error
-        result = monitor.check_closed_positions()
+        result = monitor.check_closed_usr_positions()
         assert result == 0

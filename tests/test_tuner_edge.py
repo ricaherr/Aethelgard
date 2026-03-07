@@ -17,7 +17,7 @@ INITIAL_CONFIG = {
     "sma20_proximity_percent": 1.5,
     "min_signal_score": 60,
     "tuning_enabled": True,
-    "min_trades_for_tuning": 10,
+    "min_usr_trades_for_tuning": 10,
     "target_win_rate": 0.55,
     "aggressive_mode_threshold": 0.65,
     "conservative_mode_threshold": 0.45,
@@ -48,7 +48,7 @@ def test_tuner_becomes_conservative_after_losing_streak(temp_db, edge_tuner):
     - Subir adx_threshold (25 → 30+) para exigir tendencias más fuertes
     - Reducir sma20_proximity_percent (1.5 → 1.0) para ser más estricto en pullbacks
     """
-    # === ARRANGE: Simular 10 trades perdedores consecutivos ===
+    # === ARRANGE: Simular 10 usr_trades perdedores consecutivos ===
     for i in range(10):
         trade = {
             "signal_id": f"signal_{i}",
@@ -106,7 +106,7 @@ def test_tuner_becomes_conservative_after_losing_streak(temp_db, edge_tuner):
 
 def test_tuner_becomes_aggressive_after_winning_streak(temp_db, edge_tuner):
     """
-    Tras 15 trades ganadores con win_rate > 65%, el sistema debe:
+    Tras 15 usr_trades ganadores con win_rate > 65%, el sistema debe:
     - Bajar elephant_atr_multiplier (0.5 → 0.2) para capturar más señales
     - Bajar adx_threshold (30 → 20) para operar en tendencias moderadas
     - Aumentar sma20_proximity_percent (1.0 → 2.0) para dar más margen
@@ -155,9 +155,9 @@ def test_tuner_becomes_aggressive_after_winning_streak(temp_db, edge_tuner):
     assert adjustment["stats"]["win_rate"] >= 0.65
 
 
-def test_tuner_requires_minimum_trades(temp_db, edge_tuner):
+def test_tuner_requires_minimum_usr_trades(temp_db, edge_tuner):
     """
-    El tuner NO debe ajustar parámetros si hay menos de min_trades_for_tuning
+    El tuner NO debe ajustar parámetros si hay menos de min_usr_trades_for_tuning
     """
     for i in range(5):
         trade = {

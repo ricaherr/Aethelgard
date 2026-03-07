@@ -6,7 +6,7 @@ FASE 2: Integración - Verificar que PositionManager funciona en producción
 Tests TDD (Red-Green-Refactor):
 1. PositionManager se instancia en MainOrchestrator.__init__
 2. Config loaded from DB via storage.get_dynamic_params() (SSOT)
-3. monitor_positions() se llama en run_single_cycle()
+3. monitor_usr_positions() se llama en run_single_cycle()
 4. Monitor ejecutado cada 10 segundos aprox (según current_cycle_count)
 5. Metadata se guarda al abrir posición (via Executor)
 """
@@ -37,7 +37,7 @@ def mock_scanner():
 def mock_signal_factory():
     """Mock SignalFactory"""
     factory = Mock()
-    factory.generate_signals_batch = AsyncMock(return_value=[])
+    factory.generate_usr_signals_batch = AsyncMock(return_value=[])
     return factory
 
 
@@ -64,10 +64,10 @@ def mock_storage():
     """Mock StorageManager"""
     storage = Mock(spec=StorageManager)
     storage.get_brokers = Mock(return_value=[])
-    storage.count_executed_signals = Mock(return_value=0)
-    storage.get_system_state = Mock(return_value={})
+    storage.count_executed_usr_signals = Mock(return_value=0)
+    storage.get_sys_config = Mock(return_value={})
     storage.update_module_heartbeat = Mock()
-    storage.update_system_state = Mock()
+    storage.update_sys_config = Mock()
     storage.get_dynamic_params = Mock(return_value=POSITION_MGMT_CONFIG)
     return storage
 
@@ -191,7 +191,7 @@ def test_position_manager_config_loaded_from_db(
 
 
 @pytest.mark.asyncio
-async def test_monitor_positions_called_in_single_cycle(
+async def test_monitor_usr_positions_called_in_single_cycle(
     mock_scanner,
     mock_signal_factory,
     mock_risk_manager,
@@ -200,14 +200,14 @@ async def test_monitor_positions_called_in_single_cycle(
     temp_config
 ):
     """
-    Test: monitor_positions() se llama en run_single_cycle()
+    Test: monitor_usr_positions() se llama en run_single_cycle()
     
-    Expected: position_manager.monitor_positions() ejecutado al menos una vez
+    Expected: position_manager.monitor_usr_positions() ejecutado al menos una vez
     """
     # Mock expiration manager
     with patch('core_brain.main_orchestrator.SignalExpirationManager') as mock_exp_mgr_class:
         mock_exp_mgr = Mock()
-        mock_exp_mgr.expire_old_signals = Mock(return_value={'total_expired': 0, 'total_checked': 0, 'by_timeframe': {}})
+        mock_exp_mgr.expire_old_usr_signals = Mock(return_value={'total_expired': 0, 'total_checked': 0, 'by_timeframe': {}})
         mock_exp_mgr_class.return_value = mock_exp_mgr
         
         with patch('core_brain.main_orchestrator.Path') as mock_path:
@@ -222,8 +222,8 @@ async def test_monitor_positions_called_in_single_cycle(
                 config_path=str(temp_config / "config.json")
             )
     
-    # Mock PositionManager.monitor_positions
-    orchestrator.position_manager.monitor_positions = Mock(return_value={
+    # Mock PositionManager.monitor_usr_positions
+    orchestrator.position_manager.monitor_usr_positions = Mock(return_value={
         'monitored': 0,
         'actions': []
     })
@@ -231,12 +231,12 @@ async def test_monitor_positions_called_in_single_cycle(
     # Execute one cycle
     await orchestrator.run_single_cycle()
     
-    # Assert: monitor_positions called
-    orchestrator.position_manager.monitor_positions.assert_called_once()
+    # Assert: monitor_usr_positions called
+    orchestrator.position_manager.monitor_usr_positions.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_monitor_positions_executed_periodically(
+async def test_monitor_usr_positions_executed_periodically(
     mock_scanner,
     mock_signal_factory,
     mock_risk_manager,
@@ -245,14 +245,14 @@ async def test_monitor_positions_executed_periodically(
     temp_config
 ):
     """
-    Test: monitor_positions() se ejecuta cada ~10 segundos (cada ciclo)
+    Test: monitor_usr_positions() se ejecuta cada ~10 segundos (cada ciclo)
     
-    Expected: Después de 3 ciclos, monitor_positions llamado 3 veces
+    Expected: Después de 3 ciclos, monitor_usr_positions llamado 3 veces
     """
     # Mock expiration manager
     with patch('core_brain.main_orchestrator.SignalExpirationManager') as mock_exp_mgr_class:
         mock_exp_mgr = Mock()
-        mock_exp_mgr.expire_old_signals = Mock(return_value={'total_expired': 0, 'total_checked': 0, 'by_timeframe': {}})
+        mock_exp_mgr.expire_old_usr_signals = Mock(return_value={'total_expired': 0, 'total_checked': 0, 'by_timeframe': {}})
         mock_exp_mgr_class.return_value = mock_exp_mgr
         
         with patch('core_brain.main_orchestrator.Path') as mock_path:
@@ -267,8 +267,8 @@ async def test_monitor_positions_executed_periodically(
                 config_path=str(temp_config / "config.json")
             )
     
-    # Mock PositionManager.monitor_positions
-    orchestrator.position_manager.monitor_positions = Mock(return_value={
+    # Mock PositionManager.monitor_usr_positions
+    orchestrator.position_manager.monitor_usr_positions = Mock(return_value={
         'monitored': 0,
         'actions': []
     })
@@ -277,8 +277,8 @@ async def test_monitor_positions_executed_periodically(
     for _ in range(3):
         await orchestrator.run_single_cycle()
     
-    # Assert: monitor_positions called 3 times
-    assert orchestrator.position_manager.monitor_positions.call_count == 3
+    # Assert: monitor_usr_positions called 3 times
+    assert orchestrator.position_manager.monitor_usr_positions.call_count == 3
 
 
 @pytest.mark.asyncio
@@ -316,7 +316,7 @@ async def test_metadata_saved_when_position_opened(
         }
     )
     
-    mock_signal_factory.generate_signals_batch = AsyncMock(return_value=[test_signal])
+    mock_signal_factory.generate_usr_signals_batch = AsyncMock(return_value=[test_signal])
     mock_risk_manager.validate_signal = Mock(return_value=(True, "OK"))
     mock_executor.execute_signal = AsyncMock(return_value={
         "success": True,

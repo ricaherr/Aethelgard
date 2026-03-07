@@ -56,7 +56,7 @@ class TestDynamicDeduplicationWindow:
         assert result == 60
     
     def test_has_recent_signal_respects_1m_timeframe(self, storage):
-        """1-minute timeframe should only block signals within 10 minutes."""
+        """1-minute timeframe should only block usr_signals within 10 minutes."""
         # Create signal with 1m timeframe 15 minutes ago (beyond window)
         old_signal = Signal(
             symbol="EURUSD",
@@ -73,7 +73,7 @@ class TestDynamicDeduplicationWindow:
         assert not storage.has_recent_signal("EURUSD", "BUY", timeframe="1m")
     
     def test_has_recent_signal_respects_4h_timeframe(self, storage):
-        """4-hour timeframe should block signals within 8 hours."""
+        """4-hour timeframe should block usr_signals within 8 hours."""
         # Create signal with 4h timeframe 6 hours ago (within window)
         recent_signal = Signal(
             symbol="BTCUSD",
@@ -89,8 +89,8 @@ class TestDynamicDeduplicationWindow:
         # Should be detected as duplicate (6 hours < 8 hour window)
         assert storage.has_recent_signal("BTCUSD", "SELL", timeframe="4h")
     
-    def test_has_recent_signal_allows_expired_4h_signals(self, storage):
-        """4-hour timeframe should allow signals after 8 hours."""
+    def test_has_recent_signal_allows_expired_4h_usr_signals(self, storage):
+        """4-hour timeframe should allow usr_signals after 8 hours."""
         # Create signal 9 hours ago (beyond 8-hour window)
         old_signal = Signal(
             symbol="GBPUSD",
@@ -169,9 +169,9 @@ class TestDynamicDeduplicationWindow:
             }
         }
         storage = StorageManager(db_path=':memory:')
-        state = storage.get_system_state()
+        state = storage.get_sys_config()
         state["instruments_config"] = INSTRUMENTS_CONFIG_EXAMPLE
-        storage.update_system_state(state)
+        storage.update_sys_config(state)
         instrument_manager = InstrumentManager(storage=storage)
         risk_manager = RiskManager(storage=storage, initial_capital=10000, instrument_manager=instrument_manager)
         risk_manager.storage = storage  # Inject storage for persistence

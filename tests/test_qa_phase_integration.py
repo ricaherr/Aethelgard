@@ -3,7 +3,7 @@ test_qa_phase_integration.py - QA Phase Integration Testing
 SPRINT S007 - Complete end-to-end validation of all 5 phases
 
 Tests:
-  1. Bootstrap verification (5 SHADOW strategies)
+  1. Bootstrap verification (5 SHADOW usr_strategies)
   2. StrategyRanker integration (promotion/degradation logic)
   3. StrategyEngineFactory blocking (LOGIC_PENDING supremacy)
   4. MainOrchestrator ranking cycle (5-minute interval)
@@ -26,7 +26,7 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # ===== CONSTANTS FOR QA TESTING =====
-# Strategy IDs (sourced from bootstrap_strategy_ranking.py)
+# Strategy IDs (sourced from bootstrap_usr_performance.py)
 BOOTSTRAP_STRATEGIES = [
     'BRK_OPEN_0001',
     'institutional_footprint',
@@ -49,12 +49,12 @@ SR_TRADES_MIN = Decimal('50')
 
 
 class TestBootstrapVerification:
-    """PHASE 1: Verify bootstrap_strategy_ranking.py results"""
+    """PHASE 1: Verify bootstrap_usr_performance.py results"""
 
-    def test_bootstrap_created_5_shadow_strategies(self):
-        """Verify: 5 strategies in strategy_ranking table with execution_mode='SHADOW'"""
+    def test_bootstrap_created_5_shadow_usr_strategies(self):
+        """Verify: 5 usr_strategies in usr_performance table with execution_mode='SHADOW'"""
         # This test validates bootstrap script execution
-        # Expected: 5 rows in strategy_ranking, all SHADOW mode
+        # Expected: 5 rows in usr_performance, all SHADOW mode
         
         with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as f:
             db_path = f.name
@@ -62,16 +62,16 @@ class TestBootstrapVerification:
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
-        # Create minimal strategy_ranking schema
+        # Create minimal usr_performance schema
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS strategy_ranking (
+            CREATE TABLE IF NOT EXISTS usr_performance (
                 strategy_id TEXT PRIMARY KEY,
                 execution_mode TEXT NOT NULL DEFAULT 'SHADOW',
                 profit_factor REAL DEFAULT 0.0,
                 win_rate REAL DEFAULT 0.0,
                 consecutive_losses INTEGER DEFAULT 0,
                 drawdown_pct REAL DEFAULT 0.0,
-                completed_trades INTEGER DEFAULT 0,
+                completed_usr_trades INTEGER DEFAULT 0,
                 last_evaluation TEXT
             )
         ''')
@@ -79,33 +79,33 @@ class TestBootstrapVerification:
         # Insert bootstrap rows (exactly 5 SHADOW)
         for strategy_id in BOOTSTRAP_STRATEGIES:
             cursor.execute(
-                'INSERT INTO strategy_ranking (strategy_id, execution_mode) VALUES (?, ?)',
+                'INSERT INTO usr_performance (strategy_id, execution_mode) VALUES (?, ?)',
                 (strategy_id, 'SHADOW')
             )
         
         conn.commit()
         
         # Assertion 1: 5 rows total
-        cursor.execute('SELECT COUNT(*) FROM strategy_ranking')
+        cursor.execute('SELECT COUNT(*) FROM usr_performance')
         count = cursor.fetchone()[0]
-        assert count == 5, f"Expected 5 strategies, got {count}"
+        assert count == 5, f"Expected 5 usr_strategies, got {count}"
         
         # Assertion 2: All are SHADOW
-        cursor.execute("SELECT COUNT(*) FROM strategy_ranking WHERE execution_mode='SHADOW'")
+        cursor.execute("SELECT COUNT(*) FROM usr_performance WHERE execution_mode='SHADOW'")
         shadow_count = cursor.fetchone()[0]
-        assert shadow_count == 5, f"Expected 5 SHADOW strategies, got {shadow_count}"
+        assert shadow_count == 5, f"Expected 5 SHADOW usr_strategies, got {shadow_count}"
         
-        # Assertion 3: Exact strategies are present
-        cursor.execute('SELECT strategy_id FROM strategy_ranking ORDER BY strategy_id')
-        strategies = [row[0] for row in cursor.fetchall()]
-        assert sorted(strategies) == sorted(BOOTSTRAP_STRATEGIES), f"Strategy mismatch: {strategies}"
+        # Assertion 3: Exact usr_strategies are present
+        cursor.execute('SELECT strategy_id FROM usr_performance ORDER BY strategy_id')
+        usr_strategies = [row[0] for row in cursor.fetchall()]
+        assert sorted(usr_strategies) == sorted(BOOTSTRAP_STRATEGIES), f"Strategy mismatch: {usr_strategies}"
         
         conn.close()
-        logger.info("✅ Bootstrap verification: 5 SHADOW strategies confirmed")
+        logger.info("✅ Bootstrap verification: 5 SHADOW usr_strategies confirmed")
 
     def test_sess_ext_0001_excluded_from_bootstrap(self):
-        """Verify: SESS_EXT_0001 (LOGIC_PENDING) is EXCLUDED from strategy_ranking"""
-        # This validates the exclusion rule: LOGIC_PENDING strategies cannot be bootstrapped
+        """Verify: SESS_EXT_0001 (LOGIC_PENDING) is EXCLUDED from usr_performance"""
+        # This validates the exclusion rule: LOGIC_PENDING usr_strategies cannot be bootstrapped
         
         with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as f:
             db_path = f.name
@@ -115,39 +115,39 @@ class TestBootstrapVerification:
         
         # Create tables
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS strategies (
+            CREATE TABLE IF NOT EXISTS usr_strategies (
                 class_id TEXT PRIMARY KEY,
                 readiness TEXT NOT NULL
             )
         ''')
         
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS strategy_ranking (
+            CREATE TABLE IF NOT EXISTS usr_performance (
                 strategy_id TEXT PRIMARY KEY,
                 execution_mode TEXT NOT NULL
             )
         ''')
         
-        # Insert strategies (one LOGIC_PENDING)
-        cursor.execute("INSERT INTO strategies VALUES (?, ?)", (LOGIC_PENDING_STRATEGY, 'LOGIC_PENDING'))
-        cursor.execute("INSERT INTO strategies VALUES (?, ?)", (BOOTSTRAP_STRATEGIES[0], 'READY_FOR_ENGINE'))
+        # Insert usr_strategies (one LOGIC_PENDING)
+        cursor.execute("INSERT INTO usr_strategies VALUES (?, ?)", (LOGIC_PENDING_STRATEGY, 'LOGIC_PENDING'))
+        cursor.execute("INSERT INTO usr_strategies VALUES (?, ?)", (BOOTSTRAP_STRATEGIES[0], 'READY_FOR_ENGINE'))
         
         conn.commit()
         
-        # Simulate bootstrap: Only READY_FOR_ENGINE gets added to strategy_ranking
-        cursor.execute("SELECT class_id FROM strategies WHERE readiness='READY_FOR_ENGINE'")
+        # Simulate bootstrap: Only READY_FOR_ENGINE gets added to usr_performance
+        cursor.execute("SELECT class_id FROM usr_strategies WHERE readiness='READY_FOR_ENGINE'")
         for (strategy_id,) in cursor.fetchall():
             cursor.execute(
-                "INSERT OR IGNORE INTO strategy_ranking (strategy_id, execution_mode) VALUES (?, 'SHADOW')",
+                "INSERT OR IGNORE INTO usr_performance (strategy_id, execution_mode) VALUES (?, 'SHADOW')",
                 (strategy_id,)
             )
         
         conn.commit()
         
-        # Assertion: SESS_EXT_0001 is NOT in strategy_ranking
-        cursor.execute("SELECT COUNT(*) FROM strategy_ranking WHERE strategy_id=?", (LOGIC_PENDING_STRATEGY,))
+        # Assertion: SESS_EXT_0001 is NOT in usr_performance
+        cursor.execute("SELECT COUNT(*) FROM usr_performance WHERE strategy_id=?", (LOGIC_PENDING_STRATEGY,))
         count = cursor.fetchone()[0]
-        assert count == 0, f"{LOGIC_PENDING_STRATEGY} should not be in strategy_ranking, but found {count} rows"
+        assert count == 0, f"{LOGIC_PENDING_STRATEGY} should not be in usr_performance, but found {count} rows"
         
         conn.close()
         logger.info(f"✅ {LOGIC_PENDING_STRATEGY} correctly excluded (LOGIC_PENDING)")
@@ -157,7 +157,7 @@ class TestStrategyRankerIntegration:
     """PHASE 2-4: Verify StrategyRanker promotion/degradation logic"""
 
     def test_promotion_metrics_validation(self):
-        """Verify: SHADOW → LIVE when PF≥1.5 AND WR≥50% AND 50+ trades"""
+        """Verify: SHADOW → LIVE when PF≥1.5 AND WR≥50% AND 50+ usr_trades"""
         # Test SHADOW strategy with promotion metrics
         
         shadow_metrics = {
@@ -165,7 +165,7 @@ class TestStrategyRankerIntegration:
             'execution_mode': 'SHADOW',
             'profit_factor': Decimal('1.8'),  # ≥ 1.5 ✓
             'win_rate': Decimal('55.0'),      # ≥ 50% ✓
-            'completed_trades': Decimal('75'), # ≥ 50 ✓
+            'completed_usr_trades': Decimal('75'), # ≥ 50 ✓
             'consecutive_losses': Decimal('2'),
             'drawdown_pct': Decimal('1.2'),
         }
@@ -174,11 +174,11 @@ class TestStrategyRankerIntegration:
         should_promote = (
             shadow_metrics['profit_factor'] >= SR_PROFIT_FACTOR_MIN
             and shadow_metrics['win_rate'] >= SR_WIN_RATE_MIN
-            and shadow_metrics['completed_trades'] >= SR_TRADES_MIN
+            and shadow_metrics['completed_usr_trades'] >= SR_TRADES_MIN
         )
         
-        assert should_promote, "Should promote SHADOW with PF=1.8, WR=55%, trades=75"
-        logger.info("✅ Promotion criteria validated (PF≥1.5, WR≥50%, 50+ trades)")
+        assert should_promote, "Should promote SHADOW with PF=1.8, WR=55%, usr_trades=75"
+        logger.info("✅ Promotion criteria validated (PF≥1.5, WR≥50%, 50+ usr_trades)")
 
     def test_degradation_metrics_validation(self):
         """Verify: LIVE → QUARANTINE when DD≥3% OR CL≥5"""
@@ -191,7 +191,7 @@ class TestStrategyRankerIntegration:
             'consecutive_losses': Decimal('3'),
             'profit_factor': Decimal('1.2'),
             'win_rate': Decimal('52.0'),
-            'completed_trades': Decimal('100'),
+            'completed_usr_trades': Decimal('100'),
         }
         
         # Logic: Check degradation criteria
@@ -204,7 +204,7 @@ class TestStrategyRankerIntegration:
         logger.info("✅ Degradation criteria validated (DD≥3% triggers QUARANTINE)")
 
     def test_recovery_metrics_validation(self):
-        """Verify: QUARANTINE → SHADOW when metrics normalize + 50+ trades"""
+        """Verify: QUARANTINE → SHADOW when metrics normalize + 50+ usr_trades"""
         # Test QUARANTINE strategy recovery path
         
         quarantine_metrics = {
@@ -214,7 +214,7 @@ class TestStrategyRankerIntegration:
             'consecutive_losses': Decimal('2'), # Normalized ✓
             'profit_factor': Decimal('1.1'),
             'win_rate': Decimal('48.0'),
-            'completed_trades': Decimal('65'), # ≥ 50 ✓
+            'completed_usr_trades': Decimal('65'), # ≥ 50 ✓
         }
         
         # Logic: Check recovery criteria
@@ -225,10 +225,10 @@ class TestStrategyRankerIntegration:
         
         should_recover = (
             metrics_normalized
-            and quarantine_metrics['completed_trades'] >= SR_TRADES_MIN
+            and quarantine_metrics['completed_usr_trades'] >= SR_TRADES_MIN
         )
         
-        assert should_recover, "Should recover QUARANTINE with normalized metrics + 50+ trades"
+        assert should_recover, "Should recover QUARANTINE with normalized metrics + 50+ usr_trades"
         logger.info("✅ Recovery criteria validated (metrics normalized)")
 
 
@@ -245,21 +245,21 @@ class TestStrategyEngineFactoryBlocking:
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
-        # Create strategies table
+        # Create usr_strategies table
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS strategies (
+            CREATE TABLE IF NOT EXISTS usr_strategies (
                 class_id TEXT PRIMARY KEY,
                 readiness TEXT NOT NULL
             )
         ''')
         
-        cursor.execute("INSERT INTO strategies VALUES ('SESS_EXT_0001', 'LOGIC_PENDING')")
-        cursor.execute("INSERT INTO strategies VALUES ('BRK_OPEN_0001', 'READY_FOR_ENGINE')")
+        cursor.execute("INSERT INTO usr_strategies VALUES ('SESS_EXT_0001', 'LOGIC_PENDING')")
+        cursor.execute("INSERT INTO usr_strategies VALUES ('BRK_OPEN_0001', 'READY_FOR_ENGINE')")
         
         conn.commit()
         
         # Test readiness validation
-        cursor.execute("SELECT readiness FROM strategies WHERE class_id=?", ('SESS_EXT_0001',))
+        cursor.execute("SELECT readiness FROM usr_strategies WHERE class_id=?", ('SESS_EXT_0001',))
         readiness = cursor.fetchone()[0]
         
         # Assertion: LOGIC_PENDING should be rejected
@@ -267,7 +267,7 @@ class TestStrategyEngineFactoryBlocking:
         assert is_blocked, f"SESS_EXT_0001 should be blocked (readiness={readiness})"
         
         # Test READY_FOR_ENGINE is allowed
-        cursor.execute("SELECT readiness FROM strategies WHERE class_id=?", ('BRK_OPEN_0001',))
+        cursor.execute("SELECT readiness FROM usr_strategies WHERE class_id=?", ('BRK_OPEN_0001',))
         readiness = cursor.fetchone()[0]
         is_allowed = readiness == 'READY_FOR_ENGINE'
         assert is_allowed, f"BRK_OPEN_0001 should be allowed (readiness={readiness})"
@@ -276,9 +276,9 @@ class TestStrategyEngineFactoryBlocking:
         logger.info("✅ LOGIC_PENDING blocking validated")
 
     def test_execution_mode_flags_applied(self):
-        """Verify: execution_mode controls no_send_orders flag"""
-        # SHADOW/QUARANTINE → no_send_orders=True
-        # LIVE → no_send_orders=False
+        """Verify: execution_mode controls no_send_usr_orders flag"""
+        # SHADOW/QUARANTINE → no_send_usr_orders=True
+        # LIVE → no_send_usr_orders=False
         
         test_cases = [
             ('SHADOW', True),
@@ -288,10 +288,10 @@ class TestStrategyEngineFactoryBlocking:
         
         for mode, expected_no_send in test_cases:
             # Logic: Map execution_mode to flag
-            no_send_orders = (mode in ['SHADOW', 'QUARANTINE'])
-            assert no_send_orders == expected_no_send, f"execution_mode={mode} should set no_send_orders={expected_no_send}"
+            no_send_usr_orders = (mode in ['SHADOW', 'QUARANTINE'])
+            assert no_send_usr_orders == expected_no_send, f"execution_mode={mode} should set no_send_usr_orders={expected_no_send}"
         
-        logger.info("✅ execution_mode flags validated (SHADOW/QUARANTINE block orders)")
+        logger.info("✅ execution_mode flags validated (SHADOW/QUARANTINE block usr_orders)")
 
 
 class TestMainOrchestratorRankingCycle:
@@ -372,16 +372,16 @@ class TestCircuitBreakerMonitoring:
         
         logger.info("✅ Consecutive losses threshold validated (CL≥5)")
 
-    def test_non_live_strategies_skipped(self):
-        """Verify: CircuitBreaker skips SHADOW/QUARANTINE strategies"""
+    def test_non_live_usr_strategies_skipped(self):
+        """Verify: CircuitBreaker skips SHADOW/QUARANTINE usr_strategies"""
         
-        strategies = [
+        usr_strategies = [
             {'strategy_id': BOOTSTRAP_STRATEGIES[0], 'execution_mode': 'SHADOW', 'should_monitor': False},
             {'strategy_id': BOOTSTRAP_STRATEGIES[1], 'execution_mode': 'QUARANTINE', 'should_monitor': False},
             {'strategy_id': BOOTSTRAP_STRATEGIES[2], 'execution_mode': 'LIVE', 'should_monitor': True},
         ]
         
-        for strat in strategies:
+        for strat in usr_strategies:
             should_monitor = strat['execution_mode'] == 'LIVE'
             assert should_monitor == strat['should_monitor'], \
                 f"{strat['strategy_id']} mode={strat['execution_mode']} should_monitor={strat['should_monitor']}"
@@ -406,18 +406,18 @@ class TestEndToEndWorkflow:
     """Integration of all 5 phases: Bootstrap → Ranker → Factory → Orchestrator → CB"""
 
     def test_complete_strategy_lifecycle(self):
-        """Full workflow: 5 strategies bootstrap → rank → execute (with CB monitoring)"""
+        """Full workflow: 5 usr_strategies bootstrap → rank → execute (with CB monitoring)"""
         
         # Phase 1: Bootstrap
-        strategies = BOOTSTRAP_STRATEGIES
+        usr_strategies = BOOTSTRAP_STRATEGIES
         
-        assert len(strategies) == 5, "Must have 5 bootstrapped strategies"
-        logger.info(f"✅ Phase 1: {len(strategies)} strategies bootstrapped in SHADOW mode")
+        assert len(usr_strategies) == 5, "Must have 5 bootstrapped usr_strategies"
+        logger.info(f"✅ Phase 1: {len(usr_strategies)} usr_strategies bootstrapped in SHADOW mode")
         
         # Phase 2-3: StrategyRanker + StrategyEngineFactory
-        # Verify that no LOGIC_PENDING strategies are in the list
-        assert all(s != LOGIC_PENDING_STRATEGY for s in strategies), f"{LOGIC_PENDING_STRATEGY} must not be included"
-        logger.info(f"✅ Phase 2-3: All {len(strategies)} strategies passed readiness validation")
+        # Verify that no LOGIC_PENDING usr_strategies are in the list
+        assert all(s != LOGIC_PENDING_STRATEGY for s in usr_strategies), f"{LOGIC_PENDING_STRATEGY} must not be included"
+        logger.info(f"✅ Phase 2-3: All {len(usr_strategies)} usr_strategies passed readiness validation")
         
         # Phase 4: MainOrchestrator ranking cycle ready
         ranking_interval = 300  # 5 minutes

@@ -2,7 +2,7 @@
 MultiTimeframeLimiter - EDGE protection for multi-timeframe operations
 
 Validates exposure limits per symbol:
-- Max positions simultaneous
+- Max usr_positions simultaneous
 - Max total volume
 - Hedge alerts
 - Opposite signal blocks (configurable)
@@ -38,10 +38,10 @@ class MultiTimeframeLimiter:
         self.config = config.get('multi_timeframe_limits', {})
         self.mt5_connector = mt5_connector
         self.enabled = self.config.get('enabled', True)
-        self.max_positions = self.config.get('max_positions_per_symbol', 3)
+        self.max_usr_positions = self.config.get('max_usr_positions_per_symbol', 3)
         self.max_volume = self.config.get('max_total_volume_per_symbol', 5.0)
         self.hedge_threshold = self.config.get('alert_hedge_threshold', 0.2)
-        self.allow_opposite = self.config.get('allow_opposite_signals', True)
+        self.allow_opposite = self.config.get('allow_opposite_usr_signals', True)
     
     def validate_new_signal(self, signal: Signal) -> Tuple[bool, str]:
         """
@@ -49,9 +49,9 @@ class MultiTimeframeLimiter:
         
         Process:
         1. Check if limiter enabled
-        2. Check max positions per symbol
+        2. Check max usr_positions per symbol
         3. Check max volume per symbol
-        4. Check opposite signals (if disabled)
+        4. Check opposite usr_signals (if disabled)
         5. Check hedge risk (alert only, not blocking)
         
         Args:
@@ -67,23 +67,23 @@ class MultiTimeframeLimiter:
         
         symbol = signal.symbol
         
-        # Get current open positions for this symbol
-        open_positions = self._get_open_positions_by_symbol(symbol)
+        # Get current open usr_positions for this symbol
+        open_usr_positions = self._get_open_usr_positions_by_symbol(symbol)
         
-        # 1. Check max positions limit
-        if len(open_positions) >= self.max_positions:
-            return False, f"MAX_POSITIONS_EXCEEDED: {len(open_positions)}/{self.max_positions} for {symbol}"
+        # 1. Check max usr_positions limit
+        if len(open_usr_positions) >= self.max_usr_positions:
+            return False, f"MAX_POSITIONS_EXCEEDED: {len(open_usr_positions)}/{self.max_usr_positions} for {symbol}"
         
         # 2. Check max volume limit
-        current_volume = sum(self._get_lot_size(p) for p in open_positions)
+        current_volume = sum(self._get_lot_size(p) for p in open_usr_positions)
         new_total_volume = current_volume + signal.volume
         
         if new_total_volume > self.max_volume:
             return False, f"MAX_VOLUME_EXCEEDED: {new_total_volume:.2f}/{self.max_volume} lots for {symbol}"
         
-        # 3. Check opposite signals (if not allowed)
-        if not self.allow_opposite and open_positions:
-            existing_types = {self._get_signal_type(p) for p in open_positions}
+        # 3. Check opposite usr_signals (if not allowed)
+        if not self.allow_opposite and open_usr_positions:
+            existing_types = {self._get_signal_type(p) for p in open_usr_positions}
             
             if signal.signal_type.value in ['BUY', 'SELL']:
                 opposite = 'SELL' if signal.signal_type.value == 'BUY' else 'BUY'
@@ -92,20 +92,20 @@ class MultiTimeframeLimiter:
                     return False, f"OPPOSITE_SIGNAL_BLOCKED: {symbol} already has {opposite} position"
         
         # 4. Check hedge risk (alert only, NOT blocking)
-        if open_positions and self.allow_opposite:
-            self._check_hedge_alert(symbol, open_positions, signal)
+        if open_usr_positions and self.allow_opposite:
+            self._check_hedge_alert(symbol, open_usr_positions, signal)
         
         return True, "OK"
     
     
-    def _get_open_positions_by_symbol(self, symbol: str) -> list:
+    def _get_open_usr_positions_by_symbol(self, symbol: str) -> list:
         """
-        Get all ACTUALLY OPEN positions for symbol from MT5.
+        Get all ACTUALLY OPEN usr_positions for symbol from MT5.
         
         CRITICAL FIX: Don't rely on DB status='EXECUTED' alone.
         Positions may be closed in MT5 but still marked EXECUTED in DB.
         
-        Returns only positions that are confirmed open in MT5.
+        Returns only usr_positions that are confirmed open in MT5.
         """
         try:
             if not self.mt5_connector or not self.mt5_connector.is_connected:
@@ -113,23 +113,23 @@ class MultiTimeframeLimiter:
                     f"Injected MT5 connector not available or not connected for {symbol}. "
                     "Falling back to DB-only check (may be inaccurate)."
                 )
-                return self._get_open_positions_from_db_only(symbol)
+                return self._get_open_usr_positions_from_db_only(symbol)
             
-            # Get actual open positions from MT5
-            mt5_positions = self.mt5_connector.get_open_positions()
+            # Get actual open usr_positions from MT5
+            mt5_usr_positions = self.mt5_connector.get_open_usr_positions()
             
-            if mt5_positions is None:
-                logger.warning(f"Failed to query MT5 positions for {symbol}")
-                return self._get_open_positions_from_db_only(symbol)
+            if mt5_usr_positions is None:
+                logger.warning(f"Failed to query MT5 usr_positions for {symbol}")
+                return self._get_open_usr_positions_from_db_only(symbol)
 
             # Filter by symbol
             open_for_symbol = [
-                pos for pos in mt5_positions 
+                pos for pos in mt5_usr_positions 
                 if pos.get('symbol') == symbol
             ]
             
             logger.info(
-                f"[MultiTimeframeLimiter] {symbol}: {len(open_for_symbol)} positions "
+                f"[MultiTimeframeLimiter] {symbol}: {len(open_for_symbol)} usr_positions "
                 f"actually open in MT5"
             )
             
@@ -137,15 +137,15 @@ class MultiTimeframeLimiter:
             
         except Exception as e:
             logger.error(
-                f"Error checking MT5 positions for {symbol}: {e}. "
+                f"Error checking MT5 usr_positions for {symbol}: {e}. "
                 "Falling back to DB-only check."
             )
-            return self._get_open_positions_from_db_only(symbol)
+            return self._get_open_usr_positions_from_db_only(symbol)
     
-    def _get_open_positions_from_db_only(self, symbol: str) -> list:
+    def _get_open_usr_positions_from_db_only(self, symbol: str) -> list:
         """
         Fallback: Get actually open operations from DB.
-        Uses get_open_operations() which filters EXECUTED signals not yet closed.
+        Uses get_open_operations() which filters EXECUTED usr_signals not yet closed.
         """
         get_open_ops = getattr(self.storage, "get_open_operations", None)
         if not callable(get_open_ops):
@@ -202,7 +202,7 @@ class MultiTimeframeLimiter:
 
         return str(signal_type)
     
-    def _check_hedge_alert(self, symbol: str, open_positions: List[Dict[str, Any]], new_signal: Signal) -> None:
+    def _check_hedge_alert(self, symbol: str, open_usr_positions: List[Dict[str, Any]], new_signal: Signal) -> None:
         """
         Check for hedge risk and log warning (does NOT block signal).
         
@@ -213,7 +213,7 @@ class MultiTimeframeLimiter:
         buy_volume = 0.0
         sell_volume = 0.0
         
-        for pos in open_positions:
+        for pos in open_usr_positions:
             sig_type = self._get_signal_type(pos)
             lot_size = self._get_lot_size(pos)
             

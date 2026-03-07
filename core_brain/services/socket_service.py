@@ -130,7 +130,7 @@ class SocketService:
         """
         Sends a strategy reasoning event to all connected clients.
         
-        Used for S-0005 and other strategies to explain reasoning to UI.
+        Used for S-0005 and other usr_strategies to explain reasoning to UI.
         Already formatted event from ReasoningEventBuilder.
         
         Args:

@@ -209,8 +209,8 @@ def validate_instrument(
     
     # For Forex Major pairs: typical position 0.1 - 1.0 lots for $10k account
     # For JPY pairs: similar range
-    # For metals: smaller positions
-    # For indices: much smaller positions
+    # For metals: smaller usr_positions
+    # For indices: much smaller usr_positions
     
     # Simple validation: position_size should be between min and max
     if position_size < symbol_info.volume_min:

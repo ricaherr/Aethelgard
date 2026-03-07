@@ -23,7 +23,7 @@ from data_vault.storage import StorageManager
 def mock_storage():
     """Mock StorageManager for testing."""
     mock = MagicMock(spec=StorageManager)
-    mock.get_system_state.return_value = {}
+    mock.get_sys_config.return_value = {}
     mock.get_dynamic_params.return_value = {
         'rejection_tail_threshold': 0.5,
         'hammer_body_max_pct': 0.3,
@@ -441,7 +441,7 @@ class TestEdgeCases:
 
 
 class TestPatternSignalGeneration:
-    """Test generation of signals from detected patterns."""
+    """Test generation of usr_signals from detected patterns."""
     
     def test_rejection_generates_signal(self, detector):
         """

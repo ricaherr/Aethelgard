@@ -2,8 +2,11 @@ import logging
 import os
 import sqlite3
 import json
+import shutil
+import uuid
 from datetime import datetime
 from typing import Optional, Dict, Any, List, Union
+from pathlib import Path
 
 from .base_repo import BaseRepository
 from .signals_db import SignalsMixin, calculate_deduplication_window
@@ -11,7 +14,7 @@ from .trades_db import TradesMixin
 from .accounts_db import AccountsMixin
 from .market_db import MarketMixin
 from .system_db import SystemMixin
-from .strategy_ranking_db import StrategyRankingMixin
+from .usr_performance_db import StrategyRankingMixin
 from .strategies_db import StrategiesMixin
 from .execution_db import ExecutionMixin
 from .anomalies_db import AnomaliesMixin
@@ -19,13 +22,14 @@ from .anomalies_db import AnomaliesMixin
 from .schema import (
     initialize_schema,
     run_migrations,
-    seed_default_user_preferences,
+    seed_default_usr_preferences,
     bootstrap_symbol_mappings,
 )
 
 logger = logging.getLogger(__name__)
 
 JSON_BOOTSTRAP_DONE_KEY = "_json_bootstrap_done_v1"
+
 
 class StorageManager(
     SignalsMixin,
@@ -39,33 +43,63 @@ class StorageManager(
     AnomaliesMixin
 ):
     """
-    Centralized storage manager for Aethelgard.
-    Acts as a Facade/Orchestrator for specialized database repositories.
-    100% API Compatibility with previous versions.
+    Centralized storage manager for Aethelgard (ARCH-SSOT-2026-006).
+    
+    Acts as Orquestador de Contexto:
+    - If tenant_id=None: Manages data_vault/global/aethelgard.db (sys_* tables only)
+    - If tenant_id=VALUE: Manages data_vault/tenants/{tenant_id}/aethelgard.db (usr_* tables)
+    
+    Supports auto-provisioning of tenant databases via template cloning.
     """
 
-    def __init__(self, db_path: Optional[str] = None) -> None:
-        """Initialize the storage manager and its underlying database segments."""
-        # Initialize base repository connection pool
-        super().__init__(db_path)
+    def __init__(self, db_path: Optional[str] = None, tenant_id: Optional[str] = None) -> None:
+        """
+        Initialize the storage manager with context awareness.
+        
+        Args:
+            db_path: Explicit database path (overrides tenant_id logic). For backward compatibility.
+            tenant_id: Tenant identifier. If provided, infers path from tenant_id.
+                      If None and db_path is None, defaults to global DB.
+        
+        Behavior:
+        - db_path=None, tenant_id=None  → data_vault/global/aethelgard.db (Global Intelligence)
+        - db_path=None, tenant_id=VALUE → data_vault/tenants/{id}/aethelgard.db (auto-create if needed)
+        - db_path=VALUE                  → Use explicit path (backward compat; will resolve dynamically)
+        """
+        self.tenant_id = tenant_id
+        
+        # Resolve database path based on context
+        if db_path is None:
+            resolved_db_path = self._resolve_db_path(tenant_id)
+        else:
+            resolved_db_path = db_path
+        
+        logger.info(f"StorageManager: tenant_id={tenant_id}, db_path={resolved_db_path}")
+        
+        # Initialize base repository
+        super().__init__(resolved_db_path)
+        
+        # Ensure database file exists and is initialized
+        if tenant_id is not None:
+            self._ensure_tenant_db_exists()
         
         # Initialize database schema and migrations
         conn = self._get_conn()
         try:
             logger.info("Initializing database schema...")
-            # DDL
+            # DDL (idempotent via CREATE TABLE IF NOT EXISTS)
             initialize_schema(conn)
-            # Incremental updates
+            # Incremental migrations
             run_migrations(conn)
-            # Default profiles
-            seed_default_user_preferences(conn)
-            # Fixed symbol mapping
+            # Default user preferences
+            seed_default_usr_preferences(conn)
+            # Symbol mapping bootstrap
             bootstrap_symbol_mappings(conn)
             
-            # Additional bootstrap for JSON configs to DB fallback
+            # JSON config migration (SSOT: once on first init)
             self._bootstrap_from_json(conn)
             
-            # Default asset profiles required for tests and normalization
+            # Default asset profiles (required for normalization)
             self.seed_initial_assets()
             
             self._close_conn(conn)
@@ -75,18 +109,73 @@ class StorageManager(
         finally:
             self._close_conn(conn)
 
+    @staticmethod
+    def _resolve_db_path(tenant_id: Optional[str]) -> str:
+        """
+        Resolve database path based on tenant context.
+        
+        ARCH-SSOT-2026-006 Rules:
+        - Global (tenant_id=None): data_vault/global/aethelgard.db
+        - Tenant (tenant_id=VALUE): data_vault/tenants/{tenant_id}/aethelgard.db
+        
+        Important: Tenant ID is inferred from path, not stored as column in usr_* tables.
+        """
+        data_vault_root = Path(__file__).parent.absolute()
+        
+        if tenant_id is None or tenant_id == "":
+            # Global database (Capa 0)
+            global_dir = data_vault_root / "global"
+            global_dir.mkdir(exist_ok=True)
+            return str(global_dir / "aethelgard.db")
+        else:
+            # Tenant database (Capa 1)
+            tenant_dir = data_vault_root / "tenants" / tenant_id
+            tenant_dir.mkdir(parents=True, exist_ok=True)
+            return str(tenant_dir / "aethelgard.db")
+
+    def _ensure_tenant_db_exists(self) -> None:
+        """
+        Auto-provisioning: If tenant DB does not exist, clone from template.
+        
+        Template location: data_vault/templates/usr_template.db
+        This ensures new tenants get the correct usr_* schema without sys_* tables.
+        """
+        if self.tenant_id is None:
+            return  # Global DB, no auto-provisioning needed
+        
+        tenant_db = Path(self.db_path)
+        
+        if tenant_db.exists():
+            logger.debug(f"Tenant DB already exists: {tenant_db}")
+            return  # Already provisioned
+        
+        template_db = Path(__file__).parent / "templates" / "usr_template.db"
+        
+        if not template_db.exists():
+            logger.warning(f"Template DB not found: {template_db}. Creating new tenant DB from scratch.")
+            # Will be initialized by schema.py on first connection
+            return
+        
+        try:
+            logger.info(f"Auto-provisioning tenant DB by cloning template: {template_db} → {tenant_db}")
+            shutil.copy2(template_db, tenant_db)
+            logger.info(f"✅ Tenant DB provisioned: {tenant_db}")
+        except Exception as e:
+            logger.error(f"❌ Failed to clone template: {e}")
+            # Fall through: schema initialization will handle it
+
     def _bootstrap_from_json(self, conn: sqlite3.Connection) -> None:
         """
         One-time migration logic for JSON configuration files.
         Loads seed data from data_vault/seed/ directory into database on first initialization.
         
-        SSOT NOTE: This is idempotent (runs once, flag stored in system_state).
+        SSOT NOTE: This is idempotent (runs once, flag stored in sys_config).
         After bootstrap, database is the ONLY source of truth (aethelgard.db).
         """
         cursor = conn.cursor()
         
         # Check if already done
-        cursor.execute("SELECT value FROM system_state WHERE key = ?", (JSON_BOOTSTRAP_DONE_KEY,))
+        cursor.execute("SELECT value FROM sys_config WHERE key = ?", (JSON_BOOTSTRAP_DONE_KEY,))
         row = cursor.fetchone()
         if row and row[0] == "true":
             return
@@ -102,7 +191,7 @@ class StorageManager(
                         data = json.load(f)
                         symbols = data.get("symbols", [])
                         if symbols:
-                            cursor.execute("INSERT OR REPLACE INTO system_state (key, value) VALUES (?, ?)", 
+                            cursor.execute("INSERT OR REPLACE INTO sys_config (key, value) VALUES (?, ?)", 
                                            ('auto_trading_symbols', json.dumps(symbols)))
                             logger.info(f"[BOOTSTRAP] Seeded {len(symbols)} symbols from config/instruments.json")
                 except Exception as e:
@@ -115,23 +204,23 @@ class StorageManager(
                     with open(params_path, "r") as f:
                         params = json.load(f)
                         if params:
-                            cursor.execute("INSERT OR REPLACE INTO system_state (key, value) VALUES (?, ?)", 
+                            cursor.execute("INSERT OR REPLACE INTO sys_config (key, value) VALUES (?, ?)", 
                                            ('dynamic_params', json.dumps(params)))
                             logger.info("[BOOTSTRAP] Seeded dynamic_params from config/dynamic_params.json")
                 except Exception as e:
                     logger.warning(f"[BOOTSTRAP] Failed to load dynamic_params.json for bootstrap: {e}")
             
-            # Seed strategies from data_vault/seed/ (SSOT location for strategy registry)
-            seed_strategies_path = os.path.join("data_vault", "seed", "strategy_registry.json")
-            if os.path.exists(seed_strategies_path):
+            # Seed usr_strategies from data_vault/seed/ (SSOT location for strategy registry)
+            seed_usr_strategies_path = os.path.join("data_vault", "seed", "strategy_registry.json")
+            if os.path.exists(seed_usr_strategies_path):
                 try:
-                    with open(seed_strategies_path, "r", encoding="utf-8") as f:  # IMPORTANTE: especificar utf-8
+                    with open(seed_usr_strategies_path, "r", encoding="utf-8") as f:  # IMPORTANTE: especificar utf-8
                         registry = json.load(f)
-                        strategies = registry.get("strategies", [])
-                        if strategies:
-                            for strat in strategies:
+                        usr_strategies = registry.get("usr_strategies", [])
+                        if usr_strategies:
+                            for strat in usr_strategies:
                                 cursor.execute("""
-                                    INSERT OR REPLACE INTO strategies 
+                                    INSERT OR REPLACE INTO usr_strategies 
                                     (class_id, mnemonic, version, affinity_scores, market_whitelist, readiness, readiness_notes)
                                     VALUES (?, ?, ?, ?, ?, ?, ?)
                                 """, (
@@ -143,23 +232,23 @@ class StorageManager(
                                     strat.get("readiness", "UNKNOWN"),
                                     strat.get("readiness_notes")
                                 ))
-                            logger.info(f"[BOOTSTRAP] Seeded {len(strategies)} strategies from data_vault/seed/strategy_registry.json")
+                            logger.info(f"[BOOTSTRAP] Seeded {len(usr_strategies)} usr_strategies from data_vault/seed/strategy_registry.json")
                 except Exception as e:
                     logger.warning(f"[BOOTSTRAP] Failed to load strategy_registry.json for bootstrap: {e}")
             
             # Seed demo broker accounts and data providers from data_vault/seed/
             try:
                 # Import here to avoid circular imports
-                from scripts.migrations.seed_demo_data import seed_demo_broker_accounts, seed_data_providers
+                from scripts.migrations.seed_demo_data import seed_demo_sys_broker_accounts, seed_sys_data_providers
                 
-                seed_demo_broker_accounts()
-                seed_data_providers()
+                seed_demo_sys_broker_accounts()
+                seed_sys_data_providers()
                 logger.info("[BOOTSTRAP] Seeded demo broker accounts and data providers")
             except Exception as e:
                 logger.warning(f"[BOOTSTRAP] Could not seed demo data: {str(e)[:100]}")
                     
             # Mark bootstrap as done (idempotent flag)
-            cursor.execute("INSERT OR REPLACE INTO system_state (key, value) VALUES (?, ?)", 
+            cursor.execute("INSERT OR REPLACE INTO sys_config (key, value) VALUES (?, ?)", 
                            (JSON_BOOTSTRAP_DONE_KEY, "true"))
             conn.commit()
             logger.info("[BOOTSTRAP] JSON→SQLite migration completed (SSOT: database is now canonical).")
@@ -182,10 +271,10 @@ class StorageManager(
 
     def reload_global_config(self) -> Dict[str, Any]:
         """
-        DB-first reload: returns current global_config from system_state.
+        DB-first reload: returns current global_config from sys_config.
         """
         try:
-            state = self.get_system_state()
+            state = self.get_sys_config()
             cfg = state.get("global_config", {})
             return cfg if isinstance(cfg, dict) else {}
         except Exception as e:
@@ -242,7 +331,7 @@ class StorageManager(
             cursor = conn.cursor()
             
             cursor.execute(
-                "SELECT value FROM system_state WHERE key = ?",
+                "SELECT value FROM sys_config WHERE key = ?",
                 (f"tenant:{tenant_id}:config",)
             )
             row = cursor.fetchone()
@@ -278,7 +367,7 @@ class StorageManager(
             
             # Get current config
             cursor.execute(
-                "SELECT value FROM system_state WHERE key = ?",
+                "SELECT value FROM sys_config WHERE key = ?",
                 (f"tenant:{tenant_id}:config",)
             )
             row = cursor.fetchone()
@@ -293,7 +382,7 @@ class StorageManager(
             
             # Persist
             cursor.execute(
-                "INSERT OR REPLACE INTO system_state (key, value) VALUES (?, ?)",
+                "INSERT OR REPLACE INTO sys_config (key, value) VALUES (?, ?)",
                 (f"tenant:{tenant_id}:config", json.dumps(current))
             )
             conn.commit()
@@ -317,7 +406,7 @@ class StorageManager(
             
             # Get current ledger
             cursor.execute(
-                "SELECT value FROM system_state WHERE key = ?",
+                "SELECT value FROM sys_config WHERE key = ?",
                 ("system_ledger",)
             )
             row = cursor.fetchone()
@@ -332,7 +421,7 @@ class StorageManager(
             
             # Persist
             cursor.execute(
-                "INSERT OR REPLACE INTO system_state (key, value) VALUES (?, ?)",
+                "INSERT OR REPLACE INTO sys_config (key, value) VALUES (?, ?)",
                 ("system_ledger", json.dumps(ledger))
             )
             conn.commit()

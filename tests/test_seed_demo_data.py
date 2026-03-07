@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch, MagicMock
 # Import seed functions
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from scripts.migrations.seed_demo_data import seed_demo_broker_accounts, seed_data_providers, _generate_trace_id
+from scripts.migrations.seed_demo_data import seed_demo_sys_broker_accounts, seed_sys_data_providers, _generate_trace_id
 
 
 class TestTraceIDGeneration:
@@ -45,7 +45,7 @@ class TestSeedDemoBrokerAccounts:
     def _create_seed_file(self, accounts: list) -> Path:
         """Helper: Create temporary seed file"""
         temp_dir = Path(tempfile.gettempdir())
-        seed_file = temp_dir / "demo_broker_accounts.json"
+        seed_file = temp_dir / "demo_sys_broker_accounts.json"
         
         seed_data = {
             "description": "Test seed data",
@@ -59,7 +59,7 @@ class TestSeedDemoBrokerAccounts:
     
     @patch('scripts.migrations.seed_demo_data.StorageManager')
     def test_seed_creates_new_account(self, mock_storage_class):
-        """GIVEN new account in seed WHEN seed_demo_broker_accounts THEN creates it"""
+        """GIVEN new account in seed WHEN seed_demo_sys_broker_accounts THEN creates it"""
         # Setup mock storage
         mock_storage = Mock()
         mock_storage.get_account.return_value = None
@@ -96,7 +96,7 @@ class TestSeedDemoBrokerAccounts:
                     mock_path_instance.exists.return_value = True
                     mock_path.return_value = mock_path_instance
                     
-                    seed_demo_broker_accounts()
+                    seed_demo_sys_broker_accounts()
         
         # Verify save_broker_account was called
         assert mock_storage.save_broker_account.called
@@ -107,7 +107,7 @@ class TestSeedDemoBrokerAccounts:
     
     @patch('scripts.migrations.seed_demo_data.StorageManager')
     def test_seed_idempotent_on_existing_account(self, mock_storage_class):
-        """GIVEN account already exists WHEN seed_demo_broker_accounts THEN skips creation"""
+        """GIVEN account already exists WHEN seed_demo_sys_broker_accounts THEN skips creation"""
         # Setup mock - account exists, no changes needed
         mock_storage = Mock()
         existing_account = {
@@ -141,14 +141,14 @@ class TestSeedDemoBrokerAccounts:
                     mock_path_instance.exists.return_value = True
                     mock_path.return_value = mock_path_instance
                     
-                    seed_demo_broker_accounts()
+                    seed_demo_sys_broker_accounts()
         
         # Verify save_broker_account was NOT called (no changes)
         assert not mock_storage.save_broker_account.called
     
     @patch('scripts.migrations.seed_demo_data.StorageManager')
     def test_seed_updates_account_number_when_changed(self, mock_storage_class):
-        """GIVEN account_number changed in seed WHEN seed_demo_broker_accounts THEN updates it"""
+        """GIVEN account_number changed in seed WHEN seed_demo_sys_broker_accounts THEN updates it"""
         # Setup mock - account exists with OLD login
         mock_storage = Mock()
         existing_account = {
@@ -182,7 +182,7 @@ class TestSeedDemoBrokerAccounts:
                     mock_path_instance.exists.return_value = True
                     mock_path.return_value = mock_path_instance
                     
-                    seed_demo_broker_accounts()
+                    seed_demo_sys_broker_accounts()
         
         # Verify save_broker_account WAS called with new account_number
         assert mock_storage.save_broker_account.called
@@ -196,7 +196,7 @@ class TestSeedDataProviders:
     
     @patch('scripts.migrations.seed_demo_data.StorageManager')
     def test_seed_creates_new_provider(self, mock_storage_class):
-        """GIVEN new provider in seed WHEN seed_data_providers THEN creates it"""
+        """GIVEN new provider in seed WHEN seed_sys_data_providers THEN creates it"""
         # Setup mock
         mock_storage = Mock()
         mock_conn = Mock()
@@ -228,7 +228,7 @@ class TestSeedDataProviders:
                     mock_path_instance.exists.return_value = True
                     mock_path.return_value = mock_path_instance
                     
-                    seed_data_providers()
+                    seed_sys_data_providers()
         
         # Verify save_data_provider was called
         assert mock_storage.save_data_provider.called
@@ -241,8 +241,8 @@ class TestSeedSecurityRequirements:
     """Test security constraints for seeds"""
     
     def test_seed_json_no_hardcoded_passwords(self):
-        """GIVEN demo_broker_accounts.json WHEN read THEN no operative passwords"""
-        seed_file = Path(__file__).parent.parent / "data_vault" / "seed" / "demo_broker_accounts.json"
+        """GIVEN demo_sys_broker_accounts.json WHEN read THEN no operative passwords"""
+        seed_file = Path(__file__).parent.parent / "data_vault" / "seed" / "demo_sys_broker_accounts.json"
         
         if seed_file.exists():
             with open(seed_file, 'r', encoding='utf-8') as f:
@@ -252,14 +252,14 @@ class TestSeedSecurityRequirements:
             for account in seed_data.get("accounts", []):
                 password = account.get("credential_password")
                 
-                # Demo credentials are OK (like MT5 demo logins)
+                # Demo sys_credentials are OK (like MT5 demo logins)
                 # But if password is null or empty, it's fine (awaiting user input)
                 # The key is: no "real" passwords like "operativo_secreto_real"
                 assert password is None or password == "" or "demo" in password.lower() or len(password) < 50
     
     def test_seed_json_valid_structure(self):
-        """GIVEN demo_broker_accounts.json WHEN read THEN has required fields"""
-        seed_file = Path(__file__).parent.parent / "data_vault" / "seed" / "demo_broker_accounts.json"
+        """GIVEN demo_sys_broker_accounts.json WHEN read THEN has required fields"""
+        seed_file = Path(__file__).parent.parent / "data_vault" / "seed" / "demo_sys_broker_accounts.json"
         
         if seed_file.exists():
             with open(seed_file, 'r', encoding='utf-8') as f:
@@ -278,7 +278,7 @@ class TestSeedIntegration:
     
     @patch('scripts.migrations.seed_demo_data.StorageManager')
     def test_seed_exception_handling(self, mock_storage_class):
-        """GIVEN seed file is malformed WHEN seed_demo_broker_accounts THEN handles gracefully"""
+        """GIVEN seed file is malformed WHEN seed_demo_sys_broker_accounts THEN handles gracefully"""
         mock_storage_class.return_value = Mock()
         
         with patch('scripts.migrations.seed_demo_data.Path') as mock_path:
@@ -289,7 +289,7 @@ class TestSeedIntegration:
             # Simulate JSON decode error
             with patch('scripts.migrations.seed_demo_data.json.load', side_effect=json.JSONDecodeError("msg", "doc", 0)):
                 # Should not raise - exception is caught and logged
-                seed_demo_broker_accounts()
+                seed_demo_sys_broker_accounts()
 
 
 if __name__ == "__main__":

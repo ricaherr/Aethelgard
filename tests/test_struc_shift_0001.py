@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Any
 
 from models.signal import Signal, SignalType, MarketRegime, ConnectorType
-from core_brain.strategies.struc_shift_0001 import StructureShift0001Strategy
+from core_brain.usr_strategies.struc_shift_0001 import StructureShift0001Strategy
 from core_brain.sensors.market_structure_analyzer import MarketStructureAnalyzer
 
 
@@ -55,7 +55,7 @@ class TestStructureShift0001Strategy(unittest.TestCase):
                     'breaker_buffer_pips': 5,
                     'structure_lookback_candles': 20,
                     'zig_zag_depth': 5,
-                    'struc_shift_max_daily_trades': 5,
+                    'struc_shift_max_daily_usr_trades': 5,
                     'struc_shift_tp1_ratio': 1.27,
                     'struc_shift_tp2_ratio': 1.618,
                     'struc_shift_sl_buffer_pips': 10,
@@ -264,9 +264,9 @@ class TestStructureShift0001Strategy(unittest.TestCase):
         self.assertLess(breaker_low_with_buffer, breaker['low'])
     
     
-    def test_max_daily_trades_limit(self):
-        """✓ Test: Límite de trades diarios enforced."""
-        self.assertEqual(self.strategy.max_daily_trades, 5)
+    def test_max_daily_usr_trades_limit(self):
+        """✓ Test: Límite de usr_trades diarios enforced."""
+        self.assertEqual(self.strategy.max_daily_usr_trades, 5)
     
     
     # =============== TESTS DE VALIDACIÓN ===============

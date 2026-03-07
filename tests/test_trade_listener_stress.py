@@ -11,7 +11,7 @@ Simulates 10 trade closures happening almost simultaneously to verify:
 Test Objectives:
 - 10 concurrent trade closure events
 - Each event processes in parallel (asyncio)
-- Verify all trades persisted correctly
+- Verify all usr_trades persisted correctly
 - Verify idempotent protection works (retry same event twice)
 - Validate listener metrics under stress
 """
@@ -38,7 +38,7 @@ def temp_config_dir():
         # risk_settings.json is still file-based (not yet migrated)
         risk_settings_data = {
             "max_consecutive_losses": 3,
-            "min_trades_for_tuning": 5,
+            "min_usr_trades_for_tuning": 5,
             "target_win_rate": 0.55
         }
         risk_file = tmpdir_path / "risk_settings.json"
@@ -79,14 +79,14 @@ def trade_listener(storage, temp_config_dir):
         "sma20_proximity_pct": 1.5,
         "min_score": 60,
         "tuning_enabled": True,
-        "min_trades_for_tuning": 5,
+        "min_usr_trades_for_tuning": 5,
         "risk_per_trade": 0.01,
         "max_consecutive_losses": 3
     })
     # Seed risk settings in DB
     storage.update_risk_settings({
         "max_consecutive_losses": 3,
-        "min_trades_for_tuning": 5,
+        "min_usr_trades_for_tuning": 5,
         "target_win_rate": 0.55
     })
 
@@ -116,15 +116,15 @@ class TestTradeListenerStress:
     """
     
     @pytest.mark.asyncio
-    async def test_concurrent_10_trades_no_collapse(self, trade_listener):
+    async def test_concurrent_10_usr_trades_no_collapse(self, trade_listener):
         """
-        STRESS TEST: 10 trades arriving almost simultaneously.
+        STRESS TEST: 10 usr_trades arriving almost simultaneously.
         
         Objective: Verify retry logic handles concurrent DB access
         without collapsing or losing data.
         
         Expected Results:
-        - All 10 trades successfully saved to DB
+        - All 10 usr_trades successfully saved to DB
         - Metrics show 10 processed, 10 saved, 0 failed
         - No race conditions or data corruption
         """
@@ -170,17 +170,17 @@ class TestTradeListenerStress:
         
         # Verify metrics
         metrics = trade_listener.get_metrics()
-        assert metrics["trades_processed"] == 10
-        assert metrics["trades_saved"] == 10
-        assert metrics["trades_failed"] == 0
+        assert metrics["usr_trades_processed"] == 10
+        assert metrics["usr_trades_saved"] == 10
+        assert metrics["usr_trades_failed"] == 0
         assert metrics["success_rate"] == 100.0
         
         # Verify DB contains all 10 (use public method, not direct SQL)
-        all_trades = trade_listener.storage.get_trade_results(limit=100)
-        count = len(all_trades)
-        assert count == 10, f"Expected 10 trades in DB, found {count}"
+        all_usr_trades = trade_listener.storage.get_trade_results(limit=100)
+        count = len(all_usr_trades)
+        assert count == 10, f"Expected 10 usr_trades in DB, found {count}"
         
-        print(f"[OK] [STRESS] 10 concurrent trades processed successfully")
+        print(f"[OK] [STRESS] 10 concurrent usr_trades processed successfully")
         print(f"   Metrics: {metrics}")
     
     @pytest.mark.asyncio
@@ -234,14 +234,14 @@ class TestTradeListenerStress:
         exists = trade_listener.storage.trade_exists("IDEMPOTENT_TEST_001")
         assert exists, "Trade should exist in DB"
         
-        all_trades = trade_listener.storage.get_trade_results(limit=100)
-        count = len([t for t in all_trades if t.get('id') == 'IDEMPOTENT_TEST_001'])
+        all_usr_trades = trade_listener.storage.get_trade_results(limit=100)
+        count = len([t for t in all_usr_trades if t.get('id') == 'IDEMPOTENT_TEST_001'])
         assert count == 1, f"Expected 1 trade in DB, found {count}"
         
         # Verify metrics: 2 processed, 1 saved (not 2!)
         metrics = trade_listener.get_metrics()
-        assert metrics["trades_processed"] == 2
-        assert metrics["trades_saved"] == 1, "Idempotent should prevent duplicate save"
+        assert metrics["usr_trades_processed"] == 2
+        assert metrics["usr_trades_saved"] == 1, "Idempotent should prevent duplicate save"
         
         print(f"[OK] [IDEMPOTENT] Duplicate trade rejected, DB integrity maintained")
         print(f"   Metrics: {metrics}")
@@ -251,11 +251,11 @@ class TestTradeListenerStress:
         """
         LOCK RESILIENCE: Test concurrent DB writes without collapse.
         
-        Objective: Verify all 10 trades are saved even under concurrent load.
+        Objective: Verify all 10 usr_trades are saved even under concurrent load.
         
         Expected Results:
         - Retry logic handles concurrent access
-        - All trades eventually saved
+        - All usr_trades eventually saved
         - No data loss or corruption
         """
         now = datetime.now()
@@ -299,8 +299,8 @@ class TestTradeListenerStress:
         
         # Verify all saved
         metrics = trade_listener.get_metrics()
-        assert metrics["trades_saved"] == 10
-        assert metrics["trades_failed"] == 0
+        assert metrics["usr_trades_saved"] == 10
+        assert metrics["usr_trades_failed"] == 0
         
         print(f"[OK] [CONCURRENT] 10 concurrent writes without collapse")
         print(f"   Metrics: {metrics}")

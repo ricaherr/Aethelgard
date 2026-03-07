@@ -57,7 +57,7 @@ class TestSignalIsolation:
     """
     GIVEN: Two tenants with physically separated SQLite databases.
     WHEN:  Usuario_A saves a signal via its StorageManager.
-    THEN:  Usuario_B queries its signals and receives an EMPTY result set.
+    THEN:  Usuario_B queries its usr_signals and receives an EMPTY result set.
            Zero data leakage between tenants.
     """
 
@@ -76,15 +76,15 @@ class TestSignalIsolation:
         storage_a.save_signal(signal_for_a)
 
         # Assert: Usuario_B sees NOTHING
-        signals_b = storage_b.get_recent_signals(limit=10)
-        assert len(signals_b) == 0, (
+        usr_signals_b = storage_b.get_recent_usr_signals(limit=10)
+        assert len(usr_signals_b) == 0, (
             "AISLAMIENTO ROTO: Usuario_B puede ver la señal de Usuario_A. "
             "Soberanía de datos comprometida."
         )
 
-    def test_each_tenant_only_sees_its_own_signals(self, tmp_path: Path):
+    def test_each_tenant_only_sees_its_own_usr_signals(self, tmp_path: Path):
         """
-        Both tenants write signals. Each should only see their own data.
+        Both tenants write usr_signals. Each should only see their own data.
         """
         storage_a = TenantDBFactory.get_storage("tenant_alice", base_path=str(tmp_path))
         storage_b = TenantDBFactory.get_storage("tenant_bob", base_path=str(tmp_path))
@@ -94,39 +94,39 @@ class TestSignalIsolation:
         storage_a.save_signal(_make_signal("sig_alice_002", symbol="GBPUSD"))
         storage_b.save_signal(_make_signal("sig_bob_001", symbol="USDJPY"))
 
-        signals_a = storage_a.get_recent_signals(limit=10)
-        signals_b = storage_b.get_recent_signals(limit=10)
+        usr_signals_a = storage_a.get_recent_usr_signals(limit=10)
+        usr_signals_b = storage_b.get_recent_usr_signals(limit=10)
 
-        # Alice sees exactly 2 signals — her own
-        assert len(signals_a) == 2, f"Alice debe ver 2 señales, vio {len(signals_a)}"
+        # Alice sees exactly 2 usr_signals — her own
+        assert len(usr_signals_a) == 2, f"Alice debe ver 2 señales, vio {len(usr_signals_a)}"
 
         # Bob sees exactly 1 signal — his own
-        assert len(signals_b) == 1, f"Bob debe ver 1 señal, vio {len(signals_b)}"
+        assert len(usr_signals_b) == 1, f"Bob debe ver 1 señal, vio {len(usr_signals_b)}"
 
         # Verify signal IDs never cross-pollinate
-        alice_ids = {s.get("id") or s.get("signal_id") for s in signals_a}
-        bob_ids = {s.get("id") or s.get("signal_id") for s in signals_b}
+        alice_ids = {s.get("id") or s.get("signal_id") for s in usr_signals_a}
+        bob_ids = {s.get("id") or s.get("signal_id") for s in usr_signals_b}
         assert alice_ids.isdisjoint(bob_ids), (
             "AISLAMIENTO ROTO: IDs de señales se solapan entre tenants."
         )
 
     def test_signal_count_correct_after_multiple_writes(self, tmp_path: Path):
         """
-        A tenant writing N signals must have exactly N signals — no phantom rows
+        A tenant writing N usr_signals must have exactly N usr_signals — no phantom rows
         from other tenants.
         """
         storage_a = TenantDBFactory.get_storage("big_writer", base_path=str(tmp_path))
         storage_b = TenantDBFactory.get_storage("silent_reader", base_path=str(tmp_path))
 
-        # A writes 5 signals
+        # A writes 5 usr_signals
         for i in range(5):
             storage_a.save_signal(_make_signal(f"sig_a_{i:03d}"))
 
-        # B writes 0 signals — but both DBs were provisioned and are active
+        # B writes 0 usr_signals — but both DBs were provisioned and are active
 
-        signals_b = storage_b.get_recent_signals(limit=20)
-        assert len(signals_b) == 0, (
-            f"CONTAMINACIÓN DETECTADA: Usuario_B (silent_reader) tiene {len(signals_b)} señales "
+        usr_signals_b = storage_b.get_recent_usr_signals(limit=20)
+        assert len(usr_signals_b) == 0, (
+            f"CONTAMINACIÓN DETECTADA: Usuario_B (silent_reader) tiene {len(usr_signals_b)} señales "
             "a pesar de no haber guardado ninguna."
         )
 
@@ -159,13 +159,13 @@ class TestTradingServiceTenantBlindage:
         assert svc.storage is tenant_storage
 
         # Any operation on svc.storage writes to the tenant's private DB only
-        svc.storage.update_system_state({"tenant_marker": "svc_tenant_x"})
-        state = svc.storage.get_system_state()
+        svc.storage.update_sys_config({"tenant_marker": "svc_tenant_x"})
+        state = svc.storage.get_sys_config()
         assert state.get("tenant_marker") == "svc_tenant_x"
 
         # Verify no other tenant has this marker
         other_storage = TenantDBFactory.get_storage("svc_tenant_y", base_path=str(tmp_path))
-        other_state = other_storage.get_system_state()
+        other_state = other_storage.get_sys_config()
         assert "tenant_marker" not in other_state, (
             "tenant_marker de svc_tenant_x no debe existir en svc_tenant_y."
         )

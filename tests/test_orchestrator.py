@@ -33,7 +33,7 @@ def mock_scanner():
 
 @pytest.fixture
 def mock_signal_factory():
-    """Mock SignalFactory that generates test signals"""
+    """Mock SignalFactory that generates test usr_signals"""
     factory = MagicMock()
     
     # Create a realistic signal
@@ -47,13 +47,13 @@ def mock_signal_factory():
         take_profit=1.0950
     )
     
-    factory.generate_signals_batch = AsyncMock(return_value=[test_signal])
+    factory.generate_usr_signals_batch = AsyncMock(return_value=[test_signal])
     return factory
 
 
 @pytest.fixture
 def mock_risk_manager():
-    """Mock RiskManager that validates positions"""
+    """Mock RiskManager that validates usr_positions"""
     risk_mgr = MagicMock()
     risk_mgr.is_lockdown_active.return_value = False
     risk_mgr.calculate_position_size.return_value = 0.1
@@ -108,32 +108,32 @@ class TestSessionStats:
         stats = SessionStats()
         
         assert stats.date == date.today()
-        assert stats.signals_processed == 0
-        assert stats.signals_executed == 0
+        assert stats.usr_signals_processed == 0
+        assert stats.usr_signals_executed == 0
         assert stats.cycles_completed == 0
         
-    def test_increment_signals(self):
+    def test_increment_usr_signals(self):
         """Test incrementing signal counters"""
         stats = SessionStats()
         
-        stats.signals_processed = 5
-        stats.signals_executed = 3
+        stats.usr_signals_processed = 5
+        stats.usr_signals_executed = 3
         
-        assert stats.signals_processed == 5
-        assert stats.signals_executed == 3
+        assert stats.usr_signals_processed == 5
+        assert stats.usr_signals_executed == 3
         
     def test_reset_on_new_day(self):
         """Test stats reset when date changes"""
         stats = SessionStats()
-        stats.signals_processed = 10
+        stats.usr_signals_processed = 10
         stats.cycles_completed = 5
         
         # Simulate new day
         stats.date = date.today()
-        stats.signals_processed = 0
+        stats.usr_signals_processed = 0
         stats.cycles_completed = 0
         
-        assert stats.signals_processed == 0
+        assert stats.usr_signals_processed == 0
         assert stats.cycles_completed == 0
 
 
@@ -165,12 +165,12 @@ class TestMainOrchestrator:
         
         # Verify the complete chain was executed
         mock_scanner.get_scan_results_with_data.assert_called_once()
-        mock_signal_factory.generate_signals_batch.assert_called_once()
+        mock_signal_factory.generate_usr_signals_batch.assert_called_once()
         mock_executor.execute_signal.assert_called_once()
         
         # Verify stats were updated
         assert orchestrator.stats.cycles_completed == 1
-        assert orchestrator.stats.signals_processed > 0
+        assert orchestrator.stats.usr_signals_processed > 0
     
     @pytest.mark.asyncio
     async def test_dynamic_frequency_trend_regime(
@@ -188,8 +188,8 @@ class TestMainOrchestrator:
             "EURUSD": {"regime": MarketRegime.TREND, "atr": 0.0015, "df": MagicMock()}
         })
         
-        # Configure signal factory to return no signals (so _active_signals is empty)
-        mock_signal_factory.generate_signals_batch = AsyncMock(return_value=[])
+        # Configure signal factory to return no usr_signals (so _active_usr_signals is empty)
+        mock_signal_factory.generate_usr_signals_batch = AsyncMock(return_value=[])
         
         orchestrator = MainOrchestrator(
             scanner=mock_scanner,
@@ -225,8 +225,8 @@ class TestMainOrchestrator:
             "EURUSD": {"regime": MarketRegime.RANGE, "atr": 0.0015, "df": MagicMock()}
         })
         
-        # Configure signal factory to return no signals (so _active_signals is empty)
-        mock_signal_factory.generate_signals_batch = AsyncMock(return_value=[])
+        # Configure signal factory to return no usr_signals (so _active_usr_signals is empty)
+        mock_signal_factory.generate_usr_signals_batch = AsyncMock(return_value=[])
         
         orchestrator = MainOrchestrator(
             scanner=mock_scanner,
@@ -269,13 +269,13 @@ class TestMainOrchestrator:
         
         # Mock storage save method
         orchestrator.storage = MagicMock()
-        orchestrator.storage.update_system_state = MagicMock()
+        orchestrator.storage.update_sys_config = MagicMock()
         
         # Trigger shutdown
         await orchestrator.shutdown()
         
         # Verify state was saved
-        orchestrator.storage.update_system_state.assert_called_once()
+        orchestrator.storage.update_sys_config.assert_called_once()
         assert orchestrator._shutdown_requested is True
     
     @pytest.mark.asyncio
@@ -287,7 +287,7 @@ class TestMainOrchestrator:
         mock_executor,
         temp_config
     ):
-        """Test that signals are not executed during lockdown"""
+        """Test that usr_signals are not executed during lockdown"""
         # Configure risk manager to be in lockdown
         mock_risk_manager.is_lockdown_active.return_value = True
         
@@ -304,7 +304,7 @@ class TestMainOrchestrator:
         
         # Scanner and signal factory should run
         mock_scanner.get_scan_results_with_data.assert_called_once()
-        mock_signal_factory.generate_signals_batch.assert_called_once()
+        mock_signal_factory.generate_usr_signals_batch.assert_called_once()
         
         # But executor should NOT be called due to lockdown
         mock_executor.execute_signal.assert_not_called()
@@ -332,8 +332,8 @@ class TestMainOrchestrator:
                 take_profit=1.0950
             )]
         
-        # Use side_effect to return fresh signals each call
-        mock_signal_factory.generate_signals_batch = AsyncMock(side_effect=[
+        # Use side_effect to return fresh usr_signals each call
+        mock_signal_factory.generate_usr_signals_batch = AsyncMock(side_effect=[
             create_signal(),
             create_signal(),
             create_signal()
@@ -354,7 +354,7 @@ class TestMainOrchestrator:
         
         # Verify stats accumulated
         assert orchestrator.stats.cycles_completed == 3
-        assert orchestrator.stats.signals_processed == 3  # 1 signal per cycle x 3 cycles
+        assert orchestrator.stats.usr_signals_processed == 3  # 1 signal per cycle x 3 cycles
     
     @pytest.mark.asyncio
     async def test_error_handling_continues_loop(

@@ -46,17 +46,17 @@ class CoherenceService:
         storage: StorageManager,
         min_coherence_threshold: Optional[float] = None,
         max_performance_degradation: Optional[float] = None,
-        min_executions_for_analysis: Optional[int] = None,
+        min_usr_executions_for_analysis: Optional[int] = None,
     ):
         """
         Initialize CoherenceService with dependency injection.
-        Thresholds are loaded from system_state (SSOT) if available.
+        Thresholds are loaded from sys_config (SSOT) if available.
         
         Args:
             storage: StorageManager for data access (dependency injection)
             min_coherence_threshold: Override default from DB (for testing)
             max_performance_degradation: Override default from DB (for testing)
-            min_executions_for_analysis: Override default from DB (for testing)
+            min_usr_executions_for_analysis: Override default from DB (for testing)
         """
         self.storage = storage
         self.tenant_id = getattr(storage, "tenant_id", "default")
@@ -69,22 +69,22 @@ class CoherenceService:
             self.min_coherence_threshold = min_coherence_threshold
         if max_performance_degradation is not None:
             self.max_performance_degradation = max_performance_degradation
-        if min_executions_for_analysis is not None:
-            self.min_executions_for_analysis = min_executions_for_analysis
+        if min_usr_executions_for_analysis is not None:
+            self.min_usr_executions_for_analysis = min_usr_executions_for_analysis
         
         logger.info(
             f"CoherenceService initialized (SSOT): threshold={self.min_coherence_threshold*100:.0f}%, "
             f"max_degradation={self.max_performance_degradation*100:.0f}%, "
-            f"min_executions={self.min_executions_for_analysis}"
+            f"min_usr_executions={self.min_usr_executions_for_analysis}"
         )
     
     def _load_coherence_config(self) -> None:
         """
-        Load coherence thresholds from system_state (SSOT).
+        Load coherence thresholds from sys_config (SSOT).
         Uses sensible defaults if configuration doesn't exist yet.
         """
         try:
-            state = self.storage.get_system_state()
+            state = self.storage.get_sys_config()
             config = state.get("coherence_config", {})
             
             # Load from DB or use defaults
@@ -94,15 +94,15 @@ class CoherenceService:
             self.max_performance_degradation = float(
                 config.get("max_performance_degradation", 0.15)
             )
-            self.min_executions_for_analysis = int(
-                config.get("min_executions_for_analysis", 5)
+            self.min_usr_executions_for_analysis = int(
+                config.get("min_usr_executions_for_analysis", 5)
             )
             
             logger.debug(
                 f"Coherence config loaded from DB: "
                 f"threshold={self.min_coherence_threshold}, "
                 f"max_degradation={self.max_performance_degradation}, "
-                f"min_executions={self.min_executions_for_analysis}"
+                f"min_usr_executions={self.min_usr_executions_for_analysis}"
             )
             
         except Exception as e:
@@ -110,7 +110,7 @@ class CoherenceService:
             logger.warning(f"Failed to load coherence_config from DB, using defaults: {e}")
             self.min_coherence_threshold = 0.80
             self.max_performance_degradation = 0.15
-            self.min_executions_for_analysis = 5
+            self.min_usr_executions_for_analysis = 5
     
     def detect_drift(
         self,
@@ -134,7 +134,7 @@ class CoherenceService:
             - theoretical_sharpe: float
             - real_sharpe: float
             - performance_degradation: float (ratio)
-            - executions_analyzed: int
+            - usr_executions_analyzed: int
             - recovery_trend: bool (optional)
             - reason: str (explanation)
             - timestamp: str (ISO 8601)
@@ -145,26 +145,26 @@ class CoherenceService:
         
         try:
             # 1. Fetch execution logs within time window
-            executions = self._fetch_executions(symbol, window_minutes, strategy_id)
+            usr_executions = self._fetch_usr_executions(symbol, window_minutes, strategy_id)
             
-            if not executions:
+            if not usr_executions:
                 return {
                     "coherence_score": 0.0,
                     "status": "INSUFFICIENT_DATA",
                     "veto_new_entries": True,
-                    "executions_analyzed": 0,
-                    "reason": f"No executions found for {symbol} in last {window_minutes} minutes",
+                    "usr_executions_analyzed": 0,
+                    "reason": f"No usr_executions found for {symbol} in last {window_minutes} minutes",
                     "timestamp": timestamp_utc,
                     "trace_id": trace_id,
                 }
             
-            if len(executions) < self.min_executions_for_analysis:
+            if len(usr_executions) < self.min_usr_executions_for_analysis:
                 return {
                     "coherence_score": 0.0,
                     "status": "INSUFFICIENT_DATA",
                     "veto_new_entries": False,  # Don't veto, just monitor
-                    "executions_analyzed": len(executions),
-                    "reason": f"Insufficient executions ({len(executions)}/{self.min_executions_for_analysis})",
+                    "usr_executions_analyzed": len(usr_executions),
+                    "reason": f"Insufficient usr_executions ({len(usr_executions)}/{self.min_usr_executions_for_analysis})",
                     "timestamp": timestamp_utc,
                     "trace_id": trace_id,
                 }
@@ -173,10 +173,10 @@ class CoherenceService:
             theoretical_sharpe = self._calculate_theoretical_sharpe()
             
             # 3. Calculate real performance (with slippage & latency)
-            real_sharpe = self._calculate_sharpe_ratio(executions)
+            real_sharpe = self._calculate_sharpe_ratio(usr_executions)
             
             # 4. Calculate latency metrics
-            theoretical_latency, real_latency = self._calculate_latency_metrics(executions)
+            theoretical_latency, real_latency = self._calculate_latency_metrics(usr_executions)
             
             # 5. Compute coherence score
             coherence_score = self._calculate_coherence_score(
@@ -192,7 +192,7 @@ class CoherenceService:
             )
             
             # 8. Check for recovery trend (if was previously incoherent)
-            recovery_trend = self._check_recovery_trend(symbol, executions)
+            recovery_trend = self._check_recovery_trend(symbol, usr_executions)
             
             # 9. Register event in audit trail
             self._register_coherence_event(
@@ -205,7 +205,7 @@ class CoherenceService:
                 details={
                     "theoretical_sharpe": theoretical_sharpe,
                     "real_sharpe": real_sharpe,
-                    "executions_analyzed": len(executions),
+                    "usr_executions_analyzed": len(usr_executions),
                     "recovery_trend": recovery_trend,
                 }
             )
@@ -217,7 +217,7 @@ class CoherenceService:
                 "theoretical_sharpe": theoretical_sharpe,
                 "real_sharpe": real_sharpe,
                 "performance_degradation": performance_degradation,
-                "executions_analyzed": len(executions),
+                "usr_executions_analyzed": len(usr_executions),
                 "theoretical_latency_ms": theoretical_latency,
                 "real_latency_ms": real_latency,
                 "timestamp": timestamp_utc,
@@ -256,7 +256,7 @@ class CoherenceService:
                 "trace_id": trace_id,
             }
     
-    def _fetch_executions(
+    def _fetch_usr_executions(
         self,
         symbol: str,
         window_minutes: int,
@@ -270,7 +270,7 @@ class CoherenceService:
         """
         try:
             # Use StorageManager's method to fetch execution logs
-            executions = self.storage.get_execution_shadow_logs_by_symbol_and_window(
+            usr_executions = self.storage.get_execution_shadow_logs_by_symbol_and_window(
                 symbol=symbol,
                 window_minutes=window_minutes,
                 tenant_id=self.tenant_id,
@@ -279,7 +279,7 @@ class CoherenceService:
             
             # Format results to match expected structure
             formatted = []
-            for e in executions:
+            for e in usr_executions:
                 formatted.append({
                     "signal_id": e.get("signal_id"),
                     "symbol": e.get("symbol"),
@@ -294,7 +294,7 @@ class CoherenceService:
             return formatted
             
         except Exception as e:
-            logger.error(f"Error fetching executions for {symbol}: {e}")
+            logger.error(f"Error fetching usr_executions for {symbol}: {e}")
             return []
     
     def _calculate_theoretical_sharpe(self) -> float:
@@ -312,9 +312,9 @@ class CoherenceService:
         """
         return 0.5  # Conservative baseline for theoretical Sharpe
     
-    def _calculate_sharpe_ratio(self, executions: List[Dict[str, Any]]) -> float:
+    def _calculate_sharpe_ratio(self, usr_executions: List[Dict[str, Any]]) -> float:
         """
-        Calculate Sharpe Ratio from actual executions (with slippage/latency cost).
+        Calculate Sharpe Ratio from actual usr_executions (with slippage/latency cost).
         
         Formula: Sharpe = (Mean Return - Risk-Free Rate) / StdDev(Returns)
         
@@ -322,17 +322,17 @@ class CoherenceService:
         Latency cost: Embedded in slippage estimation
         
         Args:
-            executions: List of execution dictionaries
+            usr_executions: List of execution dictionaries
         
         Returns:
             Sharpe Ratio (float >= 0)
         """
-        if len(executions) < 2:
+        if len(usr_executions) < 2:
             return 0.0
         
         try:
             # Extract slippage (negative return proxy)
-            slippages = [e.get("slippage_pips", 0.0) for e in executions]
+            slippages = [e.get("slippage_pips", 0.0) for e in usr_executions]
             
             if not slippages or all(s == 0.0 for s in slippages):
                 # Perfect execution (no slippage)
@@ -360,17 +360,17 @@ class CoherenceService:
             logger.warning(f"Error calculating Sharpe: {e}")
             return 0.0
     
-    def _calculate_latency_metrics(self, executions: List[Dict[str, Any]]) -> Tuple[float, float]:
+    def _calculate_latency_metrics(self, usr_executions: List[Dict[str, Any]]) -> Tuple[float, float]:
         """
         Calculate latency metrics.
         
         Returns:
             (theoretical_latency_ms, real_latency_ms)
         """
-        if not executions:
+        if not usr_executions:
             return 0.0, 0.0
         
-        real_latencies = [e.get("latency_ms", 0.0) for e in executions]
+        real_latencies = [e.get("latency_ms", 0.0) for e in usr_executions]
         real_avg = mean(real_latencies) if real_latencies else 0.0
         
         # Theoretical latency: network best-case (5-10ms for institutional)
@@ -460,23 +460,23 @@ class CoherenceService:
         
         return status, veto
     
-    def _check_recovery_trend(self, symbol: str, executions: List[Dict[str, Any]]) -> bool:
+    def _check_recovery_trend(self, symbol: str, usr_executions: List[Dict[str, Any]]) -> bool:
         """
         Detect if system is recovering from a drift period.
         
-        Logic: If recent executions show improving metrics (decreasing slippage trend),
+        Logic: If recent usr_executions show improving metrics (decreasing slippage trend),
         return True to signal recovery.
         
         Returns:
             bool: True if recovery trend detected
         """
-        if len(executions) < 3:
+        if len(usr_executions) < 3:
             return False
         
         try:
             # Recent 3 vs previous 3
-            recent = [e.get("slippage_pips", 0.0) for e in executions[-3:]]
-            previous = [e.get("slippage_pips", 0.0) for e in executions[-6:-3]] if len(executions) >= 6 else None
+            recent = [e.get("slippage_pips", 0.0) for e in usr_executions[-3:]]
+            previous = [e.get("slippage_pips", 0.0) for e in usr_executions[-6:-3]] if len(usr_executions) >= 6 else None
             
             if not previous:
                 return False

@@ -134,7 +134,7 @@ async def websocket_strategy_monitor(
     try:
         # Send initial metrics
         try:
-            metrics = monitor.get_all_strategies_metrics()
+            metrics = monitor.get_all_usr_strategies_metrics()
             await websocket.send_json({
                 "type": "metrics",
                 "data": metrics,
@@ -181,7 +181,7 @@ async def websocket_strategy_monitor(
             
             # Send metrics update
             try:
-                metrics = monitor.get_all_strategies_metrics()
+                metrics = monitor.get_all_usr_strategies_metrics()
                 await websocket.send_json({
                     "type": "metrics",
                     "data": metrics,

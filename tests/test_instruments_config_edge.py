@@ -71,10 +71,10 @@ def test_build_markets_response_returns_no_error_key():
 def test_get_instruments_response_structure_with_seeded_storage():
     """With storage that has instruments_config, GET /instruments contract: markets present, no error."""
     storage = StorageManager(db_path=":memory:")
-    state = storage.get_system_state()
+    state = storage.get_sys_config()
     assert state.get("instruments_config") is not None or True
-    storage.update_system_state({"instruments_config": DEFAULT_INSTRUMENTS_CONFIG})
-    state = storage.get_system_state()
+    storage.update_sys_config({"instruments_config": DEFAULT_INSTRUMENTS_CONFIG})
+    state = storage.get_sys_config()
     config = state.get("instruments_config")
     assert config is not None
 

@@ -5,7 +5,7 @@ Phase 3 Implementation (Architectural Refactor):
 - Replaces localStorage token storage (XSS-vulnerable)
 - Uses HttpOnly cookies (JS-inaccessible, server-managed)
 - Implements refresh token rotation (30-day lifecycle)
-- Client-side: credentials: 'include' auto-attaches cookies
+- Client-side: sys_credentials: 'include' auto-attaches cookies
 
 Security Standards:
 - OWASP Top 10 (Session management, Auth)
@@ -136,7 +136,7 @@ async def login(
     Client Usage:
         const res = await fetch('/auth/login', {
             method: 'POST',
-            credentials: 'include',  // IMPORTANT: auto-attach cookies
+            sys_credentials: 'include',  // IMPORTANT: auto-attach cookies
             ...
         });
         // Token already in HttpOnly cookie, nothing to store in localStorage
@@ -152,14 +152,14 @@ async def login(
             logger.warning(f"Login failed: user not found ({form_data.username})")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid credentials"
+                detail="Invalid sys_credentials"
             )
         
         if not auth_service.verify_password(form_data.password, user["password_hash"]):
             logger.warning(f"Login failed: invalid password ({form_data.username})")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid credentials"
+                detail="Invalid sys_credentials"
             )
         
         # 2. Create tokens

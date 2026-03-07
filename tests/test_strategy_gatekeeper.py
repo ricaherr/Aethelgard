@@ -18,7 +18,7 @@ from data_vault.storage import StorageManager
 def mock_storage():
     """Mock StorageManager for testing."""
     mock = MagicMock(spec=StorageManager)
-    mock.get_system_state.return_value = {}
+    mock.get_sys_config.return_value = {}
     mock.save_strategy_performance_log.return_value = True
     mock.get_strategy_affinity_scores.return_value = {
         'EUR/USD': 0.92,
@@ -208,7 +208,7 @@ class TestStrategyGatekeeperPerformanceLogging:
         """
         GIVEN: Strategy execution result (win/loss) for EUR/USD
         WHEN: log_asset_performance() is called
-        THEN: Performance is logged to strategy_performance_logs table
+        THEN: Performance is logged to usr_strategy_logs table
         """
         mock_storage.save_strategy_performance_log.return_value = True
         
@@ -216,7 +216,7 @@ class TestStrategyGatekeeperPerformanceLogging:
             strategy_id='STRAT_0001',
             asset='EUR/USD',
             pnl=150.00,
-            trades_count=5,
+            usr_trades_count=5,
             win_rate=0.80,
             profit_factor=1.5
         )
@@ -236,7 +236,7 @@ class TestStrategyGatekeeperPerformanceLogging:
             strategy_id='STRAT_0001',
             asset='EUR/USD',
             pnl=250.00,
-            trades_count=10,
+            usr_trades_count=10,
             win_rate=0.75,
             profit_factor=1.8
         )

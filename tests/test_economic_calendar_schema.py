@@ -1,5 +1,5 @@
 """
-Tests para validación de tabla economic_calendar.
+Tests para validación de tabla sys_economic_calendar.
 
 FASE C.1: Validar DDL, constraints, e integridad de datos.
 """
@@ -16,7 +16,7 @@ from data_vault.storage import StorageManager
 
 
 class TestEconomicCalendarSchema:
-    """Suite de tests para validar estructura de tabla economic_calendar."""
+    """Suite de tests para validar estructura de tabla sys_economic_calendar."""
 
     @pytest.fixture
     def storage(self):
@@ -36,20 +36,20 @@ class TestEconomicCalendarSchema:
         yield storage
 
     def test_economic_calendar_table_exists(self, storage):
-        """Valida que la tabla economic_calendar exista en la base de datos."""
+        """Valida que la tabla sys_economic_calendar exista en la base de datos."""
         try:
             conn = storage._get_conn()
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='economic_calendar'"
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='sys_economic_calendar'"
             )
-            assert cursor.fetchone() is not None, "economic_calendar table does not exist"
+            assert cursor.fetchone() is not None, "sys_economic_calendar table does not exist"
             storage._close_conn(conn)
         except Exception as e:
             pytest.fail(f"Failed to check table existence: {e}")
 
     def test_economic_calendar_has_required_columns(self, storage):
-        """Valida que la tabla economic_calendar tenga todos los campos requeridos."""
+        """Valida que la tabla sys_economic_calendar tenga todos los campos requeridos."""
         required_columns = {
             "id",  # Internal autoincrement
             "event_id",  # System-assigned UUID
@@ -64,7 +64,7 @@ class TestEconomicCalendarSchema:
 
         try:
             conn = storage._get_conn()
-            cursor = conn.execute("PRAGMA table_info(economic_calendar)")
+            cursor = conn.execute("PRAGMA table_info(sys_economic_calendar)")
             columns = {row[1] for row in cursor.fetchall()}
             assert required_columns.issubset(columns), (
                 f"Missing columns: {required_columns - columns}"
@@ -77,7 +77,7 @@ class TestEconomicCalendarSchema:
         """Valida que id es la clave primaria y event_id es UNIQUE."""
         try:
             conn = storage._get_conn()
-            cursor = conn.execute("PRAGMA table_info(economic_calendar)")
+            cursor = conn.execute("PRAGMA table_info(sys_economic_calendar)")
             id_is_pk = False
             event_id_is_unique = False
             
@@ -97,7 +97,7 @@ class TestEconomicCalendarSchema:
             
             # Check UNIQUE constraint on event_id
             cursor = conn.execute(
-                "SELECT sql FROM sqlite_master WHERE type='table' AND name='economic_calendar'"
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='sys_economic_calendar'"
             )
             create_sql = cursor.fetchone()[0]
             event_id_is_unique = "event_id TEXT UNIQUE NOT NULL" in create_sql
@@ -113,7 +113,7 @@ class TestEconomicCalendarSchema:
         try:
             conn = storage._get_conn()
             cursor = conn.execute(
-                "SELECT sql FROM sqlite_master WHERE type='table' AND name='economic_calendar'"
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='sys_economic_calendar'"
             )
             create_sql = cursor.fetchone()[0]
             # Check that impact_score has constraint
@@ -130,7 +130,7 @@ class TestEconomicCalendarSchema:
         """Valida que created_at sea NOT NULL."""
         try:
             conn = storage._get_conn()
-            cursor = conn.execute("PRAGMA table_info(economic_calendar)")
+            cursor = conn.execute("PRAGMA table_info(sys_economic_calendar)")
             for row in cursor.fetchall():
                 col_name, col_type, col_notnull = row[1], row[2], row[3]
                 if col_name == "created_at":
@@ -166,7 +166,7 @@ class TestEconomicCalendarSchema:
 
             cursor = conn.execute(
                 """
-                INSERT INTO economic_calendar 
+                INSERT INTO sys_economic_calendar 
                 (event_id, event_name, country, impact_score, currency, event_time_utc, provider_source,
                  forecast, actual, previous, is_verified, data_version, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -191,7 +191,7 @@ class TestEconomicCalendarSchema:
 
             # Verify inserted
             cursor = conn.execute(
-                "SELECT * FROM economic_calendar WHERE event_id = ?",
+                "SELECT * FROM sys_economic_calendar WHERE event_id = ?",
                 ("test-event-001",),
             )
             result = cursor.fetchone()
@@ -218,7 +218,7 @@ class TestEconomicCalendarSchema:
             # Insert first time
             conn.execute(
                 """
-                INSERT INTO economic_calendar 
+                INSERT INTO sys_economic_calendar 
                 (event_id, event_name, country, impact_score, currency, event_time_utc, provider_source, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
@@ -239,7 +239,7 @@ class TestEconomicCalendarSchema:
             with pytest.raises(sqlite3.IntegrityError):
                 conn.execute(
                     """
-                    INSERT INTO economic_calendar 
+                    INSERT INTO sys_economic_calendar 
                     (event_id, event_name, country, impact_score, currency, event_time_utc, provider_source, created_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
@@ -273,7 +273,7 @@ class TestEconomicCalendarSchema:
             for event_id, name, country, impact, currency in events:
                 conn.execute(
                     """
-                    INSERT INTO economic_calendar 
+                    INSERT INTO sys_economic_calendar 
                     (event_id, event_name, country, impact_score, currency, event_time_utc, provider_source, created_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
@@ -291,7 +291,7 @@ class TestEconomicCalendarSchema:
             conn.commit()
 
             # Query all
-            cursor = conn.execute("SELECT COUNT(*) FROM economic_calendar")
+            cursor = conn.execute("SELECT COUNT(*) FROM sys_economic_calendar")
             count = cursor.fetchone()[0]
             assert count == 3, f"Expected 3 events, got {count}"
             storage._close_conn(conn)
@@ -311,7 +311,7 @@ class TestEconomicCalendarSchema:
             for event_id, name, country, impact, currency in events:
                 conn.execute(
                     """
-                    INSERT INTO economic_calendar 
+                    INSERT INTO sys_economic_calendar 
                     (event_id, event_name, country, impact_score, currency, event_time_utc, provider_source, created_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
@@ -330,7 +330,7 @@ class TestEconomicCalendarSchema:
 
             # Query by country
             cursor = conn.execute(
-                "SELECT COUNT(*) FROM economic_calendar WHERE country = ?",
+                "SELECT COUNT(*) FROM sys_economic_calendar WHERE country = ?",
                 ("USA",),
             )
             count = cursor.fetchone()[0]
@@ -341,13 +341,13 @@ class TestEconomicCalendarSchema:
 
 
 class TestEconomicCalendarIntegration:
-    """Integration tests between economic_calendar and NewsSanitizer."""
+    """Integration tests between sys_economic_calendar and NewsSanitizer."""
 
     @pytest.fixture
     def storage(self):
         """Create in-memory storage for testing."""
         storage = StorageManager(db_path=":memory:")
-        # Apply migration to create economic_calendar table
+        # Apply migration to create sys_economic_calendar table
         migration_file = Path(__file__).parent.parent / "scripts" / "migrations" / "030_economic_calendar.sql"
         if migration_file.exists():
             with open(migration_file, "r") as f:
@@ -359,7 +359,7 @@ class TestEconomicCalendarIntegration:
         yield storage
 
     def test_economic_calendar_integrates_with_storage_manager(self, storage):
-        """Valida que StorageManager maneje economic_calendar correctamente."""
+        """Valida que StorageManager maneje sys_economic_calendar correctamente."""
         try:
             # StorageManager debe tener métodos para economic calendar
             assert hasattr(storage, "get_economic_calendar"), (
@@ -389,7 +389,7 @@ class TestEconomicCalendarIntegration:
             # Insert
             conn.execute(
                 """
-                INSERT INTO economic_calendar 
+                INSERT INTO sys_economic_calendar 
                 (event_id, event_name, country, impact_score, currency, event_time_utc, provider_source, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
@@ -410,7 +410,7 @@ class TestEconomicCalendarIntegration:
             # This test verifies that immutability is enforced at application level
             # not at DB level (by design - to allow audit trail)
             cursor = conn.execute(
-                "SELECT event_id FROM economic_calendar WHERE event_id = ?",
+                "SELECT event_id FROM sys_economic_calendar WHERE event_id = ?",
                 ("immutable-event",),
             )
             assert cursor.fetchone() is not None, "Immutable event should exist"

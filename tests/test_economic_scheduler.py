@@ -361,7 +361,7 @@ class TestSchedulerScalable:
         scheduler: EconomicDataScheduler
     ) -> None:
         """Verify high recovery rate when system auto-resumes."""
-        # Mix of skips and executions
+        # Mix of skips and usr_executions
         for i in range(10):
             scheduler.metrics.append(
                 CPUMetrics(

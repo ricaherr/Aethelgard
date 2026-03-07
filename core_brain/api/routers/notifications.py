@@ -81,12 +81,12 @@ async def mark_notification_read(notification_id: str, token: TokenPayload = Dep
 
 
 @router.get("/notifications/settings")
-async def get_all_notification_settings(token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
+async def get_all_usr_notification_settings(token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """Retorna la configuración de todos los proveedores de notificaciones"""
     try:
         tenant_id = token.tid
         storage = TenantDBFactory.get_storage(tenant_id)
-        settings = storage.get_all_notification_settings()
+        settings = storage.get_all_usr_notification_settings()
         return {"status": "success", "settings": settings}
     except Exception as e:
         logger.error(f"Error getting notification settings: {e}")
@@ -102,7 +102,7 @@ async def update_notification_provider_settings(provider: str, data: dict) -> Di
     try:
         tenant_id = token.tid
         storage = TenantDBFactory.get_storage(tenant_id)
-        success = storage.update_notification_settings(provider, enabled, config)
+        success = storage.update_usr_notification_settings(provider, enabled, config)
         
         if success:
             from core_brain.notificator import initialize_notifier
@@ -193,7 +193,7 @@ async def save_telegram_config(data: dict) -> Dict[str, Any]:
         # Guardar usando el nuevo SystemMixin (vía Factory)
         tenant_id = token.tid
         storage = TenantDBFactory.get_storage(tenant_id)
-        success = storage.update_notification_settings("telegram", enabled, telegram_config)
+        success = storage.update_usr_notification_settings("telegram", enabled, telegram_config)
         
         if success:
             # Re-inicializar el motor de notificaciones

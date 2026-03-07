@@ -72,12 +72,12 @@ def cleanup():
                 
                 # Tablas críticas a migrar
                 tables_to_migrate = [
-                    'asset_profiles', 
-                    'strategy_ranking', 
-                    'signals', 
-                    'trade_results', 
-                    'broker_accounts',
-                    'regime_configs'
+                    'usr_assets_cfg',
+                    'usr_performance',
+                    'usr_signals',
+                    'usr_trades',
+                    'sys_broker_accounts',
+                    'sys_regime_configs'
                 ]
                 
                 for table in tables_to_migrate:

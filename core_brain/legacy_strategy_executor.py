@@ -1,6 +1,6 @@
 """
 Legacy Strategy Executor Adapter
-Wraps existing Python-based strategies (OliverVelezStrategy, etc.)
+Wraps existing Python-based usr_strategies (OliverVelezStrategy, etc.)
 for execution within the dual-motor architecture.
 
 Trace_ID: STRATEGY-GENESIS-2026-001
@@ -23,7 +23,7 @@ class LegacyStrategyExecutor:
     def __init__(self, signal_factory: Any, trace_id: str = None):
         """
         Args:
-            signal_factory: SignalFactory instance with strategies loaded
+            signal_factory: SignalFactory instance with usr_strategies loaded
             trace_id: Request trace ID for auditing
         """
         self.signal_factory = signal_factory
@@ -39,7 +39,7 @@ class LegacyStrategyExecutor:
         """
         Execute legacy strategy pipeline.
         
-        Delegates to SignalFactory which runs all loaded strategies
+        Delegates to SignalFactory which runs all loaded usr_strategies
         (primarily OliverVelezStrategy in current setup).
         
         Args:
@@ -52,29 +52,29 @@ class LegacyStrategyExecutor:
         """
         try:
             # Delegate to existing SignalFactory
-            signals = await self.signal_factory.analyze(
+            usr_signals = await self.signal_factory.analyze(
                 symbol=symbol,
                 df=data_frame,
                 regime=regime
             )
             
-            if signals:
+            if usr_signals:
                 # Convert Signal object to dict if needed
-                if isinstance(signals, Signal):
+                if isinstance(usr_signals, Signal):
                     return {
-                        "signal": signals.direction,
-                        "confidence": signals.confidence,
+                        "signal": usr_signals.direction,
+                        "confidence": usr_signals.confidence,
                         "source": "legacy_python",
-                        "strategy_id": getattr(signals, 'strategy_id', 'oliver_velez')
+                        "strategy_id": getattr(usr_signals, 'strategy_id', 'oliver_velez')
                     }
-                elif isinstance(signals, list):
+                elif isinstance(usr_signals, list):
                     # Return first signal if list
-                    if signals and isinstance(signals[0], Signal):
+                    if usr_signals and isinstance(usr_signals[0], Signal):
                         return {
-                            "signal": signals[0].direction,
-                            "confidence": signals[0].confidence,
+                            "signal": usr_signals[0].direction,
+                            "confidence": usr_signals[0].confidence,
                             "source": "legacy_python",
-                            "strategy_id": getattr(signals[0], 'strategy_id', 'oliver_velez')
+                            "strategy_id": getattr(usr_signals[0], 'strategy_id', 'oliver_velez')
                         }
             
             return None

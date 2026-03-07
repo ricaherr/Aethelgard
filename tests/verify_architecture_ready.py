@@ -32,14 +32,14 @@ def verify_architecture():
 
     # 2. Validación de Datos Migrados (RiskManager)
     logger.info("🔍 Validando acceso de RiskManager...")
-    state = storage.get_system_state()
+    state = storage.get_sys_config()
     
     # Verificar claves críticas
     critical_keys = ['lockdown_active', 'consecutive_losses', 'session_stats']
     missing_keys = [k for k in critical_keys if k not in state]
     
     if missing_keys:
-        logger.warning(f"⚠️  Faltan claves en system_state: {missing_keys}")
+        logger.warning(f"⚠️  Faltan claves en sys_config: {missing_keys}")
         logger.info("   (Esto es normal si es la primera ejecución limpia, se crearán por defecto)")
     else:
         logger.info("✅ Claves de RiskManager detectadas correctamente.")
@@ -49,8 +49,8 @@ def verify_architecture():
     logger.info("🔄 Simulando reconstrucción de sesión (Orchestrator)...")
     
     # Simular conteo de señales ejecutadas hoy (debe coincidir con la migración si hubo hoy)
-    today_signals = storage.count_executed_signals(date.today())
-    logger.info(f"   Señales ejecutadas hoy (recuperadas de DB): {today_signals}")
+    today_usr_signals = storage.count_executed_usr_signals(date.today())
+    logger.info(f"   Señales ejecutadas hoy (recuperadas de DB): {today_usr_signals}")
     
     # 4. Prueba de Escritura Transaccional
     logger.info("💾 Probando escritura transaccional...")
@@ -60,10 +60,10 @@ def verify_architecture():
             "last_health_check": "VERIFIED_OK", 
             "architecture_version": "2.0-SQLITE"
         }
-        storage.update_system_state(new_state)
+        storage.update_sys_config(new_state)
         
         # Leerlo inmediatamente para confirmar commit
-        refreshed_state = storage.get_system_state()
+        refreshed_state = storage.get_sys_config()
         if refreshed_state.get("last_health_check") == "VERIFIED_OK":
             logger.info("✅ Escritura y Lectura confirmadas (Commit exitoso).")
         else:

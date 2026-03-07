@@ -27,7 +27,7 @@ from tests.conftest_test_data import (
 def mock_storage():
     """Mock StorageManager with alert persistence."""
     storage = Mock()
-    storage.get_strategy_ranking = Mock(
+    storage.get_usr_performance = Mock(
         side_effect=lambda sid: {
             'BRK_OPEN_0001': {
                 'strategy_id': 'BRK_OPEN_0001',

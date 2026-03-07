@@ -99,9 +99,9 @@ class InstrumentManager:
     def _load_config_from_storage(self) -> dict:
         """Load instruments configuration from StorageManager (DB)."""
         try:
-            state = self.storage.get_system_state()
+            state = self.storage.get_sys_config()
             if not isinstance(state, dict):
-                logger.warning("Invalid system_state format from storage. Using defaults.")
+                logger.warning("Invalid sys_config format from storage. Using defaults.")
                 return self._get_default_config()
             config = state.get("instruments_config")
             if config is None:

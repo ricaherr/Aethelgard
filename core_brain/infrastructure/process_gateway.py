@@ -101,11 +101,11 @@ class DatabaseGateway(ProcessGatewayInterface):
     
     async def get_latest_regime(self, symbol: str, timeframe: str) -> Optional[Dict[str, Any]]:
         """
-        Consultar market_state table directamente.
+        Consultar sys_market_pulse table directamente.
         ATOMIC: Single query, no race conditions.
         """
         try:
-            result = self.storage.get_market_state(symbol, timeframe=timeframe)
+            result = self.storage.get_sys_market_pulse(symbol, timeframe=timeframe)
             if result:
                 return {
                     "symbol": result["symbol"],
@@ -121,11 +121,11 @@ class DatabaseGateway(ProcessGatewayInterface):
     
     async def get_scanner_state(self) -> Dict[str, Any]:
         """
-        Agregación de market_state para reconstruir scanner state.
+        Agregación de sys_market_pulse para reconstruir scanner state.
         Fallback cuando scanner está en otro proceso.
         """
         try:
-            states = self.storage.get_all_market_states()
+            states = self.storage.get_all_sys_market_pulses()
             if not states:
                 return {"error": "no_data", "source": "database"}
             
@@ -163,7 +163,7 @@ class DatabaseGateway(ProcessGatewayInterface):
         Queda en manos del heatmap service formatear para UI.
         """
         try:
-            states = self.storage.get_all_market_states()
+            states = self.storage.get_all_sys_market_pulses()
             cells = []
             
             for state in states:
@@ -186,7 +186,7 @@ class DatabaseGateway(ProcessGatewayInterface):
     
     async def publish_scan_result(self, symbol: str, timeframe: str, data: Dict[str, Any]) -> None:
         """
-        Guardar resultado de escaneo en market_state.
+        Guardar resultado de escaneo en sys_market_pulse.
         Llamado por Scanner después de procesar.
         """
         try:
@@ -199,7 +199,7 @@ class DatabaseGateway(ProcessGatewayInterface):
                 "details": data.get("details", {})
             }
             
-            self.storage.update_market_state(symbol, market_data)
+            self.storage.update_sys_market_pulse(symbol, market_data)
             logger.debug(f"[DatabaseGateway] Published scan result: {symbol}|{timeframe}")
         except Exception as e:
             logger.error(f"[DatabaseGateway] Error publishing scan result: {e}")
@@ -207,7 +207,7 @@ class DatabaseGateway(ProcessGatewayInterface):
     async def health_check(self) -> bool:
         """Verificar conectividad a la base de datos."""
         try:
-            _ = self.storage.get_system_state()
+            _ = self.storage.get_sys_config()
             return True
         except Exception as e:
             logger.error(f"[DatabaseGateway] Health check failed: {e}")

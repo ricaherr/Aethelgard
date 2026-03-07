@@ -269,8 +269,8 @@ class TrifectaAnalyzer:
             return
             
         try:
-            # Use get_system_state to retrieve global_config
-            state = self.storage.get_system_state()
+            # Use get_sys_config to retrieve global_config
+            state = self.storage.get_sys_config()
             config = state.get("global_config", {})
             if not config:
                 return
@@ -290,8 +290,8 @@ class TrifectaAnalyzer:
                     modified = True
             
             if modified:
-                # Update global_config in system_state
-                self.storage.update_system_state({'global_config': config})
+                # Update global_config in sys_config
+                self.storage.update_sys_config({'global_config': config})
                 logger.info(f"✅ TrifectaAnalyzer: Required timeframes {self.required_tfs} enabled in DB.")
         
         except Exception as e:

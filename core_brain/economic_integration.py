@@ -316,7 +316,7 @@ class EconomicIntegrationManager:
         Returns:
             Dict containing:
             {
-                "is_tradeable": bool,           # Can open new positions?
+                "is_tradeable": bool,           # Can open new usr_positions?
                 "restriction_level": str,      # "BLOCK" | "CAUTION" | "NORMAL"
                 "reason": str,                  # Human-readable explanation
                 "next_event": str,              # Name of next event
@@ -342,7 +342,7 @@ class EconomicIntegrationManager:
                 return result
         
         try:
-            # Query economic_calendar for upcoming events
+            # Query sys_economic_calendar for upcoming events
             events = self._query_economic_calendar(symbol, current_time)
             
             if not events:
@@ -455,7 +455,7 @@ class EconomicIntegrationManager:
         current_time: datetime
     ) -> List[Dict[str, Any]]:
         """
-        Query economic_calendar for upcoming events affecting this symbol.
+        Query sys_economic_calendar for upcoming events affecting this symbol.
         
         Args:
             symbol: Currency pair (e.g., 'EUR/USD')
@@ -481,7 +481,7 @@ class EconomicIntegrationManager:
             placeholders = ",".join(["?" for _ in currencies])
             query = f"""
                 SELECT event_id, event_name, country, currency, impact_score, event_time_utc
-                FROM economic_calendar
+                FROM sys_economic_calendar
                 WHERE currency IN ({placeholders})
                   AND event_time_utc >= datetime(?)
                   AND event_time_utc <= datetime(?)

@@ -30,8 +30,8 @@ def mock_storage():
         },
         "pre_market_buffer_minutes": 30
     }
-    storage.set_system_state = MagicMock()
-    storage.get_system_state = MagicMock(return_value={})
+    storage.set_sys_config = MagicMock()
+    storage.get_sys_config = MagicMock(return_value={})
     return storage
 
 
@@ -192,8 +192,8 @@ class TestPersistenceAndSync:
         
         market_session_service.sync_ledger(utc_time)
         
-        # Verificar que se llamó a storage.set_system_state
-        assert mock_storage.set_system_state.called
+        # Verificar que se llamó a storage.set_sys_config
+        assert mock_storage.set_sys_config.called
         
     def test_get_cached_liquidity_range(self, market_session_service):
         """Verifica que cache de rangos de liquidez funciona."""

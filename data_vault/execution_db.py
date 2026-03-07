@@ -42,7 +42,7 @@ class ExecutionMixin(BaseRepository):
             # pero Decimal en la lógica para evitar errores IEEE 754.
             
             cursor.execute("""
-                INSERT INTO execution_shadow_logs (
+                INSERT INTO usr_execution_logs (
                     signal_id, symbol, theoretical_price, real_price, 
                     slippage_pips, latency_ms, status, tenant_id, 
                     trace_id, metadata
@@ -77,7 +77,7 @@ class ExecutionMixin(BaseRepository):
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            query = "SELECT * FROM execution_shadow_logs"
+            query = "SELECT * FROM usr_execution_logs"
             params = []
             
             if tenant_id:
@@ -142,7 +142,7 @@ class ExecutionMixin(BaseRepository):
                     latency_ms,
                     status,
                     timestamp
-                FROM execution_shadow_logs
+                FROM usr_execution_logs
                 WHERE symbol = ? 
                     AND status = ?
                     AND timestamp >= ?

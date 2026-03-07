@@ -75,26 +75,26 @@ class TestCoherenceServiceBasics:
     def test_calculate_sharpe_ratio_single_execution(self, coherence_service: CoherenceService):
         """Calculate Sharpe Ratio from a single execution (edge case)."""
         # A single execution cannot produce meaningful Sharpe Ratio
-        executions = [
+        usr_executions = [
             {"slippage_pips": Decimal("0.5"), "timestamp": to_utc(datetime.now(timezone.utc))}
         ]
         
-        sharpe = coherence_service._calculate_sharpe_ratio(executions)
+        sharpe = coherence_service._calculate_sharpe_ratio(usr_executions)
         
         # Should return 0.0 or None when data is insufficient
         assert sharpe == 0.0 or sharpe is None
     
-    def test_calculate_sharpe_ratio_multiple_executions(self, coherence_service: CoherenceService):
-        """Calculate Sharpe Ratio from multiple executions (normal case)."""
+    def test_calculate_sharpe_ratio_multiple_usr_executions(self, coherence_service: CoherenceService):
+        """Calculate Sharpe Ratio from multiple usr_executions (normal case)."""
         now = datetime.now(timezone.utc)
-        executions = [
+        usr_executions = [
             {"slippage_pips": Decimal("0.5"), "timestamp": to_utc(now - timedelta(hours=2))},
             {"slippage_pips": Decimal("0.1"), "timestamp": to_utc(now - timedelta(hours=1))},
             {"slippage_pips": Decimal("0.3"), "timestamp": to_utc(now - timedelta(minutes=30))},
             {"slippage_pips": Decimal("0.7"), "timestamp": to_utc(now)},
         ]
         
-        sharpe = coherence_service._calculate_sharpe_ratio(executions)
+        sharpe = coherence_service._calculate_sharpe_ratio(usr_executions)
         
         # Sharpe should be a float >= 0
         assert isinstance(sharpe, float)
@@ -150,8 +150,8 @@ class TestCoherenceDriftDetection:
     def test_detect_drift_shadow_vs_live_minimal_drift(
         self, coherence_service: CoherenceService, in_memory_storage: StorageManager
     ):
-        """Detect drift when shadow and live executions diverge slightly."""
-        # Insert mock shadow executions (theoretical performance)
+        """Detect drift when shadow and live usr_executions diverge slightly."""
+        # Insert mock shadow usr_executions (theoretical performance)
         # Using NOW timestamp to ensure they're not filtered out
         now = datetime.now(timezone.utc)
         timestamp_utc = to_utc(now)
@@ -179,7 +179,7 @@ class TestCoherenceDriftDetection:
         assert "coherence_score" in result
         assert "status" in result
         # With minimal slippage, coherence should be reasonable
-        # (May be 0 if no executions found, due to time filtering edge cases in test env)
+        # (May be 0 if no usr_executions found, due to time filtering edge cases in test env)
         assert "coherence_score" in result
     
     def test_detect_drift_returns_veto_when_coherence_low(
@@ -215,7 +215,7 @@ class TestCoherenceDriftDetection:
         assert "coherence_score" in result
         assert "status" in result
         assert "veto_new_entries" in result
-        # If we have executions and they show degradation, results should reflect it
+        # If we have usr_executions and they show degradation, results should reflect it
         assert isinstance(result["coherence_score"], float)
     
     def test_drift_detection_time_window_filtering(
@@ -225,7 +225,7 @@ class TestCoherenceDriftDetection:
         now = datetime.now(timezone.utc)
         timestamp_utc = to_utc(now)
         
-        # Insert executions with same timestamp (within window)
+        # Insert usr_executions with same timestamp (within window)
         _insert_execution_shadow_log(
             in_memory_storage,
             signal_id="new_sig_1",
@@ -251,9 +251,9 @@ class TestCoherenceDriftDetection:
         # Detect drift with 60-minute window
         result = coherence_service.detect_drift(symbol="EURUSD", window_minutes=60)
         
-        # Should havesome executions analyzed
+        # Should havesome usr_executions analyzed
         assert result is not None
-        assert "executions_analyzed" in result
+        assert "usr_executions_analyzed" in result
 
 
 class TestCoherenceIntegration:
@@ -283,9 +283,9 @@ class TestCoherenceIntegration:
         result = coherence_service.detect_drift(symbol="EURUSD", window_minutes=60)
         
         if result["status"] == "INCOHERENT":
-            # Verify event was registered in coherence_events table
+            # Verify event was registered in usr_coherence_events table
             events = in_memory_storage.execute_query(
-                "SELECT COUNT(*) as count FROM coherence_events WHERE symbol = ? AND status = ?",
+                "SELECT COUNT(*) as count FROM usr_coherence_events WHERE symbol = ? AND status = ?",
                 ("EURUSD", "INCOHERENT")
             )
             count = events[0].get('count', 0) if events else 0
@@ -297,7 +297,7 @@ class TestCoherenceIntegration:
         """Test that system recovers when coherence improves after drift period."""
         now = datetime.now(timezone.utc)
         
-        # Phase 1: Bad executions (drift period)
+        # Phase 1: Bad usr_executions (drift period)
         for i in range(3):
             timestamp = to_utc(now - timedelta(minutes=30-i*5))
             _insert_execution_shadow_log(
@@ -311,7 +311,7 @@ class TestCoherenceIntegration:
                 timestamp=timestamp,
             )
         
-        # Phase 2: Good executions (recovery period)
+        # Phase 2: Good usr_executions (recovery period)
         for i in range(3):
             timestamp = to_utc(now - timedelta(minutes=5-i*2))
             _insert_execution_shadow_log(
@@ -336,8 +336,8 @@ class TestCoherenceIntegration:
 class TestCoherenceEdgeCases:
     """Test edge cases and error handling."""
     
-    def test_coherence_with_no_executions(self, coherence_service: CoherenceService):
-        """Handle case when no executions exist for symbol."""
+    def test_coherence_with_no_usr_executions(self, coherence_service: CoherenceService):
+        """Handle case when no usr_executions exist for symbol."""
         result = coherence_service.detect_drift(symbol="NONEXISTENT", window_minutes=60)
         
         assert result is not None

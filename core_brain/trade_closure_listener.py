@@ -33,7 +33,7 @@ class TradeClosureListener:
     
     Responsibilities:
     1. Process trade closed events from any broker
-    2. Persist trades to DB (with retry on lock)
+    2. Persist usr_trades to DB (with retry on lock)
     3. Update RiskManager state (lockdown, consecutive losses)
     4. Trigger parameter tuning when needed
     5. Maintain detailed audit trail
@@ -73,9 +73,9 @@ class TradeClosureListener:
         self.retry_backoff = retry_backoff
         
         # Metrics for monitoring
-        self.trades_processed = 0
-        self.trades_saved = 0
-        self.trades_failed = 0
+        self.usr_trades_processed = 0
+        self.usr_trades_saved = 0
+        self.usr_trades_failed = 0
         self.tuner_adjustments = 0
         self.threshold_optimizations = 0
         
@@ -141,7 +141,7 @@ class TradeClosureListener:
             return False
         
         trade_event: BrokerTradeClosedEvent = event.data
-        self.trades_processed += 1
+        self.usr_trades_processed += 1
         
         # === STEP 0: Check Idempotence (already processed?) ===
         if await self._is_trade_already_processed(trade_event):
@@ -156,14 +156,14 @@ class TradeClosureListener:
         saved = await self._save_trade_with_retry(trade_event)
         
         if not saved:
-            self.trades_failed += 1
+            self.usr_trades_failed += 1
             logger.error(
                 f"[TRADE_CLOSED] FAILED after {self.max_retries} retries: "
                 f"Symbol={trade_event.symbol} | Ticket={trade_event.ticket}"
             )
             return False
         
-        self.trades_saved += 1
+        self.usr_trades_saved += 1
         
         # === STEP 2: Update RiskManager ===
         is_win = trade_event.is_win()
@@ -183,7 +183,7 @@ class TradeClosureListener:
         await self._process_edge_feedback(trade_event)
         
         # Original parameter tuning (Legacy, periodic or on stress)
-        if self.trades_saved % 5 == 0 or self.risk_manager.consecutive_losses >= 3:
+        if self.usr_trades_saved % 5 == 0 or self.risk_manager.consecutive_losses >= 3:
             await self._trigger_tuner(trade_event)
             
             # === STEP 4.5: Trigger Threshold Optimization (HU 7.1) ===
@@ -272,13 +272,13 @@ class TradeClosureListener:
         return False
     
     async def _get_execution_mode(self, signal_id: Optional[str]) -> str:
-        """Get execution_mode (LIVE/SHADOW) from strategy_ranking if signal linked.
+        """Get execution_mode (LIVE/SHADOW) from usr_performance if signal linked.
         
         Args:
             signal_id: Signal ID to lookup
             
         Returns:
-            ExecutionMode.LIVE if unknown or signal not linked, otherwise actual mode from strategy_ranking
+            ExecutionMode.LIVE if unknown or signal not linked, otherwise actual mode from usr_performance
         """
         if not signal_id:
             return ExecutionMode.LIVE.value  # Default to LIVE if no signal link
@@ -301,8 +301,8 @@ class TradeClosureListener:
             if not strategy_id:
                 return ExecutionMode.LIVE.value
             
-            # Query strategy_ranking for execution_mode
-            ranking = self.storage.get_strategy_ranking(strategy_id)
+            # Query usr_performance for execution_mode
+            ranking = self.storage.get_usr_performance(strategy_id)
             if ranking and 'execution_mode' in ranking:
                 mode = ranking.get('execution_mode', ExecutionMode.LIVE.value)
                 logger.debug(f"[ROUTING] Signal {signal_id} → Strategy {strategy_id} → Mode {mode}")
@@ -409,7 +409,7 @@ class TradeClosureListener:
             True if adjustment made, False if skipped
         """
         try:
-            adjustment_result = self.edge_tuner.adjust_parameters(limit_trades=100)
+            adjustment_result = self.edge_tuner.adjust_parameters(limit_usr_trades=100)
             
             if adjustment_result and "skipped_reason" not in adjustment_result:
                 self.tuner_adjustments += 1
@@ -435,7 +435,7 @@ class TradeClosureListener:
         Trigger ThresholdOptimizer to adaptively adjust confidence threshold.
         
         Activation Logic:
-        - Every 5 successful trades (periodic)
+        - Every 5 successful usr_trades (periodic)
         - When consecutive losses >= 3 (loss streak detection)
         
         Args:
@@ -479,22 +479,22 @@ class TradeClosureListener:
             Dictionary with processed/saved/failed counts
         """
         return {
-            "trades_processed": self.trades_processed,
-            "trades_saved": self.trades_saved,
-            "trades_failed": self.trades_failed,
+            "usr_trades_processed": self.usr_trades_processed,
+            "usr_trades_saved": self.usr_trades_saved,
+            "usr_trades_failed": self.usr_trades_failed,
             "tuner_adjustments": self.tuner_adjustments,
             "threshold_optimizations": self.threshold_optimizations,
             "success_rate": (
-                self.trades_saved / self.trades_processed * 100
-                if self.trades_processed > 0 else 0.0
+                self.usr_trades_saved / self.usr_trades_processed * 100
+                if self.usr_trades_processed > 0 else 0.0
             )
         }
     
     def reset_metrics(self) -> None:
         """Reset metrics (useful for daily rollover)"""
-        self.trades_processed = 0
-        self.trades_saved = 0
-        self.trades_failed = 0
+        self.usr_trades_processed = 0
+        self.usr_trades_saved = 0
+        self.usr_trades_failed = 0
         self.tuner_adjustments = 0
         self.threshold_optimizations = 0
         logger.info("Listener metrics reset")

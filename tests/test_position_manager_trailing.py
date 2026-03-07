@@ -10,7 +10,7 @@ Tests TDD (Red-Green-Refactor):
 4. Requiere profit mínimo (10 pips)
 5. Respeta cooldown entre modificaciones
 6. Respeta freeze level
-7. Integración en monitor_positions()
+7. Integración en monitor_usr_positions()
 """
 
 import pytest
@@ -37,7 +37,7 @@ def mock_storage():
 def mock_connector():
     """Mock MT5Connector"""
     connector = Mock()
-    connector.get_open_positions = Mock(return_value=[])
+    connector.get_open_usr_positions = Mock(return_value=[])
     connector.get_symbol_info = Mock(return_value={
         'trade_stops_level': 50,
         'point': 0.00001,
@@ -345,14 +345,14 @@ def test_trailing_stop_respects_cooldown(position_manager):
     assert "cooldown" in reason.lower()
 
 
-def test_monitor_positions_applies_trailing_stop(
+def test_monitor_usr_positions_applies_trailing_stop(
     position_manager,
     mock_connector,
     mock_storage,
     mock_regime_classifier
 ):
     """
-    Test: Integración - monitor_positions() aplica trailing stop
+    Test: Integración - monitor_usr_positions() aplica trailing stop
     
     Scenario:
     - Position BUY con 40 pips profit
@@ -389,13 +389,13 @@ def test_monitor_positions_applies_trailing_stop(
     }
     
     # Mock responses
-    mock_connector.get_open_positions.return_value = [position]
+    mock_connector.get_open_usr_positions.return_value = [position]
     mock_storage.get_position_metadata.return_value = metadata
     # ATR = 0.00050 (5 pips)
     mock_regime_classifier.get_regime_data.return_value = {'atr': 0.00050}
     
     # Execute
-    result = position_manager.monitor_positions()
+    result = position_manager.monitor_usr_positions()
     
     # Assert: Position modified
     assert mock_connector.modify_position.called

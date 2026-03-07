@@ -21,7 +21,7 @@ def storage(temp_db_path: str) -> StorageManager:
     """Initialize StorageManager with temp DB"""
     return StorageManager(db_path=temp_db_path)
 
-def test_system_state_persistence(storage: StorageManager) -> None:
+def test_sys_config_persistence(storage: StorageManager) -> None:
     """Test saving and retrieving system state"""
     state = {
         "lockdown_mode": True,
@@ -29,18 +29,18 @@ def test_system_state_persistence(storage: StorageManager) -> None:
         "session_stats": {"processed": 100}
     }
     
-    storage.update_system_state(state)
+    storage.update_sys_config(state)
     
     # Create new instance to verify persistence
     new_storage = StorageManager(db_path=storage.db_path)
-    loaded_state = new_storage.get_system_state()
+    loaded_state = new_storage.get_sys_config()
     
     assert loaded_state["lockdown_mode"] is True
     assert loaded_state["consecutive_losses"] == 3
     assert loaded_state["session_stats"]["processed"] == 100
 
 def test_signal_persistence(storage: StorageManager) -> None:
-    """Test saving and retrieving signals with trace_id and status"""
+    """Test saving and retrieving usr_signals with trace_id and status"""
     signal = Signal(
         symbol="EURUSD",
         signal_type=SignalType.BUY,
@@ -61,9 +61,9 @@ def test_signal_persistence(storage: StorageManager) -> None:
     assert signal_id is not None
     
     # Verify retrieval
-    signals = storage.get_signals_today()
-    assert len(signals) == 1
-    saved_signal = signals[0]
+    usr_signals = storage.get_usr_signals_today()
+    assert len(usr_signals) == 1
+    saved_signal = usr_signals[0]
     
     assert saved_signal["symbol"] == "EURUSD"
     assert saved_signal["status"] == "PENDING"  # Newly saved signal starts as PENDING
@@ -84,13 +84,13 @@ def test_trade_result_persistence(storage: StorageManager) -> None:
     
     storage.save_trade_result(trade)
     
-    trades = storage.get_recent_trades(limit=10)
-    assert len(trades) == 1
-    assert trades[0]["symbol"] == "GBPUSD"
-    assert trades[0]["profit"] == 50.0
-    assert trades[0]["exit_reason"] == "Take Profit"
+    usr_trades = storage.get_recent_usr_trades(limit=10)
+    assert len(usr_trades) == 1
+    assert usr_trades[0]["symbol"] == "GBPUSD"
+    assert usr_trades[0]["profit"] == 50.0
+    assert usr_trades[0]["exit_reason"] == "Take Profit"
 
-def test_market_state_logging(storage: StorageManager) -> None:
+def test_sys_market_pulse_logging(storage: StorageManager) -> None:
     """Test logging market states for tuner"""
     state = {
         "symbol": "EURUSD",
@@ -100,8 +100,8 @@ def test_market_state_logging(storage: StorageManager) -> None:
         "volatility": 0.0015
     }
     
-    storage.log_market_state(state)
+    storage.log_sys_market_pulse(state)
     
-    states = storage.get_market_state_history(symbol="EURUSD", limit=10)
+    states = storage.get_sys_market_pulse_history(symbol="EURUSD", limit=10)
     assert len(states) == 1
     assert states[0]["data"]["adx"] == 30.5

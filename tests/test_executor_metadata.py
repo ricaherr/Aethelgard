@@ -33,7 +33,7 @@ def mock_storage():
     storage.update_signal_status = Mock()
     storage.update_position_metadata = Mock(return_value=True)
     # Multi-timeframe limiter needs these
-    storage.get_signals = Mock(return_value=[])
+    storage.get_usr_signals = Mock(return_value=[])
     return storage
 
 

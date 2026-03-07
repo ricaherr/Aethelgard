@@ -2,8 +2,8 @@
 Test: Multi-Timeframe Signal Deduplication
 ===========================================
 
-Validates that signals from the same symbol on different timeframes
-are NOT considered duplicates, allowing strategies like:
+Validates that usr_signals from the same symbol on different timeframes
+are NOT considered duplicates, allowing usr_strategies like:
 - Scalping on M1/M5
 - Day trading on M15/H1
 - Swing trading on H4/D1
@@ -24,7 +24,7 @@ def storage():
 
 
 def create_signal(symbol: str, signal_type: SignalType, timeframe: str) -> Signal:
-    """Helper to create test signals"""
+    """Helper to create test usr_signals"""
     return Signal(
         symbol=symbol,
         signal_type=signal_type,
@@ -43,7 +43,7 @@ def test_same_symbol_different_timeframes_not_duplicates(storage):
     CRITICAL: Signals for the same symbol on different timeframes
     should NOT be considered duplicates.
     
-    Use case: Scalper trades EURUSD on M5, swing trader on H4.
+    Use case: Scalper usr_trades EURUSD on M5, swing trader on H4.
     """
     # Save M5 signal
     signal_m5 = create_signal("EURUSD", SignalType.BUY, "M5")
@@ -80,10 +80,10 @@ def test_same_symbol_same_timeframe_is_duplicate(storage):
 
 def test_multiple_timeframes_same_instrument(storage):
     """
-    Test that we can have active signals on M5, H1, and H4
+    Test that we can have active usr_signals on M5, H1, and H4
     for the same instrument simultaneously.
     """
-    # Save signals on different timeframes
+    # Save usr_signals on different timeframes
     signal_m5 = create_signal("BTCUSD", SignalType.BUY, "M5")
     signal_h1 = create_signal("BTCUSD", SignalType.BUY, "H1")
     signal_h4 = create_signal("BTCUSD", SignalType.BUY, "H4")

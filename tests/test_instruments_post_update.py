@@ -20,16 +20,16 @@ def storage():
     return db
 
 
-def test_update_system_state_json_serialization(storage):
+def test_update_sys_config_json_serialization(storage):
     """
-    Test that update_system_state correctly json.dumps() the instruments_config dict
+    Test that update_sys_config correctly json.dumps() the instruments_config dict
     """
     # Get initial state
-    initial_state = storage.get_system_state()
+    initial_state = storage.get_sys_config()
     assert "instruments_config" in initial_state
     
     initial_config = initial_state["instruments_config"]
-    assert isinstance(initial_config, dict), "instruments_config should be dict after get_system_state()"
+    assert isinstance(initial_config, dict), "instruments_config should be dict after get_sys_config()"
     
     # Verify METALS/spot is enabled by default
     assert initial_config["METALS"]["spot"]["enabled"] is True
@@ -39,10 +39,10 @@ def test_update_system_state_json_serialization(storage):
     modified_config["METALS"]["spot"]["enabled"] = False  # Change to disabled
     
     # Persist (same as endpoint does)
-    storage.update_system_state({"instruments_config": modified_config})
+    storage.update_sys_config({"instruments_config": modified_config})
     
     # Verify it persisted correctly
-    reloaded_state = storage.get_system_state()
+    reloaded_state = storage.get_sys_config()
     reloaded_config = reloaded_state["instruments_config"]
     
     assert isinstance(reloaded_config, dict), "Reloaded config should still be dict"
@@ -55,7 +55,7 @@ def test_post_endpoint_simulation_metals_disabled(storage):
     Simulate exact POST endpoint flow for disabling METALS/spot category
     """
     # Get state
-    state = storage.get_system_state()
+    state = storage.get_sys_config()
     instruments_config = state.get("instruments_config")
     assert instruments_config is not None
     
@@ -84,10 +84,10 @@ def test_post_endpoint_simulation_metals_disabled(storage):
     instruments_config[market][category].update(data)
     
     # Persist
-    storage.update_system_state({"instruments_config": instruments_config})
+    storage.update_sys_config({"instruments_config": instruments_config})
     
     # Reload and verify
-    reloaded_state = storage.get_system_state()
+    reloaded_state = storage.get_sys_config()
     reloaded_config = reloaded_state["instruments_config"]
     
     assert reloaded_config["METALS"]["spot"]["enabled"] is False
@@ -106,10 +106,10 @@ def test_instrument_manager_reflects_disabled_category(storage):
     print(f"✅ Initial state: XAUUSD enabled={xau_enabled}")
     
     # Disable METALS/spot
-    state = storage.get_system_state()
+    state = storage.get_sys_config()
     config = state["instruments_config"]
     config["METALS"]["spot"]["enabled"] = False
-    storage.update_system_state({"instruments_config": config})
+    storage.update_sys_config({"instruments_config": config})
     
     # CRITICAL: Recreate manager to reload config from DB
     manager2 = InstrumentManager(storage=storage)
@@ -130,10 +130,10 @@ def test_get_enabled_symbols_excludes_disabled_category(storage):
     print(f"✅ Initial metals symbols: {metals_count_before}")
     
     # Disable METALS/spot category
-    state = storage.get_system_state()
+    state = storage.get_sys_config()
     config = state["instruments_config"]
     config["METALS"]["spot"]["enabled"] = False
-    storage.update_system_state({"instruments_config": config})
+    storage.update_sys_config({"instruments_config": config})
     
     # Reload and recount
     manager2 = InstrumentManager(storage=storage)
@@ -148,7 +148,7 @@ def test_respect_actives_dict_per_symbol(storage):
     Verify that actives dict disables individual symbols while keeping category enabled
     """
     # Setup: FOREX/majors category is enabled, but disable GBPUSD individually
-    state = storage.get_system_state()
+    state = storage.get_sys_config()
     config = state["instruments_config"]
     
     # Enable category but disable GBPUSD in actives
@@ -156,7 +156,7 @@ def test_respect_actives_dict_per_symbol(storage):
     config["FOREX"]["majors"]["actives"]["GBPUSD"] = False
     config["FOREX"]["majors"]["actives"]["EURUSD"] = True
     
-    storage.update_system_state({"instruments_config": config})
+    storage.update_sys_config({"instruments_config": config})
     
     # Reload manager
     manager = InstrumentManager(storage=storage)

@@ -63,7 +63,7 @@ class NotificationService:
             Dict con la notificación o None si no debe notificarse
         """
         # Obtener preferencias del usuario
-        prefs = self.storage.get_user_preferences(user_id)
+        prefs = self.storage.get_usr_preferences(user_id)
         if not prefs:
             logger.warning(f"No preferences found for user {user_id}, using defaults")
             prefs = self.storage.get_default_profile('active_trader')
@@ -103,13 +103,13 @@ class NotificationService:
             # Verificar umbral de score
             score = context.get('score', 0)
             threshold = prefs.get('notify_threshold_score', 0.85)
-            return score >= threshold and prefs.get('notify_signals', True)
+            return score >= threshold and prefs.get('notify_usr_signals', True)
         
         # Ejecuciones: solo si auto-trading ON
         if category == NotificationCategory.EXECUTION:
             if not prefs.get('auto_trading_enabled', False):
                 return False  # No notificar ejecuciones si auto-trading inactivo
-            return prefs.get('notify_executions', True)
+            return prefs.get('notify_usr_executions', True)
         
         # Cambios de régimen
         if category == NotificationCategory.REGIME:
@@ -289,17 +289,17 @@ class NotificationService:
         
         total_risk = context.get('total_risk', 0)
         limit_risk = context.get('limit_risk', 10.0)
-        open_positions = context.get('open_positions', 0)
+        open_usr_positions = context.get('open_usr_positions', 0)
         
         return {
             'id': f"risk_exposure_{datetime.now().timestamp()}",
             'category': NotificationCategory.RISK.value,
             'priority': NotificationPriority.HIGH.value,
             'title': 'EXPOSICIÓN TOTAL ELEVADA',
-            'message': f"Riesgo agregado: {total_risk:.1f}% (límite: {limit_risk:.1f}%)\nPosiciones abiertas: {open_positions} trades",
+            'message': f"Riesgo agregado: {total_risk:.1f}% (límite: {limit_risk:.1f}%)\nPosiciones abiertas: {open_usr_positions} usr_trades",
             'details': context,
             'actions': [
-                {'label': 'Ver Posiciones', 'action': 'view_positions'},
+                {'label': 'Ver Posiciones', 'action': 'view_usr_positions'},
                 {'label': 'Ajustar Límites', 'action': 'adjust_limits'}
             ],
             'timestamp': datetime.now().isoformat(),

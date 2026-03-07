@@ -2,7 +2,7 @@
 CircuitBreaker Gate Service - Strategy Execution Authorization
 Encapsulates CircuitBreaker integration logic extracted from Executor.
 
-Responsibility: Check if strategy is allowed to send orders (LIVE or SHADOW).
+Responsibility: Check if strategy is allowed to send usr_orders (LIVE or SHADOW).
 - Strategy in LIVE: ALLOW order execution
 - Strategy in SHADOW: ALLOW IF passes 4-Pillar validation
 - Strategy in QUARANTINE: BLOCK order
@@ -100,7 +100,7 @@ class CircuitBreakerGate:
         signal: Optional[Any] = None
     ) -> Tuple[bool, Optional[str]]:
         """
-        Check if strategy is authorized to send orders.
+        Check if strategy is authorized to send usr_orders.
         
         For SHADOW mode: Validates 4-Pillar criteria before authorization.
         For LIVE mode: Standard authorization check.
@@ -117,14 +117,14 @@ class CircuitBreakerGate:
             - (True, None) if strategy is LIVE or (SHADOW + 4-Pillar passed)
             - (False, reason) if strategy is blocked or failed validation
         """
-        # Skip check if no strategy_id (unmanaged signals)
+        # Skip check if no strategy_id (unmanaged usr_signals)
         if not strategy_id:
             logger.debug("No strategy_id: CB gate skipped (unmanaged signal)")
             return (True, None)
 
         try:
             # Get strategy ranking to determine execution mode
-            ranking = self.storage.get_strategy_ranking(strategy_id)
+            ranking = self.storage.get_usr_performance(strategy_id)
             if not ranking:
                 logger.warning(f"Strategy {strategy_id} not found in ranking table")
                 return (False, "STRATEGY_NOT_FOUND")

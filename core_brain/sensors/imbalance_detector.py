@@ -324,7 +324,7 @@ class ImbalanceDetector:
                 "trace_id": self.trace_id
             }
             
-            self.storage.set_system_state(state_key, state_value)
+            self.storage.set_sys_config(state_key, state_value)
             logger.debug(
                 f"[{self.trace_id}] Persisted {len(fvgs)} imbalances "
                 f"for {instrument}/{timeframe}"
@@ -360,7 +360,7 @@ class ImbalanceDetector:
         }
         
         try:
-            self.storage.set_system_state(
+            self.storage.set_sys_config(
                 f"imbalance_ledger_{instrument}_{timeframe}",
                 sync_data
             )

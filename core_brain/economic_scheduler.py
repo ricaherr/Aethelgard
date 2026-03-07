@@ -364,7 +364,7 @@ class EconomicDataScheduler:
             Max allowed system CPU percent
         """
         if self.measured_overhead_pct:
-            # Use measured overhead (learned from real executions)
+            # Use measured overhead (learned from real usr_executions)
             overhead = self.measured_overhead_pct
         else:
             # Estimate (conservative until calibrated)

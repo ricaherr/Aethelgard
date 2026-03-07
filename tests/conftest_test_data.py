@@ -2,7 +2,7 @@
 CENTRALIZED TEST DATA - FIXTURE REFERENCE (SSOT)
 Implements § 1.4 (Explorar antes de Crear) and .ai_rules § 1 (SSOT)
 
-All test data for strategies, metrics, and mock objects should be
+All test data for usr_strategies, metrics, and mock objects should be
 referenced from THIS file, not hardcoded in individual test files.
 """
 
@@ -20,7 +20,7 @@ TEST_STRATEGY_LIVE = {
     'profit_factor': 1.45,
     'dd_pct': 2.3,
     'consecutive_losses': 1,
-    'trades_count': 50,
+    'usr_trades_count': 50,
     'updated_at': datetime.now().isoformat(),
     'blocked_for_trading': False
 }
@@ -33,7 +33,7 @@ TEST_STRATEGY_QUARANTINE = {
     'profit_factor': 1.12,
     'dd_pct': 4.8,
     'consecutive_losses': 5,
-    'trades_count': 35,
+    'usr_trades_count': 35,
     'updated_at': (datetime.now() - timedelta(hours=1)).isoformat(),
     'blocked_for_trading': True
 }
@@ -46,12 +46,12 @@ TEST_STRATEGY_SHADOW = {
     'profit_factor': 1.38,
     'dd_pct': 1.9,
     'consecutive_losses': 0,
-    'trades_count': 42,
+    'usr_trades_count': 42,
     'updated_at': datetime.now().isoformat(),
     'blocked_for_trading': False
 }
 
-# List of all test strategies (for get_all_strategies mock)
+# List of all test usr_strategies (for get_all_usr_strategies mock)
 TEST_STRATEGIES = [
     TEST_STRATEGY_LIVE,
     TEST_STRATEGY_QUARANTINE,
@@ -77,7 +77,7 @@ TEST_STRATEGY_BLOCKED_MAP = {
 }
 
 # Status priority for sorting (LIVE > SHADOW > QUARANTINE > UNKNOWN)
-# Used in: StrategyMonitorService.get_all_strategies_metrics()
+# Used in: StrategyMonitorService.get_all_usr_strategies_metrics()
 TEST_STATUS_PRIORITY_MAP = {
     'LIVE': 0,
     'SHADOW': 1,
@@ -108,12 +108,12 @@ def get_test_strategy_ids() -> list[str]:
 
 
 def get_test_strategy_statuses() -> dict:
-    """Get status mapping for all test strategies."""
+    """Get status mapping for all test usr_strategies."""
     return TEST_STRATEGY_STATUS_MAP.copy()
 
 
 def get_test_strategy_blocked_statuses() -> dict:
-    """Get blocked/trading status mapping for all test strategies."""
+    """Get blocked/trading status mapping for all test usr_strategies."""
     return TEST_STRATEGY_BLOCKED_MAP.copy()
 
 
@@ -122,6 +122,6 @@ def get_test_status_priority() -> dict:
     Get status priority mapping for sorting.
     LIVE (0) > SHADOW (1) > QUARANTINE (2) > UNKNOWN (3)
     
-    Used by: StrategyMonitorService.get_all_strategies_metrics()
+    Used by: StrategyMonitorService.get_all_usr_strategies_metrics()
     """
     return TEST_STATUS_PRIORITY_MAP.copy()

@@ -30,8 +30,8 @@ def mock_storage():
             "min_volume_avg": 50
         }
     }
-    storage.get_system_state = MagicMock(return_value={})
-    storage.set_system_state = MagicMock()
+    storage.get_sys_config = MagicMock(return_value={})
+    storage.set_sys_config = MagicMock()
     return storage
 
 
@@ -268,7 +268,7 @@ class TestPersistenceAndIntegration:
         )
         
         # Verificar que se intentó persistir
-        assert mock_storage.set_system_state.called or len(fvgs) == 0
+        assert mock_storage.set_sys_config.called or len(fvgs) == 0
         
     def test_sync_ledger_with_trace_id(self, imbalance_detector, mock_storage, sample_m5_ohlcv):
         """Sincroniza ledger de imbalances con Trace_ID."""

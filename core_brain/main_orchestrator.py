@@ -8,7 +8,7 @@ Key Features:
 - Asynchronous event loop for non-blocking operation
 - Dynamic frequency adjustment based on market regime
 - Session statistics with DB reconstruction (Resilient Recovery)
-- Adaptive heartbeat (faster when signals active)
+- Adaptive heartbeat (faster when usr_signals active)
 - Graceful shutdown with state persistence
 - Error resilience with automatic recovery
 
@@ -21,7 +21,7 @@ Principles Applied:
 Architecture: "Orquestador Resiliente"
 - SessionStats se reconstruye desde la DB al iniciar
 - Latido de Guardia: sleep se reduce si hay señales activas
-- Persistencia completa de trades ejecutados del día
+- Persistencia completa de usr_trades ejecutados del día
 """
 import sys
 import os
@@ -95,18 +95,18 @@ class SessionStats:
     Resets automatically when a new day begins.
     
     RESILIENCIA: Can reconstruct state from database on initialization.
-    This ensures trades executed today are not forgotten after restarts.
+    This ensures usr_trades executed today are not forgotten after restarts.
     """
     date: date = field(default_factory=lambda: date.today())
-    signals_processed: int = 0
-    signals_executed: int = 0
+    usr_signals_processed: int = 0
+    usr_signals_executed: int = 0
     cycles_completed: int = 0
     errors_count: int = 0
     # Pipeline tracking
     scans_total: int = 0
-    signals_generated: int = 0
-    signals_risk_passed: int = 0
-    signals_vetoed: int = 0
+    usr_signals_generated: int = 0
+    usr_signals_risk_passed: int = 0
+    usr_signals_vetoed: int = 0
     
     @classmethod
     def from_storage(cls, storage: StorageManager) -> 'SessionStats':
@@ -114,7 +114,7 @@ class SessionStats:
         Reconstruct SessionStats from persistent storage.
         
         This method enables recovery after system restarts, ensuring
-        we don't lose track of today's executed signals.
+        we don't lose track of today's executed usr_signals.
         
         Args:
             storage: StorageManager instance to query
@@ -124,12 +124,12 @@ class SessionStats:
         """
         today = date.today()
         
-        # Query DB for today's executed signals (marked with status='executed')
-        executed_count = storage.count_executed_signals(today)
+        # Query DB for today's executed usr_signals (marked with status='executed')
+        executed_count = storage.count_executed_usr_signals(today)
         
         # Retrieve system state for other metrics
-        system_state = storage.get_system_state()
-        session_data = system_state.get("session_stats", {})
+        sys_config = storage.get_sys_config()
+        session_data = sys_config.get("session_stats", {})
         
         # Check if session data is from today
         stored_date_str = session_data.get("date", "")
@@ -143,15 +143,15 @@ class SessionStats:
             # Restore full stats from storage
             stats = cls(
                 date=today,
-                signals_processed=session_data.get("signals_processed", 0),
-                signals_executed=executed_count,  # Always source from DB
+                usr_signals_processed=session_data.get("usr_signals_processed", 0),
+                usr_signals_executed=executed_count,  # Always source from DB
                 cycles_completed=session_data.get("cycles_completed", 0),
                 errors_count=session_data.get("errors_count", 0)
             )
             logger.info(f"SessionStats reconstructed from DB: {stats}")
         else:
             # Fresh start for new day
-            stats = cls(date=today, signals_executed=executed_count)
+            stats = cls(date=today, usr_signals_executed=executed_count)
             logger.info(f"New day detected. Fresh SessionStats initialized: {stats}")
         
         return stats
@@ -162,16 +162,16 @@ class SessionStats:
         if self.date != today:
             logger.info(f"New day detected. Resetting stats. Previous: {self}")
             self.date = today
-            self.signals_processed = 0
-            self.signals_executed = 0
+            self.usr_signals_processed = 0
+            self.usr_signals_executed = 0
             self.cycles_completed = 0
             self.errors_count = 0
     
     def __str__(self) -> str:
         return (
             f"SessionStats(date={self.date}, "
-            f"processed={self.signals_processed}, "
-            f"executed={self.signals_executed}, "
+            f"processed={self.usr_signals_processed}, "
+            f"executed={self.usr_signals_executed}, "
             f"cycles={self.cycles_completed}, "
             f"errors={self.errors_count})"
         )
@@ -209,19 +209,19 @@ class MainOrchestrator:
     
     Manages the complete trading cycle:
     1. Scanner: Identifies market opportunities
-    2. Signal Factory: Generates trading signals
+    2. Signal Factory: Generates trading usr_signals
     3. Risk Manager: Validates risk parameters
-    4. Executor: Places orders
+    4. Executor: Places usr_orders
     
     Features:
     - Dynamic loop frequency based on market regime
-    - Adaptive heartbeat: faster sleep when active signals present
+    - Adaptive heartbeat: faster sleep when active usr_signals present
     - Resilient recovery: reconstructs session state from DB
     - Latido de Guardia: CPU-friendly monitoring
     """
     
     # Adaptive heartbeat constants
-    MIN_SLEEP_INTERVAL = 3  # Seconds (when signals active)
+    MIN_SLEEP_INTERVAL = 3  # Seconds (when usr_signals active)
     HEARTBEAT_CHECK_INTERVAL = 1  # Check every second for shutdown
     
     def __init__(
@@ -250,8 +250,8 @@ class MainOrchestrator:
         # 1. Base dependencies and config
         self._init_core_dependencies(scanner, signal_factory, risk_manager, executor, storage, config_path, strategy_ranker)
         
-        # 1.5 Load strategies dynamically from BD (MANIFESTO II.3-II.4)
-        self._load_dynamic_strategies()
+        # 1.5 Load usr_strategies dynamically from BD (MANIFESTO II.3-II.4)
+        self._load_dynamic_usr_strategies()
         
         # 2. Classifier and Position Management
         self.regime_classifier = regime_classifier or RegimeClassifier(storage=self.storage)
@@ -264,7 +264,7 @@ class MainOrchestrator:
         self._init_ancillary_services(expiration_manager, coherence_monitor, trade_closure_listener)
 
         # 4. System State and Session Tracking (SSOT)
-        self._init_system_state()
+        self._init_sys_config()
         
         # 5. Cycle intervals and Heartbeat
         self._init_loop_intervals()
@@ -291,9 +291,9 @@ class MainOrchestrator:
         self.strategy_ranker = strategy_ranker or StrategyRanker(storage=self.storage)
         self.config = self._load_config(config_path)
 
-    def _load_dynamic_strategies(self) -> None:
+    def _load_dynamic_usr_strategies(self) -> None:
         """
-        Load all strategies dynamically from BD (MANIFESTO II.3-II.4).
+        Load all usr_strategies dynamically from BD (MANIFESTO II.3-II.4).
         Creates a new SignalFactory with populated strategy engines.
         CUMPLE: DEVELOPMENT_GUIDELINES 1.6 (Service Layer) + Dynamic Registry.
         """
@@ -301,7 +301,7 @@ class MainOrchestrator:
             from core_brain.services.strategy_engine_factory import StrategyEngineFactory
             from core_brain.signal_factory import SignalFactory
             from core_brain.confluence import MultiTimeframeConfluenceAnalyzer
-            from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
+            from core_brain.usr_strategies.trifecta_logic import TrifectaAnalyzer
             from core_brain.services.fundamental_guard import FundamentalGuardService
             from core_brain.sensors import (
                 MovingAverageSensor,
@@ -350,16 +350,16 @@ class MainOrchestrator:
             }
             logger.info(f"[STRATEGIES] ✓ Sensors initialized: {list(available_sensors.keys())}")
             
-            # Create factory and instantiate all strategies
+            # Create factory and instantiate all usr_strategies
             strategy_factory = StrategyEngineFactory(
                 storage=self.storage,
                 config=dynamic_params,
                 available_sensors=available_sensors
             )
-            active_engines = strategy_factory.instantiate_all_strategies()
+            active_engines = strategy_factory.instantiate_all_usr_strategies()
             stats = strategy_factory.get_stats()
             
-            # Create new SignalFactory with loaded strategies
+            # Create new SignalFactory with loaded usr_strategies
             self.signal_factory = SignalFactory(
                 storage_manager=self.storage,
                 strategy_engines=active_engines,
@@ -372,7 +372,7 @@ class MainOrchestrator:
                 f"{stats['active_engines']} active, {stats['failed_loads']} skipped"
             )
         except Exception as e:
-            logger.error(f"[STRATEGIES] ⚠️  Failed to load strategies dynamically: {e}", exc_info=True)
+            logger.error(f"[STRATEGIES] ⚠️  Failed to load usr_strategies dynamically: {e}", exc_info=True)
             logger.warning("[STRATEGIES] Continuing with existing SignalFactory (may have 0 engines)")
 
     def _init_position_management(self) -> None:
@@ -402,7 +402,7 @@ class MainOrchestrator:
         
         if connector is None:
             class _NullConnector:
-                def get_open_positions(self) -> List[Dict[str, Any]]: return []
+                def get_open_usr_positions(self) -> List[Dict[str, Any]]: return []
             connector = _NullConnector()
 
         self.position_manager = PositionManager(
@@ -427,7 +427,7 @@ class MainOrchestrator:
         else:
             self.trade_closure_listener = listener
 
-    def _init_system_state(self) -> None:
+    def _init_sys_config(self) -> None:
         """Loads global module status and session statistics from SSOT."""
         modules = self.storage.get_global_modules_enabled() if hasattr(self.storage, "get_global_modules_enabled") else {}
         self.modules_enabled_global = modules if isinstance(modules, dict) else {}
@@ -442,7 +442,7 @@ class MainOrchestrator:
         self.stats = SessionStats.from_storage(self.storage)
         self.current_regime = MarketRegime.RANGE
         self._shutdown_requested = False
-        self._active_signals = []
+        self._active_usr_signals = []
         self._last_checked_deal_ticket = 0
         
         # Health check: Track consecutive cycles with 0 structures detected
@@ -465,9 +465,9 @@ class MainOrchestrator:
         self._ranking_interval = 300  # 5 minutes in seconds
 
     def _init_broker_discovery(self) -> None:
-        """Discovers and classifies available brokers from storage."""
-        self.brokers = self._discover_brokers()
-        self.broker_status = self._classify_brokers(self.brokers)
+        """Discovers and classifies available sys_brokers from storage."""
+        self.sys_brokers = self._discover_brokers()
+        self.broker_status = self._classify_brokers(self.sys_brokers)
 
     def _init_orchestration_services(self, ui_mapping: Optional[Any], heartbeat: Optional[Any], resolver: Optional[Any]) -> None:
         """Initializes orchestration & reporting services (Vector V4)."""
@@ -566,31 +566,31 @@ class MainOrchestrator:
             self.economic_integration = None
 
     def _discover_brokers(self) -> List[Dict]:
-        """Descubre todos los brokers registrados en la base de datos."""
+        """Descubre todos los sys_brokers registrados en la base de datos."""
         try:
             return self.storage.get_brokers()
         except Exception as e:
-            logger.error(f"Error discovering brokers: {e}")
+            logger.error(f"Error discovering sys_brokers: {e}")
             return []
 
-    def _classify_brokers(self, brokers: List[Dict]) -> Dict[str, Dict]:
-        """Clasifica brokers según provisión automática o manual."""
+    def _classify_brokers(self, sys_brokers: List[Dict]) -> Dict[str, Dict]:
+        """Clasifica sys_brokers según provisión automática o manual."""
         status = {}
-        for broker in brokers:
+        for broker in sys_brokers:
             broker_id = broker.get('broker_id')
             auto = broker.get('auto_provision_available', False)
             status[broker_id] = {
                 'name': broker.get('name'),
                 'auto_provision': bool(auto),
                 'manual_required': not bool(auto),
-                'platforms': broker.get('platforms_available'),
+                'sys_platforms': broker.get('platforms_available'),
                 'website': broker.get('website'),
                 'status': 'pending',
             }
         return status
 
     async def provision_all_demo_accounts(self) -> None:
-        """Provisiona cuentas demo maestras para todos los brokers con provisión automática."""
+        """Provisiona cuentas demo maestras para todos los sys_brokers con provisión automática."""
         from connectors.auto_provisioning import BrokerProvisioner
         provisioner = BrokerProvisioner(storage=self.storage)
         for broker_id, info in self.broker_status.items():
@@ -616,8 +616,8 @@ class MainOrchestrator:
         # Shutdown flag
         self._shutdown_requested = False
         
-        # Active signals tracking (for adaptive heartbeat)
-        self._active_signals: List[Signal] = []
+        # Active usr_signals tracking (for adaptive heartbeat)
+        self._active_usr_signals: List[Signal] = []
 
         # Coherence monitor
         self.coherence_monitor = CoherenceMonitor(storage=self.storage)
@@ -638,7 +638,7 @@ class MainOrchestrator:
             f"VOLATILE={self.intervals[MarketRegime.VOLATILE]}s, "
             f"SHOCK={self.intervals[MarketRegime.SHOCK]}s"
         )
-        logger.info(f"Adaptive heartbeat: MIN={self.MIN_SLEEP_INTERVAL}s when signals active")
+        logger.info(f"Adaptive heartbeat: MIN={self.MIN_SLEEP_INTERVAL}s when usr_signals active")
     
     def _load_config(self, config_path: Optional[str]) -> Dict:
         """
@@ -670,7 +670,7 @@ class MainOrchestrator:
         """
         Get sleep interval based on current market regime.
         
-        LATIDO DE GUARDIA: Reduces sleep interval when active signals present,
+        LATIDO DE GUARDIA: Reduces sleep interval when active usr_signals present,
         enabling faster response to market conditions.
         
         Returns:
@@ -678,11 +678,11 @@ class MainOrchestrator:
         """
         base_interval = self.intervals.get(self.current_regime, 30)
         
-        # Adaptive heartbeat: faster when signals are active
-        if self._active_signals:
+        # Adaptive heartbeat: faster when usr_signals are active
+        if self._active_usr_signals:
             adaptive_interval = min(base_interval, self.MIN_SLEEP_INTERVAL)
             logger.debug(
-                f"Adaptive heartbeat active: {len(self._active_signals)} signals, "
+                f"Adaptive heartbeat active: {len(self._active_usr_signals)} usr_signals, "
                 f"interval reduced to {adaptive_interval}s"
             )
             return adaptive_interval
@@ -723,9 +723,9 @@ class MainOrchestrator:
             logger.info(f"Regime changed: {self.current_regime} -> {new_regime}")
             self.current_regime = new_regime
     
-    async def _check_closed_positions(self) -> None:
+    async def _check_closed_usr_positions(self) -> None:
         """
-        Check connectors for newly closed positions and process them through TradeClosureListener.
+        Check connectors for newly closed usr_positions and process them through TradeClosureListener.
         """
         try:
             from datetime import datetime
@@ -740,23 +740,23 @@ class MainOrchestrator:
             if not mt5_connector or not mt5_connector.is_connected:
                 return
             
-            # Get closed positions from connector (agnostic)
+            # Get closed usr_positions from connector (agnostic)
             # This avoids direct MetaTrader5 import in core_brain
-            closed_positions = mt5_connector.get_closed_positions(hours=24)
+            closed_usr_positions = mt5_connector.get_closed_usr_positions(hours=24)
             
-            if not closed_positions:
+            if not closed_usr_positions:
                 return
             
             # Filter for new ones (ticket > last_checked)
-            new_positions = [p for p in closed_positions if p['ticket'] > self._last_checked_deal_ticket]
+            new_usr_positions = [p for p in closed_usr_positions if p['ticket'] > self._last_checked_deal_ticket]
             
-            if not new_positions:
+            if not new_usr_positions:
                 return
             
-            logger.info(f"Found {len(new_positions)} new closed positions to process via Listener")
+            logger.info(f"Found {len(new_usr_positions)} new closed usr_positions to process via Listener")
             
             # Process each position
-            for pos in new_positions:
+            for pos in new_usr_positions:
                 # Find corresponding signal in DB
                 signal_id = pos.get('signal_id')
                 matching_signal = None
@@ -766,8 +766,8 @@ class MainOrchestrator:
                 
                 if not matching_signal:
                     # Fallback: search by ticket
-                    signals = self.storage.get_signals(limit=100)
-                    for sig in signals:
+                    usr_signals = self.storage.get_usr_signals(limit=100)
+                    for sig in usr_signals:
                         if sig.get('order_id') == str(pos['ticket']):
                             matching_signal = sig
                             break
@@ -805,7 +805,7 @@ class MainOrchestrator:
                 self._last_checked_deal_ticket = max(self._last_checked_deal_ticket, pos['ticket'])
             
         except Exception as e:
-            logger.error(f"Error checking closed positions: {e}")
+            logger.error(f"Error checking closed usr_positions: {e}")
 
     async def run_single_cycle(self) -> None:
         """
@@ -813,9 +813,9 @@ class MainOrchestrator:
         
         Cycle steps:
         1. Scan market for opportunities
-        2. Generate signals from scan results
+        2. Generate usr_signals from scan results
         3. Validate with risk manager
-        4. Execute approved signals (with DB persistence)
+        4. Execute approved usr_signals (with DB persistence)
         5. Update statistics
         """
         try:
@@ -830,13 +830,13 @@ class MainOrchestrator:
             if self.thought_callback:
                 await self.thought_callback("Iniciando ciclo de monitoreo autónomo...", module="CORE")
             
-            # EDGE: Expire old PENDING signals based on timeframe window
-            # This prevents stale signals from accumulating in database
+            # EDGE: Expire old PENDING usr_signals based on timeframe window
+            # This prevents stale usr_signals from accumulating in database
             if self.thought_callback:
                 await self.thought_callback("Verificando caducidad de señales no ejecutadas...", module="ALPHA")
                 
-            expiration_stats = self.expiration_manager.expire_old_signals()
-            logger.info(f"[EXPIRATION] Processed {expiration_stats.get('total_checked', 0)} signals, "
+            expiration_stats = self.expiration_manager.expire_old_usr_signals()
+            logger.info(f"[EXPIRATION] Processed {expiration_stats.get('total_checked', 0)} usr_signals, "
                        f"expired {expiration_stats['total_expired']}")
             if expiration_stats['total_expired'] > 0:
                 logger.info(f"[EXPIRATION] [OK] Breakdown: {expiration_stats['by_timeframe']}")
@@ -849,10 +849,10 @@ class MainOrchestrator:
             elif self.position_manager:
                 if self.thought_callback:
                     await self.thought_callback("Evaluando salud de posiciones abiertas...", module="MGMT")
-                position_stats = self.position_manager.monitor_positions()
+                position_stats = self.position_manager.monitor_usr_positions()
                 if position_stats['actions']:
                     logger.info(
-                        f"[POSITION_MANAGER] Monitored {position_stats['monitored']} positions, "
+                        f"[POSITION_MANAGER] Monitored {position_stats['monitored']} usr_positions, "
                         f"executed {len(position_stats['actions'])} actions"
                     )
                     for action in position_stats['actions']:
@@ -907,7 +907,7 @@ class MainOrchestrator:
             self.storage.update_module_heartbeat("scanner")
             
             # EXEC-UI-DATA-INTEGRATION: Analyze market structure and populate UI mapping
-            # (Always run, even if no trading signals are generated)
+            # (Always run, even if no trading usr_signals are generated)
             if self.market_structure_analyzer and self.ui_mapping_service:
                 # Defensive check: if too many snapshots lack data, wait a bit
                 snapshots_with_data = sum(
@@ -1008,8 +1008,8 @@ class MainOrchestrator:
             # ════════════════════════════════════════════════════════════════════════════════════
             # PHASE 8: Economic Veto Check (News-Based Trading Lockdown)
             # ════════════════════════════════════════════════════════════════════════════════════
-            # Before generating signals, verify trading is allowed by economic calendar.
-            # If HIGH impact event: block new positions, move SL to Break-Even.
+            # Before generating usr_signals, verify trading is allowed by economic calendar.
+            # If HIGH impact event: block new usr_positions, move SL to Break-Even.
             # If MEDIUM impact event: allow with CAUTION (unit R @ 50%).
             # Agnosis: MainOrchestrator never knows provider sources.
             
@@ -1018,7 +1018,7 @@ class MainOrchestrator:
                     current_time = datetime.now(timezone.utc)
                     
                     # Check each symbol in scan results for economic veto
-                    veto_symbols = set()  # Symbols that should NOT have new positions opened
+                    veto_symbols = set()  # Symbols that should NOT have new usr_positions opened
                     caution_symbols = set()  # Symbols with MEDIUM impact (reduced size)
                     
                     for symbol in scan_results.keys():
@@ -1034,7 +1034,7 @@ class MainOrchestrator:
                             
                             # HIGH impact: Prepare position management
                             if status.get("restriction_level") == "BLOCK":
-                                logger.warning(f"[ECON-VETO] HIGH IMPACT: Adjusting open positions for {symbol} to Break-Even")
+                                logger.warning(f"[ECON-VETO] HIGH IMPACT: Adjusting open usr_positions for {symbol} to Break-Even")
                                 # Activate RiskManager lockdown for BLOCK-level events
                                 try:
                                     await self.risk_manager.activate_lockdown(
@@ -1096,63 +1096,63 @@ class MainOrchestrator:
                 self._econ_veto_symbols = set()
                 self._econ_caution_symbols = set()
             
-            # Step 2: Generate signals WITH DataFrames
-            logger.debug("Generating signals from scan results with data...")
-            signals = await self.signal_factory.generate_signals_batch(scan_results_with_data, trace_id)
+            # Step 2: Generate usr_signals WITH DataFrames
+            logger.debug("Generating usr_signals from scan results with data...")
+            usr_signals = await self.signal_factory.generate_usr_signals_batch(scan_results_with_data, trace_id)
             self.storage.update_module_heartbeat("signal_factory")
             
-            if not signals:
-                logger.debug("No signals generated")
+            if not usr_signals:
+                logger.debug("No usr_signals generated")
                 if self.thought_callback:
                     await self.thought_callback("Silencio en el mercado. No se detectan setups institucionales.", module="ALPHA")
-                # Clear active signals if none generated
-                self._active_signals.clear()
+                # Clear active usr_signals if none generated
+                self._active_usr_signals.clear()
                 self.stats.cycles_completed += 1
                 return
             
             # Signal processing continues (unreachable code bug fixed)
             if self.thought_callback:
-                await self.thought_callback(f"Setup detectado: {len(signals)} señales en pipeline alpha.", module="ALPHA")
+                await self.thought_callback(f"Setup detectado: {len(usr_signals)} señales en pipeline alpha.", module="ALPHA")
             
-            logger.info(f"Generated {len(signals)} signals")
-            self.stats.signals_processed += len(signals)
-            self.stats.signals_generated += len(signals)
+            logger.info(f"Generated {len(usr_signals)} usr_signals")
+            self.stats.usr_signals_processed += len(usr_signals)
+            self.stats.usr_signals_generated += len(usr_signals)
             
-            # Step 3: Validate signals with risk manager
-            validated_signals = []
-            for signal in signals:
+            # Step 3: Validate usr_signals with risk manager
+            validated_usr_signals = []
+            for signal in usr_signals:
                 is_valid = True
                 if hasattr(self.risk_manager, "validate_signal"):
                     is_valid = bool(self.risk_manager.validate_signal(signal))
                 if is_valid:
-                    validated_signals.append(signal)
+                    validated_usr_signals.append(signal)
                 else:
                     logger.info(f"Signal {signal.symbol} rejected by risk manager (Trace ID: {signal.trace_id})")
             
-            if not validated_signals:
-                logger.info("No signals passed risk validation")
-                self._active_signals.clear()
+            if not validated_usr_signals:
+                logger.info("No usr_signals passed risk validation")
+                self._active_usr_signals.clear()
                 self.stats.cycles_completed += 1
                 return
             
-            logger.info(f"{len(validated_signals)} signals passed risk validation")
+            logger.info(f"{len(validated_usr_signals)} usr_signals passed risk validation")
             
             # Update pipeline stats
-            self.stats.signals_risk_passed += len(validated_signals)
-            self.stats.signals_vetoed += (len(signals) - len(validated_signals))
+            self.stats.usr_signals_risk_passed += len(validated_usr_signals)
+            self.stats.usr_signals_vetoed += (len(usr_signals) - len(validated_usr_signals))
             self.storage.update_module_heartbeat("risk_manager")
             
-            # Update active signals for adaptive heartbeat
-            self._active_signals = validated_signals
+            # Update active usr_signals for adaptive heartbeat
+            self._active_usr_signals = validated_usr_signals
             
             # MODULE TOGGLE: Executor
             if not self.modules_enabled_global.get("executor", True):
                 logger.info(
                     f"[TOGGLE] executor deshabilitado globalmente - "
-                    f"{len(validated_signals)} señales aprobadas NO ejecutadas"
+                    f"{len(validated_usr_signals)} señales aprobadas NO ejecutadas"
                 )
                 self.stats.cycles_completed += 1
-                self._active_signals.clear()
+                self._active_usr_signals.clear()
                 return
             
             # EDGE Auto-Correction: Verify lockdown BEFORE checking it (every 10 cycles)
@@ -1173,21 +1173,21 @@ class MainOrchestrator:
                 return
             
             # ════════════════════════════════════════════════════════════════════════════════════
-            # PHASE 8: Filter signals vetoed by economic calendar
+            # PHASE 8: Filter usr_signals vetoed by economic calendar
             # ════════════════════════════════════════════════════════════════════════════════════
             
-            # Remove signals for symbols under economic veto
+            # Remove usr_signals for symbols under economic veto
             econ_veto_symbols = getattr(self, '_econ_veto_symbols', set())
-            filtered_signals = []
-            for signal in validated_signals:
+            filtered_usr_signals = []
+            for signal in validated_usr_signals:
                 if signal.symbol in econ_veto_symbols:
                     logger.info(
                         f"[ECON-VETO-EXEC] Signal for {signal.symbol} blocked: "
                         f"Economic veto active"
                     )
-                    self.stats.signals_vetoed += 1
+                    self.stats.usr_signals_vetoed += 1
                     
-                    # HIGH impact: Adjust open positions to Break-Even
+                    # HIGH impact: Adjust open usr_positions to Break-Even
                     try:
                         current_status = await self.economic_integration.get_trading_status(
                             signal.symbol,
@@ -1195,7 +1195,7 @@ class MainOrchestrator:
                         )
                         if current_status.get("restriction_level") == "BLOCK":
                             logger.warning(
-                                f"[ECON-VETO-EXEC] HIGH IMPACT: Adjusting positions for {signal.symbol} to Break-Even"
+                                f"[ECON-VETO-EXEC] HIGH IMPACT: Adjusting usr_positions for {signal.symbol} to Break-Even"
                             )
                             # Activate lockdown for this symbol due to BLOCK-level event
                             try:
@@ -1214,22 +1214,22 @@ class MainOrchestrator:
                             )
                             if breakeven_result.get("adjusted", 0) > 0:
                                 logger.info(
-                                    f"[ECON-VETO-EXEC] ✅ Adjusted {breakeven_result['adjusted']} positions to Break-Even"
+                                    f"[ECON-VETO-EXEC] ✅ Adjusted {breakeven_result['adjusted']} usr_positions to Break-Even"
                                 )
                     except Exception as e:
                         logger.error(f"[ECON-VETO-EXEC] Error adjusting SL to Break-Even: {e}")
                 else:
-                    filtered_signals.append(signal)
+                    filtered_usr_signals.append(signal)
             
-            validated_signals = filtered_signals
+            validated_usr_signals = filtered_usr_signals
             
-            if not validated_signals:
-                logger.info("All signals filtered by economic veto")
+            if not validated_usr_signals:
+                logger.info("All usr_signals filtered by economic veto")
                 self.stats.cycles_completed += 1
                 return
             
-            # Step 5: Execute validated signals with DB persistence
-            for signal in validated_signals:
+            # Step 5: Execute validated usr_signals with DB persistence
+            for signal in validated_usr_signals:
                 try:
                     logger.info(f"Executing signal: {signal.symbol} {signal.signal_type}")
                     
@@ -1237,9 +1237,9 @@ class MainOrchestrator:
                     if not self._is_strategy_authorized_for_execution(signal):
                         logger.warning(
                             f"Signal for {signal.symbol} blocked: Strategy {getattr(signal, 'strategy', 'unknown')} "
-                            f"not authorized for LIVE execution (checking strategy_ranking table)"
+                            f"not authorized for LIVE execution (checking usr_performance table)"
                         )
-                        self.stats.signals_vetoed += 1
+                        self.stats.usr_signals_vetoed += 1
                         continue
                     
                     success = await self.executor.execute_signal(signal)
@@ -1247,12 +1247,12 @@ class MainOrchestrator:
                     if success:
                         if self.thought_callback:
                             await self.thought_callback(f"ORDEN EJECUTADA: {signal.symbol} via {signal.connector}", level="success", module="EXEC")
-                        if not getattr(self.executor, "persists_signals", False):
+                        if not getattr(self.executor, "persists_usr_signals", False):
                             signal_id = self.storage.save_signal(signal)
                             logger.info(
                                 f"Signal executed and persisted: {signal.symbol} (ID: {signal_id})"
                             )
-                        self.stats.signals_executed += 1
+                        self.stats.usr_signals_executed += 1
                     else:
                         logger.warning(f"Signal execution failed: {signal.symbol}")
                         
@@ -1263,16 +1263,16 @@ class MainOrchestrator:
             
             self.storage.update_module_heartbeat("executor")
             
-            # Step 6: Check for closed positions and update signal status
-            await self._check_closed_positions()
+            # Step 6: Check for closed usr_positions and update signal status
+            await self._check_closed_usr_positions()
             
             # PHASE 4: Strategy Ranking Cycle (every 5 minutes)
-            # Evaluate all strategies for mode transitions (SHADOW->LIVE, LIVE->QUARANTINE, etc.)
+            # Evaluate all usr_strategies for mode transitions (SHADOW->LIVE, LIVE->QUARANTINE, etc.)
             time_since_last_ranking = datetime.now(timezone.utc) - self._last_ranking_cycle
             if time_since_last_ranking.total_seconds() >= self._ranking_interval:
                 try:
                     logger.info(f"[RANKER] Starting ranking cycle (interval: 5 minutes)")
-                    ranking_results = self.strategy_ranker.evaluate_all_strategies()
+                    ranking_results = self.strategy_ranker.evaluate_all_usr_strategies()
                     
                     # Log transitions
                     for strategy_id, result in ranking_results.items():
@@ -1299,23 +1299,23 @@ class MainOrchestrator:
                     logger.error(f"[RANKER] Error in ranking cycle (non-blocking): {e}", exc_info=False)
                     # Don't re-raise - ranking errors should not block trading
             
-            # Step 7: Clear active signals after execution and update cycle count
-            self._active_signals.clear()
+            # Step 7: Clear active usr_signals after execution and update cycle count
+            self._active_usr_signals.clear()
             self.stats.cycles_completed += 1
             self._persist_session_stats()
             
             # Coherence monitoring
-            coherence_events = self.coherence_monitor.run_once()
-            if coherence_events:
-                    for event in coherence_events:
+            usr_coherence_events = self.coherence_monitor.run_once()
+            if usr_coherence_events:
+                    for event in usr_coherence_events:
                         logger.warning(
                             f"Coherence inconsistency: symbol={event.symbol}, stage={event.stage}, status={event.status}, reason={event.reason}, connector={event.connector_type}"
                         )
             
-            # NEW: Update heartbeat for all strategies (Vector V4 - Monitor)
+            # NEW: Update heartbeat for all usr_strategies (Vector V4 - Monitor)
             if self.heartbeat_monitor:
                 try:
-                    self._update_all_strategies_heartbeat()
+                    self._update_all_usr_strategies_heartbeat()
                 except Exception as e:
                     logger.warning(f"[HEARTBEAT] Error updating heartbeats: {e}")
             
@@ -1326,14 +1326,14 @@ class MainOrchestrator:
             self.stats.errors_count += 1
             self.stats.cycles_completed += 1
     
-    def _update_all_strategies_heartbeat(self) -> None:
-        """Update heartbeat for all strategies to reflect cycle end (Vector V4)."""
+    def _update_all_usr_strategies_heartbeat(self) -> None:
+        """Update heartbeat for all usr_strategies to reflect cycle end (Vector V4)."""
         if not self.heartbeat_monitor:
             return
         
         from core_brain.services.strategy_heartbeat_monitor import StrategyState
         
-        # Mark all strategies as IDLE at end of cycle
+        # Mark all usr_strategies as IDLE at end of cycle
         for strategy_id in getattr(self.heartbeat_monitor, 'STRATEGY_IDS', []):
             try:
                 self.heartbeat_monitor.update_heartbeat(
@@ -1353,27 +1353,27 @@ class MainOrchestrator:
         """
         session_data = {
             "date": self.stats.date.isoformat(),
-            "signals_processed": self.stats.signals_processed,
-            "signals_executed": self.stats.signals_executed,
+            "usr_signals_processed": self.stats.usr_signals_processed,
+            "usr_signals_executed": self.stats.usr_signals_executed,
             "cycles_completed": self.stats.cycles_completed,
             "errors_count": self.stats.errors_count,
             "scans_total": self.stats.scans_total,
-            "signals_generated": self.stats.signals_generated,
-            "signals_risk_passed": self.stats.signals_risk_passed,
-            "signals_vetoed": self.stats.signals_vetoed,
+            "usr_signals_generated": self.stats.usr_signals_generated,
+            "usr_signals_risk_passed": self.stats.usr_signals_risk_passed,
+            "usr_signals_vetoed": self.stats.usr_signals_vetoed,
             "last_update": datetime.now().isoformat()
         }
         
-        self.storage.update_system_state({"session_stats": session_data})
+        self.storage.update_sys_config({"session_stats": session_data})
     
     def _is_strategy_authorized_for_execution(self, signal: Signal) -> bool:
         """
         Check if a signal's strategy is authorized for LIVE execution.
         
         This implements the Shadow Ranking System:
-        - Only LIVE strategies execute real orders
-        - SHADOW strategies generate metrics but don't execute
-        - QUARANTINE strategies are blocked
+        - Only LIVE usr_strategies execute real usr_orders
+        - SHADOW usr_strategies generate metrics but don't execute
+        - QUARANTINE usr_strategies are blocked
         
         Args:
             signal: Signal object with optional 'strategy' attribute
@@ -1388,10 +1388,10 @@ class MainOrchestrator:
             return True
         
         try:
-            ranking = self.storage.get_strategy_ranking(strategy_id)
+            ranking = self.storage.get_usr_performance(strategy_id)
             
             if not ranking:
-                # Strategy not found in ranking table - allow execution for new strategies
+                # Strategy not found in ranking table - allow execution for new usr_strategies
                 logger.debug(f"Strategy {strategy_id} not in ranking table - allowing execution")
                 return True
             
@@ -1428,7 +1428,7 @@ class MainOrchestrator:
         
         Features:
         - Dynamic loop frequency based on market regime
-        - Adaptive heartbeat (faster with active signals)
+        - Adaptive heartbeat (faster with active usr_signals)
         - Graceful shutdown on SIGINT/SIGTERM
         - Session persistence after each cycle
         - Scanner warmup phase to ensure data is available
@@ -1475,12 +1475,12 @@ class MainOrchestrator:
                 # Execute one complete cycle
                 await self.run_single_cycle()
                 
-                # Dynamic sleep based on current regime and active signals
+                # Dynamic sleep based on current regime and active usr_signals
                 sleep_interval = self._get_sleep_interval()
                 logger.debug(
                     f"Sleeping for {sleep_interval}s "
                     f"(regime: {self.current_regime}, "
-                    f"active_signals: {len(self._active_signals)})"
+                    f"active_usr_signals: {len(self._active_usr_signals)})"
                 )
                 
                 # Use small sleep chunks to allow quick shutdown
@@ -1516,20 +1516,20 @@ class MainOrchestrator:
             
             # Persist lockdown state
             logger.info("Saving system state...")
-            system_state = {
+            sys_config = {
                 "last_shutdown": datetime.now().isoformat(),
                 "lockdown_active": self.risk_manager.is_lockdown_active(),
                 "consecutive_losses": self.risk_manager.consecutive_losses,
                 "last_regime": self.current_regime.value,
                 "session_stats": {
                     "date": self.stats.date.isoformat(),
-                    "signals_processed": self.stats.signals_processed,
-                    "signals_executed": self.stats.signals_executed,
+                    "usr_signals_processed": self.stats.usr_signals_processed,
+                    "usr_signals_executed": self.stats.usr_signals_executed,
                     "cycles_completed": self.stats.cycles_completed,
                     "errors_count": self.stats.errors_count
                 }
             }
-            self.storage.update_system_state(system_state)
+            self.storage.update_sys_config(sys_config)
             
             # Close broker connections (if connectors have cleanup methods)
             if hasattr(self.executor, 'close_connections'):
@@ -1612,7 +1612,7 @@ async def main() -> None:
     enabled_assets = instrument_mgr.get_enabled_symbols()
     
     if not enabled_assets:
-        print("[CRITICAL] No enabled instruments found in DB (system_state['instruments_config']). Aborting.")
+        print("[CRITICAL] No enabled instruments found in DB (sys_config['instruments_config']). Aborting.")
         return
     
     print(f"[SCAN] Scanning {len(enabled_assets)} enabled instruments: {enabled_assets[:10]}...")
@@ -1622,7 +1622,7 @@ async def main() -> None:
     
     # --- Strategies & Analyzers (DI) ---
     from core_brain.confluence import MultiTimeframeConfluenceAnalyzer
-    from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
+    from core_brain.usr_strategies.trifecta_logic import TrifectaAnalyzer
     from core_brain.services.strategy_engine_factory import StrategyEngineFactory
     
     dynamic_params = storage.get_dynamic_params()
@@ -1630,7 +1630,7 @@ async def main() -> None:
     confluence_analyzer = MultiTimeframeConfluenceAnalyzer(storage=storage)
     trifecta_analyzer = TrifectaAnalyzer(storage=storage)
     
-    # FASE 2: Load all strategies dynamically from BD (SSOT via StrategyEngineFactory)
+    # FASE 2: Load all usr_strategies dynamically from BD (SSOT via StrategyEngineFactory)
     # Cumple DEVELOPMENT_GUIDELINES 1.6 (Service Layer) + MANIFESTO II.3 (Dynamic Registry)
     try:
         strategy_factory = StrategyEngineFactory(
@@ -1638,7 +1638,7 @@ async def main() -> None:
             config=dynamic_params,
             available_sensors={}  # TODO: Populate when sensors are fully instantiated
         )
-        active_engines = strategy_factory.instantiate_all_strategies()
+        active_engines = strategy_factory.instantiate_all_usr_strategies()
         stats = strategy_factory.get_stats()
         logger.info(
             f"[STRATEGIES] ✓ Dynamic loading from BD completed: "
@@ -1699,7 +1699,7 @@ async def main() -> None:
     legacy_executor = LegacyStrategyExecutor(signal_factory=signal_factory)
     universal_executor = UniversalStrategyExecutor(
         indicator_provider=data_provider,
-        strategy_schemas_dir=None  # Uses default: core_brain/strategies/universal/
+        strategy_schemas_dir=None  # Uses default: core_brain/usr_strategies/universal/
     )
     
     # Create mode selector

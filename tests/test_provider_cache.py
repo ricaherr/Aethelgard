@@ -22,7 +22,7 @@ class TestProviderCache:
         """
         with patch('core_brain.data_provider_manager.StorageManager') as mock_storage:
             # Mock DB response
-            mock_storage.return_value.get_data_providers.return_value = [
+            mock_storage.return_value.get_sys_data_providers.return_value = [
                 {
                     'name': 'yahoo',
                     'enabled': True,
@@ -35,14 +35,14 @@ class TestProviderCache:
             manager = DataProviderManager()
             
             # Should call DB ONCE during initialization
-            assert mock_storage.return_value.get_data_providers.call_count == 1
+            assert mock_storage.return_value.get_sys_data_providers.call_count == 1
             
             # Multiple fetch calls should NOT reload providers
             for _ in range(10):
                 manager.fetch_ohlc("EURUSD=X", "M5", count=500)
             
             # DB should still only be called ONCE (no reload on every fetch)
-            assert mock_storage.return_value.get_data_providers.call_count == 1
+            assert mock_storage.return_value.get_sys_data_providers.call_count == 1
     
     def test_provider_instances_reused_across_fetches(self, tmp_path):
         """
@@ -50,7 +50,7 @@ class TestProviderCache:
         NOT recreated on every fetch
         """
         with patch('core_brain.data_provider_manager.StorageManager') as mock_storage:
-            mock_storage.return_value.get_data_providers.return_value = [
+            mock_storage.return_value.get_sys_data_providers.return_value = [
                 {
                     'name': 'yahoo',
                     'enabled': True,
@@ -87,7 +87,7 @@ class TestProviderCache:
         cache should be invalidated and providers reloaded
         """
         with patch('core_brain.data_provider_manager.StorageManager') as mock_storage:
-            mock_storage.return_value.get_data_providers.return_value = [
+            mock_storage.return_value.get_sys_data_providers.return_value = [
                 {
                     'name': 'yahoo',
                     'enabled': True,
@@ -103,7 +103,7 @@ class TestProviderCache:
             manager.reload_providers()
             
             # Should reload from DB
-            assert mock_storage.return_value.get_data_providers.call_count == 2
+            assert mock_storage.return_value.get_sys_data_providers.call_count == 2
     
     def test_multiple_manager_instances_share_cache(self):
         """
@@ -113,7 +113,7 @@ class TestProviderCache:
         This prevents duplicate Yahoo Finance API instances
         """
         with patch('core_brain.data_provider_manager.StorageManager') as mock_storage:
-            mock_storage.return_value.get_data_providers.return_value = [
+            mock_storage.return_value.get_sys_data_providers.return_value = [
                 {
                     'name': 'yahoo',
                     'enabled': True,
@@ -128,7 +128,7 @@ class TestProviderCache:
             
             # Both should use same cached providers
             # Total DB calls should be 2 (one per manager init), not 2+ fetches
-            assert mock_storage.return_value.get_data_providers.call_count == 2
+            assert mock_storage.return_value.get_sys_data_providers.call_count == 2
 
 
 class TestProviderCachePerformance:
@@ -145,7 +145,7 @@ class TestProviderCachePerformance:
         import time
         
         with patch('core_brain.data_provider_manager.StorageManager') as mock_storage:
-            mock_storage.return_value.get_data_providers.return_value = [
+            mock_storage.return_value.get_sys_data_providers.return_value = [
                 {
                     'name': 'yahoo',
                     'enabled': True,

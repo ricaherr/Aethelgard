@@ -25,8 +25,8 @@ def _generate_cb_trace_id() -> str:
 def mock_storage():
     """Mock StorageManager."""
     mock = MagicMock(spec=StorageManager)
-    mock.get_system_state.return_value = {}
-    mock.get_strategy_ranking.return_value = {}
+    mock.get_sys_config.return_value = {}
+    mock.get_usr_performance.return_value = {}
     # Generate dynamic trace_id instead of hardcoding
     mock.update_strategy_execution_mode.return_value = _generate_cb_trace_id()
     mock.log_strategy_state_change = MagicMock()
@@ -73,7 +73,7 @@ class TestDrawdownMonitoring:
         """
         strategy_id = "BRK_OPEN_0001"
         
-        mock_storage.get_strategy_ranking.return_value = {
+        mock_storage.get_usr_performance.return_value = {
             'strategy_id': strategy_id,
             'execution_mode': 'LIVE',
             'drawdown_max': 3.2,  # EXCEEDS 3% threshold
@@ -99,7 +99,7 @@ class TestDrawdownMonitoring:
         """
         strategy_id = "MOM_BIAS_0001"
         
-        mock_storage.get_strategy_ranking.return_value = {
+        mock_storage.get_usr_performance.return_value = {
             'strategy_id': strategy_id,
             'execution_mode': 'LIVE',
             'drawdown_max': 2.5,  # Below threshold
@@ -124,7 +124,7 @@ class TestConsecutiveLossesMonitoring:
         """
         strategy_id = "LIQ_SWEEP_0001"
         
-        mock_storage.get_strategy_ranking.return_value = {
+        mock_storage.get_usr_performance.return_value = {
             'strategy_id': strategy_id,
             'execution_mode': 'LIVE',
             'drawdown_max': 1.5,  # Below DD threshold
@@ -145,7 +145,7 @@ class TestConsecutiveLossesMonitoring:
         """
         strategy_id = "STRUC_SHIFT_0001"
         
-        mock_storage.get_strategy_ranking.return_value = {
+        mock_storage.get_usr_performance.return_value = {
             'strategy_id': strategy_id,
             'execution_mode': 'LIVE',
             'drawdown_max': 1.0,
@@ -165,7 +165,7 @@ class TestConsecutiveLossesMonitoring:
         """
         strategy_id = "TEST_STRAT"
         
-        mock_storage.get_strategy_ranking.return_value = {
+        mock_storage.get_usr_performance.return_value = {
             'strategy_id': strategy_id,
             'execution_mode': 'LIVE',
             'drawdown_max': 0.5,
@@ -189,7 +189,7 @@ class TestMultipleViolations:
         """
         strategy_id = "CRITICAL_STRAT"
         
-        mock_storage.get_strategy_ranking.return_value = {
+        mock_storage.get_usr_performance.return_value = {
             'strategy_id': strategy_id,
             'execution_mode': 'LIVE',
             'drawdown_max': 3.5,  # EXCEEDS DD threshold
@@ -205,9 +205,9 @@ class TestMultipleViolations:
 
 
 class TestNonLiveSkipping:
-    """Test that CircuitBreaker skips non-LIVE strategies."""
+    """Test that CircuitBreaker skips non-LIVE usr_strategies."""
 
-    def test_skips_shadow_strategies(self, circuit_breaker, mock_storage):
+    def test_skips_shadow_usr_strategies(self, circuit_breaker, mock_storage):
         """
         GIVEN: Strategy in SHADOW mode (even with bad metrics)
         WHEN: check_and_degrade_if_needed() called
@@ -215,7 +215,7 @@ class TestNonLiveSkipping:
         """
         strategy_id = "SHADOW_STRAT"
         
-        mock_storage.get_strategy_ranking.return_value = {
+        mock_storage.get_usr_performance.return_value = {
             'strategy_id': strategy_id,
             'execution_mode': 'SHADOW',  # Not LIVE
             'drawdown_max': 5.0,  # Would normally trigger
@@ -228,7 +228,7 @@ class TestNonLiveSkipping:
         assert result['reason'] == 'not_live_mode'
         mock_storage.update_strategy_execution_mode.assert_not_called()
 
-    def test_skips_quarantine_strategies(self, circuit_breaker, mock_storage):
+    def test_skips_quarantine_usr_strategies(self, circuit_breaker, mock_storage):
         """
         GIVEN: Strategy in QUARANTINE (already degraded)
         WHEN: check_and_degrade_if_needed() called
@@ -236,7 +236,7 @@ class TestNonLiveSkipping:
         """
         strategy_id = "QUARANTINED_STRAT"
         
-        mock_storage.get_strategy_ranking.return_value = {
+        mock_storage.get_usr_performance.return_value = {
             'strategy_id': strategy_id,
             'execution_mode': 'QUARANTINE',  # Already in quarantine
             'drawdown_max': 6.0,
@@ -260,13 +260,13 @@ class TestDegradationLogging:
         """
         strategy_id = "logged_strat"
         
-        mock_storage.get_strategy_ranking.return_value = {
+        mock_storage.get_usr_performance.return_value = {
             'strategy_id': strategy_id,
             'execution_mode': 'LIVE',
             'drawdown_max': 3.3,
             'consecutive_losses': 2,
             'profit_factor': 1.2,
-            'total_trades': 150
+            'total_usr_trades': 150
         }
         
         circuit_breaker.check_and_degrade_if_needed(strategy_id)
@@ -288,7 +288,7 @@ class TestDegradationLogging:
         """
         strategy_id = "traced_strat"
         
-        mock_storage.get_strategy_ranking.return_value = {
+        mock_storage.get_usr_performance.return_value = {
             'strategy_id': strategy_id,
             'execution_mode': 'LIVE',
             'drawdown_max': 4.0,
@@ -307,22 +307,22 @@ class TestDegradationLogging:
 
 
 class TestBatchMonitoring:
-    """Test batch monitoring of all LIVE strategies."""
+    """Test batch monitoring of all LIVE usr_strategies."""
 
-    def test_monitor_all_live_strategies(self, circuit_breaker, mock_storage):
+    def test_monitor_all_live_usr_strategies(self, circuit_breaker, mock_storage):
         """
-        GIVEN: 3 LIVE strategies
-        WHEN: monitor_all_live_strategies() called
+        GIVEN: 3 LIVE usr_strategies
+        WHEN: monitor_all_live_usr_strategies() called
         THEN: Should check each one individually
         """
-        mock_storage.get_strategies_by_mode.return_value = [
+        mock_storage.get_usr_strategies_by_mode.return_value = [
             'BRK_OPEN_0001',
             'MOM_BIAS_0001',
             'LIQ_SWEEP_0001'
         ]
         
         with patch.object(circuit_breaker, 'check_and_degrade_if_needed', return_value={'action': 'no_action'}):
-            results = circuit_breaker.monitor_all_live_strategies()
+            results = circuit_breaker.monitor_all_live_usr_strategies()
         
         # Should have returned 3 results
         assert len(results) == 3
@@ -334,7 +334,7 @@ class TestBatchMonitoring:
         WHEN: Results returned
         THEN: Should be Dict[strategy_id → result]
         """
-        mock_storage.get_strategies_by_mode.return_value = ['strat1', 'strat2']
+        mock_storage.get_usr_strategies_by_mode.return_value = ['strat1', 'strat2']
         
         expected_results = {
             'strat1': {'action': 'no_action', 'current_mode': 'LIVE'},
@@ -345,7 +345,7 @@ class TestBatchMonitoring:
             expected_results['strat1'],
             expected_results['strat2']
         ]):
-            results = circuit_breaker.monitor_all_live_strategies()
+            results = circuit_breaker.monitor_all_live_usr_strategies()
         
         assert results == expected_results
 
@@ -361,7 +361,7 @@ class TestErrorHandling:
         """
         strategy_id = "dne_strat"
         
-        mock_storage.get_strategy_ranking.return_value = None  # Not found
+        mock_storage.get_usr_performance.return_value = None  # Not found
         
         result = circuit_breaker.check_and_degrade_if_needed(strategy_id)
         
@@ -376,7 +376,7 @@ class TestErrorHandling:
         """
         strategy_id = "error_strat"
         
-        mock_storage.get_strategy_ranking.return_value = {
+        mock_storage.get_usr_performance.return_value = {
             'strategy_id': strategy_id,
             'execution_mode': 'LIVE',
             'drawdown_max': 5.0,
@@ -394,11 +394,11 @@ class TestErrorHandling:
 
     def test_batch_monitor_catches_per_strategy_errors(self, circuit_breaker, mock_storage):
         """
-        GIVEN: Multiple strategies, one fails
-        WHEN: monitor_all_live_strategies() called
+        GIVEN: Multiple usr_strategies, one fails
+        WHEN: monitor_all_live_usr_strategies() called
         THEN: Should continue with others, collect errors
         """
-        mock_storage.get_strategies_by_mode.return_value = ['strat1', 'strat2', 'strat3']
+        mock_storage.get_usr_strategies_by_mode.return_value = ['strat1', 'strat2', 'strat3']
         
         with patch.object(circuit_breaker, 'check_and_degrade_if_needed') as mock_check:
             mock_check.side_effect = [

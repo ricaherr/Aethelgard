@@ -2,7 +2,7 @@
 Circuit Breaker - Real-time LIVE Strategy Monitoring & Auto-Degradation
 TRACE_ID: CIRCUIT-BREAKER-REALTIME-2026
 
-Monitors all LIVE strategies for risk metric violations and automatically
+Monitors all LIVE usr_strategies for risk metric violations and automatically
 degrades them to QUARANTINE when thresholds are exceeded.
 
 Thresholds (from MANIFESTO § 7.4 - Single Source of Truth):
@@ -14,7 +14,7 @@ integration for real-time metric updates.
 
 All threshold values MUST match those in strategy_ranker.py for consistency.
 
-Integration: When strategies degrade, DegradationAlertService sends alerts
+Integration: When usr_strategies degrade, DegradationAlertService sends alerts
 to NotificationService (Telegram, Email, etc.) for immediate user notification.
 """
 
@@ -46,12 +46,12 @@ def _resolve_storage(storage: Optional[StorageManager]) -> StorageManager:
 
 class CircuitBreaker:
     """
-    Monitors all LIVE strategies in real-time and automatically degrades them
+    Monitors all LIVE usr_strategies in real-time and automatically degrades them
     to QUARANTINE when risk thresholds are violated.
     
     Architecture:
     - Called by TradeClosureListener when trade closes
-    - Reads strategy metrics from strategy_ranking table (SSOT)
+    - Reads strategy metrics from usr_performance table (SSOT)
     - Checks DD and CL thresholds
     - Degrades to QUARANTINE if violated
     - Logs all transitions with trace_ids for audit trail
@@ -99,14 +99,14 @@ class CircuitBreaker:
         """
         try:
             # Get current strategy metrics
-            ranking = self.storage.get_strategy_ranking(strategy_id)
+            ranking = self.storage.get_usr_performance(strategy_id)
             if not ranking:
                 logger.warning(f"[CB] Strategy {strategy_id} not found in ranking table")
                 return {'action': 'not_found', 'strategy_id': strategy_id}
             
             current_mode = ranking.get('execution_mode')
             
-            # CircuitBreaker only monitors LIVE strategies
+            # CircuitBreaker only monitors LIVE usr_strategies
             if current_mode != 'LIVE':
                 logger.debug(f"[CB] {strategy_id}: Skipping (mode={current_mode})")
                 return {
@@ -155,7 +155,7 @@ class CircuitBreaker:
                 metrics={
                     'drawdown_max': drawdown_max,
                     'consecutive_losses': consecutive_losses,
-                    'total_trades': ranking.get('total_trades'),
+                    'total_usr_trades': ranking.get('total_usr_trades'),
                     'profit_factor': ranking.get('profit_factor')
                 }
             )
@@ -217,9 +217,9 @@ class CircuitBreaker:
                 'error': str(e)
             }
     
-    def monitor_all_live_strategies(self) -> Dict[str, Dict[str, Any]]:
+    def monitor_all_live_usr_strategies(self) -> Dict[str, Dict[str, Any]]:
         """
-        Monitor all LIVE strategies in batch.
+        Monitor all LIVE usr_strategies in batch.
         
         Called by MainOrchestrator or TradeClosureListener for continuous monitoring.
         
@@ -227,13 +227,13 @@ class CircuitBreaker:
             Dictionary mapping strategy_id to check result
         """
         try:
-            # Get all LIVE strategies
-            live_strategies = self.storage.get_strategies_by_mode('LIVE')
+            # Get all LIVE usr_strategies
+            live_usr_strategies = self.storage.get_usr_strategies_by_mode('LIVE')
             
-            logger.info(f"[CB] Monitoring {len(live_strategies)} LIVE strategies...")
+            logger.info(f"[CB] Monitoring {len(live_usr_strategies)} LIVE usr_strategies...")
             
             results = {}
-            for strategy_id in live_strategies:
+            for strategy_id in live_usr_strategies:
                 try:
                     result = self.check_and_degrade_if_needed(strategy_id)
                     results[strategy_id] = result
@@ -244,9 +244,9 @@ class CircuitBreaker:
             # Log summary
             degradations = sum(1 for r in results.values() if r.get('action') == 'degraded')
             if degradations > 0:
-                logger.critical(f"[CB] Summary: {degradations} strategies degraded to QUARANTINE")
+                logger.critical(f"[CB] Summary: {degradations} usr_strategies degraded to QUARANTINE")
             else:
-                logger.debug(f"[CB] All {len(live_strategies)} LIVE strategies healthy")
+                logger.debug(f"[CB] All {len(live_usr_strategies)} LIVE usr_strategies healthy")
             
             return results
             
@@ -256,19 +256,19 @@ class CircuitBreaker:
     
     def is_strategy_blocked_for_trading(self, strategy_id: str) -> bool:
         """
-        Quick check: Is strategy blocked from sending orders?
+        Quick check: Is strategy blocked from sending usr_orders?
         
         Used by Executor to prevent order placement.
         
         Returns True if in QUARANTINE or SHADOW mode.
         """
         try:
-            ranking = self.storage.get_strategy_ranking(strategy_id)
+            ranking = self.storage.get_usr_performance(strategy_id)
             if not ranking:
                 return True  # Unknown = blocked
             
             execution_mode = ranking.get('execution_mode')
-            # Only LIVE -> send orders. SHADOW/QUARANTINE -> blocked
+            # Only LIVE -> send usr_orders. SHADOW/QUARANTINE -> blocked
             return execution_mode != 'LIVE'
             
         except Exception:

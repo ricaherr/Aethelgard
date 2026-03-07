@@ -16,7 +16,7 @@ class TestTrifectaAnalyzer:
     @pytest.fixture
     def analyzer(self):
         """Import here para que falle claramente si el módulo no existe"""
-        from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
+        from core_brain.usr_strategies.trifecta_logic import TrifectaAnalyzer
         return TrifectaAnalyzer()
 
     @pytest.fixture
@@ -73,7 +73,7 @@ class TestTrifectaAnalyzer:
     @pytest.fixture
     def mixed_alignment_data(self):
         """
-        Scenario: No alignment (mixed signals)
+        Scenario: No alignment (mixed usr_signals)
         - M1 bullish, M5 bearish, M15 neutral
         """
         dates = pd.date_range(start='2024-01-01', periods=250, freq='1min')
@@ -327,7 +327,7 @@ class TestTrifectaTimeOfDay:
 
     @pytest.fixture
     def analyzer(self):
-        from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
+        from core_brain.usr_strategies.trifecta_logic import TrifectaAnalyzer
         return TrifectaAnalyzer()
 
     def test_doldrums_penalty(self, analyzer, monkeypatch):
@@ -346,8 +346,8 @@ class TestTrifectaTimeOfDay:
                         return time(12, 30)  # 12:30 PM (doldrums)
                 return MockNow()
         
-        import core_brain.strategies.trifecta_logic
-        monkeypatch.setattr(core_brain.strategies.trifecta_logic, 'datetime', MockDatetime)
+        import core_brain.usr_strategies.trifecta_logic
+        monkeypatch.setattr(core_brain.usr_strategies.trifecta_logic, 'datetime', MockDatetime)
         
         # Datos bullish alineados
         dates = pd.date_range(start='2024-01-01', periods=250, freq='1min')
@@ -375,7 +375,7 @@ class TestTrifectaTrapZone:
 
     @pytest.fixture
     def analyzer(self):
-        from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
+        from core_brain.usr_strategies.trifecta_logic import TrifectaAnalyzer
         return TrifectaAnalyzer(auto_enable_tfs=False)
 
     def test_trap_zone_bullish_rejected(self, analyzer):
@@ -563,7 +563,7 @@ class TestTrifectaTrapZone:
 
 class TestTrifectaTrendValidation:
     """
-    Tests para validar que Trifecta rechaza trades cuando:
+    Tests para validar que Trifecta rechaza usr_trades cuando:
     1. EMAs están planas (sin pendiente clara)
     2. EMA 20 y EMA 200 están muy cerca (sin separación = no hay tendencia)
     3. Régimen de mercado es RANGE

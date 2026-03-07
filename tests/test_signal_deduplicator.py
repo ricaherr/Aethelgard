@@ -22,7 +22,7 @@ class TestSignalDeduplicator:
     def mock_storage(self) -> Any:
         """Mock StorageManager for deduplicator"""
         storage = MagicMock(spec=StorageManager)
-        # Default: no duplicates, no open positions
+        # Default: no duplicates, no open usr_positions
         storage.has_open_position.return_value = False
         storage.has_recent_signal.return_value = False
         storage.get_open_operations.return_value = []
@@ -32,8 +32,8 @@ class TestSignalDeduplicator:
     def mock_mt5_connector(self) -> Any:
         """Mock MT5Connector for reconciliation"""
         connector = MagicMock()
-        # Default: MT5 has matching positions
-        connector.get_open_positions.return_value = [
+        # Default: MT5 has matching usr_positions
+        connector.get_open_usr_positions.return_value = [
             {'symbol': 'EURUSD', 'ticket': 12345},
             {'symbol': 'GBPUSD', 'ticket': 12346},
         ]
@@ -70,7 +70,7 @@ class TestSignalDeduplicator:
         )
     
     def test_is_duplicate_no_duplicates(self, deduplicator, sample_signal):
-        """Test that signal is NOT a duplicate when no existing signals/positions"""
+        """Test that signal is NOT a duplicate when no existing usr_signals/usr_positions"""
         # Arrange: storage returns False for all checks
         assert deduplicator.is_duplicate(sample_signal) is False
     
@@ -130,7 +130,7 @@ class TestSignalDeduplicator:
         assert deduplicator.is_duplicate(sample_signal) is True
     
     def test_mt5_reconciliation_ghost_position_cleanup(self, deduplicator_with_mt5, mock_storage, mock_mt5_connector, sample_signal):
-        """Test detection and cleanup of ghost positions"""
+        """Test detection and cleanup of ghost usr_positions"""
         # Arrange: position in DB but not in MT5
         mock_storage.has_open_position.return_value = True
         mock_storage.get_open_operations.return_value = [
@@ -139,7 +139,7 @@ class TestSignalDeduplicator:
                 'symbol': 'EURUSD'
             }
         ]
-        mock_mt5_connector.get_open_positions.return_value = []  # Empty = ghost position
+        mock_mt5_connector.get_open_usr_positions.return_value = []  # Empty = ghost position
         
         # Act
         result = deduplicator_with_mt5.is_duplicate(sample_signal)
@@ -158,7 +158,7 @@ class TestSignalDeduplicator:
                 'symbol': 'EURUSD'
             }
         ]
-        mock_mt5_connector.get_open_positions.return_value = [
+        mock_mt5_connector.get_open_usr_positions.return_value = [
             {'symbol': 'EURUSD', 'ticket': 12345}
         ]
         
@@ -180,9 +180,9 @@ class TestSignalDeduplicator:
         # Assert: timeframe passed to storage
         mock_storage.has_open_position.assert_called_once_with('EURUSD', 'M5')
     
-    def test_multiple_signals_same_symbol_different_timeframes(self, deduplicator, mock_storage):
+    def test_multiple_usr_signals_same_symbol_different_timeframes(self, deduplicator, mock_storage):
         """Test that same symbol on different timeframes are NOT duplicates"""
-        # Arrange: two signals, same symbol, different timeframes
+        # Arrange: two usr_signals, same symbol, different timeframes
         signal_m5 = Signal(
             symbol="EURUSD",
             signal_type=SignalType.BUY,
@@ -236,7 +236,7 @@ class TestSignalDeduplicator:
         mock_storage.get_open_operations.return_value = [
             {'id': 'sig_ghost_001', 'symbol': 'GBPUSD'}
         ]
-        mock_mt5_connector.get_open_positions.return_value = []
+        mock_mt5_connector.get_open_usr_positions.return_value = []
         
         # Act
         deduplicator_with_mt5.is_duplicate(signal)

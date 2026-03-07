@@ -128,7 +128,7 @@ async def get_config(category: str, token: TokenPayload = Depends(get_current_ac
     db_key = f"config_{category}"
     tenant_id = token.tid
     storage = TenantDBFactory.get_storage(tenant_id)
-    state = storage.get_system_state()
+    state = storage.get_sys_config()
     config_data = state.get(db_key)
     
     if config_data is None:
@@ -140,7 +140,7 @@ async def get_config(category: str, token: TokenPayload = Depends(get_current_ac
         try:
             from data_vault.system_db import SystemMixin
             notif_db = SystemMixin()
-            telegram_settings = notif_db.get_notification_settings("telegram", tenant_id=tenant_id)
+            telegram_settings = notif_db.get_usr_notification_settings("telegram", tenant_id=tenant_id)
             if telegram_settings:
                 # Asegurar que config_data sea un diccionario mutable
                 raw_config = telegram_settings.get("config", {})
@@ -176,7 +176,7 @@ async def update_config(category: str, new_data: dict, token: TokenPayload = Dep
     storage = TenantDBFactory.get_storage(tenant_id)
     
     try:
-        storage.update_system_state({db_key: new_data})
+        storage.update_sys_config({db_key: new_data})
         await _broadcast_thought(f"Configuración '{category}' actualizada por el usuario.", module="CORE")
         return {"status": "success", "message": f"Configuración '{category}' guardada correctamente."}
     except Exception as e:
@@ -327,13 +327,13 @@ async def toggle_module(request: Request) -> Dict[str, Any]:
 # ============ User Preferences Endpoints ============
 
 @router.get("/user/preferences")
-async def get_user_preferences(user_id: str = "default", token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
+async def get_usr_preferences(user_id: str = "default", token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """Returns the user preferences from the database."""
     try:
         # Ensure we use the token's tid for tenant isolation
         tenant_id = token.tid
         storage = TenantDBFactory.get_storage(tenant_id)
-        prefs = storage.get_user_preferences(user_id)
+        prefs = storage.get_usr_preferences(user_id)
         if prefs is None:
             return {"preferences": {}, "user_id": user_id}
         return {"preferences": prefs, "user_id": user_id}
@@ -343,7 +343,7 @@ async def get_user_preferences(user_id: str = "default", token: TokenPayload = D
 
 
 @router.post("/user/preferences")
-async def update_user_preferences(request: Request, token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
+async def update_usr_preferences(request: Request, token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """Update user preferences.
     Body: { "user_id": "default", "key": "value", ... }
     """
@@ -356,7 +356,7 @@ async def update_user_preferences(request: Request, token: TokenPayload = Depend
             raise HTTPException(status_code=400, detail="No preferences provided")
 
         storage = TenantDBFactory.get_storage(tenant_id)
-        success = storage.update_user_preferences(user_id, body)
+        success = storage.update_usr_preferences(user_id, body)
 
         if success:
             return {"success": True, "user_id": user_id}

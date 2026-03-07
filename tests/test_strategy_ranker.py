@@ -15,7 +15,7 @@ from data_vault.storage import StorageManager
 def mock_storage():
     """Mock StorageManager for testing."""
     mock = MagicMock(spec=StorageManager)
-    mock.get_system_state.return_value = {}
+    mock.get_sys_config.return_value = {}
     return mock
 
 
@@ -33,21 +33,21 @@ class TestStrategyRankerPromotion:
         GIVEN: Strategy in SHADOW mode with:
             - Profit Factor: 1.6 (> 1.5 threshold)
             - Win Rate: 52% (> 50% threshold)
-            - Last 50 trades all completed
+            - Last 50 usr_trades all completed
         WHEN: StrategyRanker evaluates the strategy
         THEN: Strategy should be promoted to LIVE with trace_id logged
         """
         strategy_id = "strat_golden_eagle_v2"
         
         # Mock strategy data from DB
-        mock_storage.get_strategy_ranking.return_value = {
+        mock_storage.get_usr_performance.return_value = {
             'strategy_id': strategy_id,
             'profit_factor': 1.6,
             'win_rate': 0.52,
             'drawdown_max': 1.2,  # Below 3% threshold
             'consecutive_losses': 0,
             'execution_mode': 'SHADOW',
-            'total_trades': 150,
+            'total_usr_trades': 150,
             'completed_last_50': 50
         }
         
@@ -74,20 +74,20 @@ class TestStrategyRankerPromotion:
         GIVEN: Strategy in SHADOW with:
             - Profit Factor: 1.3 (< 1.5 threshold)
             - Win Rate: 48% (< 50% threshold)
-            - Sufficient trades (50)
+            - Sufficient usr_trades (50)
         WHEN: StrategyRanker evaluates
         THEN: Strategy remains in SHADOW, no action taken
         """
         strategy_id = "strat_learner_v1"
         
-        mock_storage.get_strategy_ranking.return_value = {
+        mock_storage.get_usr_performance.return_value = {
             'strategy_id': strategy_id,
             'profit_factor': 1.3,
             'win_rate': 0.48,
             'drawdown_max': 1.8,
             'consecutive_losses': 2,
             'execution_mode': 'SHADOW',
-            'total_trades': 50,
+            'total_usr_trades': 50,
             'completed_last_50': 50
         }
         
@@ -97,29 +97,29 @@ class TestStrategyRankerPromotion:
         assert result['current_mode'] == 'SHADOW'
         mock_storage.update_strategy_execution_mode.assert_not_called()
 
-    def test_promote_only_with_minimum_50_completed_trades(self, strategy_ranker, mock_storage):
+    def test_promote_only_with_minimum_50_completed_usr_trades(self, strategy_ranker, mock_storage):
         """
         GIVEN: Strategy with perfect metrics (PF=1.8, WR=60%)
-            but only 40 completed trades out of last 50
+            but only 40 completed usr_trades out of last 50
         WHEN: StrategyRanker evaluates
-        THEN: Strategy NOT promoted (needs at least 50 trades)
+        THEN: Strategy NOT promoted (needs at least 50 usr_trades)
         """
         strategy_id = "strat_new_idea"
         
-        mock_storage.get_strategy_ranking.return_value = {
+        mock_storage.get_usr_performance.return_value = {
             'strategy_id': strategy_id,
             'profit_factor': 1.8,
             'win_rate': 0.60,
             'drawdown_max': 1.0,
             'consecutive_losses': 0,
             'execution_mode': 'SHADOW',
-            'total_trades': 45,
+            'total_usr_trades': 45,
             'completed_last_50': 40  # Insufficient
         }
         
         result = strategy_ranker.evaluate_and_rank(strategy_id)
         
-        assert result['action'] == 'insufficient_trades'
+        assert result['action'] == 'insufficient_usr_trades'
         assert result['current_mode'] == 'SHADOW'
         mock_storage.update_strategy_execution_mode.assert_not_called()
 
@@ -136,14 +136,14 @@ class TestStrategyRankerDegradation:
         """
         strategy_id = "strat_old_reliable"
         
-        mock_storage.get_strategy_ranking.return_value = {
+        mock_storage.get_usr_performance.return_value = {
             'strategy_id': strategy_id,
             'profit_factor': 1.5,
             'win_rate': 0.52,
             'drawdown_max': 3.2,  # EXCEEDS 3% threshold
             'consecutive_losses': 2,
             'execution_mode': 'LIVE',
-            'total_trades': 200,
+            'total_usr_trades': 200,
             'completed_last_50': 50
         }
         
@@ -171,14 +171,14 @@ class TestStrategyRankerDegradation:
         """
         strategy_id = "strat_unlucky_streak"
         
-        mock_storage.get_strategy_ranking.return_value = {
+        mock_storage.get_usr_performance.return_value = {
             'strategy_id': strategy_id,
             'profit_factor': 1.5,
             'win_rate': 0.52,
             'drawdown_max': 2.1,  # Below threshold
             'consecutive_losses': 5,  # EQUALS threshold
             'execution_mode': 'LIVE',
-            'total_trades': 150,
+            'total_usr_trades': 150,
             'completed_last_50': 50
         }
         
@@ -201,14 +201,14 @@ class TestStrategyRankerDegradation:
         """
         strategy_id = "strat_stable_performer"
         
-        mock_storage.get_strategy_ranking.return_value = {
+        mock_storage.get_usr_performance.return_value = {
             'strategy_id': strategy_id,
             'profit_factor': 1.8,
             'win_rate': 0.58,
             'drawdown_max': 1.5,
             'consecutive_losses': 2,
             'execution_mode': 'LIVE',
-            'total_trades': 200,
+            'total_usr_trades': 200,
             'completed_last_50': 50
         }
         
@@ -232,14 +232,14 @@ class TestStrategyRankerRecovery:
         """
         strategy_id = "strat_comeback_kid"
         
-        mock_storage.get_strategy_ranking.return_value = {
+        mock_storage.get_usr_performance.return_value = {
             'strategy_id': strategy_id,
             'profit_factor': 1.6,
             'win_rate': 0.55,
             'drawdown_max': 1.5,  # Recovered!
             'consecutive_losses': 0,  # Recovered!
             'execution_mode': 'QUARANTINE',
-            'total_trades': 300,
+            'total_usr_trades': 300,
             'completed_last_50': 50
         }
         
@@ -265,14 +265,14 @@ class TestStrategyRankerAudit:
         """
         strategy_id = "strat_audit_test"
         
-        mock_storage.get_strategy_ranking.return_value = {
+        mock_storage.get_usr_performance.return_value = {
             'strategy_id': strategy_id,
             'profit_factor': 1.7,
             'win_rate': 0.53,
             'drawdown_max': 1.1,
             'consecutive_losses': 0,
             'execution_mode': 'SHADOW',
-            'total_trades': 100,
+            'total_usr_trades': 100,
             'completed_last_50': 50
         }
         
@@ -298,14 +298,14 @@ class TestStrategyRankerAudit:
         """
         strategy_id = "strat_log_test"
         
-        mock_storage.get_strategy_ranking.return_value = {
+        mock_storage.get_usr_performance.return_value = {
             'strategy_id': strategy_id,
             'profit_factor': 1.75,
             'win_rate': 0.54,
             'drawdown_max': 0.9,
             'consecutive_losses': 0,
             'execution_mode': 'SHADOW',
-            'total_trades': 95,
+            'total_usr_trades': 95,
             'completed_last_50': 50
         }
         

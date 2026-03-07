@@ -2,12 +2,12 @@
 Tests for SignalExpirationManager - Dynamic signal expiration by timeframe
 
 Tests core functionality:
-1. M5 signals expire after 5 minutes
-2. H1 signals expire after 60 minutes
-3. D1 signals expire after 24 hours
+1. M5 usr_signals expire after 5 minutes
+2. H1 usr_signals expire after 60 minutes
+3. D1 usr_signals expire after 24 hours
 4. Signals within window are NOT expired
 5. Multiple timeframes expire correctly
-6. EXECUTED signals are NOT expired (only PENDING)
+6. EXECUTED usr_signals are NOT expired (only PENDING)
 
 TDD Approach: Tests created BEFORE implementation
 """
@@ -39,7 +39,7 @@ def test_m5_signal_expires_after_5_minutes(storage):
     try:
         cursor = conn.cursor()
         cursor.execute("""
-            UPDATE signals SET timestamp = ? WHERE id = ?
+            UPDATE usr_signals SET timestamp = ? WHERE id = ?
         """, (old_time, signal_id))
         conn.commit()
     finally:
@@ -47,15 +47,15 @@ def test_m5_signal_expires_after_5_minutes(storage):
     
     # Run expiration
     manager = SignalExpirationManager(storage)
-    stats = manager.expire_old_signals()
+    stats = manager.expire_old_usr_signals()
     
     # Verify
     assert stats['total_expired'] == 1
     assert stats['by_timeframe']['M5'] == 1
     
     # Check signal status
-    signals = storage.get_signals()
-    expired_signal = next(s for s in signals if s['id'] == signal_id)
+    usr_signals = storage.get_usr_signals()
+    expired_signal = next(s for s in usr_signals if s['id'] == signal_id)
     assert expired_signal['status'] == 'EXPIRED'
     assert 'expired_at' in expired_signal['metadata']
     assert 'reason' in expired_signal['metadata']
@@ -83,7 +83,7 @@ def test_h1_signal_not_expired_within_60_minutes(storage):
     try:
         cursor = conn.cursor()
         cursor.execute("""
-            UPDATE signals SET timestamp = ? WHERE id = ?
+            UPDATE usr_signals SET timestamp = ? WHERE id = ?
         """, (recent_time, signal_id))
         conn.commit()
     finally:
@@ -91,13 +91,13 @@ def test_h1_signal_not_expired_within_60_minutes(storage):
     
     # Run expiration
     manager = SignalExpirationManager(storage)
-    stats = manager.expire_old_signals()
+    stats = manager.expire_old_usr_signals()
     
     # Verify NOT expired
     assert stats['total_expired'] == 0
     
-    signals = storage.get_signals()
-    pending_signal = next(s for s in signals if s['id'] == signal_id)
+    usr_signals = storage.get_usr_signals()
+    pending_signal = next(s for s in usr_signals if s['id'] == signal_id)
     assert pending_signal['status'] == 'PENDING'  # Still PENDING
 
 
@@ -123,7 +123,7 @@ def test_d1_signal_expires_after_24_hours(storage):
     try:
         cursor = conn.cursor()
         cursor.execute("""
-            UPDATE signals SET timestamp = ? WHERE id = ?
+            UPDATE usr_signals SET timestamp = ? WHERE id = ?
         """, (old_time, signal_id))
         conn.commit()
     finally:
@@ -131,7 +131,7 @@ def test_d1_signal_expires_after_24_hours(storage):
     
     # Run expiration
     manager = SignalExpirationManager(storage)
-    stats = manager.expire_old_signals()
+    stats = manager.expire_old_usr_signals()
     
     # Verify
     assert stats['total_expired'] == 1
@@ -139,7 +139,7 @@ def test_d1_signal_expires_after_24_hours(storage):
 
 
 def test_multiple_timeframes_expire_correctly(storage):
-    """Multiple signals with different timeframes expire according to their windows"""
+    """Multiple usr_signals with different timeframes expire according to their windows"""
     base_time = datetime.now()
     
     # M5 signal (3min ago) - NOT expired (within 5min window)
@@ -202,13 +202,13 @@ def test_multiple_timeframes_expire_correctly(storage):
     conn = storage._get_conn()
     try:
         cursor = conn.cursor()
-        cursor.execute("UPDATE signals SET timestamp = ? WHERE id = ?",
+        cursor.execute("UPDATE usr_signals SET timestamp = ? WHERE id = ?",
                       (base_time - timedelta(minutes=3), m5_recent_id))
-        cursor.execute("UPDATE signals SET timestamp = ? WHERE id = ?",
+        cursor.execute("UPDATE usr_signals SET timestamp = ? WHERE id = ?",
                       (base_time - timedelta(minutes=10), m5_old_id))
-        cursor.execute("UPDATE signals SET timestamp = ? WHERE id = ?",
+        cursor.execute("UPDATE usr_signals SET timestamp = ? WHERE id = ?",
                       (base_time - timedelta(hours=2), h1_old_id))
-        cursor.execute("UPDATE signals SET timestamp = ? WHERE id = ?",
+        cursor.execute("UPDATE usr_signals SET timestamp = ? WHERE id = ?",
                       (base_time - timedelta(hours=12), d1_recent_id))
         conn.commit()
     finally:
@@ -216,7 +216,7 @@ def test_multiple_timeframes_expire_correctly(storage):
     
     # Run expiration
     manager = SignalExpirationManager(storage)
-    stats = manager.expire_old_signals()
+    stats = manager.expire_old_usr_signals()
     
     # Verify: 2 expired (M5 10min + H1 2h), 2 still PENDING
     assert stats['total_expired'] == 2
@@ -224,17 +224,17 @@ def test_multiple_timeframes_expire_correctly(storage):
     assert stats['by_timeframe']['H1'] == 1
     
     # Verify individual statuses
-    signals = storage.get_signals()
-    signals_dict = {s['id']: s for s in signals}
+    usr_signals = storage.get_usr_signals()
+    usr_signals_dict = {s['id']: s for s in usr_signals}
     
-    assert signals_dict[m5_recent_id]['status'] == 'PENDING'  # Still valid
-    assert signals_dict[m5_old_id]['status'] == 'EXPIRED'
-    assert signals_dict[h1_old_id]['status'] == 'EXPIRED'
-    assert signals_dict[d1_recent_id]['status'] == 'PENDING'  # Still valid
+    assert usr_signals_dict[m5_recent_id]['status'] == 'PENDING'  # Still valid
+    assert usr_signals_dict[m5_old_id]['status'] == 'EXPIRED'
+    assert usr_signals_dict[h1_old_id]['status'] == 'EXPIRED'
+    assert usr_signals_dict[d1_recent_id]['status'] == 'PENDING'  # Still valid
 
 
-def test_executed_signals_not_expired(storage):
-    """EXECUTED signals should NOT be expired (only PENDING)"""
+def test_executed_usr_signals_not_expired(storage):
+    """EXECUTED usr_signals should NOT be expired (only PENDING)"""
     # Create old signal and mark as EXECUTED
     old_time = datetime.now() - timedelta(hours=5)
     signal = Signal(
@@ -262,7 +262,7 @@ def test_executed_signals_not_expired(storage):
     try:
         cursor = conn.cursor()
         cursor.execute("""
-            UPDATE signals SET timestamp = ? WHERE id = ?
+            UPDATE usr_signals SET timestamp = ? WHERE id = ?
         """, (old_time, signal_id))
         conn.commit()
     finally:
@@ -270,13 +270,13 @@ def test_executed_signals_not_expired(storage):
     
     # Run expiration
     manager = SignalExpirationManager(storage)
-    stats = manager.expire_old_signals()
+    stats = manager.expire_old_usr_signals()
     
-    # Verify: 0 expired (EXECUTED signals exempt)
+    # Verify: 0 expired (EXECUTED usr_signals exempt)
     assert stats['total_expired'] == 0
     
-    signals = storage.get_signals()
-    executed_signal = next(s for s in signals if s['id'] == signal_id)
+    usr_signals = storage.get_usr_signals()
+    executed_signal = next(s for s in usr_signals if s['id'] == signal_id)
     assert executed_signal['status'] == 'EXECUTED'  # Still EXECUTED
 
 
@@ -302,7 +302,7 @@ def test_h4_signal_expires_after_4_hours(storage):
     try:
         cursor = conn.cursor()
         cursor.execute("""
-            UPDATE signals SET timestamp = ? WHERE id = ?
+            UPDATE usr_signals SET timestamp = ? WHERE id = ?
         """, (old_time, signal_id))
         conn.commit()
     finally:
@@ -310,7 +310,7 @@ def test_h4_signal_expires_after_4_hours(storage):
     
     # Run expiration
     manager = SignalExpirationManager(storage)
-    stats = manager.expire_old_signals()
+    stats = manager.expire_old_usr_signals()
     
     # Verify
     assert stats['total_expired'] == 1

@@ -7,7 +7,7 @@ Arquitectura:
 - Consulta calendario económico de storage_manager (SSOT)
 - Define ventanas de LOCKDOWN (15 min) para eventos alto impacto
 - Define ventanas de VOLATILITY (30 min) para eventos impacto medio
-- Integración con SignalFactory para enriquecer signals con reasoning
+- Integración con SignalFactory para enriquecer usr_signals con reasoning
 
 TRACE_ID: EXEC-FUNDAMENTAL-GUARD-2026
 

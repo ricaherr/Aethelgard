@@ -28,7 +28,7 @@ def mock_storage():
     storage = Mock()
     
     # Mock strategy summary list (uses TEST_STRATEGIES)
-    storage.get_all_strategies = Mock(
+    storage.get_all_usr_strategies = Mock(
         return_value=[
             {k: v for k, v in s.items() if k in ['strategy_id', 'execution_mode']}
             for s in TEST_STRATEGIES
@@ -36,7 +36,7 @@ def mock_storage():
     )
     
     # Mock getting single strategy (lookup from TEST_STRATEGIES_BY_ID)
-    def get_strategy_ranking_impl(sid):
+    def get_usr_performance_impl(sid):
         strategy = TEST_STRATEGIES_BY_ID.get(sid)
         if strategy:
             return {
@@ -45,12 +45,12 @@ def mock_storage():
                 'profit_factor': strategy['profit_factor'],
                 'dd_pct': strategy['dd_pct'],
                 'consecutive_losses': strategy['consecutive_losses'],
-                'trades_count': strategy['trades_count'],
+                'usr_trades_count': strategy['usr_trades_count'],
                 'updated_at': strategy['updated_at']
             }
         return None
     
-    storage.get_strategy_ranking = Mock(side_effect=get_strategy_ranking_impl)
+    storage.get_usr_performance = Mock(side_effect=get_usr_performance_impl)
     
     return storage
 
@@ -95,9 +95,9 @@ class TestStrategyMonitorServiceInitialization:
     def test_service_has_required_methods(self, monitor_service):
         """Service should have core methods"""
         assert hasattr(monitor_service, 'get_strategy_metrics')
-        assert hasattr(monitor_service, 'get_all_strategies_metrics')
+        assert hasattr(monitor_service, 'get_all_usr_strategies_metrics')
         assert callable(monitor_service.get_strategy_metrics)
-        assert callable(monitor_service.get_all_strategies_metrics)
+        assert callable(monitor_service.get_all_usr_strategies_metrics)
 
 
 class TestGetSingleStrategyMetrics:
@@ -156,18 +156,18 @@ class TestGetSingleStrategyMetrics:
 
 
 class TestGetAllStrategiesMetrics:
-    """Test getting metrics for all strategies"""
+    """Test getting metrics for all usr_strategies"""
     
     def test_get_all_returns_list(self, monitor_service):
         """Should return list of all strategy metrics"""
-        metrics_list = monitor_service.get_all_strategies_metrics()
+        metrics_list = monitor_service.get_all_usr_strategies_metrics()
         
         assert isinstance(metrics_list, list)
         assert len(metrics_list) >= 3
     
     def test_all_metrics_have_required_fields(self, monitor_service):
         """Each metric dict should have required fields"""
-        metrics_list = monitor_service.get_all_strategies_metrics()
+        metrics_list = monitor_service.get_all_usr_strategies_metrics()
         
         required_fields = [
             'strategy_id', 'status', 'dd_pct', 'consecutive_losses',
@@ -180,7 +180,7 @@ class TestGetAllStrategiesMetrics:
     
     def test_metrics_sorted_by_status_priority(self, monitor_service):
         """Metrics should be sorted: LIVE > SHADOW > QUARANTINE > UNKNOWN"""
-        metrics_list = monitor_service.get_all_strategies_metrics()
+        metrics_list = monitor_service.get_all_usr_strategies_metrics()
         
         status_order = get_test_status_priority()
         statuses = [m['status'] for m in metrics_list]
@@ -189,9 +189,9 @@ class TestGetAllStrategiesMetrics:
         for i in range(len(statuses) - 1):
             assert status_order[statuses[i]] <= status_order[statuses[i + 1]]
     
-    def test_all_strategies_included(self, monitor_service):
-        """All strategies from storage should be included"""
-        metrics_list = monitor_service.get_all_strategies_metrics()
+    def test_all_usr_strategies_included(self, monitor_service):
+        """All usr_strategies from storage should be included"""
+        metrics_list = monitor_service.get_all_usr_strategies_metrics()
         strategy_ids = [m['strategy_id'] for m in metrics_list]
         
         assert 'BRK_OPEN_0001' in strategy_ids
@@ -237,7 +237,7 @@ class TestExceptionHandling:
     def test_storage_error_handled_gracefully(self, mock_circuit_breaker):
         """Should handle storage errors gracefully"""
         mock_storage = Mock()
-        mock_storage.get_strategy_ranking = Mock(side_effect=Exception("DB error"))
+        mock_storage.get_usr_performance = Mock(side_effect=Exception("DB error"))
         
         service = StrategyMonitorService(
             storage=mock_storage,
@@ -270,7 +270,7 @@ class TestExceptionHandling:
         
         # None of these should raise
         monitor_service.get_strategy_metrics('BRK_OPEN_0001')
-        monitor_service.get_all_strategies_metrics()
+        monitor_service.get_all_usr_strategies_metrics()
         monitor_service.get_strategy_metrics('NONEXISTENT')
 
 

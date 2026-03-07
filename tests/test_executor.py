@@ -1,6 +1,6 @@
 """
 Test Suite for OrderExecutor Module (TDD)
-Tests the execution of trading signals with RiskManager validation and agnostic connector routing.
+Tests the execution of trading usr_signals with RiskManager validation and agnostic connector routing.
 Follows TDD methodology as per Aethelgard's golden rules.
 """
 import pytest
@@ -30,7 +30,7 @@ class TestOrderExecutor:
     def mock_storage(self):
         """Create a mock StorageManager."""
         storage = Mock(spec=StorageManager)
-        storage.update_system_state = Mock()
+        storage.update_sys_config = Mock()
         storage.get_open_operations.return_value = []
         storage.is_duplicate_signal = Mock(return_value=False)
         storage.has_recent_signal = Mock(return_value=False)
@@ -50,7 +50,7 @@ class TestOrderExecutor:
         connector = Mock()
         connector.execute_signal = Mock(return_value={"status": "success", "order_id": "MT5_12345", "price": 1.1050, "entry_price": 1.1050, "sl": 1.1000, "tp": 1.1150, "volume": 0.01})
         connector.is_connected = True
-        connector.get_open_positions = Mock(return_value=[])
+        connector.get_open_usr_positions = Mock(return_value=[])
         connector.contract_size = 1.0
         return connector
     
@@ -71,8 +71,8 @@ class TestOrderExecutor:
         # Mock multi_tf_limiter para evitar TypeError
         multi_tf_limiter = Mock()
         multi_tf_limiter.validate_new_signal.return_value = (True, "OK")
-        multi_tf_limiter._get_open_positions_by_symbol = Mock(return_value=[])
-        multi_tf_limiter._get_open_positions_from_db_only = Mock(return_value=[])
+        multi_tf_limiter._get_open_usr_positions_by_symbol = Mock(return_value=[])
+        multi_tf_limiter._get_open_usr_positions_from_db_only = Mock(return_value=[])
         executor = OrderExecutor(
             risk_manager=mock_risk_manager,
             storage=mock_storage,
@@ -100,7 +100,7 @@ class TestOrderExecutor:
     async def test_executor_blocks_signal_when_risk_manager_locked(self, executor, mock_risk_manager, sample_signal, mock_storage):
         """
         TEST 1: Executor debe bloquear señales cuando RiskManager está en lockdown.
-        Critical: Ensures no orders are sent when system is locked.
+        Critical: Ensures no usr_orders are sent when system is locked.
         Verifica que execute_signal() retorna False y registra el intento fallido.
         """
         # Arrange: RiskManager en lockdown
@@ -124,7 +124,7 @@ class TestOrderExecutor:
     async def test_executor_sends_signal_when_risk_manager_allows(self, executor, mock_risk_manager, sample_signal, mock_mt5_connector, mock_storage):
         """
         TEST 2: Executor debe enviar señales cuando RiskManager lo permite.
-        Validates that signals are routed to the correct connector using Factory pattern.
+        Validates that usr_signals are routed to the correct connector using Factory pattern.
         """
         # Arrange: RiskManager permite trading
         mock_risk_manager.is_locked.return_value = False
@@ -156,7 +156,7 @@ class TestOrderExecutor:
         sample_signal.metadata['signal_id'] = 'test-signal-mt5-no-ticket'
         result = await executor.execute_signal(sample_signal)
         assert result is False
-        assert mock_storage.update_system_state.called
+        assert mock_storage.update_sys_config.called
     
     @pytest.mark.asyncio
     async def test_executor_uses_factory_pattern_for_connector_routing(
@@ -251,10 +251,10 @@ class TestOrderExecutor:
         await executor.execute_signal(sample_signal)
         
         # Assert: Verificar que se registró con estado PENDING
-        assert mock_storage.update_system_state.called
+        assert mock_storage.update_sys_config.called
         
         # Buscar la llamada que registra PENDING
-        calls = [str(call) for call in mock_storage.update_system_state.call_args_list]
+        calls = [str(call) for call in mock_storage.update_sys_config.call_args_list]
         pending_found = any("PENDING" in call or "pending" in call.lower() for call in calls)
         assert pending_found, "Signal should be registered with PENDING status"
     

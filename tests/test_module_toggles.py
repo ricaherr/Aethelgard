@@ -220,7 +220,7 @@ class TestModuleTogglesOrchestrator:
     
     @pytest.mark.asyncio
     async def test_executor_disabled_skips_execution(self):
-        """When executor globally disabled, signals are not executed"""
+        """When executor globally disabled, usr_signals are not executed"""
         # Arrange
         storage = StorageManager(":memory:")
         storage.set_global_module_enabled("executor", False)
@@ -228,7 +228,7 @@ class TestModuleTogglesOrchestrator:
         # Create executor mock with explicit execute_signal method
         mock_executor = Mock()
         mock_executor.execute_signal = AsyncMock()
-        mock_executor.persists_signals = False
+        mock_executor.persists_usr_signals = False
         
         mock_scanner = Mock()
         mock_scanner.get_scan_results_with_data = Mock(return_value={
@@ -236,7 +236,7 @@ class TestModuleTogglesOrchestrator:
         })
         
         mock_signal_factory = AsyncMock()
-        mock_signal_factory.generate_signals_batch = AsyncMock(return_value=[
+        mock_signal_factory.generate_usr_signals_batch = AsyncMock(return_value=[
             Mock(id="test_signal", symbol="EURUSD")
         ])
         
@@ -267,7 +267,7 @@ class TestModuleTogglesOrchestrator:
         storage.set_global_module_enabled("position_manager", False)
         
         mock_position_manager = Mock()
-        mock_position_manager.monitor_positions = Mock(return_value={
+        mock_position_manager.monitor_usr_positions = Mock(return_value={
             'monitored': 0,
             'actions': []
         })
@@ -290,7 +290,7 @@ class TestModuleTogglesOrchestrator:
         await orchestrator.run_single_cycle()
         
         # Assert
-        mock_position_manager.monitor_positions.assert_not_called()
+        mock_position_manager.monitor_usr_positions.assert_not_called()
 
 
 class TestModuleTogglesPersistence:

@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class StrategyRankingMixin(BaseRepository):
     """Mixin for Strategy Ranking and Shadow Portfolio database operations."""
 
-    def save_strategy_ranking(self, strategy_id: str, ranking_data: Dict) -> str:
+    def save_usr_performance(self, strategy_id: str, ranking_data: Dict) -> str:
         """
         Save or update strategy ranking data.
         Returns trace_id for auditing.
@@ -22,10 +22,10 @@ class StrategyRankingMixin(BaseRepository):
             trace_id = ranking_data.get('trace_id') or f"RANK-{uuid.uuid4().hex[:8].upper()}"
             
             cursor.execute("""
-                INSERT OR REPLACE INTO strategy_ranking (
+                INSERT OR REPLACE INTO usr_performance (
                     strategy_id, profit_factor, win_rate, drawdown_max,
                     sharpe_ratio, consecutive_losses, execution_mode, trace_id,
-                    last_update_utc, total_trades, completed_last_50
+                    last_update_utc, total_usr_trades, completed_last_50
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 strategy_id,
@@ -37,7 +37,7 @@ class StrategyRankingMixin(BaseRepository):
                 ranking_data.get('execution_mode', 'SHADOW'),
                 trace_id,
                 ranking_data.get('last_update_utc', datetime.now(timezone.utc)),
-                ranking_data.get('total_trades', 0),
+                ranking_data.get('total_usr_trades', 0),
                 ranking_data.get('completed_last_50', 0)
             ))
             conn.commit()
@@ -49,13 +49,13 @@ class StrategyRankingMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_strategy_ranking(self, strategy_id: str) -> Optional[Dict]:
+    def get_usr_performance(self, strategy_id: str) -> Optional[Dict]:
         """Get current ranking data for a strategy."""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT * FROM strategy_ranking WHERE strategy_id = ?
+                SELECT * FROM usr_performance WHERE strategy_id = ?
             """, (strategy_id,))
             row = cursor.fetchone()
             if row:
@@ -64,13 +64,13 @@ class StrategyRankingMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_all_strategy_rankings(self) -> List[Dict]:
+    def get_all_usr_performances(self) -> List[Dict]:
         """Get all strategy rankings, sorted by execution mode and profit factor."""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT * FROM strategy_ranking 
+                SELECT * FROM usr_performance 
                 ORDER BY 
                     CASE execution_mode 
                         WHEN 'LIVE' THEN 1
@@ -98,7 +98,7 @@ class StrategyRankingMixin(BaseRepository):
                 trace_id = f"RANK-{uuid.uuid4().hex[:8].upper()}"
             
             cursor.execute("""
-                UPDATE strategy_ranking 
+                UPDATE usr_performance 
                 SET execution_mode = ?, trace_id = ?, last_update_utc = ?
                 WHERE strategy_id = ?
             """, (new_mode, trace_id, datetime.now(timezone.utc), strategy_id))
@@ -114,13 +114,13 @@ class StrategyRankingMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_strategies_by_mode(self, mode: str) -> List[Dict]:
-        """Get all strategies with a specific execution mode."""
+    def get_usr_strategies_by_mode(self, mode: str) -> List[Dict]:
+        """Get all usr_strategies with a specific execution mode."""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT * FROM strategy_ranking 
+                SELECT * FROM usr_performance 
                 WHERE execution_mode = ?
                 ORDER BY profit_factor DESC
             """, (mode,))
@@ -133,7 +133,7 @@ class StrategyRankingMixin(BaseRepository):
                                  trace_id: str, reason: str, metrics: Dict) -> None:
         """
         Log strategy state changes for audit trail.
-        Stores in system_state JSON for historical tracking.
+        Stores in sys_config JSON for historical tracking.
         """
         conn = self._get_conn()
         try:
@@ -148,9 +148,9 @@ class StrategyRankingMixin(BaseRepository):
                 'metrics': metrics
             }
             
-            # Save to system_state for persistence
+            # Save to sys_config for persistence
             cursor.execute("""
-                INSERT INTO edge_learning (
+                INSERT INTO usr_edge_learning (
                     timestamp, detection, action_taken, learning, details
                 ) VALUES (?, ?, ?, ?, ?)
             """, (
@@ -167,14 +167,14 @@ class StrategyRankingMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_strategy_ranking_history(self, strategy_id: str, limit: int = 50) -> List[Dict]:
-        """Get historical state changes for a strategy from edge_learning table."""
+    def get_usr_performance_history(self, strategy_id: str, limit: int = 50) -> List[Dict]:
+        """Get historical state changes for a strategy from usr_edge_learning table."""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT timestamp, detection, action_taken, learning, details
-                FROM edge_learning
+                FROM usr_edge_learning
                 WHERE detection = 'strategy_mode_change' AND details LIKE ?
                 ORDER BY timestamp DESC
                 LIMIT ?
@@ -185,7 +185,7 @@ class StrategyRankingMixin(BaseRepository):
             self._close_conn(conn)
     def get_regime_weights(self, regime: str, tenant_id: str = "default") -> Dict[str, str]:
         """
-        Get metric weights for a specific regime from regime_configs table.
+        Get metric weights for a specific regime from sys_regime_configs table.
         
         Args:
             regime: Market regime (TREND, RANGE, VOLATILE)
@@ -196,11 +196,11 @@ class StrategyRankingMixin(BaseRepository):
         """
         conn = self._get_conn()
         try:
-            # Note: regime_configs currently might be global or tenant-specific.
+            # Note: sys_regime_configs currently might be global or tenant-specific.
             # If following the isolation protocol, we filter by tenant_id.
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT metric_name, weight FROM regime_configs 
+                SELECT metric_name, weight FROM sys_regime_configs 
                 WHERE regime = ? AND (tenant_id = ? OR tenant_id IS NULL)
                 ORDER BY metric_name
             """, (regime, tenant_id))
@@ -209,7 +209,7 @@ class StrategyRankingMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_all_regime_configs(self, tenant_id: str = "default") -> Dict[str, Dict[str, str]]:
+    def get_all_sys_regime_configs(self, tenant_id: str = "default") -> Dict[str, Dict[str, str]]:
         """
         Get all regime configurations as nested dict.
         
@@ -220,7 +220,7 @@ class StrategyRankingMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT regime, metric_name, weight FROM regime_configs
+                SELECT regime, metric_name, weight FROM sys_regime_configs
                 WHERE (tenant_id = ? OR tenant_id IS NULL)
                 ORDER BY regime, metric_name
             """, (tenant_id,))
@@ -249,7 +249,7 @@ class StrategyRankingMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT OR REPLACE INTO regime_configs 
+                INSERT OR REPLACE INTO sys_regime_configs 
                 (regime, metric_name, weight, updated_at)
                 VALUES (?, ?, ?, ?)
             """, (regime, metric_name, weight, datetime.now(timezone.utc)))

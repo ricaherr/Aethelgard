@@ -1,6 +1,6 @@
 """
 Test Suite for PHASE 4: StrategyRanker Integration in MainOrchestrator
-Testing: Ranking cycle every 5 minutes, evaluate_all_strategies call, trace_ids logged
+Testing: Ranking cycle every 5 minutes, evaluate_all_usr_strategies call, trace_ids logged
 """
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock, call
@@ -16,11 +16,11 @@ from data_vault.storage import StorageManager
 def mock_storage():
     """Mock StorageManager for testing."""
     mock = MagicMock(spec=StorageManager)
-    mock.get_system_state.return_value = {}
+    mock.get_sys_config.return_value = {}
     mock.get_dynamic_params.return_value = {}
-    mock.get_all_strategies.return_value = []
-    mock.get_strategy_ranking.return_value = {}
-    mock.get_strategies_by_mode.return_value = []
+    mock.get_all_usr_strategies.return_value = []
+    mock.get_usr_performance.return_value = {}
+    mock.get_usr_strategies_by_mode.return_value = []
     return mock
 
 
@@ -36,7 +36,7 @@ def mock_scanner():
 def mock_signal_factory():
     """Mock SignalFactory."""
     mock = MagicMock()
-    mock.generate_signals_batch = AsyncMock(return_value=[])
+    mock.generate_usr_signals_batch = AsyncMock(return_value=[])
     return mock
 
 
@@ -66,9 +66,9 @@ def strategy_ranker(mock_storage):
 @pytest.fixture
 def orchestrator(mock_scanner, mock_signal_factory, mock_risk_manager, mock_executor, mock_storage, strategy_ranker):
     """Create MainOrchestrator with mocked dependencies."""
-    with patch.object(MainOrchestrator, '_load_dynamic_strategies'):
+    with patch.object(MainOrchestrator, '_load_dynamic_usr_strategies'):
         with patch.object(MainOrchestrator, '_init_ancillary_services'):
-            with patch.object(MainOrchestrator, '_init_system_state'):
+            with patch.object(MainOrchestrator, '_init_sys_config'):
                 # Don't mock _init_loop_intervals - we need it to set _last_ranking_cycle
                 with patch.object(MainOrchestrator, '_init_broker_discovery'):
                     with patch.object(MainOrchestrator, '_init_orchestration_services'):
@@ -130,11 +130,11 @@ class TestRankingCycleExecution:
         """
         GIVEN: run_single_cycle called multiple times
         WHEN: 5 minutes elapse between runs
-        THEN: strategy_ranker.evaluate_all_strategies() should be called
+        THEN: strategy_ranker.evaluate_all_usr_strategies() should be called
         """
-        # Mock evaluate_all_strategies
-        with patch.object(orchestrator.strategy_ranker, 'evaluate_all_strategies', return_value={}) as mock_eval:
-            with patch.object(orchestrator, '_check_closed_positions', new_callable=AsyncMock):
+        # Mock evaluate_all_usr_strategies
+        with patch.object(orchestrator.strategy_ranker, 'evaluate_all_usr_strategies', return_value={}) as mock_eval:
+            with patch.object(orchestrator, '_check_closed_usr_positions', new_callable=AsyncMock):
                 with patch.object(orchestrator, '_persist_session_stats'):
                     # Set last ranking cycle to 6 minutes ago (> 5 min threshold)
                     orchestrator._last_ranking_cycle = datetime.now(timezone.utc) - timedelta(minutes=6)
@@ -147,26 +147,26 @@ class TestRankingCycleExecution:
                     # For now, we test the timing logic
                     time_since_last = datetime.now(timezone.utc) - orchestrator._last_ranking_cycle
                     if time_since_last.total_seconds() >= orchestrator._ranking_interval:
-                        orchestrator.strategy_ranker.evaluate_all_strategies()
+                        orchestrator.strategy_ranker.evaluate_all_usr_strategies()
                     
-                    # Verify evaluate_all_strategies was called
+                    # Verify evaluate_all_usr_strategies was called
                     mock_eval.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_ranking_cycle_updates_last_cycle_timestamp(self, orchestrator, mock_storage):
         """
         GIVEN: Ranking cycle executes
-        WHEN: evaluate_all_strategies completes
+        WHEN: evaluate_all_usr_strategies completes
         THEN: _last_ranking_cycle should be updated to current time
         """
         past_time = datetime.now(timezone.utc) - timedelta(minutes=6)
         orchestrator._last_ranking_cycle = past_time
         
-        with patch.object(orchestrator.strategy_ranker, 'evaluate_all_strategies', return_value={}) as mock_eval:
+        with patch.object(orchestrator.strategy_ranker, 'evaluate_all_usr_strategies', return_value={}) as mock_eval:
             # Simulate ranking cycle execution
             time_since_last = datetime.now(timezone.utc) - orchestrator._last_ranking_cycle
             if time_since_last.total_seconds() >= orchestrator._ranking_interval:
-                orchestrator.strategy_ranker.evaluate_all_strategies()
+                orchestrator.strategy_ranker.evaluate_all_usr_strategies()
                 orchestrator._last_ranking_cycle = datetime.now(timezone.utc)  # Update timestamp
             
             # Verify timestamp was updated
@@ -177,18 +177,18 @@ class TestRankingCycleExecution:
         """
         GIVEN: Last ranking cycle was 2 minutes ago
         WHEN: run_single_cycle called
-        THEN: evaluate_all_strategies should NOT be called
+        THEN: evaluate_all_usr_strategies should NOT be called
         """
         # Set last ranking cycle to 2 minutes ago (< 5 min threshold)
         orchestrator._last_ranking_cycle = datetime.now(timezone.utc) - timedelta(minutes=2)
         
-        with patch.object(orchestrator.strategy_ranker, 'evaluate_all_strategies') as mock_eval:
+        with patch.object(orchestrator.strategy_ranker, 'evaluate_all_usr_strategies') as mock_eval:
             # Check if ranking should execute
             time_since_last = datetime.now(timezone.utc) - orchestrator._last_ranking_cycle
             if time_since_last.total_seconds() >= orchestrator._ranking_interval:
-                orchestrator.strategy_ranker.evaluate_all_strategies()
+                orchestrator.strategy_ranker.evaluate_all_usr_strategies()
             
-            # Verify evaluate_all_strategies was NOT called
+            # Verify evaluate_all_usr_strategies was NOT called
             mock_eval.assert_not_called()
 
 
@@ -197,7 +197,7 @@ class TestRankingResultsHandling:
 
     def test_ranking_results_logged_with_trace_ids(self, orchestrator, mock_storage):
         """
-        GIVEN: evaluate_all_strategies returns results with trace_ids
+        GIVEN: evaluate_all_usr_strategies returns results with trace_ids
         WHEN: Results are processed
         THEN: Each transition should be logged with trace_id
         """
@@ -215,8 +215,8 @@ class TestRankingResultsHandling:
             }
         }
         
-        with patch.object(orchestrator.strategy_ranker, 'evaluate_all_strategies', return_value=ranking_results):
-            results = orchestrator.strategy_ranker.evaluate_all_strategies()
+        with patch.object(orchestrator.strategy_ranker, 'evaluate_all_usr_strategies', return_value=ranking_results):
+            results = orchestrator.strategy_ranker.evaluate_all_usr_strategies()
         
         # Verify results have expected structure
         assert 'BRK_OPEN_0001' in results
@@ -246,7 +246,7 @@ class TestRankingResultsHandling:
         """
         GIVEN: Strategy promoted SHADOW -> LIVE
         WHEN: Ranking executes
-        THEN: strategy_ranking table should be updated (via StrategyRanker)
+        THEN: usr_performance table should be updated (via StrategyRanker)
         """
         promotion_result = {
             'strategy_id': 'BRK_OPEN_0001',
@@ -277,16 +277,16 @@ class TestRankingCycleErrorHandling:
 
     def test_ranking_cycle_error_does_not_block_trading(self, orchestrator, mock_storage):
         """
-        GIVEN: evaluate_all_strategies raises an exception
+        GIVEN: evaluate_all_usr_strategies raises an exception
         WHEN: run_single_cycle executes
         THEN: Trading should continue (ranking errors non-blocking)
         """
-        with patch.object(orchestrator.strategy_ranker, 'evaluate_all_strategies') as mock_eval:
+        with patch.object(orchestrator.strategy_ranker, 'evaluate_all_usr_strategies') as mock_eval:
             mock_eval.side_effect = Exception("Ranking error")
             
             # Simulate error handling
             try:
-                orchestrator.strategy_ranker.evaluate_all_strategies()
+                orchestrator.strategy_ranker.evaluate_all_usr_strategies()
             except Exception as e:
                 # Error caught - trading continues
                 assert str(e) == "Ranking error"
@@ -300,12 +300,12 @@ class TestRankingCycleErrorHandling:
         WHEN: Error is caught
         THEN: Should be logged and system should continue
         """
-        with patch.object(orchestrator.strategy_ranker, 'evaluate_all_strategies') as mock_eval:
+        with patch.object(orchestrator.strategy_ranker, 'evaluate_all_usr_strategies') as mock_eval:
             mock_eval.side_effect = RuntimeError("Storage connection failed")
             
             error_caught = False
             try:
-                result = orchestrator.strategy_ranker.evaluate_all_strategies()
+                result = orchestrator.strategy_ranker.evaluate_all_usr_strategies()
             except RuntimeError as e:
                 error_caught = True
                 assert "Storage connection failed" in str(e)
@@ -314,29 +314,29 @@ class TestRankingCycleErrorHandling:
 
 
 class TestRankingAllStrategies:
-    """Test batch evaluation of all strategies."""
+    """Test batch evaluation of all usr_strategies."""
 
-    def test_evaluate_all_strategies_calls_batch_evaluate(self, orchestrator, mock_storage):
+    def test_evaluate_all_usr_strategies_calls_batch_evaluate(self, orchestrator, mock_storage):
         """
-        GIVEN: MainOrchestrator evaluate_all_strategies called
-        WHEN: No specific strategies provided
-        THEN: Should evaluate ALL strategies in SHADOW/LIVE/QUARANTINE modes
+        GIVEN: MainOrchestrator evaluate_all_usr_strategies called
+        WHEN: No specific usr_strategies provided
+        THEN: Should evaluate ALL usr_strategies in SHADOW/LIVE/QUARANTINE modes
         """
         # Mock the batch evaluate method
         with patch.object(orchestrator.strategy_ranker, 'batch_evaluate', return_value={}) as mock_batch:
-            with patch.object(orchestrator.strategy_ranker, 'get_shadow_strategies', return_value=['strat1', 'strat2']):
-                with patch.object(orchestrator.strategy_ranker, 'get_live_strategies', return_value=['strat3']):
-                    with patch.object(orchestrator.strategy_ranker, 'get_quarantine_strategies', return_value=[]):
-                        # Call would aggregate all strategies
-                        all_strategies = ['strat1', 'strat2', 'strat3']
-                        results = orchestrator.strategy_ranker.batch_evaluate(all_strategies)
+            with patch.object(orchestrator.strategy_ranker, 'get_shadow_usr_strategies', return_value=['strat1', 'strat2']):
+                with patch.object(orchestrator.strategy_ranker, 'get_live_usr_strategies', return_value=['strat3']):
+                    with patch.object(orchestrator.strategy_ranker, 'get_quarantine_usr_strategies', return_value=[]):
+                        # Call would aggregate all usr_strategies
+                        all_usr_strategies = ['strat1', 'strat2', 'strat3']
+                        results = orchestrator.strategy_ranker.batch_evaluate(all_usr_strategies)
         
-        # Verify batch_evaluate was prepared with all strategies
+        # Verify batch_evaluate was prepared with all usr_strategies
         assert mock_batch.called
 
-    def test_evaluate_all_strategies_returns_dict_with_strategy_ids(self, orchestrator, mock_storage):
+    def test_evaluate_all_usr_strategies_returns_dict_with_strategy_ids(self, orchestrator, mock_storage):
         """
-        GIVEN: evaluate_all_strategies executes successfully
+        GIVEN: evaluate_all_usr_strategies executes successfully
         WHEN: Results are returned
         THEN: Dict should have strategy_id as keys, evaluation results as values
         """
@@ -346,13 +346,13 @@ class TestRankingAllStrategies:
             'LIQ_SWEEP_0001': {'action': 'no_change', 'current_mode': 'LIVE'}
         }
         
-        with patch.object(orchestrator.strategy_ranker, 'get_shadow_strategies', return_value=['BRK_OPEN_0001']):
-            with patch.object(orchestrator.strategy_ranker, 'get_live_strategies', return_value=['LIQ_SWEEP_0001']):
-                with patch.object(orchestrator.strategy_ranker, 'get_quarantine_strategies', return_value=[]):
+        with patch.object(orchestrator.strategy_ranker, 'get_shadow_usr_strategies', return_value=['BRK_OPEN_0001']):
+            with patch.object(orchestrator.strategy_ranker, 'get_live_usr_strategies', return_value=['LIQ_SWEEP_0001']):
+                with patch.object(orchestrator.strategy_ranker, 'get_quarantine_usr_strategies', return_value=[]):
                     with patch.object(orchestrator.strategy_ranker, 'batch_evaluate', return_value=expected_results):
-                        # Simulate evaluate_all_strategies implementation
-                        all_strategies = ['BRK_OPEN_0001', 'LIQ_SWEEP_0001', 'MOM_BIAS_0001']
-                        results = orchestrator.strategy_ranker.batch_evaluate(all_strategies)
+                        # Simulate evaluate_all_usr_strategies implementation
+                        all_usr_strategies = ['BRK_OPEN_0001', 'LIQ_SWEEP_0001', 'MOM_BIAS_0001']
+                        results = orchestrator.strategy_ranker.batch_evaluate(all_usr_strategies)
         
         assert isinstance(results, dict)
         assert 'BRK_OPEN_0001' in results

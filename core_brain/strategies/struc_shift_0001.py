@@ -27,7 +27,7 @@ from datetime import datetime
 import pandas as pd
 
 from models.signal import Signal, SignalType, MarketRegime, ConnectorType
-from core_brain.strategies.base_strategy import BaseStrategy
+from core_brain.usr_strategies.base_strategy import BaseStrategy
 from core_brain.sensors.market_structure_analyzer import MarketStructureAnalyzer
 from core_brain.services.reasoning_event_builder import ReasoningEventBuilder
 from data_vault.storage import StorageManager
@@ -91,7 +91,7 @@ class StructureShift0001Strategy(BaseStrategy):
         
         logger.info(
             f"[{self.trace_id}] StructureShift0001Strategy initialized for tenant {self.tenant_id}. "
-            f"Max daily trades: {self.max_daily_trades}, "
+            f"Max daily usr_trades: {self.max_daily_usr_trades}, "
             f"TP1 ratio: {self.tp1_ratio}, TP2 ratio: {self.tp2_ratio}"
         )
     
@@ -102,7 +102,7 @@ class StructureShift0001Strategy(BaseStrategy):
             params = self.storage_manager.get_dynamic_params()
             
             # Límites operativos
-            self.max_daily_trades = params.get('struc_shift_max_daily_trades', 5)
+            self.max_daily_usr_trades = params.get('struc_shift_max_daily_usr_trades', 5)
             
             # Ratios de proyección
             self.tp1_ratio = params.get('struc_shift_tp1_ratio', 1.27)      # FIB 127%
@@ -119,7 +119,7 @@ class StructureShift0001Strategy(BaseStrategy):
             
         except Exception as e:
             logger.warning(f"Failed to load parameters from storage: {e}. Using defaults.")
-            self.max_daily_trades = 5
+            self.max_daily_usr_trades = 5
             self.tp1_ratio = 1.27
             self.tp2_ratio = 1.618
             self.sl_buffer_pips = 10

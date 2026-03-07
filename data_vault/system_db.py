@@ -11,19 +11,19 @@ logger = logging.getLogger(__name__)
 class SystemMixin(BaseRepository):
     """Mixin for System State, Stats, Data Providers and Learning operations."""
 
-    def update_system_state(self, new_state: dict) -> None:
+    def update_sys_config(self, new_state: dict) -> None:
         """Update system state in database"""
         def _update(conn: sqlite3.Connection, new_state: dict) -> None:
             cursor = conn.cursor()
             for key, value in new_state.items():
                 try:
                     cursor.execute("""
-                        INSERT OR REPLACE INTO system_state (key, value, updated_at)
+                        INSERT OR REPLACE INTO sys_config (key, value, updated_at)
                         VALUES (?, ?, ?)
                     """, (key, json.dumps(value), datetime.now(timezone.utc)))
                 except sqlite3.OperationalError:
                     cursor.execute("""
-                        INSERT OR REPLACE INTO system_state (key, value)
+                        INSERT OR REPLACE INTO sys_config (key, value)
                         VALUES (?, ?)
                     """, (key, json.dumps(value)))
             conn.commit()
@@ -33,12 +33,12 @@ class SystemMixin(BaseRepository):
         except Exception as e:
             logger.error(f"Error updating system state: {e}")
 
-    def get_system_state(self) -> Dict[str, Any]:
+    def get_sys_config(self) -> Dict[str, Any]:
         """Get current system state from database"""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT key, value FROM system_state")
+            cursor.execute("SELECT key, value FROM sys_config")
             rows = cursor.fetchall()
             state = {}
             for row in rows:
@@ -52,7 +52,7 @@ class SystemMixin(BaseRepository):
 
     def get_active_timeframes(self) -> List[str]:
         """Get list of active timeframes from system state"""
-        state = self.get_system_state()
+        state = self.get_sys_config()
         tfs = state.get('active_timeframes', [])
         if isinstance(tfs, str):
             try:
@@ -69,7 +69,7 @@ class SystemMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT INTO tuning_adjustments (adjustment_data)
+                INSERT INTO usr_tuning_adjustments (adjustment_data)
                 VALUES (?)
             """, (json.dumps(adjustment),))
             conn.commit()
@@ -82,7 +82,7 @@ class SystemMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT * FROM tuning_adjustments 
+                SELECT * FROM usr_tuning_adjustments 
                 ORDER BY timestamp DESC 
                 LIMIT ?
             """, (limit,))
@@ -102,7 +102,7 @@ class SystemMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT INTO edge_learning (detection, action_taken, learning, details)
+                INSERT INTO usr_edge_learning (detection, action_taken, learning, details)
                 VALUES (?, ?, ?, ?)
             """, (detection, action_taken, learning, details))
             conn.commit()
@@ -111,7 +111,7 @@ class SystemMixin(BaseRepository):
 
     def get_modules_config(self) -> Dict[str, Any]:
         """Get active modules configuration from system state (SSOT)."""
-        state = self.get_system_state()
+        state = self.get_sys_config()
         config = state.get('modules_config', {})
         if isinstance(config, str):
             try:
@@ -123,11 +123,11 @@ class SystemMixin(BaseRepository):
 
     def save_modules_config(self, config: Dict[str, Any]) -> None:
         """Save modules configuration to system state (SSOT)."""
-        self.update_system_state({'modules_config': config})
+        self.update_sys_config({'modules_config': config})
 
     def get_edge_learning_history(self, limit: int = 20) -> List[Dict]:
         """Get EDGE learning history"""
-        query = "SELECT * FROM edge_learning ORDER BY timestamp DESC LIMIT ?"
+        query = "SELECT * FROM usr_edge_learning ORDER BY timestamp DESC LIMIT ?"
         return self.execute_query(query, (limit,))
 
     def save_data_provider(self, name: str, enabled: bool = True, priority: int = 50, 
@@ -142,7 +142,7 @@ class SystemMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT OR REPLACE INTO data_providers 
+                INSERT OR REPLACE INTO sys_sys_data_providers 
                 (name, type, enabled, priority, requires_auth, api_key, api_secret, additional_config, is_system)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
@@ -153,12 +153,12 @@ class SystemMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_data_providers(self) -> List[Dict]:
+    def get_sys_data_providers(self) -> List[Dict]:
         """Get all data providers"""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM data_providers")
+            cursor.execute("SELECT * FROM sys_sys_data_providers")
             rows = cursor.fetchall()
             column_names = [description[0] for description in cursor.description]
             providers = []
@@ -200,7 +200,7 @@ class SystemMixin(BaseRepository):
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            cursor.execute("UPDATE data_providers SET enabled = ? WHERE name = ?", (enabled, provider_id))
+            cursor.execute("UPDATE sys_sys_data_providers SET enabled = ? WHERE name = ?", (enabled, provider_id))
             conn.commit()
         finally:
             self._close_conn(conn)
@@ -211,7 +211,7 @@ class SystemMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT OR REPLACE INTO connector_settings (provider_id, enabled, last_manual_toggle)
+                INSERT OR REPLACE INTO usr_connector_settings (provider_id, enabled, last_manual_toggle)
                 VALUES (?, ?, CURRENT_TIMESTAMP)
             """, (provider_id, 1 if enabled else 0))
             conn.commit()
@@ -223,7 +223,7 @@ class SystemMixin(BaseRepository):
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT provider_id, enabled FROM connector_settings")
+            cursor.execute("SELECT provider_id, enabled FROM usr_connector_settings")
             rows = cursor.fetchall()
             return {row['provider_id']: bool(row['enabled']) for row in rows}
         finally:
@@ -231,46 +231,46 @@ class SystemMixin(BaseRepository):
 
     def update_module_heartbeat(self, module_name: str) -> None:
         """Update last activity timestamp for a module"""
-        self.update_system_state({f"heartbeat_{module_name}": datetime.now(timezone.utc).isoformat()})
+        self.update_sys_config({f"heartbeat_{module_name}": datetime.now(timezone.utc).isoformat()})
 
     def get_module_heartbeats(self) -> Dict[str, str]:
         """Get last activity timestamps for all modules"""
-        system_state = self.get_system_state()
+        sys_config = self.get_sys_config()
         heartbeats = {}
-        for key, value in system_state.items():
+        for key, value in sys_config.items():
             if key.startswith("heartbeat_"):
                 module_name = key.replace("heartbeat_", "")
                 heartbeats[module_name] = value
         return heartbeats
 
     def get_statistics(self) -> Dict[str, Any]:
-        """Get system statistics for dashboard (LIVE trades only for backward compatibility)"""
+        """Get system statistics for dashboard (LIVE usr_trades only for backward compatibility)"""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM signals")
-            total_signals = cursor.fetchone()[0]
-            cursor.execute("SELECT COUNT(*) FROM signals WHERE status = 'executed'")
-            executed_signals_count = cursor.fetchone()[0]
-            cursor.execute("SELECT COUNT(*) FROM trades WHERE profit > 0 AND execution_mode = 'LIVE'")
+            cursor.execute("SELECT COUNT(*) FROM usr_signals")
+            total_usr_signals = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM usr_signals WHERE status = 'executed'")
+            executed_usr_signals_count = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM usr_trades WHERE profit > 0 AND execution_mode = 'LIVE'")
             wins = cursor.fetchone()[0]
-            cursor.execute("SELECT COUNT(*) FROM trades WHERE profit < 0 AND execution_mode = 'LIVE'")
+            cursor.execute("SELECT COUNT(*) FROM usr_trades WHERE profit < 0 AND execution_mode = 'LIVE'")
             losses = cursor.fetchone()[0]
-            total_trades = wins + losses
-            win_rate = (wins / total_trades) if total_trades > 0 else 0
-            cursor.execute("SELECT AVG(profit) FROM trades WHERE execution_mode = 'LIVE'")
+            total_usr_trades = wins + losses
+            win_rate = (wins / total_usr_trades) if total_usr_trades > 0 else 0
+            cursor.execute("SELECT AVG(profit) FROM usr_trades WHERE execution_mode = 'LIVE'")
             avg_pnl_result = cursor.fetchone()[0]
             avg_pnl = float(avg_pnl_result) if avg_pnl_result else 0.0
             
             return {
-                'total_signals': total_signals,
-                'executed_signals': {
-                    'total': executed_signals_count,
+                'total_usr_signals': total_usr_signals,
+                'executed_usr_signals': {
+                    'total': executed_usr_signals_count,
                     'avg_pnl': avg_pnl,
-                    'winning_trades': wins,
+                    'winning_usr_trades': wins,
                     'win_rate': win_rate
                 },
-                'total_trades': total_trades,
+                'total_usr_trades': total_usr_trades,
                 'wins': wins,
                 'losses': losses,
                 'win_rate': win_rate
@@ -289,7 +289,7 @@ class SystemMixin(BaseRepository):
             Dict with module names as keys, enabled status as values.
             Defaults to all enabled if not set.
         """
-        system_state = self.get_system_state()
+        sys_config = self.get_sys_config()
         default_modules = {
             "scanner": True,
             "executor": True,
@@ -298,7 +298,7 @@ class SystemMixin(BaseRepository):
             "monitor": True,
             "notificator": True
         }
-        return system_state.get("modules_enabled", default_modules)
+        return sys_config.get("modules_enabled", default_modules)
     
     def set_global_module_enabled(self, module_name: str, enabled: bool) -> None:
         """
@@ -310,7 +310,7 @@ class SystemMixin(BaseRepository):
         """
         modules = self.get_global_modules_enabled()
         modules[module_name] = enabled
-        self.update_system_state({"modules_enabled": modules})
+        self.update_sys_config({"modules_enabled": modules})
         logger.info(f"[GLOBAL] Module '{module_name}' set to {'ENABLED' if enabled else 'DISABLED'}")
     
     def set_global_modules_enabled(self, modules_dict: Dict[str, bool]) -> None:
@@ -322,19 +322,19 @@ class SystemMixin(BaseRepository):
         """
         current_modules = self.get_global_modules_enabled()
         current_modules.update(modules_dict)
-        self.update_system_state({"modules_enabled": current_modules})
+        self.update_sys_config({"modules_enabled": current_modules})
         logger.info(f"[GLOBAL] Updated module states: {modules_dict}")
 
     # ========== NOTIFICATION SETTINGS (Multi-channel) ==========
     
-    def get_notification_settings(self, provider: str) -> Optional[Dict[str, Any]]:
+    def get_usr_notification_settings(self, provider: str) -> Optional[Dict[str, Any]]:
         """
         Obtiene la configuración de un proveedor de notificaciones.
         """
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM notification_settings WHERE provider = ?", (provider,))
+            cursor.execute("SELECT * FROM usr_notification_settings WHERE provider = ?", (provider,))
             row = cursor.fetchone()
             if not row:
                 return None
@@ -349,7 +349,7 @@ class SystemMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def update_notification_settings(self, provider: str, enabled: bool, config: Dict[str, Any]) -> bool:
+    def update_usr_notification_settings(self, provider: str, enabled: bool, config: Dict[str, Any]) -> bool:
         """
         Actualiza o crea la configuración de un proveedor de notificaciones.
         """
@@ -357,7 +357,7 @@ class SystemMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT OR REPLACE INTO notification_settings (provider, enabled, config, updated_at)
+                INSERT OR REPLACE INTO usr_notification_settings (provider, enabled, config, updated_at)
                 VALUES (?, ?, ?, CURRENT_TIMESTAMP)
             """, (provider, 1 if enabled else 0, json.dumps(config)))
             conn.commit()
@@ -368,14 +368,14 @@ class SystemMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_all_notification_settings(self) -> List[Dict[str, Any]]:
+    def get_all_usr_notification_settings(self) -> List[Dict[str, Any]]:
         """
         Obtiene la configuración de todos los proveedores.
         """
         try:
             conn = self._get_conn()
             cursor = conn.cursor()
-            cursor.execute("SELECT provider, enabled, config FROM notification_settings")
+            cursor.execute("SELECT provider, enabled, config FROM usr_notification_settings")
             results = cursor.fetchall()
             conn.close()
             
@@ -504,31 +504,31 @@ class SystemMixin(BaseRepository):
         Obtiene la configuración de riesgo desde el estado del sistema.
         Si no existe, retorna un diccionario vacío para que el manager use defaults.
         """
-        state = self.get_system_state()
+        state = self.get_sys_config()
         return state.get("risk_settings", {})
 
     def update_risk_settings(self, settings: Dict[str, Any]) -> bool:
         """
         Actualiza la configuración de riesgo en el estado del sistema.
         """
-        state = self.get_system_state()
+        state = self.get_sys_config()
         state["risk_settings"] = settings
-        return self.update_system_state(state)
+        return self.update_sys_config(state)
 
     def get_dynamic_params(self) -> Dict[str, Any]:
         """
         Obtiene los parámetros dinámicos (Auto-tune) desde el estado del sistema.
         """
-        state = self.get_system_state()
+        state = self.get_sys_config()
         return state.get("dynamic_params", {})
 
     def update_dynamic_params(self, params: Dict[str, Any]) -> bool:
         """
         Actualiza los parámetros dinámicos en el estado del sistema.
         """
-        state = self.get_system_state()
+        state = self.get_sys_config()
         state["dynamic_params"] = params
-        return self.update_system_state(state)
+        return self.update_sys_config(state)
     # ========== SYMBOL MAPPINGS (SSOT) ==========
 
     def save_symbol_mapping(self, internal_symbol: str, provider_id: str, provider_symbol: str, is_default: bool = False) -> None:
@@ -537,7 +537,7 @@ class SystemMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT OR REPLACE INTO symbol_mappings (internal_symbol, provider_id, provider_symbol, is_default)
+                INSERT OR REPLACE INTO sys_symbol_mappings (internal_symbol, provider_id, provider_symbol, is_default)
                 VALUES (?, ?, ?, ?)
             """, (internal_symbol, provider_id, provider_symbol, 1 if is_default else 0))
             conn.commit()
@@ -560,11 +560,11 @@ class SystemMixin(BaseRepository):
             cursor = conn.cursor()
             if provider_id:
                 cursor.execute("""
-                    SELECT internal_symbol, provider_id, provider_symbol FROM symbol_mappings 
+                    SELECT internal_symbol, provider_id, provider_symbol FROM sys_symbol_mappings 
                     WHERE provider_id = ?
                 """, (provider_id,))
             else:
-                cursor.execute("SELECT internal_symbol, provider_id, provider_symbol FROM symbol_mappings")
+                cursor.execute("SELECT internal_symbol, provider_id, provider_symbol FROM sys_symbol_mappings")
             
             rows = cursor.fetchall()
             mapping = {}
@@ -583,18 +583,18 @@ class SystemMixin(BaseRepository):
 
     # ── User Preferences (Perfiles y Autonomía) ──────────────────────────────
 
-    def get_user_preferences(self, user_id: str = "default") -> Optional[Dict]:
+    def get_usr_preferences(self, user_id: str = "default") -> Optional[Dict]:
         """Obtiene las preferencias del usuario desde la base de datos."""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM user_preferences WHERE user_id = ?", (user_id,))
+            cursor.execute("SELECT * FROM usr_preferences WHERE user_id = ?", (user_id,))
             row = cursor.fetchone()
             if not row:
                 return None
             columns = [desc[0] for desc in cursor.description]
             prefs = dict(zip(columns, row))
-            for json_field in ("auto_trading_symbols", "auto_trading_strategies",
+            for json_field in ("auto_trading_symbols", "auto_trading_usr_strategies",
                                "auto_trading_timeframes", "active_filters"):
                 if prefs.get(json_field):
                     try:
@@ -608,13 +608,13 @@ class SystemMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def update_user_preferences(self, user_id: str, preferences: Dict) -> bool:
+    def update_usr_preferences(self, user_id: str, preferences: Dict) -> bool:
         """Actualiza las preferencias del usuario en la base de datos."""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
             # Serializar campos JSON
-            for json_field in ("auto_trading_symbols", "auto_trading_strategies",
+            for json_field in ("auto_trading_symbols", "auto_trading_usr_strategies",
                                "auto_trading_timeframes", "active_filters"):
                 if json_field in preferences and preferences[json_field] is not None:
                     if not isinstance(preferences[json_field], str):
@@ -626,7 +626,7 @@ class SystemMixin(BaseRepository):
                 return False
 
             fields.append("updated_at = CURRENT_TIMESTAMP")
-            query = f"UPDATE user_preferences SET {', '.join(fields)} WHERE user_id = ?"
+            query = f"UPDATE usr_preferences SET {', '.join(fields)} WHERE user_id = ?"
             values.append(user_id)
             cursor.execute(query, values)
 
@@ -634,7 +634,7 @@ class SystemMixin(BaseRepository):
                 preferences["user_id"] = user_id
                 placeholders = ", ".join(["?" for _ in preferences])
                 columns = ", ".join(preferences.keys())
-                cursor.execute(f"INSERT INTO user_preferences ({columns}) VALUES ({placeholders})",
+                cursor.execute(f"INSERT INTO usr_preferences ({columns}) VALUES ({placeholders})",
                                list(preferences.values()))
             conn.commit()
             return True
@@ -651,8 +651,8 @@ class SystemMixin(BaseRepository):
             "explorer": {
                 "profile_type": "explorer",
                 "auto_trading_enabled": False,
-                "notify_signals": True,
-                "notify_executions": False,
+                "notify_usr_signals": True,
+                "notify_usr_executions": False,
                 "notify_threshold_score": 0.90,
                 "default_view": "feed",
                 "require_confirmation": True,
@@ -661,24 +661,24 @@ class SystemMixin(BaseRepository):
                 "profile_type": "active_trader",
                 "auto_trading_enabled": False,
                 "auto_trading_max_risk": 1.5,
-                "notify_signals": True,
-                "notify_executions": True,
+                "notify_usr_signals": True,
+                "notify_usr_executions": True,
                 "notify_threshold_score": 0.85,
                 "default_view": "grid",
                 "require_confirmation": True,
-                "max_daily_trades": 10,
+                "max_daily_usr_trades": 10,
             },
             "scalper": {
                 "profile_type": "scalper",
                 "auto_trading_enabled": True,
                 "auto_trading_max_risk": 1.0,
                 "auto_trading_timeframes": ["M1", "M5"],
-                "notify_signals": False,
-                "notify_executions": True,
+                "notify_usr_signals": False,
+                "notify_usr_executions": True,
                 "notify_threshold_score": 0.90,
                 "default_view": "feed",
                 "require_confirmation": False,
-                "max_daily_trades": 20,
+                "max_daily_usr_trades": 20,
             }
         }
         return profiles.get(profile_type, profiles["active_trader"])

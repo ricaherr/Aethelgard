@@ -51,7 +51,7 @@ class InstrumentAnalysisService:
             last_state = {}
             try:
                 if self.market_db:
-                    history = self.market_db.get_market_state_history(symbol, limit=1)
+                    history = self.market_db.get_sys_market_pulse_history(symbol, limit=1)
                     last_state = history[0]["data"] if history else {}
             except Exception as e:
                 logger.debug(f"[AnalysisService] Failed to fetch market state for {symbol}: {e}")
@@ -75,7 +75,7 @@ class InstrumentAnalysisService:
                 logger.debug(f"[AnalysisService] Trifecta extraction failed: {e}")
             
             # 4. Estrategias aplicables
-            strategies = self._get_applicable_strategies(regime)
+            usr_strategies = self._get_applicable_usr_strategies(regime)
             
             return {
                 "symbol": symbol,
@@ -92,7 +92,7 @@ class InstrumentAnalysisService:
                     "price_position": price_position
                 },
                 "trifecta": trifecta_result,
-                "applicable_strategies": strategies,
+                "applicable_usr_strategies": usr_strategies,
                 "metadata": {
                     "freshness": "cached",
                     "source": "market_db"
@@ -103,7 +103,7 @@ class InstrumentAnalysisService:
             logger.error(f"[AnalysisService] Unexpected error in get_analysis({symbol}): {e}", exc_info=True)
             return self._empty_analysis(symbol)
 
-    def _get_applicable_strategies(self, regime: str) -> List[Dict[str, Any]]:
+    def _get_applicable_usr_strategies(self, regime: str) -> List[Dict[str, Any]]:
         """
         Obtiene módulos estratégicos aplicables para un régimen.
         
@@ -141,7 +141,7 @@ class InstrumentAnalysisService:
             return result
         
         except Exception as e:
-            logger.warning(f"[AnalysisService] Failed to get applicable strategies for regime {regime}: {e}")
+            logger.warning(f"[AnalysisService] Failed to get applicable usr_strategies for regime {regime}: {e}")
             return []
 
     def _empty_analysis(self, symbol: str) -> Dict[str, Any]:
@@ -161,7 +161,7 @@ class InstrumentAnalysisService:
                 "price_position": None
             },
             "trifecta": None,
-            "applicable_strategies": [],
+            "applicable_usr_strategies": [],
             "metadata": {
                 "freshness": "stale",
                 "source": "empty"

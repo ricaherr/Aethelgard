@@ -5,8 +5,8 @@ Test Suite: Feedback Loop Integration
 CRITICAL TEST: Complete feedback loop from trade closure → RiskManager → Tuner
 
 Scenario:
-  1. Open 3 trades (simulated executions)
-  2. Close all 3 trades with loss
+  1. Open 3 usr_trades (simulated usr_executions)
+  2. Close all 3 usr_trades with loss
   3. Assert RiskManager enters LOCKDOWN
   4. Assert Tuner adjusts parameters (becomes conservative)
   5. Assert reconciliation after reconnect (unprocessed closes are caught)
@@ -45,7 +45,7 @@ def temp_config_dir(tmp_path):
     risk_settings = {
         "max_consecutive_losses": 3,
         "lockdown_mode_enabled": True,
-        "min_trades_for_tuning": 5,
+        "min_usr_trades_for_tuning": 5,
         "tuning_enabled": True,
         "target_win_rate": 0.55
     }
@@ -63,7 +63,7 @@ DYNAMIC_PARAMS_SEED = {
     "risk_per_trade": 0.01,
     "max_consecutive_losses": 3,
     "tuning_enabled": True,
-    "min_trades_for_tuning": 5,
+    "min_usr_trades_for_tuning": 5,
     "target_win_rate": 0.55,
     "adx_threshold": 25,
     "elephant_atr_multiplier": 0.3,
@@ -83,9 +83,9 @@ class TestFeedbackLoopIntegration:
     ):
         """
         Test the complete feedback loop:
-        1. Create 3 closed trades with losses
+        1. Create 3 closed usr_trades with losses
         2. RiskManager records results and enters LOCKDOWN at trade #3
-        3. Tuner reads trades from DB and adjusts parameters
+        3. Tuner reads usr_trades from DB and adjusts parameters
         4. Assert that dynamic_params in DB changed (became more conservative)
         
         EXPECTED FLOW:
@@ -94,13 +94,13 @@ class TestFeedbackLoopIntegration:
           Trade 3 (Loss) → consecutive_losses=3 → LOCKDOWN ACTIVATED
           
         THEN:
-          EdgeTuner.adjust_parameters() reads trades from DB
+          EdgeTuner.adjust_parameters() reads usr_trades from DB
           Detects consecutive_losses=3 >= trigger threshold (5 in current code, should be 3)
           Adjusts parameters to be MORE CONSERVATIVE:
             - ADX threshold UP (only strong trends)
             - ATR multiplier UP (only big candles)
             - SMA20 proximity DOWN (tighter filter)
-            - Min score UP (higher quality signals)
+            - Min score UP (higher quality usr_signals)
         """
         
         # ========== SETUP: Initialize components ==========
@@ -109,7 +109,7 @@ class TestFeedbackLoopIntegration:
         temp_db.update_risk_settings({
             "max_consecutive_losses": 3,
             "lockdown_mode_enabled": True,
-            "min_trades_for_tuning": 5,
+            "min_usr_trades_for_tuning": 5,
             "tuning_enabled": True,
             "target_win_rate": 0.55
         })
@@ -141,9 +141,9 @@ class TestFeedbackLoopIntegration:
         assert risk_manager.consecutive_losses == 0, "Should start with 0 consecutive losses"
         
         # ========== PHASE 1: SIMULATE 5 TRADES (2 WINS + 3 LOSSES) ==========
-        print(f"\n[PHASE 1] Simulating 5 trades (2 wins + 3 losses)...")
+        print(f"\n[PHASE 1] Simulating 5 usr_trades (2 wins + 3 losses)...")
         
-        trades_data = []
+        usr_trades_data = []
         
         # Trade 1-2: WINS (to ensure statistical significance: 40% win rate -> 60% loss rate)
         for i in range(1, 3):
@@ -162,7 +162,7 @@ class TestFeedbackLoopIntegration:
             }
             
             temp_db.save_trade_result(trade)
-            trades_data.append(trade)
+            usr_trades_data.append(trade)
             risk_manager.record_trade_result(is_win=True, pnl=+150.0)
             
             print(f"   Trade {i}: WIN   | PnL=+150 | consecutive_losses={risk_manager.consecutive_losses} | locked={risk_manager.is_locked()}")
@@ -184,7 +184,7 @@ class TestFeedbackLoopIntegration:
             }
             
             temp_db.save_trade_result(trade)
-            trades_data.append(trade)
+            usr_trades_data.append(trade)
             risk_manager.record_trade_result(is_win=False, pnl=-100.0)
             
             print(f"   Trade {i}: LOSS  | PnL=-100 | consecutive_losses={risk_manager.consecutive_losses} | locked={risk_manager.is_locked()}")
@@ -199,8 +199,8 @@ class TestFeedbackLoopIntegration:
             "RiskManager should be LOCKED after 3 consecutive losses"
         
         # Verify lockdown persisted in DB
-        system_state = temp_db.get_system_state()
-        assert system_state.get("lockdown_mode") is True, \
+        sys_config = temp_db.get_sys_config()
+        assert sys_config.get("lockdown_mode") is True, \
             "Lockdown mode should be persisted in DB"
         
         print(f"   [OK] RiskManager LOCKED: consecutive_losses={risk_manager.consecutive_losses}")
@@ -210,7 +210,7 @@ class TestFeedbackLoopIntegration:
         print(f"\n[PHASE 3] EdgeTuner analyzing and adjusting parameters...")
         
         # Call EdgeTuner.adjust_parameters()
-        adjustment_result = edge_tuner.adjust_parameters(limit_trades=100)
+        adjustment_result = edge_tuner.adjust_parameters(limit_usr_trades=100)
         
         assert adjustment_result is not None, \
             "EdgeTuner should return adjustment result"
@@ -235,7 +235,7 @@ class TestFeedbackLoopIntegration:
         # - ADX higher (more selective about trends)
         # - ATR higher (only big candles)
         # - SMA20 lower (tighter filter)
-        # - Score higher (higher quality signals only)
+        # - Score higher (higher quality usr_signals only)
         
         # The exact values depend on EdgeTuner's logic, but they should CHANGE
         # and move in the "conservative" direction
@@ -260,8 +260,8 @@ class TestFeedbackLoopIntegration:
         # ========== PHASE 5: RECONCILIATION TEST (Simulate Reconnect) ==========
         print(f"\n[PHASE 5] Testing reconciliation after disconnect/reconnect...")
         
-        # Simulate: System was down, 2 more trades closed while offline
-        offline_trades = [
+        # Simulate: System was down, 2 more usr_trades closed while offline
+        offline_usr_trades = [
             {
                 "id": "trade_4_offline",
                 "signal_id": "signal_4",
@@ -290,23 +290,23 @@ class TestFeedbackLoopIntegration:
             }
         ]
         
-        # Save offline trades to DB (simulating they arrived from broker)
-        for offline_trade in offline_trades:
+        # Save offline usr_trades to DB (simulating they arrived from broker)
+        for offline_trade in offline_usr_trades:
             temp_db.save_trade_result(offline_trade)
         
-        # Now query recent trades and verify all 7 are there (5 initial + 2 offline)
-        all_trades = temp_db.get_recent_trades(limit=100)
+        # Now query recent usr_trades and verify all 7 are there (5 initial + 2 offline)
+        all_usr_trades = temp_db.get_recent_usr_trades(limit=100)
         
-        assert len(all_trades) >= 5, \
-            f"Should have at least 5 trades in DB, got {len(all_trades)}"
+        assert len(all_usr_trades) >= 5, \
+            f"Should have at least 5 usr_trades in DB, got {len(all_usr_trades)}"
         
-        print(f"   [OK] Reconciliation: Found {len(all_trades)} trades in DB after reconnect")
+        print(f"   [OK] Reconciliation: Found {len(all_usr_trades)} usr_trades in DB after reconnect")
         
         # ========== FINAL ASSERTIONS ==========
         print(f"\n[TEST PASSED] Complete Feedback Loop Verified")
         print(f"   - RiskManager.lockdown_mode = {risk_manager.is_locked()}")
         print(f"   - EdgeTuner adjusted parameters = {params_changed}")
-        print(f"   - Reconciliation recovered trades = {len(all_trades)}")
+        print(f"   - Reconciliation recovered usr_trades = {len(all_usr_trades)}")
 
 
 class TestRiskSettingsSourceOfTruth:

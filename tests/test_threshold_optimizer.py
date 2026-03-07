@@ -39,11 +39,11 @@ def mock_storage():
         "confidence_threshold_min": 0.50,
         "confidence_threshold_max": 0.95,
         "confidence_smoothing_max": 0.05,
-        "equity_lookback_trades": 20,
+        "equity_lookback_usr_trades": 20,
         "consecutive_loss_threshold": 3,
     })
     
-    storage.get_account_trades = Mock(return_value=[])
+    storage.get_account_usr_trades = Mock(return_value=[])
     storage.log_threshold_adjustment = Mock()
     storage.update_dynamic_params = Mock()
     
@@ -57,8 +57,8 @@ def threshold_optimizer(mock_storage):
 
 
 @pytest.fixture
-def sample_winning_trades() -> List[Dict[str, Any]]:
-    """Sample winning trades for equity curve analysis."""
+def sample_winning_usr_trades() -> List[Dict[str, Any]]:
+    """Sample winning usr_trades for equity curve analysis."""
     return [
         {
             "ticket_id": f"trade_{i}",
@@ -72,8 +72,8 @@ def sample_winning_trades() -> List[Dict[str, Any]]:
 
 
 @pytest.fixture
-def sample_losing_trades() -> List[Dict[str, Any]]:
-    """Sample losing trades (consecutive losses for testing adversity detection)."""
+def sample_losing_usr_trades() -> List[Dict[str, Any]]:
+    """Sample losing usr_trades (consecutive losses for testing adversity detection)."""
     return [
         {
             "ticket_id": f"trade_{i}",
@@ -87,18 +87,18 @@ def sample_losing_trades() -> List[Dict[str, Any]]:
 
 
 @pytest.fixture
-def sample_mixed_trades() -> List[Dict[str, Any]]:
-    """Mixed winning and losing trades."""
-    trades = []
+def sample_mixed_usr_trades() -> List[Dict[str, Any]]:
+    """Mixed winning and losing usr_trades."""
+    usr_trades = []
     for i in range(20):
-        trades.append({
+        usr_trades.append({
             "ticket_id": f"trade_{i}",
             "is_win": (i % 3) != 0,  # Win pattern: W, W, L, W, W, L, ...
             "pnl": 100.0 if (i % 3) != 0 else -50.0,
             "timestamp": datetime.now(timezone.utc) - timedelta(minutes=60 - i),
             "symbol": "EURUSD",
         })
-    return trades
+    return usr_trades
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -137,47 +137,47 @@ class TestThresholdOptimizerInitialization:
 class TestEquityCurveAnalyzer:
     """Test equity curve analysis logic."""
 
-    def test_analyzer_calculates_win_rate(self, sample_winning_trades):
-        """Test win rate calculation on all winning trades."""
-        analyzer = EquityCurveAnalyzer(trades=sample_winning_trades)
+    def test_analyzer_calculates_win_rate(self, sample_winning_usr_trades):
+        """Test win rate calculation on all winning usr_trades."""
+        analyzer = EquityCurveAnalyzer(usr_trades=sample_winning_usr_trades)
         
         assert analyzer.win_rate == 1.0
-        assert analyzer.total_trades == 5
+        assert analyzer.total_usr_trades == 5
         assert analyzer.consecutive_losses == 0
 
-    def test_analyzer_calculates_losing_streak(self, sample_losing_trades):
+    def test_analyzer_calculates_losing_streak(self, sample_losing_usr_trades):
         """Test consecutive losses detection."""
-        analyzer = EquityCurveAnalyzer(trades=sample_losing_trades)
+        analyzer = EquityCurveAnalyzer(usr_trades=sample_losing_usr_trades)
         
         assert analyzer.win_rate == 0.0
         assert analyzer.consecutive_losses == 4
 
-    def test_analyzer_detects_consecutive_losses_in_mixed_trades(self, sample_mixed_trades):
-        """Test detection of consecutive losses within mixed winning/losing trades."""
-        # First 3 trades: W, W, L → no streak of 3
+    def test_analyzer_detects_consecutive_losses_in_mixed_usr_trades(self, sample_mixed_usr_trades):
+        """Test detection of consecutive losses within mixed winning/losing usr_trades."""
+        # First 3 usr_trades: W, W, L → no streak of 3
         # Then: W, W, L → no streak of 3
         # Pattern repeats, max consecutive loss should be 1
         
-        analyzer = EquityCurveAnalyzer(trades=sample_mixed_trades)
+        analyzer = EquityCurveAnalyzer(usr_trades=sample_mixed_usr_trades)
         
         assert analyzer.consecutive_losses == 1
-        assert analyzer.total_trades == 20
+        assert analyzer.total_usr_trades == 20
         assert analyzer.win_rate < 1.0
         assert analyzer.win_rate > 0.0
 
-    def test_analyzer_calculates_drawdown(self, sample_mixed_trades):
+    def test_analyzer_calculates_drawdown(self, sample_mixed_usr_trades):
         """Test drawdown calculation (cumulative loss from peak)."""
-        analyzer = EquityCurveAnalyzer(trades=sample_mixed_trades)
+        analyzer = EquityCurveAnalyzer(usr_trades=sample_mixed_usr_trades)
         
         # Should have calculated some drawdown from equity curve
         assert hasattr(analyzer, "max_drawdown")
         assert analyzer.max_drawdown <= 0.0  # Drawdown is negative or zero
 
-    def test_analyzer_handles_empty_trades(self):
-        """Test analyzer gracefully handles empty trades list."""
-        analyzer = EquityCurveAnalyzer(trades=[])
+    def test_analyzer_handles_empty_usr_trades(self):
+        """Test analyzer gracefully handles empty usr_trades list."""
+        analyzer = EquityCurveAnalyzer(usr_trades=[])
         
-        assert analyzer.total_trades == 0
+        assert analyzer.total_usr_trades == 0
         assert analyzer.win_rate == 0.0
         assert analyzer.consecutive_losses == 0
 
@@ -187,14 +187,14 @@ class TestThresholdAdjustment:
 
     @pytest.mark.asyncio
     async def test_increase_threshold_on_consecutive_losses(
-        self, threshold_optimizer, sample_losing_trades
+        self, threshold_optimizer, sample_losing_usr_trades
     ):
         """
         Test RULE: When consecutive_losses >= threshold (e.g., 3),
         the confidence_threshold should increase (become more demanding).
         """
         # Simulate 4 consecutive losses
-        threshold_optimizer.storage.get_account_trades.return_value = sample_losing_trades
+        threshold_optimizer.storage.get_account_usr_trades.return_value = sample_losing_usr_trades
         
         old_threshold = threshold_optimizer.current_threshold
         
@@ -208,13 +208,13 @@ class TestThresholdAdjustment:
 
     @pytest.mark.asyncio
     async def test_decrease_threshold_on_winning_streak(
-        self, threshold_optimizer, sample_winning_trades
+        self, threshold_optimizer, sample_winning_usr_trades
     ):
         """
         Test RULE: When win_rate is high after recovering from losses,
         the threshold can decrease slightly (become more permissive).
         """
-        threshold_optimizer.storage.get_account_trades.return_value = sample_winning_trades
+        threshold_optimizer.storage.get_account_usr_trades.return_value = sample_winning_usr_trades
         
         old_threshold = threshold_optimizer.current_threshold
         
@@ -228,13 +228,13 @@ class TestThresholdAdjustment:
 
     @pytest.mark.asyncio
     async def test_no_adjustment_on_stable_performance(
-        self, threshold_optimizer, sample_mixed_trades
+        self, threshold_optimizer, sample_mixed_usr_trades
     ):
         """
         Test RULE: On stable mixed performance (no extreme patterns),
         threshold adjustment should be minimal or none.
         """
-        threshold_optimizer.storage.get_account_trades.return_value = sample_mixed_trades
+        threshold_optimizer.storage.get_account_usr_trades.return_value = sample_mixed_usr_trades
         
         old_threshold = threshold_optimizer.current_threshold
         
@@ -302,10 +302,10 @@ class TestPersistence:
 
     @pytest.mark.asyncio
     async def test_adjustment_persisted_to_storage(
-        self, threshold_optimizer, sample_losing_trades
+        self, threshold_optimizer, sample_losing_usr_trades
     ):
         """Verify threshold changes are persisted to StorageManager."""
-        threshold_optimizer.storage.get_account_trades.return_value = sample_losing_trades
+        threshold_optimizer.storage.get_account_usr_trades.return_value = sample_losing_usr_trades
         
         old_threshold = threshold_optimizer.current_threshold
         
@@ -318,10 +318,10 @@ class TestPersistence:
 
     @pytest.mark.asyncio
     async def test_adjustment_logged_with_trace_id(
-        self, threshold_optimizer, sample_losing_trades, monkeypatch
+        self, threshold_optimizer, sample_losing_usr_trades, monkeypatch
     ):
         """Verify adjustments are logged with Trace_ID for traceability."""
-        threshold_optimizer.storage.get_account_trades.return_value = sample_losing_trades
+        threshold_optimizer.storage.get_account_usr_trades.return_value = sample_losing_usr_trades
         
         await threshold_optimizer.optimize_threshold(
             account_id="test_account",
@@ -360,15 +360,15 @@ class TestIntegrationWithSignalFactory:
 class TestEdgeCases:
     """Test edge cases and error handling."""
 
-    def test_empty_trades_handling(self, threshold_optimizer):
-        """Verify optimizer handles accounts with no trades gracefully."""
+    def test_empty_usr_trades_handling(self, threshold_optimizer):
+        """Verify optimizer handles accounts with no usr_trades gracefully."""
         optimizer = threshold_optimizer
-        optimizer.storage.get_account_trades.return_value = []
+        optimizer.storage.get_account_usr_trades.return_value = []
         
         # Should not crash, should handle gracefully
         # Equity curve analysis should return neutral values
-        analyzer = EquityCurveAnalyzer(trades=[])
-        assert analyzer.total_trades == 0
+        analyzer = EquityCurveAnalyzer(usr_trades=[])
+        assert analyzer.total_usr_trades == 0
 
     @pytest.mark.asyncio
     async def test_threshold_optimization_on_single_trade(self, threshold_optimizer):
@@ -382,7 +382,7 @@ class TestEdgeCases:
                 "symbol": "EURUSD",
             }
         ]
-        threshold_optimizer.storage.get_account_trades.return_value = single_trade
+        threshold_optimizer.storage.get_account_usr_trades.return_value = single_trade
         
         # Should not crash
         await threshold_optimizer.optimize_threshold(account_id="test_account")
@@ -422,8 +422,8 @@ def test_threshold_optimizer_code_complexity():
 
 def test_equity_curve_analyzer_efficiency():
     """Verify EquityCurveAnalyzer handles large trade histories efficiently."""
-    # Generate 1000 trades
-    large_trades = [
+    # Generate 1000 usr_trades
+    large_usr_trades = [
         {
             "ticket_id": f"trade_{i}",
             "is_win": i % 2 == 0,
@@ -435,6 +435,6 @@ def test_equity_curve_analyzer_efficiency():
     ]
     
     # Should complete analysis quickly (< 1 second)
-    analyzer = EquityCurveAnalyzer(trades=large_trades)
+    analyzer = EquityCurveAnalyzer(usr_trades=large_usr_trades)
     
-    assert analyzer.total_trades == 1000
+    assert analyzer.total_usr_trades == 1000

@@ -9,12 +9,12 @@ from core_brain.multi_timeframe_limiter import MultiTimeframeLimiter
 from models.signal import Signal, SignalType, ConnectorType
 
 
-def test_max_positions_per_symbol_enforced(storage):
+def test_max_usr_positions_per_symbol_enforced(storage):
     """Should block 4th position for same symbol (max=3)"""
-    config = {'multi_timeframe_limits': {'max_positions_per_symbol': 3}}
+    config = {'multi_timeframe_limits': {'max_usr_positions_per_symbol': 3}}
     limiter = MultiTimeframeLimiter(storage, config)
     
-    # Create 3 open positions EURUSD
+    # Create 3 open usr_positions EURUSD
     for i, tf in enumerate(['M15', 'H1', 'H4']):
         signal = Signal(
             symbol='EURUSD',
@@ -58,7 +58,7 @@ def test_max_volume_per_symbol_enforced(storage):
     config = {'multi_timeframe_limits': {'max_total_volume_per_symbol': 5.0}}
     limiter = MultiTimeframeLimiter(storage, config)
     
-    # Create 2 positions: 2.0 + 2.5 = 4.5 lots total
+    # Create 2 usr_positions: 2.0 + 2.5 = 4.5 lots total
     for volume, tf in [(2.0, 'H1'), (2.5, 'H4')]:
         signal = Signal(
             symbol='GBPUSD',
@@ -102,7 +102,7 @@ def test_hedge_alert_logged_but_not_blocked(storage, caplog):
     config = {
         'multi_timeframe_limits': {
             'alert_hedge_threshold': 0.2,
-            'allow_opposite_signals': True
+            'allow_opposite_usr_signals': True
         }
     }
     limiter = MultiTimeframeLimiter(storage, config)
@@ -148,11 +148,11 @@ def test_hedge_alert_logged_but_not_blocked(storage, caplog):
     assert "AUDUSD" in caplog.text
 
 
-def test_opposite_signals_blocked_when_disabled(storage):
-    """Should reject opposite signal if allow_opposite_signals=false"""
+def test_opposite_usr_signals_blocked_when_disabled(storage):
+    """Should reject opposite signal if allow_opposite_usr_signals=false"""
     config = {
         'multi_timeframe_limits': {
-            'allow_opposite_signals': False
+            'allow_opposite_usr_signals': False
         }
     }
     limiter = MultiTimeframeLimiter(storage, config)
@@ -196,11 +196,11 @@ def test_opposite_signals_blocked_when_disabled(storage):
 
 
 def test_limiter_disabled_allows_all(storage):
-    """Should allow all signals when limiter is disabled"""
+    """Should allow all usr_signals when limiter is disabled"""
     config = {'multi_timeframe_limits': {'enabled': False}}
     limiter = MultiTimeframeLimiter(storage, config)
     
-    # Create 10 positions (way over any limit)
+    # Create 10 usr_positions (way over any limit)
     for i in range(10):
         signal = Signal(
             symbol='NZDUSD',
@@ -238,11 +238,11 @@ def test_limiter_disabled_allows_all(storage):
 
 
 def test_different_symbols_not_affected(storage):
-    """Should NOT count positions from different symbols"""
-    config = {'multi_timeframe_limits': {'max_positions_per_symbol': 2}}
+    """Should NOT count usr_positions from different symbols"""
+    config = {'multi_timeframe_limits': {'max_usr_positions_per_symbol': 2}}
     limiter = MultiTimeframeLimiter(storage, config)
     
-    # Create 2 EURUSD positions
+    # Create 2 EURUSD usr_positions
     for i in range(2):
         signal = Signal(
             symbol='EURUSD',

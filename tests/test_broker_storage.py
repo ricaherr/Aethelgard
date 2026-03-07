@@ -16,15 +16,15 @@ class TestBrokerStorage:
         return StorageManager(db_path=":memory:")
     
     def test_table_brokers_exists(self, storage):
-        """Verify brokers table is created"""
+        """Verify sys_brokers table is created"""
         conn = storage._get_conn()
         cursor = conn.cursor()
         cursor.execute("""
             SELECT name FROM sqlite_master 
-            WHERE type='table' AND name='brokers'
+            WHERE type='table' AND name='sys_brokers'
         """)
         result = cursor.fetchone()
-        assert result is not None, "Table 'brokers' should exist"
+        assert result is not None, "Table 'sys_brokers' should exist"
     
     def test_save_broker_config(self, storage):
         """Save broker configuration"""
@@ -43,11 +43,11 @@ class TestBrokerStorage:
         storage.save_broker(broker_config)
         
         # Verify saved
-        brokers = storage.get_brokers()
-        assert len(brokers) == 1
-        assert brokers[0]['broker_id'] == 'binance'
-        assert brokers[0]['name'] == 'Binance'
-        assert brokers[0]['auto_provisioning'] == 'full'
+        sys_brokers = storage.get_brokers()
+        assert len(sys_brokers) == 1
+        assert sys_brokers[0]['broker_id'] == 'binance'
+        assert sys_brokers[0]['name'] == 'Binance'
+        assert sys_brokers[0]['auto_provisioning'] == 'full'
     
     def test_get_broker_by_id(self, storage):
         """Retrieve specific broker"""
@@ -73,7 +73,7 @@ class TestBrokerStorage:
         assert storage.get_broker('nonexistent') is None
     
     def test_save_and_get_broker_account(self, storage):
-        """Save and retrieve broker accounts (enabled status applies to accounts, not brokers)"""
+        """Save and retrieve broker accounts (enabled status applies to accounts, not sys_brokers)"""
         # First save a broker
         broker_config = {
             "broker_id": "ibkr",
@@ -117,14 +117,14 @@ class TestBrokerStorage:
     
     def test_get_enabled_accounts(self, storage):
         """Get only enabled broker accounts"""
-        # Create brokers
-        brokers = [
+        # Create sys_brokers
+        sys_brokers = [
             {"broker_id": "binance", "name": "Binance", "type": "crypto", "auto_provision_available": True},
             {"broker_id": "ibkr", "name": "Interactive Brokers", "type": "multi_asset", "auto_provision_available": False},
             {"broker_id": "mt5", "name": "MetaTrader 5", "type": "forex_cfd", "auto_provision_available": False}
         ]
         
-        for broker in brokers:
+        for broker in sys_brokers:
             storage.save_broker(broker)
         
         # Create accounts (some enabled, some disabled)
@@ -133,13 +133,13 @@ class TestBrokerStorage:
         storage.save_broker_account('mt5', 'mt5', 'MT5 Demo', enabled=True)
         
         # Get only enabled accounts
-        enabled_accounts = storage.get_broker_accounts(enabled_only=True)
+        enabled_accounts = storage.get_sys_broker_accounts(enabled_only=True)
         assert len(enabled_accounts) == 2
         assert all(acc['enabled'] == 1 for acc in enabled_accounts)
         assert {acc['broker_id'] for acc in enabled_accounts} == {'binance', 'mt5'}
     
     def test_account_credentials_storage(self, storage):
-        """Verify account credentials are stored securely"""
+        """Verify account sys_credentials are stored securely"""
         broker_config = {
             "broker_id": "binance",
             "name": "Binance",
@@ -163,14 +163,14 @@ class TestBrokerStorage:
         assert account is not None
         assert account['account_number'] == 'test_user'
         
-        # Verify credentials are stored (encrypted)
+        # Verify sys_credentials are stored (encrypted)
         creds = storage.get_credentials(account_id, 'password')
         assert creds is not None
         assert len(creds) > 0
     
     def test_filter_auto_provision_brokers(self, storage):
-        """Get brokers that support auto-provisioning"""
-        brokers = [
+        """Get sys_brokers that support auto-provisioning"""
+        sys_brokers = [
             {
                 "broker_id": "binance",
                 "name": "Binance",
@@ -191,10 +191,10 @@ class TestBrokerStorage:
             }
         ]
         
-        for broker in brokers:
+        for broker in sys_brokers:
             storage.save_broker(broker)
         
-        # Get all brokers and filter by auto_provision_available
+        # Get all sys_brokers and filter by auto_provision_available
         all_brokers = storage.get_brokers()
         auto_brokers = [b for b in all_brokers if b.get('auto_provision_available')]
         assert len(auto_brokers) == 2
@@ -202,23 +202,23 @@ class TestBrokerStorage:
     
     def test_platforms_json_serialization(self, storage):
         """Verify platforms_available list is properly serialized/deserialized"""
-        platforms = ["binance_api", "binance_futures", "tradingview"]
+        sys_platforms = ["binance_api", "binance_futures", "tradingview"]
         
         broker_config = {
             "broker_id": "binance",
             "name": "Binance",
             "type": "crypto",
-            "platforms_available": platforms,
+            "platforms_available": sys_platforms,
             "auto_provision_available": True
         }
         
         storage.save_broker(broker_config)
         
-        # Retrieve and verify platforms are deserialized
+        # Retrieve and verify sys_platforms are deserialized
         broker = storage.get_broker('binance')
         assert broker is not None
         
         # platforms_available is stored as JSON string, parse it
         stored_platforms = json.loads(broker['platforms_available'])
-        assert stored_platforms == platforms
+        assert stored_platforms == sys_platforms
         assert 'binance_api' in stored_platforms

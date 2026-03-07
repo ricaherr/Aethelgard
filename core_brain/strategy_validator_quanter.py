@@ -349,7 +349,7 @@ class CoherencePillar(ValidationPillar):
                         pillar_name="Coherencia",
                         status=PillarStatus.FAILED,
                         confidence=0.0,
-                        reason="Signal conflicts with other active strategies",
+                        reason="Signal conflicts with other active usr_strategies",
                         details={"conflicting_strategy": signal_data.get("conflict_with")}
                     )
             

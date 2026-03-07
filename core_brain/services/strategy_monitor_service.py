@@ -6,7 +6,7 @@ Metrics tracked:
 - Status: LIVE, QUARANTINE, SHADOW, UNKNOWN
 - DD% (Drawdown %): Current drawdown percentage
 - CL (Consecutive Losses): Loss streak
-- WR (Win Rate): Percentage of winning trades
+- WR (Win Rate): Percentage of winning usr_trades
 - PF (Profit Factor): Gross profit / Gross loss ratio
 """
 
@@ -24,7 +24,7 @@ class StrategyMonitorService:
     """
     Real-time strategy monitoring service.
     
-    Provides current metrics for all strategies including:
+    Provides current metrics for all usr_strategies including:
     - Execution mode (LIVE, SHADOW, QUARANTINE)
     - Performance metrics (DD%, CL, WR, PF)
     - Trading authorization status
@@ -68,7 +68,7 @@ class StrategyMonitorService:
         """
         try:
             # Get strategy data from storage
-            strategy_data = self.storage.get_strategy_ranking(strategy_id)
+            strategy_data = self.storage.get_usr_performance(strategy_id)
             
             if strategy_data is None:
                 logger.warning(f"[STRATEGY_MONITOR] Strategy not found: {strategy_id}")
@@ -113,7 +113,7 @@ class StrategyMonitorService:
                 'profit_factor': profit_factor,
                 'blocked_for_trading': is_blocked,
                 'updated_at': updated_dt.isoformat(),
-                'trades_count': strategy_data.get('trades_count', 0)
+                'usr_trades_count': strategy_data.get('usr_trades_count', 0)
             }
         
         except Exception as exc:
@@ -134,9 +134,9 @@ class StrategyMonitorService:
                 'error': str(exc)
             }
     
-    def get_all_strategies_metrics(self) -> List[Dict[str, Any]]:
+    def get_all_usr_strategies_metrics(self) -> List[Dict[str, Any]]:
         """
-        Get metrics for all monitored strategies.
+        Get metrics for all monitored usr_strategies.
         
         Results are sorted by priority:
         1. LIVE (actively trading)
@@ -148,16 +148,16 @@ class StrategyMonitorService:
             List of strategy metric dicts, sorted by status priority
         """
         try:
-            # Get all strategies from storage
-            all_strategies = self.storage.get_all_strategies()
+            # Get all usr_strategies from storage
+            all_usr_strategies = self.storage.get_all_usr_strategies()
             
-            if not all_strategies:
-                logger.warning("[STRATEGY_MONITOR] No strategies found in storage")
+            if not all_usr_strategies:
+                logger.warning("[STRATEGY_MONITOR] No usr_strategies found in storage")
                 return []
             
             # Get metrics for each
             metrics_list = []
-            for strategy_summary in all_strategies:
+            for strategy_summary in all_usr_strategies:
                 strategy_id = strategy_summary.get('strategy_id')
                 if strategy_id:
                     metrics = self.get_strategy_metrics(strategy_id)
@@ -170,7 +170,7 @@ class StrategyMonitorService:
             )
             
             logger.debug(
-                f"[STRATEGY_MONITOR] Retrieved metrics for {len(metrics_list)} strategies"
+                f"[STRATEGY_MONITOR] Retrieved metrics for {len(metrics_list)} usr_strategies"
             )
             return metrics_list
         

@@ -44,7 +44,7 @@ def sample_ohlc_data():
 def mock_storage():
     """Mock StorageManager for testing."""
     mock = MagicMock(spec=StorageManager)
-    mock.get_system_state.return_value = {}
+    mock.get_sys_config.return_value = {}
     mock.get_dynamic_params.return_value = {
         'sma_fast_period': 20,
         'sma_slow_period': 200,

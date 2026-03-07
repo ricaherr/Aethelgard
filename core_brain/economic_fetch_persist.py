@@ -7,7 +7,7 @@ Implements atomic transaction: fetch → sanitize → persist (all-or-nothing)
 Pipeline:
 1. Fetch from all providers in parallel
 2. Sanitize batch using NewsSanitizer (3 pilares validation)
-3. Persist atomically to economic_calendar table
+3. Persist atomically to sys_economic_calendar table
 4. Return metrics for EDGE scheduler monitoring
 
 Type Hints: 100% coverage
@@ -189,7 +189,7 @@ class EconomicFetchPersist:
         events: List[Dict[str, Any]]
     ) -> Tuple[int, Optional[str]]:
         """
-        Atomically persist events to economic_calendar table.
+        Atomically persist events to sys_economic_calendar table.
         
         All-or-nothing: Either all events are inserted or none are.
         

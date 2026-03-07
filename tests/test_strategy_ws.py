@@ -28,7 +28,7 @@ def mock_monitor_service():
     """Mock StrategyMonitorService"""
     service = AsyncMock()
     
-    service.get_all_strategies_metrics = AsyncMock(return_value=[
+    service.get_all_usr_strategies_metrics = AsyncMock(return_value=[
         {
             'strategy_id': 'BRK_OPEN_0001',
             'status': 'LIVE',
@@ -96,11 +96,11 @@ class TestWebSocketTenantIsolation:
     
     @pytest.mark.asyncio
     async def test_websocket_isolates_by_tenant(self, mock_token_payload):
-        """Only that tenant's strategies should be sent"""
+        """Only that tenant's usr_strategies should be sent"""
         # Two connections from different tenants should receive different data
-        # User Alice (tenant_001) should NOT see Bob's (tenant_002) strategies
+        # User Alice (tenant_001) should NOT see Bob's (tenant_002) usr_strategies
         
-        # Mock storage returning different strategies per tenant
+        # Mock storage returning different usr_strategies per tenant
         # This ensures isolation at the service level
         assert True  # Marked for real integration test
     
@@ -132,7 +132,7 @@ class TestWebSocketMetricsUpdates:
     @pytest.mark.asyncio
     async def test_websocket_sends_metrics_structure(self, mock_monitor_service):
         """Each metric dict has required fields"""
-        metrics = await mock_monitor_service.get_all_strategies_metrics()
+        metrics = await mock_monitor_service.get_all_usr_strategies_metrics()
         
         required_fields = [
             'strategy_id', 'status', 'dd_pct', 'consecutive_losses',
@@ -180,7 +180,7 @@ class TestWebSocketResilience:
     @pytest.mark.asyncio
     async def test_websocket_handles_storage_error(self, mock_monitor_service):
         """If storage fails, should send error message (not crash)"""
-        # Try/except wraps get_all_strategies_metrics()
+        # Try/except wraps get_all_usr_strategies_metrics()
         # Sends: {type: 'error', message: '...'}
         assert True  # Marked for real implementation
     
@@ -230,7 +230,7 @@ class TestWebSocketPerformance:
         """Getting metrics should complete in < 100ms"""
         import time
         start = time.time()
-        await mock_monitor_service.get_all_strategies_metrics()
+        await mock_monitor_service.get_all_usr_strategies_metrics()
         elapsed = (time.time() - start) * 1000  # ms
         
         assert elapsed < 100, f"Metrics took {elapsed}ms, should be < 100ms"
@@ -260,6 +260,6 @@ class TestWebSocketIntegration:
         """WebSocket should use StrategyMonitorService correctly"""
         # Service is called to get metrics
         # Updates are sent to clients
-        metrics = await mock_monitor_service.get_all_strategies_metrics()
+        metrics = await mock_monitor_service.get_all_usr_strategies_metrics()
         assert len(metrics) > 0
-        assert mock_monitor_service.get_all_strategies_metrics.called
+        assert mock_monitor_service.get_all_usr_strategies_metrics.called

@@ -64,7 +64,7 @@ async def get_risk_status(token: TokenPayload = Depends(get_current_active_user)
         
         # 2. Resumen de riesgos (Single Source of Truth)
         dynamic_params = {}
-        state = storage.get_system_state()
+        state = storage.get_sys_config()
         dynamic_params = state.get("config_trading", {})
         
         if not dynamic_params:
@@ -118,10 +118,10 @@ async def get_risk_summary(token: TokenPayload = Depends(get_current_active_user
         trading_service = _get_trading_service()
         tenant_id = token.tid
         
-        # Get open positions via TradingService
-        positions_response = await trading_service.get_open_positions(tenant_id=tenant_id)
-        positions = positions_response.get("positions", [])
-        total_risk = positions_response.get("total_risk_usd", 0.0)
+        # Get open usr_positions via TradingService
+        usr_positions_response = await trading_service.get_open_usr_positions(tenant_id=tenant_id)
+        usr_positions = usr_positions_response.get("usr_positions", [])
+        total_risk = usr_positions_response.get("total_risk_usd", 0.0)
         
         # Get REAL account balance from TradingService
         account_balance = trading_service.get_account_balance(tenant_id=tenant_id)
@@ -133,7 +133,7 @@ async def get_risk_summary(token: TokenPayload = Depends(get_current_active_user
         
         # Distribution by asset type
         by_asset = {}
-        for pos in positions:
+        for pos in usr_positions:
             asset = pos["asset_type"]
             if asset not in by_asset:
                 by_asset[asset] = {"count": 0, "risk": 0.0}
@@ -157,7 +157,7 @@ async def get_risk_summary(token: TokenPayload = Depends(get_current_active_user
             "balance_metadata": balance_metadata,
             "risk_percentage": round(risk_percentage, 2),
             "max_allowed_risk_pct": max_allowed_risk,
-            "positions_by_asset": by_asset,
+            "usr_positions_by_asset": by_asset,
             "warnings": warnings
         }
         
@@ -169,7 +169,7 @@ async def get_risk_summary(token: TokenPayload = Depends(get_current_active_user
             "balance_metadata": {"source": "ERROR", "last_update": datetime.now().isoformat(), "is_live": False},
             "risk_percentage": 0.0,
             "max_allowed_risk_pct": 5.0,
-            "positions_by_asset": {},
+            "usr_positions_by_asset": {},
             "warnings": [f"Error: {str(e)}"]
         }
 

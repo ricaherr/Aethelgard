@@ -13,8 +13,8 @@ from core_brain.services.strategy_engine_factory import StrategyEngineFactory
 def mock_storage():
     """Mock StorageManager with strategy registry and ranking data."""
     mock = MagicMock()
-    mock.get_all_strategies.return_value = []
-    mock.get_strategy_ranking.return_value = {}
+    mock.get_all_usr_strategies.return_value = []
+    mock.get_usr_performance.return_value = {}
     return mock
 
 
@@ -41,7 +41,7 @@ class TestReadinessSeverity:
             'class_id': 'SESS_EXT_0001',
             'type': 'PYTHON_CLASS',
             'readiness': 'LOGIC_PENDING',  # **BLOCKED - Code not validated yet**
-            'class_file': 'strategies/session_extender.py',
+            'class_file': 'usr_strategies/session_extender.py',
             'class_name': 'SessionExtenderStrategy'
         }
         
@@ -58,35 +58,35 @@ class TestReadinessSeverity:
 
     def test_logic_pending_vs_ready_for_engine(self, factory, mock_storage):
         """
-        GIVEN: Two strategies - one LOGIC_PENDING, one READY_FOR_ENGINE
+        GIVEN: Two usr_strategies - one LOGIC_PENDING, one READY_FOR_ENGINE
         WHEN: Factory processes both
         THEN: Only READY_FOR_ENGINE succeeds, LOGIC_PENDING is blocked
         """
-        strategies = [
+        usr_strategies = [
             {
                 'class_id': 'SESS_EXT_0001',
                 'type': 'PYTHON_CLASS',
                 'readiness': 'LOGIC_PENDING',
-                'class_file': 'strategies/session_extender.py',
+                'class_file': 'usr_strategies/session_extender.py',
                 'class_name': 'SessionExtenderStrategy'
             },
             {
                 'class_id': 'BRK_OPEN_0001',
                 'type': 'PYTHON_CLASS',
                 'readiness': 'READY_FOR_ENGINE',
-                'class_file': 'strategies/breakout_opener.py',
+                'class_file': 'usr_strategies/breakout_opener.py',
                 'class_name': 'BreakoutOpenerStrategy'
             }
         ]
         
-        mock_storage.get_all_strategies.return_value = strategies
+        mock_storage.get_all_usr_strategies.return_value = usr_strategies
         
         # Mock successful instantiation for READY_FOR_ENGINE strategy
         with patch('core_brain.services.strategy_engine_factory.StrategyEngineFactory._instantiate_python_strategy') as mock_instantiate:
             mock_instantiate.return_value = MagicMock()
             
             # This should succeed for READY_FOR_ENGINE but skip LOGIC_PENDING
-            result = factory.instantiate_all_strategies()
+            result = factory.instantiate_all_usr_strategies()
         
         # Verify: Only READY_FOR_ENGINE was instantiated
         assert 'BRK_OPEN_0001' in factory.active_engines
@@ -104,18 +104,18 @@ class TestExecutionModeAwareness:
         """
         GIVEN: Strategy with execution_mode='SHADOW'
         WHEN: Factory instantiates it
-        THEN: Should load successfully without no_send_orders flag
+        THEN: Should load successfully without no_send_usr_orders flag
         """
         strategy_spec = {
             'class_id': 'BRK_OPEN_0001',
             'type': 'PYTHON_CLASS',
             'readiness': 'READY_FOR_ENGINE',
-            'class_file': 'strategies/breakout_opener.py',
+            'class_file': 'usr_strategies/breakout_opener.py',
             'class_name': 'BreakoutOpenerStrategy'
         }
         
         # Mock storage to return SHADOW execution_mode
-        mock_storage.get_strategy_ranking.return_value = {
+        mock_storage.get_usr_performance.return_value = {
             'strategy_id': 'BRK_OPEN_0001',
             'execution_mode': 'SHADOW'
         }
@@ -141,11 +141,11 @@ class TestExecutionModeAwareness:
             'class_id': 'MOM_BIAS_0001',
             'type': 'PYTHON_CLASS',
             'readiness': 'READY_FOR_ENGINE',
-            'class_file': 'strategies/momentum_bias.py',
+            'class_file': 'usr_strategies/momentum_bias.py',
             'class_name': 'MomentumBiasStrategy'
         }
         
-        mock_storage.get_strategy_ranking.return_value = {
+        mock_storage.get_usr_performance.return_value = {
             'strategy_id': 'MOM_BIAS_0001',
             'execution_mode': 'LIVE'
         }
@@ -162,17 +162,17 @@ class TestExecutionModeAwareness:
         """
         GIVEN: Strategy with execution_mode='QUARANTINE'
         WHEN: Factory instantiates it
-        THEN: Should load with no_send_orders=True marker
+        THEN: Should load with no_send_usr_orders=True marker
         """
         strategy_spec = {
             'class_id': 'LIQ_SWEEP_0001',
             'type': 'PYTHON_CLASS',
             'readiness': 'READY_FOR_ENGINE',
-            'class_file': 'strategies/liquidity_sweep.py',
+            'class_file': 'usr_strategies/liquidity_sweep.py',
             'class_name': 'LiquiditySweepStrategy'
         }
         
-        mock_storage.get_strategy_ranking.return_value = {
+        mock_storage.get_usr_performance.return_value = {
             'strategy_id': 'LIQ_SWEEP_0001',
             'execution_mode': 'QUARANTINE'
         }
@@ -194,32 +194,32 @@ class TestSESSEXTBlocking:
     def test_sess_ext_0001_never_instantiated(self, factory, mock_storage):
         """
         GIVEN: SESS_EXT_0001 with LOGIC_PENDING readiness
-        WHEN: Factory instantiate_all_strategies() is called
+        WHEN: Factory instantiate_all_usr_strategies() is called
         THEN: SESS_EXT_0001 should be in load_errors, never in active_engines
         """
-        strategies = [
+        usr_strategies = [
             {
                 'class_id': 'SESS_EXT_0001',
                 'type': 'PYTHON_CLASS',
                 'readiness': 'LOGIC_PENDING',
-                'class_file': 'strategies/session_extender.py',
+                'class_file': 'usr_strategies/session_extender.py',
                 'class_name': 'SessionExtenderStrategy'
             },
             {
                 'class_id': 'BRK_OPEN_0001',
                 'type': 'PYTHON_CLASS',
                 'readiness': 'READY_FOR_ENGINE',
-                'class_file': 'strategies/breakout_opener.py',
+                'class_file': 'usr_strategies/breakout_opener.py',
                 'class_name': 'BreakoutOpenerStrategy'
             }
         ]
         
-        mock_storage.get_all_strategies.return_value = strategies
+        mock_storage.get_all_usr_strategies.return_value = usr_strategies
         
         with patch('core_brain.services.strategy_engine_factory.StrategyEngineFactory._instantiate_python_strategy') as mock_instantiate:
             mock_instantiate.return_value = MagicMock()
             
-            result = factory.instantiate_all_strategies()
+            result = factory.instantiate_all_usr_strategies()
         
         # Critical assertion: SESS_EXT_0001 MUST NOT be in active_engines
         assert 'SESS_EXT_0001' not in result
@@ -243,7 +243,7 @@ class TestSESSEXTBlocking:
             'class_id': 'SESS_EXT_0001',  # **SPECIAL ID - ALWAYS BLOCKED**
             'type': 'PYTHON_CLASS',
             'readiness': 'READY_FOR_ENGINE',  # Even if this (shouldn't happen)
-            'class_file': 'strategies/session_extender.py',
+            'class_file': 'usr_strategies/session_extender.py',
             'class_name': 'SessionExtenderStrategy'
         }
         
@@ -270,32 +270,32 @@ class TestMultiStrategyFiltering:
 
     def test_batch_load_filters_logic_pending_correctly(self, factory, mock_storage):
         """
-        GIVEN: 6 total strategies (5 READY, 1 LOGIC_PENDING)
-        WHEN: instantiate_all_strategies() processes batch
+        GIVEN: 6 total usr_strategies (5 READY, 1 LOGIC_PENDING)
+        WHEN: instantiate_all_usr_strategies() processes batch
         THEN: Should load 5, skip 1 LOGIC_PENDING
         """
-        strategies = [
+        usr_strategies = [
             {'class_id': 'BRK_OPEN_0001', 'type': 'PYTHON_CLASS', 'readiness': 'READY_FOR_ENGINE',
-             'class_file': 'strategies/breakout_opener.py', 'class_name': 'BreakoutOpenerStrategy'},
+             'class_file': 'usr_strategies/breakout_opener.py', 'class_name': 'BreakoutOpenerStrategy'},
             {'class_id': 'institutional_footprint', 'type': 'JSON_SCHEMA', 'readiness': 'READY_FOR_ENGINE'},
             {'class_id': 'MOM_BIAS_0001', 'type': 'PYTHON_CLASS', 'readiness': 'READY_FOR_ENGINE',
-             'class_file': 'strategies/momentum_bias.py', 'class_name': 'MomentumBiasStrategy'},
+             'class_file': 'usr_strategies/momentum_bias.py', 'class_name': 'MomentumBiasStrategy'},
             {'class_id': 'LIQ_SWEEP_0001', 'type': 'PYTHON_CLASS', 'readiness': 'READY_FOR_ENGINE',
-             'class_file': 'strategies/liquidity_sweep.py', 'class_name': 'LiquiditySweepStrategy'},
+             'class_file': 'usr_strategies/liquidity_sweep.py', 'class_name': 'LiquiditySweepStrategy'},
             {'class_id': 'SESS_EXT_0001', 'type': 'PYTHON_CLASS', 'readiness': 'LOGIC_PENDING',
-             'class_file': 'strategies/session_extender.py', 'class_name': 'SessionExtenderStrategy'},
+             'class_file': 'usr_strategies/session_extender.py', 'class_name': 'SessionExtenderStrategy'},
             {'class_id': 'STRUC_SHIFT_0001', 'type': 'PYTHON_CLASS', 'readiness': 'READY_FOR_ENGINE',
-             'class_file': 'strategies/structure_shift.py', 'class_name': 'StructureShiftStrategy'}
+             'class_file': 'usr_strategies/structure_shift.py', 'class_name': 'StructureShiftStrategy'}
         ]
         
-        mock_storage.get_all_strategies.return_value = strategies
+        mock_storage.get_all_usr_strategies.return_value = usr_strategies
         
         with patch('core_brain.services.strategy_engine_factory.StrategyEngineFactory._instantiate_python_strategy') as mock_py:
             with patch('core_brain.services.strategy_engine_factory.StrategyEngineFactory._instantiate_json_schema_strategy') as mock_json:
                 mock_py.return_value = MagicMock()
                 mock_json.return_value = MagicMock()
                 
-                result = factory.instantiate_all_strategies()
+                result = factory.instantiate_all_usr_strategies()
         
         # Verify counts
         assert len(factory.active_engines) == 5  # Only READY_FOR_ENGINE loaded
@@ -307,22 +307,22 @@ class TestMultiStrategyFiltering:
     def test_load_errors_with_clear_reasons(self, factory, mock_storage):
         """
         GIVEN: Batch load with LOGIC_PENDING and other errors
-        WHEN: instantiate_all_strategies() processes
+        WHEN: instantiate_all_usr_strategies() processes
         THEN: load_errors should have clear reasons for each failure
         """
-        strategies = [
+        usr_strategies = [
             {'class_id': 'SESS_EXT_0001', 'type': 'PYTHON_CLASS', 'readiness': 'LOGIC_PENDING',
-             'class_file': 'strategies/session_extender.py', 'class_name': 'SessionExtenderStrategy'},
+             'class_file': 'usr_strategies/session_extender.py', 'class_name': 'SessionExtenderStrategy'},
             {'class_id': 'WORKING_STRAT', 'type': 'PYTHON_CLASS', 'readiness': 'READY_FOR_ENGINE',
-             'class_file': 'strategies/working.py', 'class_name': 'WorkingStrategy'}
+             'class_file': 'usr_strategies/working.py', 'class_name': 'WorkingStrategy'}
         ]
         
-        mock_storage.get_all_strategies.return_value = strategies
+        mock_storage.get_all_usr_strategies.return_value = usr_strategies
         
         with patch('core_brain.services.strategy_engine_factory.StrategyEngineFactory._instantiate_python_strategy') as mock_instantiate:
             mock_instantiate.return_value = MagicMock()
             
-            factory.instantiate_all_strategies()
+            factory.instantiate_all_usr_strategies()
         
         # Verify error reasons are meaningful
         assert 'SESS_EXT_0001' in factory.load_errors

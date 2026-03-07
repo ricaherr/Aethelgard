@@ -17,9 +17,9 @@ from data_vault.storage import StorageManager
 def setup_storage_with_instruments():
     """Create in-memory storage preloaded with instrument config for DB-first tests."""
     storage = StorageManager(db_path=':memory:')
-    state = storage.get_system_state()
+    state = storage.get_sys_config()
     state["instruments_config"] = InstrumentManager()._get_default_config()
-    storage.update_system_state(state)
+    storage.update_sys_config(state)
     return storage
 
 
@@ -240,7 +240,7 @@ class TestOliverVelezStrategyIntegration:
     
     def test_strategy_rejects_low_score_major(self, mock_dataframe):
         """Test that strategy rejects majors with score < 70."""
-        from core_brain.strategies.oliver_velez import OliverVelezStrategy
+        from core_brain.usr_strategies.oliver_velez import OliverVelezStrategy
         from core_brain.instrument_manager import InstrumentManager
         from unittest.mock import MagicMock
         instrument_manager = MagicMock(spec=InstrumentManager)
@@ -260,7 +260,7 @@ class TestOliverVelezStrategyIntegration:
     
     def test_strategy_accepts_good_score_major(self):
         """Test that strategy accepts majors with score >= 70."""
-        from core_brain.strategies.oliver_velez import OliverVelezStrategy
+        from core_brain.usr_strategies.oliver_velez import OliverVelezStrategy
         from core_brain.instrument_manager import InstrumentManager
         from unittest.mock import MagicMock
         instrument_manager = MagicMock(spec=InstrumentManager)
@@ -273,7 +273,7 @@ class TestOliverVelezStrategyIntegration:
     
     def test_strategy_rejects_disabled_exotic(self):
         """Test that strategy rejects disabled exotic instruments."""
-        from core_brain.strategies.oliver_velez import OliverVelezStrategy
+        from core_brain.usr_strategies.oliver_velez import OliverVelezStrategy
         from core_brain.instrument_manager import InstrumentManager
         from unittest.mock import MagicMock
         instrument_manager = MagicMock(spec=InstrumentManager)

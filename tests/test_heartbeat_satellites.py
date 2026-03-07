@@ -22,7 +22,7 @@ from datetime import datetime
 def mock_storage():
     """Minimal StorageManager mock with provider data."""
     storage = MagicMock()
-    storage.get_data_providers.return_value = [
+    storage.get_sys_data_providers.return_value = [
         {
             "name": "yahoo",
             "enabled": 1,
@@ -38,7 +38,7 @@ def mock_storage():
             "supports_exec": 1,
         },
     ]
-    storage.get_broker_accounts.return_value = []
+    storage.get_sys_broker_accounts.return_value = []
     storage.get_connector_settings.return_value = {}
     return storage
 

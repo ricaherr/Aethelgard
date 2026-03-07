@@ -1,6 +1,6 @@
 """
 Tests for Signal Deduplication System
-Ensures no duplicate signals are generated or executed
+Ensures no duplicate usr_signals are generated or executed
 """
 import pytest
 from datetime import datetime, timedelta
@@ -30,7 +30,7 @@ INSTRUMENTS_CONFIG_EXAMPLE = {
 def _insert_execution_shadow_for_testing(
     storage: StorageManager,
     symbol: str,
-    num_executions: int = 5
+    num_usr_executions: int = 5
 ) -> bool:
     """Pre-populate execution shadow logs so CoherenceService has baseline data"""
     from datetime import datetime, timezone, timedelta
@@ -44,7 +44,7 @@ def _insert_execution_shadow_for_testing(
         }
         base_price = base_prices.get(symbol, 1.0)
         
-        for i in range(num_executions):
+        for i in range(num_usr_executions):
             timestamp = to_utc(now - timedelta(minutes=30-i*10))
             # Use PERFECT execution data (0 slippage, low latency) to ensure coherence > 80%
             storage.log_execution_shadow(
@@ -75,9 +75,9 @@ class TestSignalDeduplication:
     
     @pytest.fixture
     def instrument_manager(self, storage):
-        state = storage.get_system_state()
+        state = storage.get_sys_config()
         state["instruments_config"] = INSTRUMENTS_CONFIG_EXAMPLE
-        storage.update_system_state(state)
+        storage.update_sys_config(state)
         return InstrumentManager(storage=storage)
 
     @pytest.fixture
@@ -92,9 +92,9 @@ class TestSignalDeduplication:
         from connectors.paper_connector import PaperConnector
         
         # Pre-populate execution shadow logs for multiple symbols so CoherenceService has baseline data
-        # This prevents coherence veto due to insufficient data (0 executions = 0% coherence)
+        # This prevents coherence veto due to insufficient data (0 usr_executions = 0% coherence)
         for symbol in ["EURUSD", "GBPUSD"]:
-            _insert_execution_shadow_for_testing(storage, symbol, num_executions=5)
+            _insert_execution_shadow_for_testing(storage, symbol, num_usr_executions=5)
 
         paper_connector = PaperConnector(instrument_manager=instrument_manager)
         connectors = {ConnectorType.PAPER: paper_connector}
@@ -105,7 +105,7 @@ class TestSignalDeduplication:
         )
     
     def test_has_open_position_detection(self, storage):
-        """Test detection of open positions"""
+        """Test detection of open usr_positions"""
         # Initially no open position
         assert not storage.has_open_position("EURUSD")
         
@@ -130,7 +130,7 @@ class TestSignalDeduplication:
         assert not storage.has_open_position("GBPUSD")
     
     def test_has_recent_signal_detection(self, storage):
-        """Test detection of recent signals"""
+        """Test detection of recent usr_signals"""
         # Initially no recent signal
         assert not storage.has_recent_signal("EURUSD", "BUY", minutes=60)
         
@@ -202,7 +202,7 @@ class TestSignalDeduplication:
         
         ARCHITECTURE CHANGE:
         - SignalFactory: generates freely (no dedup)
-        - Executor: validates against EXECUTED positions only
+        - Executor: validates against EXECUTED usr_positions only
         """
         # Execute first signal and mark as EXECUTED (simulating MT5 execution)
         signal1 = Signal(
@@ -242,7 +242,7 @@ class TestSignalDeduplication:
     
     @pytest.mark.asyncio
     async def test_executor_allows_different_symbols(self, executor, storage):
-        """Test executor allows signals for different symbols"""
+        """Test executor allows usr_signals for different symbols"""
         # Execute signal for EURUSD
         signal1 = Signal(
             symbol="EURUSD",
@@ -272,7 +272,7 @@ class TestSignalDeduplication:
         assert result2 is True  # Should be allowed
     
     @pytest.mark.asyncio
-    async def test_executor_allows_opposite_signals(self, executor, storage):
+    async def test_executor_allows_opposite_usr_signals(self, executor, storage):
         """Test executor behavior with opposite signal types (BUY vs SELL)"""
         # Execute BUY signal
         signal1 = Signal(
@@ -292,7 +292,7 @@ class TestSignalDeduplication:
         
         # Try opposite signal type (SELL)
         # This SHOULD be rejected because there's an open BUY position
-        # Our deduplication logic prevents opening opposite positions on the same symbol
+        # Our deduplication logic prevents opening opposite usr_positions on the same symbol
         signal2 = Signal(
             symbol="EURUSD",
             signal_type=SignalType.SELL,

@@ -3,7 +3,7 @@ from core_brain.instrument_manager import InstrumentManager
 from core_brain.instrument_manager import InstrumentManager
 """
 Test Suite for Multi-Timeframe Confluence Analyzer
-Validates that signals are reinforced or penalized based on multi-timeframe alignment
+Validates that usr_signals are reinforced or penalized based on multi-timeframe alignment
 
 EDGE Feature: This system learns optimal weights via EdgeTuner
 """
@@ -275,7 +275,7 @@ class TestConfluenceEdgeLearning:
         """
         If confluence is disabled via config flag, return signal as-is
         
-        This allows A/B testing: some signals use confluence, others don't
+        This allows A/B testing: some usr_signals use confluence, others don't
         EdgeTuner can compare performance
         """
         storage = StorageManager()
