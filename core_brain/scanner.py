@@ -297,7 +297,7 @@ class ScannerEngine:
             self.last_dataframes[key] = df
             self.last_providers[key] = provider_id
         
-        # Persistence for cross-process (Heatmap)
+        # Persistence for cross-process (Heatmap) - write to GLOBAL sys_market_pulse
         if self.storage:
             try:
                 state_data = {

@@ -26,7 +26,7 @@ from core_brain.notification_service import NotificationService, NotificationCat
 from core_brain.notificator import get_notifier, NotificationEngine
 from core_brain.module_manager import MembershipLevel
 from core_brain.confluence import MultiTimeframeConfluenceAnalyzer
-from core_brain.usr_strategies.trifecta_logic import TrifectaAnalyzer
+from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
 from core_brain.tech_utils import TechnicalAnalyzer
 from core_brain.services.fundamental_guard import FundamentalGuardService
 from core_brain.signal_converter import StrategySignalConverter
@@ -35,9 +35,9 @@ from core_brain.signal_deduplicator import SignalDeduplicator
 from core_brain.signal_conflict_analyzer import SignalConflictAnalyzer
 from core_brain.signal_trifecta_optimizer import SignalTrifectaOptimizer
 
-# Import usr_strategies
-from core_brain.usr_strategies.base_strategy import BaseStrategy
-from core_brain.usr_strategies.oliver_velez import OliverVelezStrategy
+# Import strategies
+from core_brain.strategies.base_strategy import BaseStrategy
+from core_brain.strategies.oliver_velez import OliverVelezStrategy
 
 logger = logging.getLogger(__name__)
 
@@ -330,6 +330,7 @@ class SignalFactory:
         Procesa un lote de resultados del ScannerEngine y genera señales.
         
         FASE 2.5: Aplica confluencia multi-timeframe para reforzar/penalizar señales.
+        FASE 4: Filtra signals por usr_assets_cfg (solo genera para assets habilitados).
 
         Args:
             scan_results: Dict con "symbol|timeframe" -> {"regime": MarketRegime, "df": DataFrame, "symbol": str, "timeframe": str}
@@ -346,11 +347,28 @@ class SignalFactory:
                 return []
             logger.info(f"DEBUG: Engines available: {list(self.strategy_engines.keys())}")
 
+            # FASE 4: Get enabled assets from usr_assets_cfg (global list)
+            try:
+                enabled_assets = self.storage_manager.get_all_usr_assets_cfg()
+                enabled_symbols = [asset['symbol'] for asset in enabled_assets if asset.get('enabled', True)]
+                logger.info(f"[FASE4] Enabled assets for signal generation: {enabled_symbols}")
+            except Exception as e:
+                logger.warning(f"[FASE4] Could not load usr_assets_cfg, generating for all scanned symbols: {e}")
+                enabled_symbols = None  # Fallback: generate for all
+            
+            skipped_count = 0
+            
             for key, data in scan_results.items():
                 regime = data.get("regime")
                 df = data.get("df")
                 symbol = data.get("symbol")  # Extraer symbol del dict
                 timeframe = data.get("timeframe")  # Extraer timeframe del dict
+                
+                # FASE 4: Filter by enabled assets
+                if enabled_symbols is not None and symbol not in enabled_symbols:
+                    logger.debug(f"[FASE4] Skipping {symbol}: not in enabled asset config")
+                    skipped_count += 1
+                    continue
                 
                 if regime and df is not None and symbol:
                     # Pass symbol, df, regime, timeframe, trace_id, AND provider_source
@@ -358,6 +376,9 @@ class SignalFactory:
                     tasks.append(self.generate_signal(
                         symbol, df, regime, timeframe, trace_id, provider_source
                     ))
+
+            if skipped_count > 0:
+                logger.info(f"[FASE4] Skipped {skipped_count} symbols not in asset configuration")
 
             if not tasks:
                 # Diagnóstico detallado: ¿por qué no se crearon tasks?

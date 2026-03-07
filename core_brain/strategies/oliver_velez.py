@@ -6,7 +6,7 @@ import pandas as pd
 from models.signal import (
     Signal, SignalType, MarketRegime, MembershipTier, ConnectorType
 )
-from core_brain.usr_strategies.base_strategy import BaseStrategy
+from core_brain.strategies.base_strategy import BaseStrategy
 from core_brain.instrument_manager import InstrumentManager
 from data_vault.storage import StorageManager
 

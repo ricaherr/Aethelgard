@@ -16,7 +16,7 @@ from datetime import datetime
 
 # Componentes a probar y mockear
 from core_brain.signal_factory import SignalFactory
-from core_brain.usr_strategies.oliver_velez import OliverVelezStrategy
+from core_brain.strategies.oliver_velez import OliverVelezStrategy
 from models.signal import Signal, MarketRegime, MembershipTier, SignalType, ConnectorType
 from data_vault.storage import StorageManager
 

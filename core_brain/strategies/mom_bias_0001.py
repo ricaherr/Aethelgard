@@ -26,7 +26,7 @@ import numpy as np
 
 from models.signal import Signal, SignalType, MarketRegime, ConnectorType
 from data_vault.storage import StorageManager
-from core_brain.usr_strategies.base_strategy import BaseStrategy
+from core_brain.strategies.base_strategy import BaseStrategy
 from core_brain.sensors.elephant_candle_detector import ElephantCandleDetector
 from core_brain.sensors.moving_average_sensor import MovingAverageSensor
 

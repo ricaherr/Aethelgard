@@ -52,7 +52,7 @@ def migrate_json_credentials():
             logger.info(f"  Provider: {creds.get('provider', 'unknown')}")
             
             # Check if account already exists in DB
-            existing_accounts = storage.get_broker_accounts(
+            existing_accounts = storage.get_sys_broker_accounts(
                 broker_id=broker_id,
                 account_type='demo'
             )
@@ -147,7 +147,7 @@ def migrate_json_credentials():
     logger.info("\nVerify accounts in database:")
     
     # Show migrated accounts
-    all_demo_accounts = storage.get_broker_accounts(account_type='demo')
+    all_demo_accounts = storage.get_sys_broker_accounts(account_type='demo')
     for acc in all_demo_accounts:
         logger.info(f"  - {acc['broker_id']}: {acc['account_name']} ({acc['account_id']})")
         creds = storage.get_credentials(acc['account_id'])

@@ -70,7 +70,7 @@ def diagnose():
                 
                 # Also check broker_accounts table
                 print(f"  MT5 Broker Accounts:")
-                all_accounts = storage.get_broker_accounts()
+                all_accounts = storage.get_sys_broker_accounts()
                 mt5_accounts = [a for a in all_accounts if a.get('platform_id') == 'mt5']
                 if mt5_accounts:
                     for acc in mt5_accounts:

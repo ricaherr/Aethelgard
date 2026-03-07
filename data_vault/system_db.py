@@ -142,7 +142,7 @@ class SystemMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT OR REPLACE INTO sys_sys_data_providers 
+                INSERT OR REPLACE INTO sys_data_providers 
                 (name, type, enabled, priority, requires_auth, api_key, api_secret, additional_config, is_system)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
@@ -158,7 +158,7 @@ class SystemMixin(BaseRepository):
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM sys_sys_data_providers")
+            cursor.execute("SELECT * FROM sys_data_providers")
             rows = cursor.fetchall()
             column_names = [description[0] for description in cursor.description]
             providers = []
@@ -200,7 +200,7 @@ class SystemMixin(BaseRepository):
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            cursor.execute("UPDATE sys_sys_data_providers SET enabled = ? WHERE name = ?", (enabled, provider_id))
+            cursor.execute("UPDATE sys_data_providers SET enabled = ? WHERE name = ?", (enabled, provider_id))
             conn.commit()
         finally:
             self._close_conn(conn)

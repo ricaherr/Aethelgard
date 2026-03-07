@@ -27,7 +27,7 @@ from datetime import datetime
 import pandas as pd
 
 from models.signal import Signal, SignalType, MarketRegime, ConnectorType
-from core_brain.usr_strategies.base_strategy import BaseStrategy
+from core_brain.strategies.base_strategy import BaseStrategy
 from core_brain.sensors.market_structure_analyzer import MarketStructureAnalyzer
 from core_brain.services.reasoning_event_builder import ReasoningEventBuilder
 from data_vault.storage import StorageManager

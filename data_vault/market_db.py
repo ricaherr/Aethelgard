@@ -173,6 +173,22 @@ class MarketMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
+    def get_all_usr_assets_cfg(self) -> List[Dict]:
+        """
+        Get all asset configurations (enabled and disabled).
+        FASE 4: Used for signal filtering to only generate signals for enabled assets.
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM usr_assets_cfg")
+            rows = cursor.fetchall()
+            if rows:
+                return [dict(row) for row in rows]
+            return []
+        finally:
+            self._close_conn(conn)
+
     def seed_initial_assets(self) -> None:
         """Seed initial asset profiles if table is empty."""
         conn = self._get_conn()

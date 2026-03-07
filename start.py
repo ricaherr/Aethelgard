@@ -158,7 +158,7 @@ async def main() -> None:
         
         # 1.5. Configuración SSOT (Regla 14)
         # Cargar configuraciones directamente desde DB (sin auto-bootstrap JSON en runtime)
-        system_state = storage.get_system_state()
+        system_state = storage.get_sys_config()
         global_config = system_state.get("global_config", {})
         dynamic_params = storage.get_dynamic_params()
 
@@ -296,7 +296,7 @@ async def main() -> None:
                 config=dynamic_params,
                 available_sensors={}
             )
-            active_engines = strategy_factory.instantiate_all_strategies()
+            active_engines = strategy_factory.instantiate_all_usr_strategies()
             logger.info(f"[INIT] {len(active_engines)} estrategias cargadas exitosamente")
         except Exception as e:
             logger.warning(f"[INIT] Error cargando estrategias: {e}. SignalFactory operará con Dict vacío")

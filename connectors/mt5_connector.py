@@ -146,7 +146,7 @@ class MT5Connector(BaseConnector):
         """
         try:
             # Get all MT5 accounts
-            all_accounts = self.storage.get_broker_accounts()
+            all_accounts = self.storage.get_sys_broker_accounts()
             mt5_accounts = [acc for acc in all_accounts if acc.get('platform_id') == 'mt5' and acc.get('enabled', True)]
             
             if not mt5_accounts:
@@ -470,7 +470,7 @@ class MT5Connector(BaseConnector):
         """
         try:
             # Get all MT5 accounts
-            all_accounts = self.storage.get_broker_accounts()
+            all_accounts = self.storage.get_sys_broker_accounts()
             mt5_accounts = [acc for acc in all_accounts if acc.get('platform_id') == 'mt5' and acc.get('enabled', True)]
             
             if not mt5_accounts:

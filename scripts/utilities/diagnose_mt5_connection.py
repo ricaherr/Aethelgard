@@ -18,7 +18,7 @@ storage = StorageManager()
 # Step 1: Check database accounts
 print("\n📊 PASO 1: Verificar cuentas en base de datos")
 print("-" * 70)
-all_accounts = storage.get_broker_accounts()
+all_accounts = storage.get_sys_broker_accounts()
 mt5_accounts = [acc for acc in all_accounts if acc.get('platform_id') == 'mt5']
 
 if not mt5_accounts:

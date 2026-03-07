@@ -247,7 +247,7 @@ class BrokerProvisioner:
     
     def has_demo_account(self, broker_id: str) -> bool:
         """Check if demo account exists for broker in database"""
-        accounts = self.storage.get_broker_accounts(
+        accounts = self.storage.get_sys_broker_accounts(
             broker_id=broker_id,
             account_type='demo'
         )
@@ -261,7 +261,7 @@ class BrokerProvisioner:
         import threading
         lock = threading.Lock()
         with lock:
-            accounts = self.storage.get_broker_accounts(
+            accounts = self.storage.get_sys_broker_accounts(
                 broker_id=broker_id,
                 account_type='demo'
             )

@@ -41,7 +41,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
         )
     """)
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS edge_learning (
+        CREATE TABLE IF NOT EXISTS usr_edge_learning (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp TEXT,
             detection TEXT NOT NULL,
@@ -212,7 +212,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
         )
     """)
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS sys_sys_data_providers (
+        CREATE TABLE IF NOT EXISTS sys_data_providers (
             name TEXT PRIMARY KEY,
             type TEXT NOT NULL,
             config TEXT,

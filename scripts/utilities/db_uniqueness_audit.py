@@ -71,6 +71,13 @@ def audit_db_uniqueness(workspace: Path) -> int:
         if len(parts) >= 3 and parts[0] == "data_vault" and parts[1] == "tenants":
             continue
 
+        # Also allow databases in data_vault/global/ and data_vault/templates/ (FASE 5 architecture)
+        if len(parts) >= 2 and parts[0] == "data_vault" and parts[1] in ("global", "templates"):
+            # Skip backup files (*.backup_*) which are temporary
+            if ".backup_" in relative.name:
+                continue
+            continue  # All non-backup DB files in these dirs are permitted for architecture
+
         # Anything else is a violation
         violations.append(relative)
 

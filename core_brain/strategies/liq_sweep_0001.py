@@ -22,7 +22,7 @@ from datetime import datetime
 import pandas as pd
 
 from models.signal import Signal, SignalType, MarketRegime, ConnectorType
-from core_brain.usr_strategies.base_strategy import BaseStrategy
+from core_brain.strategies.base_strategy import BaseStrategy
 from core_brain.sensors.session_liquidity_sensor import SessionLiquiditySensor
 from core_brain.sensors.liquidity_sweep_detector import LiquiditySweepDetector
 from core_brain.services.fundamental_guard import FundamentalGuardService

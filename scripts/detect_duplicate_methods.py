@@ -25,7 +25,7 @@ def detect_duplicate_economic_methods() -> bool:
         print(f"ERROR: File not found: {storage_file}")
         return False
     
-    with open(storage_file, "r") as f:
+    with open(storage_file, "r", encoding="utf-8") as f:
         content = f.read()
     
     # Check 1: get_economic_calendar() debe tener la lógica principal
@@ -67,7 +67,7 @@ def detect_provider_source_hardcoding() -> bool:
         print(f"WARNING: Test file not found: {test_file}")
         return True  # No fallar si no existe
     
-    with open(test_file, "r") as f:
+    with open(test_file, "r", encoding="utf-8") as f:
         content = f.read()
     
     # Buscar hardcoded "INVESTING" en parámetro de función

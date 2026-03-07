@@ -2,7 +2,7 @@ import pytest
 import asyncio
 import tempfile
 from core_brain.signal_factory import SignalFactory
-from core_brain.usr_strategies.base_strategy import BaseStrategy
+from core_brain.strategies.base_strategy import BaseStrategy
 ## No importar clases con anotaciones de tipo no resueltas para evitar NameError
 from data_vault.storage import StorageManager
 
@@ -46,7 +46,7 @@ async def test_generate_usr_signals_batch_creates_tasks():
     # Usar StorageManager con base de datos en memoria
     storage = StorageManager(db_path=':memory:')
     from core_brain.confluence import MultiTimeframeConfluenceAnalyzer
-    from core_brain.usr_strategies.trifecta_logic import TrifectaAnalyzer
+    from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
     confluence = MultiTimeframeConfluenceAnalyzer(storage=storage, enabled=False)
     trifecta = TrifectaAnalyzer(storage=storage, config_data={"enabled": False})
     factory = SignalFactory(
@@ -65,7 +65,7 @@ async def test_generate_usr_signals_batch_creates_tasks():
 async def test_generate_usr_signals_batch_no_tasks_logs_warning(caplog):
     storage = StorageManager(db_path=':memory:')
     from core_brain.confluence import MultiTimeframeConfluenceAnalyzer
-    from core_brain.usr_strategies.trifecta_logic import TrifectaAnalyzer
+    from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
     confluence = MultiTimeframeConfluenceAnalyzer(storage=storage, enabled=False)
     trifecta = TrifectaAnalyzer(storage=storage, config_data={"enabled": False})
     factory = SignalFactory(

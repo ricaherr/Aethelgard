@@ -53,15 +53,26 @@ from core_brain.strategy_ranker import StrategyRanker
 
 logger = logging.getLogger(__name__)
 
-def _resolve_storage(storage: Optional[StorageManager]) -> StorageManager:
+def _resolve_storage(storage: Optional[StorageManager], tenant_id: Optional[str] = None) -> StorageManager:
     """
     Resolve storage dependency with legacy fallback.
     Main path should inject StorageManager from composition root.
+    
+    FASE 5: Supports tenant_id for multi-tenant awareness.
+    
+    Raises:
+        RuntimeError: If StorageManager initialization fails and storage is None.
     """
     if storage is not None:
         return storage
-    logger.warning("MainOrchestrator initialized without explicit storage! Falling back to default storage.")
-    return StorageManager()
+    
+    logger.warning(f"MainOrchestrator initialized without explicit storage! Falling back to default storage (tenant_id={tenant_id}).")
+    
+    try:
+        return StorageManager(tenant_id=tenant_id)
+    except Exception as e:
+        logger.error(f"CRITICAL: Failed to initialize StorageManager with tenant_id={tenant_id}. Error: {str(e)}", exc_info=True)
+        raise RuntimeError(f"StorageManager initialization failed: {str(e)}") from e
 
 
 @dataclass
@@ -241,14 +252,20 @@ class MainOrchestrator:
         config_path: Optional[str] = None,
         ui_mapping_service: Optional[Any] = None,
         heartbeat_monitor: Optional[Any] = None,
-        conflict_resolver: Optional[Any] = None
+        conflict_resolver: Optional[Any] = None,
+        tenant_id: Optional[str] = None  # FASE 5: Multi-tenant support
     ):
         """
         Initialize MainOrchestrator with backward-compatible Dependency Injection.
+        
+        FASE 5: tenant_id parameter enables multi-tenant orchestration.
+        If tenant_id is provided, all storage operations use tenant-specific DB.
+        If tenant_id is None, uses global DB (backward compat).
         """
         self.thought_callback = thought_callback
+        self.tenant_id = tenant_id  # FASE 5: Store tenant context
         # 1. Base dependencies and config
-        self._init_core_dependencies(scanner, signal_factory, risk_manager, executor, storage, config_path, strategy_ranker)
+        self._init_core_dependencies(scanner, signal_factory, risk_manager, executor, storage, config_path, strategy_ranker, tenant_id)
         
         # 1.5 Load usr_strategies dynamically from BD (MANIFESTO II.3-II.4)
         self._load_dynamic_usr_strategies()
@@ -281,13 +298,16 @@ class MainOrchestrator:
         # 9. Economic Calendar Veto Interface (PHASE 8: News-Based Trading Lockdown)
         self._init_economic_integration()
 
-    def _init_core_dependencies(self, scanner: Any, factory: Any, risk: Any, executor: Any, storage: Optional[Any], config_path: Optional[str], strategy_ranker: Optional[StrategyRanker] = None) -> None:
-        """Initializes core engines and resolves storage/config."""
+    def _init_core_dependencies(self, scanner: Any, factory: Any, risk: Any, executor: Any, storage: Optional[Any], config_path: Optional[str], strategy_ranker: Optional[StrategyRanker] = None, tenant_id: Optional[str] = None) -> None:
+        """Initializes core engines and resolves storage/config.
+        
+        FASE 5: Passes tenant_id to storage resolution for multi-tenant support.
+        """
         self.scanner = scanner
         self.signal_factory = factory
         self.risk_manager = risk
         self.executor = executor
-        self.storage = _resolve_storage(storage)
+        self.storage = _resolve_storage(storage, tenant_id=tenant_id)  # FASE 5: Pass tenant_id
         self.strategy_ranker = strategy_ranker or StrategyRanker(storage=self.storage)
         self.config = self._load_config(config_path)
 
@@ -301,7 +321,7 @@ class MainOrchestrator:
             from core_brain.services.strategy_engine_factory import StrategyEngineFactory
             from core_brain.signal_factory import SignalFactory
             from core_brain.confluence import MultiTimeframeConfluenceAnalyzer
-            from core_brain.usr_strategies.trifecta_logic import TrifectaAnalyzer
+            from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
             from core_brain.services.fundamental_guard import FundamentalGuardService
             from core_brain.sensors import (
                 MovingAverageSensor,
@@ -1622,7 +1642,7 @@ async def main() -> None:
     
     # --- Strategies & Analyzers (DI) ---
     from core_brain.confluence import MultiTimeframeConfluenceAnalyzer
-    from core_brain.usr_strategies.trifecta_logic import TrifectaAnalyzer
+    from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
     from core_brain.services.strategy_engine_factory import StrategyEngineFactory
     
     dynamic_params = storage.get_dynamic_params()

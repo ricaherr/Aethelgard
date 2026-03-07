@@ -22,7 +22,7 @@ def validate_news_sanitizer_pillars() -> bool:
         print(f"ERROR: File not found: {sanitizer_file}")
         return False
     
-    with open(sanitizer_file, "r") as f:
+    with open(sanitizer_file, "r", encoding="utf-8") as f:
         content = f.read()
     
     # Check Pilar 1: _validate_schema() method
@@ -81,7 +81,7 @@ def validate_storage_economic_consolidation() -> bool:
         print(f"ERROR: File not found: {storage_file}")
         return False
     
-    with open(storage_file, "r") as f:
+    with open(storage_file, "r", encoding="utf-8") as f:
         content = f.read()
     
     # Check get_economic_calendar() is primary (has SELECT logic)
@@ -123,7 +123,7 @@ def validate_test_constants() -> bool:
         print(f"WARNING: conftest.py not found: {conftest_file}")
         return True  # Don't fail tests if conftest missing
     
-    with open(conftest_file, "r") as f:
+    with open(conftest_file, "r", encoding="utf-8") as f:
         content = f.read()
     
     # Check TEST_PROVIDER_SOURCE constant exists

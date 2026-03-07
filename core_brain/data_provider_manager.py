@@ -177,7 +177,7 @@ class DataProviderManager:
         self._selected_provider_name: Optional[str] = None
         self._provider_selection_initialized: bool = False
         
-        # PHASE 3: Sync sys_broker_accounts to sys_sys_data_providers FIRST (auto-provisioning)
+        # PHASE 3: Sync sys_broker_accounts to sys_data_providers FIRST (auto-provisioning)
         # This enables MT5 automatically if sys_credentials exist in sys_broker_accounts
         # IMPORTANT: Must execute BEFORE _load_configuration() to sync DB before read
         self._sync_sys_broker_accounts_to_providers()
@@ -286,15 +286,15 @@ class DataProviderManager:
     
     def _sync_sys_broker_accounts_to_providers(self) -> None:
         """
-        PHASE 3: Auto-sync sys_broker_accounts to sys_sys_data_providers in DB
+        PHASE 3: Auto-sync sys_broker_accounts to sys_data_providers in DB
         
-        Automatically enables MT5 in sys_sys_data_providers if:
+        Automatically enables MT5 in sys_data_providers if:
         1. sys_broker_accounts has an enabled MT5 account with sys_credentials
-        2. sys_sys_data_providers MT5 entry exists
+        2. sys_data_providers MT5 entry exists
         
         Architecture: Maintains separation but syncs sys_credentials for convenience.
         - sys_broker_accounts: Operational accounts (execute usr_trades)
-        - sys_sys_data_providers: Data sources (fetch market data) [SSOT for providers]
+        - sys_data_providers: Data sources (fetch market data) [SSOT for providers]
         
         NOTE: This runs BEFORE _load_configuration(), so it updates DB only.
         The in-memory providers dict is updated when _load_configuration() reads the DB.
@@ -332,7 +332,7 @@ class DataProviderManager:
                 logger.warning(f"MT5 account incomplete: login={bool(login)}, server={bool(server)}. Sync skipped.")
                 return
             
-            # Persist MT5 sys_credentials to sys_sys_data_providers in DB
+            # Persist MT5 sys_credentials to sys_data_providers in DB
             # This updates the DB entry; _load_configuration() will read these values afterward
             self.storage.save_data_provider(
                 name='mt5',
@@ -356,7 +356,7 @@ class DataProviderManager:
             )
             
         except Exception as e:
-            logger.error(f"Error syncing sys_broker_accounts to sys_sys_data_providers: {e}", exc_info=True)
+            logger.error(f"Error syncing sys_broker_accounts to sys_data_providers: {e}", exc_info=True)
     
     def save_configuration(self) -> None:
         """Save current provider configuration to DB"""
