@@ -54,8 +54,22 @@ El Core Brain no debe conocer detalles del broker (MT5/FIX). Debe trabajar solo 
       signal_type=SignalType.BUY if result.signal == "BUY" else SignalType.SELL  # ✅ Enum
       ```
 *   **1.4. Protocolo "Explorar antes de Crear"**: Antes de implementar cualquier nueva función o clase, el Ejecutor DEBE realizar una búsqueda semántica en el repositorio actual para verificar si ya existe una lógica similar. Se prohíbe la duplicación de código; en su lugar, se debe refactorizar la función existente para que sea reutilizable.
-*   **1.5. Higiene de Masa (Regla <30KB)**: Ningún archivo puede superar los 30KB o las 500 líneas. Si un componente crece por encima de este límite, su fragmentación en submódulos es obligatoria e inmediata.
-*   **1.6. Patrones Obligatorios**: Se exige el uso estricto de Repository Pattern para datos y Service Layer para lógica. Los Routers de FastAPI solo orquestan.
+*   **1.5. Convención Obligatoria: `sys_*` vs `usr_*`**: (NEW - 2026-03-07)
+    - **`sys_*`**: Tablas globales, propiedad del sistema, configuradas por Admin
+      - Ubicación: `data_vault/global/aethelgard.db`
+      - Trader: Solo lectura (no escribe)
+      - System: Lectura/escritura limitada (ej: NewsSanitizer escribe en `sys_economic_calendar`)
+      - Ejemplo: `sys_auth`, `sys_strategies`, `sys_state`, `sys_economic_calendar`
+    - **`usr_*`**: Tablas personalizadas, propiedad del trader, datos aislados por tenant
+      - Ubicación: `data_vault/tenants/{uuid}/aethelgard.db`
+      - Trader: Lectura/escritura total a sus datos
+      - Admin: Lectura solo (auditoría), nunca escritura
+      - System: Lectura/escritura limitada (ej: inserta nueva `usr_signals`)
+      - Ejemplo: `usr_assets_cfg`, `usr_trades`, `usr_signals`, `usr_credentials`
+    - **VIOLACIÓN**: Cualquier tabla sin prefijo o que viole esta convención será rechazada por `audit_table_naming.py` en `validate_all.py`
+    - **DI Delegación**: UniversalEngine consulta `sys_strategies` (global) Y filtra contra `usr_assets_cfg` (personal) → genera `usr_signals`
+*   **1.6. Higiene de Masa (Regla <30KB)**: Ningún archivo puede superar los 30KB o las 500 líneas. Si un componente crece por encima de este límite, su fragmentación en submódulos es obligatoria e inmediata.
+*   **1.7. Patrones Obligatorios**: Se exige el uso estricto de Repository Pattern para datos y Service Layer para lógica. Los Routers de FastAPI solo orquestan.
 
 ## 2. Frontend Rules: La Terminal de Inteligencia
 *   **Estética Terminal**: Prohibido el uso de componentes de librerías comunes sin personalización. Estética **Bloomberg-Dark** (#050505, acentos cian/neón).

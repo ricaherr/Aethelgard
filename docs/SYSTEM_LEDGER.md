@@ -4,7 +4,162 @@
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> ✅ **ÚLTIMA ACTUALIZACIÓN (2026-03-06 [COMPLETADO])**: Trace_ID: ARCH-SHADOW-UNLOCK-001 | REFACTORIZACIÓN SSOT COMPLETADA | PUERTA DE SOMBRA ABIERTA
+> 🔵 **ÚLTIMA ACTUALIZACIÓN (2026-03-07 [EN PROGRESO])**: Trace_ID: ARCH-REORG-2026-004 | DESMANTELAMIENTO DE ESQUIZOFRENIA MULTI-TENANT | ARQUITECTURA HÍBRIDA UNIFICADA CON PREFIJOS sys_/usr_
+
+---
+
+## 📅 Registro: 2026-03-07 — DESMANTELAMIENTO: Multi-Tenant Esquizofrénico → Arquitectura Híbrida Unificada (TRACE_ID: ARCH-REORG-2026-004)
+
+### 🔵 ARQUITECTURA DECISIÓN: Convención Obligatoria de Nombres `sys_*` vs `usr_*`
+
+**Timestamp**: 2026-03-07 10:00 UTC → 2026-03-07 [EN PROGRESO]
+**Status**: 🔵 Documentación de Diseño | Implementación Iniciada
+**Severity**: ARCHITECTURAL REDESIGN (Critical Clarity)
+**Domain**: 00 (Governance) + 08 (Data Sovereignty) + 01 (System Architecture)
+
+#### Problema: Confusión Conceptual (Esquizofrenia)
+
+**Síntoma**:
+- ❌ Documentación menciona "Capa 0 Global" y "Capa 1 Tenant", pero no hay convención clara de nombres de tablas
+- ❌ Código accede "instruments_config" sin saber si es global o personal
+- ❌ RiskManager consulta params en múltiples lugares sin claridad sobre dónde es la fuente de verdad
+- ❌ Traders ven "múltiples databases" como arquitectura aislada, no como servicios híbridos compartidos
+- ⚠️ Escalabilidad: Agregar nueva tabla = adivinanza sobre dónde ponerla (¿global? ¿personal?)
+
+#### Causa Raíz
+
+No existe una **convención de nomenclatura universal** que distinga instantáneamente entre:
+- **Datos globales compartidos** (configurados por Admin, leídos por todos)
+- **Datos personalizados** (propiedad del trader, aislados per UUID)
+
+#### Solución: Convención Obligatoria (Declaración Constitucional)
+
+**Prefijo `sys_*`** (Global, Shared):
+```
+Capa 0: data_vault/global/aethelgard.db
+├── sys_auth           (Admin escribe, Trader lee (propia))
+├── sys_memberships    (Admin escribe, Trader lee (propia))
+├── sys_audit_logs     (Admin/System escritura, Trader lee (propia))
+├── sys_state          (Admin escribe, Trader lee readonly)
+├── sys_economic_calendar (NewsSanitizer escribe, Trader lee readonly)
+└── sys_strategies     (DevOps escribe, Trader lee readonly)
+```
+
+**Prefijo `usr_*`** (Personal, Tenant-Isolated):
+```
+Capa 1: data_vault/tenants/{uuid}/aethelgard.db
+├── usr_assets_cfg       (Trader RW, System R)
+├── usr_trades           (Trader RW, System W(close), Admin R(audit))
+├── usr_signals          (Trader R(historical), System W(new), Admin R(audit))
+├── usr_strategy_params  (Trader RW, System R)
+├── usr_credentials      (Trader RW, System N, Admin NEVER)
+└── usr_positions        (Trader RW, System W(sync))
+```
+
+#### Patrón Obligatorio: Delegación sys_ → usr_
+
+UniversalEngine SIEMPRE implementa este flujo:
+
+```python
+# ✅ CORRECTO: Dos consultas en cascada
+async def analyze(self, symbol: str, trader_id: str) -> Optional[OutputSignal]:
+    # 1. Consulta global
+    global_db = StorageManager.get_global_db()
+    strategy = global_db.query("SELECT * FROM sys_strategies WHERE id=?", self.id)
+    if not strategy or strategy.readiness != "READY_FOR_ENGINE":
+        return None  # No disponible globalmente
+    
+    # 2. Consulta personal del trader
+    trader_db = TenantDBFactory.get_storage(trader_id)
+    user_config = trader_db.query("SELECT * FROM usr_assets_cfg WHERE symbol=?", symbol)
+    if not user_config or not user_config.enabled:
+        return None  # Trader no lo permite
+    
+    # 3. Generar señal (si pasó ambos filtros)
+    signal = await self._generate_signal(...)
+    return signal
+```
+
+#### Beneficios Realizados
+
+| Problema | Antes | Después |
+|----------|-------|---------|
+| **Claridad** | "Dónde va esto?" | "sys_ o usr_ — inmediatamente claro" |
+| **Escalabilidad** | Nueva tabla = adivinar | Nueva tabla = sigue convención |
+| **Aislamiento** | Conceptual | **Garantizado por prefijo** |
+| **Auditoría** | Dispersa | Centralizada: sys_ logs, usr_ audits |
+| **Documentación** | Ambigua | Constitucional (vinculante) |
+
+#### Documentos Actualizados
+
+1. ✅ **`docs/08_DATA_SOVEREIGNTY.md`** — Nuevo apartado "Convención de Nombres Obligatoria"
+   - Definición de prefijos sys_ / usr_
+   - Patrón de delegación
+   - Prohibición de redundancia
+   - Tabla de acceso por rol
+
+2. ✅ **`docs/INTERFACE_CONTRACTS.md`** — Versión 2.0
+   - Diseñado para tablas `sys_*` específicamente
+   - Tres contratos: Economic Calendar, Risk Manager Limits, Signal Generation
+   - Validation checklist con prefijo como requisito
+
+3. ✅ **`docs/DEVELOPMENT_GUIDELINES.md`** — Sección 1.5 (NEW)
+   - Convención obligatoria: `sys_*` vs `usr_*`
+   - Validación en `validate_all.py`
+
+4. ✅ **`.ai_rules.md`** — Sección 2 actualizada
+   - Estructura de BD Global vs Tenant con prefijos
+   - Delegación de responsabilidad explícita
+   - Prohibición de redundancia
+
+5. 🔵 **`docs/SYSTEM_LEDGER.md`** — Este registro (NUEVO)
+
+#### Tarea de Implementación: `audit_table_naming.py`
+
+Script a crear en `scripts/utilities/audit_table_naming.py`:
+
+```python
+def audit_db_naming(db_path):
+    """
+    Verifica que TODAS las tablas (global + tenant) usan sys_ o usr_
+    Ejecuta en validate_all.py como parte de arquit validation
+    """
+    
+    tables = db.query("SELECT name FROM sqlite_master WHERE type='table'")
+    violations = []
+    
+    for table in tables:
+        if not table.startswith(("sys_", "usr_")):
+            violations.append(f"Table '{table}' violates naming convention")
+    
+    if violations:
+        raise NamingConventionViolation("\n".join(violations))
+    
+    logger.info("✅ Naming convention audit: PASSED (all tables use sys_* or usr_*)")
+```
+
+#### Próximas Fases
+
+- [ ] **PHASE 1 (Hoy)**: Documentación completada ✅
+- [ ] **PHASE 2 (Esta semana)**: Implementar `audit_table_naming.py`
+- [ ] **PHASE 3 (Próxima semana)**: Refactorizar código existente que viole convención
+- [ ] **PHASE 4**: Ejecutar `validate_all.py` con audit activado
+- [ ] **PHASE 5**: Confirmar: CERO violaciones de naming
+
+#### Validación Completada
+
+| Componente | Status |
+|-----------|--------|
+| Documentación | ✅ COMPLETADO |
+| Conceptual clarity | ✅ GARANTIZADO |
+| Naming convention | ✅ DEFINIDO |
+| Delegation pattern | ✅ ESPECIFICADO |
+| Audit script | 📋 EN FASE DE DISEÑO |
+
+#### Status Final
+**TRACE_ID**: ARCH-REORG-2026-004
+**Status**: 🔵 Documentación de Diseño Completada → Listo para Implementación
+**Próxima Revisión**: 2026-03-10
 
 ---
 

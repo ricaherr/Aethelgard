@@ -1,19 +1,30 @@
 # INTERFACE CONTRACTS - Aethelgard Data Integration
 
-**Version**: 1.0  
-**Status**: ACTIVE (2026-03-05)  
-**Trace_ID**: ARCH-INTERFACE-CONTRACTS-v1  
-**Domain**: 08 (Data Sovereignty) + 04 (Risk Governance)
+**Version**: 2.0  
+**Status**: ACTIVE (2026-03-07)  
+**Trace_ID**: ARCH-INTERFACE-CONTRACTS-v2  
+**Domain**: 08 (Data Sovereignty) + 04 (Risk Governance) + Naming Convention (sys_ / usr_)
 
 ---
 
-## 🚪 Contract 1: Economic Calendar Injection Gate
+## 🏛️ Convención de Nombres: Contrato Obligatorio
 
-**Purpose**: Guarantee data integrity for economic events before persistence to database.
+Todas las integraciones externas **DEBEN** cumplir con la convención de nombres:
+
+- **`sys_*`**: Tablas globales en `data_vault/global/aethelgard.db`
+- **`usr_*`**: Tablas personalizadas por trader en `data_vault/tenants/{uuid}/aethelgard.db`
+
+**Violación de convención**: ❌ Será rechazada en `validate_all.py` (script: `audit_table_naming.py`)
+
+---
+
+## 🚪 Contract 1: Economic Calendar Injection Gate (Global Data)
+
+**Purpose**: Guarantee data integrity for economic events before persistence to **`sys_calendar`** table (renamed from economic_calendar).
 
 **Scope**: All external economic data (Bloomberg, Investing.com, ForexFactory) entering the system.
 
-**Responsibility**: NewsSanitizer component validates and transforms raw external data to system-compatible format.
+**Responsibility**: NewsSanitizer component validates and transforms raw external data to system-compatible format. Data is **shared globally** (read-only for traders).
 
 ---
 
@@ -22,6 +33,7 @@
 | Aspect | Raw Data (Untrusted) | Validated Data (Trusted) |
 |--------|----------------------|--------------------------|
 | **Source** | External provider (Bloomberg, Investing.com, etc.) | NewsSanitizer output |
+| **Destination** | N/A | **`sys_calendar`** (global, read-only for traders) |
 | **Guarantee** | None (may contain errors, duplicates, malformed fields) | Schema-valid, latency-checked, immutable-ready |
 | **Responsibility** | Provider | NewsSanitizer validates |
 
@@ -68,7 +80,7 @@
 ### Pilar 3️⃣: IMMUTABILITY ENFORCEMENT
 **After Data Enters the Table**:
 - Once `event_id` is assigned and data is persisted → **NO UPDATES ALLOWED**
-- Runtime prohibition: `UPDATE economic_calendar SET ...` is NOT permitted
+- Runtime prohibition: `UPDATE sys_economic_calendar SET ...` is NOT permitted
 - If data needs correction → INSERT new event with new `event_id`, keep old record as historical audit trail
 
 **Enforcement Mechanism**:
@@ -80,7 +92,7 @@
 
 ---
 
-## 🏷️ Data Fields (System Contract)
+## 🏷️ Data Fields (System Contract) - `sys_economic_calendar` Table
 
 | Field | Type | Source | Validation | Immutable |
 |-------|------|--------|-----------|-----------|
@@ -97,6 +109,105 @@
 | `is_verified` | Boolean | System | Default False, set True after sanitization | ❌ Mutable (once) |
 | `data_version` | Integer | System | Version schema (1, 2, 3...) for migrations | ❌ Mutable (on schema updates) |
 | `created_at` | Timestamp | System | Auto-generated on INSERT | ✅ Yes |
+
+---
+
+## 2️⃣ Contract 2: Risk Manager Global Limits vs User Overrides
+
+**Purpose**: Enforce **global hard-stops** (`sys_state`) while allowing trader customization (`usr_strategy_params`).
+
+**Scope**: Daily risk limits, max drawdown, consecutive loss stops.
+
+**Responsibility**: RiskManager queries BOTH levels and applies most restrictive rule.
+
+| Parameter | Table (Global) | Table (User) | Decision Logic |
+|-----------|---|---|---|
+| **max_daily_risk_pct** | `sys_state` (key=max_daily_risk_pct) | `usr_strategy_params` (if exists) | Use MIN(sys_value, usr_value) |
+| **max_consecutive_losses** | `sys_state` | `usr_strategy_params` | Use MIN(sys_value, usr_value) |
+| **max_drawdown_pct** | `sys_state` | `usr_strategy_params` | Use MIN(sys_value, usr_value) |
+
+**Implementation Pattern**:
+```python
+# RiskManager.__init__()
+def evaluate_signal(self, signal: OutputSignal, trader_id: str) -> RiskResult:
+    # 1. Obtener límites globales (sys_)
+    global_db = StorageManager.get_global_db()
+    global_limits = global_db.query("SELECT value FROM sys_state WHERE key LIKE 'max_%'")
+    
+    # 2. Obtener límites personalizados (usr_)
+    trader_db = TenantDBFactory.get_storage(trader_id)
+    user_limits = trader_db.query("SELECT * FROM usr_strategy_params WHERE trader_id=?", trader_id)
+    
+    # 3. Aplicar el más restrictivo (MIN)
+    effective_limit = min(global_limits.max_daily_risk, user_limits.max_daily_risk or global_limits.max_daily_risk)
+    
+    # 4. Evaluación
+    if current_risk > effective_limit:
+        return RiskResult.REJECTED(reason="Exceeds effective daily risk limit")
+    
+    return RiskResult.APPROVED()
+```
+
+---
+
+## 3️⃣ Contract 3: Signal Generation with sys_ Knowledge + usr_ Filtering
+
+**Purpose**: UniversalEngine genera señales basado en datos globales, pero filtra por configuración personal.
+
+**Scope**: Strategy availability, asset whitelist, membership tier.
+
+**Responsibility**: SignalFactory queries sys_ for strategy metadata, then filters by usr_ config.
+
+| Data Level | Table | What | Who Writes | Who Reads |
+|---|---|---|---|---|
+| **Global** | `sys_strategies` | Estrategia disponible, readiness, metadata | DevOps | System, Trader (readonly) |
+| **Personal** | `usr_assets_cfg` | Qué activos permite trader, filtros personalizados | Trader | System, Trader |
+| **Output** | `usr_signals` | Señales generadas (filtradas) | System | Trader, Admin (audit) |
+
+**Implementation Pattern**:
+```python
+# SignalFactory.generate_signals()
+async def generate_signals(self, trader_id: str) -> List[OutputSignal]:
+    """
+    Genera señales filtrando sys_ (global) contra usr_ (personal)
+    """
+    
+    # 1. Cargar estrategias globales disponibles
+    global_db = StorageManager.get_global_db()
+    strategies = global_db.query("SELECT * FROM sys_strategies WHERE readiness='READY_FOR_ENGINE'")
+    
+    # 2. Cargar configuración personal del trader
+    trader_db = TenantDBFactory.get_storage(trader_id)
+    user_config = trader_db.query("SELECT * FROM usr_assets_cfg WHERE enabled=1")
+    
+    signals = []
+    for strategy in strategies:
+        for symbol in user_config:
+            # 3. Generar solo si estrategia es global + trader lo permite
+            if strategy.market_whitelist contains symbol.symbol:
+                signal = await strategy.engine.analyze(symbol, market_data)
+                if signal:
+                    # 4. Guardar en usr_signals
+                    trader_db.write("INSERT INTO usr_signals (...) VALUES (...)")
+                    signals.append(signal)
+    
+    return signals
+```
+
+---
+
+## ✅ Validation Checklist (Para cada integración externa)
+
+- [ ] **Tabla destino usa prefijo correcto** (sys_* o usr_*?)
+- [ ] **SCHEMA VALIDATION** ejecutado (mandatory fields presentes y válidos)
+- [ ] **LATENCY VALIDATION** ejecutado (evento no demasiado viejo)
+- [ ] **IMMUTABILITY** garantizada (no hay UPDATE después de INSERT)
+- [ ] **Redundancia verificada** (NO duplicar sys_ en usr_)
+- [ ] **Access control** implementado (Trader no escribe sys_, System no accede usr_credentials)
+- [ ] **TRACE_ID** presente en logs de transformación
+- [ ] Datos integrados pasan `audit_table_naming.py` script
+
+---
 
 ---
 

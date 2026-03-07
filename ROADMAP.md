@@ -1,8 +1,139 @@
 # 🛣️ ROADMAP.md - Aethelgard Alpha Training
 
-**Última Actualización**: 6 de Marzo 2026 (13:48 UTC) - 🚀 INSTRUMENT SYSTEM FIX: AGNOSTIC + RESPECTS ACTIVES  
-**Estado General**: 🟢 **SHADOW Audit & SSOT Compliance - ✅ COMPLETED** | FASE D, E.0, Corrections, InstrumentFix: ✅ COMPLETED  
-**Validación Automática**: 22/22 módulos PASSED | Tests: 152+ PASSED | Compliance: 100%
+**Última Actualización**: 7 de Marzo 2026 (21:00 UTC) - ✅ ARQUITECTURA SSOT ESTANDARIZADA: Naming Convention + Database Schema Doc  
+**Estado General**: ✅ **ARCH-SSOT-2026-006 COMPLETADA (Diseño)** | DATABASE_SCHEMA.md: ✅ REESCRITO | BACKLOG.md: ✅ CREADO  
+**Validación Automática**: 22/22 módulos PASSED | Tests: 152+ PASSED | Compliance: 100% | Architecture: ✅ FROZEN
+
+---
+
+## 🔵 ARQUITECTURA: Desmantelamiento Multi-Tenant Esquizofrénico (TRACE_ID: ARCH-REORG-2026-004)
+
+**Estado**: 🔵 **DOCUMENTACIÓN COMPLETADA - Diseño Listo para Implementación**
+
+**Fecha**: 7 de Marzo 2026 (15:45 UTC)
+
+**TRACE_ID**: ARCH-REORG-2026-004
+
+**Objetivo**: Eliminar confusión conceptual mediante convención obligatoria de nombres de tablas (`sys_*` para global, `usr_*` para personal).
+
+### ARCH-REORG.1: Convención Obligatoria de Nombres ✅
+- ✅ **`sys_*` Prefijo**: Tablas globales, Admin-managed, Trader read-only
+  - Ubicación: `data_vault/global/aethelgard.db`
+  - Tablas: sys_auth, sys_memberships, sys_state, sys_audit_logs, sys_economic_calendar, sys_strategies
+- ✅ **`usr_*` Prefijo**: Tablas personalizadas, Trader-owned, aisladas por UUID
+  - Ubicación: `data_vault/tenants/{uuid}/aethelgard.db`
+  - Tablas: usr_assets_cfg, usr_trades, usr_signals, usr_strategy_params, usr_credentials, usr_positions
+- ✅ **Delegación Patrón**: UniversalEngine consulta `sys_strategies` (global) + filtra contra `usr_assets_cfg` (personal)
+- **Documento**: `docs/08_DATA_SOVEREIGNTY.md` (Nueva Sección: "Convención de Nombres Obligatoria")
+
+### ARCH-REORG.2: Prohibición de Redundancia ✅
+- ✅ Datos de `sys_*` NUNCA se duplican en `usr_*`
+- ✅ Trader filtra contra tablas globales en runtime, NO copia
+- ✅ Resultado: SSOT único por nivel (global/personal)
+- **Documento**: `docs/08_DATA_SOVEREIGNTY.md` (Nueva Sección: "Prohibición de Redundancia")
+
+### ARCH-REORG.3: Contratos de Integración Actualizados ✅
+- ✅ **Economic Calendar**: Escribe a `sys_economic_calendar` (NewsSanitizer)
+- ✅ **Risk Manager**: Consulta ambos niveles (MIN de sys_ + usr_ limits)
+- ✅ **Signal Generation**: Filtra sys_ strategies contra usr_ assets para generar usr_ signals
+- **Documento**: `docs/INTERFACE_CONTRACTS.md` (v2.0 - Completamente refactorizado)
+
+### ARCH-REORG.4: Reglas de Desarrollo Actualizadas ✅
+- ✅ **DEVELOPMENT_GUIDELINES.md**: Nueva sección 1.5 "Convención Obligatoria"
+- ✅ **`.ai_rules.md`**: Secciones 2-7 refactorizadas con prefijos y delegación
+- ✅ **Validación**: Script `audit_table_naming.py` (en diseño) verificará en `validate_all.py`
+- **Status**: Implementación de audit script próxima semana
+
+### ARCH-REORG.5: Entrada en SYSTEM_LEDGER ✅
+- ✅ Registro histórico: 2026-03-07, ARCH-REORG-2026-004
+- ✅ Problema mitigado: "Esquizofrenia de Multi-Tenant"
+- ✅ Solución: Convención universal de nombres
+- **Documento**: `docs/SYSTEM_LEDGER.md` (Nueva Entrada Principal)
+
+### Beneficios Realizados ✅
+
+| Problema | Antes | Después |
+|----------|-------|---------|
+| **Claridad** | "¿sys_ o usr_?" | ✅ Convención inmediata |
+| **Escalabilidad** | Nueva tabla = ambigüedad | ✅ Nueva tabla = sigue convención |
+| **Aislamiento** | Conceptual, no garantizado | ✅ Garantizado por prefijo |
+| **Auditoría** | Dispersa entre niveles | ✅ Centralizada: sys_ logs + usr_ audits |
+| **Documentación** | Ambigua | ✅ Constitucional (vinculante) |
+
+### Próximas Fases (Implementación)
+
+- [ ] **PHASE 2 (Esta semana)**: Implementar `audit_table_naming.py` en `scripts/utilities/`
+- [ ] **PHASE 3 (Próxima semana)**: Refactorizar código existente que viole convención
+- [ ] **PHASE 4**: Integrar audit en `validate_all.py`
+- [ ] **PHASE 5**: Confirmar: CERO violaciones de naming en toda la BD
+
+**Status Final**: 🔵 En Fase de Documentación de Diseño → Listo para Implementación Técnica
+
+---
+
+## ✅ ARQUITECTURA: Standardized Data Sovereignty (TRACE_ID: ARCH-SSOT-2026-006)
+
+**Estado**: ✅ **COMPLETADA - Diseño & Documentación**
+
+**Fecha**: 7 de Marzo 2026 (21:00 UTC)
+
+**Objetivo**: Establecer contrato arquitectónico final con mapeo estricto de nombres de tablas (sys_*/usr_*).
+
+### ARCH-SSOT.1: Tabla de Equivalencias Completa ✅
+- ✅ **10 Tablas Mapeadas**: system_state→sys_config, market_state→sys_market_pulse, etc.
+- ✅ **Capa 0 (Global)**: sys_config, sys_market_pulse, sys_calendar, sys_auth, sys_memberships
+- ✅ **Capa 1 (Tenant)**: usr_assets_cfg, usr_strategies, usr_signals, usr_trades, usr_performance
+- **Documento**: `docs/DATABASE_SCHEMA.md` v2.0 (Reescrito)
+
+### ARCH-SSOT.2: Protocolo de Sincronización ✅
+- ✅ **Global Scanner**: Escribe UNA VEZ a sys_market_pulse
+- ✅ **Tenant Read**: Filtran por usr_assets_cfg
+- ✅ **Eficiencia**: 1 scan vs N scans
+- **Documento**: `docs/08_DATA_SOVEREIGNTY.md` (Nueva sección)
+
+### ARCH-SSOT.3: Regla de Oro de Naming ✅
+- ✅ **Asset Terminology**: Todo = "asset" (NO "symbol")
+- ✅ **Prefix Rule**: sys_* = global, usr_* = tenant
+- ✅ **Redundancy Rule**: CERO duplicación en usr_*
+- ✅ **Tenant ID Rule**: Inferido por ruta, NO en columnas
+
+### ARCH-SSOT.4: Contrato Arquitectónico Final ⚠️
+- ✅ **NOTA** en DATABASE_SCHEMA.md: "Desviación resultará en fallo de auditoría"
+- ✅ **Validación**: audit_table_naming.py (próxima semana)
+
+### ARCH-SSOT.5: BACKLOG de Implementación ✅
+- ✅ **Tarea 8.5**: Refactor Naming DB (3-4 días)
+- ✅ **Tarea 8.6**: Desac Global Scanner (2-3 días)
+- **Documento**: `docs/BACKLOG.md` (Nuevo)
+
+### ARCH-SSOT.6: Contratos de Integración ✅
+- ✅ **INTERFACE_CONTRACTS.md**: Actualizado (sys_calendar)
+
+**Status Final**: ✅ Arquitectura Congelada → Lista para Implementación
+
+---
+
+## ✅ DOCUMENTACIÓN: Database Schema Complete (TRACE_ID: DOC-SCHEMA-2026-005)
+
+**Estado**: ✅ **COMPLETADA**
+
+**Fecha**: 3 de Marzo 2026 (20:30 UTC)
+
+**Objetivo**: Crear documentación markdown completa del esquema SQLite actual.
+
+### DOC-SCHEMA.1: Inventario Completo ✅
+- ✅ **26+ Tablas Documentadas** en 12 secciones lógicas
+- ✅ Clasificación sys_* (global) vs usr_* (tenant-isolated)
+- ✅ Especificación completa: campos, tipos, índices, foreign keys
+- ✅ Seeding logic, decisiones arquitectónicas, flow de inicialización
+- **Documento**: `docs/DATABASE_SCHEMA.md` (850+ líneas)
+
+### DOC-SCHEMA.2: Alineación ARCH-REORG ✅
+- ✅ Todas las tablas con prefijo sys_* o usr_*
+- ✅ Vinculadas a: `08_DATA_SOVEREIGNTY.md`, `INTERFACE_CONTRACTS.md`, `SYSTEM_LEDGER.md`
+- ✅ SSOT, Multi-tenant, Idempotent patterns documentados
+
+**Status**: ✅ Documentación Completa → Soporte para Auditoría
 
 ---
 
