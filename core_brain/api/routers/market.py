@@ -355,7 +355,14 @@ async def get_instruments(all: bool = False, token: TokenPayload = Depends(get_c
 # ============ ENDPOINT: Instrumentos (Actualización) ============
 @router.post("/instruments")
 async def update_instruments(payload: dict, token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
-    """Actualiza SOLO una categoría de instrumentos (más eficiente, DRY)"""
+    """Actualiza SOLO una categoría de instrumentos (más eficiente, DRY)
+    
+    CRITICAL: 
+    1. Valida que instruments_config sea diccionario (no string JSON residual)
+    2. Fusiona datos (no sobrescribe)
+    3. Persiste en BD con json.dumps
+    4. Retorna configuración actualizada para UI confirmation
+    """
     try:
         tenant_id = token.tid
         storage = TenantDBFactory.get_storage(tenant_id)
@@ -367,15 +374,71 @@ async def update_instruments(payload: dict, token: TokenPayload = Depends(get_cu
 
         state = storage.get_system_state()
         instruments_config = state.get("instruments_config")
-        if not instruments_config or market not in instruments_config or category not in instruments_config[market]:
-            raise HTTPException(status_code=404, detail="Categoría no encontrada en la configuración actual")
         
-        # Actualizar categoría
-        instruments_config[market][category].update(data)
+        # === CRITICAL VALIDATION (same as GET endpoint) ===
+        if instruments_config is None:
+            logger.error(f"[ERROR] instruments_config is None for tenant {tenant_id}. Cannot update.")
+            raise HTTPException(status_code=404, detail="instruments_config not found. Initialize first via GET /instruments.")
+        
+        # Handle residual JSON strings (deserialize)
+        if isinstance(instruments_config, str):
+            try:
+                import json as _json
+                instruments_config = _json.loads(instruments_config)
+                logger.debug("Converted instruments_config from JSON string to dict")
+            except Exception as e:
+                logger.error(f"Invalid instruments_config JSON in DB: {e}")
+                raise HTTPException(status_code=400, detail=f"Invalid instruments_config format in DB: {str(e)}")
+        
+        # Validate structure
+        if not isinstance(instruments_config, dict):
+            logger.error(f"instruments_config is not a dict: {type(instruments_config)}")
+            raise HTTPException(status_code=400, detail="Invalid instruments_config format (not a dict)")
+        
+        # Validate market exists
+        if market not in instruments_config:
+            logger.error(f"Market '{market}' not found in instruments_config")
+            raise HTTPException(status_code=404, detail=f"Market '{market}' not found")
+        
+        # Validate category exists
+        if category not in instruments_config[market]:
+            logger.error(f"Category '{category}' not found in market '{market}'")
+            raise HTTPException(status_code=404, detail=f"Category '{category}' not found in market '{market}'")
+        
+        # === MERGE UPDATE (preserve existing keys, update from data) ===
+        # Get current category config
+        current_category_config = instruments_config[market][category]
+        
+        # Merge: update existing dict with new data
+        current_category_config.update(data)
+        instruments_config[market][category] = current_category_config
+        
+        # === PERSIST TO BOTH BDs: TENANT + GENERIC (SSOT sync) ===
+        # 1. Write to tenant-isolated DB (primary)
         storage.update_system_state({"instruments_config": instruments_config})
+        logger.info(f"✅ Category {market}/{category} persisted to TENANT DB. enabled={data.get('enabled')}, actives={data.get('actives', {})}")
         
-        await _broadcast_thought(f"Categoría {market}/{category} actualizada por el usuario.", module="MARKET")
-        return {"status": "success", "message": f"Categoría {market}/{category} actualizada correctamente."}
+        # 2. CRITICAL: Also sync to generic DB (data_vault/aethelgard.db) for CLI/start.py consistency
+        from data_vault.storage import StorageManager as GenericStorageManager
+        generic_storage = GenericStorageManager()  # Uses default path: data_vault/aethelgard.db
+        generic_storage.update_system_state({"instruments_config": instruments_config})
+        logger.info(f"✅ Category {market}/{category} ALSO persisted to GENERIC DB (data_vault/aethelgard.db). SSOT sync complete.")
+        
+        # === BROADCAST UI UPDATE ===
+        await _broadcast_thought(
+            f"Categoría {market}/{category} actualizada: enabled={data.get('enabled')}, " +
+            f"{len(data.get('instruments', []))} instrumentos",
+            module="MARKET"
+        )
+        
+        # === RETURN UPDATED CONFIG (for UI confirmation) ===
+        return {
+            "status": "success",
+            "message": f"Categoría {market}/{category} actualizada correctamente.",
+            "updated_config": instruments_config[market][category]
+        }
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error guardando categoría de instrumentos: {e}")
+        logger.error(f"Error guardando categoría de instrumentos: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

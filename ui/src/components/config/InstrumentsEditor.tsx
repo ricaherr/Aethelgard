@@ -125,7 +125,13 @@ export function InstrumentsEditor({ data, onRefresh }: InstrumentsEditorProps) {
             });
             if (!res.ok) throw new Error('Error al guardar la categoría.');
             setMessage('✅ Categoría actualizada correctamente.');
-            setTimeout(() => setMessage(null), 3000);
+            
+            // CRITICAL: Recargar desde BD después de persisting (SSOT)
+            // Esto asegura que el UI refleja exactamente lo que está en la BD
+            setTimeout(() => {
+                onRefresh();
+                setMessage(null);
+            }, 1000);
         } catch (err: any) {
             setError(err.message);
         } finally {
