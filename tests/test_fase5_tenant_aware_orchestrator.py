@@ -7,8 +7,8 @@ Objetivo: Verificar que MainOrchestrator y todos sus componentes son tenant-awar
 Todos los métodos de almacenamiento deben operar sobre la BD correcta (global o tenant) basados en tenant_id.
 
 Reglas:
-- Si tenant_id=None: USA data_vault/global/aethelgard.db (sys_* tables)
-- Si tenant_id="uuid": USA data_vault/tenants/{uuid}/aethelgard.db (usr_* tables)
+- Si user_id=None: USA data_vault/global/aethelgard.db (sys_* tables)
+- Si user_id="uuid": USA data_vault/tenants/{uuid}/aethelgard.db (usr_* tables)
 - MainOrchestrator debe recibir tenant_id como parámetro y propagarlo a StorageManager
 - No debe haber DB sharing entre tenants
 """
@@ -68,8 +68,8 @@ class TestStorageManagerTenantAwareness:
                         with patch('data_vault.storage.bootstrap_symbol_mappings'):
                             with patch('data_vault.storage.StorageManager._bootstrap_from_json'):
                                 with patch('data_vault.storage.StorageManager.seed_initial_assets'):
-                                    storage = StorageManager(db_path=':memory:', tenant_id=tenant_id)
-                                    assert storage.tenant_id == tenant_id
+                                    storage = StorageManager(db_path=':memory:', user_id=tenant_id)
+                                    assert storage.user_id == tenant_id
     
     def test_storage_manager_backward_compat_explicit_path(self):
         """
@@ -89,7 +89,7 @@ class TestStorageManagerTenantAwareness:
                             with patch('data_vault.storage.StorageManager.seed_initial_assets'):
                                 storage = StorageManager(db_path=explicit_path)
                                 assert storage.db_path == explicit_path
-                                assert storage.tenant_id is None
+                                assert storage.user_id is None
     
     def test_resolve_db_path_logic_global(self):
         """
@@ -126,7 +126,7 @@ class TestMainOrchestratorTenantAwareness:
         # Arrange
         tenant_id = tenant_uuid_orchestrator_test
         mock_storage = MagicMock(spec=StorageManager)
-        mock_storage.tenant_id = tenant_id
+        mock_storage.user_id = tenant_id
         mock_storage.get_sys_config = MagicMock(return_value={})
         mock_storage.get_sys_strategies = MagicMock(return_value=[])
         mock_storage.get_usr_performance = MagicMock(return_value={})
@@ -145,16 +145,16 @@ class TestMainOrchestratorTenantAwareness:
                 risk_manager=mock_risk_manager,
                 executor=mock_executor,
                 storage=mock_storage,
-                tenant_id=tenant_id  # FASE 5: Nuevo parámetro
+                user_id=tenant_id  # FASE 5: Nuevo parámetro
             )
             
             # Verify
-            assert orchestrator.tenant_id == tenant_id
+            assert orchestrator.user_id == tenant_id
     
     @pytest.mark.asyncio
     async def test_main_orchestrator_storage_uses_tenant_id(self, tenant_uuid_fallback_test):
         """
-        MainOrchestrator debe crear StorageManager(tenant_id=tenant_id) 
+        MainOrchestrator debe crear StorageManager(user_id=tenant_id) 
         cuando no recibe storage inyectado
         """
         # Arrange
@@ -167,7 +167,7 @@ class TestMainOrchestratorTenantAwareness:
         # Act: MainOrchestrator crea su propio StorageManager con tenant_id
         with patch('core_brain.main_orchestrator.StorageManager') as mock_storage_class:
             mock_storage_instance = MagicMock()
-            mock_storage_instance.tenant_id = tenant_id
+            mock_storage_instance.user_id = tenant_id
             mock_storage_instance.get_sys_config = MagicMock(return_value={})
             mock_storage_instance.get_sys_strategies = MagicMock(return_value=[])
             mock_storage_instance.get_usr_performance = MagicMock(return_value={})
@@ -184,14 +184,14 @@ class TestMainOrchestratorTenantAwareness:
                 signal_factory=mock_signal_factory,
                 risk_manager=mock_risk_manager,
                 executor=mock_executor,
-                tenant_id=tenant_id  # FASE 5
+                user_id=tenant_id  # FASE 5
             )
             
             # Verify
             mock_storage_class.assert_called_once()
             call_kwargs = mock_storage_class.call_args[1]
-            assert 'tenant_id' in call_kwargs
-            assert call_kwargs['tenant_id'] == tenant_id
+            assert 'user_id' in call_kwargs
+            assert call_kwargs['user_id'] == tenant_id
 
 
 class TestTenantIsolationInStorage:
@@ -254,7 +254,7 @@ class TestMainOrchestratorOperationsWithTenantId:
         tenant_id = "user_a_uuid_5"
         
         mock_storage = MagicMock(spec=StorageManager)
-        mock_storage.tenant_id = tenant_id
+        mock_storage.user_id = tenant_id
         mock_storage.save_signal = MagicMock(return_value="signal_123")
         mock_storage.get_sys_config = MagicMock(return_value={})
         mock_storage.get_sys_strategies = MagicMock(return_value=[])
@@ -274,7 +274,7 @@ class TestMainOrchestratorOperationsWithTenantId:
                 risk_manager=mock_risk_manager,
                 executor=mock_executor,
                 storage=mock_storage,
-                tenant_id=tenant_id
+                user_id=tenant_id
             )
             
             # Create test signal
@@ -290,7 +290,7 @@ class TestMainOrchestratorOperationsWithTenantId:
             )
             
             # Verify storage has correct tenant_id
-            assert mock_storage.tenant_id == tenant_id
+            assert mock_storage.user_id == tenant_id
 
 
 class TestBackwardCompatibility:
@@ -316,18 +316,18 @@ class TestBackwardCompatibility:
     
     def test_resolve_storage_with_tenant_id_fallback(self):
         """
-        _resolve_storage(storage=None, tenant_id="uuid") debe crear storage con tenant_id
+        _resolve_storage(storage=None, user_id="uuid") debe crear storage con tenant_id
         """
         # Act & Assert: función debe aceptar tenant_id parámetro
         # (Sin crear BD real debido a schema issues pre-existentes)
         with patch('core_brain.main_orchestrator.StorageManager') as mock_class:
             mock_class.return_value = MagicMock()
-            _resolve_storage(storage=None, tenant_id="trader_123")
+            _resolve_storage(storage=None, user_id="trader_123")
             
             # Verify StorageManager fue llamado con tenant_id
             mock_class.assert_called_once()
             call_kwargs = mock_class.call_args[1]
-            assert call_kwargs['tenant_id'] == "trader_123"
+            assert call_kwargs['user_id'] == "trader_123"
     
     @pytest.mark.asyncio
     async def test_main_orchestrator_init_backward_compat_no_tenant_id(self):
@@ -337,7 +337,7 @@ class TestBackwardCompatibility:
         """
         # Arrange
         mock_storage = MagicMock(spec=StorageManager)
-        mock_storage.tenant_id = None
+        mock_storage.user_id = None
         mock_storage.get_sys_config = MagicMock(return_value={})
         mock_storage.get_sys_strategies = MagicMock(return_value=[])
         mock_storage.get_usr_performance = MagicMock(return_value={})
@@ -361,4 +361,4 @@ class TestBackwardCompatibility:
             
             # Assert
             assert orchestrator is not None
-            assert orchestrator.tenant_id is None
+            assert orchestrator.user_id is None

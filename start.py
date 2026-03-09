@@ -296,7 +296,7 @@ async def main() -> None:
                 config=dynamic_params,
                 available_sensors={}
             )
-            active_engines = strategy_factory.instantiate_all_usr_strategies()
+            active_engines = strategy_factory.instantiate_all_sys_strategies()
             logger.info(f"[INIT] {len(active_engines)} estrategias cargadas exitosamente")
         except Exception as e:
             logger.warning(f"[INIT] Error cargando estrategias: {e}. SignalFactory operará con Dict vacío")

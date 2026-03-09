@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 DEMO_USER_EMAIL = "demo@aethelgard.local"
 DEMO_USER_PASSWORD = "demo123"
-DEMO_TENANT_ID = "default"
+DEMO_USER_ID = "default"  # Refactored from DEMO_TENANT_ID to DEMO_USER_ID
 
 
 def create_demo_user():
@@ -40,17 +40,17 @@ def create_demo_user():
         user_id = auth_repo.create_user(
             email=DEMO_USER_EMAIL,
             password_hash=hashed_password,
-            tenant_id=DEMO_TENANT_ID,
+            user_id=DEMO_USER_ID,
             role="admin"
         )
         
         logger.info(f"✓ Usuario demo creado exitosamente")
         logger.info(f"  - Email: {DEMO_USER_EMAIL}")
         logger.info(f"  - Password: {DEMO_USER_PASSWORD}")
-        logger.info(f"  - Tenant ID: {DEMO_TENANT_ID}")
+        logger.info(f"  - User ID: {DEMO_USER_ID}")
         logger.info(f"  - User ID: {user_id}")
         
-        return {"id": user_id, "email": DEMO_USER_EMAIL, "tenant_id": DEMO_TENANT_ID}
+        return {"id": user_id, "email": DEMO_USER_EMAIL, "user_id": DEMO_USER_ID}
     
     except Exception as e:
         logger.error(f"✗ Error creando usuario demo: {e}")
@@ -70,7 +70,7 @@ def generate_demo_token():
         auth_service = AuthService(auth_repo)
         token = auth_service.create_access_token(
             subject=user["id"],
-            tenant_id=user["tenant_id"],
+            user_id=user["tenant_id"],  # tenant_id column stores user_id value
             role=user["role"]
         )
         

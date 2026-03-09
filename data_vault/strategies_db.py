@@ -2,7 +2,7 @@
 strategies_db.py — Strategy Metadata and Affinity Score Management
 
 Responsibility: CRUD operations for:
-  - usr_strategies table (class_id, mnemonic, affinity_scores JSON, market_whitelist)
+  - sys_strategies table (class_id, mnemonic, affinity_scores JSON, market_whitelist)
   - usr_strategy_logs table (learning logs for asset efficiency)
 
 Dependency Injection: StorageManager (no direct DB connections)
@@ -57,7 +57,7 @@ class StrategiesMixin(BaseRepository):
             whitelist_json = json.dumps(market_whitelist or [])
             
             cursor.execute("""
-                INSERT INTO usr_strategies (
+                INSERT INTO sys_strategies (
                     class_id, mnemonic, version, affinity_scores,
                     market_whitelist, description
                 ) VALUES (?, ?, ?, ?, ?, ?)
@@ -83,16 +83,23 @@ class StrategiesMixin(BaseRepository):
 
     def get_strategy(self, class_id: str) -> Optional[Dict[str, Any]]:
         """
-        Retrieve strategy metadata by class_id.
+        Retrieve strategy metadata by class_id from GLOBAL DB.
         
         Returns:
             Dict with strategy data, or None if not found
         """
-        conn = self._get_conn()
+        # Force read from global DB (even if self is in tenant context)
+        from pathlib import Path
+        data_vault_root = Path(__file__).parent.absolute()
+        global_db_path = str(data_vault_root / "global" / "aethelgard.db")
+        
+        conn = None
         try:
+            conn = sqlite3.connect(global_db_path)
+            conn.row_factory = sqlite3.Row  # Enable dict-like access
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT * FROM usr_strategies WHERE class_id = ?
+                SELECT * FROM sys_strategies WHERE class_id = ?
             """, (class_id,))
             row = cursor.fetchone()
             if not row:
@@ -103,15 +110,30 @@ class StrategiesMixin(BaseRepository):
             result['affinity_scores'] = json.loads(result.get('affinity_scores', '{}'))
             result['market_whitelist'] = json.loads(result.get('market_whitelist', '[]'))
             return result
+        except sqlite3.OperationalError as e:
+            logger.error(f"[STRATEGIES] ✗ Error reading strategy {class_id} from global DB: {e}")
+            return None
         finally:
-            self._close_conn(conn)
+            if conn:
+                conn.close()
 
-    def get_all_usr_strategies(self) -> List[Dict[str, Any]]:
-        """Retrieve all usr_strategies with parsed JSON fields."""
-        conn = self._get_conn()
+    def get_all_sys_strategies(self) -> List[Dict[str, Any]]:
+        """Retrieve all sys_strategies from GLOBAL DB with parsed JSON fields.
+        
+        IMPORTANT: Reads ALWAYS from global DB, never from tenant DB.
+        sys_strategies are GLOBAL resources shared across all tenants.
+        """
+        # Force read from global DB (even if self is in tenant context)
+        from pathlib import Path
+        data_vault_root = Path(__file__).parent.absolute()
+        global_db_path = str(data_vault_root / "global" / "aethelgard.db")
+        
+        conn = None
         try:
+            conn = sqlite3.connect(global_db_path)
+            conn.row_factory = sqlite3.Row  # Enable dict-like access
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM usr_strategies ORDER BY created_at DESC")
+            cursor.execute("SELECT * FROM sys_strategies ORDER BY created_at DESC")
             rows = cursor.fetchall()
             
             results = []
@@ -121,8 +143,12 @@ class StrategiesMixin(BaseRepository):
                 result['market_whitelist'] = json.loads(result.get('market_whitelist', '[]'))
                 results.append(result)
             return results
+        except sqlite3.OperationalError as e:
+            logger.error(f"[STRATEGIES] ✗ Error reading sys_strategies from global DB: {e}")
+            return []
         finally:
-            self._close_conn(conn)
+            if conn:
+                conn.close()
 
     def update_strategy_affinity_scores(
         self,
@@ -146,7 +172,7 @@ class StrategiesMixin(BaseRepository):
             affinity_json = json.dumps(affinity_scores)
             
             cursor.execute("""
-                UPDATE usr_strategies
+                UPDATE sys_strategies
                 SET affinity_scores = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE class_id = ?
             """, (affinity_json, class_id))
@@ -181,7 +207,7 @@ class StrategiesMixin(BaseRepository):
             whitelist_json = json.dumps(market_whitelist)
             
             cursor.execute("""
-                UPDATE usr_strategies
+                UPDATE sys_strategies
                 SET market_whitelist = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE class_id = ?
             """, (whitelist_json, class_id))
@@ -199,12 +225,12 @@ class StrategiesMixin(BaseRepository):
 
     def get_strategy_affinity_scores(self, class_id: Optional[str] = None) -> Dict[str, float]:
         """
-        Retrieve affinity scores for a strategy (or all usr_strategies).
+        Retrieve affinity scores for a strategy (or all sys_strategies).
         Used by StrategyGatekeeper to load in-memory cache.
         
         Args:
             class_id: If provided, return scores for that strategy only.
-                     If None, aggregate scores across all usr_strategies.
+                     If None, aggregate scores across all sys_strategies.
                      
         Returns:
             Dict mapping assets to average efficiency scores
@@ -215,15 +241,15 @@ class StrategiesMixin(BaseRepository):
             
             if class_id:
                 cursor.execute("""
-                    SELECT affinity_scores FROM usr_strategies WHERE class_id = ?
+                    SELECT affinity_scores FROM sys_strategies WHERE class_id = ?
                 """, (class_id,))
                 row = cursor.fetchone()
                 if row:
                     return json.loads(row[0] or '{}')
                 return {}
             else:
-                # Aggregate: average affinity scores across all usr_strategies
-                cursor.execute("SELECT affinity_scores FROM usr_strategies")
+                # Aggregate: average affinity scores across all sys_strategies
+                cursor.execute("SELECT affinity_scores FROM sys_strategies")
                 rows = cursor.fetchall()
                 
                 aggregated = {}
@@ -250,7 +276,7 @@ class StrategiesMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT market_whitelist FROM usr_strategies WHERE class_id = ?
+                SELECT market_whitelist FROM sys_strategies WHERE class_id = ?
             """, (class_id,))
             row = cursor.fetchone()
             if row:
@@ -454,9 +480,9 @@ class StrategiesMixin(BaseRepository):
     # ── Readiness Status (SSOT: Strategy Registry in BD) ─────────────────────
     # Trace_ID: EXEC-UNIVERSAL-ENGINE-REAL | CORRECTION: Soberanía de Persistencia
 
-    def get_usr_strategies_by_readiness(self, readiness: str) -> List[Dict[str, Any]]:
+    def get_sys_strategies_by_readiness(self, readiness: str) -> List[Dict[str, Any]]:
         """
-        Retrieve all usr_strategies with a specific readiness status.
+        Retrieve all sys_strategies with a specific readiness status from GLOBAL DB.
         
         Args:
             readiness: Status to filter by (e.g., 'READY_FOR_ENGINE', 'LOGIC_PENDING')
@@ -464,11 +490,18 @@ class StrategiesMixin(BaseRepository):
         Returns:
             List of strategy dicts matching the readiness status
         """
-        conn = self._get_conn()
+        # Force read from global DB (even if self is in tenant context)
+        from pathlib import Path
+        data_vault_root = Path(__file__).parent.absolute()
+        global_db_path = str(data_vault_root / "global" / "aethelgard.db")
+        
+        conn = None
         try:
+            conn = sqlite3.connect(global_db_path)
+            conn.row_factory = sqlite3.Row  # Enable dict-like access
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT * FROM usr_strategies
+                SELECT * FROM sys_strategies
                 WHERE readiness = ?
                 ORDER BY created_at DESC
             """, (readiness,))
@@ -481,8 +514,12 @@ class StrategiesMixin(BaseRepository):
                 result['market_whitelist'] = json.loads(result.get('market_whitelist', '[]'))
                 results.append(result)
             return results
+        except sqlite3.OperationalError as e:
+            logger.error(f"[STRATEGIES] ✗ Error reading sys_strategies by readiness from global DB: {e}")
+            return []
         finally:
-            self._close_conn(conn)
+            if conn:
+                conn.close()
 
     def update_strategy_readiness(
         self,
@@ -505,7 +542,7 @@ class StrategiesMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                UPDATE usr_strategies
+                UPDATE sys_strategies
                 SET readiness = ?, readiness_notes = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE class_id = ?
             """, (readiness, readiness_notes, class_id))

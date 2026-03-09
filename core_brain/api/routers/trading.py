@@ -423,7 +423,7 @@ async def get_usr_strategies_library(token: TokenPayload = Depends(get_current_a
 
         # Registry: Strategy metadata from DB (SSOT: usr_strategies table)
         # Trace_ID: SSOT-CORRECTION-REGISTRY-V2
-        all_usr_strategies = storage.get_all_usr_strategies()
+        all_sys_strategies = storage.get_all_sys_strategies()
         registry = [
             {
                 "id": s.get("class_id"),

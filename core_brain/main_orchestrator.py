@@ -53,12 +53,12 @@ from core_brain.strategy_ranker import StrategyRanker
 
 logger = logging.getLogger(__name__)
 
-def _resolve_storage(storage: Optional[StorageManager], tenant_id: Optional[str] = None) -> StorageManager:
+def _resolve_storage(storage: Optional[StorageManager], user_id: Optional[str] = None) -> StorageManager:
     """
     Resolve storage dependency with legacy fallback.
     Main path should inject StorageManager from composition root.
     
-    FASE 5: Supports tenant_id for multi-tenant awareness.
+    Multi-tenant architecture: Supports user_id for user-aware DB isolation.
     
     Raises:
         RuntimeError: If StorageManager initialization fails and storage is None.
@@ -66,12 +66,12 @@ def _resolve_storage(storage: Optional[StorageManager], tenant_id: Optional[str]
     if storage is not None:
         return storage
     
-    logger.warning(f"MainOrchestrator initialized without explicit storage! Falling back to default storage (tenant_id={tenant_id}).")
+    logger.warning(f"MainOrchestrator initialized without explicit storage! Falling back to default storage (user_id={user_id}).")
     
     try:
-        return StorageManager(tenant_id=tenant_id)
+        return StorageManager(user_id=user_id)
     except Exception as e:
-        logger.error(f"CRITICAL: Failed to initialize StorageManager with tenant_id={tenant_id}. Error: {str(e)}", exc_info=True)
+        logger.error(f"CRITICAL: Failed to initialize StorageManager with user_id={user_id}. Error: {str(e)}", exc_info=True)
         raise RuntimeError(f"StorageManager initialization failed: {str(e)}") from e
 
 
@@ -253,19 +253,22 @@ class MainOrchestrator:
         ui_mapping_service: Optional[Any] = None,
         heartbeat_monitor: Optional[Any] = None,
         conflict_resolver: Optional[Any] = None,
-        tenant_id: Optional[str] = None  # FASE 5: Multi-tenant support
+        tenant_id: Optional[str] = None,  # DEPRECATED: Use user_id instead
+        user_id: Optional[str] = None  # Multi-user support: User identifier for DB isolation
     ):
         """
         Initialize MainOrchestrator with backward-compatible Dependency Injection.
         
-        FASE 5: tenant_id parameter enables multi-tenant orchestration.
-        If tenant_id is provided, all storage operations use tenant-specific DB.
-        If tenant_id is None, uses global DB (backward compat).
+        Multi-user support: user_id parameter enables per-user data isolation.
+        If user_id is provided, all storage operations use user-specific DB.
+        If user_id is None, uses global DB (backward compat).
         """
         self.thought_callback = thought_callback
-        self.tenant_id = tenant_id  # FASE 5: Store tenant context
+        # Support both old (tenant_id) and new (user_id) parameters
+        effective_user_id = user_id or tenant_id
+        self.user_id = effective_user_id  # Store user context
         # 1. Base dependencies and config
-        self._init_core_dependencies(scanner, signal_factory, risk_manager, executor, storage, config_path, strategy_ranker, tenant_id)
+        self._init_core_dependencies(scanner, signal_factory, risk_manager, executor, storage, config_path, strategy_ranker, user_id=effective_user_id, tenant_id=tenant_id)
         
         # 1.5 Load usr_strategies dynamically from BD (MANIFESTO II.3-II.4)
         self._load_dynamic_usr_strategies()
@@ -298,16 +301,18 @@ class MainOrchestrator:
         # 9. Economic Calendar Veto Interface (PHASE 8: News-Based Trading Lockdown)
         self._init_economic_integration()
 
-    def _init_core_dependencies(self, scanner: Any, factory: Any, risk: Any, executor: Any, storage: Optional[Any], config_path: Optional[str], strategy_ranker: Optional[StrategyRanker] = None, tenant_id: Optional[str] = None) -> None:
+    def _init_core_dependencies(self, scanner: Any, factory: Any, risk: Any, executor: Any, storage: Optional[Any], config_path: Optional[str], strategy_ranker: Optional[StrategyRanker] = None, user_id: Optional[str] = None, tenant_id: Optional[str] = None) -> None:
         """Initializes core engines and resolves storage/config.
         
-        FASE 5: Passes tenant_id to storage resolution for multi-tenant support.
+        Multi-user architecture: Passes user_id to storage resolution for per-user DB isolation.
+        tenant_id is deprecated (kept for backward compatibility).
         """
         self.scanner = scanner
         self.signal_factory = factory
         self.risk_manager = risk
         self.executor = executor
-        self.storage = _resolve_storage(storage, tenant_id=tenant_id)  # FASE 5: Pass tenant_id
+        effective_user_id = user_id or tenant_id
+        self.storage = _resolve_storage(storage, user_id=effective_user_id)
         self.strategy_ranker = strategy_ranker or StrategyRanker(storage=self.storage)
         self.config = self._load_config(config_path)
 
@@ -376,7 +381,7 @@ class MainOrchestrator:
                 config=dynamic_params,
                 available_sensors=available_sensors
             )
-            active_engines = strategy_factory.instantiate_all_usr_strategies()
+            active_engines = strategy_factory.instantiate_all_sys_strategies()
             stats = strategy_factory.get_stats()
             
             # Create new SignalFactory with loaded usr_strategies
@@ -1658,7 +1663,7 @@ async def main() -> None:
             config=dynamic_params,
             available_sensors={}  # TODO: Populate when sensors are fully instantiated
         )
-        active_engines = strategy_factory.instantiate_all_usr_strategies()
+        active_engines = strategy_factory.instantiate_all_sys_strategies()
         stats = strategy_factory.get_stats()
         logger.info(
             f"[STRATEGIES] ✓ Dynamic loading from BD completed: "

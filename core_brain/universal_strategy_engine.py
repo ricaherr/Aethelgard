@@ -86,11 +86,11 @@ class RegistryLoader:
         
         try:
             # Leer TODAS las estrategias desde BD
-            usr_strategies = self.storage.get_all_usr_strategies()
+            sys_strategies = self.storage.get_all_sys_strategies()
             
             # Construir Registry
             registry = {
-                "usr_strategies": usr_strategies,
+                "sys_strategies": sys_strategies,
                 "validation_protocol": {
                     "name": "Protocolo Quanter",
                     "pillars": [
@@ -140,7 +140,7 @@ class RegistryLoader:
     def get_ready_usr_strategies(self) -> List[Dict[str, Any]]:
         """Retorna solo estrategias con readiness=READY_FOR_ENGINE (desde BD)."""
         try:
-            return self.storage.get_usr_strategies_by_readiness("READY_FOR_ENGINE")
+            return self.storage.get_sys_strategies_by_readiness("READY_FOR_ENGINE")
         except Exception as e:
             logger.error(f"Error obteniendo estrategias READY_FOR_ENGINE: {e}")
             return []

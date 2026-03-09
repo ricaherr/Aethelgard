@@ -70,7 +70,7 @@ class StrategyEngineFactory:
         self.active_engines: Dict[str, Any] = {}
         self.load_errors: Dict[str, str] = {}
     
-    def instantiate_all_usr_strategies(self) -> Dict[str, Any]:
+    def instantiate_all_sys_strategies(self) -> Dict[str, Any]:
         """
         Carga TODAS las estrategias desde BD e instancia aquellas que cumplan:
         1. readiness = READY_FOR_ENGINE (no LOGIC_PENDING)
@@ -85,20 +85,20 @@ class StrategyEngineFactory:
         logger.info("[FACTORY] Iniciando carga dinámica de estrategias desde BD...")
         
         try:
-            # Paso 1: Leer todas las estrategias desde tabla `usr_strategies` (SSOT)
-            all_usr_strategies = self.storage.get_all_usr_strategies()
-            logger.info(f"[FACTORY] ✓ Leídas {len(all_usr_strategies)} estrategias de BD")
+            # Paso 1: Leer todas las estrategias desde tabla `sys_strategies` (SSOT global)
+            all_sys_strategies = self.storage.get_all_sys_strategies()
+            logger.info(f"[FACTORY] ✓ Leídas {len(all_sys_strategies)} estrategias de BD")
             
         except Exception as e:
-            logger.error(f"[FACTORY] ✗ Error al leer tabla usr_strategies: {e}")
-            raise RuntimeError(f"[FACTORY] CRITICAL: No se pudo acceder a tabla usr_strategies: {e}")
+            logger.error(f"[FACTORY] ✗ Error al leer tabla sys_strategies: {e}")
+            raise RuntimeError(f"[FACTORY] CRITICAL: No se pudo acceder a tabla sys_strategies: {e}")
         
-        if not all_usr_strategies:
-            logger.error("[FACTORY] ✗ Tabla usr_strategies vacía")
-            raise RuntimeError("[FACTORY] CRITICAL: Tabla usr_strategies vacía")
+        if not all_sys_strategies:
+            logger.warning("[FACTORY] ⚠ Tabla sys_strategies vacía - Sin estrategias pre-cargadas")
+            return {}
         
         # Paso 2: Filtrar, validar y instanciar cada estrategia
-        for strategy_spec in all_usr_strategies:
+        for strategy_spec in all_sys_strategies:
             try:
                 self._load_single_strategy(strategy_spec)
             except Exception as e:
@@ -113,7 +113,7 @@ class StrategyEngineFactory:
                 f"[FACTORY] ✗ CRÍTICO: No se instanció ninguna estrategia. "
                 f"Errores: {self.load_errors}"
             )
-            raise RuntimeError("[FACTORY] CRITICAL: No usr_strategies instantiated")
+            raise RuntimeError("[FACTORY] CRITICAL: No sys_strategies instantiated")
         
         logger.info(
             f"[FACTORY] ✓ Carga completada: {len(self.active_engines)} estrategias activas, "

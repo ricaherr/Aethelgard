@@ -28,7 +28,7 @@ class TestStrategyEngineFactoryBasics:
     def test_factory_initialization(self):
         """Verifica que el factory se inicializa correctamente."""
         mock_storage = Mock()
-        mock_storage.get_all_usr_strategies.return_value = [
+        mock_storage.get_all_sys_strategies.return_value = [
             {
                 "class_id": "TEST_STRAT",
                 "type": "JSON_SCHEMA",
@@ -48,30 +48,30 @@ class TestStrategyEngineFactoryBasics:
         assert factory.active_engines == {}
         assert factory.load_errors == {}
 
-    def test_factory_instantiate_all_usr_strategies_empty_bd(self):
+    def test_factory_instantiate_all_sys_strategies_empty_bd(self):
         """Verifica que factory reporta error si BD está vacía."""
         mock_storage = Mock()
-        mock_storage.get_all_usr_strategies.return_value = []
+        mock_storage.get_all_sys_strategies.return_value = []
         
         factory = StrategyEngineFactory(storage=mock_storage)
         
-        with pytest.raises(RuntimeError, match="Tabla usr_strategies vacía"):
-            factory.instantiate_all_usr_strategies()
+        with pytest.raises(RuntimeError, match="Tabla sys_strategies vacía"):
+            factory.instantiate_all_sys_strategies()
 
     def test_factory_instantiate_all_strategies_db_error(self):
         """Verifica manejo de errores al acceder a BD."""
         mock_storage = Mock()
-        mock_storage.get_all_usr_strategies.side_effect = Exception("DB connection failed")
+        mock_storage.get_all_sys_strategies.side_effect = Exception("DB connection failed")
         
         factory = StrategyEngineFactory(storage=mock_storage)
         
-        with pytest.raises(RuntimeError, match="No se pudo acceder a tabla usr_strategies"):
-            factory.instantiate_all_usr_strategies()
+        with pytest.raises(RuntimeError, match="No se pudo acceder a tabla sys_strategies"):
+            factory.instantiate_all_sys_strategies()
 
     def test_factory_validates_readiness(self):
         """Verifica que usr_strategies con readiness != READY_FOR_ENGINE se salten."""
         mock_storage = Mock()
-        mock_storage.get_all_usr_strategies.return_value = [
+        mock_storage.get_all_sys_strategies.return_value = [
             {
                 "class_id": "LOGIC_PENDING_STRAT",
                 "type": "JSON_SCHEMA",
@@ -89,15 +89,15 @@ class TestStrategyEngineFactoryBasics:
         factory = StrategyEngineFactory(storage=mock_storage)
         
         with patch("core_brain.services.strategy_engine_factory.logger"):
-            with pytest.raises(RuntimeError, match="No usr_strategies instantiated"):
+            with pytest.raises(RuntimeError, match="No sys_strategies instantiated"):
                 # El segundo strategy no se puede instanciar porque UniversalStrategyEngine
                 # fallaría en esta prueba, pero el primero se saltaría correctamente
-                factory.instantiate_all_usr_strategies()
+                factory.instantiate_all_sys_strategies()
 
     def test_factory_validates_dependencies(self):
         """Verifica validación de dependencias de sensores."""
         mock_storage = Mock()
-        mock_storage.get_all_usr_strategies.return_value = [
+        mock_storage.get_all_sys_strategies.return_value = [
             {
                 "class_id": "NEEDS_SENSOR",
                 "type": "JSON_SCHEMA",
@@ -112,8 +112,8 @@ class TestStrategyEngineFactoryBasics:
         )
         
         with patch("core_brain.services.strategy_engine_factory.logger"):
-            with pytest.raises(RuntimeError, match="No usr_strategies instantiated"):
-                factory.instantiate_all_usr_strategies()
+            with pytest.raises(RuntimeError, match="No sys_strategies instantiated"):
+                factory.instantiate_all_sys_strategies()
 
     def test_factory_get_stats(self):
         """Verifica que stats() retorna información correcta."""

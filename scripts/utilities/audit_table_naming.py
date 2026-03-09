@@ -15,8 +15,8 @@ Approved Table Mapping (Single Source of Truth):
 - sys_calendar (was: economic_calendar)
 - sys_auth (was: users_auth)
 - sys_memberships (was: memberships)
+- sys_strategies (was: usr_strategies) [GLOBAL: All traders read same strategies]
 - usr_assets_cfg (was: instruments_config)
-- usr_strategies (was: strategies)
 - usr_signals (was: signals)
 - usr_trades (was: trades)
 - usr_performance (was: strategy_ranking)
@@ -41,6 +41,7 @@ APPROVED_TABLES = {
     "sys_calendar",
     "sys_auth",
     "sys_memberships",
+    "sys_strategies",  # Global: all traders read same strategies
     # Supporting sys tables (referenced in schema)
     "symbol_mappings",  # sys_* but kept for provider normalization
     "brokers",
@@ -64,7 +65,6 @@ APPROVED_TABLES = {
     "strategy_performance_logs",
     # Capa 1: Tenant Tables (usr_*)
     "usr_assets_cfg",
-    "usr_strategies",
     "usr_signals",
     "usr_trades",
     "usr_performance",
@@ -78,10 +78,11 @@ FORBIDDEN_TABLES = {
     "users_auth",           # ❌ OLD → sys_auth
     "memberships",          # ⚠️ Check context
     "instruments_config",   # ❌ OLD → usr_assets_cfg
-    "strategies",           # ⚠️ Check: usr_strategies or global?
-    "signals",              # ⚠️ Check: usr_signals or global?
-    "trades",               # ⚠️ Check: usr_trades or global?
+    "usr_strategies",       # ❌ OLD → sys_strategies (global convention)
+    "signals",              # ⚠️ Check: usr_signals (tenant-isolated)
+    "trades",               # ⚠️ Check: usr_trades (tenant-isolated)
     "strategy_ranking",     # ❌ OLD → usr_performance
+    "strategies",           # ⚠️ Check: sys_strategies (global)
 }
 
 

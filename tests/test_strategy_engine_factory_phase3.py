@@ -13,7 +13,7 @@ from core_brain.services.strategy_engine_factory import StrategyEngineFactory
 def mock_storage():
     """Mock StorageManager with strategy registry and ranking data."""
     mock = MagicMock()
-    mock.get_all_usr_strategies.return_value = []
+    mock.get_all_sys_strategies.return_value = []
     mock.get_usr_performance.return_value = {}
     return mock
 
@@ -79,14 +79,14 @@ class TestReadinessSeverity:
             }
         ]
         
-        mock_storage.get_all_usr_strategies.return_value = usr_strategies
+        mock_storage.get_all_sys_strategies.return_value = usr_strategies
         
         # Mock successful instantiation for READY_FOR_ENGINE strategy
         with patch('core_brain.services.strategy_engine_factory.StrategyEngineFactory._instantiate_python_strategy') as mock_instantiate:
             mock_instantiate.return_value = MagicMock()
             
             # This should succeed for READY_FOR_ENGINE but skip LOGIC_PENDING
-            result = factory.instantiate_all_usr_strategies()
+            result = factory.instantiate_all_sys_strategies()
         
         # Verify: Only READY_FOR_ENGINE was instantiated
         assert 'BRK_OPEN_0001' in factory.active_engines
@@ -194,7 +194,7 @@ class TestSESSEXTBlocking:
     def test_sess_ext_0001_never_instantiated(self, factory, mock_storage):
         """
         GIVEN: SESS_EXT_0001 with LOGIC_PENDING readiness
-        WHEN: Factory instantiate_all_usr_strategies() is called
+        WHEN: Factory instantiate_all_sys_strategies() is called
         THEN: SESS_EXT_0001 should be in load_errors, never in active_engines
         """
         usr_strategies = [
@@ -214,12 +214,12 @@ class TestSESSEXTBlocking:
             }
         ]
         
-        mock_storage.get_all_usr_strategies.return_value = usr_strategies
+        mock_storage.get_all_sys_strategies.return_value = usr_strategies
         
         with patch('core_brain.services.strategy_engine_factory.StrategyEngineFactory._instantiate_python_strategy') as mock_instantiate:
             mock_instantiate.return_value = MagicMock()
             
-            result = factory.instantiate_all_usr_strategies()
+            result = factory.instantiate_all_sys_strategies()
         
         # Critical assertion: SESS_EXT_0001 MUST NOT be in active_engines
         assert 'SESS_EXT_0001' not in result
@@ -271,7 +271,7 @@ class TestMultiStrategyFiltering:
     def test_batch_load_filters_logic_pending_correctly(self, factory, mock_storage):
         """
         GIVEN: 6 total usr_strategies (5 READY, 1 LOGIC_PENDING)
-        WHEN: instantiate_all_usr_strategies() processes batch
+        WHEN: instantiate_all_sys_strategies() processes batch
         THEN: Should load 5, skip 1 LOGIC_PENDING
         """
         usr_strategies = [
@@ -288,14 +288,14 @@ class TestMultiStrategyFiltering:
              'class_file': 'usr_strategies/structure_shift.py', 'class_name': 'StructureShiftStrategy'}
         ]
         
-        mock_storage.get_all_usr_strategies.return_value = usr_strategies
+        mock_storage.get_all_sys_strategies.return_value = usr_strategies
         
         with patch('core_brain.services.strategy_engine_factory.StrategyEngineFactory._instantiate_python_strategy') as mock_py:
             with patch('core_brain.services.strategy_engine_factory.StrategyEngineFactory._instantiate_json_schema_strategy') as mock_json:
                 mock_py.return_value = MagicMock()
                 mock_json.return_value = MagicMock()
                 
-                result = factory.instantiate_all_usr_strategies()
+                result = factory.instantiate_all_sys_strategies()
         
         # Verify counts
         assert len(factory.active_engines) == 5  # Only READY_FOR_ENGINE loaded
@@ -307,7 +307,7 @@ class TestMultiStrategyFiltering:
     def test_load_errors_with_clear_reasons(self, factory, mock_storage):
         """
         GIVEN: Batch load with LOGIC_PENDING and other errors
-        WHEN: instantiate_all_usr_strategies() processes
+        WHEN: instantiate_all_sys_strategies() processes
         THEN: load_errors should have clear reasons for each failure
         """
         usr_strategies = [
@@ -317,12 +317,12 @@ class TestMultiStrategyFiltering:
              'class_file': 'usr_strategies/working.py', 'class_name': 'WorkingStrategy'}
         ]
         
-        mock_storage.get_all_usr_strategies.return_value = usr_strategies
+        mock_storage.get_all_sys_strategies.return_value = usr_strategies
         
         with patch('core_brain.services.strategy_engine_factory.StrategyEngineFactory._instantiate_python_strategy') as mock_instantiate:
             mock_instantiate.return_value = MagicMock()
             
-            factory.instantiate_all_usr_strategies()
+            factory.instantiate_all_sys_strategies()
         
         # Verify error reasons are meaningful
         assert 'SESS_EXT_0001' in factory.load_errors

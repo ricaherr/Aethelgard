@@ -52,35 +52,35 @@ class StorageManager(
     Supports auto-provisioning of tenant databases via template cloning.
     """
 
-    def __init__(self, db_path: Optional[str] = None, tenant_id: Optional[str] = None) -> None:
+    def __init__(self, db_path: Optional[str] = None, user_id: Optional[str] = None) -> None:
         """
         Initialize the storage manager with context awareness.
         
         Args:
-            db_path: Explicit database path (overrides tenant_id logic). For backward compatibility.
-            tenant_id: Tenant identifier. If provided, infers path from tenant_id.
+            db_path: Explicit database path (overrides user_id logic). For backward compatibility.
+            user_id: User identifier. If provided, infers path from user_id.
                       If None and db_path is None, defaults to global DB.
         
         Behavior:
-        - db_path=None, tenant_id=None  → data_vault/global/aethelgard.db (Global Intelligence)
-        - db_path=None, tenant_id=VALUE → data_vault/tenants/{id}/aethelgard.db (auto-create if needed)
+        - db_path=None, user_id=None  → data_vault/global/aethelgard.db (Global Intelligence)
+        - db_path=None, user_id=VALUE → data_vault/tenants/{id}/aethelgard.db (auto-create if needed)
         - db_path=VALUE                  → Use explicit path (backward compat; will resolve dynamically)
         """
-        self.tenant_id = tenant_id
+        self.user_id = user_id
         
         # Resolve database path based on context
         if db_path is None:
-            resolved_db_path = self._resolve_db_path(tenant_id)
+            resolved_db_path = self._resolve_db_path(user_id)
         else:
             resolved_db_path = db_path
         
-        logger.info(f"StorageManager: tenant_id={tenant_id}, db_path={resolved_db_path}")
+        logger.info(f"StorageManager: user_id={user_id}, db_path={resolved_db_path}")
         
         # Initialize base repository
         super().__init__(resolved_db_path)
         
         # Ensure database file exists and is initialized
-        if tenant_id is not None:
+        if user_id is not None:
             self._ensure_tenant_db_exists()
         
         # Initialize database schema and migrations
@@ -110,26 +110,26 @@ class StorageManager(
             self._close_conn(conn)
 
     @staticmethod
-    def _resolve_db_path(tenant_id: Optional[str]) -> str:
+    def _resolve_db_path(user_id: Optional[str]) -> str:
         """
-        Resolve database path based on tenant context.
+        Resolve database path based on user context.
         
         ARCH-SSOT-2026-006 Rules:
-        - Global (tenant_id=None): data_vault/global/aethelgard.db
-        - Tenant (tenant_id=VALUE): data_vault/tenants/{tenant_id}/aethelgard.db
+        - Global (user_id=None): data_vault/global/aethelgard.db
+        - User (user_id=VALUE): data_vault/tenants/{user_id}/aethelgard.db
         
-        Important: Tenant ID is inferred from path, not stored as column in usr_* tables.
+        Important: User ID is inferred from path, not stored as column in usr_* tables.
         """
         data_vault_root = Path(__file__).parent.absolute()
         
-        if tenant_id is None or tenant_id == "":
+        if user_id is None or user_id == "":
             # Global database (Capa 0)
             global_dir = data_vault_root / "global"
             global_dir.mkdir(exist_ok=True)
             return str(global_dir / "aethelgard.db")
         else:
             # Tenant database (Capa 1)
-            tenant_dir = data_vault_root / "tenants" / tenant_id
+            tenant_dir = data_vault_root / "tenants" / user_id
             tenant_dir.mkdir(parents=True, exist_ok=True)
             return str(tenant_dir / "aethelgard.db")
 
@@ -210,17 +210,17 @@ class StorageManager(
                 except Exception as e:
                     logger.warning(f"[BOOTSTRAP] Failed to load dynamic_params.json for bootstrap: {e}")
             
-            # Seed usr_strategies from data_vault/seed/ (SSOT location for strategy registry)
-            seed_usr_strategies_path = os.path.join("data_vault", "seed", "strategy_registry.json")
-            if os.path.exists(seed_usr_strategies_path):
+            # Seed sys_strategies from data_vault/seed/ (SSOT location for strategy registry)
+            seed_sys_strategies_path = os.path.join("data_vault", "seed", "strategy_registry.json")
+            if os.path.exists(seed_sys_strategies_path):
                 try:
-                    with open(seed_usr_strategies_path, "r", encoding="utf-8") as f:  # IMPORTANTE: especificar utf-8
+                    with open(seed_sys_strategies_path, "r", encoding="utf-8") as f:  # IMPORTANTE: especificar utf-8
                         registry = json.load(f)
-                        usr_strategies = registry.get("usr_strategies", [])
-                        if usr_strategies:
-                            for strat in usr_strategies:
+                        sys_strategies = registry.get("strategies", [])  # JSON key is "strategies"
+                        if sys_strategies:
+                            for strat in sys_strategies:
                                 cursor.execute("""
-                                    INSERT OR REPLACE INTO usr_strategies 
+                                    INSERT OR REPLACE INTO sys_strategies 
                                     (class_id, mnemonic, version, affinity_scores, market_whitelist, readiness, readiness_notes)
                                     VALUES (?, ?, ?, ?, ?, ?, ?)
                                 """, (
@@ -232,22 +232,11 @@ class StorageManager(
                                     strat.get("readiness", "UNKNOWN"),
                                     strat.get("readiness_notes")
                                 ))
-                            logger.info(f"[BOOTSTRAP] Seeded {len(usr_strategies)} usr_strategies from data_vault/seed/strategy_registry.json")
+                            logger.info(f"[BOOTSTRAP] Seeded {len(sys_strategies)} sys_strategies from data_vault/seed/strategy_registry.json")
                 except Exception as e:
                     logger.warning(f"[BOOTSTRAP] Failed to load strategy_registry.json for bootstrap: {e}")
             
-            # Seed demo broker accounts and data providers from data_vault/seed/
-            try:
-                # Import here to avoid circular imports
-                from scripts.migrations.seed_demo_data import seed_demo_sys_broker_accounts, seed_sys_data_providers
-                
-                seed_demo_sys_broker_accounts()
-                seed_sys_data_providers()
-                logger.info("[BOOTSTRAP] Seeded demo broker accounts and data providers")
-            except Exception as e:
-                logger.warning(f"[BOOTSTRAP] Could not seed demo data: {str(e)[:100]}")
-                    
-            # Mark bootstrap as done (idempotent flag)
+            # Mark bootstrap as complete
             cursor.execute("INSERT OR REPLACE INTO sys_config (key, value) VALUES (?, ?)", 
                            (JSON_BOOTSTRAP_DONE_KEY, "true"))
             conn.commit()
@@ -293,7 +282,7 @@ class StorageManager(
             cursor = conn.cursor()
             
             cursor.execute("""
-                INSERT INTO coherence_events 
+                INSERT INTO usr_coherence_events 
                 (signal_id, symbol, timeframe, strategy, stage, status, 
                  incoherence_type, reason, details, connector_type)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

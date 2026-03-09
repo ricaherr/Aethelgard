@@ -18,7 +18,7 @@ def mock_storage():
     mock = MagicMock(spec=StorageManager)
     mock.get_sys_config.return_value = {}
     mock.get_dynamic_params.return_value = {}
-    mock.get_all_usr_strategies.return_value = []
+    mock.get_all_sys_strategies.return_value = []
     mock.get_usr_performance.return_value = {}
     mock.get_usr_strategies_by_mode.return_value = []
     return mock

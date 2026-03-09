@@ -128,7 +128,7 @@ class StrategyRegistry:
             logger.error(f"[REGISTRY] Unexpected error loading registry: {e}")
             self.usr_strategies = {}
 
-    def get_all_usr_strategies(self) -> List[StrategySpec]:
+    def get_all_sys_strategies(self) -> List[StrategySpec]:
         """Retorna todas las estrategias registradas."""
         return list(self.usr_strategies.values())
 

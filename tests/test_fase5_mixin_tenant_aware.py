@@ -4,13 +4,13 @@ Test Suite para FASE 5 Parte 2: Storage Mixins Tenant-Aware Propagation
 TRACE_ID: EXEC-SSOT-PHASE5-MIXINS-2026-009
 
 Objetivo: Validar que todos los métodos de storage mixins (TradesMixin, SignalsMixin, etc)
-funcionan correctamente con tenant context (StorageManager.tenant_id).
+funcionan correctamente con tenant context (StorageManager.user_id).
 
 Arquitectura Comprobada:
-- MainOrchestrator(tenant_id="uuid") → StorageManager(tenant_id="uuid")
+- MainOrchestrator(user_id="uuid") → StorageManager(user_id="uuid")
 - StorageManager usa data_vault/tenants/{uuid}/aethelgard.db
 - Todos los métodos de mixins usan self.db_path (que contiene contexto correcto)
-- Backward compatibility: tenant_id=None → data_vault/global/aethelgard.db
+- Backward compatibility: user_id=None → data_vault/global/aethelgard.db
 
 Validaciones:
 1. StorageManager._resolve_db_path() resuelve rutas correctamente
@@ -84,11 +84,11 @@ class TestMixinTenantContextResolution:
     
     def test_storage_manager_resolves_global_db_path(self):
         """
-        StorageManager._resolve_db_path(tenant_id=None) debe retornar
+        StorageManager._resolve_db_path(user_id=None) debe retornar
         ruta a BD global (data_vault/global/aethelgard.db)
         """
         # Act
-        global_path = StorageManager._resolve_db_path(tenant_id=None)
+        global_path = StorageManager._resolve_db_path(user_id=None)
         
         # Assert
         assert 'global' in global_path
@@ -97,11 +97,11 @@ class TestMixinTenantContextResolution:
 
     def test_storage_manager_resolves_tenant_db_path(self, tenant_uuid_primary):
         """
-        StorageManager._resolve_db_path(tenant_id="uuid") debe retornar
+        StorageManager._resolve_db_path(user_id="uuid") debe retornar
         ruta a BD de tenant (data_vault/tenants/{uuid}/aethelgard.db)
         """
         # Act
-        tenant_path = StorageManager._resolve_db_path(tenant_id=tenant_uuid_primary)
+        tenant_path = StorageManager._resolve_db_path(user_id=tenant_uuid_primary)
         
         # Assert
         assert 'tenants' in tenant_path
@@ -111,7 +111,7 @@ class TestMixinTenantContextResolution:
     def test_storage_manager_stores_tenant_id_as_attribute(self, tenant_uuid_primary):
         """
         StorageManager debe almacenar tenant_id como atributo para
-        que métodos downstream puedan acceder a self.tenant_id si es necesario
+        que métodos downstream puedan acceder a self.user_id si es necesario
         
         P3: Usar patches simplificados (decorator style)
         """
@@ -123,14 +123,14 @@ class TestMixinTenantContextResolution:
              patch('data_vault.storage.bootstrap_symbol_mappings'), \
              patch('data_vault.storage.StorageManager._bootstrap_from_json'), \
              patch('data_vault.storage.StorageManager.seed_initial_assets'):
-            storage = StorageManager(db_path=':memory:', tenant_id=tenant_uuid_primary)
+            storage = StorageManager(db_path=':memory:', user_id=tenant_uuid_primary)
             
             # Assert
-            assert storage.tenant_id == tenant_uuid_primary
+            assert storage.user_id == tenant_uuid_primary
 
     def test_storage_manager_has_none_tenant_id_for_global(self):
         """
-        StorageManager sin parámetro tenant_id debe tener self.tenant_id = None
+        StorageManager sin parámetro tenant_id debe tener self.user_id = None
         (indicando contexto global)
         """
         # Arrange & Act - Patch storage initialization
@@ -143,7 +143,7 @@ class TestMixinTenantContextResolution:
             storage = StorageManager(db_path=':memory:')
             
             # Assert
-            assert storage.tenant_id is None
+            assert storage.user_id is None
 
 
 class TestTradesMixinWithTenantContext:
@@ -213,9 +213,9 @@ class TestMultiTenantDataIsolation:
         P2: Usar fixtures para tenant_id values
         """
         # Act
-        global_path = StorageManager._resolve_db_path(tenant_id=None)
-        tenant_a_path = StorageManager._resolve_db_path(tenant_id=tenant_uuid_primary)
-        tenant_b_path = StorageManager._resolve_db_path(tenant_id=tenant_uuid_secondary)
+        global_path = StorageManager._resolve_db_path(user_id=None)
+        tenant_a_path = StorageManager._resolve_db_path(user_id=tenant_uuid_primary)
+        tenant_b_path = StorageManager._resolve_db_path(user_id=tenant_uuid_secondary)
         
         # Assert: Todos deben ser diferentes
         assert global_path != tenant_a_path, "Global path == Tenant A path!"
@@ -250,7 +250,7 @@ class TestBackwardCompatibilityMixins:
             
             # Assert
             assert storage is not None
-            assert storage.tenant_id is None
+            assert storage.user_id is None
 
     def test_base_repository_backward_compat_no_tenant(self):
         """

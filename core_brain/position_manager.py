@@ -108,7 +108,7 @@ class PositionManager:
         logger.debug("Starting position monitoring cycle")
         
         # Get all open usr_positions from connector
-        open_usr_positions = self.connector.get_open_usr_positions()
+        open_usr_positions = self.connector.get_open_positions()
         
         if not open_usr_positions:
             logger.debug("No open usr_positions to monitor")

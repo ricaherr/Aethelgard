@@ -354,7 +354,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
 
     # ── 14. Strategies (Strategy Metadata & Affinity Scoring) ──────────────────
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS usr_strategies (
+        CREATE TABLE IF NOT EXISTS sys_strategies (
             class_id TEXT PRIMARY KEY,
             mnemonic TEXT NOT NULL,
             version TEXT DEFAULT '1.0',
@@ -365,8 +365,8 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_strategies_mnemonic ON usr_strategies (mnemonic)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_strategies_version ON usr_strategies (version)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_strategies_mnemonic ON sys_strategies (mnemonic)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_strategies_version ON sys_strategies (version)")
 
     # ── 14.1. Strategy Performance Logs (Asset Efficiency Learning) ───────────
     cursor.execute("""
@@ -519,17 +519,17 @@ def run_migrations(conn: sqlite3.Connection) -> None:
         logger.info("Migration applied: sys_regime_configs.tenant_id added.")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_regime_configs_tenant_id ON sys_regime_configs (tenant_id)")
 
-    # usr_strategies: add readiness & readiness_notes (SSOT: Strategy Registry moved from JSON to BD)
+    # sys_strategies: add readiness & readiness_notes (SSOT: Strategy Registry moved from JSON to BD)
     # TRACE_ID: EXEC-UNIVERSAL-ENGINE-REAL | CORRECTION: Soberanía de Persistencia
-    cursor.execute("PRAGMA table_info(usr_strategies)")
+    cursor.execute("PRAGMA table_info(sys_strategies)")
     strat_cols = [r[1] for r in cursor.fetchall()]
     if "readiness" not in strat_cols:
-        cursor.execute("ALTER TABLE usr_strategies ADD COLUMN readiness TEXT DEFAULT 'UNKNOWN'")
-        logger.info("Migration applied: usr_strategies.readiness added.")
+        cursor.execute("ALTER TABLE sys_strategies ADD COLUMN readiness TEXT DEFAULT 'UNKNOWN'")
+        logger.info("Migration applied: sys_strategies.readiness added.")
     if "readiness_notes" not in strat_cols:
-        cursor.execute("ALTER TABLE usr_strategies ADD COLUMN readiness_notes TEXT DEFAULT NULL")
-        logger.info("Migration applied: usr_strategies.readiness_notes added.")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_strategies_readiness ON usr_strategies (readiness)")
+        cursor.execute("ALTER TABLE sys_strategies ADD COLUMN readiness_notes TEXT DEFAULT NULL")
+        logger.info("Migration applied: sys_strategies.readiness_notes added.")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_strategies_readiness ON sys_strategies (readiness)")
 
     # instruments_config: seed only when key is absent (never overwrite existing data)
     cursor.execute("SELECT 1 FROM sys_config WHERE key = ?", ("instruments_config",))

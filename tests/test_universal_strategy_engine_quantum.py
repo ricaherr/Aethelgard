@@ -91,7 +91,7 @@ def mock_storage():
     storage.get_strategy.side_effect = lambda strategy_id: next(
         (s for s in usr_strategies_from_db if s.get("class_id") == strategy_id), None
     )
-    storage.get_usr_strategies_by_readiness.side_effect = lambda readiness: [
+    storage.get_sys_strategies_by_readiness.side_effect = lambda readiness: [
         s for s in usr_strategies_from_db if s.get("readiness") == readiness
     ]
     

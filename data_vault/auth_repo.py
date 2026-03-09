@@ -63,13 +63,16 @@ class AuthRepository:
 
     # --- Users ---
 
-    def create_user(self, email: str, password_hash: str, tenant_id: str, role: str = "user") -> str:
+    def create_user(self, email: str, password_hash: str, user_id: Optional[str] = None, role: str = "user") -> str:
+        """Create a new user with optional user_id (defaults to generated UUID)."""
         with self._get_connection() as conn:
-            user_id = str(uuid.uuid4())
+            if user_id is None:
+                user_id = str(uuid.uuid4())
             now = datetime.now().isoformat()
+            # Store user_id in tenant_id column for backward compatibility with existing schema
             conn.execute(
                 "INSERT INTO users (id, email, password_hash, tenant_id, role, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                (user_id, email, password_hash, tenant_id, role, now)
+                (user_id, email, password_hash, user_id, role, now)
             )
             conn.commit()
             return user_id
