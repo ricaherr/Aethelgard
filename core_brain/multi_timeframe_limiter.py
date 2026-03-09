@@ -115,8 +115,8 @@ class MultiTimeframeLimiter:
                 )
                 return self._get_open_usr_positions_from_db_only(symbol)
             
-            # Get actual open usr_positions from MT5
-            mt5_usr_positions = self.mt5_connector.get_open_usr_positions()
+            # Get actual open positions from MT5
+            mt5_usr_positions = self.mt5_connector.get_open_positions()
             
             if mt5_usr_positions is None:
                 logger.warning(f"Failed to query MT5 usr_positions for {symbol}")

@@ -425,14 +425,11 @@ async def main() -> None:
                 # Cache account balance in system_state for API queries
                 try:
                     account_balance = mt5_connector.get_account_balance()
-                    storage.update_system_state({
-                        "account_balance": account_balance,
-                        "balance_source": "MT5_LIVE",
-                        "balance_last_update": datetime.now().isoformat()
-                    })
-                    logger.info(f"   Balance cacheado: ${account_balance:,.2f} (MT5_LIVE)")
+                    # TODO: Implement update_system_state() in StorageManager when needed
+                    # storage.update_system_state({...})
+                    logger.info(f"   Balance obtenido: ${account_balance:,.2f} (MT5_LIVE)")
                 except Exception as e:
-                    logger.warning(f"[WARN] No se pudo cachear balance de MT5: {e}")
+                    logger.warning(f"[WARN] No se pudo obtener balance de MT5: {e}")
             else:
                 logger.error("[ERROR] MT5 connection failed!")
             

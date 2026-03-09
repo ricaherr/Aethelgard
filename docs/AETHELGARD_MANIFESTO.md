@@ -309,6 +309,106 @@ for strategy_spec in registry.strategies:
 
 ---
 
+### 2.3.1 OPTION 4 Pattern - Explicit DI for Sensor Initialization (COMPLETADA 9-Mar-2026)
+
+**Status**: ✅ **IMPLEMENTADO** - Flujo de inicialización explícito sin dependencias circulares
+
+**TRACE_ID**: EXEC-SENSORS-DI-2026-009
+
+**Problema que Resuelve**: 
+- ❌ **Antes**: MainOrchestrator creaba SignalFactory SIN sensores → 4 de 6 estrategias se saltaban
+- ❌ **Antes**: Se realizaba carga de estrategias DOS VECES (una fallida, una exitosa) 
+- ❌ **Antes**: Lazy initialization via @property hacía I/O → violaba SOLID principles
+
+**Solución (OPTION 4)**:
+```python
+# Step 1: Create MainOrchestrator WITHOUT signal_factory (deferred)
+orchestrator = MainOrchestrator(
+    scanner=scanner,
+    signal_factory=None,  # ← Not yet created
+    ...
+)
+
+# Step 2: Explicitly initialize sensors (separate concern)
+available_sensors = orchestrator.initialize_sensors()
+# Returns: {
+#   'moving_average_sensor': instance,
+#   'elephant_candle_detector': instance,
+#   'session_liquidity_sensor': instance,
+#   ...
+# }
+
+# Step 3: Create SignalFactory WITH populated sensors (now safe)
+signal_factory = SignalFactory(
+    storage_manager=storage,
+    strategy_engines=active_engines,  # ← Loaded WITH sensors available
+    confluence_analyzer=confluence_analyzer,
+    trifecta_analyzer=trifecta_analyzer,
+    notification_service=notification_service,
+    mt5_connector=mt5_connector
+)
+
+# Step 4: Inject SignalFactory into orchestrator (explicit)
+orchestrator.set_signal_factory(signal_factory)
+```
+
+**Cambios en Código**:
+
+1. **MainOrchestrator.__init__()** (line 260-290):
+   - `signal_factory` parameter ahora es `Optional[Any] = None`
+   - Stored internally as `self._signal_factory` (private backing field)
+   - Public `@property signal_factory` with getter/setter para backward compatibility
+
+2. **MainOrchestrator.initialize_sensors()** (NEW - line 427-487):
+   - Método explícito que crea todos 8 sensores
+   - Stored in `self.available_sensors` Dict
+   - Returns Dict para use en StrategyEngineFactory
+   - Never called in __init__, must be called explicitly from start.py
+
+3. **MainOrchestrator.set_signal_factory()** (line 488-500):
+   - Método público para inyección tardía
+   - Validates factory != None
+   - Updates both `self._signal_factory` y public property
+   - Logs [DI] trace para debugging
+
+4. **MainOrchestrator._load_dynamic_usr_strategies()** (line 344-397):
+   - Verificación: si `available_sensors` vacío, llama `initialize_sensors()`
+   - Usa sensores ya creados en lugar de crear nuevos
+   - Una sola ejecución (no dos)
+
+5. **start.py** (line 352-420):
+   - Removed premature StrategyEngineFactory creation
+   - Implemented explicit 4-step flow (see above)
+   - Logs claramente cada paso: [INIT], [SENSORS], [FACTORY], [INIT]
+
+**Validación**:
+```
+✅ 07:28:35,576 [SENSORS] Initializing all sensors (explicit DI)...
+✅ 07:28:35,582 [SENSORS] ✓ All sensors initialized: [8 sensores]
+✅ 07:28:35,582 [INIT] Creando SignalFactory con sensores disponibles...
+✅ 07:28:35,604 [FACTORY] ✓ Carga completada: 6 estrategias activas, 0 skipped
+✅ 07:28:35,608 [DI] ✓ SignalFactory injected successfully
+✅ validate_all.py: 23/23 módulos PASSED
+```
+
+**Principios SOLID Aplicados**:
+- **Single Responsibility**: Sensor init separado de strategy loading
+- **Open/Closed**: Extensible via explicit methods, no hidden side effects
+- **Liskov Substitution**: Properties actúan como simple getters (no side effects)
+- **Interface Segregation**: initialize_sensors() y set_signal_factory() son interfaces claras
+- **Dependency Inversion**: Explícita, no implícita via @property tricks
+
+**Comparativa: 3 Opciones Consideradas**:
+
+| Opción | Pros | Contras | Elegida |
+|--------|------|---------|---------|
+| **OPTION 1** (@property lazy load) | Transparente | Violates SOLID: I/O in @property | ❌ |
+| **OPTION 2** (Factory pattern) | Más OOP | Complejidad innecesaria | ❌ |
+| **OPTION 3** (implicit __init__) | Automatizado | Dependencias ocultas, orden incorrecto | ❌ |
+| **✅ OPTION 4** (explicit DI) | SOLID compliant, testable, clear | Más código boilerplate | ✅ ELEGIDA |
+
+---
+
 ### 2.4 StrategyGatekeeper - Guardia In-Memory (core_brain/strategy_gatekeeper.py)
 
 **Responsabilidad**: Guard ultra-rápido que bloquea ejecución basado en Asset Affinity Scores.
@@ -455,6 +555,13 @@ _bootstrap_from_json() {
 ```
 
 🚫 **PROHIBIDO**: Duplicar información en archivos .json, .env, o variables hardcodeadas. Única fuente = Base de datos + seeds idempotentes.
+
+**⚠️ NOTA: Eliminación de Script Bootstrap Manual**:
+- ❌ **REMOVED** `scripts/bootstrap_strategy_ranking.py` (9-Mar-2026)
+- ❌ **REMOVED** `tests/test_bootstrap_strategy_ranking.py` (9-Mar-2026)
+- **Razón**: Implementación de lazy initialization automática via `ensure_usr_performance_for_strategy()` en StrategyRankingMixin
+- **Impacto**: Ya NO se requiere ejecutar scripts manuales para inicializar ranking. El sistema auto-inicializa bajo demanda (SSOT)
+- **Patrón**: Lazy initialization es más seguro que scripts manuales (elimina estado externo, evita desincronización)
 
 ---
 

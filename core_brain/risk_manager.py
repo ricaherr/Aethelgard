@@ -486,13 +486,13 @@ class RiskManager:
                     continue
                 
                 try:
-                    # Verificar si el conector tiene el método get_open_usr_positions
-                    if not hasattr(connector, 'get_open_usr_positions'):
-                        logger.debug(f"Connector {connector_type} does not support get_open_usr_positions")
+                    # Verificar si el conector tiene el método get_open_positions
+                    if not hasattr(connector, 'get_open_positions'):
+                        logger.debug(f"Connector {connector_type} does not support get_open_positions")
                         continue
                     
                     # Obtener posiciones abiertas
-                    usr_positions = connector.get_open_usr_positions()
+                    usr_positions = connector.get_open_positions()
                     
                     if usr_positions is None or not usr_positions:
                         logger.info(f"No open usr_positions found on {connector_type} for {symbol or 'ALL'}")

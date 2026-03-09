@@ -503,7 +503,7 @@ class MainOrchestrator:
         
         if connector is None:
             class _NullConnector:
-                def get_open_usr_positions(self) -> List[Dict[str, Any]]: return []
+                def get_open_positions(self) -> List[Dict[str, Any]]: return []
             connector = _NullConnector()
 
         self.position_manager = PositionManager(
@@ -841,9 +841,9 @@ class MainOrchestrator:
             if not mt5_connector or not mt5_connector.is_connected:
                 return
             
-            # Get closed usr_positions from connector (agnostic)
+            # Get closed positions from connector (agnostic)
             # This avoids direct MetaTrader5 import in core_brain
-            closed_usr_positions = mt5_connector.get_closed_usr_positions(hours=24)
+            closed_usr_positions = mt5_connector.get_closed_positions(hours=24)
             
             if not closed_usr_positions:
                 return

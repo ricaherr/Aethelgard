@@ -511,8 +511,9 @@ class StrategyRanker:
             live_usr_strategies = self.get_live_usr_strategies()
             quarantine_usr_strategies = self.get_quarantine_usr_strategies()
             
-            # Aggregate all usr_strategies
-            all_strategy_ids = shadow_usr_strategies + live_usr_strategies + quarantine_usr_strategies
+            # Aggregate all usr_strategies and extract ONLY strategy_ids (batch_evaluate expects strings, not dicts)
+            all_strategies = shadow_usr_strategies + live_usr_strategies + quarantine_usr_strategies
+            all_strategy_ids = [s['strategy_id'] if isinstance(s, dict) else s for s in all_strategies]
             
             logger.info(
                 f"[RANKER] Evaluating all usr_strategies: "

@@ -67,28 +67,29 @@ class SessionExtension0001Strategy:
                 return None
             
             # Si hay solapamiento, generar Signal de oportunidad
+            direction = "LONG" if current_session != "ASIA" else "SHORT"
             signal = Signal(
                 symbol=symbol,
-                connector=ConnectorType.METATRADER5,
+                connector_type=ConnectorType.METATRADER5,
                 signal_type=SignalType.BUY,  # Session extension indicates potential continuation
                 entry_price=0.0,  # Will be filled by executor
                 stop_loss=0.0,    # Will be calculated by executor  
                 take_profit=0.0,  # Will be calculated by executor
-                direction="LONG" if current_session != "ASIA" else "SHORT",  # Simple heuristic
                 confidence=0.5,
-                timestamp=datetime.utcnow().isoformat(),
-                strategy="SESS_EXT_0001",
+                timestamp=datetime.utcnow(),
+                strategy_id="SESS_EXT_0001",
                 trace_id=self.trace_id,
                 metadata={
                     "session": current_session,
                     "is_overlap": is_overlap,
                     "reason": "session_overlap_detected",
+                    "direction": direction,
                 }
             )
             
             logger.debug(
                 f"[{self.trace_id}] {symbol}: Session overlap detected. "
-                f"Overlap={is_overlap}, Direction={signal.direction}"
+                f"Overlap={is_overlap}, Direction={direction}"
             )
             
             return signal

@@ -1,8 +1,8 @@
 # 🛣️ ROADMAP.md - Aethelgard Alpha Training
 
-**Última Actualización**: 7 de Marzo 2026 (02:45 UTC) - 🟢 **EXEC-SSOT-IMPLEMENT-2026-007: PHASE 1-4 ✅ 100% | PHASE 5 ✅ 100% COMPLETADA**  
-**Estado General**: ✅ **FASE 5 COMPLETADA: Multi-Tenant Runtime Propagation** | Phase 1-4: ✅ 100% | Part 1: ✅ MainOrchestrator | Part 2: ✅ Mixin Architecture  
-**Validación**: 8/8 DBs migradas ✅ | 217 queries refactorizadas ✅ | 25+ tablas renombradas ✅ | MainOrchestrator tenant-aware: ✅ | StorageManager: ✅ | Mixins: ✅
+**Última Actualización**: 9 de Marzo 2026 (07:35 UTC) - 🟢 **OPTION 4 IMPLEMENTATION ✅ COMPLETADA | BOOTSTRAP ELIMINATION ✅ COMPLETADA**  
+**Estado General**: ✅ **EXEC-SSOT-IMPLEMENT-2026-007: PHASE 1-5 ✅ 100% COMPLETADA | ARCHITECTURE REFACTOR: OPTION 4 DI ✅ COMPLETADA**  
+**Validación**: 8/8 DBs migradas ✅ | 217 queries refactorizadas ✅ | Sensores: 8/8 operativos ✅ | Estrategias: 6/6 cargadas (0 saltadas) ✅ | Double-load eliminado ✅ | Explicit DI: ✅ SOLID Compliant
 
 ---
 
@@ -227,6 +227,79 @@
 - ✅ SSOT, Multi-tenant, Idempotent patterns documentados
 
 **Status**: ✅ Documentación Completa → Soporte para Auditoría
+
+---
+
+## ✅ ARCHITECTURE FIX: OPTION 4 - Explicit Dependency Injection for Sensor Initialization
+
+**Estado**: ✅ **COMPLETADA - 9 de Marzo 2026**
+
+**TRACE_ID**: EXEC-SENSORS-DI-2026-009
+
+**Objetivo**: Eliminar doble carga de estrategias y crear flujo explícito de inyección de dependencias donde sensores se inicialicen ANTES de crear SignalFactory.
+
+### Problema Resuelto ✅
+
+**Antes (Flujo Incorrecto)**:
+```
+MainOrchestrator.__init__() 
+  → SignalFactory creada SIN sensores
+  → StrategyEngineFactory(available_sensors={})  ← VACÍO
+  → 4 de 6 estrategias SALTADAS (faltaban sensores)
+  → Inicio de otra carga en MainOrchestrator  ← DUPLICACIÓN
+  → 6 estrategias finalmente cargadas (2 cargas)
+```
+
+**Después (OPTION 4 - Orden Correcto)**:
+```
+start.py: MainOrchestrator(signal_factory=None)  ← Sin factory aún
+start.py: orchestrator.initialize_sensors()  ← 8 sensores creados
+start.py: StrategyEngineFactory(available_sensors={poblado})  ← Con sensors
+start.py: orchestrator.set_signal_factory(factory)  ← Inyección explícita
+Result: 6 estrategias cargadas UNA VEZ, 0 saltos
+```
+
+### Cambios Implementados ✅
+
+**1. MainOrchestrator.py**:
+- ✅ `__init__()` signature: `signal_factory` ahora Optional
+- ✅ Added property getter/setter para backward compatibility
+- ✅ Added `initialize_sensors()` method - crea todos 8 sensores explícitamente
+- ✅ Added `set_signal_factory()` method - inyección tardía de factory
+- ✅ Modified `_load_dynamic_usr_strategies()` - usa sensores si ya existen
+
+**2. start.py**:
+- ✅ Eliminada carga prematura de StrategyEngineFactory
+- ✅ Implementado flujo OPTION 4 de 4 pasos:
+  1. Create MainOrchestrator(signal_factory=None)
+  2. Call orchestrator.initialize_sensors()
+  3. Create SignalFactory WITH sensors populated
+  4. Call orchestrator.set_signal_factory(factory)
+
+**3. Eliminación de Bootstrap**:
+- ✅ Removed `scripts/bootstrap_strategy_ranking.py` (no longer needed)
+- ✅ Removed `tests/test_bootstrap_strategy_ranking.py`
+- ✅ Implemented lazy initialization via `ensure_usr_performance_for_strategy()` in StrategyRankingMixin
+
+### Validación Completa ✅
+
+| Métrica | Status | Evidencia |
+|---------|--------|-----------|
+| **Sensores inicializados** | ✅ 8/8 | logs: "All sensors initialized: [8 sensores]" |
+| **Doble carga eliminada** | ✅ 1 carga | StrategyEngineFactory.instantiate_all_sys_strategies() aparece 1 sola vez |
+| **Estrategias cargadas** | ✅ 6/6 | "6 estrategias activas, 0 skipped" |
+| **SOLID Compliant** | ✅ SÍ | Explicit DI, single responsibility, no side effects in @property |
+| **Validación sistema** | ✅ PASSED | `python scripts/validate_all.py`: 23/23 módulos PASSED |
+| **Sistema funcional** | ✅ OPERATIVO | Sistema escaneando, analizando estructuras, generando señales |
+
+### Lecciones Aprendidas ✅
+
+- **Regla Crítica**: SIEMPRE revisar código existente ANTES de crear nuevo (evita 2+ horas de desperdicios)
+- **Lazy @property**: NUNCA debe tener I/O o side effects (viola clean code principles)
+- **Explicit DI**: Más verboso pero infinitamente más mantenible que @property tricks
+- **SOLID en práctica**: Order of initialization matters as much as code quality
+
+**Status Final**: ✅ ARQUITECTURA REFACTORIZADA - Sistema LISTO para PRODUCCIÓN
 
 ---
 

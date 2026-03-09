@@ -603,8 +603,8 @@ class OrderExecutor:
                 logger.warning("MT5 connector not available for reconciliation")
                 return False
             
-            # Query real MT5 usr_positions
-            usr_positions = mt5_connector.get_open_usr_positions()
+            # Query real MT5 positions
+            usr_positions = mt5_connector.get_open_positions()
             if usr_positions is None:
                 logger.error("Failed to query MT5 usr_positions for reconciliation")
                 return False

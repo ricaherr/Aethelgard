@@ -314,8 +314,8 @@ class HealthManager:
                             results["details"].append("")
                             results["details"].append("[WARNING] SIN AUTOTRADING NO SE PUEDEN EJECUTAR OPERACIONES AUTOMÁTICAS")
                     
-                    # Get open usr_positions
-                    open_usr_positions = connector.get_open_usr_positions()
+                    # Get open positions
+                    open_usr_positions = connector.get_open_positions()
                     results["open_usr_positions"] = open_usr_positions
                     if len(open_usr_positions) > 0:
                         results["details"].append(f"[POS] {len(open_usr_positions)} posición(es) abierta(s)")

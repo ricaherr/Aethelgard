@@ -81,8 +81,8 @@ class TestAnomalySentinelOrderCancellation:
         
         connector.cancel_order = Mock(side_effect=cancel_side_effect)
         
-        # Mock open usr_positions for stop adjustment
-        connector.get_open_usr_positions = Mock(return_value=[
+        # Mock open positions for stop adjustment
+        connector.get_open_positions = Mock(return_value=[
             {
                 'ticket': 2001,
                 'symbol': 'EURUSD',
@@ -217,7 +217,7 @@ class TestAnomalySentinelOrderCancellation:
     async def test_adjust_stops_filters_by_symbol(self, mock_storage):
         """Test that only usr_positions for a specific symbol are adjusted."""
         mock_connector = Mock()
-        mock_connector.get_open_usr_positions = Mock(return_value=[
+        mock_connector.get_open_positions = Mock(return_value=[
             {
                 'ticket': 2001,
                 'symbol': 'EURUSD',
@@ -297,7 +297,7 @@ class TestAnomalySentinelOrderCancellation:
         mock_connector = Mock()
         
         # Mix of BUY (type=0) and SELL (type=1) usr_positions
-        mock_connector.get_open_usr_positions = Mock(return_value=[
+        mock_connector.get_open_positions = Mock(return_value=[
             {
                 'ticket': 2001,
                 'symbol': 'EURUSD',
@@ -359,7 +359,7 @@ class TestAnomalyIntegrationEndToEnd:
         mock_connector.get_pending_usr_orders = Mock(return_value=[
             {'ticket': 1001, 'symbol': 'EURUSD', 'type': 'BUY'},
         ])
-        mock_connector.get_open_usr_positions = Mock(return_value=[
+        mock_connector.get_open_positions = Mock(return_value=[
             {'ticket': 2001, 'symbol': 'EURUSD', 'type': 0, 'price_current': 1.1050, 'sl': 1.1000},
         ])
         mock_connector.cancel_order = Mock(return_value={'success': True, 'ticket': 1001})
@@ -396,6 +396,6 @@ class TestAnomalyIntegrationEndToEnd:
         
         # Verify all connectors were called
         assert mock_connector.get_pending_usr_orders.called
-        assert mock_connector.get_open_usr_positions.called
+        assert mock_connector.get_open_positions.called
         assert mock_connector.cancel_order.called or cancel_result.get('cancelled') == 0
         assert mock_connector.modify_order.called or adjust_result.get('adjusted') == 0

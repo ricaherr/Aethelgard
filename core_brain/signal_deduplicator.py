@@ -158,7 +158,7 @@ class SignalDeduplicator:
         open_signal_id = matching_op.get('id')
         
         # Obtener posiciones reales de MT5
-        real_usr_positions = self.mt5_connector.get_open_usr_positions()
+        real_usr_positions = self.mt5_connector.get_open_positions()
         if real_usr_positions is None:
             logger.warning("Failed to get MT5 usr_positions for reconciliation")
             return True

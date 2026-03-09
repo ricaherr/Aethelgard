@@ -223,9 +223,9 @@ class RiskPolicyEnforcer:
         except Exception as e:
             logger.error("[%s] Error in Sentiment check: %s", signal.symbol, e)
 
-        # 5. Account risk (open usr_positions + new signal)
+        # 5. Account risk (open positions + new signal)
         try:
-            open_usr_positions = getattr(connector, "get_open_usr_positions", lambda: [])()
+            open_usr_positions = getattr(connector, "get_open_positions", lambda: [])()  
         except AttributeError:
             open_usr_positions = []
         current_risk_usd = 0.0

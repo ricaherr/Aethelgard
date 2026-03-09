@@ -83,12 +83,12 @@ class EdgeMonitor(threading.Thread):
             
             # PASO 1: Reconciliar cierres pendientes (sincronizar DB con MT5)
             if self.trade_listener:
-                mt5.reconcile_closed_usr_trades(self.trade_listener, hours_back=24)
+                mt5.reconcile_closed_trades(self.trade_listener, hours_back=24)
             else:
                 logger.warning("[EDGE] TradeClosureListener not available - reconciliation skipped")
             
             # PASO 2: Obtener posiciones ABIERTAS de MT5 (ya sincronizadas)
-            mt5_usr_positions = mt5.get_open_usr_positions()
+            mt5_usr_positions = mt5.get_open_positions()
             if mt5_usr_positions is None:
                 return
                 

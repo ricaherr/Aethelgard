@@ -50,7 +50,7 @@ class TestOrderExecutor:
         connector = Mock()
         connector.execute_signal = Mock(return_value={"status": "success", "order_id": "MT5_12345", "price": 1.1050, "entry_price": 1.1050, "sl": 1.1000, "tp": 1.1150, "volume": 0.01})
         connector.is_connected = True
-        connector.get_open_usr_positions = Mock(return_value=[])
+        connector.get_open_positions = Mock(return_value=[])
         connector.contract_size = 1.0
         return connector
     

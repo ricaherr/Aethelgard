@@ -220,8 +220,8 @@ class TradingService:
                 except Exception as e:
                     logger.debug(f"Could not update cached balance: {e}")
 
-                # Get open usr_positions from MT5
-                mt5_usr_positions = mt5.get_open_usr_positions()
+                # Get open positions from MT5
+                mt5_usr_positions = mt5.get_open_positions()
 
                 if mt5_usr_positions:
                     for mt5_pos in mt5_usr_positions:

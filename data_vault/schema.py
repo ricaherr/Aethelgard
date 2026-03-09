@@ -164,6 +164,26 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_anomaly_events_type ON usr_anomaly_events (anomaly_type)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_anomaly_events_timestamp ON usr_anomaly_events (timestamp)")
 
+    # ── 4.7 Economic Calendar (News-Based Veto) ──────────────────────────────
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sys_economic_calendar (
+            event_id TEXT PRIMARY KEY,
+            event_name TEXT NOT NULL,
+            country TEXT NOT NULL,
+            currency TEXT NOT NULL,
+            impact_score INTEGER,
+            event_time_utc TIMESTAMP NOT NULL,
+            forecast REAL,
+            previous REAL,
+            actual REAL,
+            source TEXT DEFAULT 'economic_data_gateway',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_economic_calendar_currency ON sys_economic_calendar (currency)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_economic_calendar_time ON sys_economic_calendar (event_time_utc)")
+
     # ── 5. Accounts, Brokers & Providers ────────────────────────────────────
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS sys_broker_accounts (
