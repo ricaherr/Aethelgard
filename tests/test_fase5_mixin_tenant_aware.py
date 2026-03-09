@@ -197,8 +197,8 @@ class TestSignalsMixinWithTenantContext:
         
         source = inspect.getsource(SignalsMixin.save_signal)
         
-        # Assert: Debe usar tabla usr_signals (no sys_signals)
-        assert 'usr_signals' in source, "save_signal() no usa tabla usr_signals"
+        # Assert: Debe usar tabla sys_signals (global, no tenant-scoped)
+        assert 'sys_signals' in source, "save_signal() no usa tabla sys_signals"
 
 
 class TestMultiTenantDataIsolation:

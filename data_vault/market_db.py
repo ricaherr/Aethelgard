@@ -67,7 +67,7 @@ class MarketMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                UPDATE usr_signals 
+                UPDATE sys_signals 
                 SET status = 'CLOSED', 
                     metadata = json_set(COALESCE(metadata, '{}'), '$.exit_reason', 'REJECTED')
                 WHERE symbol = ? 

@@ -116,9 +116,9 @@ class TradesMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             if timeframe:
-                # Filter by both symbol AND timeframe (allows multi-timeframe usr_positions)
+                # Filter by both symbol AND timeframe (allows multi-timeframe positions)
                 cursor.execute("""
-                    SELECT COUNT(*) FROM usr_signals 
+                    SELECT COUNT(*) FROM sys_signals 
                     WHERE symbol = ? 
                     AND timeframe = ?
                     AND UPPER(status) = 'EXECUTED'
@@ -127,7 +127,7 @@ class TradesMixin(BaseRepository):
             else:
                 # Legacy behavior: check any timeframe (for backward compatibility)
                 cursor.execute("""
-                    SELECT COUNT(*) FROM usr_signals 
+                    SELECT COUNT(*) FROM sys_signals 
                     WHERE symbol = ? 
                     AND UPPER(status) = 'EXECUTED'
                     AND id NOT IN (SELECT signal_id FROM usr_trades WHERE signal_id IS NOT NULL)
@@ -483,18 +483,18 @@ class TradesMixin(BaseRepository):
 
     def clear_ghost_position(self, symbol: str) -> None:
         """
-        Remove 'EXECUTED' status from usr_signals for a symbol that has no real open position.
+        Remove 'EXECUTED' status from sys_signals for a symbol that has no real open position.
         This fixes the 'ghost position' issue where DB thinks a trade is open but MT5 doesn't.
         """
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            # logger.warning(f"🧹 Clearing ghost usr_positions for {symbol} (Marking as REJECTED)")
+            # logger.warning(f"🧹 Clearing ghost positions for {symbol} (Marking as REJECTED)")
             
             # Using basic UPDATE first, json_patch might be sqlite extension dependent
             # If json_patch is not available, just update status
             cursor.execute("""
-                UPDATE usr_signals 
+                UPDATE sys_signals 
                 SET status = 'REJECTED'
                 WHERE symbol = ? 
                 AND status = 'EXECUTED'
@@ -502,10 +502,10 @@ class TradesMixin(BaseRepository):
             """, (symbol,))
             
             if cursor.rowcount > 0:
-                logger.info(f"🧹 Cleared {cursor.rowcount} ghost usr_positions for {symbol}")
+                logger.info(f"🧹 Cleared {cursor.rowcount} ghost positions for {symbol}")
                 conn.commit()
         except Exception as e:
-            logger.error(f"Error clearing ghost usr_positions: {e}")
+            logger.error(f"Error clearing ghost positions: {e}")
         finally:
             self._close_conn(conn)
     def get_account_usr_trades(self, account_id: str, limit: int = 20) -> List[Dict]:

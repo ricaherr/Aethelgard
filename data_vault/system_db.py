@@ -244,13 +244,13 @@ class SystemMixin(BaseRepository):
         return heartbeats
 
     def get_statistics(self) -> Dict[str, Any]:
-        """Get system statistics for dashboard (LIVE usr_trades only for backward compatibility)"""
+        """Get system statistics for dashboard (LIVE trades only for backward compatibility)"""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM usr_signals")
+            cursor.execute("SELECT COUNT(*) FROM sys_signals")
             total_usr_signals = cursor.fetchone()[0]
-            cursor.execute("SELECT COUNT(*) FROM usr_signals WHERE status = 'executed'")
+            cursor.execute("SELECT COUNT(*) FROM sys_signals WHERE status = 'executed'")
             executed_usr_signals_count = cursor.fetchone()[0]
             cursor.execute("SELECT COUNT(*) FROM usr_trades WHERE profit > 0 AND execution_mode = 'LIVE'")
             wins = cursor.fetchone()[0]

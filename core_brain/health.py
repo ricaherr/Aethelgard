@@ -66,7 +66,7 @@ class HealthManager:
             tables: List[Any] = [r[0] for r in cursor.fetchall()]
             
             # Correct tables based on StorageManager schema
-            needed_tables: List[str] = ['sys_config', 'usr_signals', 'usr_trades', 'sys_market_pulses']
+            needed_tables: List[str] = ['sys_config', 'sys_signals', 'usr_trades', 'sys_market_pulses']
             for t in needed_tables:
                 if t not in tables:
                     results["status"] = "YELLOW"

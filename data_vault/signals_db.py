@@ -76,8 +76,19 @@ class SignalsMixin(BaseRepository):
             return signal_type.value
         return str(signal_type)
 
-    def save_signal(self, signal: dict) -> str:
-        """Save a signal to persistent storage with full traceability."""
+    def save_signal(self, signal: dict, origin_mode: str = 'LIVE') -> str:
+        """Save a signal to persistent storage with full traceability.
+        
+        Args:
+            signal: Signal object with market data and analysis.
+            origin_mode: Execution mode when signal was generated (LIVE|SHADOW). 
+                        Defaults to 'LIVE' for backward compatibility.
+                        SHADOW signals are generated during testing and can accumulate metrics
+                        for strategy ranking and promotion to LIVE.
+        
+        Returns:
+            signal_id: Unique identifier for the saved signal.
+        """
         signal_id = str(uuid.uuid4())
         metadata = getattr(signal, 'metadata', {})
         serialized_metadata = {}
@@ -112,7 +123,7 @@ class SignalsMixin(BaseRepository):
                     dt_utc_obj = dt_utc
                 timestamp_value = dt_utc_obj.replace(microsecond=0).strftime('%Y-%m-%d %H:%M:%S')
             
-            base_columns = ['id', 'symbol', 'signal_type', 'confidence', 'metadata', 'connector_type', 'timeframe', 'price', 'direction']
+            base_columns = ['id', 'symbol', 'signal_type', 'confidence', 'metadata', 'connector_type', 'timeframe', 'price', 'direction', 'origin_mode']
             base_values = [
                 signal_id,
                 getattr(signal, 'symbol', 'unknown'),
@@ -122,7 +133,8 @@ class SignalsMixin(BaseRepository):
                 connector_type,
                 getattr(signal, 'timeframe', None),
                 getattr(signal, 'price', None),
-                getattr(signal, 'direction', None)
+                getattr(signal, 'direction', None),
+                origin_mode  # Track whether this signal was generated in SHADOW or LIVE mode
             ]
             
             entry_price = getattr(signal, 'entry_price', None)
@@ -143,7 +155,7 @@ class SignalsMixin(BaseRepository):
             columns_str = ','.join(columns)
             
             cursor.execute(f"""
-                INSERT INTO usr_signals ({columns_str})
+                INSERT INTO sys_signals ({columns_str})
                 VALUES ({placeholders})
             """, values)
             conn.commit()
@@ -152,11 +164,11 @@ class SignalsMixin(BaseRepository):
         return signal_id
 
     def get_usr_signals(self, limit: int = 100, status: Optional[str] = None) -> List[Dict]:
-        """Get usr_signals from database"""
+        """Get sys_signals from database"""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            query = "SELECT * FROM usr_signals"
+            query = "SELECT * FROM sys_signals"
             params = []
             if status:
                 query += " WHERE status = ?"
@@ -180,7 +192,7 @@ class SignalsMixin(BaseRepository):
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM usr_signals WHERE id = ?", (signal_id,))
+            cursor.execute("SELECT * FROM sys_signals WHERE id = ?", (signal_id,))
             row = cursor.fetchone()
             if row:
                 signal = dict(row)
@@ -196,13 +208,13 @@ class SignalsMixin(BaseRepository):
         return self.get_usr_signals_by_date(date.today(), status=status)
 
     def get_usr_signals_by_date(self, target_date: date, status: Optional[str] = None) -> List[Dict]:
-        """Get all usr_signals from a specific date"""
+        """Get all sys_signals from a specific date"""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
             start_utc, end_utc = self._local_date_bounds_utc(target_date)
             query = """
-                SELECT * FROM usr_signals
+                SELECT * FROM sys_signals
                 WHERE (
                     (datetime(timestamp) >= datetime(?) AND datetime(timestamp) < datetime(?))
                     OR DATE(timestamp) = ?
@@ -232,7 +244,7 @@ class SignalsMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             if metadata_update:
-                cursor.execute("SELECT metadata FROM usr_signals WHERE id = ?", (signal_id,))
+                cursor.execute("SELECT metadata FROM sys_signals WHERE id = ?", (signal_id,))
                 row = cursor.fetchone()
                 if row:
                     current_metadata = json.loads(row['metadata']) if row['metadata'] else {}
@@ -244,14 +256,14 @@ class SignalsMixin(BaseRepository):
                 now = datetime.now(timezone.utc).replace(microsecond=0)
                 now_str = now.strftime('%Y-%m-%d %H:%M:%S')
                 cursor.execute("""
-                    UPDATE usr_signals 
+                    UPDATE sys_signals 
                     SET status = ?, metadata = ?, updated_at = ?
                     WHERE id = ?
                 """, (status, json.dumps(current_metadata), now_str, signal_id))
 
                 if 'ticket' in metadata_update:
                     cursor.execute("""
-                        UPDATE usr_signals 
+                        UPDATE sys_signals 
                         SET order_id = ?
                         WHERE id = ?
                     """, (str(metadata_update['ticket']), signal_id))
@@ -259,7 +271,7 @@ class SignalsMixin(BaseRepository):
                 now = datetime.now(timezone.utc).replace(microsecond=0)
                 now_str = now.strftime('%Y-%m-%d %H:%M:%S')
                 cursor.execute("""
-                    UPDATE usr_signals 
+                    UPDATE sys_signals 
                     SET status = ?, updated_at = ?
                     WHERE id = ?
                 """, (status, now_str, signal_id))
@@ -276,10 +288,10 @@ class SignalsMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             
-            # Base query: Only consider PENDING or EXECUTED usr_signals as duplicates
+            # Base query: Only consider PENDING or EXECUTED sys_signals as duplicates
             # Exclude REJECTED, CLOSED, etc. (only get PENDING and EXECUTED)
             query = """
-                SELECT COUNT(*) FROM usr_signals 
+                SELECT COUNT(*) FROM sys_signals 
                 WHERE symbol = ? 
                 AND signal_type = ? 
                 AND datetime(timestamp) >= datetime('now', '-' || ? || ' minutes')
@@ -304,12 +316,12 @@ class SignalsMixin(BaseRepository):
             self._close_conn(conn)
 
     def get_recent_usr_signals(self, minutes: int = 60, limit: int = 100, symbol: str = None, timeframe: str = None, status: str = None) -> List[Dict]:
-        """Get recent usr_signals within the last N minutes with optional filters"""
+        """Get recent sys_signals within the last N minutes with optional filters"""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
             
-            query = "SELECT * FROM usr_signals WHERE datetime(timestamp) >= datetime('now', '-' || ? || ' minutes')"
+            query = "SELECT * FROM sys_signals WHERE datetime(timestamp) >= datetime('now', '-' || ? || ' minutes')"
             params = [minutes]
             
             if symbol:
@@ -355,12 +367,12 @@ class SignalsMixin(BaseRepository):
             self._close_conn(conn)
 
     def get_open_operations(self) -> List[Dict]:
-        """Get usr_signals that are executed but not closed (open operations)"""
+        """Get sys_signals that are executed but not closed (open operations)"""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT s.* FROM usr_signals s
+                SELECT s.* FROM sys_signals s
                 LEFT JOIN usr_trades t ON s.id = t.signal_id
                 WHERE UPPER(s.status) = 'EXECUTED' 
                 AND t.signal_id IS NULL
@@ -378,7 +390,7 @@ class SignalsMixin(BaseRepository):
             self._close_conn(conn)
 
     def count_executed_usr_signals(self, date_filter: Optional[date] = None) -> int:
-        """Count executed usr_signals, optionally filtered by date"""
+        """Count executed sys_signals, optionally filtered by date"""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
@@ -386,7 +398,7 @@ class SignalsMixin(BaseRepository):
                 start_utc, end_utc = self._local_date_bounds_utc(date_filter)
                 target_date_str = date_filter.isoformat()
                 cursor.execute("""
-                    SELECT COUNT(*) FROM usr_signals 
+                    SELECT COUNT(*) FROM sys_signals 
                     WHERE LOWER(status) = 'executed'
                     AND (
                         (datetime(timestamp) >= datetime(?) AND datetime(timestamp) < datetime(?))
@@ -396,7 +408,7 @@ class SignalsMixin(BaseRepository):
                 """, (start_utc, end_utc, target_date_str, target_date_str))
             else:
                 cursor.execute("""
-                    SELECT COUNT(*) FROM usr_signals 
+                    SELECT COUNT(*) FROM sys_signals 
                     WHERE LOWER(status) = 'executed'
                 """)
             return cursor.fetchone()[0]

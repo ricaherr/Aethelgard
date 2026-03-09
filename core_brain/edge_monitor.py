@@ -167,7 +167,7 @@ class EdgeMonitor(threading.Thread):
     def _audit_signal_inconsistencies(self) -> None:
         """Auditoría específica: señales generadas vs órdenes ejecutadas"""
         # Obtener señales recientes que deberían haber sido ejecutadas
-        recent_usr_signals = self._get_recent_pending_usr_signals()
+        recent_usr_signals = self._get_recent_pending_sys_signals()
         
         for signal in recent_usr_signals:
             signal_id = signal['id']
@@ -205,7 +205,7 @@ class EdgeMonitor(threading.Thread):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT * FROM usr_signals 
+                SELECT * FROM sys_signals 
                 WHERE status = 'PENDING' 
                 AND timestamp >= datetime('now', '-300 seconds')  -- Últimos 5 minutos
                 ORDER BY timestamp DESC
@@ -274,7 +274,7 @@ class EdgeMonitor(threading.Thread):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT COUNT(*) FROM usr_signals 
+                SELECT COUNT(*) FROM sys_signals 
                 WHERE timestamp >= datetime('now', '-60 seconds')
             """)
             return cursor.fetchone()[0]
@@ -287,7 +287,7 @@ class EdgeMonitor(threading.Thread):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT COUNT(*) FROM usr_signals 
+                SELECT COUNT(*) FROM sys_signals 
                 WHERE status = 'EXECUTED' 
                 AND timestamp >= datetime('now', '-60 seconds')
             """)

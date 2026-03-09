@@ -53,7 +53,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
 
     # ── 2. Signals & Trades ──────────────────────────────────────────────────
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS usr_signals (
+        CREATE TABLE IF NOT EXISTS sys_signals (
             id TEXT PRIMARY KEY,
             symbol TEXT NOT NULL,
             signal_type TEXT NOT NULL,
@@ -84,7 +84,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             provider TEXT DEFAULT 'MT5',
             account_type TEXT DEFAULT 'REAL',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (signal_id) REFERENCES usr_signals (id)
+            FOREIGN KEY (signal_id) REFERENCES sys_signals (id)
         )
     """)
 
@@ -268,7 +268,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             decision TEXT,
             reason TEXT,
             metadata TEXT,
-            FOREIGN KEY (signal_id) REFERENCES usr_signals (id)
+            FOREIGN KEY (signal_id) REFERENCES sys_signals (id)
         )
     """)
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_signal_pipeline_signal_id ON usr_signal_pipeline (signal_id)")
@@ -424,7 +424,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             trace_id TEXT NOT NULL,
             metadata TEXT,
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (signal_id) REFERENCES usr_signals (id)
+            FOREIGN KEY (signal_id) REFERENCES sys_signals (id)
         )
     """)
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_execution_logs_signal_id ON usr_execution_logs (signal_id)")
@@ -546,6 +546,18 @@ def run_migrations(conn: sqlite3.Connection) -> None:
     
     # Create index for efficient filtering by execution_mode
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_trades_execution_mode ON usr_trades (execution_mode)")
+
+    # MIGRATION (FASE E): Add origin_mode to sys_signals for SHADOW/LIVE signal persistence
+    # ──────────────────────────────────────────────────────────────────────
+    cursor.execute("PRAGMA table_info(sys_signals)")
+    sys_signals_cols = [r[1] for r in cursor.fetchall()]
+    if "origin_mode" not in sys_signals_cols:
+        cursor.execute("ALTER TABLE sys_signals ADD COLUMN origin_mode TEXT DEFAULT 'LIVE'")
+        logger.info("Migration applied: sys_signals.origin_mode added (DEFAULT='LIVE' for backward compat)")
+    
+    # Create index for efficient filtering by origin_mode (enables SHADOW signal audits)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_signals_origin_mode ON sys_signals (origin_mode)")
+    logger.info("Index created: idx_sys_signals_origin_mode for query optimization")
 
     # sys_regime_configs: add tenant_id for multi-tenant isolation (nullable for backward compat)
     cursor.execute("PRAGMA table_info(sys_regime_configs)")

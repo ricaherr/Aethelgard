@@ -12,10 +12,10 @@ from models.signal import Signal, SignalType, ConnectorType
 
 def test_coherence_detects_unnormalized_and_missing_ticket():
     storage = StorageManager(db_path=':memory:')
-    # Limpiar tabla usr_signals por si acaso
+    # Limpiar tabla sys_signals por si acaso
     with storage._get_conn() as conn:
         cur = conn.cursor()
-        cur.execute("DELETE FROM usr_signals")
+        cur.execute("DELETE FROM sys_signals")
         conn.commit()
 
     from models.signal import ConnectorType
@@ -36,20 +36,20 @@ def test_coherence_detects_unnormalized_and_missing_ticket():
     # Debug: inspeccionar contenido real de la tabla usr_signals
     with storage._get_conn() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT * FROM usr_signals")
+        cur.execute("SELECT * FROM sys_signals")
         all_rows = cur.fetchall()
         print(f"Contenido real en usr_signals tras insert: {all_rows}")
         for row in all_rows:
             print(f"Row id={row['id']} timestamp={row['timestamp']}")
         assert len(all_rows) > 0, "La tabla usr_signals está vacía tras el insert."
         # Debug: mostrar timestamp insertado y resultado de consulta manual
-        cur.execute("SELECT timestamp FROM usr_signals")
+        cur.execute("SELECT timestamp FROM sys_signals")
         ts_row = cur.fetchone()
         print(f"Timestamp insertado: {ts_row['timestamp']}")
         cur.execute("SELECT datetime('now')")
         now_row = cur.fetchone()
         print(f"SQLite datetime('now'): {now_row[0]}")
-        cur.execute("SELECT * FROM usr_signals WHERE datetime(timestamp) >= datetime('now', '-120 minutes')")
+        cur.execute("SELECT * FROM sys_signals WHERE datetime(timestamp) >= datetime('now', '-120 minutes')")
         manual_rows = cur.fetchall()
         print(f"Resultado consulta manual: {manual_rows}")
 
@@ -67,10 +67,10 @@ def test_coherence_detects_unnormalized_and_missing_ticket():
 
 def test_coherence_detects_pending_timeout():
     storage = StorageManager(db_path=':memory:')
-    # Limpiar tabla usr_signals por si acaso
+    # Limpiar tabla sys_signals por si acaso
     with storage._get_conn() as conn:
         cur = conn.cursor()
-        cur.execute("DELETE FROM usr_signals")
+        cur.execute("DELETE FROM sys_signals")
         conn.commit()
 
     from models.signal import ConnectorType
@@ -90,7 +90,7 @@ def test_coherence_detects_pending_timeout():
     old_ts = to_utc(datetime.now(timezone.utc) - timedelta(minutes=10))
     with storage._get_conn() as conn:
         cur = conn.cursor()
-        cur.execute("UPDATE usr_signals SET timestamp = ? WHERE id = ?", (old_ts, signal_id))
+        cur.execute("UPDATE sys_signals SET timestamp = ? WHERE id = ?", (old_ts, signal_id))
         conn.commit()
 
     monitor = CoherenceMonitor(storage=storage, pending_timeout_minutes=1, lookback_minutes=120)

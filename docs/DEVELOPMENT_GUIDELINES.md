@@ -58,14 +58,14 @@ El Core Brain no debe conocer detalles del broker (MT5/FIX). Debe trabajar solo 
     - **`sys_*`**: Tablas globales, propiedad del sistema, configuradas por Admin
       - Ubicación: `data_vault/global/aethelgard.db`
       - Trader: Solo lectura (no escribe)
-      - System: Lectura/escritura limitada (ej: NewsSanitizer escribe en `sys_economic_calendar`)
-      - Ejemplo: `sys_auth`, `sys_strategies`, `sys_state`, `sys_economic_calendar`
+      - System: Lectura/escritura limitada (ej: NewsSanitizer escribe en `sys_economic_calendar`, SignalFactory escribe en `sys_signals`)
+      - Ejemplo: `sys_auth`, `sys_strategies`, `sys_state`, `sys_economic_calendar`, `sys_signals`
     - **`usr_*`**: Tablas personalizadas, propiedad del trader, datos aislados por tenant
       - Ubicación: `data_vault/tenants/{uuid}/aethelgard.db`
       - Trader: Lectura/escritura total a sus datos
       - Admin: Lectura solo (auditoría), nunca escritura
-      - System: Lectura/escritura limitada (ej: inserta nueva `usr_signals`)
-      - Ejemplo: `usr_assets_cfg`, `usr_trades`, `usr_signals`, `usr_credentials`
+      - System: Lectura/escritura limitada (ej: inserta nueva `usr_trades` asociada a `sys_signals`)
+      - Ejemplo: `usr_assets_cfg`, `usr_trades`, `usr_credentials`
     - **VIOLACIÓN**: Cualquier tabla sin prefijo o que viole esta convención será rechazada por `audit_table_naming.py` en `validate_all.py`
     - **DI Delegación**: UniversalEngine consulta `sys_strategies` (global) Y filtra contra `usr_assets_cfg` (personal) → genera `usr_signals`
 *   **1.6. Higiene de Masa (Regla <30KB)**: Ningún archivo puede superar los 30KB o las 500 líneas. Si un componente crece por encima de este límite, su fragmentación en submódulos es obligatoria e inmediata.

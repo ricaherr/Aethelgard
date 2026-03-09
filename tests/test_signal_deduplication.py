@@ -1,6 +1,6 @@
 """
 Tests for Signal Deduplication System
-Ensures no duplicate usr_signals are generated or executed
+Ensures no duplicate sys_signals are generated or executed
 """
 import pytest
 from datetime import datetime, timedelta
@@ -130,7 +130,7 @@ class TestSignalDeduplication:
         assert not storage.has_open_position("GBPUSD")
     
     def test_has_recent_signal_detection(self, storage):
-        """Test detection of recent usr_signals"""
+        """Test detection of recent sys_signals"""
         # Initially no recent signal
         assert not storage.has_recent_signal("EURUSD", "BUY", minutes=60)
         
@@ -242,7 +242,7 @@ class TestSignalDeduplication:
     
     @pytest.mark.asyncio
     async def test_executor_allows_different_symbols(self, executor, storage):
-        """Test executor allows usr_signals for different symbols"""
+        """Test executor allows sys_signals for different symbols"""
         # Execute signal for EURUSD
         signal1 = Signal(
             symbol="EURUSD",
@@ -272,7 +272,7 @@ class TestSignalDeduplication:
         assert result2 is True  # Should be allowed
     
     @pytest.mark.asyncio
-    async def test_executor_allows_opposite_usr_signals(self, executor, storage):
+    async def test_executor_allows_opposite_sys_signals(self, executor, storage):
         """Test executor behavior with opposite signal types (BUY vs SELL)"""
         # Execute BUY signal
         signal1 = Signal(

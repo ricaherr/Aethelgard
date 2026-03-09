@@ -262,8 +262,21 @@ class SignalFactory:
                 except Exception as e:
                     logger.warning(f"Symbol normalization failed in SignalFactory: {e}")
             
-            # 1. Persistencia (guarda con status='PENDING' por defecto)
-            signal_id = self.storage_manager.save_signal(signal)
+            # 0.5. Determine execution_mode (SHADOW/LIVE) from strategy_id
+            # PHASE E: Signal persistence now tracks whether signal was generated in SHADOW or LIVE mode
+            strategy_id = signal.metadata.get('strategy_id') if signal.metadata else None
+            origin_mode = 'LIVE'  # Default to LIVE for backward compatibility
+            if strategy_id:
+                try:
+                    ranking = self.storage_manager.get_strategy_ranking(strategy_id)
+                    if ranking and 'execution_mode' in ranking:
+                        origin_mode = ranking['execution_mode']
+                        logger.debug(f"[SIGNAL-ORIGIN] {strategy_id} mode={origin_mode}")
+                except Exception as e:
+                    logger.warning(f"Failed to determine execution_mode for {strategy_id}: {e}")
+            
+            # 1. Persistencia (guarda con status='PENDING' y origin_mode=SHADOW/LIVE)
+            signal_id = self.storage_manager.save_signal(signal, origin_mode=origin_mode)
             
             # CLAVE: Asignar ID al objeto Signal para que Executor lo use (evita duplicados)
             signal.metadata['signal_id'] = signal_id
@@ -272,6 +285,7 @@ class SignalFactory:
                 f"SEÑAL GENERADA [ID: {signal_id}] -> {signal.symbol} "
                 f"{signal.signal_type} @ {signal.entry_price:.5f} | "
                 f"Strategy: {signal.metadata.get('strategy_id')} | "
+                f"Origin: {origin_mode} | "
                 f"Score: {signal.metadata.get('score', 0):.1f}"
             )
             

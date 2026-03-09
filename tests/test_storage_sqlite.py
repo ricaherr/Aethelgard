@@ -40,7 +40,7 @@ def test_sys_config_persistence(storage: StorageManager) -> None:
     assert loaded_state["session_stats"]["processed"] == 100
 
 def test_signal_persistence(storage: StorageManager) -> None:
-    """Test saving and retrieving usr_signals with trace_id and status"""
+    """Test saving and retrieving sys_signals with trace_id and status"""
     signal = Signal(
         symbol="EURUSD",
         signal_type=SignalType.BUY,
@@ -61,9 +61,9 @@ def test_signal_persistence(storage: StorageManager) -> None:
     assert signal_id is not None
     
     # Verify retrieval
-    usr_signals = storage.get_usr_signals_today()
-    assert len(usr_signals) == 1
-    saved_signal = usr_signals[0]
+    sys_signals = storage.get_usr_signals_today()
+    assert len(sys_signals) == 1
+    saved_signal = sys_signals[0]
     
     assert saved_signal["symbol"] == "EURUSD"
     assert saved_signal["status"] == "PENDING"  # Newly saved signal starts as PENDING

@@ -118,11 +118,11 @@ class TestSchemaMigration:
         assert result[0] == AccountType.REAL.value, f"Default account_type is not {AccountType.REAL.value}, got {result[0]}"
     
     def test_usr_trades_maintains_foreign_key_signal_id(self, test_db, test_trade_id, test_signal_id):
-        """Verify FK constraint between usr_trades.signal_id and usr_signals.id."""
+        """Verify FK constraint between usr_trades.signal_id and sys_signals.id."""
         cursor = test_db.cursor()
         # Create a signal first
         cursor.execute("""
-            INSERT INTO usr_signals (id, symbol, signal_type) 
+            INSERT INTO sys_signals (id, symbol, signal_type) 
             VALUES (?, ?, ?)
         """, (test_signal_id, 'EURUSD', 'BUY'))
         # Create a trade linked to the signal
