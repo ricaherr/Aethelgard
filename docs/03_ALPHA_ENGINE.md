@@ -327,3 +327,4 @@ Cada candidato debe cumplir los **4 Pilares del Protocolo Quanter** (definidos e
 - **AETHELGARD_MANIFESTO.md - Sección V**: Protocolo Quanter - 4 Pilares operativos
 - **data_vault/strategies_db.py**: Registro central de todas las Alphas institucionalizadas
 - **core_brain/signal_factory.py**: Inyección de Strategy Class ID y Instance ID en señales
+

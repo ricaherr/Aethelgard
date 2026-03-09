@@ -25,3 +25,4 @@ Proveer una ventana de alta fidelidad al cerebro de Aethelgard mediante una inte
 - [x] Estandarización de la librería de componentes "Intelligence Terminal".
 - [x] Implementación de Dashboards de Darwinismo Estratégico y Neural History.
 - [ ] Desarrollo de herramientas de visualización de micro-estructura (Order Flow).
+

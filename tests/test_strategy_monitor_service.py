@@ -36,21 +36,21 @@ def mock_storage():
     )
     
     # Mock getting single strategy (lookup from TEST_STRATEGIES_BY_ID)
-    def get_usr_performance_impl(sid):
+    def get_signal_ranking_impl(sid):
         strategy = TEST_STRATEGIES_BY_ID.get(sid)
         if strategy:
             return {
                 'strategy_id': strategy['strategy_id'],
                 'win_rate': strategy['win_rate'],
                 'profit_factor': strategy['profit_factor'],
-                'dd_pct': strategy['dd_pct'],
+                'drawdown_max': strategy['dd_pct'],
                 'consecutive_losses': strategy['consecutive_losses'],
-                'usr_trades_count': strategy['usr_trades_count'],
-                'updated_at': strategy['updated_at']
+                'total_usr_trades': strategy['usr_trades_count'],
+                'last_update_utc': strategy['updated_at']
             }
         return None
     
-    storage.get_usr_performance = Mock(side_effect=get_usr_performance_impl)
+    storage.get_signal_ranking = Mock(side_effect=get_signal_ranking_impl)
     
     return storage
 

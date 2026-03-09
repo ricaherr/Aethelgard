@@ -68,7 +68,7 @@ class StrategyMonitorService:
         """
         try:
             # Get strategy data from storage
-            strategy_data = self.storage.get_usr_performance(strategy_id)
+            strategy_data = self.storage.get_signal_ranking(strategy_id)
             
             if strategy_data is None:
                 logger.warning(f"[STRATEGY_MONITOR] Strategy not found: {strategy_id}")
@@ -81,6 +81,7 @@ class StrategyMonitorService:
                     'profit_factor': 1.0,
                     'blocked_for_trading': False,
                     'updated_at': datetime.now().isoformat(),
+                    'total_usr_trades': 0,
                     'error': 'Strategy not found'
                 }
             
@@ -91,8 +92,9 @@ class StrategyMonitorService:
             # Map CB status to UI status
             status = self._map_cb_status_to_ui_status(cb_status)
             
-            # Extract metrics from strategy data
-            dd_pct = float(strategy_data.get('dd_pct', 0.0))
+            # Extract metrics from strategy data (from sys_signal_ranking)
+            # Note: drawdown_max is stored as drawdown_max in DB (not dd_pct)
+            dd_pct = float(strategy_data.get('drawdown_max', 0.0))
             consecutive_losses = int(strategy_data.get('consecutive_losses', 0))
             win_rate = float(strategy_data.get('win_rate', 0.0))
             profit_factor = float(strategy_data.get('profit_factor', 1.0))
@@ -113,7 +115,7 @@ class StrategyMonitorService:
                 'profit_factor': profit_factor,
                 'blocked_for_trading': is_blocked,
                 'updated_at': updated_dt.isoformat(),
-                'usr_trades_count': strategy_data.get('usr_trades_count', 0)
+                'total_usr_trades': strategy_data.get('total_usr_trades', 0)
             }
         
         except Exception as exc:
@@ -131,6 +133,7 @@ class StrategyMonitorService:
                 'profit_factor': 1.0,
                 'blocked_for_trading': False,
                 'updated_at': datetime.now().isoformat(),
+                'total_usr_trades': 0,
                 'error': str(exc)
             }
     

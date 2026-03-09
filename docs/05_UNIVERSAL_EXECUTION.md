@@ -35,3 +35,4 @@ Aethelgard utiliza un sistema de **fallback automático** para garantizar la dis
 - [ ] Despliegue del núcleo QuickFIX para Prime Brokers.
 - [ ] Implementación del Feedback Loop de infraestructura (The Pulse).
 - [x] Agnosticismo de activos y Normalización SSOT (Unidades R).
+

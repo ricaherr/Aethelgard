@@ -14,7 +14,7 @@ def mock_storage():
     """Mock StorageManager with strategy registry and ranking data."""
     mock = MagicMock()
     mock.get_all_sys_strategies.return_value = []
-    mock.get_usr_performance.return_value = {}
+    mock.get_signal_ranking.return_value = {}
     return mock
 
 

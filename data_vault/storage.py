@@ -14,7 +14,7 @@ from .trades_db import TradesMixin
 from .accounts_db import AccountsMixin
 from .market_db import MarketMixin
 from .system_db import SystemMixin
-from .usr_performance_db import StrategyRankingMixin
+from .sys_signal_ranking_db import StrategyRankingMixin
 from .strategies_db import StrategiesMixin
 from .execution_db import ExecutionMixin
 from .anomalies_db import AnomaliesMixin

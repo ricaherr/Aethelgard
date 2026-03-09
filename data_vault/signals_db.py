@@ -76,7 +76,7 @@ class SignalsMixin(BaseRepository):
             return signal_type.value
         return str(signal_type)
 
-    def save_signal(self, signal: dict, origin_mode: str = 'LIVE') -> str:
+    def save_signal(self, signal: dict, origin_mode: str = 'SHADOW') -> str:
         """Save a signal to persistent storage with full traceability.
         
         Args:
@@ -123,7 +123,7 @@ class SignalsMixin(BaseRepository):
                     dt_utc_obj = dt_utc
                 timestamp_value = dt_utc_obj.replace(microsecond=0).strftime('%Y-%m-%d %H:%M:%S')
             
-            base_columns = ['id', 'symbol', 'signal_type', 'confidence', 'metadata', 'connector_type', 'timeframe', 'price', 'direction', 'origin_mode']
+            base_columns = ['id', 'symbol', 'signal_type', 'confidence', 'metadata', 'connector_type', 'timeframe', 'price', 'direction', 'origin_mode', 'strategy_id', 'score', 'source']
             base_values = [
                 signal_id,
                 getattr(signal, 'symbol', 'unknown'),
@@ -134,7 +134,10 @@ class SignalsMixin(BaseRepository):
                 getattr(signal, 'timeframe', None),
                 getattr(signal, 'price', None),
                 getattr(signal, 'direction', None),
-                origin_mode  # Track whether this signal was generated in SHADOW or LIVE mode
+                origin_mode,  # Track whether this signal was generated in SHADOW or LIVE mode
+                metadata.get('strategy_id'),  # Extract strategy_id from metadata
+                metadata.get('score', 0.0),   # Extract score from metadata
+                metadata.get('source')        # Extract source from metadata
             ]
             
             entry_price = getattr(signal, 'entry_price', None)
@@ -261,12 +264,14 @@ class SignalsMixin(BaseRepository):
                     WHERE id = ?
                 """, (status, json.dumps(current_metadata), now_str, signal_id))
 
-                if 'ticket' in metadata_update:
-                    cursor.execute("""
-                        UPDATE sys_signals 
-                        SET order_id = ?
-                        WHERE id = ?
-                    """, (str(metadata_update['ticket']), signal_id))
+                # FASE 2C: order_id will be stored in usr_trades instead of sys_signals
+                # This UPDATE is commented out as order_id column was removed from sys_signals
+                # if 'ticket' in metadata_update:
+                #     cursor.execute("""
+                #         UPDATE sys_signals 
+                #         SET order_id = ?
+                #         WHERE id = ?
+                #     """, (str(metadata_update['ticket']), signal_id))
             else:
                 now = datetime.now(timezone.utc).replace(microsecond=0)
                 now_str = now.strftime('%Y-%m-%d %H:%M:%S')

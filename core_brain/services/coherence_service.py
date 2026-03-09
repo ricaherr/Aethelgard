@@ -167,7 +167,7 @@ class CoherenceService:
             is_shadow_bootstrap = False
             if strategy_id:
                 try:
-                    ranking = self.storage.get_usr_performance(strategy_id)
+                    ranking = self.storage.get_signal_ranking(strategy_id)
                     execution_mode = ranking.get('execution_mode') if ranking else None
                     total_trades = ranking.get('completed_last_50', 0) if ranking else 0
                     

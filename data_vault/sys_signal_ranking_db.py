@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class StrategyRankingMixin(BaseRepository):
     """Mixin for Strategy Ranking and Shadow Portfolio database operations."""
 
-    def save_usr_performance(self, strategy_id: str, ranking_data: Dict) -> str:
+    def save_signal_ranking(self, strategy_id: str, ranking_data: Dict) -> str:
         """
         Save or update strategy ranking data.
         Returns trace_id for auditing.
@@ -22,7 +22,7 @@ class StrategyRankingMixin(BaseRepository):
             trace_id = ranking_data.get('trace_id') or f"RANK-{uuid.uuid4().hex[:8].upper()}"
             
             cursor.execute("""
-                INSERT OR REPLACE INTO usr_performance (
+                INSERT OR REPLACE INTO sys_signal_ranking (
                     strategy_id, profit_factor, win_rate, drawdown_max,
                     sharpe_ratio, consecutive_losses, execution_mode, trace_id,
                     last_update_utc, total_usr_trades, completed_last_50
@@ -49,13 +49,13 @@ class StrategyRankingMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_usr_performance(self, strategy_id: str) -> Optional[Dict]:
+    def get_signal_ranking(self, strategy_id: str) -> Optional[Dict]:
         """Get current ranking data for a strategy."""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT * FROM usr_performance WHERE strategy_id = ?
+                SELECT * FROM sys_signal_ranking WHERE strategy_id = ?
             """, (strategy_id,))
             row = cursor.fetchone()
             if row:
@@ -64,37 +64,37 @@ class StrategyRankingMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def ensure_usr_performance_for_strategy(self, strategy_id: str) -> Dict:
+    def ensure_signal_ranking_for_strategy(self, strategy_id: str) -> Dict:
         """
-        Lazy initialization: Obtener o crear entrada en usr_performance para una estrategia.
+        Lazy initialization: Obtener o crear entrada en sys_signal_ranking para una estrategia.
         
-        Si la estrategia YA existe en usr_performance, retornar registro existente.
+        Si la estrategia YA existe en sys_signal_ranking, retornar registro existente.
         Si NO existe, crear automáticamente con valores por defecto (SHADOW mode, métricas en 0).
         
         IDEMPOTENTE: Safe to call multiple times. No duplica registros.
         
-        Trace_ID: LAZY-INIT-USR-PERFORMANCE-S007
+        Trace_ID: LAZY-INIT-SIGNAL-RANKING-S007
         
         Args:
             strategy_id: Identificador único de la estrategia (ej: 'BRK_OPEN_0001')
             
         Returns:
-            Dict con los datos de usr_performance (existente o recién creado)
+            Dict con los datos de sys_signal_ranking (existente o recién creado)
             
         Usado por: StrategyEngineFactory._get_execution_mode() cuando carga estrategias
         """
         # Intentar obtener registro existente
-        existing = self.get_usr_performance(strategy_id)
+        existing = self.get_signal_ranking(strategy_id)
         if existing:
-            logger.debug(f"[LAZY-INIT] {strategy_id}: Already exists in usr_performance")
+            logger.debug(f"[LAZY-INIT] {strategy_id}: Already exists in sys_signal_ranking")
             return existing
         
         # No existe → Crear automáticamente con defaults
         logger.warning(
-            f"[LAZY-INIT] {strategy_id}: Creating automatic entry in usr_performance (SHADOW mode)"
+            f"[LAZY-INIT] {strategy_id}: Creating automatic entry in sys_signal_ranking (SHADOW mode)"
         )
         
-        self.save_usr_performance(
+        self.save_signal_ranking(
             strategy_id=strategy_id,
             ranking_data={
                 'execution_mode': 'SHADOW',  # Safe default: no live trading
@@ -110,15 +110,15 @@ class StrategyRankingMixin(BaseRepository):
         )
         
         # Retornar registro recién creado
-        return self.get_usr_performance(strategy_id)
+        return self.get_signal_ranking(strategy_id)
 
-    def get_all_usr_performances(self) -> List[Dict]:
+    def get_all_signal_rankings(self) -> List[Dict]:
         """Get all strategy rankings, sorted by execution mode and profit factor."""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT * FROM usr_performance 
+                SELECT * FROM sys_signal_ranking 
                 ORDER BY 
                     CASE execution_mode 
                         WHEN 'LIVE' THEN 1
@@ -146,7 +146,7 @@ class StrategyRankingMixin(BaseRepository):
                 trace_id = f"RANK-{uuid.uuid4().hex[:8].upper()}"
             
             cursor.execute("""
-                UPDATE usr_performance 
+                UPDATE sys_signal_ranking 
                 SET execution_mode = ?, trace_id = ?, last_update_utc = ?
                 WHERE strategy_id = ?
             """, (new_mode, trace_id, datetime.now(timezone.utc), strategy_id))
@@ -162,13 +162,13 @@ class StrategyRankingMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_usr_strategies_by_mode(self, mode: str) -> List[Dict]:
-        """Get all usr_strategies with a specific execution mode."""
+    def get_strategies_by_mode(self, mode: str) -> List[Dict]:
+        """Get all strategies with a specific execution mode."""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT * FROM usr_performance 
+                SELECT * FROM sys_signal_ranking 
                 WHERE execution_mode = ?
                 ORDER BY profit_factor DESC
             """, (mode,))
@@ -215,7 +215,7 @@ class StrategyRankingMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_usr_performance_history(self, strategy_id: str, limit: int = 50) -> List[Dict]:
+    def get_signal_ranking_history(self, strategy_id: str, limit: int = 50) -> List[Dict]:
         """Get historical state changes for a strategy from usr_edge_learning table."""
         conn = self._get_conn()
         try:

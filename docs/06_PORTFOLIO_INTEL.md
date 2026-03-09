@@ -24,3 +24,4 @@ Las estrategias en Aethelgard deben atravesar tres estados:
 - [ ] Desarrollo del Penalty Injector para fidelidad Shadow.
 - [x] Implementación del Ranker multi-tenant.
 - [ ] Despliegue de alertas de Coherence Drift.
+

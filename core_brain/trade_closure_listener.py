@@ -301,8 +301,8 @@ class TradeClosureListener:
             if not strategy_id:
                 return ExecutionMode.LIVE.value
             
-            # Query usr_performance for execution_mode
-            ranking = self.storage.get_usr_performance(strategy_id)
+            # Query sys_signal_ranking for execution_mode
+            ranking = self.storage.get_signal_ranking(strategy_id)
             if ranking and 'execution_mode' in ranking:
                 mode = ranking.get('execution_mode', ExecutionMode.LIVE.value)
                 logger.debug(f"[ROUTING] Signal {signal_id} → Strategy {strategy_id} → Mode {mode}")

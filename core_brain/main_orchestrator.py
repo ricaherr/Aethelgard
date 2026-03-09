@@ -1489,7 +1489,7 @@ class MainOrchestrator:
             return True
         
         try:
-            ranking = self.storage.get_usr_performance(strategy_id)
+            ranking = self.storage.get_signal_ranking(strategy_id)
             
             if not ranking:
                 # Strategy not found in ranking table - allow execution for new usr_strategies

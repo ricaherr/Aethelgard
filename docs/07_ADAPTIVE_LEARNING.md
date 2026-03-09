@@ -255,3 +255,4 @@ TradeClosureListener → actual_result
 3. **Persistencia**:
    - Cambios guardados en DB con Trace_ID
    - Log: `[THRESHOLD_OPTIMIZER] Threshold updated: 0.75 → 0.79 (Δ=+0.04) | Reason: LOSS_STREAK(3) | Trace_ID: ADAPTIVE-THRESHOLD-2026-001`
+

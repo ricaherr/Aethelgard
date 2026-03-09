@@ -263,7 +263,7 @@ class StrategyEngineFactory:
         """
         try:
             # Intentar obtener, o crear si no existe (LAZY INIT)
-            ranking = self.storage.ensure_usr_performance_for_strategy(strategy_id)
+            ranking = self.storage.ensure_signal_ranking_for_strategy(strategy_id)
             
             if ranking and 'execution_mode' in ranking:
                 return ranking['execution_mode']

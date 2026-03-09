@@ -1,59 +1,80 @@
-# Aethelgard Database Schema v2.0 (ARCH-SSOT-2026-006)
+# Aethelgard Database Schema v3.0 (ARCH-SSOT-2026-008)
 
 ## Overview
 
 **Database Engine**: SQLite 3 (Idempotent, Multi-Tenant Capable)  
-**Architecture**: Global Intelligence + Local Execution  
-**Initialization**: Pure DDL via `data_vault/schema.py`  
-**Source of Truth**: This document + schema.py  
-**Last Updated**: 2026-03-07 (ARCH-SSOT-2026-006 - Table Naming Standardization)
+**Architecture**: Unified Global DB + Tenant Templates  
+**Current Status**: Single Admin in Global DB (No Active Tenants)  
+**Initialization**: Pure DDL via `data_vault/schema.py` + Migrations  
+**Source of Truth**: This document + Global DB (`data_vault/global/aethelgard.db`)  
+**Last Updated**: 2026-03-09 (ARCH-SSOT-2026-008 - Schema Verification)
 
-⚠️ **CONTRATO ARQUITECTÓNICO FINAL**: Esta estructura es vinculante. Cualquier desviación en el código respecto a estos nombres de tablas resultará en fallo de auditoría de arquitectura (`validate_all.py`).
-
----
-
-## 🗂️ TABLA DE EQUIVALENCIAS: Transformación de Nombres de Tablas
-
-| Tabla Actual (Obsoleta) | Nuevo Nombre (Estandarizado) | DB Física | Alcance | Propósito |
-|------------------------|------------------------------|----------|---------|----------|
-| system_state | sys_config | global/aethelgard.db | Global | Configuración maestra del motor |
-| users_auth | sys_auth | global/aethelgard.db | Global | Credenciales, roles y sesiones |
-| memberships | sys_memberships | global/aethelgard.db | Global | Tiers de usuario y acceso |
-| market_state | sys_market_pulse | global/aethelgard.db | Global | ⭐ NUEVO: Escaneo único (READ-ONLY para tenants) |
-| economic_calendar | sys_calendar | global/aethelgard.db | Global | Eventos macro compartidos |
-| instruments_config | usr_assets_cfg | tenants/{id}/aethelgard.db | Tenant | Activos que operas TÚ |
-| strategies | usr_strategies | tenants/{id}/aethelgard.db | Tenant | Parámetros personalizados de estrategia |
-| signals | usr_signals | tenants/{id}/aethelgard.db | Tenant | Señales en tu cuenta |
-| trades | usr_trades | tenants/{id}/aethelgard.db | Tenant | Ejecuciones reales (Soberanía Total) |
-| strategy_ranking | usr_performance | tenants/{id}/aethelgard.db | Tenant | Ranking basado en TU equity |
+⚠️ **CONTRATO ARQUITECTÓNICO FINAL**: Esta estructura es vinculante. La DB global es la ÚNICA FUENTE DE VERDAD en operación.
 
 ---
 
-## 🔑 Definición de Single Source of Truth (SSOT)
+## 🗂️ ARQUITECTURA ACTUAL (Real)
 
-El sistema consulta **sys_market_pulse** (Global Scanner) para descubrir el estado del mercado UNA SOLA VEZ. Cada tenant filtra **sys_market_pulse** contra su propia **usr_assets_cfg** para decidir qué activos operar. Esto garantiza:
-- ✅ Eficiencia global (un solo scan del mercado)
-- ✅ Soberanía del tenant (operas solo lo que configuraste)
-- ✅ SSOT único por nivel (global y tenant)
+| DB | Contenido | Propósito | Tablas |
+|----|-----------|----------|--------|
+| **data_vault/global/aethelgard.db** | sys_* + usr_* | ADMIN principal (datos globales + personales) | 30+ tablas |
+| **data_vault/templates/usr_template.db** | usr_* | Plantilla para clonar nuevos tenants | 20+ tablas |
+| **data_vault/tenants/{uuid}/** | (vacío) | Cuando se cree un nuevo usuario, se clonará template aquí | - |
 
 ---
 
-## CAPA 0: GLOBAL INTELLIGENCE (`data_vault/global/aethelgard.db`)
+## ✅ CAPA GLOBAL: ADMIN DATABASE (`data_vault/global/aethelgard.db`)
 
-### `sys_config` (Global Configuration)
+## ✅ CAPA GLOBAL: ADMIN DATABASE (`data_vault/global/aethelgard.db`)
 
-**Scope**: Global, admin-managed, single source of truth.  
-**Governance**: Admin writes; all tenants read.
+### Contenido Actual (Real - 9 Marzo 2026):
 
-| Column | Type | Purpose |
-|--------|------|---------|
-| id | INTEGER | System-generated ID |
-| key | TEXT | Configuration key name (UNIQUE) |
-| value | TEXT | JSON-serialized value |
-| created_at | TIMESTAMP | Creation timestamp |
-| updated_at | TIMESTAMP | Last modification |
+**TABLAS SYS_* (Compartidas - Global)**: 15 tablas
+```
+sys_broker_accounts       - Configuración de cuentas de broker
+sys_brokers              - Metadatos de brokers
+sys_config               - Configuración del sistema (SSOT)
+sys_credentials          - Credenciales encriptadas
+sys_data_providers       - Proveedores de datos
+sys_economic_calendar    - Calendario económico
+sys_market_pulse         - Estado del mercado (global scanner)
+sys_platforms            - Plataformas de trading
+sys_regime_configs       - Configuración de regímenes de mercado
+sys_signal_pipeline      - Auditoría de señales
+sys_signal_ranking       - Ranking global de estrategias (formerly usr_performance)
+sys_signals              - Señales generadas globales
+sys_strategies           - Registro de estrategias disponibles
+sys_strategy_logs        - Logs de ejecución de estrategias
+sys_symbol_mappings      - Mapeo de símbolos (SSOT)
+```
 
-**Indexes**: `idx_sys_config_key` on key
+**TABLAS USR_* (Personales del ADMIN)**: 12 tablas
+```
+usr_anomaly_events               - Eventos de anomalías detectadas
+usr_assets_cfg                   - Activos que ADMIN opea
+usr_coherence_events             - Eventos de incoherencia de señales
+usr_connector_settings           - Configuración de conectores
+usr_edge_learning                - Aprendizaje EDGE del sistema
+usr_execution_logs               - Logs de ejecución de órdenes
+usr_notification_settings        - Configuración de notificaciones
+usr_notifications                - Notificaciones del sistema
+usr_position_history             - Historial de posiciones
+usr_preferences                  - Preferencias del usuario ADMIN
+usr_trades                       - Ejecuciones/trades del ADMIN
+usr_tuning_adjustments           - Ajustes de tuning del sistema
+```
+
+**OTRAS TABLAS**: 4 tablas (Sistema)
+```
+edge_learning            - Tabla de aprendizaje EDGE (legacy)
+notifications            - Notificaciones internas
+session_tokens          - Tokens de sesión
+sqlite_sequence         - Secuencia de SQLite
+```
+
+---
+
+### `sys_config` (Global Configuration SSOT)
 
 ---
 
@@ -108,7 +129,54 @@ These follow the same pattern: admin-managed, read-only for tenants.
 
 ---
 
-## CAPA 1: LOCAL EXECUTION (`data_vault/tenants/{tenant_id}/aethelgard.db`)
+## 🔧 PROVISIONING: Templates y Nuevo Tenants
+
+### Template Generation (Manual - Recomendado)
+
+El sistema mantiene una **plantilla maestra** en `data_vault/templates/usr_template.db` que contiene SOLO las tablas `usr_*`. Cuando se crea un nuevo tenant, su BD se clona desde esta plantilla.
+
+**Función**: `bootstrap_tenant_template()` en `data_vault/schema.py`
+
+```python
+from data_vault.schema import bootstrap_tenant_template
+from data_vault.storage import StorageManager
+
+# Obtener conexión global
+storage = StorageManager()  # Sin user_id = global
+global_conn = storage._get_conn()
+
+# Crear template (MANUAL - recomendado)
+bootstrap_tenant_template(global_conn, mode="manual")
+```
+
+**Modos de Ejecución**:
+
+| Modo | Comportamiento | Recomendación |
+|------|---|---|
+| `"manual"` (default) | Solo se ejecuta si se llama explícitamente | ✅ RECOMENDADO |
+| `"automatic"` | Se ejecuta en cada startup | Para desarrollo |
+
+**Configuración Persistente**:
+- Se guarda en `sys_config` tabla
+  - `tenant_template_bootstrap_mode`: "manual" o "automatic"
+  - `tenant_template_bootstrap_done`: "1" si ya completado
+
+**Idempotencia**:
+```
+Si template ya existe → No se sobrescribe
+Si bootstrap ya ejecutado (manual) → No se repite
+```
+
+### Creación de Nuevo Tenant
+
+```python
+# El sistema lo hace automáticamente:
+storage = StorageManager(user_id="new_user_uuid")
+# → Clona template.db a tenants/new_user_uuid/aethelgard.db
+# → Inicializa schema si necesario
+```
+
+---
 
 ⚠️ **IMPORTANT**: Tenant ID is inferred from the database path. Do NOT store `tenant_id` column in these tables (redundant, violates sovereignty).
 
@@ -297,3 +365,4 @@ These follow the same pattern: admin-managed, read-only for tenants.
 
 **Last Validated**: 2026-03-07  
 **Architecture Version**: ARCH-SSOT-2026-006 (Global Intelligence + Local Execution)
+

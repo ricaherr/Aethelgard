@@ -99,7 +99,7 @@ class CircuitBreaker:
         """
         try:
             # Get current strategy metrics
-            ranking = self.storage.get_usr_performance(strategy_id)
+            ranking = self.storage.get_signal_ranking(strategy_id)
             if not ranking:
                 logger.warning(f"[CB] Strategy {strategy_id} not found in ranking table")
                 return {'action': 'not_found', 'strategy_id': strategy_id}
@@ -228,7 +228,7 @@ class CircuitBreaker:
         """
         try:
             # Get all LIVE usr_strategies
-            live_usr_strategies = self.storage.get_usr_strategies_by_mode('LIVE')
+            live_usr_strategies = self.storage.get_strategies_by_mode('LIVE')
             
             logger.info(f"[CB] Monitoring {len(live_usr_strategies)} LIVE usr_strategies...")
             
@@ -263,7 +263,7 @@ class CircuitBreaker:
         Returns True if in QUARANTINE or SHADOW mode.
         """
         try:
-            ranking = self.storage.get_usr_performance(strategy_id)
+            ranking = self.storage.get_signal_ranking(strategy_id)
             if not ranking:
                 return True  # Unknown = blocked
             

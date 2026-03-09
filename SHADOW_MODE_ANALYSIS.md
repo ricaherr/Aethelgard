@@ -260,3 +260,4 @@ def test_live_strategy_uses_real_connector():
 - ✅ Accumulating trades (visibles después de 3-5 días)
 - ✅ Métricas actualizadas diariamente  
 - ✅ Promoción automática a LIVE cuando PF>1.5 AND WR>50%
+

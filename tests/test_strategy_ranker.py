@@ -40,7 +40,7 @@ class TestStrategyRankerPromotion:
         strategy_id = "strat_golden_eagle_v2"
         
         # Mock strategy data from DB
-        mock_storage.get_usr_performance.return_value = {
+        mock_storage.get_signal_ranking.return_value = {
             'strategy_id': strategy_id,
             'profit_factor': 1.6,
             'win_rate': 0.52,
@@ -80,7 +80,7 @@ class TestStrategyRankerPromotion:
         """
         strategy_id = "strat_learner_v1"
         
-        mock_storage.get_usr_performance.return_value = {
+        mock_storage.get_signal_ranking.return_value = {
             'strategy_id': strategy_id,
             'profit_factor': 1.3,
             'win_rate': 0.48,
@@ -106,7 +106,7 @@ class TestStrategyRankerPromotion:
         """
         strategy_id = "strat_new_idea"
         
-        mock_storage.get_usr_performance.return_value = {
+        mock_storage.get_signal_ranking.return_value = {
             'strategy_id': strategy_id,
             'profit_factor': 1.8,
             'win_rate': 0.60,
@@ -136,7 +136,7 @@ class TestStrategyRankerDegradation:
         """
         strategy_id = "strat_old_reliable"
         
-        mock_storage.get_usr_performance.return_value = {
+        mock_storage.get_signal_ranking.return_value = {
             'strategy_id': strategy_id,
             'profit_factor': 1.5,
             'win_rate': 0.52,
@@ -171,7 +171,7 @@ class TestStrategyRankerDegradation:
         """
         strategy_id = "strat_unlucky_streak"
         
-        mock_storage.get_usr_performance.return_value = {
+        mock_storage.get_signal_ranking.return_value = {
             'strategy_id': strategy_id,
             'profit_factor': 1.5,
             'win_rate': 0.52,
@@ -201,7 +201,7 @@ class TestStrategyRankerDegradation:
         """
         strategy_id = "strat_stable_performer"
         
-        mock_storage.get_usr_performance.return_value = {
+        mock_storage.get_signal_ranking.return_value = {
             'strategy_id': strategy_id,
             'profit_factor': 1.8,
             'win_rate': 0.58,
@@ -232,7 +232,7 @@ class TestStrategyRankerRecovery:
         """
         strategy_id = "strat_comeback_kid"
         
-        mock_storage.get_usr_performance.return_value = {
+        mock_storage.get_signal_ranking.return_value = {
             'strategy_id': strategy_id,
             'profit_factor': 1.6,
             'win_rate': 0.55,
@@ -265,7 +265,7 @@ class TestStrategyRankerAudit:
         """
         strategy_id = "strat_audit_test"
         
-        mock_storage.get_usr_performance.return_value = {
+        mock_storage.get_signal_ranking.return_value = {
             'strategy_id': strategy_id,
             'profit_factor': 1.7,
             'win_rate': 0.53,
@@ -298,7 +298,7 @@ class TestStrategyRankerAudit:
         """
         strategy_id = "strat_log_test"
         
-        mock_storage.get_usr_performance.return_value = {
+        mock_storage.get_signal_ranking.return_value = {
             'strategy_id': strategy_id,
             'profit_factor': 1.75,
             'win_rate': 0.54,

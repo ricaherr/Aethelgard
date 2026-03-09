@@ -405,7 +405,7 @@ async def get_usr_strategies_library(token: TokenPayload = Depends(get_current_a
     try:
         # SECURITY: Get tenant-isolated storage using TenantDBFactory
         storage = TenantDBFactory.get_storage(token.tid)
-        rankings = storage.get_all_usr_performances()
+        rankings = storage.get_all_signal_rankings()
 
         registered = [
             {

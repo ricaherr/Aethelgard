@@ -194,7 +194,7 @@ class OrderExecutor:
         # If strategy is in SHADOW mode, override connector type to PAPER
         if strategy_id:
             try:
-                ranking = self.storage.get_usr_performance(strategy_id)
+                ranking = self.storage.get_signal_ranking(strategy_id)
                 if ranking and ranking.get('execution_mode') == 'SHADOW':
                     signal.connector_type = ConnectorType.PAPER
                     logger.info(

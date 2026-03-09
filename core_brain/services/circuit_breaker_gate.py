@@ -124,7 +124,7 @@ class CircuitBreakerGate:
 
         try:
             # Get strategy ranking to determine execution mode
-            ranking = self.storage.get_usr_performance(strategy_id)
+            ranking = self.storage.get_signal_ranking(strategy_id)
             if not ranking:
                 logger.warning(f"Strategy {strategy_id} not found in ranking table")
                 return (False, "STRATEGY_NOT_FOUND")

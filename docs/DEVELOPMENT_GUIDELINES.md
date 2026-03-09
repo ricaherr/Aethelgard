@@ -175,3 +175,4 @@ Cada nueva funcionalidad o Historia de Usuario (HU) debe cumplir con:
 
 ---
 *Este documento es dinámico y representa el estándar de excelencia técnica de Aethelgard.*
+

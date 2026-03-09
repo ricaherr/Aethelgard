@@ -17,15 +17,16 @@ Factoría de bases de datos que garantiza que el `tenant_id` sea inyectado en ca
 
 #### Arquitectura Multi-Tenant
 - **Por-Tenant Database Isolation**: Cada tenant obtiene su base de datos exclusiva en `data_vault/tenants/{tenant_id}/aethelgard.db`
+- **Tenant Provisioning**: Nueva BD se crea automáticamente clonando `data_vault/templates/usr_template.db` (blueprint generado vía `bootstrap_tenant_template()`). La plantilla contiene las 12 tablas `usr_*` del esquema del usuario con estructura estándar. Ver detalles técnicos en [Dominio 08: DATA_SOVEREIGNTY - Tenant Provisioning](08_DATA_SOVEREIGNTY.md#-tenant-provisioning-bootstrap_tenant_template---creación-idempotente-de-capas-1).
 - **TenantDBFactory Pattern**: Factory singleton que crea y cachea `StorageManager` instances por tenant
   ```python
   # Patrón correcto:
-  storage = TenantDBFactory.get_storage(token.tid)  # BD aislada del tenant
+  storage = TenantDBFactory.get_storage(token.tid)  # BD aislada del tenant (clonada de template)
   
   # Patrón PROHIBIDO:
   storage = _get_storage()  # BD genérica compartida entre todos
   ```
-- **Schema Consistency**: Cada BD de tenant usa el mismo schema (`data_vault/schema.py`) pero datos completamente aislados
+- **Schema Consistency**: Cada BD de tenant usa el mismo schema (`data_vault/schema.py`) pero datos completamente aislados. Template garantiza que todas las Capas 1 sean idénticas estructuralmente.
 - **Zero Cross-Tenant Data Leakage**: Imposible acceder a datos de otro tenant incluso si alguien contornea autenticación
 
 #### Reglas Obligatorias de Implementación
@@ -144,3 +145,4 @@ Control de acceso granular basado en niveles (Basic, Pro, Institutional). Las ca
 - [ ] HTTP Contract Tests (autenticación + autorización flujos end-to-end).
 - [ ] OWASP Top 10 Security Validation en CI/CD.
 - [ ] Lógica de filtrado de módulos por suscripción (Membership Engine).
+

@@ -130,6 +130,214 @@ Cada tenant tiene su **propia base de datos aislada** que contiene **SOLO tablas
 
 ---
 
+## 🔧 Tenant Provisioning: bootstrap_tenant_template() - Creación Idempotente de Capas 1
+
+**Función**: `data_vault/schema.py::bootstrap_tenant_template()`
+
+**Propósito**: Crear plantilla de base de datos (`data_vault/templates/usr_template.db`) que actúa como blueprint para nuevos tenants. Copia las 12 tablas `usr_*` desde la Capa 0 global, permitiendo provisioning automático de nuevas Capas 1.
+
+**Ubicación Física**:
+```
+data_vault/
+├── global/
+│   └── aethelgard.db                    (Capa 0: sys_* tables)
+├── templates/
+│   └── usr_template.db                  (Blueprint para nuevos tenants)
+└── tenants/
+    └── {tenant_uuid}/
+        └── aethelgard.db                (Capa 1: Clone del template)
+```
+
+### Signature y Modos de Ejecución
+
+```python
+def bootstrap_tenant_template(global_conn: sqlite3.Connection, mode: str = "manual") -> bool:
+    """
+    Create template DB by copying usr_* tables from global DB.
+    
+    Args:
+        global_conn: Connection to data_vault/global/aethelgard.db
+        mode: "manual" (default) or "automatic"
+    
+    Returns:
+        True if bootstrap succeeded, False if already done (idempotent)
+    """
+```
+
+**Dos Modos de Operación**:
+
+| Modo | Ejecución | Uso Recomendado | Configuración |
+|------|-----------|-----------------|---------------|
+| **manual** | Solo en llamada explícita | ✅ Producción (control explícito) | Default en sys_config |
+| **automatic** | Automático en startup si falta template | ✅ Desarrollo/Testing (conveniente) | Cambiar sys_config para habilitar |
+
+**Configuración Persistente** (almacenada en `sys_config` table):
+
+```
+tenant_template_bootstrap_mode = "manual"     (default)
+tenant_template_bootstrap_done = "0" → "1"    (automático post-bootstrap)
+```
+
+### Garantías Arquitectónicas
+
+1. **Idempotencia**: 
+   - Verifica si `usr_template.db` existe antes de crear
+   - Comprueba flag `bootstrap_done` en sys_config
+   - Múltiples llamadas = sin efectos (seguro para retry logic)
+
+2. **SSOT Compliance**:
+   - Configuración almacenada ÚNICAMENTE en DB (sys_config)
+   - No hardcodeada en código ni en archivos .env
+   - Cambios en runtime reflejados inmediatamente
+
+3. **Data Isolation**:
+   - Copia SOLO tablas `usr_*` (12 tablas)
+   - NUNCA incluye tablas `sys_*` (esas son siempre globales)
+   - Resultado: cada tenant tiene estructura idéntica, datos completamente aislados
+
+4. **Schema Fidelity**:
+   - Copia columnas, índices, constraints exactos
+   - Preserva tipos de datos y valores por defecto
+   - Mantiene referencial integrity (FKs)
+
+5. **Error Handling**:
+   - Try/except con rollback automático en fallos
+   - Logging en cada fase (inicio, copia, validación, fin)
+   - State restoration si error parcial
+
+### Flujo Operacional Completo
+
+```
+STARTUP INICIAL
+    ↓
+01. Admin registra primer usuario (ADMIN)
+    └─ INSERT en sys_auth (global DB)
+    
+02. Sistema inicializa (MainOrchestrator)
+    └─ Carga configuración desde sys_config
+    └─ Lee: tenant_template_bootstrap_mode = "manual"
+    └─ Template NO existe aún → No hace nada
+    
+03. [CUANDO SE NECESITA] Admin ejecuta bootstrap manualmente
+    ├─ Llamada: bootstrap_tenant_template(global_conn, mode="manual")
+    ├─ Copia 12 tablas usr_* → data_vault/templates/usr_template.db
+    ├─ Valida schema consistency
+    ├─ Marca sys_config.bootstrap_done = "1"
+    └─ Retorna: True (éxito)
+
+04. Nuevo trader se registra
+    ├─ INSERT en sys_auth → sys_memberships (global)
+    ├─ StorageManager(tenant_id="new_uuid") 
+    └─ ._ensure_tenant_db_exists() → Clona template a tenants/new_uuid/
+    
+05. Nuevo tenant completamente operativo
+    ├─ Database: data_vault/tenants/new_uuid/aethelgard.db (clon del template)
+    ├─ Schema: Idéntico al template (12 usr_* tables)
+    ├─ Data: Vacío (listo para operaciones del trader)
+    └─ Aislamiento: Garantizado (uuid en ruta = separación física)
+```
+
+### Ejemplo de Uso
+
+```python
+from data_vault.schema import bootstrap_tenant_template
+from data_vault.storage import StorageManager
+
+# Paso 1: Obtener conexión global
+storage = StorageManager()  # tenant_id=None → data_vault/global/
+global_conn = storage._get_conn()
+
+# Paso 2: Ejecutar bootstrap (manual mode = default)
+success = bootstrap_tenant_template(global_conn, mode="manual")
+
+if success:
+    print("[OK] Template creado en data_vault/templates/usr_template.db")
+    
+    # Ahora StorageManager clonará template para nuevos tenants:
+    new_tenant_storage = StorageManager(tenant_id="trader_uuid_456")
+    # → Automáticamente clona: templates/usr_template.db → tenants/trader_uuid_456/aethelgard.db
+else:
+    print("[INFO] Template ya existe (bootstrap idempotente)")
+
+# Paso 3: [OPCIONAL] Enable automatic mode para startups futuros
+storage.execute(
+    "UPDATE sys_config SET value='automatic' WHERE key='tenant_template_bootstrap_mode'"
+)
+# A partir de ahora: bootstrap se ejecuta automáticamente si falta template
+```
+
+### Tablas Copiadas en Template (12 usr_* tables)
+
+**Schema Exacto**:
+```
+usuario (Capa 1): data_vault/tenants/{uuid}/aethelgard.db
+├── usr_trades                      (Operaciones del trader - inmutable post-cierre)
+├── usr_preferences                 (Configuración personal)
+├── usr_notification_settings       (Preferencias de alertas)
+├── usr_strategy_execution_log      (Historial de ejecuciones)
+├── usr_edge_applied_history        (Delta feedback del EdgeTuner)
+├── usr_performance_daily           (Métricas diarias)
+├── usr_risk_exposure               (Posiciones abiertas y riesgo)
+├── usr_available_balance_history   (Evolución del capital)
+├── usr_signal_history              (Señales vistas/ejecutadas)
+├── usr_notifications_received      (Log de alertas)
+├── usr_custom_alerts_preferences   (Alertas personalizadas)
+└── usr_credentials                 (API keys encriptadas - NUNCA en global)
+```
+
+**Tablas NUNCA Copiadas** (Siempre en Capa 0):
+```
+global (Capa 0): data_vault/global/aethelgard.db
+├── sys_auth                    (Autenticación global - admin managed)
+├── sys_memberships             (Suscripciones y tiers)
+├── sys_config                  (Parámetros globales)
+├── sys_signals                 (Señales globales pre-filtradas)
+├── sys_strategies              (Estrategias disponibles)
+├── sys_signal_ranking          (Performance agregado)
+├── sys_economic_calendar       (Eventos macro globales)
+├── sys_brokers                 (Cuentas broker disponibles)
+├── sys_market_hours_cache      (Horarios de mercado globales)
+├── sys_regime_classification   (Estado de mercado global)
+├── sys_edge_learning           (Aprendizaje agregado de EdgeTuner)
+├── sys_drawdown_monitor        (Análisis de drawdown global)
+├── sys_notifications           (Centro de alertas global)
+├── sys_coherence_scores        (Coherencia agregada)
+└── sys_signal_conflicts        (Conflictos entre señales)
+```
+
+**Integración con StorageManager**:
+
+```python
+class StorageManager:
+    def __init__(self, tenant_id: Optional[str] = None, db_path: Optional[str] = None):
+        """Constructor tenant-aware: clona template si es nuevo tenant."""
+        self.tenant_id = tenant_id
+        self.db_path = db_path or self._resolve_db_path(tenant_id)
+        
+        if not os.path.exists(self.db_path):
+            self._ensure_tenant_db_exists()  # Copia template aquí
+    
+    def _ensure_tenant_db_exists(self):
+        """Verifica template y clona si es necesario."""
+        template_path = "data_vault/templates/usr_template.db"
+        
+        if not os.path.exists(template_path):
+            raise TemplateNotFound("Ejecute bootstrap_tenant_template() primero")
+        
+        shutil.copy2(template_path, self.db_path)
+        logger.info(f"[TENANT PROVISIONED] {self.db_path} from template")
+```
+
+### Performance: Tiempo de Creación
+
+| Operación | Duración | Escala |
+|-----------|----------|--------|
+| bootstrap_tenant_template() | ~2-5 segundos | Una sola vez |
+| StorageManager clonación | ~0.5-1 segundo | Por tenant |
+| StorageManager inicialización | <100ms | Reutilización |
+
+---
+
 ### Protocolo de Sincronización (Schema Evolution)
 
 #### Principio Base: **El Código es Master**
@@ -447,3 +655,4 @@ strategy = StrategyEngineFactory().get_by_id("INST_FOOTPRINT_0002")
 ```
 
 **Beneficio**: No hay downtime, no hay "versión de BD". Todo es progresivo y agnóstico.
+

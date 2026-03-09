@@ -265,7 +265,7 @@ class SignalFactory:
             # 0.5. Determine execution_mode (SHADOW/LIVE) from strategy_id
             # PHASE E: Signal persistence now tracks whether signal was generated in SHADOW or LIVE mode
             strategy_id = signal.metadata.get('strategy_id') if signal.metadata else None
-            origin_mode = 'LIVE'  # Default to LIVE for backward compatibility
+            origin_mode = 'SHADOW'  # Safe default: unknown strategy = testing mode (no live trading)
             if strategy_id:
                 try:
                     ranking = self.storage_manager.get_strategy_ranking(strategy_id)

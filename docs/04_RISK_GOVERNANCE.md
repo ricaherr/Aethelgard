@@ -101,3 +101,4 @@ anomaly_events (table)
   - Thought Console + sugerencias inteligentes
   - Integración con Health System (NORMAL/CAUTION/DEGRADED/STRESSED)
   - Base de datos de anomalías con Trace_ID
+

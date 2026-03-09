@@ -51,3 +51,4 @@ Estado actualizado del scanner de depredación de contexto:
 *   **Caso canónico implementado**: DXY barriendo máximos mientras EURUSD se estanca.
 *   **Salida normalizada**: `divergence_strength` (0-100), `state` (`DORMANT`, `TRACKING`, `PREDATOR_ACTIVE`), `signal_bias`.
 *   **UI en tiempo real**: endpoint `/api/analysis/predator-radar` + widget `Predator Radar` en la Terminal de análisis.
+

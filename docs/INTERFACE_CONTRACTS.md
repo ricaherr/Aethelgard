@@ -410,3 +410,4 @@ Economic events affect currencies. Mapping:
 ---
 
 **End of Contracts v1.0**
+

@@ -538,6 +538,7 @@ def run_migrations(conn: sqlite3.Connection) -> None:
         ("execution_mode", "TEXT DEFAULT 'LIVE'"),
         ("provider", "TEXT DEFAULT 'MT5'"),
         ("account_type", "TEXT DEFAULT 'REAL'"),
+        ("order_id", "TEXT"),  # FASE 2C: Add order_id to usr_trades (moved from sys_signals)
     ]
     for col, col_type in usr_trades_migrations:
         if col not in usr_trades_cols:
@@ -552,12 +553,82 @@ def run_migrations(conn: sqlite3.Connection) -> None:
     cursor.execute("PRAGMA table_info(sys_signals)")
     sys_signals_cols = [r[1] for r in cursor.fetchall()]
     if "origin_mode" not in sys_signals_cols:
-        cursor.execute("ALTER TABLE sys_signals ADD COLUMN origin_mode TEXT DEFAULT 'LIVE'")
-        logger.info("Migration applied: sys_signals.origin_mode added (DEFAULT='LIVE' for backward compat)")
+        cursor.execute("ALTER TABLE sys_signals ADD COLUMN origin_mode TEXT DEFAULT 'SHADOW'")
+        logger.info("Migration applied: sys_signals.origin_mode added (DEFAULT='SHADOW' for safe fallback)")
     
     # Create index for efficient filtering by origin_mode (enables SHADOW signal audits)
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_signals_origin_mode ON sys_signals (origin_mode)")
     logger.info("Index created: idx_sys_signals_origin_mode for query optimization")
+
+    # MIGRATION (FASE 2B): Add strategy_id, score, source to sys_signals for normalization
+    # ──────────────────────────────────────────────────────────────────────
+    if "strategy_id" not in sys_signals_cols:
+        cursor.execute("ALTER TABLE sys_signals ADD COLUMN strategy_id TEXT")
+        logger.info("Migration applied: sys_signals.strategy_id added for strategy link")
+    if "score" not in sys_signals_cols:
+        cursor.execute("ALTER TABLE sys_signals ADD COLUMN score REAL DEFAULT 0.0")
+        logger.info("Migration applied: sys_signals.score added for signal quality metrics")
+    if "source" not in sys_signals_cols:
+        cursor.execute("ALTER TABLE sys_signals ADD COLUMN source TEXT")
+        logger.info("Migration applied: sys_signals.source added for signal source tracking")
+    
+    # Create indexes for strategy_id lookups and score-based filtering
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_signals_strategy_id ON sys_signals (strategy_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_signals_score ON sys_signals (score DESC)")
+    logger.info("Indexes created: idx_sys_signals_strategy_id, idx_sys_signals_score for optimization")
+    
+    # BACKFILL (FASE 2B): Extract strategy_id, score, source from existing metadata JSON
+    # ──────────────────────────────────────────────────────────────────────
+    logger.info("Starting BACKFILL: Extracting strategy_id, score, source from metadata JSON...")
+    try:
+        cursor.execute("""
+            UPDATE sys_signals 
+            SET 
+                strategy_id = COALESCE(json_extract(metadata, '$.strategy_id'), strategy_id),
+                score = COALESCE(CAST(json_extract(metadata, '$.score') AS REAL), 0.0),
+                source = COALESCE(json_extract(metadata, '$.source'), source)
+            WHERE metadata IS NOT NULL
+        """)
+        backfill_count = cursor.rowcount
+        conn.commit()
+        logger.info(f"BACKFILL completed: {backfill_count} signals updated with extracted metadata")
+    except Exception as e:
+        logger.warning(f"BACKFILL failed (non-blocking): {e}")
+        conn.rollback()
+
+    # MIGRATION (FASE 2C): Remove order_id column from sys_signals
+    # ──────────────────────────────────────────────────────────────────────
+    # SQLite doesn't support DROP COLUMN, so we recreate the table without it
+    cursor.execute("PRAGMA table_info(sys_signals)")
+    sys_signals_cols = [r[1] for r in cursor.fetchall()]
+    if "order_id" in sys_signals_cols:
+        logger.info("MIGRATION: Removing order_id from sys_signals (table recreation required)")
+        try:
+            # Step 1: Create temporary table without order_id
+            cursor.execute("""
+                CREATE TABLE sys_signals_new AS
+                SELECT 
+                    id, symbol, signal_type, confidence, timestamp, metadata, connector_type,
+                    timeframe, price, direction, status, created_at, updated_at, origin_mode,
+                    strategy_id, score, source
+                FROM sys_signals
+            """)
+            
+            # Step 2: Drop old table and recreate indexes
+            cursor.execute("DROP TABLE sys_signals")
+            cursor.execute("ALTER TABLE sys_signals_new RENAME TO sys_signals")
+            
+            # Step 3: Recreate all indexes
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_signals_origin_mode ON sys_signals (origin_mode)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_signals_strategy_id ON sys_signals (strategy_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_signals_score ON sys_signals (score DESC)")
+            
+            conn.commit()
+            logger.info("MIGRATION completed: order_id removed from sys_signals, table recreated successfully")
+        except Exception as e:
+            logger.error(f"MIGRATION FAILED: {e}. Attempting rollback...")
+            conn.rollback()
+            raise
 
     # sys_regime_configs: add tenant_id for multi-tenant isolation (nullable for backward compat)
     cursor.execute("PRAGMA table_info(sys_regime_configs)")
@@ -730,3 +801,135 @@ def _seed_usr_notification_settings(cursor: sqlite3.Cursor) -> None:
             INSERT OR IGNORE INTO usr_notification_settings (provider, enabled, config)
             VALUES (?, ?, ?)
         """, (provider, enabled, config))
+
+
+def bootstrap_tenant_template(global_conn: sqlite3.Connection, mode: str = "manual") -> bool:
+    """
+    Create template DB for new tenants by copying usr_* tables from global DB.
+    
+    Args:
+        global_conn: Connection to data_vault/global/aethelgard.db
+        mode: "manual" (default) or "automatic"
+            - "manual": Only run if explicitly called, flag stored in sys_config
+            - "automatic": Run on every startup (for convenience, not recommended)
+    
+    Returns:
+        True if bootstrap succeeded, False if already done
+    
+    Idempotent: Safe to call multiple times, will skip if template already exists.
+    """
+    from pathlib import Path
+    import shutil
+    
+    template_dir = Path("data_vault/templates")
+    template_path = template_dir / "usr_template.db"
+    
+    # Check if bootstrap is enabled in config
+    mode_config_key = "tenant_template_bootstrap_mode"
+    cursor = global_conn.cursor()
+    cursor.execute("SELECT value FROM sys_config WHERE key = ?", (mode_config_key,))
+    result = cursor.fetchone()
+    
+    # First time: store config
+    if result is None:
+        cursor.execute(
+            "INSERT INTO sys_config (key, value) VALUES (?, ?)",
+            (mode_config_key, mode)
+        )
+        global_conn.commit()
+        logger.info(f"[TEMPLATE] Bootstrap mode configured: {mode}")
+    else:
+        mode = result[0]  # Read from config
+    
+    # Check if already completed (manual mode only)
+    if mode == "manual":
+        bootstrap_done_key = "tenant_template_bootstrap_done"
+        cursor.execute("SELECT value FROM sys_config WHERE key = ?", (bootstrap_done_key,))
+        if cursor.fetchone():
+            logger.debug("[TEMPLATE] Bootstrap already completed (manual mode)")
+            return False
+    
+    # Skip if template already physically exists
+    if template_path.exists():
+        # Mark as done if manual mode
+        if mode == "manual":
+            cursor.execute(
+                "INSERT OR IGNORE INTO sys_config (key, value) VALUES (?, ?)",
+                ("tenant_template_bootstrap_done", "1")
+            )
+            global_conn.commit()
+        logger.info(f"[TEMPLATE] Template already exists: {template_path}")
+        return False
+    
+    # Create template: copy usr_* tables from global to template
+    try:
+        logger.info("[TEMPLATE] Creating tenant template DB...")
+        template_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create new template DB
+        template_conn = sqlite3.connect(str(template_path))
+        template_cursor = template_conn.cursor()
+        
+        # Get list of usr_* tables from global DB
+        cursor.execute("""
+            SELECT name FROM sqlite_master 
+            WHERE type='table' AND name LIKE 'usr_%'
+            ORDER BY name
+        """)
+        usr_tables = [row[0] for row in cursor.fetchall()]
+        
+        if not usr_tables:
+            logger.warning("[TEMPLATE] No usr_* tables found in global DB")
+            template_conn.close()
+            return False
+        
+        logger.info(f"[TEMPLATE] Copying {len(usr_tables)} usr_* tables to template...")
+        
+        # Copy each usr_* table schema + data from global to template
+        for table_name in usr_tables:
+            # GET table creation SQL
+            cursor.execute(f"SELECT sql FROM sqlite_master WHERE type='table' AND name='{table_name}'")
+            create_sql = cursor.fetchone()[0]
+            
+            # Create table in template
+            template_cursor.execute(create_sql)
+            
+            # Copy data from global to template
+            cursor.execute(f"SELECT * FROM {table_name}")
+            rows = cursor.fetchall()
+            
+            # Get column names
+            cursor.execute(f"PRAGMA table_info({table_name})")
+            columns = [row[1] for row in cursor.fetchall()]
+            
+            if rows:
+                placeholders = ", ".join(["?" for _ in columns])
+                template_cursor.execute(
+                    f"INSERT INTO {table_name} VALUES ({placeholders})",
+                    rows[0]
+                )
+                for row in rows[1:]:
+                    template_cursor.execute(
+                        f"INSERT INTO {table_name} VALUES ({placeholders})",
+                        row
+                    )
+            
+            logger.debug(f"[TEMPLATE] Copied {table_name}: {len(rows)} rows")
+        
+        template_conn.commit()
+        template_conn.close()
+        
+        # Mark as done in global config
+        if mode == "manual":
+            cursor.execute(
+                "INSERT OR IGNORE INTO sys_config (key, value) VALUES (?, ?)",
+                ("tenant_template_bootstrap_done", "1")
+            )
+        
+        global_conn.commit()
+        logger.info(f"[TEMPLATE] Bootstrap successful: {template_path} ({len(usr_tables)} tables)")
+        return True
+        
+    except Exception as e:
+        logger.error(f"[TEMPLATE] Bootstrap failed: {e}", exc_info=True)
+        return False

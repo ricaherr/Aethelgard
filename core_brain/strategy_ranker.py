@@ -83,7 +83,7 @@ class StrategyRanker:
             Dictionary with action, metrics, and trace_id if applicable
         """
         # Fetch current strategy data
-        ranking = self.storage.get_usr_performance(strategy_id)
+        ranking = self.storage.get_signal_ranking(strategy_id)
         if not ranking:
             logger.warning(f"Strategy {strategy_id} not found in ranking table")
             return {'action': 'not_found', 'strategy_id': strategy_id}
@@ -399,7 +399,7 @@ class StrategyRanker:
             Decimal score (0-1 range, 4+ decimal places precision)
         """
         # Fetch strategy ranking metrics
-        ranking = self.storage.get_usr_performance(strategy_id)
+        ranking = self.storage.get_signal_ranking(strategy_id)
         if not ranking:
             logger.warning(f"Strategy {strategy_id} not found for weighted ranking")
             return Decimal('0.0')

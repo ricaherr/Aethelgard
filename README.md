@@ -45,3 +45,4 @@ El sistema se organiza en dominios especializados para garantizar la escalabilid
 ---
 
 *Desarrollado con enfoque en la autonomía total y la resiliencia algorítmica.*
+
