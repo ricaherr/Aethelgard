@@ -238,9 +238,9 @@ class MainOrchestrator:
     def __init__(
         self,
         scanner: Any,
-        signal_factory: Any,
-        risk_manager: Any,
-        executor: Any,
+        signal_factory: Optional[Any] = None,
+        risk_manager: Any = None,
+        executor: Any = None,
         storage: Optional[StorageManager] = None,
         position_manager: Optional[Any] = None,
         trade_closure_listener: Optional[Any] = None,
@@ -257,21 +257,35 @@ class MainOrchestrator:
         user_id: Optional[str] = None  # Multi-user support: User identifier for DB isolation
     ):
         """
-        Initialize MainOrchestrator with backward-compatible Dependency Injection.
+        Initialize MainOrchestrator with Explicit Dependency Injection (SOLID).
         
-        Multi-user support: user_id parameter enables per-user data isolation.
-        If user_id is provided, all storage operations use user-specific DB.
-        If user_id is None, uses global DB (backward compat).
+        TRACE_ID: MAIN-ORCHESTRATOR-DI-SEPARATION-2026
+        
+        signal_factory is NOW OPTIONAL:
+        - If None: User must call initialize_sensors() then set_signal_factory() afterwards
+        - If provided: Uses it immediately (backward compatible)
+        
+        This separation allows:
+        1. Sensors to be initialized FIRST
+        2. SignalFactory created WITH sensores already available
+        3. Zero duplicate strategy loads
         """
         self.thought_callback = thought_callback
         # Support both old (tenant_id) and new (user_id) parameters
         effective_user_id = user_id or tenant_id
         self.user_id = effective_user_id  # Store user context
+        
+        # Initialize sensor dictionary early (will be populated by initialize_sensors())
+        self.available_sensors = {}
+        self._signal_factory = signal_factory  # Store for later injection if None
+        
         # 1. Base dependencies and config
         self._init_core_dependencies(scanner, signal_factory, risk_manager, executor, storage, config_path, strategy_ranker, user_id=effective_user_id, tenant_id=tenant_id)
         
-        # 1.5 Load usr_strategies dynamically from BD (MANIFESTO II.3-II.4)
-        self._load_dynamic_usr_strategies()
+        # 1.5 Load usr_strategies dynamically ONLY if signal_factory was provided
+        # Otherwise, user must call initialize_sensors() + set_signal_factory() explicitly
+        if signal_factory is not None:
+            self._load_dynamic_usr_strategies()
         
         # 2. Classifier and Position Management
         self.regime_classifier = regime_classifier or RegimeClassifier(storage=self.storage)
@@ -301,14 +315,25 @@ class MainOrchestrator:
         # 9. Economic Calendar Veto Interface (PHASE 8: News-Based Trading Lockdown)
         self._init_economic_integration()
 
-    def _init_core_dependencies(self, scanner: Any, factory: Any, risk: Any, executor: Any, storage: Optional[Any], config_path: Optional[str], strategy_ranker: Optional[StrategyRanker] = None, user_id: Optional[str] = None, tenant_id: Optional[str] = None) -> None:
+    @property
+    def signal_factory(self) -> Optional[Any]:
+        """Public property for backward compatibility. Returns _signal_factory."""
+        return self._signal_factory
+    
+    @signal_factory.setter
+    def signal_factory(self, factory: Optional[Any]) -> None:
+        """Setter for backward compatibility."""
+        self._signal_factory = factory
+
+    def _init_core_dependencies(self, scanner: Any, factory: Optional[Any] = None, risk: Any = None, executor: Any = None, storage: Optional[Any] = None, config_path: Optional[str] = None, strategy_ranker: Optional[StrategyRanker] = None, user_id: Optional[str] = None, tenant_id: Optional[str] = None) -> None:
         """Initializes core engines and resolves storage/config.
         
         Multi-user architecture: Passes user_id to storage resolution for per-user DB isolation.
         tenant_id is deprecated (kept for backward compatibility).
+        signal_factory (factory) is optional - can be set later via set_signal_factory().
         """
         self.scanner = scanner
-        self.signal_factory = factory
+        self._signal_factory = factory  # Optional - may be None
         self.risk_manager = risk
         self.executor = executor
         effective_user_id = user_id or tenant_id
@@ -321,59 +346,30 @@ class MainOrchestrator:
         Load all usr_strategies dynamically from BD (MANIFESTO II.3-II.4).
         Creates a new SignalFactory with populated strategy engines.
         CUMPLE: DEVELOPMENT_GUIDELINES 1.6 (Service Layer) + Dynamic Registry.
+        
+        Uses already-initialized sensors from initialize_sensors() or initializes them if needed.
         """
         try:
             from core_brain.services.strategy_engine_factory import StrategyEngineFactory
             from core_brain.signal_factory import SignalFactory
             from core_brain.confluence import MultiTimeframeConfluenceAnalyzer
             from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
-            from core_brain.services.fundamental_guard import FundamentalGuardService
-            from core_brain.sensors import (
-                MovingAverageSensor,
-                ElephantCandleDetector,
-                SessionLiquiditySensor,
-                LiquiditySweepDetector,
-                MarketStructureAnalyzer,
-                SessionStateDetector,
-                ReasoningEventBuilder,
-            )
             
             logger.info("[STRATEGIES] Initiating dynamic loading from BD (SSOT)...")
+            
+            # Ensure sensors are initialized (use existing or create new)
+            if not self.available_sensors:
+                logger.info("[STRATEGIES] Sensors not yet initialized, initializing now...")
+                self.initialize_sensors()
+            
+            available_sensors = self.available_sensors
             
             # Load required dependencies
             dynamic_params = self.storage.get_dynamic_params()
             confluence_analyzer = MultiTimeframeConfluenceAnalyzer(storage=self.storage)
             trifecta_analyzer = TrifectaAnalyzer(storage=self.storage)
             
-            # Initialize all sensors (DI)
-            logger.info("[STRATEGIES] Initializing sensors...")
-            moving_avg_sensor = MovingAverageSensor(storage=self.storage)
-            elephant_detector = ElephantCandleDetector(
-                storage=self.storage, 
-                moving_average_sensor=moving_avg_sensor
-            )
-            liq_sensor = SessionLiquiditySensor(storage=self.storage)
-            liq_sweep_detector = LiquiditySweepDetector(storage=self.storage)
-            market_struct_analyzer = MarketStructureAnalyzer(storage=self.storage)
-            session_state = SessionStateDetector(storage=self.storage)
-            reasoning_builder = ReasoningEventBuilder(
-                storage=self.storage,
-                market_structure_analyzer=market_struct_analyzer
-            )
-            fundamental_guard = FundamentalGuardService(storage=self.storage)
-            
-            # Map sensors
-            available_sensors = {
-                "moving_average_sensor": moving_avg_sensor,
-                "elephant_candle_detector": elephant_detector,
-                "session_liquidity_sensor": liq_sensor,
-                "liquidity_sweep_detector": liq_sweep_detector,
-                "market_structure_analyzer": market_struct_analyzer,
-                "session_state_detector": session_state,
-                "reasoning_event_builder": reasoning_builder,
-                "fundamental_guard": fundamental_guard,
-            }
-            logger.info(f"[STRATEGIES] ✓ Sensors initialized: {list(available_sensors.keys())}")
+            logger.info(f"[STRATEGIES] Using sensors: {list(available_sensors.keys())}")
             
             # Create factory and instantiate all usr_strategies
             strategy_factory = StrategyEngineFactory(
@@ -399,6 +395,86 @@ class MainOrchestrator:
         except Exception as e:
             logger.error(f"[STRATEGIES] ⚠️  Failed to load usr_strategies dynamically: {e}", exc_info=True)
             logger.warning("[STRATEGIES] Continuing with existing SignalFactory (may have 0 engines)")
+
+    def initialize_sensors(self) -> Dict[str, Any]:
+        """
+        Explicitly initialize ALL sensors (DI).
+        
+        Returns:
+            Dict[sensor_name -> sensor_instance]
+            
+        Called BEFORE creating SignalFactory to ensure sensores are ready.
+        This method replaces the implicit initialization that was hidden in _load_dynamic_usr_strategies().
+        
+        TRACE_ID: MAIN-ORCHESTRATOR-SENSOR-INIT-2026
+        """
+        try:
+            from core_brain.services.fundamental_guard import FundamentalGuardService
+            from core_brain.sensors import (
+                MovingAverageSensor,
+                ElephantCandleDetector,
+                SessionLiquiditySensor,
+                LiquiditySweepDetector,
+                MarketStructureAnalyzer,
+                SessionStateDetector,
+                ReasoningEventBuilder,
+            )
+            
+            logger.info("[SENSORS] Initializing all sensors (explicit DI)...")
+            
+            # Create all sensors
+            moving_avg_sensor = MovingAverageSensor(storage=self.storage)
+            elephant_detector = ElephantCandleDetector(
+                storage=self.storage, 
+                moving_average_sensor=moving_avg_sensor
+            )
+            liq_sensor = SessionLiquiditySensor(storage=self.storage)
+            liq_sweep_detector = LiquiditySweepDetector(storage=self.storage)
+            market_struct_analyzer = MarketStructureAnalyzer(storage=self.storage)
+            session_state = SessionStateDetector(storage=self.storage)
+            reasoning_builder = ReasoningEventBuilder(
+                storage=self.storage,
+                market_structure_analyzer=market_struct_analyzer
+            )
+            fundamental_guard = FundamentalGuardService(storage=self.storage)
+            
+            # Map sensors
+            self.available_sensors = {
+                "moving_average_sensor": moving_avg_sensor,
+                "elephant_candle_detector": elephant_detector,
+                "session_liquidity_sensor": liq_sensor,
+                "liquidity_sweep_detector": liq_sweep_detector,
+                "market_structure_analyzer": market_struct_analyzer,
+                "session_state_detector": session_state,
+                "reasoning_event_builder": reasoning_builder,
+                "fundamental_guard": fundamental_guard,
+            }
+            
+            logger.info(f"[SENSORS] ✓ All sensors initialized: {list(self.available_sensors.keys())}")
+            return self.available_sensors
+            
+        except Exception as e:
+            logger.error(f"[SENSORS] ✗ Failed to initialize sensors: {e}", exc_info=True)
+            raise
+
+    def set_signal_factory(self, signal_factory: Any) -> None:
+        """
+        Explicitly inject SignalFactory AFTER sensors are ready.
+        
+        Args:
+            signal_factory: Configured SignalFactory instance
+            
+        This method is called after initialize_sensors() and main initialization is complete.
+        Ensures sensors are available BEFORE strategies are loaded.
+        
+        TRACE_ID: MAIN-ORCHESTRATOR-SIGNAL-FACTORY-INJECT-2026
+        """
+        if signal_factory is None:
+            raise ValueError("signal_factory cannot be None")
+        
+        logger.info("[DI] Injecting SignalFactory (sensores already initialized)")
+        self._signal_factory = signal_factory  # Property setter handles backward compatibility
+        logger.info("[DI] ✓ SignalFactory injected successfully")
 
     def _init_position_management(self) -> None:
         """Initializes PositionManager with configuration mapping and connector resolution."""

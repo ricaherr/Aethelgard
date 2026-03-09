@@ -288,30 +288,12 @@ async def main() -> None:
             auto_enable_tfs=True
         )
         
-        # Load strategies dynamically from database via StrategyEngineFactory
-        logger.info("[INIT] Cargando estrategias dinámicamente desde DB...")
-        try:
-            strategy_factory = StrategyEngineFactory(
-                storage=storage,
-                config=dynamic_params,
-                available_sensors={}
-            )
-            active_engines = strategy_factory.instantiate_all_sys_strategies()
-            logger.info(f"[INIT] {len(active_engines)} estrategias cargadas exitosamente")
-        except Exception as e:
-            logger.warning(f"[INIT] Error cargando estrategias: {e}. SignalFactory operará con Dict vacío")
-            active_engines = {}
-        
-        signal_factory = SignalFactory(
-            storage_manager=storage,
-            strategy_engines=active_engines,  # Poblado dinámicamente desde DB
-            confluence_analyzer=confluence_analyzer,
-            trifecta_analyzer=trifecta_analyzer,
-            notification_service=notification_service,
-            mt5_connector=mt5_connector
-        )
+        # NOTE: SignalFactory will be created AFTER sensors are initialized in MainOrchestrator
+        # See OPTION 4 implementation: Sensors first, then factory creation
+        signal_factory = None  # Will be set later
         
         # 6. Order Executor - FASE DI (Regla 1)
+
         logger.info("[INIT] Inicializando Order Executor (DI)...")
         
         multi_tf_limiter = MultiTimeframeLimiter(
@@ -367,12 +349,16 @@ async def main() -> None:
             config=dynamic_params.get("position_management", {})
         )
         
-        # 8. Main Orchestrator (Unified DI)
+        # 8. Main Orchestrator (Unified DI) - OPTION 4 Implementation
+        # Explicit sensor initialization BEFORE SignalFactory creation
         logger.info("[INIT] Inicializando Main Orchestrator (DI/SSOT)...")
         from core_brain.server import broadcast_thought
+        
+        # STEP 1: Create MainOrchestrator WITHOUT signal_factory (signal_factory=None)
+        # This ensures __init__ doesn't try to load strategies yet
         orchestrator = MainOrchestrator(
             scanner=scanner,
-            signal_factory=signal_factory,
+            signal_factory=None,  # OPTION 4: Defer factory injection
             risk_manager=risk_manager,
             executor=order_executor,
             storage=storage,
@@ -383,6 +369,42 @@ async def main() -> None:
             regime_classifier=regime_classifier,
             thought_callback=broadcast_thought
         )
+        
+        # STEP 2: Initialize sensors explicitly (BEFORE SignalFactory creation)
+        logger.info("[INIT] Inicializando sensores (fase de DI explícita)...")
+        available_sensors = orchestrator.initialize_sensors()
+        logger.info(f"[INIT] ✓ Sensores inicializados: {list(available_sensors.keys())}")
+        
+        # STEP 3: Create SignalFactory WITH populated sensors
+        logger.info("[INIT] Creando SignalFactory con sensores disponibles...")
+        from core_brain.services.strategy_engine_factory import StrategyEngineFactory
+        
+        try:
+            # Load strategies with sensors now available
+            strategy_factory = StrategyEngineFactory(
+                storage=storage,
+                config=dynamic_params,
+                available_sensors=available_sensors  # NOW POPULATED!
+            )
+            active_engines = strategy_factory.instantiate_all_sys_strategies()
+            logger.info(f"[INIT] ✓ {len(active_engines)} estrategias cargadas (con sensores listos)")
+        except Exception as e:
+            logger.warning(f"[INIT] Error cargando estrategias: {e}. SignalFactory operará con Dict vacío")
+            active_engines = {}
+        
+        signal_factory = SignalFactory(
+            storage_manager=storage,
+            strategy_engines=active_engines,
+            confluence_analyzer=confluence_analyzer,
+            trifecta_analyzer=trifecta_analyzer,
+            notification_service=notification_service,
+            mt5_connector=mt5_connector
+        )
+        
+        # STEP 4: Inject SignalFactory into orchestrator (explicit DI)
+        logger.info("[INIT] Inyectando SignalFactory en Orchestrator...")
+        orchestrator.set_signal_factory(signal_factory)
+        logger.info("[INIT] ✓ Orquestador listo con SignalFactory")
         
         # 9. Autonomous Health Service (EDGE Autonomy)
         logger.info("[INIT] Inicializando Servicio de Salud Autónomo...")
