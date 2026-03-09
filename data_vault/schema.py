@@ -445,12 +445,28 @@ def run_migrations(conn: sqlite3.Connection) -> None:
     """
     cursor = conn.cursor()
 
-    # usr_performance: add sharpe_ratio if missing
+    # usr_performance: add missing columns incrementally
     cursor.execute("PRAGMA table_info(usr_performance)")
-    sr_cols = [r[1] for r in cursor.fetchall()]
-    if "sharpe_ratio" not in sr_cols:
+    perf_cols = [r[1] for r in cursor.fetchall()]
+    
+    # Add sharpe_ratio if missing
+    if "sharpe_ratio" not in perf_cols:
         cursor.execute("ALTER TABLE usr_performance ADD COLUMN sharpe_ratio REAL DEFAULT 0.0")
         logger.info("Migration applied: usr_performance.sharpe_ratio added.")
+        perf_cols.append("sharpe_ratio")
+    
+    # Add total_usr_trades if missing
+    if "total_usr_trades" not in perf_cols:
+        cursor.execute("ALTER TABLE usr_performance ADD COLUMN total_usr_trades INTEGER DEFAULT 0")
+        logger.info("Migration applied: usr_performance.total_usr_trades added.")
+        perf_cols.append("total_usr_trades")
+    
+    # Add completed_last_50 if missing
+    if "completed_last_50" not in perf_cols:
+        cursor.execute("ALTER TABLE usr_performance ADD COLUMN completed_last_50 INTEGER DEFAULT 0")
+        logger.info("Migration applied: usr_performance.completed_last_50 added.")
+        perf_cols.append("completed_last_50")
+    
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_performance_sharpe ON usr_performance (sharpe_ratio DESC)")
 
     # sys_data_providers: add capability columns if missing

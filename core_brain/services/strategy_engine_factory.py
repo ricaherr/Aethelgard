@@ -248,29 +248,35 @@ class StrategyEngineFactory:
         """
         Obtiene execution_mode de usr_performance para una estrategia.
         
+        Implementa LAZY INITIALIZATION: Si estrategia NO existe en usr_performance,
+        la crea automáticamente con modo SHADOW (seguro, testing).
+        
+        Idempotente: Safe to call multiple times (no duplica registros).
+        
         Args:
             strategy_id: Identificador de la estrategia
             
         Returns:
-            execution_mode (SHADOW | LIVE | QUARANTINE) o 'SHADOW' como default
+            execution_mode (SHADOW | LIVE | QUARANTINE)
             
-        Note: Consulta BD via storage.get_usr_performance()
-              Si no está en ranking (bug), retorna SHADOW como safe default
+        Trace_ID: FACTORY-LAZY-INIT-USR-PERFORMANCE
         """
         try:
-            ranking = self.storage.get_usr_performance(strategy_id)
+            # Intentar obtener, o crear si no existe (LAZY INIT)
+            ranking = self.storage.ensure_usr_performance_for_strategy(strategy_id)
+            
             if ranking and 'execution_mode' in ranking:
                 return ranking['execution_mode']
             
-            # Si no está en ranking (puede pasar si bootstrap_usr_performance.py no se ejecutó)
-            logger.warning(
-                f"[FACTORY] ⊘ {strategy_id}: No encontrado en usr_performance, "
-                f"usando SHADOW como default (ejecute bootstrap_usr_performance.py)"
+            # Fallback en error inesperado
+            logger.error(
+                f"[FACTORY] ⚠️  {strategy_id}: Unexpected state after lazy init, "
+                f"using SHADOW as safe default"
             )
-            return 'SHADOW'  # Safe default
+            return 'SHADOW'
             
         except Exception as e:
-            logger.error(f"[FACTORY] ✗ {strategy_id}: Error al leer execution_mode: {e}")
+            logger.error(f"[FACTORY] ✗ {strategy_id}: Error en lazy init: {e}")
             return 'SHADOW'  # Safe default on error
     
     def _instantiate_python_strategy(self, strategy_spec: Dict[str, Any]) -> Any:

@@ -64,6 +64,54 @@ class StrategyRankingMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
+    def ensure_usr_performance_for_strategy(self, strategy_id: str) -> Dict:
+        """
+        Lazy initialization: Obtener o crear entrada en usr_performance para una estrategia.
+        
+        Si la estrategia YA existe en usr_performance, retornar registro existente.
+        Si NO existe, crear automáticamente con valores por defecto (SHADOW mode, métricas en 0).
+        
+        IDEMPOTENTE: Safe to call multiple times. No duplica registros.
+        
+        Trace_ID: LAZY-INIT-USR-PERFORMANCE-S007
+        
+        Args:
+            strategy_id: Identificador único de la estrategia (ej: 'BRK_OPEN_0001')
+            
+        Returns:
+            Dict con los datos de usr_performance (existente o recién creado)
+            
+        Usado por: StrategyEngineFactory._get_execution_mode() cuando carga estrategias
+        """
+        # Intentar obtener registro existente
+        existing = self.get_usr_performance(strategy_id)
+        if existing:
+            logger.debug(f"[LAZY-INIT] {strategy_id}: Already exists in usr_performance")
+            return existing
+        
+        # No existe → Crear automáticamente con defaults
+        logger.warning(
+            f"[LAZY-INIT] {strategy_id}: Creating automatic entry in usr_performance (SHADOW mode)"
+        )
+        
+        self.save_usr_performance(
+            strategy_id=strategy_id,
+            ranking_data={
+                'execution_mode': 'SHADOW',  # Safe default: no live trading
+                'profit_factor': 0.0,
+                'win_rate': 0.0,
+                'drawdown_max': 0.0,
+                'sharpe_ratio': 0.0,
+                'consecutive_losses': 0,
+                'total_usr_trades': 0,
+                'completed_last_50': 0,
+                'trace_id': f"LAZY-INIT-{strategy_id}"
+            }
+        )
+        
+        # Retornar registro recién creado
+        return self.get_usr_performance(strategy_id)
+
     def get_all_usr_performances(self) -> List[Dict]:
         """Get all strategy rankings, sorted by execution mode and profit factor."""
         conn = self._get_conn()
