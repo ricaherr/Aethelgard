@@ -99,6 +99,123 @@ class EdgeTuner:
             "learning": learning_note
         }
 
+    def adjust_confidence_threshold(self, predicted_score: float, actual_result: float) -> Dict[str, Any]:
+        """
+        FASE 2: Adjust confidence_threshold dynamically based on prediction accuracy (Delta Feedback).
+        
+        Used in SHADOW mode to allow strategies to learn accurate confidence calibration.
+        
+        Delta = Actual_Result - Predicted_Score
+        - If Delta > positive_delta_threshold: Prediction was conservative, increase threshold
+        - If Delta < negative_delta_threshold: Prediction was optimistic, decrease threshold
+        
+        Args:
+            predicted_score: Confidence score when signal was created (0.0-1.0)
+            actual_result: Trade outcome (1.0 = WIN, 0.0 = LOSS)
+        
+        Returns:
+            Dictionary with adjustment details and new threshold
+        """
+        import uuid
+        from datetime import datetime, timezone
+        
+        # Generate Trace_ID for this operation (RULE 5 of .ai_rules.md)
+        trace_id = f"EDGE-THRESHOLD-{uuid.uuid4().hex[:8].upper()}"
+        timestamp = datetime.now(timezone.utc).isoformat()
+        
+        try:
+            config = self._load_config()
+            current_threshold = config.get("confidence_threshold", 0.75)
+            
+            # Load governance parameters from config (SSOT - Rule 1 of .ai_rules.md)
+            positive_delta_threshold = config.get("confidence_delta_positive_threshold", 0.10)
+            negative_delta_threshold = config.get("confidence_delta_negative_threshold", -0.40)
+            threshold_increase_pct = config.get("confidence_threshold_increase_pct", 0.01)
+            threshold_decrease_pct = config.get("confidence_threshold_decrease_pct", 0.02)
+            threshold_max = config.get("confidence_threshold_max", 0.95)
+            threshold_min = config.get("confidence_threshold_min", 0.50)
+            
+            # Validate loaded governance parameters
+            if not all(isinstance(v, (int, float)) for v in [positive_delta_threshold, negative_delta_threshold, 
+                                                              threshold_increase_pct, threshold_decrease_pct,
+                                                              threshold_max, threshold_min]):
+                logger.error(
+                    f"[TRACE_ID: {trace_id}] [ERROR] Invalid governance parameters type. Using safe defaults."
+                )
+                # Safe defaults if config is corrupted
+                positive_delta_threshold = 0.10
+                negative_delta_threshold = -0.40
+                threshold_increase_pct = 0.01
+                threshold_decrease_pct = 0.02
+                threshold_max = 0.95
+                threshold_min = 0.50
+            
+            # Normalize predicted_score if in percentage format
+            norm_score = predicted_score / 100.0 if predicted_score > 1.0 else predicted_score
+            
+            # Calculate Delta
+            delta = actual_result - norm_score
+            
+            new_threshold = current_threshold
+            adjustment_direction = "none"
+            
+            # Positive delta: Prediction was too conservative, increase threshold
+            if delta > positive_delta_threshold:
+                new_threshold = min(threshold_max, current_threshold + threshold_increase_pct)
+                adjustment_direction = "increase"
+                logger.info(
+                    f"[TRACE_ID: {trace_id}] [EDGE_TUNER] Confidence threshold INCREASED (Delta={delta:.3f}, positive drift). "
+                    f"{current_threshold:.2f} → {new_threshold:.2f} | Timestamp: {timestamp}"
+                )
+            
+            # Negative delta: Prediction was too optimistic, decrease threshold
+            elif delta < negative_delta_threshold:
+                new_threshold = max(threshold_min, current_threshold - threshold_decrease_pct)
+                adjustment_direction = "decrease"
+                logger.info(
+                    f"[TRACE_ID: {trace_id}] [EDGE_TUNER] Confidence threshold DECREASED (Delta={delta:.3f}, negative drift). "
+                    f"{current_threshold:.2f} → {new_threshold:.2f} | Timestamp: {timestamp}"
+                )
+            
+            # Update config if changed (with try/except for rollback - Rule 4 of DEVELOPMENT_GUIDELINES.md)
+            if abs(new_threshold - current_threshold) > 0.001:
+                try:
+                    config["confidence_threshold"] = new_threshold
+                    self._save_config(config)
+                    logger.info(f"[TRACE_ID: {trace_id}] [OK] Confidence threshold persisted to DB (SSOT)")
+                except Exception as e:
+                    # Rollback: revert to old value and log error
+                    logger.error(
+                        f"[TRACE_ID: {trace_id}] [ROLLBACK] Failed to persist threshold change: {str(e)}. "
+                        f"Keeping old threshold: {current_threshold:.2f}"
+                    )
+                    new_threshold = current_threshold  # Rollback to safe value
+                    raise
+                
+                return {
+                    "adjustment_made": True,
+                    "trace_id": trace_id,
+                    "timestamp": timestamp,
+                    "delta": delta,
+                    "old_threshold": current_threshold,
+                    "new_threshold": new_threshold,
+                    "direction": adjustment_direction
+                }
+            
+            return {
+                "adjustment_made": False,
+                "delta": delta,
+                "current_threshold": current_threshold,
+                "reason": "Delta not significant enough for adjustment"
+            }
+        
+        except Exception as e:
+            logger.error(f"[EDGE_TUNER] Error adjusting confidence threshold: {e}")
+            return {
+                "adjustment_made": False,
+                "error": str(e)
+            }
+
     def apply_governance_limits(self, current_weight: float, proposed_weight: float) -> tuple[float, str]:
         """
         Safety Governor: Enforces learning boundaries to prevent overfitting.

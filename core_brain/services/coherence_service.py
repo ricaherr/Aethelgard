@@ -98,11 +98,23 @@ class CoherenceService:
                 config.get("min_usr_executions_for_analysis", 5)
             )
             
+            # FASE 6: Dynamic thresholds (SHADOW bootstrap phases)
+            # These define when veto applies based on strategy age (number of trades)
+            self.shadow_bootstrap_trades_limit = int(config.get("shadow_bootstrap_trades_limit", 10))  # Trades 0-10
+            self.shadow_transition_trades_limit = int(config.get("shadow_transition_trades_limit", 30))  # Trades 11-30
+            self.shadow_monitoring_trades_limit = int(config.get("shadow_monitoring_trades_limit", 50))  # Trades 31-50
+            
+            # Adaptive thresholds per phase (only for SHADOW)
+            self.bootstrap_coherence_threshold = float(config.get("bootstrap_coherence_threshold", 0.0))  # Phase 0: NO VETO
+            self.transition_coherence_threshold = float(config.get("transition_coherence_threshold", 0.40))  # Phase 1: 40%
+            self.monitoring_coherence_threshold = float(config.get("monitoring_coherence_threshold", 0.60))  # Phase 2: 60%
+            
             logger.debug(
                 f"Coherence config loaded from DB: "
                 f"threshold={self.min_coherence_threshold}, "
                 f"max_degradation={self.max_performance_degradation}, "
-                f"min_usr_executions={self.min_usr_executions_for_analysis}"
+                f"min_usr_executions={self.min_usr_executions_for_analysis}, "
+                f"SHADOW_bootstrap_limit={self.shadow_bootstrap_trades_limit}"
             )
             
         except Exception as e:
@@ -111,6 +123,13 @@ class CoherenceService:
             self.min_coherence_threshold = 0.80
             self.max_performance_degradation = 0.15
             self.min_usr_executions_for_analysis = 5
+            # FASE 6 defaults
+            self.shadow_bootstrap_trades_limit = 10
+            self.shadow_transition_trades_limit = 30
+            self.shadow_monitoring_trades_limit = 50
+            self.bootstrap_coherence_threshold = 0.0
+            self.transition_coherence_threshold = 0.40
+            self.monitoring_coherence_threshold = 0.60
     
     def detect_drift(
         self,
@@ -144,27 +163,49 @@ class CoherenceService:
         timestamp_utc = to_utc(start_time)
         
         try:
+            # 0. CHECK: Is strategy in SHADOW mode? If so, apply grace period (bootstrap phase)
+            is_shadow_bootstrap = False
+            if strategy_id:
+                try:
+                    ranking = self.storage.get_usr_performance(strategy_id)
+                    execution_mode = ranking.get('execution_mode') if ranking else None
+                    total_trades = ranking.get('completed_last_50', 0) if ranking else 0
+                    
+                    # SHADOW mode with < 10 trades = Bootstrap phase (no veto)
+                    if execution_mode == 'SHADOW' and total_trades < 10:
+                        is_shadow_bootstrap = True
+                        logger.info(
+                            f"[COHERENCE] {strategy_id} in SHADOW BOOTSTRAP phase ({total_trades} trades). "
+                            f"Disabling veto for confidence gathering."
+                        )
+                except Exception as e:
+                    logger.debug(f"[COHERENCE] Could not check strategy execution_mode: {e}")
+            
             # 1. Fetch execution logs within time window
             usr_executions = self._fetch_usr_executions(symbol, window_minutes, strategy_id)
             
             if not usr_executions:
+                # No data found
+                veto_decision = False if is_shadow_bootstrap else True
                 return {
                     "coherence_score": 0.0,
-                    "status": "INSUFFICIENT_DATA",
-                    "veto_new_entries": True,
+                    "status": "BOOTSTRAP_PHASE" if is_shadow_bootstrap else "INSUFFICIENT_DATA",
+                    "veto_new_entries": veto_decision,
                     "usr_executions_analyzed": 0,
-                    "reason": f"No usr_executions found for {symbol} in last {window_minutes} minutes",
+                    "reason": f"Bootstrap phase (SHADOW, collecting signal confidence)" if is_shadow_bootstrap else f"No usr_executions found for {symbol} in last {window_minutes} minutes",
                     "timestamp": timestamp_utc,
                     "trace_id": trace_id,
                 }
             
             if len(usr_executions) < self.min_usr_executions_for_analysis:
+                # Insufficient data
+                veto_decision = False if is_shadow_bootstrap else False
                 return {
                     "coherence_score": 0.0,
-                    "status": "INSUFFICIENT_DATA",
-                    "veto_new_entries": False,  # Don't veto, just monitor
+                    "status": "BOOTSTRAP_PHASE" if is_shadow_bootstrap else "INSUFFICIENT_DATA",
+                    "veto_new_entries": veto_decision,  # Don't veto, just monitor
                     "usr_executions_analyzed": len(usr_executions),
-                    "reason": f"Insufficient usr_executions ({len(usr_executions)}/{self.min_usr_executions_for_analysis})",
+                    "reason": f"Bootstrap phase (SHADOW, {len(usr_executions)} trades accumulated)" if is_shadow_bootstrap else f"Insufficient usr_executions ({len(usr_executions)}/{self.min_usr_executions_for_analysis})",
                     "timestamp": timestamp_utc,
                     "trace_id": trace_id,
                 }

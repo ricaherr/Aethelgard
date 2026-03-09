@@ -262,6 +262,7 @@ class RiskPolicyEnforcer:
         
         # 6. COHERENCE CHECK (HU 6.3) — Model Fidelity Validation
         # If model has drifted from reality, block new entries to prevent losses on invalid model
+        # EXCEPTION: SHADOW strategies in bootstrap phase are allowed to gather confidence
         try:
             coherence_result = self.coherence_service.detect_drift(
                 symbol=signal.symbol,
@@ -269,7 +270,11 @@ class RiskPolicyEnforcer:
                 strategy_id=getattr(signal, "strategy_id", None),
             )
             
-            if coherence_result.get("veto_new_entries", False):
+            # Check if strategy is in BOOTSTRAP_PHASE (SHADOW mode with few trades)
+            # If so, skip veto and allow execution for confidence gathering
+            is_bootstrap = coherence_result.get("status") == "BOOTSTRAP_PHASE"
+            
+            if coherence_result.get("veto_new_entries", False) and not is_bootstrap:
                 reason = (
                     f"[COHERENCE_VETO][Trace_ID: {tid}] Model incoherence detected. "
                     f"Coherence score {coherence_result.get('coherence_score', 0)*100:.1f}% < 80%. "
@@ -279,14 +284,22 @@ class RiskPolicyEnforcer:
                 logger.warning("[%s] %s", signal.symbol, reason)
                 return False, reason
             
+            # Log appropriate message based on status
+            if is_bootstrap:
+                logger.info(
+                    "[%s] [COHERENCE_BOOTSTRAP] Strategy in confidence-gathering phase. "
+                    f"Coherence monitoring active. Reason: {coherence_result.get('reason', 'SHADOW bootstrap')}",
+                    signal.symbol
+                )
+            
             # Log coherence status for monitoring
             coherence_score = coherence_result.get("coherence_score", 1.0)
-            if coherence_score < 0.95:
+            if coherence_score < 0.95 and not is_bootstrap:
                 logger.info(
                     "[%s] [COHERENCE_WARNING] Coherence degraded to %.1f%%. Monitoring active. Status: %s",
                     signal.symbol, coherence_score*100, coherence_result.get("status", "MONITORING")
                 )
-            else:
+            elif not is_bootstrap:
                 logger.debug(
                     "[%s] [COHERENCE_OK] Model coherent (%.1f%%). Status: %s",
                     signal.symbol, coherence_score*100, coherence_result.get("status", "COHERENT")

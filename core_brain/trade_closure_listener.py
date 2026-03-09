@@ -394,6 +394,23 @@ class TradeClosureListener:
             
             if result.get('adjustment_made'):
                 logger.info(f"[TUNER] [ADAPTIVE] Learning Adjustment: {result['learning']}")
+            
+            # FASE 2: Adjust confidence_threshold dynamically (Lite Confidence Profiling)
+            # Allows SHADOW mode to learn true confidence calibration over time
+            try:
+                confidence_adj = self.edge_tuner.adjust_confidence_threshold(
+                    predicted_score=confidence,
+                    actual_result=float(trade_result["is_win"])
+                )
+                
+                if confidence_adj.get('adjustment_made'):
+                    logger.info(
+                        f"[CONFIDENCE_LEARNING] Threshold adjusted: "
+                        f"{confidence_adj['old_threshold']:.2f} → {confidence_adj['new_threshold']:.2f} "
+                        f"(Delta={confidence_adj['delta']:.3f})"
+                    )
+            except Exception as e:
+                logger.debug(f"[CONFIDENCE_LEARNING] Skipped: {e}")
                 
         except Exception as e:
             logger.error(f"Error in edge feedback processing: {e}", exc_info=True)

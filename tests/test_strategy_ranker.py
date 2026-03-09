@@ -132,7 +132,7 @@ class TestStrategyRankerDegradation:
         GIVEN: Strategy in LIVE mode with:
             - Drawdown: 3.2% (> 3% threshold)
         WHEN: StrategyRanker evaluates
-        THEN: Strategy degraded to QUARANTINE with trace_id logged
+        THEN: Strategy rehabilitated to SHADOW (recovery path per OPCIÓN A++)
         """
         strategy_id = "strat_old_reliable"
         
@@ -152,22 +152,22 @@ class TestStrategyRankerDegradation:
         
         result = strategy_ranker.evaluate_and_rank(strategy_id)
         
-        assert result['action'] == 'degraded'
+        assert result['action'] == 'rehabilitated'
         assert result['from_mode'] == 'LIVE'
-        assert result['to_mode'] == 'QUARANTINE'
-        assert result['reason'] == 'drawdown_exceeded'
+        assert result['to_mode'] == 'SHADOW'
+        assert result['reason'] == 'rehabilitation_drawdown_exceeded'
         assert result['trace_id'].startswith('RANK-')
         
         mock_storage.update_strategy_execution_mode.assert_called_once()
         args = mock_storage.update_strategy_execution_mode.call_args[0]
-        assert args[1] == 'QUARANTINE'
+        assert args[1] == 'SHADOW'
 
     def test_degrade_live_to_quarantine_with_5_consecutive_losses(self, strategy_ranker, mock_storage):
         """
         GIVEN: Strategy in LIVE mode with:
             - Consecutive Losses: 5 (>= 5 threshold)
         WHEN: StrategyRanker evaluates
-        THEN: Strategy degraded to QUARANTINE
+        THEN: Strategy rehabilitated to SHADOW (recovery path per OPCIÓN A++)
         """
         strategy_id = "strat_unlucky_streak"
         
@@ -186,10 +186,10 @@ class TestStrategyRankerDegradation:
         
         result = strategy_ranker.evaluate_and_rank(strategy_id)
         
-        assert result['action'] == 'degraded'
+        assert result['action'] == 'rehabilitated'
         assert result['from_mode'] == 'LIVE'
-        assert result['to_mode'] == 'QUARANTINE'
-        assert result['reason'] == 'consecutive_losses_exceeded'
+        assert result['to_mode'] == 'SHADOW'
+        assert result['reason'] == 'rehabilitation_consecutive_losses_exceeded'
 
     def test_live_remains_live_with_healthy_metrics(self, strategy_ranker, mock_storage):
         """

@@ -166,11 +166,15 @@ class StrategyRanker:
     
     def _evaluate_live(self, strategy_id: str, ranking: Dict) -> Dict[str, Any]:
         """
-        Evaluate LIVE strategy for degradation to QUARANTINE.
+        Evaluate LIVE strategy for degradation.
         
-        Degradation triggers:
+        FASE 7: Degradation triggers cause transition to SHADOW for rehabilitation (not QUARANTINE).
+        
+        Rehabilitation triggers:
         - Drawdown >= 3% OR
         - Consecutive Losses >= 5
+        
+        This allows strategies to recover in SHADOW mode rather than being permanently suspended.
         """
         drawdown_max = ranking.get('drawdown_max', 0.0)
         consecutive_losses = ranking.get('consecutive_losses', 0)
@@ -180,20 +184,40 @@ class StrategyRanker:
         losses_exceeded = consecutive_losses >= self.CONSECUTIVE_LOSSES_THRESHOLD
         
         if drawdown_exceeded or losses_exceeded:
-            # DEGRADATION to QUARANTINE
+            # FASE 7: DEGRADATION to SHADOW (rehabilitation, not quarantine)
             reason = 'drawdown_exceeded' if drawdown_exceeded else 'consecutive_losses_exceeded'
-            trace_id = self._degrade_strategy(strategy_id, ranking, reason)
+            
+            # Use storage to transition to SHADOW (not QUARANTINE)
+            trace_id = self.storage.update_strategy_execution_mode(
+                strategy_id, 'SHADOW', trace_id=None
+            )
+            
+            # Log state change with "rehabilitation" flavor
+            self.storage.log_strategy_state_change(
+                strategy_id=strategy_id,
+                old_mode='LIVE',
+                new_mode='SHADOW',
+                trace_id=trace_id,
+                reason=f"REHABILITATION: {reason}",
+                metrics={
+                    'drawdown_max': drawdown_max,
+                    'consecutive_losses': consecutive_losses,
+                    'total_usr_trades': ranking.get('total_usr_trades'),
+                    'rehabilitation_mode': True
+                }
+            )
             
             logger.critical(
-                f"[TRACE_ID: {trace_id}] Strategy {strategy_id} degraded to QUARANTINE. "
-                f"Reason: {reason} (DD={drawdown_max:.2f}%, CL={consecutive_losses})"
+                f"[TRACE_ID: {trace_id}] Strategy {strategy_id} transitioned to SHADOW for rehabilitation. "
+                f"Reason: {reason} (DD={drawdown_max:.2f}%, CL={consecutive_losses}). "
+                f"System will attempt recovery over next 20-50 trades."
             )
             
             return {
-                'action': 'degraded',
+                'action': 'rehabilitated',
                 'from_mode': 'LIVE',
-                'to_mode': 'QUARANTINE',
-                'reason': reason,
+                'to_mode': 'SHADOW',
+                'reason': f"rehabilitation_{reason}",
                 'trace_id': trace_id,
                 'drawdown_max': drawdown_max,
                 'consecutive_losses': consecutive_losses
