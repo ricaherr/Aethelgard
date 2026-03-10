@@ -258,18 +258,14 @@ class RiskManager:
         current_balance: float,
     ) -> tuple[bool, str]:
         from datetime import datetime, timezone
-        from utils.time_utils import to_utc
+        from utils.time_utils import to_utc_datetime
         if not lockdown_date:
             return True, "No lockdown date (stale)"
         try:
             if isinstance(lockdown_date, datetime):
                 lockdown_time = lockdown_date.astimezone(timezone.utc) if lockdown_date.tzinfo else lockdown_date.replace(tzinfo=timezone.utc)
             else:
-                dt_str = to_utc(lockdown_date)
-                try:
-                    lockdown_time = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S.%f").replace(tzinfo=timezone.utc)
-                except Exception:
-                    lockdown_time = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                lockdown_time = to_utc_datetime(lockdown_date)
         except (ValueError, TypeError):
             return True, "Invalid lockdown date"
         if lockdown_balance and current_balance >= lockdown_balance * 1.02:
@@ -277,12 +273,13 @@ class RiskManager:
         try:
             conn = self.storage._get_conn()
             cursor = conn.cursor()
-            cursor.execute("SELECT MAX(timestamp) FROM usr_trades WHERE timestamp > ?", (lockdown_date,))
+            cursor.execute("SELECT MAX(close_time) FROM usr_trades WHERE close_time > ?", (lockdown_time.isoformat(),))
             row = cursor.fetchone()
             last_trade = row[0] if row and row[0] else None
             conn.close()
             if last_trade:
-                last_dt = to_utc(last_trade)
+                from utils.time_utils import to_utc_datetime
+                last_dt = to_utc_datetime(last_trade)
                 hours = (datetime.now(timezone.utc) - last_dt).total_seconds() / 3600
                 if hours >= 24:
                     return True, f"System rested {hours:.1f}h"
