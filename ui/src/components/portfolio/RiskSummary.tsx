@@ -159,7 +159,7 @@ export function RiskSummary({ summary, collapsed = false, onToggleCollapse }: Ri
             <div className="mb-6">
                 <div className="text-[10px] text-white/50 uppercase font-bold tracking-widest mb-3">Risk Distribution</div>
                 <div className="space-y-2">
-                    {Object.entries(summary.positions_by_asset).map(([type, data]) => (
+                    {Object.entries(summary.positions_by_asset || {}).map(([type, data]) => (
                         data.count > 0 && (
                             <div key={type} className="flex items-center justify-between text-sm p-2 bg-white/[0.02] rounded">
                                 <div className="flex items-center gap-2">

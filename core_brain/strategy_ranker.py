@@ -502,15 +502,15 @@ class StrategyRanker:
     
     def get_live_usr_strategies(self) -> list:
         """Get all usr_strategies currently in LIVE mode."""
-        return self.storage.get_usr_strategies_by_mode('LIVE')
+        return self.storage.get_strategies_by_mode('LIVE')
     
     def get_shadow_usr_strategies(self) -> list:
         """Get all usr_strategies currently in SHADOW mode."""
-        return self.storage.get_usr_strategies_by_mode('SHADOW')
+        return self.storage.get_strategies_by_mode('SHADOW')
     
     def get_quarantine_usr_strategies(self) -> list:
         """Get all usr_strategies currently in QUARANTINE mode."""
-        return self.storage.get_usr_strategies_by_mode('QUARANTINE')
+        return self.storage.get_strategies_by_mode('QUARANTINE')
     
     def evaluate_all_usr_strategies(self) -> Dict[str, Dict[str, Any]]:
         """

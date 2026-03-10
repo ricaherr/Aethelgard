@@ -100,20 +100,31 @@ const AnalysisPage: React.FC = () => {
         body: JSON.stringify({ signal_id: signalId }),
       });
 
+      // Defensive: ensure response is valid JSON
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`API Error ${response.status}: ${errorText}`);
+      }
+
       const result = await response.json();
 
-      if (result.success) {
-        toast.success(result.message);
-        if ((window as any).__signalFeedRefresh) {
-          (window as any).__signalFeedRefresh();
+      // Defensive: verify result structure
+      if (result && typeof result === 'object') {
+        if (result.success) {
+          toast.success(result.message || 'Signal executed successfully');
+          if ((window as any).__signalFeedRefresh) {
+            (window as any).__signalFeedRefresh();
+          }
+        } else {
+          toast.error(result.message || 'Failed to execute signal');
         }
       } else {
-        console.error('[Analysis] Signal execution failed:', result.message);
-        toast.error(result.message);
+        throw new Error('Invalid response format from server');
       }
     } catch (error) {
-      console.error('[Analysis] Error executing signal:', error);
-      toast.error('Error executing signal');
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error executing signal';
+      console.error('[Analysis] Error executing signal:', errorMsg);
+      toast.error(errorMsg);
     }
   };
 

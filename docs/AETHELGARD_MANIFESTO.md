@@ -1013,6 +1013,117 @@ for signal in approved:
 
 ---
 
+## XI. Architecture Principle: API Endpoint Naming Convention (2026-03-11)
+
+**Propósito**: Garantizar separación clara entre nomenclatura interna (base de datos) y nombres públicos (API REST), evitando 404 erres y deuda técnica.
+
+### Principio Fundamental
+
+**Separación Inmutable**: Tabla `sys_regime_configs` (BD) ≠ ruta `/api/regime_configs` (API pública)
+
+- ✅ **Internamente**: Usar prefijos agnósticos (`sys_*`, `usr_*`) en BD para categorizar datos
+- ✅ **Externamente**: Usar nombres semánticos en API REST (sin prefijos internos)
+- ❌ **Prohibido**: Exponer prefijos internos en ruta pública  → genera 404s y confusión
+
+### Convención de Nombrado (SSOT)
+
+```
+Base de Datos (Internal)       →  API REST Public (Semántico)
+────────────────────────────────────────────────────────
+sys_regime_configs             →  /api/regime_configs
+usr_positions                  →  /api/positions
+usr_orders                     →  /api/orders
+usr_trades                     →  /api/trades
+usr_strategies                 →  /api/strategies
+sys_signals                    →  /api/signals
+sys_audit_logs                 →  /api/audit/logs (admin-only)
+usr_assets_cfg                 →  /api/assets
+```
+
+### Ejemplos Correctos vs Incorrectos
+
+**✅ CORRECTO** (Clean Architecture):
+```python
+# core_brain/api/routers/market.py
+@router.get("/regime_configs")  # Semántico para cliente público
+async def get_regime_configs(token: TokenPayload = Depends(...)):
+    storage = TenantDBFactory.get_storage(token.sub)
+    # Internamente: storage.get_all_sys_regime_configs() (BD naming)
+    regime_weights = {regime: metrics_dict for regime, metrics_dict in all_configs.items()}
+    return {"regime_weights": regime_weights, ...}
+```
+
+**❌ INCORRECTO** (Deuda Técnica):
+```python
+# ❌ ANTES
+@router.get("/sys_regime_configs")         # Prefijo interno en API pública
+@router.get("/regime_configs")        # Alias temporal = BadSmell
+async def get_sys_regime_configs(...):
+    # Genera: Dos nombres = confusión, mantenimiento doble, 404 errors si frontend usa nombre equivocado
+```
+
+### Patrón de Refactorización
+
+**Fase 1: Audit** - Identificar todos los mismatches
+```
+GET /usr_positions/open → debe ser /api/positions/open ❌
+GET /sys_regime_configs → debe ser /api/regime_configs ❌
+```
+
+**Fase 2: Rename** - Cambiar el endpoint de VERDAD (no aliases temporales)
+```python
+# Cambiar de:
+@router.get("/usr_positions/open")
+# Cambiar a:
+@router.get("/positions/open")
+```
+
+**Fase 3: Update Frontend** - Una sola refactorización
+```typescript
+// Cambiar de:
+const positionsRes = await apiFetch('/api/usr_positions/open');
+// Cambiar a:
+const positionsRes = await apiFetch('/api/positions/open');
+```
+
+**Fase 4: Validate** - Confirmar que funciona
+- ✅ Frontend recibe datos
+- ✅ Tests pasan
+- ✅ validate_all.py confirma sin 404s
+
+**Fase 5: Document** - Actualizar SSOT (esta sección)
+- Agregar nuevo nombre a tabla de convención
+- Marcar como completado en ROADMAP
+
+### Validación Automática
+
+**Script**: `scripts/validate_endpoint_naming.py` (NUEVO[2026-03-11])
+
+```python
+#!/usr/bin/env python3
+"""
+Auditoría de Nomenclatura de Endpoints - Detecta mismatches entre BD y API pública
+Valida que NO haya:
+  - Prefijos sys_* o usr_* expuestos en API pública
+  - Aliases redundantes (@router.get("/...")  @router.get("/...") duplicados)
+  - Endponts sin documentar en XI. Architecture Principle
+"""
+
+# Detecta:
+- Endpoints que exponen sys_* o usr_* en ruta pública
+- Aliases temporales (indica deuda técnica no resuelta)
+- 404 potenciales (ruta esperada por frontend vs ruta real del backend)
+- Documentación desactualizada (endpoint existe pero no en MANIFESTO)
+
+# Exit codes:
+- 0 = OK (zero naming issues)
+- 1 = FAIL (naming violations detected)
+```
+
+Integrado en `validate_all.py` como nuevo módulo de auditoría.
+
+---
+
 ## X. Subsystem: User Management CRUD & RBAC (Fase X.2 - COMPLETADA)
 
 **Propósito**: Gestión integral de usuarios con autenticación, autorización, auditoría y cumplimiento regulatorio (soft delete policy).

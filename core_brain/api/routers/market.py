@@ -250,17 +250,23 @@ async def get_regime(symbol: str, token: TokenPayload = Depends(get_current_acti
 
 
 # ============ ENDPOINT: Configuraciones de Régimen ============
-@router.get("/sys_regime_configs")
+@router.get("/regime_configs")
 async def get_sys_regime_configs(token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """Retorna los pesos y configuraciones dinámicas de cada régimen (sys_regime_configs table).
     Usado por UI para visualizar WeightedMetricsVisualizer (Darwinismo Algorítmico).
     
-    Estructura respuesta:
+    Estructura respuesta GARANTIZADA:
     {
-        "TREND": {"profit_factor": 0.4, "win_rate": 0.3, "drawdown_max": 0.2, "consecutive_losses": 0.1},
-        "RANGE": {"profit_factor": 0.25, "win_rate": 0.4, "drawdown_max": 0.2, "consecutive_losses": 0.15},
-        "VOLATILE": {"profit_factor": 0.2, "win_rate": 0.2, "drawdown_max": 0.4, "consecutive_losses": 0.2}
+        "regime_weights": {
+            "TREND": {"profit_factor": 0.4, "win_rate": 0.3, ...},
+            "RANGE": {...},
+            "VOLATILE": {...}
+        },
+        "timestamp": "ISO8601",
+        "description": "..."
     }
+    
+    CONTRATO: regime_weights NUNCA es null/undefined. Si no hay datos, retorna {} (dict vacío).
     """
     try:
         tenant_id = token.sub
@@ -270,19 +276,27 @@ async def get_sys_regime_configs(token: TokenPayload = Depends(get_current_activ
         
         # Transformar formato: all_configs es Dict[regime -> Dict[metric_name -> weight]]
         regime_weights = {}
-        for regime, metrics_dict in all_configs.items():
-            regime_weights[regime] = {}
-            for metric_name, weight in metrics_dict.items():
-                regime_weights[regime][metric_name] = float(weight)
+        if all_configs:  # Defensiva: verifica que all_configs no sea None
+            for regime, metrics_dict in all_configs.items():
+                if metrics_dict:  # Defensiva: verifica que metrics_dict no sea None
+                    regime_weights[regime] = {}
+                    for metric_name, weight in metrics_dict.items():
+                        regime_weights[regime][metric_name] = float(weight)
         
         return {
-            "regime_weights": regime_weights,
+            "regime_weights": regime_weights,  # GARANTÍA: nunca None, siempre dict
             "timestamp": datetime.now().isoformat(),
             "description": "Dynamic regime-specific metric weights for strategy ranking (Darwinismo Algorítmico)"
         }
     except Exception as e:
         logger.error(f"Error en get_sys_regime_configs: {e}")
-        raise HTTPException(status_code=500, detail=f"Error fetching regime configs: {str(e)}")
+        # Retorna estructura válida incluso en error (fail-safe)
+        return {
+            "regime_weights": {},
+            "timestamp": datetime.now().isoformat(),
+            "error": str(e),
+            "description": "Error fetching regime configs - returning empty weights"
+        }
 
 
 # ============ ENDPOINT: Instrumentos (Lectura) ============

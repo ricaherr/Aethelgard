@@ -71,6 +71,54 @@ El Core Brain no debe conocer detalles del broker (MT5/FIX). Debe trabajar solo 
 *   **1.6. Higiene de Masa (Regla <30KB)**: Ningún archivo puede superar los 30KB o las 500 líneas. Si un componente crece por encima de este límite, su fragmentación en submódulos es obligatoria e inmediata.
 *   **1.7. Patrones Obligatorios**: Se exige el uso estricto de Repository Pattern para datos y Service Layer para lógica. Los Routers de FastAPI solo orquestan.
 
+*   **1.8. API Endpoint Naming Convention (OBLIGATORIO - 2026-03-11)**: Separación inmutable entre nombres internos (Base de Datos) y nombres públicos (API REST).
+    - **PRINCIPIO**: Tabla `sys_regime_configs` en BD ≠ ruta `/api/regime_configs` en API pública
+    - **PROHIBIDO**: Exponer prefijos internos (`usr_`, `sys_`) en la API pública (404 Errors + deuda técnica)
+    - **OBLIGATORIO**: Nombres semánticos en API, internamente uso de prefijos DB
+    
+    **Convención Correcta**:
+    ```
+    BD (Internal Naming)          →  API REST (Semantic Public Naming)
+    ─────────────────────────────────────────────────────────────
+    sys_regime_configs           →  /api/regime_configs
+    usr_positions                →  /api/positions
+    usr_strategies               →  /api/strategies  
+    sys_signals                  →  /api/signals
+    usr_trades                   →  /api/trades
+    usr_orders                   →  /api/orders
+    sys_audit_logs               →  /api/audit/logs (admin only)
+    ```
+    
+    **Ejemplo CORRECTO** (Clean Architecture):
+    ```python
+    # core_brain/api/routers/market.py
+    @router.get("/regime_configs")  # ✅ Semántico para público
+    async def get_regime_configs(token: TokenPayload = Depends(...)):
+        storage = TenantDBFactory.get_storage(token.sub)
+        # Internamente accede: storage.get_all_sys_regime_configs()  (BD naming)
+        return {"regime_weights": regime_weights, ...}
+    ```
+    
+    **Ejemplo INCORRECTO** (Deuda Técnica):
+    ```python
+    # ❌ ANTES (Genera 404s, aliases como bandaids)
+    @router.get("/sys_regime_configs")  # Prefijo interno en API pública
+    @router.get("/regime_configs")          # Alias temporal = Technical Debt
+    async def get_sys_regime_configs(...): ...
+    ```
+    
+    **Validación Automática**:
+    - Auditoría en `scripts/validate_all.py` chequea consistencia frontend ↔ backend
+    - Detecta: Mismatches de nombres, 404s potenciales, aliases redundantes
+    - Si encuentra endpoint con prefijo `usr_` o `sys_` en API pública → FAIL
+    
+    **Protocolo de Refactorización**:
+    1. Audit de TODOS los endpoints (identificar mismatches)
+    2. Renombrar de VERDAD (no aliases temporales)
+    3. Actualizar cliente (frontend) una sola vez
+    4. Eliminar aliases después de validar que todo funciona
+    5. Documentar nuevo nombre en esta sección (SSOT)
+
 ## 2. Frontend Rules: La Terminal de Inteligencia
 *   **Estética Terminal**: Prohibido el uso de componentes de librerías comunes sin personalización. Estética **Bloomberg-Dark** (#050505, acentos cian/neón).
 *   **Densidad de Datos**: Diseñar para el experto. Mostrar datos de alta fidelidad sin saturar, utilizando transparencias y capas (Glassmorphism).

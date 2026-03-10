@@ -38,7 +38,7 @@ async def _broadcast_thought(message: str, module: str = "TRADING", level: str =
     await broadcast_thought(message, module=module, level=level, metadata=metadata)
 
 
-@router.get("/usr_signals")
+@router.get("/signals")
 async def get_usr_signals(
     limit: int = 100, 
     minutes: int = 10080,
@@ -154,7 +154,7 @@ async def get_usr_signals(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/usr_signals/execute")
+@router.post("/signals/execute")
 async def execute_signal_manual(data: dict, token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """
     Manually execute a signal by ID (triggered from UI Execute button).
@@ -279,7 +279,7 @@ async def execute_signal_manual(data: dict, token: TokenPayload = Depends(get_cu
         }
 
 
-@router.get("/usr_positions/open")
+@router.get("/positions/open")
 async def get_open_usr_positions(token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """
     Get open usr_positions with risk metadata.
@@ -399,7 +399,7 @@ async def toggle_auto_trading(request: Request, token: TokenPayload = Depends(ge
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/usr_strategies/library")
+@router.get("/strategies/library")
 async def get_usr_strategies_library(token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """Returns the strategy library: registered usr_strategies from DB + registry (SSOT) + educational catalog."""
     try:

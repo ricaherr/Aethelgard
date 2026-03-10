@@ -27,16 +27,33 @@ const StrategyExplorer: React.FC = () => {
         setError(null);
         fetch('/api/strategies/library')
             .then(res => {
-                if (!res.ok) throw new Error('Error al obtener biblioteca de estrategias');
+                if (!res.ok) throw new Error(`HTTP ${res.status}: Error al obtener biblioteca de estrategias`);
                 return res.json();
             })
             .then(data => {
-                setRegistered(data.registered || []);
-                setEducational(data.educational || []);
+                // Defensive: validate response structure
+                if (!data || typeof data !== 'object') {
+                    throw new Error('Invalid response structure from strategies endpoint');
+                }
+                
+                // Ensure arrays
+                const registered = Array.isArray(data.registered) ? data.registered : [];
+                const educational = Array.isArray(data.educational) ? data.educational : [];
+                
+                setRegistered(registered);
+                setEducational(educational);
+                
+                // Warn if both are empty
+                if (registered.length === 0 && educational.length === 0) {
+                    console.warn('[StrategyExplorer] No strategies found');
+                }
             })
             .catch(err => {
+                const errorMsg = err instanceof Error ? err.message : 'Unknown error';
                 setError('No se pudo cargar la biblioteca de estrategias.');
-                console.error('[StrategyExplorer] Error:', err);
+                console.error('[StrategyExplorer] Error:', errorMsg, err);
+                setRegistered([]);
+                setEducational([]);
             })
             .finally(() => setLoading(false));
     };

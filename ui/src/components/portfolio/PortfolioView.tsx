@@ -18,19 +18,35 @@ export function PortfolioView() {
             const positionsRes = await apiFetch('/api/positions/open');
             if (positionsRes.ok) {
                 const positionsData = await positionsRes.json();
-                setPositions(positionsData.positions || []);
+                // Defensive: ensure positions is an array
+                const positions = Array.isArray(positionsData.positions) ? positionsData.positions : [];
+                setPositions(positions);
+            } else {
+                console.warn(`[Portfolio] Positions API returned ${positionsRes.status}`);
+                setPositions([]);
             }
 
             // Fetch risk summary (includes real-time balance from MT5 if connected)
             const riskRes = await apiFetch('/api/risk/summary');
             if (riskRes.ok) {
                 const riskData = await riskRes.json();
-                setRiskSummary(riskData);
+                // Defensive: validate risk summary structure
+                if (riskData && typeof riskData === 'object') {
+                    setRiskSummary(riskData);
+                } else {
+                    console.warn('[Portfolio] Risk summary is invalid:', riskData);
+                    setRiskSummary(null);
+                }
+            } else {
+                console.warn(`[Portfolio] Risk API returned ${riskRes.status}`);
+                setRiskSummary(null);
             }
 
             setLoading(false);
         } catch (error) {
             console.error('[Portfolio] Error fetching portfolio data:', error);
+            setPositions([]);
+            setRiskSummary(null);
             setLoading(false);
         }
     }, [apiFetch]);

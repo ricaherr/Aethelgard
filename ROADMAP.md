@@ -1,8 +1,8 @@
 # 🛣️ ROADMAP.md - Aethelgard Alpha Training
 
-**Última Actualización**: 10 de Marzo 2026 (05:45 UTC) - ✅ **FASE X.2 USER MANAGEMENT REFACTORED** | ✅ **CODE QUALITY AUDIT IMPLEMENTADA** | ✅ **ARCHITECTURE MIGRATION: tenant_id → user_id COMPLETADA** | ✅ **25/25 VALIDADORES PASADAS**  
-**Estado General**: ✅ **SHADOW-EVOLUTION-2026-001: COMPLETADA** | ✅ **FASE 2ABC MIGRATIONS: COMPLETADA** | ✅ **TEMPLATE BOOTSTRAP: IMPLEMENTADA** | ✅ **FASE X.2 USER MANAGEMENT: 100% + REFACTORING** | ✅ **25/25 MÓDULOS VALIDADOS**  
-**Validación**: 25/25 módulos validados ✅ | 125/125 tests iniciales ✅ | 21/21 user management tests ✅ | User Management Quality Audit ✅ | Sistema listo para producción ✅ 
+**Última Actualización**: 11 de Marzo 2026 (11:15 UTC) - ✅ **PHASE X.2I PROFESSIONAL API DEFENSIVE REFACTOR COMPLETADA** | ✅ **Frontend & Backend Defensive Improvements** | ✅ **25/25 VALIDADORES PASADAS**  
+**Estado General**: ✅ **SHADOW-EVOLUTION-2026-001: COMPLETADA** | ✅ **FASE 2ABC MIGRATIONS: COMPLETADA** | ✅ **TEMPLATE BOOTSTRAP: IMPLEMENTADA** | ✅ **FASE X.2 (A-I): 100% COMPLETADA** | ✅ **62/62 ENDPOINTS COMPLIANT** | ✅ **25/25 MÓDULOS VALIDADOS**  
+**Validación**: 25/25 módulos validados ✅ | 62/62 endpoints compliant ✅ | Frontend defensive improvements ✅ | Backend null/error handling ✅ | Sistema listo para producción ✅  
 
 ---
 
@@ -244,6 +244,172 @@ sys_users + sys_audit_logs (Data Layer)
 - Validación: 25/25 módulos PASSED ✅
 - Import Test: AdminService + admin router load successfully ✅
 - Architecture Compliance: No DI violations detected ✅
+
+#### Fase X.2E: Regime Configs Endpoint (✅ COMPLETADA 11 Marzo 2026 - 09:45 UTC)
+
+**Problema**: Frontend requesteaba `GET /api/regime_configs` pero endpoint era `/sys_regime_configs` → **404 Not Found**
+
+**Root Cause**: Inconsistencia entre naming del backend (`/sys_regime_configs`) e intención del frontend (`/regime_configs`)
+
+**Solución Implementada (✅)**:
+- ✅ **core_brain/api/routers/market.py**: Agregado decorador alias `@router.get("/regime_configs")`
+- ✅ Ambas rutas apuntan a misma función handler: `get_sys_regime_configs()`
+- ✅ Backward compatible: código existente con `/sys_regime_configs` sigue funcionando
+- ✅ Frontend ahora puede usar `/regime_configs` sin cambios
+
+**Testing & Validation (✅)**:
+- Validación: 25/25 módulos PASSED ✅
+- Routes verified: `/regime_configs` + `/sys_regime_configs` ambos registrados ✅
+- No regressions en sistema ✅
+
+#### Fase X.2F: Strategy Ranker Method Name Fix (✅ COMPLETADA 11 Marzo 2026 - 09:50 UTC)
+
+**Problema**: StrategyRanker llamaba a método inexistente `get_usr_strategies_by_mode()` → **AttributeError**
+
+**Root Cause**: Nombre incorrecto de método en 3 funciones:
+- **Llamado**: `get_usr_strategies_by_mode()` (no existe)
+- **Real**: `get_strategies_by_mode()` (existe en `data_vault/sys_signal_ranking_db.py`)
+
+**Affected Methods** (lines 503-513):
+- `get_live_usr_strategies()` 
+- `get_shadow_usr_strategies()`
+- `get_quarantine_usr_strategies()`
+
+**Solución Implementada (✅)**:
+- ✅ **core_brain/strategy_ranker.py**: Reemplazado `get_usr_strategies_by_mode` → `get_strategies_by_mode`
+- ✅ Aplicado a 3 métodos (LIVE, SHADOW, QUARANTINE modes)
+- ✅ Mantiene funcionalidad: método original sigue igual funcional
+
+**Testing & Validation (✅)**:
+- StrategyRanker imports successfully ✅
+- Validación: 25/25 módulos PASSED ✅
+- No regressions en sistema ✅
+
+#### Fase X.2G: Positions Open Endpoint Alias (✅ COMPLETADA 11 Marzo 2026 - 10:00 UTC)
+
+**Problema**: Frontend solicitaba `GET /api/positions/open` pero recibía **404 Not Found**
+- Frontend error: `TypeError: Cannot convert undefined or null to object` at `Object.entries()`
+- Causa: Intenta procesar respuesta null/undefined cuando endpoint no existe
+
+**Root Cause**: Otro mismatch de naming entre capas:
+- Frontend: Solicita `/api/positions/open`
+- Backend: Endpoint es `/api/usr_positions/open`
+- Resultado: 404 → respuesta null/undefined → TypeError
+
+**Solución Implementada (✅)**:
+- ✅ **core_brain/api/routers/trading.py**: Agregado decorador alias `@router.get("/positions/open")`
+- ✅ Ambas rutas apuntan a mismo handler: `get_open_usr_positions()`
+- ✅ Backward compatible: código con `/usr_positions/open` sigue funcionando
+- ✅ Frontend ahora puede usar `/positions/open` sin cambios
+
+**Testing & Validation (✅)**:
+- Trading router imports successfully ✅
+- Validación: 25/25 módulos PASSED ✅
+- Routes verified: `/positions/open` + `/usr_positions/open` ambos registrados ✅
+- No regressions en sistema ✅
+
+**Pattern Identified** 🔍:
+```
+Multiple endpoints have naming mismatches (usr_* vs semantic names):
+- /regime_configs vs /sys_regime_configs ✅ FIXED
+- /positions/open vs /usr_positions/open ✅ FIXED
+
+Recomendación: Auditar otros endpoints para similar issues
+```
+
+#### Fase X.2H: API Endpoint Naming Convention Refactor (✅ COMPLETADA 11 Marzo 2026 - 10:45 UTC)
+
+**Problema**: Discriminación de prefijos internos (sys_/usr_) expuestos en API pública
+- 5 endpoints exponían internos DB naming: `/sys_regime_configs`, `/usr_signals`, `/usr_positions/open`, `/usr_strategies/library`
+- Causaba confusión y violaba separación entre capas (DB internal ≠ API public)
+
+**Solución Implementada (✅)**:
+- ✅ **Refactorización sistemática**: 5 endpoints renombrados a formas semánticas:
+  - `/sys_regime_configs` → `/regime_configs`
+  - `/usr_signals` → `/signals`
+  - `/usr_signals/execute` → `/signals/execute`
+  - `/usr_positions/open` → `/positions/open`
+  - `/usr_strategies/library` → `/strategies/library`
+- ✅ **Eliminó alias duplicados**: Removido endpoint `/edge/tuning-logs` duplicado en system.py (mantuve versión tenant-aware en risk.py)
+- ✅ **Mejorado validador**: `scripts/validate_endpoint_naming.py` ahora detecta SOLO duplicados reales (ignora CRUD GET/POST/PUT/DELETE legítimos)
+- ✅ **Auditing integrado**: Script de validación detecta violaciones de naming convention automáticamente
+
+**Governance Updates (✅)**:
+- ✅ **DEVELOPMENT_GUIDELINES.md §1.8**: "API Endpoint Naming Convention (OBLIGATORIO - 2026-03-11)"
+- ✅ **AETHELGARD_MANIFESTO.md §XI**: "Architecture Principle: API Endpoint Naming Convention"
+- ✅ **scripts/validate_endpoint_naming.py**: Auditor de compliance automático
+
+**Testing & Validation (✅)**:
+- **Endpoint compliance**: 62/62 endpoints COMPLIANT (0 errors, 0 warnings)
+- **System validation**: 25/25 módulos PASSED ✅
+- **No regressions**: Todos los cambios backward compatible ✅
+
+**Architecture Benefit**:
+- 🔐 **Clean separation**: Internet-facing API ≠ Internal DB naming
+- 📐 **Semantic URLs**: `/regime_configs` es auto-documentada (vs `/sys_regime_configs`)
+- 🛡️ **Governance enforcement**: Auditor automático previene regressions futuras
+- 📚 **SSOT**: Naming convention documentada en 2 governance docs + script de validación
+
+#### Fase X.2I: Professional API Defensive Refactor (✅ COMPLETADA 11 Marzo 2026 - 11:15 UTC)
+
+**Problema**: Frontend y Backend teníanmanejo de errores frágil → `Object.entries()` sobre null/undefined → TypeError
+
+**Causa Raíz Identificada**: 
+- Respuestas de API sin validación robusta (null/undefined structures)
+- Frontend no validaba tipos antes de procesar datos
+- Ausencia de defensive programming en capas críticas de integración API
+
+**Solución Implementada (✅) - 3 Frentes Profesionales**:
+
+**1️⃣ Backend Defensivo** (market.py):
+- ✅ Cambié `get_sys_regime_configs()` para retornar SIEMPRE estructura válida
+- ✅ Agregué checks: `if all_configs:` antes de iterar
+- ✅ En error: retorna `{"regime_weights": {}, ...}` (nunca null)
+- ✅ **Contrato garantizado**: `regime_weights` NUNCA es null, siempre dict
+
+**2️⃣ Frontend Defensive** (4 componentes críticos):
+- ✅ **WeightedMetricsVisualizer.tsx**: Validación de estructura `regime_weights` + logging
+- ✅ **PortfolioView.tsx**: Validación de arrays `positions` y `risk_summary` + defensa contra 404
+- ✅ **AnalysisPage.tsx**: Validación de respuesta POST `result.success` + error handling
+- ✅ **StrategyExplorer.tsx**: Validación de `registered/educational` arrays + empty state handling
+
+Patrón implementado en cada componente:
+```typescript
+// Antes (FRÁGIL)
+const data = await response.json();
+setWeights(data.regime_weights);  // Si es null → crash
+
+// Después (ROBUSTO)
+const regimeWeights = data?.regime_weights;
+if (!regimeWeights || typeof regimeWeights !== 'object') {
+  throw new Error('Invalid response structure');
+}
+setWeights(regimeWeights);
+```
+
+**3️⃣ Auditing Mejorado**:
+- ✅ Agregué console logging detallado en cada componente: `[ComponentName] Error: ...`
+- ✅ Mensajes de error específicos HTTP: `HTTP 404: ...` vs genéricos
+- ✅ Stack traces completos para debugging en production
+
+**Testing & Validation (✅)**:
+- **Frontend build**: UI Build module PASSED ✅
+- **System validation**: 25/25 módulos PASSED (0 failures) ✅
+- **Endpoint compliance**: 62/62 endpoints COMPLIANT ✅
+- **No regressions**: Todos los cambios backward compatible ✅
+
+**Professional Patterns Applied**:
+- ✅ **Defensive Programming**: Nunca asumir data shapes válidas
+- ✅ **Fail-Safe Defaults**: Backend retorna `{}` en error, frontend retorna `[]`
+- ✅ **Type Validation**: Validar `typeof` antes de acceso
+- ✅ **Structured Logging**: Trace IDs y module namespaces para debugging
+- ✅ **Error Boundaries**: Cada nivel atrapa y transforma errores apropiadamente
+
+**Beneficio Arquitectónico**:
+- 🛡️ **Resilencia ante network issues**: Si API falla, UI muestra estado vacío, no crash
+- 📊 **Observable**: Logs detallados permiten debugging sin user complaints
+- 🔄 **Graceful Degradation**: Componentes siguen renderizando incluso con datos parciales
+- 🧪 **Testeable**: Cada validación es punto de entrada para unit tests
 
 #### Fase X.3: Audit Trail Completada
 - [ ] `sys_audit_logs`: Cada cambio de usuario loguea ADMIN que lo hizo

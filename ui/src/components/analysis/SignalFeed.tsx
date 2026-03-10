@@ -63,7 +63,7 @@ export const SignalFeed: React.FC<SignalFeedProps> = ({
             console.log('📡 [SIGNAL FEED] Received analysis signals from WebSocket:', analysisData.analysis_signals);
             
             // Convert analysis_signals to Signal format
-            const wsSignals: Signal[] = Object.entries(analysisData.analysis_signals).map(([key, signalData]: [string, any]) => ({
+            const wsSignals: Signal[] = Object.entries(analysisData.analysis_signals || {}).map(([key, signalData]: [string, any]) => ({
                 id: signalData.id || key,
                 symbol: signalData.symbol || signalData.asset || '',
                 direction: signalData.direction || 'BUY',

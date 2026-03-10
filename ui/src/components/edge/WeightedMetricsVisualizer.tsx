@@ -32,13 +32,30 @@ export function WeightedMetricsVisualizer({
         setError(null);
         try {
             const response = await apiFetch('/api/regime_configs');
-            if (!response.ok) throw new Error('Failed to fetch regime configs');
+            if (!response.ok) throw new Error(`HTTP ${response.status}: Failed to fetch regime configs`);
 
             const data = await response.json();
-            const regimeWeights = data.regime_weights;
+            
+            // Validación defensiva: asegurar que regime_weights existe y es un objeto
+            const regimeWeights = data?.regime_weights;
+            if (!regimeWeights || typeof regimeWeights !== 'object') {
+                throw new Error('Invalid response structure: regime_weights missing or invalid');
+            }
+            
+            // Verificar que no esté vacío
+            if (Object.keys(regimeWeights).length === 0) {
+                setError('No regime configurations available. Contact administrator.');
+                setWeights(null);
+                setLoading(false);
+                return;
+            }
+            
             setWeights(regimeWeights);
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Unknown error');
+            const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+            console.error('[WeightedMetricsVisualizer] Error:', errorMsg, err);
+            setError(errorMsg);
+            setWeights(null);
         } finally {
             setLoading(false);
         }
@@ -134,7 +151,7 @@ export function WeightedMetricsVisualizer({
                 >
                     {/* Stacked Bar Chart Visualization */}
                     <div className="space-y-4">
-                        {Object.entries(weights).map(([regime, metrics]) => (
+                        {weights && Object.entries(weights).map(([regime, metrics]) => (
                             <motion.div
                                 key={regime}
                                 initial={{ opacity: 0, x: -20 }}

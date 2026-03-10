@@ -264,20 +264,6 @@ async def repair_integrity_vector(payload: Dict[str, Any]) -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
-@router.get("/edge/tuning-logs")
-async def get_tuning_logs(limit: int = 50) -> Dict[str, Any]:
-    """
-    Retorna el historial de ajustes del EdgeTuner (Neuro-evolución).
-    """
-    try:
-        storage = _get_storage()
-        history = storage.get_tuning_history(limit=limit)
-        return {"status": "success", "history": history}
-    except Exception as e:
-        logger.error(f"Error recuperando historial de tuning: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 # ============ Module Management Endpoints ============
 
 @router.get("/modules/status")
