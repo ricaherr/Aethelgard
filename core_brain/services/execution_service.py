@@ -5,6 +5,7 @@ import uuid
 from decimal import Decimal
 from typing import Dict, Any, Optional, Tuple, Union
 from datetime import datetime, timezone
+from enum import Enum
 from pydantic import BaseModel, Field
 
 from models.signal import Signal, SignalType
@@ -13,8 +14,44 @@ from utils.market_ops import normalize_price, calculate_pip_size
 
 logger = logging.getLogger(__name__)
 
+
+class ExecutionFailureReason(str, Enum):
+    """
+    Enumeration of execution failure causes.
+    Used by ExecutionService to report specific failure reasons to MainOrchestrator.
+    Part of DOMINIO-05 (UNIVERSAL_EXECUTION) and DOMINIO-10 (INFRA_RESILIENCY).
+    
+    Reference: DEVELOPMENT_GUIDELINES.md Rule 1.3 (Enums not strings)
+    """
+    PRICE_FETCH_ERROR = "PRICE_FETCH_ERROR"  # _get_current_price returned None
+    LIQUIDITY_INSUFFICIENT = "LIQUIDITY_INSUFFICIENT"  # No bid/ask available
+    VETO_SLIPPAGE = "VETO_SLIPPAGE"  # Slippage exceeded limit
+    VETO_SPREAD = "VETO_SPREAD"  # Spread exceeded limit
+    VETO_VOLATILITY = "VETO_VOLATILITY"  # Volatility too high (Z-Score > 3.0)
+    CONNECTION_ERROR = "CONNECTION_ERROR"  # Broker connection failed
+    ORDER_REJECTED = "ORDER_REJECTED"  # Broker rejected order (validation error)
+    TIMEOUT = "TIMEOUT"  # Execution timeout
+    UNKNOWN = "UNKNOWN"  # Unknown cause (fallback)
+
+
 class ExecutionResponse(BaseModel):
-    """Modelo Pydantic para el resultado de una ejecución."""
+    """
+    High-fidelity execution response with rich failure information.
+    
+    Implements DOMINIO-05 (UNIVERSAL_EXECUTION) with detailed failure reasons
+    for downstream feedback loop integration (DOMINIO-10 INFRA_RESILIENCY).
+    
+    Attributes:
+        success: Execution succeeded or failed
+        order_id: Order ID from broker (success only)
+        real_price: Actual execution price (success only)
+        slippage_pips: Actual slippage in pips
+        latency_ms: Execution latency in milliseconds
+        error_message: Human-readable error description (failure only)
+        status: Status code string (SUCCESS, PRICE_FETCH_ERROR, VETO_SLIPPAGE, etc.)
+        failure_reason: Structured reason enum for programmatic handling (NEW - Improvement)
+        failure_context: Additional context about failure (NEW - Improvement)
+    """
     success: bool
     order_id: Optional[str] = None
     real_price: Optional[Decimal] = None
@@ -22,6 +59,8 @@ class ExecutionResponse(BaseModel):
     latency_ms: float = 0.0
     error_message: Optional[str] = None
     status: str
+    failure_reason: Optional[ExecutionFailureReason] = None  # ← NEW: Structured reason
+    failure_context: Dict[str, Any] = Field(default_factory=dict)  # ← NEW: Failure context
 
 class ExecutionService:
     """
@@ -52,7 +91,19 @@ class ExecutionService:
         current_tick_price = await self._get_current_price(signal.symbol, signal.signal_type, connector)
         
         if current_tick_price is None:
-            return self._fail_response("No se pudo obtener el precio actual para validación pre-ejecución", start_time, status="PRICE_FETCH_ERROR")
+            # DOMINIO-05: Report specific failure reason for feedback loop
+            return ExecutionResponse(
+                success=False,
+                error_message="No se pudo obtener el precio actual para validación pre-ejecución",
+                status="PRICE_FETCH_ERROR",
+                failure_reason=ExecutionFailureReason.PRICE_FETCH_ERROR,  # ← Specific reason
+                failure_context={
+                    "trace_id": trace_id,
+                    "symbol": signal.symbol,
+                    "reason": "connector.get_last_tick() returned None",
+                    "provider": "MT5/DataProvider"
+                }
+            )
 
         theoretical_price = Decimal(str(signal.entry_price))
         pre_exec_slippage = self._calculate_pips(signal.symbol, theoretical_price, current_tick_price, signal.signal_type, connector)
@@ -61,8 +112,8 @@ class ExecutionService:
         slippage_limit = Decimal(str(signal.metadata.get("slippage_limit", self.default_slippage_limit)))
         
         if abs(pre_exec_slippage) > slippage_limit:
-            reason = f"Veto Pre-Ejecución: Slippage estimado {pre_exec_slippage:.2f} pips > limite {slippage_limit} pips"
-            logger.warning(f"[{trace_id}] {reason}")
+            reason_msg = f"Veto Pre-Ejecución: Slippage estimado {pre_exec_slippage:.2f} pips > limite {slippage_limit} pips"
+            logger.warning(f"[{trace_id}] {reason_msg}")
             
             # Shadow Log del Veto (Pre-ejecución)
             await self._log_shadow_async(
@@ -71,7 +122,21 @@ class ExecutionService:
                 metadata={"veto_limit": float(slippage_limit)}
             )
             
-            return self._fail_response(reason, start_time, status="VETO_SLIPPAGE")
+            # DOMINIO-05: Report specific failure reason for feedback loop
+            return ExecutionResponse(
+                success=False,
+                error_message=reason_msg,
+                status="VETO_SLIPPAGE",
+                failure_reason=ExecutionFailureReason.VETO_SLIPPAGE,  # ← Specific reason
+                failure_context={
+                    "trace_id": trace_id,
+                    "symbol": signal.symbol,
+                    "theoretical_price": float(theoretical_price),
+                    "current_price": float(current_tick_price),
+                    "slippage_pips": float(pre_exec_slippage),
+                    "limit_pips": float(slippage_limit)
+                }
+            )
 
         # 2. Ejecución Real vía Connector
         try:
@@ -108,16 +173,76 @@ class ExecutionService:
                     pre_exec_slippage, start_time, "BROKER_REJECTED", tenant_id, trace_id,
                     metadata={"broker_error": error_msg}
                 )
-                return self._fail_response(f"Broker rejected: {error_msg}", start_time, status="BROKER_REJECTED")
+                return self._fail_response(
+                    f"Broker rejected: {error_msg}",
+                    start_time,
+                    status="BROKER_REJECTED",
+                    failure_reason=ExecutionFailureReason.ORDER_REJECTED,
+                    failure_context={
+                        "trace_id": trace_id,
+                        "symbol": signal.symbol,
+                        "broker_error": error_msg,
+                        "reason": "Broker order validation failed"
+                    }
+                )
 
+        except asyncio.TimeoutError as e:
+            logger.error(f"[{trace_id}] Timeout en ExecutionService: {e}", exc_info=True)
+            await self._log_shadow_async(
+                signal_id, signal.symbol, theoretical_price, current_tick_price, 
+                pre_exec_slippage, start_time, "TIMEOUT", tenant_id, trace_id,
+                metadata={"exception": str(e), "error_type": "TimeoutError"}
+            )
+            return self._fail_response(
+                f"Execution timeout: {str(e)}",
+                start_time,
+                status="TIMEOUT",
+                failure_reason=ExecutionFailureReason.TIMEOUT,
+                failure_context={
+                    "trace_id": trace_id,
+                    "symbol": signal.symbol,
+                    "error_type": "asyncio.TimeoutError",
+                    "reason": "Order execution exceeded timeout limit"
+                }
+            )
+        except (ConnectionError, OSError) as e:
+            logger.error(f"[{trace_id}] Conexión perdida en ExecutionService: {e}", exc_info=True)
+            await self._log_shadow_async(
+                signal_id, signal.symbol, theoretical_price, current_tick_price, 
+                pre_exec_slippage, start_time, "CONNECTION_ERROR", tenant_id, trace_id,
+                metadata={"exception": str(e), "error_type": type(e).__name__}
+            )
+            return self._fail_response(
+                f"Connection error: {str(e)}",
+                start_time,
+                status="CONNECTION_ERROR",
+                failure_reason=ExecutionFailureReason.CONNECTION_ERROR,
+                failure_context={
+                    "trace_id": trace_id,
+                    "symbol": signal.symbol,
+                    "error_type": type(e).__name__,
+                    "reason": "Broker connection failed"
+                }
+            )
         except Exception as e:
             logger.error(f"[{trace_id}] Error crítico en ExecutionService: {e}", exc_info=True)
             await self._log_shadow_async(
                 signal_id, signal.symbol, theoretical_price, current_tick_price, 
                 pre_exec_slippage, start_time, "CRITICAL_ERROR", tenant_id, trace_id,
-                metadata={"exception": str(e)}
+                metadata={"exception": str(e), "error_type": type(e).__name__}
             )
-            return self._fail_response(f"Internal Execution Error: {str(e)}", start_time, status="CRITICAL_ERROR")
+            return self._fail_response(
+                f"Internal Execution Error: {str(e)}",
+                start_time,
+                status="CRITICAL_ERROR",
+                failure_reason=ExecutionFailureReason.UNKNOWN,
+                failure_context={
+                    "trace_id": trace_id,
+                    "symbol": signal.symbol,
+                    "error_type": type(e).__name__,
+                    "reason": "Unexpected error during execution"
+                }
+            )
 
     async def _get_current_price(self, symbol: str, signal_type: SignalType, connector: Any) -> Optional[Decimal]:
         """Obtiene el precio bid/ask actual del conector de forma agnóstica."""
@@ -188,12 +313,21 @@ class ExecutionService:
         except Exception as e:
             logger.error(f"Error guardando Shadow Log: {e}")
 
-    def _fail_response(self, message: str, start_time: float, status: str = "FAILED") -> ExecutionResponse:
-        """Helper para generar respuestas de fallo estandarizadas."""
+    def _fail_response(
+        self,
+        message: str,
+        start_time: float,
+        status: str = "FAILED",
+        failure_reason: Optional[ExecutionFailureReason] = None,
+        failure_context: Optional[Dict[str, Any]] = None
+    ) -> ExecutionResponse:
+        """Helper para generar respuestas de fallo estandarizadas con razón estructurada."""
         latency_ms = (time.perf_counter() - start_time) * 1000
         return ExecutionResponse(
             success=False,
             error_message=message,
             latency_ms=latency_ms,
-            status=status
+            status=status,
+            failure_reason=failure_reason or ExecutionFailureReason.UNKNOWN,
+            failure_context=failure_context or {}
         )

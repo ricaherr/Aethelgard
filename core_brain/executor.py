@@ -128,6 +128,8 @@ class OrderExecutor:
         
         # Track last rejection reason for better error reporting
         self.last_rejection_reason = None
+        # Track last execution response for failure reason extraction (DOMINIO-10 feedback)
+        self.last_execution_response = None
     
     async def execute_signal(self, signal: Signal) -> bool:
         """
@@ -384,6 +386,8 @@ class OrderExecutor:
             
             # --- NUEVO FLUJO HU 5.1: ExecutionService with Protection ---
             execution_response = await self.execution_service.execute_with_protection(signal, connector)
+            # Store response for MainOrchestrator feedback loop (DOMINIO-10 INFRA_RESILIENCY)
+            self.last_execution_response = execution_response
             
             success = execution_response.success
             # Map response to result format for backward compatibility

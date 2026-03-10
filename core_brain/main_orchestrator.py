@@ -48,6 +48,7 @@ from core_brain.position_manager import PositionManager
 from core_brain.regime import RegimeClassifier
 from core_brain.edge_tuner import EdgeTuner
 from core_brain.threshold_optimizer import ThresholdOptimizer
+from core_brain.execution_feedback import ExecutionFeedbackCollector, ExecutionFailureReason
 from core_brain.trade_closure_listener import TradeClosureListener
 from core_brain.strategy_ranker import StrategyRanker
 
@@ -253,6 +254,7 @@ class MainOrchestrator:
         ui_mapping_service: Optional[Any] = None,
         heartbeat_monitor: Optional[Any] = None,
         conflict_resolver: Optional[Any] = None,
+        execution_feedback_collector: Optional[ExecutionFeedbackCollector] = None,
         tenant_id: Optional[str] = None,  # DEPRECATED: Use user_id instead
         user_id: Optional[str] = None  # Multi-user support: User identifier for DB isolation
     ):
@@ -280,7 +282,7 @@ class MainOrchestrator:
         self._signal_factory = signal_factory  # Store for later injection if None
         
         # 1. Base dependencies and config
-        self._init_core_dependencies(scanner, signal_factory, risk_manager, executor, storage, config_path, strategy_ranker, user_id=effective_user_id, tenant_id=tenant_id)
+        self._init_core_dependencies(scanner, signal_factory, risk_manager, executor, storage, config_path, strategy_ranker, execution_feedback_collector=execution_feedback_collector, user_id=effective_user_id, tenant_id=tenant_id)
         
         # 1.5 Load usr_strategies dynamically ONLY if signal_factory was provided
         # Otherwise, user must call initialize_sensors() + set_signal_factory() explicitly
@@ -325,12 +327,13 @@ class MainOrchestrator:
         """Setter for backward compatibility."""
         self._signal_factory = factory
 
-    def _init_core_dependencies(self, scanner: Any, factory: Optional[Any] = None, risk: Any = None, executor: Any = None, storage: Optional[Any] = None, config_path: Optional[str] = None, strategy_ranker: Optional[StrategyRanker] = None, user_id: Optional[str] = None, tenant_id: Optional[str] = None) -> None:
+    def _init_core_dependencies(self, scanner: Any, factory: Optional[Any] = None, risk: Any = None, executor: Any = None, storage: Optional[Any] = None, config_path: Optional[str] = None, strategy_ranker: Optional[StrategyRanker] = None, execution_feedback_collector: Optional[ExecutionFeedbackCollector] = None, user_id: Optional[str] = None, tenant_id: Optional[str] = None) -> None:
         """Initializes core engines and resolves storage/config.
         
         Multi-user architecture: Passes user_id to storage resolution for per-user DB isolation.
         tenant_id is deprecated (kept for backward compatibility).
         signal_factory (factory) is optional - can be set later via set_signal_factory().
+        execution_feedback_collector is optional - auto-created if None.
         """
         self.scanner = scanner
         self._signal_factory = factory  # Optional - may be None
@@ -340,6 +343,10 @@ class MainOrchestrator:
         self.storage = _resolve_storage(storage, user_id=effective_user_id)
         self.strategy_ranker = strategy_ranker or StrategyRanker(storage=self.storage)
         self.config = self._load_config(config_path)
+        
+        # Initialize ExecutionFeedbackCollector for autonomous learning loop
+        self.execution_feedback_collector = execution_feedback_collector or ExecutionFeedbackCollector(storage=self.storage)
+        logger.info(f"[FEEDBACK] ExecutionFeedbackCollector initialized (DOMINIO-10 Auto-Healing)")
 
     def _load_dynamic_usr_strategies(self) -> None:
         """
@@ -385,7 +392,8 @@ class MainOrchestrator:
                 storage_manager=self.storage,
                 strategy_engines=active_engines,
                 confluence_analyzer=confluence_analyzer,
-                trifecta_analyzer=trifecta_analyzer
+                trifecta_analyzer=trifecta_analyzer,
+                execution_feedback_collector=self.execution_feedback_collector
             )
             
             logger.info(
@@ -1356,6 +1364,24 @@ class MainOrchestrator:
                         self.stats.usr_signals_executed += 1
                     else:
                         logger.warning(f"Signal execution failed: {signal.symbol}")
+                        # Record execution failure for autonomous learning (DOMINIO-10)
+                        # Extract specific failure reason from ExecutionService response (IMPROVEMENT)
+                        failure_reason = ExecutionFailureReason.UNKNOWN
+                        failure_details = {"signal_type": str(signal.signal_type) if signal.signal_type else None}
+                        if hasattr(self.executor, 'last_execution_response') and self.executor.last_execution_response:
+                            last_response = self.executor.last_execution_response
+                            if hasattr(last_response, 'failure_reason') and last_response.failure_reason:
+                                failure_reason = last_response.failure_reason
+                            if hasattr(last_response, 'failure_context') and last_response.failure_context:
+                                failure_details.update(last_response.failure_context)
+                        
+                        await self.execution_feedback_collector.record_failure(
+                            signal_id=getattr(signal, 'id', None),
+                            symbol=signal.symbol,
+                            strategy_name=getattr(signal, 'strategy', None),
+                            reason=failure_reason,
+                            details=failure_details
+                        )
                         
                 except Exception as e:
                     logger.error(f"Error executing signal {signal.symbol}: {e}")
@@ -1750,12 +1776,16 @@ async def main() -> None:
         print(f"[CRITICAL] ABORTING STARTUP: {e}")
         return
 
+    # Initialize ExecutionFeedbackCollector for autonomous learning (DOMINIO-10)
+    execution_feedback_collector = ExecutionFeedbackCollector(storage=storage)
+    
     # 2. Component Initialization (Signal Factory)
     signal_factory = SignalFactory(
         storage_manager=storage,
         strategy_engines=active_engines,
         confluence_analyzer=confluence_analyzer,
-        trifecta_analyzer=trifecta_analyzer
+        trifecta_analyzer=trifecta_analyzer,
+        execution_feedback_collector=execution_feedback_collector
     )
     
     # Risk Manager ($10k starting capital) - Dependency Injection
@@ -1828,7 +1858,8 @@ async def main() -> None:
         signal_factory=strategy_adapter,  # Changed from signal_factory to strategy_adapter
         risk_manager=risk_manager,
         executor=executor,
-        storage=storage
+        storage=storage,
+        execution_feedback_collector=execution_feedback_collector
     )
     
     # Store references for API/control access

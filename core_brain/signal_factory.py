@@ -62,6 +62,7 @@ class SignalFactory:
         notification_service: Optional[NotificationService] = None,
         mt5_connector: Optional[Any] = None,
         fundamental_guard: Optional[FundamentalGuardService] = None,
+        execution_feedback_collector: Optional[Any] = None,
     ):
         """
         Inicializa la SignalFactory con inyección de dependencias estricta.
@@ -74,11 +75,13 @@ class SignalFactory:
             notification_service: Servicio de notificación opcional.
             mt5_connector: Opcional MT5 connector para reconciliación.
             fundamental_guard: Opcional FundamentalGuardService para veto por noticias.
+            execution_feedback_collector: Opcional ExecutionFeedbackCollector para autonomous learning (DOMINIO-10).
         """
         self.storage_manager = storage_manager
         self.notifier: Optional[NotificationEngine] = get_notifier()
         self.internal_notifier = notification_service
         self.mt5_connector = mt5_connector
+        self.execution_feedback_collector = execution_feedback_collector  # For signal suppression
         
         # Inyectar FundamentalGuardService o crear uno si no está disponible
         if fundamental_guard is None:
@@ -234,7 +237,11 @@ class SignalFactory:
                     # ──────────────────────────────────────────────────────────────────────────────────
                     await self.signal_enricher.enrich(signal, symbol, strategy_id)
                     
-                    generated_usr_signals.append(signal)
+                    # CHECK EXECUTION FEEDBACK: Suppress if symbol/strategy failing repeatedly
+                    if not self._should_suppress_signal(signal):
+                        generated_usr_signals.append(signal)
+                    else:
+                        logger.debug(f"[EXEC-FEEDBACK] Signal {signal.symbol} suppressed by feedback learning")
             
             except Exception as e:
                 logger.error(
@@ -432,6 +439,19 @@ class SignalFactory:
             # FASE 2.6: Apply Trifecta Optimization (Oliver Velez Multi-TF)
             if all_usr_signals:
                 all_usr_signals = self.signal_trifecta_optimizer.optimize(all_usr_signals, scan_results)
+            
+            # FASE 2.7: Apply Execution Feedback Suppression (DOMINIO-10 Auto-Healing)
+            if all_usr_signals and self.execution_feedback_collector:
+                before_suppression = len(all_usr_signals)
+                all_usr_signals = [
+                    s for s in all_usr_signals 
+                    if not self._should_suppress_signal(s)
+                ]
+                if before_suppression > len(all_usr_signals):
+                    logger.info(
+                        f"[EXEC-FEEDBACK] Suppressed {before_suppression - len(all_usr_signals)} signals "
+                        f"based on execution feedback learning"
+                    )
 
             if all_usr_signals:
                 logger.info(
@@ -469,4 +489,47 @@ class SignalFactory:
             # Se asume que signal.membership_tier es un enum MembershipTier
             if tier_order.get(MembershipTier(s.metadata.get("membership_tier", "FREE")), 0) <= user_level
         ]
-        return filtered
+        return filtered    
+    def _should_suppress_signal(self, signal: Signal) -> bool:
+        """
+        Check if a signal should be suppressed based on execution feedback history.
+        
+        Part of DOMINIO-10 (INFRA_RESILIENCY): Autonomous learning loop.
+        Signs are suppressed if:
+        - Symbol has >3 recent failures
+        - Strategy has >2 recent failures
+        
+        Args:
+            signal: Signal to evaluate
+        
+        Returns:
+            True if signal should be suppressed, False otherwise
+        """
+        if not self.execution_feedback_collector:
+            return False  # No feedback collector, don't suppress
+        
+        symbol = signal.symbol
+        strategy = getattr(signal, 'strategy', None)
+        
+        # Check symbol failure rate
+        symbol_metrics = self.execution_feedback_collector.get_symbol_failure_metrics(symbol)
+        if symbol_metrics.get('should_suppress', False):
+            logger.warning(
+                f"[SUPPRESS] Signal for {symbol} suppressed: "
+                f"Symbol has {symbol_metrics['failure_count']} recent failures | "
+                f"Streak: {symbol_metrics['failure_streak']}"
+            )
+            return True
+        
+        # Check strategy failure rate
+        if strategy:
+            strategy_metrics = self.execution_feedback_collector.get_strategy_failure_metrics(strategy)
+            if strategy_metrics.get('should_suppress', False):
+                logger.warning(
+                    f"[SUPPRESS] Signal from strategy {strategy} suppressed: "
+                    f"Strategy has {strategy_metrics['failure_count']} recent failures | "
+                    f"Streak: {strategy_metrics['failure_streak']}"
+                )
+                return True
+        
+        return False
