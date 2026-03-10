@@ -6,10 +6,10 @@ Establecer los estándares innegociables para el desarrollo del ecosistema Aethe
 ## 1. Backend Rules: La Fortaleza Asíncrona
 
 ### 1.1 Aislamiento (Multitenancy)
-El `tenant_id` es el átomo central. Ninguna función de base de datos o lógica de negocio puede ejecutarse sin la validación del contexto del usuario. **Documentación completa**: Ver Dominio 01_IDENTITY_SECURITY.md (Sección "Tenant Isolation Protocol").
+El `user_id` es el átomo central. Ninguna función de base de datos o lógica de negocio puede ejecutarse sin la validación del contexto del usuario. **Documentación completa**: Ver Dominio 01_IDENTITY_SECURITY.md (Sección "Tenant Isolation Protocol").
 
 **Patrón Obligatorio - RULE T1**:
-Si endpoint tiene `token: TokenPayload` en firma → DEBE usar `TenantDBFactory.get_storage(token.tid)`
+Si endpoint tiene `token: TokenPayload` en firma → DEBE usar `TenantDBFactory.get_storage(token.sub)`
 ```python
 # ❌ PROHIBIDO:
 @router.get("/edge/history")
@@ -19,7 +19,7 @@ async def get_edge_history(token: TokenPayload = Depends(...)):
 # ✅ OBLIGATORIO:
 @router.get("/edge/history")
 async def get_edge_history(token: TokenPayload = Depends(...)):
-    storage = TenantDBFactory.get_storage(token.tid)  # BD aislada del tenant
+    storage = TenantDBFactory.get_storage(token.sub)  # BD aislada del usuario
 ```
 
 **Validación Automática**: 

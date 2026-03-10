@@ -171,8 +171,8 @@ class CircuitBreaker:
             # Send degradation alert if service available
             if self.degradation_alert_service:
                 try:
-                    # Get tenant_id from storage context (if available)
-                    tenant_id = getattr(self.storage, 'tenant_id', 'default')
+                    # Get user_id from storage context (if available)
+                    user_id = getattr(self.storage, 'user_id', 'default')
                     
                     self.degradation_alert_service.handle_degradation({
                         'strategy_id': strategy_id,
@@ -183,7 +183,7 @@ class CircuitBreaker:
                         'consecutive_losses': consecutive_losses,
                         'profit_factor': ranking.get('profit_factor'),
                         'win_rate': ranking.get('win_rate'),
-                        'tenant_id': tenant_id
+                        'user_id': user_id
                     })
                     logger.info(f"[CB] {trace_id}: Degradation alert sent for {strategy_id}")
                 

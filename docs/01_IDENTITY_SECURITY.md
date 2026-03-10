@@ -13,58 +13,58 @@ Middleware centralizado con protección JWT que valida cada solicitud antes de a
 - Excepciones explícitas para tokens inválidos, expirados o comprometidos
 
 ### Tenant Isolation Protocol
-Factoría de bases de datos que garantiza que el `tenant_id` sea inyectado en cada consulta y que cada cliente tenga su propia base de datos aislada.
+Factoría de bases de datos que garantiza que el `user_id` sea inyectado en cada consulta y que cada cliente tenga su propia base de datos aislada.
 
 #### Arquitectura Multi-Tenant
-- **Por-Tenant Database Isolation**: Cada tenant obtiene su base de datos exclusiva en `data_vault/tenants/{tenant_id}/aethelgard.db`
-- **Tenant Provisioning**: Nueva BD se crea automáticamente clonando `data_vault/templates/usr_template.db` (blueprint generado vía `bootstrap_tenant_template()`). La plantilla contiene las 12 tablas `usr_*` del esquema del usuario con estructura estándar. Ver detalles técnicos en [Dominio 08: DATA_SOVEREIGNTY - Tenant Provisioning](08_DATA_SOVEREIGNTY.md#-tenant-provisioning-bootstrap_tenant_template---creación-idempotente-de-capas-1).
-- **TenantDBFactory Pattern**: Factory singleton que crea y cachea `StorageManager` instances por tenant
+- **Por-User Database Isolation**: Cada usuario obtiene su base de datos exclusiva en `data_vault/tenants/{user_id}/aethelgard.db`
+- **User Provisioning**: Nueva BD se crea automáticamente clonando `data_vault/templates/usr_template.db` (blueprint generado vía `bootstrap_tenant_template()`). La plantilla contiene las 12 tablas `usr_*` del esquema del usuario con estructura estándar. Ver detalles técnicos en [Dominio 08: DATA_SOVEREIGNTY - Tenant Provisioning](08_DATA_SOVEREIGNTY.md#-tenant-provisioning-bootstrap_tenant_template---creación-idempotente-de-capas-1).
+- **TenantDBFactory Pattern**: Factory singleton que crea y cachea `StorageManager` instances por usuario
   ```python
   # Patrón correcto:
-  storage = TenantDBFactory.get_storage(token.tid)  # BD aislada del tenant (clonada de template)
+  storage = TenantDBFactory.get_storage(token.sub)  # BD aislada del usuario (clonada de template)
   
   # Patrón PROHIBIDO:
   storage = _get_storage()  # BD genérica compartida entre todos
   ```
-- **Schema Consistency**: Cada BD de tenant usa el mismo schema (`data_vault/schema.py`) pero datos completamente aislados. Template garantiza que todas las Capas 1 sean idénticas estructuralmente.
-- **Zero Cross-Tenant Data Leakage**: Imposible acceder a datos de otro tenant incluso si alguien contornea autenticación
+- **Schema Consistency**: Cada BD de usuario usa el mismo schema (`data_vault/schema.py`) pero datos completamente aislados. Template garantiza que todas las Capas 1 sean idénticas estructuralmente.
+- **Zero Cross-Tenant Data Leakage**: Imposible acceder a datos de otro usuario incluso si alguien contornea autenticación
 
 #### Reglas Obligatorias de Implementación
 
-**RULE T1**: Si endpoint tiene `token: TokenPayload` en firma → **DEBE** usar `TenantDBFactory.get_storage(token.tid)`
+**RULE T1**: Si endpoint tiene `token: TokenPayload` en firma → **DEBE** usar `TenantDBFactory.get_storage(token.sub)`
 ```python
 # ❌ INCORRECTO:
 @router.get("/signals")
 async def get_signals(token: TokenPayload = Depends(get_current_active_user)):
     storage = _get_storage()  # ¡ERROR! BD compartida
-    return storage.get_signals()  # Datos filtrados por tenant_id post-facto
+    return storage.get_signals()  # Datos filtrados por user_id post-facto
 
 # ✅ CORRECTO:
 @router.get("/signals")
 async def get_signals(token: TokenPayload = Depends(get_current_active_user)):
-    storage = TenantDBFactory.get_storage(token.tid)  # BD aislada por tenant
-    return storage.get_signals()  # Solo datos del tenant en BD
+    storage = TenantDBFactory.get_storage(token.sub)  # BD aislada por usuario
+    return storage.get_signals()  # Solo datos del usuario en BD
 ```
 
 **RULE T2**: Si endpoint retorna datos del usuario → **DEBE** estar en BD aislada (no filtro post-facto)
 ```python
 # ❌ PROBLEMATIC (aunque funcione):
 tuning_history = storage.get_all_tuning_history()
-filtered = [h for h in tuning_history if h['tenant_id'] == token.tid]  # Filtro manual
+filtered = [h for h in tuning_history if h['user_id'] == token.sub]  # Filtro manual
 
 # ✅ SEGURO:
-tuning_history = storage.get_tuning_history()  # BD ya es del tenant
-# (retorna solo datos de ese tenant, no hay filtro necesario)
+tuning_history = storage.get_tuning_history()  # BD ya es del usuario
+# (retorna solo datos de ese usuario, no hay filtro necesario)
 ```
 
-**RULE T3**: Si endpoint modifica datos → **DEBE** validar que `owner_id == token.tid`
+**RULE T3**: Si endpoint modifica datos → **DEBE** validar que `owner_id == token.sub`
 ```python
 @router.post("/update_strategy")
 async def update_strategy(req: StrategyUpdate, token: TokenPayload = Depends(...)):
-    storage = TenantDBFactory.get_storage(token.tid)
+    storage = TenantDBFactory.get_storage(token.sub)
     strategy = storage.get_strategy(req.strategy_id)
     
-    if strategy['owner_id'] != token.tid:  # Validación explícita de propiedad
+    if strategy['owner_id'] != token.sub:  # Validación explícita de propiedad
         raise HTTPException(403, "Not owner of this strategy")
     
     storage.update_strategy(req)  # Ahora seguro actualizar

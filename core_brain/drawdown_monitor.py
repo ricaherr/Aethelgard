@@ -25,19 +25,19 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DrawdownStatus:
     """
-    Result of a drawdown check for a given tenant equity snapshot.
+    Result of a drawdown check for a given user equity snapshot.
 
     Attributes:
-        tenant_id:        Tenant identifier
+        user_id:          User identifier
         level:            "SAFE" | "SOFT_ALERT" | "HARD_BREACH"
         current_equity:   Current account equity (Decimal)
-        peak_equity:      Highest recorded equity for this tenant (Decimal)
+        peak_equity:      Highest recorded equity for this user (Decimal)
         drawdown_pct:     Drawdown as percentage of peak (Decimal, 2dp)
         soft_threshold:   Soft alert threshold in % (Decimal)
         hard_threshold:   Hard breach threshold in % (Decimal)
         should_lockdown:  True only when level == "HARD_BREACH"
     """
-    tenant_id: str
+    user_id: str
     level: str
     current_equity: Decimal
     peak_equity: Decimal
@@ -49,7 +49,7 @@ class DrawdownStatus:
 
 class DrawdownMonitor:
     """
-    Equity drawdown supervisor with per-tenant isolation.
+    Equity drawdown supervisor with per-user isolation.
 
     Thresholds (configurable via constructor):
         soft_threshold_pct (default 5.0%): Alert-only, trading NOT blocked
@@ -57,7 +57,7 @@ class DrawdownMonitor:
 
     Usage:
         monitor = DrawdownMonitor(soft_threshold_pct=5.0, hard_threshold_pct=10.0)
-        status = monitor.update_equity("tenant_001", peak_equity=10000.0, current_equity=9400.0)
+        status = monitor.update_equity("user_001", peak_equity=10000.0, current_equity=9400.0)
         if status.should_lockdown:
             risk_manager.activate_lockdown()
     """
@@ -82,9 +82,9 @@ class DrawdownMonitor:
         self._soft = Decimal(str(soft_threshold_pct))
         self._hard = Decimal(str(hard_threshold_pct))
 
-        # Per-tenant state: {tenant_id: {"peak": Decimal}}
+        # Per-user state: {user_id: {"peak": Decimal}}
         # Using in-memory dict for simplicity; peak survives within process lifetime
-        self._tenant_state: Dict[str, Dict] = {}
+        self._user_state: Dict[str, Dict] = {}
 
         logger.info(
             f"[DrawdownMonitor] Initialized: soft={self._soft}%, hard={self._hard}%"
@@ -94,7 +94,7 @@ class DrawdownMonitor:
 
     def update_equity(
         self,
-        tenant_id: str,
+        user_id: str,
         peak_equity: float,
         current_equity: float,
     ) -> DrawdownStatus:
@@ -102,7 +102,7 @@ class DrawdownMonitor:
         Evaluate current equity against peak and classify drawdown level.
 
         Args:
-            tenant_id:      Tenant identifier (used for isolation and logging)
+            user_id:        User identifier (used for isolation and logging)
             peak_equity:    Highest recorded equity (caller provides; use get_peak() for stored value)
             current_equity: Current account equity snapshot
 
@@ -112,14 +112,14 @@ class DrawdownMonitor:
         d_peak = Decimal(str(peak_equity))
         d_current = Decimal(str(current_equity))
 
-        # Update stored peak for this tenant if current exceeds it
-        self._update_peak(tenant_id, d_current)
+        # Update stored peak for this user if current exceeds it
+        self._update_peak(user_id, d_current)
 
         drawdown_pct = self._calculate_drawdown_pct(d_peak, d_current)
         level, should_lockdown = self._classify(drawdown_pct)
 
         status = DrawdownStatus(
-            tenant_id=tenant_id,
+            user_id=user_id,
             level=level,
             current_equity=d_current,
             peak_equity=d_peak,
@@ -132,27 +132,27 @@ class DrawdownMonitor:
         self._log(status)
         return status
 
-    def get_peak(self, tenant_id: str) -> Optional[Decimal]:
+    def get_peak(self, user_id: str) -> Optional[Decimal]:
         """
-        Returns the stored peak equity for a tenant (None if not seen yet).
+        Returns the stored peak equity for a user (None if not seen yet).
         Useful for passing to update_equity() on subsequent calls.
         """
-        state = self._tenant_state.get(tenant_id)
+        state = self._user_state.get(user_id)
         return state["peak"] if state else None
 
-    def reset_peak(self, tenant_id: str) -> None:
+    def reset_peak(self, user_id: str) -> None:
         """
-        Reset the peak equity for a tenant (e.g., start of new trading session).
+        Reset the peak equity for a user (e.g., start of new trading session).
         """
-        if tenant_id in self._tenant_state:
-            del self._tenant_state[tenant_id]
-            logger.info(f"[DrawdownMonitor] Peak reset for tenant: {tenant_id}")
+        if user_id in self._user_state:
+            del self._user_state[user_id]
+            logger.info(f"[DrawdownMonitor] Peak reset for user: {user_id}")
 
     # ─── Private Methods ──────────────────────────────────────────────────────
 
-    def _update_peak(self, tenant_id: str, current_equity: Decimal) -> None:
-        """Update stored peak for tenant if current equity is higher."""
-        state = self._tenant_state.setdefault(tenant_id, {"peak": current_equity})
+    def _update_peak(self, user_id: str, current_equity: Decimal) -> None:
+        """Update stored peak for user if current equity is higher."""
+        state = self._user_state.setdefault(user_id, {"peak": current_equity})
         if current_equity > state["peak"]:
             state["peak"] = current_equity
 
@@ -186,7 +186,7 @@ class DrawdownMonitor:
     def _log(self, status: DrawdownStatus) -> None:
         """Emit appropriate log level based on status."""
         msg = (
-            f"[DrawdownMonitor] [{status.tenant_id}] Level={status.level} | "
+            f"[DrawdownMonitor] [{status.user_id}] Level={status.level} | "
             f"DD={status.drawdown_pct:.2f}% | "
             f"Equity={status.current_equity} / Peak={status.peak_equity}"
         )
