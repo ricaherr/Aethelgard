@@ -450,12 +450,45 @@ for signal in active_signals:
 
 ---
 
+## II.5 Data Services: Provisión de Contexto Macro
+
+Antes del Pipeline de Validación, el sistema requiere datos confiables de contexto macro para decisiones inteligentes.
+
+### DXYService (USD Dollar Index)
+**Ubicación**: `core_brain/services/dxy_service.py`  
+**Responsabilidad**: Provisión confiable de datos DXY para análisis de correlación macro
+
+**Arquitectura**:
+- **Agnóstica** (Rule #4): Retorna `List[Dict[str, Any]]`, no DataFrame
+- **SSOT** (Rule #15): Cache persistido en StorageManager, no archivos JSON
+- **Fallback Chain** (5 niveles):
+  1. DataProviderManager (auto-select)
+  2. Alpha Vantage (si habilitado)
+  3. Twelve Data (si habilitado)
+  4. CCXT USD proxy (fallback creativo)
+  5. StorageManager cache (último recurso)
+
+**Integración en ConfluenceService**:
+```python
+# ConfluenceService.detect_predator_divergence()
+dxy_data = await self.dxy_service.fetch_dxy(timeframe="H1", count=50)
+if dxy_data:
+    usd_strength = dxy_data[-1]["close"] > mean(dxy_data[-20:])
+    # Veto: Bloquear EURUSD si USD muy fuerte (macro contexto)
+```
+
+**Estado**: ✅ Production Ready (Rule #4 agnóstica, Rule #15 SSOT compliance)
+
+---
+
 ## III. El Flujo Completo de Validación (Pipeline v2.0)
 
 ```
 1. TICK LLEGA (market_data)
    ↓
-2. UniversalStrategyEngine.analyze()
+2. [MACRO CONTEXT] DXYService.fetch() → USD strength
+   ↓
+3. UniversalStrategyEngine.analyze()
    - Interpreta schema JSON
    - Genera OutputSignal (candidata)
    ↓

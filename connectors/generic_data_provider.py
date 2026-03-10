@@ -53,6 +53,8 @@ class GenericDataProvider:
         "NDX": "^IXIC",    # NASDAQ
         "DJI": "^DJI",     # Dow Jones
         "US30": "^DJI",    # Dow Jones (alias)
+        "DXY": "^DXY",     # US Dollar Index (Yahoo: ^DXY)
+        "USDX": "^DXY",    # US Dollar Index (alias)
         
         # Commodities
         "GOLD": "XAUUSD=X",  # Gold Spot

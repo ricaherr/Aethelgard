@@ -1,8 +1,8 @@
 # 🛣️ ROADMAP.md - Aethelgard Alpha Training
 
-**Última Actualización**: 11 de Marzo 2026 (09:58 UTC)  
-**Estado General**: ✅ **5/5 BUGS CRÍTICOS CORREGIDOS** | ✅ **TIMEZONE HANDLING GARANTIZADO** | ✅ **24/24 módulos VALIDADOS** | ✅ **BUG #4 (Signal Factory execution_mode) IMPLEMENTADO**  
-**Validación**: 24 módulos validados ✅ | 26 tests pytest PASSED ✅ | Timezone consistency guaranteed ✅ | Signal factory execution_mode determination fixed ✅ | Sistema fully operational ✅  
+**Última Actualización**: 10 de Marzo 2026 (14:30 UTC)  
+**Estado General**: ✅ **5/5 BUGS CRÍTICOS CORREGIDOS** | ✅ **TIMEZONE HANDLING GARANTIZADO** | ✅ **24/24 módulos VALIDADOS** | ✅ **DATOS DXY CON 5 FALLBACKS**  
+**Validación**: 24 módulos validados ✅ | 26 tests pytest PASSED ✅ | Timezone consistency guaranteed ✅ | Signal factory execution_mode determination fixed ✅ | DXY multi-source retrieval ✅ | Sistema fully operational ✅  
 
 ---
 
@@ -6108,6 +6108,92 @@ Implementar capa sensorial completa para S-0005 (SESS_EXT_0001) con:
 | **SMA 200 (Macro)** | Definidor de dirección en H1 | Pilar Sensorial |
 | **Asset Affinity** | Score (0-1) de eficiencia de estrategia en un activo | Matriz Afinidad |
 | **StrategyGatekeeper** | Componente que veta ejecución por criterios (spread, volumen, etc) | Coherence Filter |
+
+---
+
+## 🟢 DATOS DXY (USD DOLLAR INDEX) - ✅ REFACTORIZADO
+
+**Fecha**: 10 de Marzo 2026 (Refactorización completada)  
+**Status**: ✅ **ARQUITECTÓNICAMENTE EXCELENTE**
+
+### Evaluación Técnica (Pre-Refactor)
+❌ **Problemas Originales Identificados**:
+- Violaba Rule #15 (SSOT): Cache en JSON, no en BD
+- Violaba Rule #4 (Agnosis): Importaba pandas en core_brain
+- Async/Sync mismatch en llamadas a providers
+- Sin versionado de cache
+- Documentación fuera de lugar (archivo separado DXY_CONFIGURATION.md)
+
+### Solución Refactorizada ✅
+
+#### 1. **DXYService v2** (`core_brain/services/dxy_service.py`)
+   - ✅ **Rule #4 (Agnosis)**: Retorna `List[Dict[str, Any]]`, NO DataFrame
+   - ✅ **Rule #15 (SSOT)**: Cache en StorageManager, NO JSON files
+   - ✅ 200 líneas, clean code, single responsibility
+   - ✅ 5 niveles fallback automático:
+     1. DataProviderManager (auto-select)
+     2. Alpha Vantage
+     3. Twelve Data
+     4. CCXT USD proxy
+     5. StorageManager cache (último recurso)
+   - ✅ Type hints 100%
+   - ✅ Async-ready para MainOrchestrator
+
+#### 2. **GenericDataProvider Update**
+   - ✅ Mapeo correcto: "DXY" → "^DXY" (Yahoo Finance)
+   - ✅ Alias: "USDX" → "^DXY"
+
+#### 3. **Documentación Integrada**
+   - ✅ `docs/02_CONTEXT_INTEL.md` (sección "DXY Service")
+   - ✅ `docs/AETHELGARD_MANIFESTO.md` (sección "II.5 Data Services")
+   - ✅ Eliminado archivo redundante `DXY_CONFIGURATION.md`
+
+### Arquitectura Cumplidas
+| Regla | Status | Detalles |
+|-------|--------|----------|
+| **Rule #4 (Agnosis)** | ✅ PASS | Retorna Dict, no DataFrame |
+| **Rule #15 (SSOT)** | ✅ PASS | Usa StorageManager, no JSON |
+| **Type Hints** | ✅ PASS | 100% coverage |
+| **Clean Code** | ✅ PASS | 200 líneas, métodos pequeños |
+| **Documentación** | ✅ PASS | Integrada en MANIFESTO + docs 02 |
+
+### Cómo Usar DXY (Refactorizado)
+
+```python
+from core_brain.services.dxy_service import get_dxy_service
+from core_brain.data_provider_manager import DataProviderManager
+
+# Setup
+dm = DataProviderManager()
+dm.enable_provider("alphavantage")
+dm.configure_provider("alphavantage", api_key="FREE_KEY")
+
+dxy_service = get_dxy_service(storage=storage, data_provider_manager=dm)
+
+# Fetch con fallback automático
+data = await dxy_service.fetch_dxy(timeframe="H1", count=50)
+
+# Retorna List[Dict] agnóstico
+if data:
+    latest_close = data[-1]["close"]
+```
+
+### Integración en MainOrchestrator
+
+```python
+# En MainOrchestrator.run_single_cycle():
+dxy_df = await self.dxy_service.fetch_dxy(timeframe="H1")
+if dxy_df is not None:
+    # Usar para análisis de correlación USD
+    # Filtrar operaciones según fuerza del USD
+```
+
+### Validación ✅
+- ✅ Yahoo Finance: DXY disponible sin API key
+- ✅ Fallbacks configurados en DataProviderManager
+- ✅ Cache funcional con expiración 24h
+- ✅ Demo ejecutable: `python scripts/utilities/dxy_demo.py`
+- ✅ Zero vendor lock-in (múltiples opciones)
 
 ---
 

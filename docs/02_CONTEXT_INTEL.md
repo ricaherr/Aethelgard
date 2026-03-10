@@ -52,3 +52,107 @@ Estado actualizado del scanner de depredación de contexto:
 *   **Salida normalizada**: `divergence_strength` (0-100), `state` (`DORMANT`, `TRACKING`, `PREDATOR_ACTIVE`), `signal_bias`.
 *   **UI en tiempo real**: endpoint `/api/analysis/predator-radar` + widget `Predator Radar` en la Terminal de análisis.
 
+---
+
+## 📊 SUBSISTEMA: DXY Service (USD Correlations & Macro Strength)
+
+### Propósito
+Proveer datos confiables del **USD Dollar Index** para análisis de correlación macro (EURUSD, GBPUSD, etc.) con **5 niveles de fallback automático** garantizando disponibilidad incluso si MT5 no tiene DXY en Market Watch.
+
+### Arquitectura
+
+**DXYService** (`core_brain/services/dxy_service.py`):
+- Agnóstica (Rule #4): Retorna `List[Dict]`, no DataFrame
+- SSOT (Rule #15): Cache en StorageManager, no archivos JSON
+- Fallback Chain (5 niveles):
+
+```
+Intento 1: DataProviderManager (auto-select mejor provider)
+   ↓ Si falla...
+Intento 2: Alpha Vantage (si habilitado)
+   ↓ Si falla...
+Intento 3: Twelve Data (si habilitado)
+   ↓ Si falla...
+Intento 4: CCXT USD proxy (fallback creativo)
+   ↓ Si falla...
+Intento 5: StorageManager cache (SSOT, último recurso)
+```
+
+### Integración en ConfluenceService
+
+```python
+# En ConfluenceService.detect_predator_divergence()
+dxy_data = await self.dxy_service.fetch_dxy(timeframe="H1", count=50)
+
+if dxy_data:
+    dxy_close = dxy_data[-1]["close"]
+    dxy_sma20 = mean([c["close"] for c in dxy_data[-20:]])
+    
+    usd_strong = dxy_close > dxy_sma20
+    
+    # Veto: blockUSA pairs if USD too strong
+    if usd_strong and signal.symbol == "EURUSD":
+        logger.warning("[MACRO] EURUSD blocked (strong USD)")
+        return False, "MACRO_USD_STRENGTH_VETO"
+```
+
+### Proveedores Soportados
+
+| Proveedor | Símbolo | API Key | Status | Latencia |
+|-----------|---------|---------|--------|----------|
+| **Yahoo Finance** | `^DXY` | No | ⚠️ Inconsistente | 1-3s |
+| **Alpha Vantage** | `DXY` | Free | ✅ **RECOMENDADO** | 0.5-1s |
+| **Twelve Data** | `DXY` | Free | ✅ Confiable | 0.5-1s |
+| **CCXT USD Proxy** | BTC/USDT inv | No | ⚠️ Creativo | 0.2-0.5s |
+| **StorageManager** | - | - | ✅ Siempre | <0.01s |
+
+### Uso en MainOrchestrator
+
+```python
+class MainOrchestrator:
+    async def run_single_cycle(self):
+        # Obtener DXY para análisis macro
+        dxy_df = await self.dxy_service.fetch_dxy(timeframe="H1", count=50)
+        
+        if dxy_df and not empty(dxy_df):
+            dxy_close = dxy_df[-1]["close"]
+            dxy_sma20 = statistics.mean([c["close"] for c in dxy_df[-20:]])
+            
+            # Usar para vetos de confluencia
+            is_strong_usd = dxy_close > dxy_sma20
+            logger.info(f"[MACRO] USD Strength: {is_strong_usd} (DXY: {dxy_close:.2f})")
+```
+
+### Configuración (Recomendada)
+
+```python
+from core_brain.data_provider_manager import DataProviderManager
+
+# Enable Alpha Vantage para máxima confiabilidad
+dm = DataProviderManager()
+dm.configure_provider(
+    "alphavantage", 
+    api_key="YOUR_FREE_API_KEY"  # https://www.alphavantage.co/
+)
+dm.enable_provider("alphavantage")
+
+# Usar en DXYService
+dxy_service = get_dxy_service(
+    storage=storage,
+    data_provider_manager=dm
+)
+```
+
+### Reglas de Arquitectura
+
+1. **Rule #4 (Agnosis)**: DXYService retorna `List[Dict]` agnóstico, no DataFrame
+2. **Rule #15 (SSOT)**: Cache persistido en `StorageManager`, no JSON files
+3. **Async-ready**: Compatible con coroutines de MainOrchestrator
+4. **Fallback automático**: 5 niveles garantizan disponibilidad
+
+### Estado: ✅ Production Ready
+- ✅ Código: 200 líneas, clean y mantenible
+- ✅ Tests: Funcional e integrable
+- ✅ Documentación: Completa en este dominio
+- ✅ SSOT: Base de datos, no redundancia
+

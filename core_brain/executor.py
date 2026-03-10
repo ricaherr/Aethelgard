@@ -523,6 +523,31 @@ class OrderExecutor:
             logger.warning(f"Invalid signal_type: {signal_type_str}")
             return False
         
+        # CRITICAL: Check entry_price is not 0 (prevents division by zero in PositionSizeEngine)
+        if signal.entry_price <= 0.0:
+            logger.error(
+                f"[VALIDATION ERROR] Signal has invalid entry_price={signal.entry_price} "
+                f"(symbol={signal.symbol}, strategy={signal.strategy_id}). "
+                f"Signal rejected. Strategy must provide valid entry_price."
+            )
+            return False
+        
+        # Check stop_loss is not 0 for proper risk calculations
+        if signal.stop_loss <= 0.0:
+            logger.warning(
+                f"[VALIDATION WARNING] Signal {signal.symbol} has stop_loss={signal.stop_loss}. "
+                f"Using default 50-pips stop loss."
+            )
+            # Default to 50 pips below entry (for BUY)
+            if hasattr(signal.signal_type, 'value'):
+                signal_type_str = signal.signal_type.value
+            else:
+                signal_type_str = str(signal.signal_type)
+            
+            pip_size = 0.0001 if signal.symbol.endswith("JPY") else 0.00001
+            signal.stop_loss = (signal.entry_price - 50 * pip_size if signal_type_str == "BUY" 
+                              else signal.entry_price + 50 * pip_size)
+        
         return True
     
     def _get_connector(self, connector_type: ConnectorType) -> Optional[Any]:

@@ -1,6 +1,7 @@
 import json
 import logging
 import sqlite3
+from datetime import datetime
 from typing import Dict, List, Optional
 from .base_repo import BaseRepository
 
@@ -186,6 +187,97 @@ class MarketMixin(BaseRepository):
             if rows:
                 return [dict(row) for row in rows]
             return []
+        finally:
+            self._close_conn(conn)
+
+    def log_market_cache(self, symbol: str, data: Optional[List[Dict]] = None, 
+                         limit_records: int = 100, metadata: Optional[Dict] = None) -> None:
+        """
+        Persist market data cache (agnóstico - Rule #15 SSOT).
+        
+        Used by: DXYService, other data services for cache persistence.
+        
+        Args:
+            symbol: Market symbol (e.g., "DXY", "EURUSD")
+            data: Market OHLCV data to cache (optional for cleanup)
+            limit_records: Keep only latest N records per symbol
+            metadata: Additional metadata (ttl_seconds, provider, etc.)
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            timestamp_str = datetime.utcnow().isoformat()
+            
+            # Prepare cache entry with metadata
+            cache_entry = {
+                "timestamp": timestamp_str,
+                "symbol": symbol,
+                "record_count": len(data) if data else 0,
+                "metadata": metadata or {}
+            }
+            if data:
+                cache_entry["records"] = data
+            
+            # Insert cache entry
+            cursor.execute("""
+                INSERT INTO sys_market_pulse (symbol, data)
+                VALUES (?, ?)
+            """, (symbol, json.dumps(cache_entry)))
+            
+            # Cleanup: Keep only latest N per symbol
+            cursor.execute("""
+                DELETE FROM sys_market_pulse 
+                WHERE symbol = ? AND id NOT IN (
+                    SELECT id FROM sys_market_pulse 
+                    WHERE symbol = ? 
+                    ORDER BY timestamp DESC 
+                    LIMIT ?
+                )
+            """, (symbol, symbol, limit_records))
+            
+            conn.commit()
+            logger.debug(f"[CACHE] Logged {len(data) if data else 0} records for {symbol}")
+        except Exception as e:
+            logger.warning(f"[CACHE] log_market_cache failed: {e}")
+        finally:
+            self._close_conn(conn)
+    
+    def get_market_cache(self, symbol: str, count: int = 100) -> Optional[List[Dict]]:
+        """
+        Retrieve market data cache (SSOT persistence - Rule #15).
+        
+        Returns: List of OHLCV records or None if not found.
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT data FROM sys_market_pulse 
+                WHERE symbol = ? 
+                ORDER BY timestamp DESC 
+                LIMIT 1
+            """, (symbol,))
+            
+            row = cursor.fetchone()
+            if not row:
+                logger.debug(f"[CACHE] No cache found for {symbol}")
+                return None
+            
+            try:
+                cache_data = json.loads(row['data'])
+                records = cache_data.get('records', [])
+                
+                # Return only requested count
+                result = records[-count:] if records else None
+                logger.debug(f"[CACHE] Retrieved {len(result) if result else 0} records for {symbol}")
+                return result
+            except (json.JSONDecodeError, KeyError) as e:
+                logger.warning(f"[CACHE] Malformed cache data for {symbol}: {e}")
+                return None
+                
+        except Exception as e:
+            logger.warning(f"[CACHE] get_market_cache failed: {e}")
+            return None
         finally:
             self._close_conn(conn)
 

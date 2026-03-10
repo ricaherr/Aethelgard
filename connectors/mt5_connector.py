@@ -180,13 +180,16 @@ class MT5Connector(BaseConnector):
                 logger.error(f"No credentials found for MT5 account {self.account_id}")
                 return {'enabled': False}
             
+            # Get account display name (prefer account_name, fallback to login)
+            account_display_name = account.get('account_name') or f"Account#{account.get('account_number')}"
+            
             config = {
                 'enabled': True,
                 'login': account.get('login') or account.get('account_number'),
                 'server': account.get('server'),
                 'password': credentials['password'],
                 'account_id': self.account_id,
-                'account_name': account.get('account_name'),
+                'account_name': account_display_name,
                 'account_type': account.get('account_type')
             }
             
@@ -848,28 +851,68 @@ class MT5Connector(BaseConnector):
         }
         return mapping.get(timeframe.upper())
 
+    def _sanitize_comment(self, comment: str, max_length: int = 31) -> str:
+        """
+        Sanitize MT5 comment field according to broker constraints.
+        
+        MT5 Requirements:
+        - Max 31 characters
+        - Alphanumeric + underscore only
+        - No special characters (dashes, quotes, spaces cause "Invalid comment argument" error)
+        
+        Args:
+            comment: Raw comment string (may contain invalid chars)
+            max_length: Maximum allowed length (MT5 default: 31)
+        
+        Returns:
+            Sanitized comment safe for MT5 order submission
+        """
+        # Remove invalid characters: keep only alphanumeric + underscore
+        sanitized = ''.join(c if c.isalnum() or c == '_' else '' for c in str(comment))
+        
+        # Truncate to max length
+        if len(sanitized) > max_length:
+            sanitized = sanitized[:max_length]
+        
+        # Ensure not empty
+        if not sanitized:
+            sanitized = "AE"  # Fallback safe value
+        
+        return sanitized
+    
     def _build_trade_comment(self, signal: Signal) -> str:
         """
         Build MT5 comment with timeframe and strategy info.
         
-        Format: AE_<TF>_<TYPE>_<STRAT>
-        Example: AE_M5_BUY_RSI (13 chars)
+        MT5 CONSTRAINT: Comment must be ≤31 chars, alphanumeric + underscores only.
+        Connector normalizes broker-specific constraints (SSOT: Agnosticismo de Datos).
         
-        MT5 comment limit: 31 chars
+        Format: AE_<SID>_<TF>_<TYPE>
+        Example: AE_95f523fa_M5_B (15 chars max)
         """
-        tf = (signal.timeframe or 'M5').upper()
-        signal_type = signal.signal_type.value[:4]  # BUY or SELL (4 chars max)
-        strategy = (signal.strategy_id or 'RSI')[:8]  # Max 8 chars for strategy
-        signal_id = signal.metadata.get('signal_id') if hasattr(signal, 'metadata') else None
-        # Embebe signal_id en el comentario si existe
+        tf = (signal.timeframe or 'M5').upper()[:2]  # M5, H1, etc. Max 2 chars
+        signal_type = signal.signal_type.value[:1]  # 'B' for BUY, 'S' for SELL (1 char max)
+        
+        # Extract and sanitize signal_id from metadata
+        signal_id = None
+        if hasattr(signal, 'metadata') and isinstance(signal.metadata, dict):
+            raw_id = signal.metadata.get('signal_id')
+            if raw_id:
+                # First pass: remove non-alphanumeric (converts UUID dashes to empty)
+                filtered = str(raw_id)
+                # Keep only first 8 chars of cleaned ID for short form 
+                signal_id = ''.join(c for c in filtered if c.isalnum())[:8]
+        
+        # Build comment respecting 31-char limit
         if signal_id:
-            comment = f"Aethelgard_signal_{signal_id}_{tf}_{signal_type}_{strategy}"
+            # Format: AE_<SHORT_SID>_<TF>_<TYPE> (e.g., AE_95f523fa_M5_B = 15 chars)
+            comment = f"AE_{signal_id}_{tf}_{signal_type}"
         else:
-            comment = f"AE_{tf}_{signal_type}_{strategy}"
-        # Trunca si excede el límite MT5
-        if len(comment) > 31:
-            comment = comment[:31]
-        return comment
+            # Fallback: AE_<TF>_<TYPE> (e.g., AE_M5_B = 7 chars)
+            comment = f"AE_{tf}_{signal_type}"
+        
+        # Final sanitization pass
+        return self._sanitize_comment(comment, max_length=31)
     
     def execute_order(self, signal: Any) -> Dict[str, Any]:
         """BaseConnector interface wrapper for execute_signal"""
@@ -1215,11 +1258,13 @@ class MT5Connector(BaseConnector):
             order = orders[0]
             
             # Prepare cancel request
+            # Sanitize comment to meet MT5 constraints (alphanumeric + underscore only)
+            cancel_comment = f"AE_CANCEL_{reason}" if reason else "AE_CANCEL"
             cancel_request = {
                 "action": mt5.TRADE_ACTION_REMOVE,
                 "order": order_ticket,
                 "magic": self.magic_number,
-                "comment": f"Aethelgard_Cancel_{reason}",
+                "comment": self._sanitize_comment(cancel_comment),
                 "type_time": mt5.ORDER_TIME_GTC,
             }
             
@@ -1608,13 +1653,15 @@ class MT5Connector(BaseConnector):
 
     def _prepare_modify_request(self, ticket: int, symbol: str, sl: float, tp: float, reason: str = "") -> Dict[str, Any]:
         """Prepare the request dictionary for mt5.order_send."""
+        # Sanitize comment to meet MT5 constraints
+        modify_comment = f"AE_MOD_{reason}" if reason else "AE_MOD"
         return {
             "action": mt5.TRADE_ACTION_SLTP,
             "symbol": symbol,
             "position": ticket,
             "sl": normalize_price(sl, mt5.symbol_info(symbol)) if sl > 0 else 0.0,
             "tp": normalize_price(tp, mt5.symbol_info(symbol)) if tp > 0 else 0.0,
-            "comment": f"AE_MOD_{reason}"[:31],
+            "comment": self._sanitize_comment(modify_comment),
         }
 
     def _validate_freeze_level(self, ticket: int, new_sl: float, current_price: float, symbol_info: Any) -> bool:
@@ -1684,15 +1731,22 @@ class MT5Connector(BaseConnector):
             position = positions[0]
             
             # Prepare close request
-            # Buscar signal_id en metadata de posición
+            # Extract signal_id from original position comment if available
             signal_id = None
             if hasattr(position, 'comment') and position.comment:
-                # Si el comentario original tiene signal_id, extraerlo
                 import re
-                match = re.search(r'signal_(\w+)', position.comment)
+                match = re.search(r'AE_([A-Fa-f0-9]{1,8})', position.comment)
                 if match:
                     signal_id = match.group(1)
-            comment = f"Aethelgard_Close_signal_{signal_id}_{reason}" if signal_id else (f"Aethelgard_Close_{reason}" if reason else "Aethelgard_Close")
+            
+            # Build and sanitize comment
+            if signal_id and reason:
+                close_comment = f"AE_CLO_{signal_id}_{reason}"
+            elif signal_id:
+                close_comment = f"AE_CLO_{signal_id}"
+            else:
+                close_comment = f"AE_CLO_{reason}" if reason else "AE_CLO"
+            
             close_request = {
                 "action": mt5.TRADE_ACTION_DEAL,
                 "symbol": position.symbol,
@@ -1702,7 +1756,7 @@ class MT5Connector(BaseConnector):
                 "price": normalize_price(mt5.symbol_info_tick(position.symbol).bid if position.type == mt5.ORDER_TYPE_BUY else mt5.symbol_info_tick(position.symbol).ask, mt5.symbol_info(position.symbol)),
                 "deviation": 20,
                 "magic": self.magic_number,
-                "comment": comment,
+                "comment": self._sanitize_comment(close_comment),
                 "type_time": mt5.ORDER_TIME_GTC,
                 "type_filling": mt5.ORDER_FILLING_IOC,
             }
