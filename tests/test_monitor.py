@@ -66,9 +66,9 @@ class TestClosingMonitor:
         # Update signal to EXECUTED status with ticket
         storage.update_signal_status(signal_id, 'EXECUTED', {'ticket': 123456})
 
-        # Verify order_id persisted in usr_signals table
+        # Verify ticket persisted in metadata (order_id moved to usr_trades in FASE 2C)
         updated = storage.get_signal_by_id(signal_id)
-        assert updated['order_id'] == "123456"
+        assert updated['metadata'].get('ticket') == 123456
         
         # Configure mock to return a closed position matching our signal
         mock_mt5_connector.get_closed_usr_positions.return_value = [

@@ -5,7 +5,7 @@ Part of Aethelgard's autonomous learning system.
 """
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
 from data_vault.storage import StorageManager
 from utils.market_ops import calculate_pip_size
@@ -186,7 +186,16 @@ class ClosingMonitor:
             
             # Calculate duration
             signal_time = datetime.fromisoformat(signal['timestamp'])
-            close_time = close_time or datetime.now()
+            # Normalize to UTC-aware if naive
+            if signal_time.tzinfo is None:
+                signal_time = signal_time.replace(tzinfo=timezone.utc)
+            
+            # Ensure close_time is UTC-aware
+            if close_time is None:
+                close_time = datetime.now(timezone.utc)
+            elif close_time.tzinfo is None:
+                close_time = close_time.replace(tzinfo=timezone.utc)
+            
             duration_minutes = int((close_time - signal_time).total_seconds() / 60)
             
             # Save trade result

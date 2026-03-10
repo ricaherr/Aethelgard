@@ -885,6 +885,16 @@ class MainOrchestrator:
                     continue
                 
                 # Create BrokerTradeClosedEvent
+                # Normalize entry_time to UTC-aware
+                entry_time = datetime.fromisoformat(matching_signal['timestamp']) if 'timestamp' in matching_signal else datetime.now(timezone.utc)
+                if entry_time.tzinfo is None:
+                    entry_time = entry_time.replace(tzinfo=timezone.utc)
+                
+                # Exit time from MT5 is already UTC-aware, but normalize if needed
+                exit_time = pos['close_time']
+                if isinstance(exit_time, datetime) and exit_time.tzinfo is None:
+                    exit_time = exit_time.replace(tzinfo=timezone.utc)
+                
                 trade_event = BrokerTradeClosedEvent(
                     ticket=pos['ticket'],
                     signal_id=matching_signal.get('id'),
@@ -894,8 +904,8 @@ class MainOrchestrator:
                     profit_loss=pos['profit'],
                     pips=0.0,
                     exit_reason=pos.get('exit_reason', "MT5_CLOSE"),
-                    entry_time=datetime.fromisoformat(matching_signal['timestamp']) if 'timestamp' in matching_signal else datetime.now(),
-                    exit_time=pos['close_time'],
+                    entry_time=entry_time,
+                    exit_time=exit_time,
                     broker_id="MT5",
                     metadata={"ticket": pos['ticket']}
                 )
@@ -904,7 +914,7 @@ class MainOrchestrator:
                 event = BrokerEvent(
                     event_type=BrokerEventType.TRADE_CLOSED,
                     data=trade_event,
-                    timestamp=datetime.now()
+                    timestamp=datetime.now(timezone.utc)
                 )
                 
                 # Process through listener
