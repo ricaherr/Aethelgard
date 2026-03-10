@@ -54,19 +54,22 @@ class StrategyEngineFactory:
         self,
         storage: Any,  # StorageManager (DI)
         config: Optional[Dict[str, Any]] = None,
-        available_sensors: Optional[Dict[str, Any]] = None
+        available_sensors: Optional[Dict[str, Any]] = None,
+        user_id: Optional[str] = None
     ):
         """
         Inicializa el factory.
         
         Args:
-            storage: StorageManager instance (inyectada)
+            storage: StorageManager instance (inyectada) - implementa SSOT (Dominio 08)
             config: Configuración dinámica (dynamic_params)
             available_sensors: Dict de sensores disponibles en MainOrchestrator {name: instance}
+            user_id: User identifier para multi-tenancy (inyección a estrategias). Ver Dominio 01.
         """
         self.storage = storage
         self.config = config or {}
         self.available_sensors = available_sensors or {}
+        self.user_id = user_id or (storage.user_id if hasattr(storage, 'user_id') else None)
         self.active_engines: Dict[str, Any] = {}
         self.load_errors: Dict[str, str] = {}
     
@@ -347,6 +350,11 @@ class StrategyEngineFactory:
                 elif param_name == "trace_id":
                     required_params[param_name] = f"INIT-{strategy_id}-FACTORY"
                     logger.debug(f"[FACTORY] ↓ {strategy_id}: trace_id ← generated")
+                
+                # Si es user_id, inyectar si está disponible
+                elif param_name == "user_id":
+                    required_params[param_name] = self.user_id
+                    logger.debug(f"[FACTORY] ↓ {strategy_id}: user_id ← {self.user_id}")
                 
                 # Si tiene default, no es requerido
                 elif param.default != inspect.Parameter.empty:

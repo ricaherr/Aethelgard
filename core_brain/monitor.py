@@ -84,14 +84,14 @@ class ClosingMonitor:
                         # 2. Fallback: ticket
                         if not signal_id:
                             ticket = position.get('ticket')
-                            matching_signal = self._find_signal_by_ticket(executed_usr_signals, ticket)
+                            matching_signal = self._find_signal_by_ticket(executed_sys_signals, ticket)
                             if matching_signal:
                                 signal_id = matching_signal['id']
                                 logger.debug(f"[MATCH] por ticket: {ticket} → signal_id={signal_id}")
                         # 3. Fallback: order_id
                         if not signal_id:
                             order_id = position.get('order_id')
-                            for signal in executed_usr_signals:
+                            for signal in executed_sys_signals:
                                 metadata = signal.get('metadata', {})
                                 if metadata.get('order_id') == order_id:
                                     signal_id = signal['id']
@@ -134,11 +134,11 @@ class ClosingMonitor:
     
     def _find_signal_by_ticket(
         self, 
-        usr_signals: List[Dict], 
+        signals: List[Dict], 
         ticket: int
     ) -> Optional[Dict]:
         """Find signal matching a broker ticket number"""
-        for signal in usr_signals:
+        for signal in signals:
             metadata = signal.get('metadata', {})
             if metadata.get('ticket') == ticket:
                 return signal
@@ -234,11 +234,8 @@ class ClosingMonitor:
         """
         Calculate PIPs based on symbol type using agnostic market utilities.
         """
-        # Usar utilidades globales
-        im = InstrumentManager()
-        # Intentar obtener el conector para el símbolo para pasar info del broker si es posible
-        # Pero ClosingMonitor es asíncrono y broad, market_utils tiene fallbacks para esto
-        
+        # Usar InstrumentManager con storage para obtener configuración de BD
+        im = InstrumentManager(storage=self.storage)
         pip_size = calculate_pip_size(symbol=symbol, instrument_manager=im)
         pips = (exit_price - entry_price) / pip_size
         

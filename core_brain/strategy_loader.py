@@ -232,11 +232,11 @@ class StrategyLoaderService:
             # Mapeo de classes conocidas
             strategy_class_map = {
                 "BRK_OPEN_0001": "core_brain.usr_strategies.brk_open_0001",
-                "institutional_footprint": "core_brain.usr_strategies.institutional_footprint",
-                "MOM_BIAS_0001": "core_brain.usr_strategies.mom_bias_0001",
-                "LIQ_SWEEP_0001": "core_brain.usr_strategies.liq_sweep_0001",
-                "SESS_EXT_0001": "core_brain.usr_strategies.sess_ext_0001",
-                "STRUC_SHIFT_0001": "core_brain.usr_strategies.struc_shift_0001",
+                "institutional_footprint": "core_brain.strategies.institutional_footprint",
+                "MOM_BIAS_0001": "core_brain.strategies.mom_bias_0001",
+                "LIQ_SWEEP_0001": "core_brain.strategies.liq_sweep_0001",
+                "SESS_EXT_0001": "core_brain.strategies.sess_ext_0001",
+                "STRUC_SHIFT_0001": "core_brain.strategies.struc_shift_0001",
             }
             
             module_path = strategy_class_map.get(class_id)

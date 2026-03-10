@@ -62,7 +62,7 @@ class StructureShift0001Strategy(BaseStrategy):
         self,
         storage_manager: StorageManager,
         market_structure_analyzer: MarketStructureAnalyzer,
-        tenant_id: str = "DEFAULT",
+        user_id: Optional[str] = None,
         config: Dict[str, Any] = None,
         trace_id: str = None,
         reasoning_event_callback: Optional[callable] = None
@@ -73,7 +73,7 @@ class StructureShift0001Strategy(BaseStrategy):
         Args:
             storage_manager: Gestor de persistencia
             market_structure_analyzer: Sensor de estructura de mercado
-            tenant_id: ID del tenant (multi-tenancy)
+            user_id: ID del usuario/tenant para trazabilidad (multi-tenancy). Ver Dominio 01,08.
             config: Configuración adicional
             trace_id: ID único de traza
             reasoning_event_callback: Callback para emitir eventos de razonamiento

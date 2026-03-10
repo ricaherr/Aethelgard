@@ -381,10 +381,12 @@ async def main() -> None:
         
         try:
             # Load strategies with sensors now available
+            # Pasar user_id desde storage (SSOT) para multi-tenancy (Dominio 01, 08)
             strategy_factory = StrategyEngineFactory(
                 storage=storage,
                 config=dynamic_params,
-                available_sensors=available_sensors  # NOW POPULATED!
+                available_sensors=available_sensors,  # NOW POPULATED!
+                user_id=storage.user_id  # Multi-user context for strategy initialization
             )
             active_engines = strategy_factory.instantiate_all_sys_strategies()
             logger.info(f"[INIT] ✓ {len(active_engines)} estrategias cargadas (con sensores listos)")

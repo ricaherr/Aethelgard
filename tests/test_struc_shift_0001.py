@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Any
 
 from models.signal import Signal, SignalType, MarketRegime, ConnectorType
-from core_brain.usr_strategies.struc_shift_0001 import StructureShift0001Strategy
+from core_brain.strategies.struc_shift_0001 import StructureShift0001Strategy
 from core_brain.sensors.market_structure_analyzer import MarketStructureAnalyzer
 
 
@@ -37,7 +37,7 @@ class TestStructureShift0001Strategy(unittest.TestCase):
         self.strategy = StructureShift0001Strategy(
             storage_manager=self.mock_storage,
             market_structure_analyzer=self.market_structure_analyzer,
-            tenant_id="TEST_TENANT",
+            user_id="test-user-uuid",
             trace_id="TEST-STRUC-SHIFT-0001"
         )
         
@@ -109,7 +109,7 @@ class TestStructureShift0001Strategy(unittest.TestCase):
         """✓ Test: Inicialización con inyección de dependencias."""
         self.assertIsNotNone(self.strategy)
         self.assertEqual(self.strategy.STRATEGY_ID, "STRUC_SHIFT_0001")
-        self.assertEqual(self.strategy.tenant_id, "TEST_TENANT")
+        self.assertEqual(self.strategy.user_id, "test-user-uuid")
     
     
     def test_strategy_affinity_scores_loaded(self):
