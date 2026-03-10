@@ -213,52 +213,60 @@ class MarketStructureAnalyzer:
         """
         Detecta estructura de mercado (tendencia alcista o bajista).
         
-        Lógica:
-        - UPTREND: HH + HL (máximos y mínimos más altos)
-        - DOWNTREND: LH + LL (máximos y mínimos más bajos)
-        - INVALID: Datos insuficientes o sin patrón claro
+        Clasificación con 3 niveles (refactorizado hacia Clean Code):
+        - STRONG: Estructura clara con suficientes pivots coherentes
+        - PARTIAL: Estructura débil pero detectable (al menos 3 pivots)
+        - INSUFFICIENT: Datos insuficientes o sin patrón claro
+        
+        Arquitectura mejorada:
+        1. Validación de entrada (edge cases)
+        2. Detección de pivots
+        3. Clasificación via método separado (SoC)
+        4. Scoring profesional de confianza
+        5. Caching
         
         Args:
             candles: DataFrame con OHLC
             
         Returns:
-            Dict con estructura detectada y metadatos
+            Dict con estructura, validez, niveles de confianza y pivots
         """
-        # Buscar en cache
+        # PASO 1: Validación de entrada (edge cases protection)
+        if self._validate_input_candles(candles) is False:
+            return self._create_insufficient_result(0, "Por validar antes de procesar detectores pivots")
+        
+        # PASO 2: Buscar en cache
         cache_key = f"struct_{hash(candles.iloc[-1, :].to_string())}"
         if cache_key in self._structure_cache:
             return self._structure_cache[cache_key]
         
-        # Usar últimas N velas
+        # PASO 3: Usar últimas N velas y detectar pivots
         lookback = min(len(candles), self.structure_lookback_candles)
         recent_candles = candles.iloc[-lookback:].reset_index(drop=True)
         
-        # Detectar pivots
         hh = self.detect_higher_highs(recent_candles)
         hl = self.detect_higher_lows(recent_candles)
         lh = self.detect_lower_highs(recent_candles)
         ll = self.detect_lower_lows(recent_candles)
         
-        # Determinar tipo de estructura
-        structure_type = "UNKNOWN"
-        is_valid = False
+        # PASO 4: Clasificar estructura (método separado para DRY + SoC)
+        structure_type, validation_level, is_valid = self._classify_structure_strength(
+            len(hh), len(hl), len(lh), len(ll)
+        )
         
-        # UPTREND: más HH que LH, más HL que LL
-        if len(hh) >= self.structure_min_pivots and len(hl) >= self.structure_min_pivots:
-            if len(hh) >= len(lh) and len(hl) >= len(ll):
-                structure_type = "UPTREND"
-                is_valid = True
+        # PASO 5: Calcular confianza profesional (método separado)
+        total_pivots = len(hh) + len(hl) + len(lh) + len(ll)
+        confidence = self._calculate_confidence_score_professional(
+            len(hh), len(hl), len(lh), len(ll), 
+            validation_level, structure_type
+        )
         
-        # DOWNTREND: más LH que HH, más LL que HL
-        elif len(lh) >= self.structure_min_pivots and len(ll) >= self.structure_min_pivots:
-            if len(lh) >= len(hh) and len(ll) >= len(hl):
-                structure_type = "DOWNTREND"
-                is_valid = True
-        
-        # Construir resultado
+        # PASO 6: Construir resultado
         result = {
             'type': structure_type,
-            'is_valid': is_valid,
+            'is_valid': is_valid,  # Backward compatibility
+            'validation_level': validation_level,
+            'confidence': round(confidence, 1),
             'hh_count': len(hh),
             'hl_count': len(hl),
             'lh_count': len(lh),
@@ -280,10 +288,233 @@ class MarketStructureAnalyzer:
         
         logger.debug(
             f"[{self.trace_id}] Structure detected: {structure_type} "
-            f"(HH={len(hh)}, HL={len(hl)}, LH={len(lh)}, LL={len(ll)})"
+            f"(Level={validation_level}, Confidence={confidence:.0f}%, "
+            f"HH={len(hh)}, HL={len(hl)}, LH={len(lh)}, LL={len(ll)})"
         )
         
         return result
+    
+    
+    def _validate_input_candles(self, candles: pd.DataFrame) -> bool:
+        """
+        Valida que el DataFrame de velas sea válido.
+        
+        Checks:
+        - No vacío
+        - Tiene suficientes velas (>= 2)
+        - Tiene columnas requeridas
+        
+        Args:
+            candles: DataFrame a validar
+            
+        Returns:
+            bool: True si es válido, False si hay problema
+        """
+        if candles is None or len(candles) == 0:
+            logger.debug(f"[{self.trace_id}] Canvas validation FAILED: Empty or None DataFrame")
+            return False
+        
+        required_cols = {'open', 'high', 'low', 'close', 'volume'}
+        if not required_cols.issubset(set(candles.columns)):
+            logger.warning(f"[{self.trace_id}] Canvas validation FAILED: Missing columns")
+            return False
+        
+        # Mínimo 2 velas para detectar algo
+        if len(candles) < 2:
+            logger.debug(f"[{self.trace_id}] Canvas validation FAILED: Only {len(candles)} candle(s)")
+            return False
+        
+        return True
+    
+    
+    def _classify_structure_strength(
+        self, 
+        hh_count: int, 
+        hl_count: int, 
+        lh_count: int, 
+        ll_count: int
+    ) -> Tuple[str, str, bool]:
+        """
+        Clasifica la fuerza de la estructura de mercado.
+        
+        Responsabilidad única: Determinar tipo, nivel de validación, y is_valid.
+        Refactorización DRY: Elimina código duplicado entre uptrend/downtrend.
+        
+        Algoritmo:
+        1. STRONG: Mínimo 3 pivots coherentes EN CADA LADO
+           - UPTREND: HH>=3 AND HL>=3 AND HH>=LH AND HL>=LL
+           - DOWNTREND: LH>=3 AND LL>=3 AND LH>=HH AND LL>=HL
+        2. PARTIAL: Menos estricto, pero con patrón detectable
+           - Mínimo 3 pivots totales
+           - Tendencia mayoría
+        3. INSUFFICIENT: Todo lo demás
+        
+        Args:
+            hh_count, hl_count, lh_count, ll_count: Conteos de pivots
+            
+        Returns:
+            (structure_type, validation_level, is_valid)
+        """
+        total_pivots = hh_count + hl_count + lh_count + ll_count
+        
+        # Defaults (INSUFFICIENT)
+        structure_type = "UNKNOWN"
+        validation_level = "INSUFFICIENT"
+        is_valid = False
+        
+        # === STRONG UPTREND ===
+        # Condición combinada (DRY): todos los checks en UN if
+        if (hh_count >= self.structure_min_pivots and 
+            hl_count >= self.structure_min_pivots and 
+            hh_count >= lh_count and 
+            hl_count >= ll_count):
+            structure_type = "UPTREND"
+            validation_level = "STRONG"
+            is_valid = True
+            return (structure_type, validation_level, is_valid)
+        
+        # === STRONG DOWNTREND ===
+        # Condición combinada (DRY): todos los checks en UN elif
+        elif (lh_count >= self.structure_min_pivots and 
+              ll_count >= self.structure_min_pivots and 
+              lh_count >= hh_count and 
+              ll_count >= hl_count):
+            structure_type = "DOWNTREND"
+            validation_level = "STRONG"
+            is_valid = True
+            return (structure_type, validation_level, is_valid)
+        
+        # === PARTIAL (fallback si no STRONG pero hay pivots) ===
+        elif total_pivots >= 3:
+            uptrend_score = hh_count + hl_count
+            downtrend_score = lh_count + ll_count
+            
+            # PARTIAL UPTREND
+            if (uptrend_score >= downtrend_score and 
+                hh_count >= 1 and hl_count >= 1):
+                structure_type = "UPTREND"
+                validation_level = "PARTIAL"
+                is_valid = False
+                return (structure_type, validation_level, is_valid)
+            
+            # PARTIAL DOWNTREND
+            elif (downtrend_score > uptrend_score and 
+                  lh_count >= 1 and ll_count >= 1):
+                structure_type = "DOWNTREND"
+                validation_level = "PARTIAL"
+                is_valid = False
+                return (structure_type, validation_level, is_valid)
+        
+        # Caso por defecto: INSUFFICIENT
+        return (structure_type, validation_level, is_valid)
+    
+    
+    def _calculate_confidence_score_professional(
+        self,
+        hh_count: int,
+        hl_count: int,
+        lh_count: int,
+        ll_count: int,
+        validation_level: str,
+        structure_type: str
+    ) -> float:
+        """
+        Calcula score de confianza profesional basado en lógica financiera.
+        
+        Responsabilidad única: Scoring de confianza con criterios reales.
+        
+        Lógica mejorada (vs simple % pivots):
+        1. Coherencia: % de pivots en dirección esperada
+        2. Concentración: Penalización si hay demasiados pivots contrarios
+        3. Mínimo absoluto: 0-100%
+        
+        Ejemplos:
+        - STRONG Uptrend HH=5, HL=4, LH=1, LL=1: 
+          Coherencia=(5+4)/(5+4+1+1)=90% → confidence=90%
+        - PARTIAL Downtrend LH=3, LL=3, HH=3, HL=2:
+          Coherencia=(3+3)/(3+3+3+2)=60% → confidence=60%
+        - INSUFFICIENT: confidence=0%
+        
+        Args:
+            hh_count, hl_count, lh_count, ll_count: Conteos pivots
+            validation_level: STRONG/PARTIAL/INSUFFICIENT
+            structure_type: UPTREND/DOWNTREND/UNKNOWN
+            
+        Returns:
+            float: Confianza 0-100
+        """
+        total_pivots = hh_count + hl_count + lh_count + ll_count
+        
+        # INSUFFICIENT siempre = 0%
+        if validation_level == "INSUFFICIENT" or total_pivots < 3:
+            return 0.0
+        
+        # Calcular coherencia (% pivots en dirección esperada)
+        if structure_type == "UPTREND":
+            coherent_pivots = hh_count + hl_count
+        elif structure_type == "DOWNTREND":
+            coherent_pivots = lh_count + ll_count
+        else:
+            return 0.0  # UNKNOWN
+        
+        # Fórmula de confianza: Coherencia * Factor de penalización
+        coherence = (coherent_pivots / max(total_pivots, 1)) * 100.0
+        
+        # Factor de penalización: Si hay muchos pivots contradictorios, penalizar
+        # Ejemplo: 5 HH + 100 LH → alta contradicción → penalizar más
+        opposite_pivots = total_pivots - coherent_pivots
+        penalization_factor = 1.0
+        
+        if opposite_pivots > coherent_pivots:
+            # Más pivots opuestos que coherentes → fuerte penalización
+            penalization_factor = max(0.5, 1.0 - (opposite_pivots / (coherent_pivots + 1)) * 0.5)
+        
+        # STRONG merece confianza más alta que PARTIAL
+        confidence_mult = 1.0 if validation_level == "STRONG" else 0.9
+        
+        final_confidence = coherence * penalization_factor * confidence_mult
+        
+        return min(100.0, max(0.0, round(final_confidence, 1)))
+    
+    
+    def _create_insufficient_result(
+        self, 
+        lookback: int = 0,
+        reason: str = "Invalid input"
+    ) -> Dict[str, Any]:
+        """
+        Crea un resultado INSUFFICIENT standard (para edge cases).
+        
+        Helper para mantener consistencia cuando validaciones fallan.
+        
+        Args:
+            lookback: Velas analizadas (0 si falló antes)
+            reason: Motivo de INSUFFICIENT
+            
+        Returns:
+            Dict con estructura INSUFFICIENT
+        """
+        return {
+            'type': "UNKNOWN",
+            'is_valid': False,
+            'validation_level': "INSUFFICIENT",
+            'confidence': 0.0,
+            'hh_count': 0,
+            'hl_count': 0,
+            'lh_count': 0,
+            'll_count': 0,
+            'hh_indices': [],
+            'hl_indices': [],
+            'lh_indices': [],
+            'll_indices': [],
+            'last_hh_idx': None,
+            'last_hl_idx': None,
+            'last_lh_idx': None,
+            'last_ll_idx': None,
+            'analyzed_candles': lookback,
+            'timestamp': datetime.now(),
+            '_reason': reason  # Debug info
+        }
     
     
     # ============= BREAKER BLOCK =============

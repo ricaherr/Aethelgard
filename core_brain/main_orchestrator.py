@@ -1065,7 +1065,7 @@ class MainOrchestrator:
                                 )
                                 
                                 if structure_result.get('is_valid') or has_some_pivots:
-                                    # Provide structure data to UI mapping service
+                                    # Provide structure data to UI mapping service with new validation_level
                                     self.ui_mapping_service.add_structure_signal(
                                         asset=snapshot.symbol,
                                         structure_data={
@@ -1075,14 +1075,17 @@ class MainOrchestrator:
                                             'll_indices': structure_result.get('ll_indices', []),
                                             'structure_type': structure_result.get('type', 'UNKNOWN'),
                                             'is_valid': structure_result.get('is_valid', False),
-                                            'confidence': 'high' if structure_result.get('is_valid') else 'partial'
+                                            'validation_level': structure_result.get('validation_level', 'INSUFFICIENT'),
+                                            'confidence': structure_result.get('confidence', 0.0)
                                         }
                                     )
                                     structure_count += 1
-                                    struct_status = "✅ valid" if structure_result.get('is_valid') else "⚠️ partial"
+                                    # Use validation_level for better status reporting
+                                    level_icon = "✅" if structure_result.get('validation_level') == 'STRONG' else "⚠️"
                                     logger.info(
-                                        f"[UI_MAPPING] {struct_status} Added structure for {snapshot.symbol}: "
-                                        f"{structure_result.get('type')} "
+                                        f"[UI_MAPPING] {level_icon} Added structure for {snapshot.symbol}: "
+                                        f"{structure_result.get('type')} ({structure_result.get('validation_level')}) "
+                                        f"[Confidence: {structure_result.get('confidence', 0.0):.0f}%] "
                                         f"(HH={structure_result.get('hh_count')}, "
                                         f"HL={structure_result.get('hl_count')}, "
                                         f"LH={structure_result.get('lh_count')}, "
@@ -1825,10 +1828,10 @@ async def main() -> None:
     # ─────────────────────────────────────────────────────────────────
     # HU 3.6 & 3.9: DUAL MOTOR INITIALIZATION
     # ─────────────────────────────────────────────────────────────────
-    logger.info("🔄 Initializing Hybrid Runtime (MODE_LEGACY + MODE_UNIVERSAL)")
+    logger.info("🔄 Initializing Hybrid Runtime (MODE_UNIVERSAL)")
     
     # Import required components for dual-motor
-    from core_brain.legacy_strategy_executor import LegacyStrategyExecutor
+    # NOTE: LegacyStrategyExecutor removed (v2.0 uses MODE_UNIVERSAL exclusively)
     from core_brain.universal_strategy_executor import UniversalStrategyExecutor
     from core_brain.strategy_mode_selector import StrategyModeSelector, RuntimeMode
     from core_brain.strategy_mode_adapter import StrategyModeAdapter
@@ -1837,7 +1840,7 @@ async def main() -> None:
     tenant_id = "default_tenant"
     
     # Create executors
-    legacy_executor = LegacyStrategyExecutor(signal_factory=signal_factory)
+    # NOTE: legacy_executor=None (MODE_LEGACY removed, v2.0 uses MODE_UNIVERSAL only)
     universal_executor = UniversalStrategyExecutor(
         indicator_provider=data_provider,
         strategy_schemas_dir=None  # Uses default: core_brain/usr_strategies/universal/
@@ -1846,7 +1849,7 @@ async def main() -> None:
     # Create mode selector
     mode_selector = StrategyModeSelector(
         storage_manager=storage,
-        legacy_executor=legacy_executor,
+        legacy_executor=None,  # Removed in v2.0
         universal_executor=universal_executor,
         tenant_id=tenant_id,
         trace_id="STARTUP-2026-001"

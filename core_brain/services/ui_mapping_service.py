@@ -549,8 +549,9 @@ class UIMappingService:
             lh_indices = structure_data.get("lh_indices", [])
             ll_indices = structure_data.get("ll_indices", [])
             structure_type = structure_data.get("structure_type", "UNKNOWN")
-            confidence = structure_data.get("confidence", "unknown")
             is_valid = structure_data.get("is_valid", False)
+            validation_level = structure_data.get("validation_level", "INSUFFICIENT")  # NEW
+            confidence = structure_data.get("confidence", 0.0)  # Numeric score
             
             # Check if we have any pivot data
             has_pivots = any([hh_indices, hl_indices, lh_indices, ll_indices])
@@ -559,11 +560,12 @@ class UIMappingService:
                 logger.warning(f"[UI_MAPPING] No pivots detected for {asset}")
                 return
             
-            # Log the structure signal details
+            # Log the structure signal details with new validation level
             logger.debug(
                 f"[UI_MAPPING] Structure signal: {asset} {structure_type} "
-                f"(HH={len(hh_indices)}, HL={len(hl_indices)}, "
-                f"LH={len(lh_indices)}, LL={len(ll_indices)}, confidence={confidence})"
+                f"(Level={validation_level}, Confidence={confidence:.0f}%, "
+                f"HH={len(hh_indices)}, HL={len(hl_indices)}, "
+                f"LH={len(lh_indices)}, LL={len(ll_indices)})"
             )
             
             # EXEC-UI-VALIDATION-FIX: Marcar como ANÁLISIS - Prioridad Alta
@@ -578,11 +580,17 @@ class UIMappingService:
                 "lh_count": len(lh_indices),
                 "ll_count": len(ll_indices),
                 "valid": is_valid,
-                "confidence": confidence,
+                "validation_level": validation_level,  # NEW: STRONG/PARTIAL/UNKNOWN
+                "confidence": confidence,  # NEW: 0-100 numeric score
                 "timestamp": datetime.now().isoformat()
             }
             
-            logger.info(f"[UI_MAPPING] Added structure signal for {asset}: {structure_type} ({confidence})")
+            # Log with validation level indicator
+            level_icon = "✅" if validation_level == "STRONG" else "⚠️" if validation_level == "PARTIAL" else "❌"
+            logger.info(
+                f"[UI_MAPPING] {level_icon} Added structure signal for {asset}: "
+                f"{structure_type} ({validation_level}) - Confidence: {confidence:.0f}%"
+            )
         
         except Exception as e:
             logger.error(f"[UI_MAPPING] Error adding structure signal: {e}", exc_info=True)
