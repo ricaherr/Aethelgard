@@ -90,7 +90,7 @@ class TestClosingMonitor:
         assert updates == 1
         
         # Verify database was updated
-        usr_signals = storage.get_usr_signals()
+        usr_signals = storage.get_sys_signals()
         updated_signal = next(s for s in usr_signals if s['id'] == signal_id)
         assert updated_signal['status'] == 'CLOSED'
     

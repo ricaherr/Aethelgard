@@ -41,25 +41,25 @@ class SessionLiquiditySensor:
     identifica breakouts falsos y zonas de alta densidad de stops.
     """
     
-    def __init__(self, storage: StorageManager, tenant_id: str = "DEFAULT", trace_id: str = None):
+    def __init__(self, storage: StorageManager, user_id: str = "DEFAULT", trace_id: str = None):
         """
         Inicializa el sensor con inyección de dependencias.
         
         Args:
-            storage: StorageManager para lectura de configuración (debe estar aislado a tenant_id)
-            tenant_id: Identificador del tenant para aislamiento multitenancy
+            storage: StorageManager para lectura de configuración (debe estar aislado a user_id)
+            user_id: Identificador del usuario para aislamiento multiusuario
             trace_id: Identificador único de traza
         """
         self.storage_manager = storage
-        self.tenant_id = tenant_id
-        self.trace_id = trace_id or f"SENSOR-SESSION-LIQUIDITY-{tenant_id}"
+        self.user_id = user_id
+        self.trace_id = trace_id or f"SENSOR-SESSION-LIQUIDITY-{user_id}"
         
         # Configuración de sesión Londres
         self.london_session_start = 8   # 08:00 GMT
         self.london_session_end = 17    # 17:00 GMT
         self.london_timezone = "GMT"
         
-        logger.info(f"[{self.trace_id}] SessionLiquiditySensor initialized for tenant {self.tenant_id}")
+        logger.info(f"[{self.trace_id}] SessionLiquiditySensor initialized for user {self.user_id}")
     
     
     def get_london_session_high_low(

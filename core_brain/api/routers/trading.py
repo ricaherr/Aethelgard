@@ -39,28 +39,28 @@ async def _broadcast_thought(message: str, module: str = "TRADING", level: str =
 
 
 @router.get("/signals")
-async def get_usr_signals(
+async def get_sys_signals(
     limit: int = 100, 
     minutes: int = 10080,
     symbols: str = None,  # Comma-separated: "EURUSD,GBPUSD"
     timeframes: str = None,  # Comma-separated: "M1,M5"
     regimes: str = None,  # Comma-separated: "TREND,RANGE"
     usr_strategies: str = None,  # Comma-separated: "Trifecta,Oliver Velez"
-    status: str = 'PENDING,EXECUTED,EXPIRED',  # Default to recent usr_signals
+    status: str = 'PENDING,EXECUTED,EXPIRED',  # Default to recent sys_signals
     token: TokenPayload = Depends(get_current_active_user)
 ) -> Dict[str, Any]:
     """
-    Get recent usr_signals from database with optional filters
-    Includes live trade status and P/L for executed usr_signals.
+    Get recent sys_signals from database with optional filters
+    Includes live trade status and P/L for executed sys_signals.
     """
     try:
-        logger.info(f"GET /api/usr_signals: limit={limit}, minutes={minutes}, symbols={symbols}, status={status}")
+        logger.info(f"GET /api/signals: limit={limit}, minutes={minutes}, symbols={symbols}, status={status}")
         
         storage = _get_storage()
         tenant_id = token.sub
         
         # Get usr_signals from DB with SQL-level filtering
-        all_usr_signals = storage.get_recent_usr_signals(
+        all_usr_signals = storage.get_recent_sys_signals(
             minutes=minutes, 
             limit=limit,
             symbol=symbols,

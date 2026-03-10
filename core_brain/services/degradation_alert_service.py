@@ -2,7 +2,7 @@
 Degradation Alert Service (PRIORIDAD 3: Alertas de Degradación)
 
 Handles strategy degradation events and creates alerts with:
-- RULE T1: Tenant isolation (tenant_id in every alert)
+- RULE T1: User isolation (user_id in every alert)
 - RULE 4.3: Try/Except protection on all external calls
 - Trace_ID for traceability
 - Integration with NotificationService for sending alerts
@@ -26,7 +26,7 @@ class DegradationAlertService:
     When CircuitBreaker detects degradation (LIVE -> QUARANTINE),
     this service:
     1. Creates alert payload with metrics
-    2. Ensures RULE T1 (tenant_id) present
+    2. Ensures RULE T1 (user_id) present
     3. Calls notification_service with try/except
     4. Persists alert to storage
     5. Logs with Trace_ID
@@ -61,13 +61,13 @@ class DegradationAlertService:
                 - from_status: str (LIVE, SHADOW, etc.)
                 - to_status: str (QUARANTINE, etc.)
                 - reason: str (why degraded)
-                - tenant_id: str (RULE T1)
+                - user_id: str (RULE T1)
                 - Optional: dd_pct, consecutive_losses, etc.
         
         Returns:
             Alert payload dict with:
             - strategy_id, from_status, to_status, reason
-            - tenant_id (RULE T1)
+            - user_id (RULE T1)
             - trace_id: ALERT-{uuid}
             - timestamp: ISO8601
             - message: Human-readable alert text
@@ -75,11 +75,11 @@ class DegradationAlertService:
             - notification_id: ID from notification_service (if sent)
         """
         
-        # RULE T1: Validate tenant_id presence
-        tenant_id = degradation_event.get('tenant_id')
-        if not tenant_id:
-            logger.warning("[DEGRADATION_ALERT] Missing tenant_id in degradation event")
-            tenant_id = 'unknown'
+        # RULE T1: Validate user_id presence
+        user_id = degradation_event.get('user_id')
+        if not user_id:
+            logger.warning("[DEGRADATION_ALERT] Missing user_id in degradation event")
+            user_id = 'unknown'
         
         # Extract degradation details
         strategy_id = degradation_event.get('strategy_id', 'UNKNOWN')
@@ -99,7 +99,7 @@ class DegradationAlertService:
             'from_status': from_status,
             'to_status': to_status,
             'reason': reason,
-            'tenant_id': tenant_id,
+            'user_id': user_id,
             'trace_id': trace_id,
             'timestamp': datetime.now().isoformat(),
             'message': message,
@@ -124,7 +124,7 @@ class DegradationAlertService:
                     'reason': reason,
                     'trace_id': trace_id
                 },
-                user_id=f"tenant:{tenant_id}"  # Tenant-aware user context
+                user_id=user_id  # User context
             )
             
             if notification:
@@ -146,13 +146,13 @@ class DegradationAlertService:
         try:
             self.storage.log_alert(
                 alert_type='strategy_degradation',
-                tenant_id=tenant_id,
+                user_id=user_id,
                 alert_data=alert,
                 trace_id=trace_id
             )
             logger.info(
                 f"[DEGRADATION_ALERT] {trace_id}: Alert persisted for "
-                f"{strategy_id} in tenant {tenant_id}"
+                f"{strategy_id} for user {user_id}"
             )
         
         except Exception as exc:

@@ -45,11 +45,11 @@ def test_risk_status_with_invalid_token_rejected(client):
 
 def test_risk_status_with_valid_token_accepted(client, auth_service, auth_repo):
     """
-    Test que verifica que un token válido inyecta el tenant_id y permite acceso.
+    Test que verifica que un token válido inyecta el user_id y permite acceso.
     """
-    tenant_id = "tenant_test_123"
+    user_id = "user_test_123"
     # Crear un token válido usando el servicio
-    token = auth_service.create_access_token(subject="user_123", tenant_id=tenant_id)
+    token = auth_service.create_access_token(subject="user_123", user_id=user_id)
     
     headers = {"Authorization": f"Bearer {token}"}
     response = client.get("/api/risk/status", headers=headers)

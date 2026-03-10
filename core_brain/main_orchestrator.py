@@ -875,8 +875,8 @@ class MainOrchestrator:
                 
                 if not matching_signal:
                     # Fallback: search by ticket
-                    usr_signals = self.storage.get_usr_signals(limit=100)
-                    for sig in usr_signals:
+                    sys_signals = self.storage.get_sys_signals(limit=100)
+                    for sig in sys_signals:
                         if sig.get('order_id') == str(pos['ticket']):
                             matching_signal = sig
                             break
@@ -954,8 +954,8 @@ class MainOrchestrator:
             if self.thought_callback:
                 await self.thought_callback("Verificando caducidad de señales no ejecutadas...", module="ALPHA")
                 
-            expiration_stats = self.expiration_manager.expire_old_usr_signals()
-            logger.info(f"[EXPIRATION] Processed {expiration_stats.get('total_checked', 0)} usr_signals, "
+            expiration_stats = self.expiration_manager.expire_old_sys_signals()
+            logger.info(f"[EXPIRATION] Processed {expiration_stats.get('total_checked', 0)} sys_signals, "
                        f"expired {expiration_stats['total_expired']}")
             if expiration_stats['total_expired'] > 0:
                 logger.info(f"[EXPIRATION] [OK] Breakdown: {expiration_stats['by_timeframe']}")

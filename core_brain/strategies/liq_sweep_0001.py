@@ -78,14 +78,14 @@ class LiquiditySweep0001Strategy(BaseStrategy):
         self.session_liquidity_sensor = session_liquidity_sensor
         self.liquidity_sweep_detector = liquidity_sweep_detector
         self.fundamental_guard = fundamental_guard
-        self.tenant_id = tenant_id
-        self.trace_id = trace_id or f"STRAT-LIQ-SWEEP-0001-{tenant_id}"
+        self.user_id = user_id
+        self.trace_id = trace_id or f"STRAT-LIQ-SWEEP-0001-{user_id}"
         
         # Parámetros dinámicos
         self._load_parameters()
         
         logger.info(
-            f"[{self.trace_id}] LiquiditySweep0001Strategy initialized for tenant {self.tenant_id}. "
+            f"[{self.trace_id}] LiquiditySweep0001Strategy initialized for user {self.user_id}. "
             f"Max daily usr_trades: {self.max_daily_usr_trades}, "
             f"TP pips: {self.tp_pips}, SL buffer: {self.sl_buffer_pips}"
         )

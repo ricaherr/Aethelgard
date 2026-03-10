@@ -320,7 +320,7 @@ class EdgeMonitor(threading.Thread):
     def _check_risk_behavior_patterns(self) -> None:
         """Check for emerging risk behavior patterns"""
         # Get recent usr_signals with vetoed status
-        recent_usr_signals = self.storage.get_recent_usr_signals(minutes=60)
+        recent_usr_signals = self.storage.get_recent_sys_signals(minutes=60)
         
         # Group by symbol and count vetoed vs total
         symbol_stats = {}

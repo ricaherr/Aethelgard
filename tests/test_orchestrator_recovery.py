@@ -299,14 +299,14 @@ async def test_orchestrator_persistence_after_execution(storage):
     await orchestrator.run_single_cycle()
     
     # Verify signal was persisted
-    executed_count = storage.count_executed_usr_signals(date.today())
+    executed_count = storage.count_executed_sys_signals(date.today())
     assert executed_count == 1
     
-    # Verify usr_signals in DB
-    usr_signals_today = storage.get_usr_signals_by_date(date.today())
-    assert len(usr_signals_today) == 1
-    assert usr_signals_today[0]["symbol"] == "EURUSD"
-    assert usr_signals_today[0]["status"] == "EXECUTED"  # Uppercase (simplified STATUS)
+    # Verify sys_signals in DB
+    sys_signals_today = storage.get_sys_signals_by_date(date.today())
+    assert len(sys_signals_today) == 1
+    assert sys_signals_today[0]["symbol"] == "EURUSD"
+    assert sys_signals_today[0]["status"] == "EXECUTED"  # Uppercase (simplified STATUS)
 
 
 @pytest.mark.asyncio
@@ -356,12 +356,12 @@ async def test_orchestrator_recovery_after_crash(storage):
     )
     
     # Verify stats were recovered
-    assert orchestrator2.stats.usr_signals_executed == 2  # Recovered from DB
+    assert orchestrator2.stats.sys_signals_executed == 2  # Recovered from DB
     assert orchestrator2.stats.date == date.today()
     
-    # Verify DB still has usr_signals
-    usr_signals_today = storage.get_usr_signals_by_date(date.today())
-    assert len(usr_signals_today) == 2
+    # Verify DB still has sys_signals
+    sys_signals_today = storage.get_sys_signals_by_date(date.today())
+    assert len(sys_signals_today) == 2
 
 
 @pytest.mark.asyncio

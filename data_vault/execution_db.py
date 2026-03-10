@@ -25,7 +25,7 @@ class ExecutionMixin(BaseRepository):
         slippage_pips: Decimal,
         latency_ms: float,
         status: str,
-        tenant_id: str,
+        user_id: str,
         trace_id: str,
         metadata: Optional[Dict[str, Any]] = None
     ) -> bool:
@@ -44,7 +44,7 @@ class ExecutionMixin(BaseRepository):
             cursor.execute("""
                 INSERT INTO usr_execution_logs (
                     signal_id, symbol, theoretical_price, real_price, 
-                    slippage_pips, latency_ms, status, tenant_id, 
+                    slippage_pips, latency_ms, status, user_id, 
                     trace_id, metadata
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
@@ -55,7 +55,7 @@ class ExecutionMixin(BaseRepository):
                 float(slippage_pips), 
                 latency_ms, 
                 status, 
-                tenant_id, 
+                user_id, 
                 trace_id, 
                 json.dumps(metadata) if metadata else None
             ))
@@ -72,7 +72,7 @@ class ExecutionMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_execution_shadow_logs(self, limit: int = 100, tenant_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_execution_shadow_logs(self, limit: int = 100, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """Recupera los logs de ejecución recientes."""
         conn = self._get_conn()
         try:
@@ -80,9 +80,9 @@ class ExecutionMixin(BaseRepository):
             query = "SELECT * FROM usr_execution_logs"
             params = []
             
-            if tenant_id:
-                query += " WHERE tenant_id = ?"
-                params.append(tenant_id)
+            if user_id:
+                query += " WHERE user_id = ?"
+                params.append(user_id)
             
             query += " ORDER BY timestamp DESC LIMIT ?"
             params.append(limit)
@@ -107,7 +107,7 @@ class ExecutionMixin(BaseRepository):
         self,
         symbol: str,
         window_minutes: int = 60,
-        tenant_id: Optional[str] = None,
+        user_id: Optional[str] = None,
         status_filter: str = "SUCCESS"
     ) -> List[Dict[str, Any]]:
         """
@@ -117,7 +117,7 @@ class ExecutionMixin(BaseRepository):
         Args:
             symbol: Trading symbol (e.g., "EURUSD")
             window_minutes: Look-back window in minutes (default 60)
-            tenant_id: Optional tenant ID for isolation
+            user_id: Optional user ID for isolation
             status_filter: Filter by execution status (default "SUCCESS")
         
         Returns:
@@ -149,9 +149,9 @@ class ExecutionMixin(BaseRepository):
             """
             params = [symbol, status_filter, time_threshold]
             
-            if tenant_id:
-                query += " AND tenant_id = ?"
-                params.append(tenant_id)
+            if user_id:
+                query += " AND user_id = ?"
+                params.append(user_id)
             
             query += " ORDER BY timestamp ASC"
             

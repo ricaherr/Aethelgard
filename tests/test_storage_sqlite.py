@@ -61,7 +61,7 @@ def test_signal_persistence(storage: StorageManager) -> None:
     assert signal_id is not None
     
     # Verify retrieval
-    sys_signals = storage.get_usr_signals_today()
+    sys_signals = storage.get_sys_signals_today()
     assert len(sys_signals) == 1
     saved_signal = sys_signals[0]
     

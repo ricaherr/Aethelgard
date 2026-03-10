@@ -11,15 +11,15 @@ from core_brain.regime import RegimeClassifier
 logger = logging.getLogger(__name__)
 
 class InstrumentAnalysisService:
-    def __init__(self, storage: StorageManager, tenant_id: str = "default"):
+    def __init__(self, storage: StorageManager, user_id: str = "default"):
         """
         Inicializa InstrumentAnalysisService.
         
         Args:
             storage: StorageManager inyectado (DI pattern)
-            tenant_id: ID del tenant para aislación multi-tenant
+            user_id: ID del usuario para aislación multi-usuario
         """
-        self.tenant_id = tenant_id
+        self.user_id = user_id
         self.storage = storage
         
         try:

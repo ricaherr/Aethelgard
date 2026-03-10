@@ -166,7 +166,7 @@ class SignalsMixin(BaseRepository):
         self._execute_serialized(_save, signal_id)
         return signal_id
 
-    def get_usr_signals(self, limit: int = 100, status: Optional[str] = None) -> List[Dict]:
+    def get_sys_signals(self, limit: int = 100, status: Optional[str] = None) -> List[Dict]:
         """Get sys_signals from database"""
         conn = self._get_conn()
         try:
@@ -205,12 +205,12 @@ class SignalsMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_usr_signals_today(self, status: Optional[str] = None) -> List[Dict]:
+    def get_sys_signals_today(self, status: Optional[str] = None) -> List[Dict]:
         """Obtiene las señales del día actual."""
         from datetime import date
-        return self.get_usr_signals_by_date(date.today(), status=status)
+        return self.get_sys_signals_by_date(date.today(), status=status)
 
-    def get_usr_signals_by_date(self, target_date: date, status: Optional[str] = None) -> List[Dict]:
+    def get_sys_signals_by_date(self, target_date: date, status: Optional[str] = None) -> List[Dict]:
         """Get all sys_signals from a specific date"""
         conn = self._get_conn()
         try:
@@ -320,7 +320,7 @@ class SignalsMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_recent_usr_signals(self, minutes: int = 60, limit: int = 100, symbol: str = None, timeframe: str = None, status: str = None) -> List[Dict]:
+    def get_recent_sys_signals(self, minutes: int = 60, limit: int = 100, symbol: str = None, timeframe: str = None, status: str = None) -> List[Dict]:
         """Get recent sys_signals within the last N minutes with optional filters"""
         conn = self._get_conn()
         try:

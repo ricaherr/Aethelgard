@@ -54,7 +54,7 @@ def test_coherence_detects_unnormalized_and_missing_ticket():
         print(f"Resultado consulta manual: {manual_rows}")
 
     monitor = CoherenceMonitor(storage=storage, pending_timeout_minutes=15, lookback_minutes=120)
-    usr_signals = storage.get_recent_usr_signals(minutes=120)
+    usr_signals = storage.get_recent_sys_signals(minutes=120)
     # Validación funcional
     assert usr_signals, "No se recuperaron señales recientes."
     events = monitor.run_once()
@@ -94,7 +94,7 @@ def test_coherence_detects_pending_timeout():
         conn.commit()
 
     monitor = CoherenceMonitor(storage=storage, pending_timeout_minutes=1, lookback_minutes=120)
-    usr_signals = storage.get_recent_usr_signals(minutes=120)
+    usr_signals = storage.get_recent_sys_signals(minutes=120)
     # Validación funcional
     assert usr_signals, "No se recuperaron señales recientes."
     events = monitor.run_once()

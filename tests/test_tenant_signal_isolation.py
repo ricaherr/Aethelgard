@@ -76,7 +76,7 @@ class TestSignalIsolation:
         storage_a.save_signal(signal_for_a)
 
         # Assert: Usuario_B sees NOTHING
-        usr_signals_b = storage_b.get_recent_usr_signals(limit=10)
+        usr_signals_b = storage_b.get_recent_sys_signals(limit=10)
         assert len(usr_signals_b) == 0, (
             "AISLAMIENTO ROTO: Usuario_B puede ver la señal de Usuario_A. "
             "Soberanía de datos comprometida."
@@ -94,8 +94,8 @@ class TestSignalIsolation:
         storage_a.save_signal(_make_signal("sig_alice_002", symbol="GBPUSD"))
         storage_b.save_signal(_make_signal("sig_bob_001", symbol="USDJPY"))
 
-        usr_signals_a = storage_a.get_recent_usr_signals(limit=10)
-        usr_signals_b = storage_b.get_recent_usr_signals(limit=10)
+        usr_signals_a = storage_a.get_recent_sys_signals(limit=10)
+        usr_signals_b = storage_b.get_recent_sys_signals(limit=10)
 
         # Alice sees exactly 2 usr_signals — her own
         assert len(usr_signals_a) == 2, f"Alice debe ver 2 señales, vio {len(usr_signals_a)}"
@@ -124,7 +124,7 @@ class TestSignalIsolation:
 
         # B writes 0 usr_signals — but both DBs were provisioned and are active
 
-        usr_signals_b = storage_b.get_recent_usr_signals(limit=20)
+        usr_signals_b = storage_b.get_recent_sys_signals(limit=20)
         assert len(usr_signals_b) == 0, (
             f"CONTAMINACIÓN DETECTADA: Usuario_B (silent_reader) tiene {len(usr_signals_b)} señales "
             "a pesar de no haber guardado ninguna."

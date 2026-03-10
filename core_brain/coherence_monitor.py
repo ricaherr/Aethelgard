@@ -47,7 +47,7 @@ class CoherenceMonitor:
 
     def run_once(self) -> List[CoherenceEvent]:
         events: List[CoherenceEvent] = []
-        recent_usr_signals = self.storage.get_recent_usr_signals(minutes=self.lookback_minutes)
+        recent_usr_signals = self.storage.get_recent_sys_signals(minutes=self.lookback_minutes)
 
         from datetime import timezone
         now = datetime.now(timezone.utc)

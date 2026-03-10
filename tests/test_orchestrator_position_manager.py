@@ -207,7 +207,7 @@ async def test_monitor_usr_positions_called_in_single_cycle(
     # Mock expiration manager
     with patch('core_brain.main_orchestrator.SignalExpirationManager') as mock_exp_mgr_class:
         mock_exp_mgr = Mock()
-        mock_exp_mgr.expire_old_usr_signals = Mock(return_value={'total_expired': 0, 'total_checked': 0, 'by_timeframe': {}})
+        mock_exp_mgr.expire_old_sys_signals = Mock(return_value={'total_expired': 0, 'total_checked': 0, 'by_timeframe': {}})
         mock_exp_mgr_class.return_value = mock_exp_mgr
         
         with patch('core_brain.main_orchestrator.Path') as mock_path:
@@ -252,7 +252,7 @@ async def test_monitor_usr_positions_executed_periodically(
     # Mock expiration manager
     with patch('core_brain.main_orchestrator.SignalExpirationManager') as mock_exp_mgr_class:
         mock_exp_mgr = Mock()
-        mock_exp_mgr.expire_old_usr_signals = Mock(return_value={'total_expired': 0, 'total_checked': 0, 'by_timeframe': {}})
+        mock_exp_mgr.expire_old_sys_signals = Mock(return_value={'total_expired': 0, 'total_checked': 0, 'by_timeframe': {}})
         mock_exp_mgr_class.return_value = mock_exp_mgr
         
         with patch('core_brain.main_orchestrator.Path') as mock_path:

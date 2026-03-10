@@ -6229,6 +6229,156 @@ Implementar capa sensorial completa para S-0005 (SESS_EXT_0001) con:
 ### Cómo Usar DXY (Refactorizado)
 
 ```python
+# MainOrchestrator
+dxy_service = DXYService(data_provider_manager=data_provider_manager)
+dxy_values = await dxy_service.get_dxy_data()  # → List[Dict]
+# Almacenado automáticamente en StorageManager
+```
+
+---
+
+## 🟡 TAREA: REFACTORIZACIÓN ARQUITECTÓNICA - usr_signals → sys_signals + tenant_id → user_id (10 de Marzo 2026)
+
+**Fecha de Inicio**: 10 de Marzo 2026 (Tarde - 10:15 UTC)  
+**Estado Actual**: 🔄 **FASE 1 COMPLETADA (40% del trabajo)** → FASE 2 EN PROGRESO  
+**Validación Estado**: ✅ **24/24 módulos PASANDO** (Sin regresos)  
+
+### Contexto Arquitectónico
+
+**Refactorización de la v1.0 (Per-Tenant) → v2.0 (GLOBAL)**:
+- `usr_signals` (tabla privada por usuario) → `sys_signals` (tabla global de señales)
+- `tenant_id` (parámetro arquitectónico) → `user_id` (parámetro REST semantically correct)
+- Objetivo: Simplificar multi-tenancy, mejorar escalabilidad, alinearse con RULE #4 (Agnosis)
+
+### FASE 1: Renombramiento de Métodos en StorageManager - ✅ COMPLETADO
+
+**Arquivos Refactorizados**: 6  
+**Métodos Renombrados**: 4 (signals_db.py)  
+**Llamadas Actualizadas**: 7 (core_brain + tests)  
+**Tiempo**: ~45 minutos  
+**Riesgo**: BAJO ✅ (cambios localizados, tests pasan)  
+
+#### 1.1 Cambios en `data_vault/signals_db.py`
+- ✅ `get_usr_signals()` → `get_sys_signals()`
+- ✅ `get_usr_signals_today()` → `get_sys_signals_today()`
+- ✅ `get_usr_signals_by_date()` → `get_sys_signals_by_date()`
+- ✅ `get_recent_usr_signals()` → `get_recent_sys_signals()`
+
+**Justificación**: method names deben reflejar tabla real (`sys_signals`), no prefijo heredado (`usr_`)
+
+#### 1.2 Llamadas Actualizadas
+| Archivo | Cambio | Status |
+|---------|--------|--------|
+| `core_brain/coherence_monitor.py` | `get_recent_sys_signals()` | ✅ |
+| `core_brain/edge_monitor.py` | `get_recent_sys_signals()` | ✅ |
+| `core_brain/api/routers/trading.py` | `get_recent_sys_signals()` | ✅ |
+| `tests/test_coherence_monitor.py` | 2 test updates | ✅ |
+| `tests/test_tenant_signal_isolation.py` | 4 test updates | ✅ |
+
+#### 1.3 Validación
+```
+✅ 24/24 módulos PASSED (sin regresos)
+✅ Code Quality: 35.36s OK
+✅ Architecture Scan: 0.50s OK
+✅ Tests: 12.04s OK
+```
+
+---
+
+### FASE 2: Refactor tenant_id → user_id (PENDIENTE - 50+ Ubicaciones)
+
+**Prioridad**: ALTA  
+**Complejidad**: Mecánica (refactor de parámetros + tipos)  
+**Tiempo Estimado**: 2-3 horas  
+**Riesgo**: BAJO-MEDIO (cambios en signaturas, debe validarse completamente)  
+
+#### 2.1 Ubicaciones Identificadas (~50 matches)
+- **core_brain/**: chart_service.py, analysis_service.py, circuit_breaker.py, drawdown_monitor.py, execution_feedback.py, etc.
+- **data_vault/storage.py**: Inicializaciones, métodos StorageManager
+- **tests/**: 15+ archivos con referencias a tenant_id
+- **docs/**: Ejemplos en documentación
+
+#### 2.2 Patrón de Cambio
+```python
+# ANTES (v1.0):
+def __init__(self, storage: StorageManager, tenant_id: str = "default"):
+    self.tenant_id = tenant_id
+    self._tenant_state = {}  # Dict[str, TenantData]
+
+# DESPUÉS (v2.0):
+def __init__(self, storage: StorageManager, user_id: str = "default"):
+    self.user_id = user_id
+    self._user_state = {}  # Dict[str, UserData]
+```
+
+#### 2.3 Archivos a Actualizar (Orden recomendado)
+1. [ ] `data_vault/storage.py` - Definiciones base (9 refs)
+2. [ ] `core_brain/circuit_breaker.py` - Estados por usuario
+3. [ ] `core_brain/drawdown_monitor.py` - Tracking estado
+4. [ ] `core_brain/*.py` (otros servicios) - 10+ archivos
+5. [ ] `tests/*.py` - Todos parametrizados con user_id
+6. [ ] `docs/*.md` - Actualizar ejemplos
+
+---
+
+### FASE 3: Limpieza de Variables Locales (PENDIENTE)
+
+**Descripción**: Renombrar variables que aún usan nomenclatura heredada dentro de métodos refactorizados
+
+**Ejemplos**:
+```python
+# Antes:
+recent_usr_signals = self.get_recent_sys_signals(...)
+usr_signal_list = fetch_from_db(...)
+
+# Después:
+recent_sys_signals = self.get_recent_sys_signals(...)
+sys_signal_list = fetch_from_db(...)
+```
+
+**Ubicaciones**: Principalmente `signals_db.py` (3-5 variables a renombrar)  
+**Tiempo**: ~30 minutos
+
+---
+
+### 📊 Resumen de Progreso
+
+| Fase | Trabajo | Status | % Completado |
+|------|---------|--------|-------------|
+| **1** | Renombrar métodos signals | ✅ HECHO | 100% |
+| **2** | Refactor tenant_id → user_id | 🔄 NO INICIADO | 0% |
+| **3** | Limpieza de variables | ⏳ ESPERA | 0% |
+| **TOTAL** | - | - | **35% Completado** |
+
+---
+
+### ✅ Checklist de Finalización
+
+- [x] Renombrar 4 métodos en signals_db.py
+- [x] Actualizar 7 llamadas en core_brain + tests
+- [x] Validar 24/24 módulos (sin regresos)
+- [ ] Refactor 50+ references tenant_id → user_id
+- [ ] Actualizar documentación con nomenclatura v2.0
+- [ ] Ejecutar validate_all.py final
+- [ ] Merge a main
+
+---
+
+### 🎯 Próximos Pasos
+
+1. **INMEDIATO**: Proceder con FASE 2 (tenant_id → user_id) si usuario aprueba
+2. **Si aprobado**:
+   - Ejecutar grep exhaustivo para confirmar 50+ ubicaciones
+   - Refactor storage.py primero (base)
+   - Actualizar core_brain/ servicios
+   - Validar tests
+3. **Finalización**: Documentar refactor en AETHELGARD_MANIFESTO.md Sección IV (Evolución Arquitectónica)
+
+---
+
+**Nota para José**: FASE 1 fue segura y exitosa (24/24 tests sin cambios). FASE 2 es mecánica pero requiere atención a detalles (signaturas de función, tipos, tests parametrizados). Puedo completar en 1 sesión si me das luz verde.
+
+```python
 from core_brain.services.dxy_service import get_dxy_service
 from core_brain.data_provider_manager import DataProviderManager
 

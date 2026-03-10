@@ -39,18 +39,18 @@ class LiquiditySweepDetector:
     y que la reversal tiene suficiente fuerza (volumen, patrón).
     """
     
-    def __init__(self, storage: StorageManager = None, tenant_id: str = "DEFAULT", trace_id: str = None):
+    def __init__(self, storage: StorageManager = None, user_id: str = "DEFAULT", trace_id: str = None):
         """
         Inicializa el detector de sweep.
         
         Args:
-            storage: StorageManager para leer configuración (debe estar aislado a tenant_id)
-            tenant_id: Identificador del tenant para aislamiento multitenancy
+            storage: StorageManager para leer configuración (debe estar aislado a user_id)
+            user_id: Identificador del usuario para aislamiento multiusuario
             trace_id: ID único de traza
         """
         self.storage_manager = storage
-        self.tenant_id = tenant_id
-        self.trace_id = trace_id or f"SENSOR-LIQUIDITY-SWEEP-{tenant_id}"
+        self.user_id = user_id
+        self.trace_id = trace_id or f"SENSOR-LIQUIDITY-SWEEP-{user_id}"
         
         # Parámetros de PIN BAR
         self.pin_bar_wick_threshold = 0.60    # Wick debe ser >= 60% del rango
@@ -59,7 +59,7 @@ class LiquiditySweepDetector:
         # Parámetros de ENGULFING
         self.engulfing_body_overlap = 0.80    # Cuerpo actual debe envolver >= 80%
         
-        logger.info(f"[{self.trace_id}] LiquiditySweepDetector initialized for tenant {self.tenant_id}")
+        logger.info(f"[{self.trace_id}] LiquiditySweepDetector initialized for user {self.user_id}")
     
     
     def detect_pin_bar(self, candle: Dict) -> Tuple[bool, Optional[str], float]:

@@ -47,15 +47,15 @@ def test_m5_signal_expires_after_5_minutes(storage):
     
     # Run expiration
     manager = SignalExpirationManager(storage)
-    stats = manager.expire_old_usr_signals()
+    stats = manager.expire_old_sys_signals()
     
     # Verify
     assert stats['total_expired'] == 1
     assert stats['by_timeframe']['M5'] == 1
     
     # Check signal status
-    usr_signals = storage.get_usr_signals()
-    expired_signal = next(s for s in usr_signals if s['id'] == signal_id)
+    sys_signals = storage.get_sys_signals()
+    expired_signal = next(s for s in sys_signals if s['id'] == signal_id)
     assert expired_signal['status'] == 'EXPIRED'
     assert 'expired_at' in expired_signal['metadata']
     assert 'reason' in expired_signal['metadata']
@@ -91,13 +91,13 @@ def test_h1_signal_not_expired_within_60_minutes(storage):
     
     # Run expiration
     manager = SignalExpirationManager(storage)
-    stats = manager.expire_old_usr_signals()
+    stats = manager.expire_old_sys_signals()
     
     # Verify NOT expired
     assert stats['total_expired'] == 0
     
-    usr_signals = storage.get_usr_signals()
-    pending_signal = next(s for s in usr_signals if s['id'] == signal_id)
+    sys_signals = storage.get_sys_signals()
+    pending_signal = next(s for s in sys_signals if s['id'] == signal_id)
     assert pending_signal['status'] == 'PENDING'  # Still PENDING
 
 
@@ -216,7 +216,7 @@ def test_multiple_timeframes_expire_correctly(storage):
     
     # Run expiration
     manager = SignalExpirationManager(storage)
-    stats = manager.expire_old_usr_signals()
+    stats = manager.expire_old_sys_signals()
     
     # Verify: 2 expired (M5 10min + H1 2h), 2 still PENDING
     assert stats['total_expired'] == 2
@@ -224,13 +224,13 @@ def test_multiple_timeframes_expire_correctly(storage):
     assert stats['by_timeframe']['H1'] == 1
     
     # Verify individual statuses
-    usr_signals = storage.get_usr_signals()
-    usr_signals_dict = {s['id']: s for s in usr_signals}
+    sys_signals = storage.get_sys_signals()
+    sys_signals_dict = {s['id']: s for s in sys_signals}
     
-    assert usr_signals_dict[m5_recent_id]['status'] == 'PENDING'  # Still valid
-    assert usr_signals_dict[m5_old_id]['status'] == 'EXPIRED'
-    assert usr_signals_dict[h1_old_id]['status'] == 'EXPIRED'
-    assert usr_signals_dict[d1_recent_id]['status'] == 'PENDING'  # Still valid
+    assert sys_signals_dict[m5_recent_id]['status'] == 'PENDING'  # Still valid
+    assert sys_signals_dict[m5_old_id]['status'] == 'EXPIRED'
+    assert sys_signals_dict[h1_old_id]['status'] == 'EXPIRED'
+    assert sys_signals_dict[d1_recent_id]['status'] == 'PENDING'  # Still valid
 
 
 def test_executed_usr_signals_not_expired(storage):
@@ -270,13 +270,13 @@ def test_executed_usr_signals_not_expired(storage):
     
     # Run expiration
     manager = SignalExpirationManager(storage)
-    stats = manager.expire_old_usr_signals()
+    stats = manager.expire_old_sys_signals()
     
-    # Verify: 0 expired (EXECUTED usr_signals exempt)
+    # Verify: 0 expired (EXECUTED sys_signals exempt)
     assert stats['total_expired'] == 0
     
-    usr_signals = storage.get_usr_signals()
-    executed_signal = next(s for s in usr_signals if s['id'] == signal_id)
+    sys_signals = storage.get_sys_signals()
+    executed_signal = next(s for s in sys_signals if s['id'] == signal_id)
     assert executed_signal['status'] == 'EXECUTED'  # Still EXECUTED
 
 
@@ -310,7 +310,7 @@ def test_h4_signal_expires_after_4_hours(storage):
     
     # Run expiration
     manager = SignalExpirationManager(storage)
-    stats = manager.expire_old_usr_signals()
+    stats = manager.expire_old_sys_signals()
     
     # Verify
     assert stats['total_expired'] == 1

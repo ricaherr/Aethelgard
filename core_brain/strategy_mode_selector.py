@@ -68,7 +68,7 @@ class StrategyModeSelector:
         self.storage = storage_manager
         self.legacy_executor = legacy_executor
         self.universal_executor = universal_executor
-        self.tenant_id = tenant_id
+        self.user_id = user_id
         self.trace_id = trace_id or str(uuid.uuid4())
         
         # Will be populated during async initialization
@@ -77,7 +77,7 @@ class StrategyModeSelector:
     
     async def initialize(self) -> None:
         """
-        Load tenant's configured mode from database.
+        Load user's configured mode from database.
         
         This must be called after construction (async initialization pattern).
         
@@ -85,18 +85,18 @@ class StrategyModeSelector:
             ValueError: If mode is ambiguous or missing
         """
         try:
-            tenant_config = await self.storage.get_tenant_config(self.tenant_id)
+            user_config = await self.storage.get_user_config(self.user_id)
             
-            if not tenant_config:
+            if not user_config:
                 raise ValueError(
-                    f"Tenant '{self.tenant_id}' configuration not found"
+                    f"User '{self.user_id}' configuration not found"
                 )
             
-            mode_str = tenant_config.get("strategy_runtime_mode")
+            mode_str = user_config.get("strategy_runtime_mode")
             
             if not mode_str:
                 raise ValueError(
-                    f"Tenant '{self.tenant_id}' has ambiguous strategy_runtime_mode "
+                    f"User '{self.user_id}' has ambiguous strategy_runtime_mode "
                     "(missing from config). Refusing to start."
                 )
             
@@ -105,12 +105,12 @@ class StrategyModeSelector:
                 self._current_mode = RuntimeMode(mode_str)
             except ValueError:
                 raise ValueError(
-                    f"Invalid runtime mode '{mode_str}' for tenant '{self.tenant_id}'. "
+                    f"Invalid runtime mode '{mode_str}' for user '{self.user_id}'. "
                     f"Allowed: {[m.value for m in RuntimeMode]}"
                 )
             
             logger.info(
-                f"[Trace: {self.trace_id}] Tenant '{self.tenant_id}' "
+                f"[Trace: {self.trace_id}] User '{self.user_id}' "
                 f"initialized with MODE_{self._current_mode.value.upper()}"
             )
             self._initialized = True
@@ -143,7 +143,7 @@ class StrategyModeSelector:
         """
         if not self._initialized:
             raise RuntimeError(
-                f"StrategyModeSelector for tenant '{self.tenant_id}' not initialized. "
+                f"StrategyModeSelector for user '{self.user_id}' not initialized. "
                 "Call initialize() first."
             )
         
@@ -242,8 +242,8 @@ class StrategyModeSelector:
             
             # Update database (SSOT)
             old_mode = self._current_mode
-            await self.storage.update_tenant_config(
-                tenant_id=self.tenant_id,
+            await self.storage.update_user_config(
+                user_id=self.user_id,
                 updates={"strategy_runtime_mode": target_mode.value}
             )
             
@@ -255,7 +255,7 @@ class StrategyModeSelector:
                 "timestamp": datetime.utcnow().isoformat(),
                 "trace_id": self.trace_id,
                 "event_type": "MODE_SWITCH",
-                "tenant_id": self.tenant_id,
+                "user_id": self.user_id,
                 "old_mode": old_mode.value,
                 "new_mode": target_mode.value,
                 "reason": reason or "Not specified",
@@ -290,7 +290,7 @@ class StrategyModeSelector:
     async def get_status(self) -> Dict[str, Any]:
         """Return current mode status and configuration."""
         return {
-            "tenant_id": self.tenant_id,
+            "user_id": self.user_id,
             "current_mode": self._current_mode.value if self._current_mode else None,
             "initialized": self._initialized,
             "trace_id": self.trace_id,

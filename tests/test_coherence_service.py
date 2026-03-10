@@ -37,7 +37,7 @@ def _insert_execution_shadow_log(
             slippage_pips=Decimal(str(slippage_pips)),
             latency_ms=latency_ms,
             status="SUCCESS",
-            tenant_id=getattr(storage, "tenant_id", "default"),
+            user_id=getattr(storage, "user_id", "default"),
             trace_id=f"test_{signal_id}",
             metadata=None,
         )
@@ -51,7 +51,7 @@ def in_memory_storage() -> StorageManager:
     """Create an in-memory SQLite DB for testing (isolation)."""
     # Create StorageManager with ":memory:" path - this initializes a persistent in-memory connection
     storage = StorageManager(db_path=":memory:")
-    storage.tenant_id = "test_tenant"
+    storage.user_id = "test_user"
     
     return storage
 

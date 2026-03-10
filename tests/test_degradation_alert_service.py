@@ -4,7 +4,7 @@ TDD Tests for DegradationAlertService (PRIORIDAD 3: Alertas de Degradación)
 Tests cover:
 - Detection of strategy degradation (LIVE -> QUARANTINE)
 - Alert payload construction with all required fields
-- RULE T1: Tenant isolation (tenant_id in every alert)
+- RULE T1: User isolation (user_id in every alert)
 - RULE 4.3: Try/Except protection when calling notification_service
 - Trace_ID generation and logging
 - Alert persistence to storage
@@ -99,7 +99,7 @@ class TestDegradationDetection:
             'reason': 'Drawdown exceeded 3.0%',
             'dd_pct': 3.5,
             'consecutive_losses': 6,
-            'tenant_id': 'tenant-100'
+            'user_id': 'user-100'
         }
         
         alert = alert_service.handle_degradation(degradation_event)
@@ -108,7 +108,7 @@ class TestDegradationDetection:
         assert alert['strategy_id'] == 'BRK_OPEN_0001'
         assert alert['from_status'] == 'LIVE'
         assert alert['to_status'] == 'QUARANTINE'
-        assert alert['tenant_id'] == 'tenant-100'
+        assert alert['user_id'] == 'user-100'
     
     def test_handle_degradation_returns_trace_id(self, alert_service):
         """Alert should include Trace_ID for traceability."""
@@ -118,7 +118,7 @@ class TestDegradationDetection:
             'to_status': 'QUARANTINE',
             'reason': 'Consecutive losses exceeded 5',
             'consecutive_losses': 6,
-            'tenant_id': 'tenant-100'
+            'user_id': 'user-100'
         }
         
         alert = alert_service.handle_degradation(degradation_event)
@@ -139,14 +139,14 @@ class TestAlertPayloadConstruction:
             'reason': 'Drawdown exceeded threshold',
             'dd_pct': 3.5,
             'consecutive_losses': 6,
-            'tenant_id': 'tenant-100'
+            'user_id': 'user-100'
         }
         
         alert = alert_service.handle_degradation(degradation_event)
         
         required_fields = [
             'strategy_id', 'from_status', 'to_status', 'reason',
-            'tenant_id', 'trace_id', 'timestamp', 'message', 'severity'
+            'user_id', 'trace_id', 'timestamp', 'message', 'severity'
         ]
         
         for field in required_fields:
@@ -161,7 +161,7 @@ class TestAlertPayloadConstruction:
             'reason': 'Drawdown exceeded 3.0%',
             'dd_pct': 3.5,
             'consecutive_losses': 6,
-            'tenant_id': 'tenant-100'
+            'user_id': 'user-100'
         }
         
         alert = alert_service.handle_degradation(degradation_event)
@@ -178,7 +178,7 @@ class TestAlertPayloadConstruction:
             'to_status': 'QUARANTINE',
             'reason': 'Consecutive losses exceeded 5',
             'consecutive_losses': 6,
-            'tenant_id': 'tenant-100'
+            'user_id': 'user-100'
         }
         
         alert = alert_service.handle_degradation(degradation_event)
@@ -187,37 +187,37 @@ class TestAlertPayloadConstruction:
 
 
 class TestTenantIsolation:
-    """Test RULE T1: Tenant isolation in alerts."""
+    """Test RULE T1: User isolation in alerts."""
     
-    def test_alert_includes_tenant_id_from_event(self, alert_service):
-        """Alert must include tenant_id from degradation event (RULE T1)."""
+    def test_alert_includes_user_id_from_event(self, alert_service):
+        """Alert must include user_id from degradation event (RULE T1)."""
         degradation_event = {
             'strategy_id': 'BRK_OPEN_0001',
             'from_status': 'LIVE',
             'to_status': 'QUARANTINE',
             'reason': 'Drawdown threshold',
-            'tenant_id': 'tenant-200'
+            'user_id': 'user-200'
         }
         
         alert = alert_service.handle_degradation(degradation_event)
         
-        assert alert['tenant_id'] == 'tenant-200'
+        assert alert['user_id'] == 'user-200'
     
-    def test_alert_rejects_missing_tenant_id(self, alert_service):
-        """Alert should fail safely if tenant_id missing (RULE T1)."""
+    def test_alert_rejects_missing_user_id(self, alert_service):
+        """Alert should fail safely if user_id missing (RULE T1)."""
         degradation_event = {
             'strategy_id': 'BRK_OPEN_0001',
             'from_status': 'LIVE',
             'to_status': 'QUARANTINE',
             'reason': 'Drawdown threshold'
-            # Missing tenant_id
+            # Missing user_id
         }
         
         alert = alert_service.handle_degradation(degradation_event)
         
         # Should return safe default with error indication
         assert alert is not None
-        assert alert.get('error') is not None or alert.get('tenant_id') == 'unknown'
+        assert alert.get('error') is not None or alert.get('user_id') == 'unknown'
 
 
 class TestNotificationServiceIntegration:
@@ -230,7 +230,7 @@ class TestNotificationServiceIntegration:
             'from_status': 'LIVE',
             'to_status': 'QUARANTINE',
             'reason': 'Drawdown exceeded',
-            'tenant_id': 'tenant-100'
+            'user_id': 'user-100'
         }
         
         alert_service.handle_degradation(degradation_event)
@@ -246,7 +246,7 @@ class TestNotificationServiceIntegration:
             'from_status': 'LIVE',
             'to_status': 'QUARANTINE',
             'reason': 'Drawdown exceeded',
-            'tenant_id': 'tenant-100'
+            'user_id': 'user-100'
         }
         
         # Should not raise, should return safe default
@@ -261,7 +261,7 @@ class TestNotificationServiceIntegration:
             'from_status': 'LIVE',
             'to_status': 'QUARANTINE',
             'reason': 'Drawdown exceeded',
-            'tenant_id': 'tenant-100'
+            'user_id': 'user-100'
         }
         
         alert_service.handle_degradation(degradation_event)
@@ -279,7 +279,7 @@ class TestAlertTimestamp:
             'from_status': 'LIVE',
             'to_status': 'QUARANTINE',
             'reason': 'Drawdown exceeded',
-            'tenant_id': 'tenant-100'
+            'user_id': 'user-100'
         }
         
         alert = alert_service.handle_degradation(degradation_event)
@@ -295,7 +295,7 @@ class TestAlertTimestamp:
             'from_status': 'LIVE',
             'to_status': 'QUARANTINE',
             'reason': 'Drawdown exceeded',
-            'tenant_id': 'tenant-100'
+            'user_id': 'user-100'
         }
         
         before = datetime.now()
@@ -324,7 +324,7 @@ class TestExceptionHandling:
             'from_status': 'LIVE',
             'to_status': 'QUARANTINE',
             'reason': 'Drawdown exceeded',
-            'tenant_id': 'tenant-100'
+            'user_id': 'user-100'
         }
         
         # Should not raise
@@ -344,7 +344,7 @@ class TestExceptionHandling:
             'from_status': 'LIVE',
             'to_status': 'QUARANTINE',
             'reason': 'Drawdown exceeded',
-            'tenant_id': 'tenant-100'
+            'user_id': 'user-100'
         }
         
         # Handler should complete without error

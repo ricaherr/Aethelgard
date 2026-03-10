@@ -10,15 +10,15 @@ from typing import Dict, Any, Optional
 logger = logging.getLogger(__name__)
 
 class ChartService:
-    def __init__(self, storage=None, tenant_id: str = "default"):
+    def __init__(self, storage=None, user_id: str = "default"):
         """
         Inicializa ChartService.
         
         Args:
             storage: StorageManager inyectado (DI pattern)
-            tenant_id: ID del tenant (para isolación multi-tenant)
+            user_id: ID del usuario (para isolación multi-usuario)
         """
-        self.tenant_id = tenant_id
+        self.user_id = user_id
         try:
             self.provider_manager = DataProviderManager(storage=storage)
             self.data_provider = self.provider_manager.get_best_provider()

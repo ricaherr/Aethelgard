@@ -57,17 +57,17 @@ class ClosingMonitor:
     
     def check_closed_usr_positions(self) -> int:
         """
-        Check all executed usr_signals and update those that have closed.
+        Check all executed sys_signals and update those that have closed.
         
         Returns:
-            Number of usr_signals updated
+            Number of sys_signals updated
         """
         try:
-            # Get all executed usr_signals (not yet marked as closed)
-            executed_usr_signals = self.storage.get_usr_signals(status='EXECUTED')
+            # Get all executed sys_signals (not yet marked as closed)
+            executed_sys_signals = self.storage.get_sys_signals(status='EXECUTED')
             
-            if not executed_usr_signals:
-                logger.debug("No executed usr_signals to monitor")
+            if not executed_sys_signals:
+                logger.debug("No executed sys_signals to monitor")
                 return 0
             
             updates_count = 0

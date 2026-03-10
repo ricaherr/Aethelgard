@@ -68,7 +68,7 @@ class FibonacciExtender:
         self,
         storage: StorageManager,
         session_service=None,
-        tenant_id: str = "DEFAULT",
+        user_id: str = "DEFAULT",
         trace_id: str = None
     ):
         """
@@ -77,13 +77,13 @@ class FibonacciExtender:
         Args:
             storage: StorageManager para acceso a datos configuración
             session_service: Servicio de sesiones (MarketSessionService) para obtener London H/L
-            tenant_id: Identificador del tenant para aislamiento multitenancy
+            user_id: Identificador del usuario para aislamiento multiusuario
             trace_id: Identificador único de traza para logging
         """
         self.storage_manager = storage
         self.session_service = session_service
-        self.tenant_id = tenant_id
-        self.trace_id = trace_id or f"SENSOR-FIBONACCI-{tenant_id}"
+        self.user_id = user_id
+        self.trace_id = trace_id or f"SENSOR-FIBONACCI-{user_id}"
         
         # Ratios Fibonacci para extensiones
         self.fib_levels = {
@@ -91,7 +91,7 @@ class FibonacciExtender:
             'FIB_161': 1.618,     # Extensión 161% (objetivo secundario, golden ratio)
         }
         
-        logger.info(f"[{self.trace_id}] FibonacciExtender initialized for tenant {self.tenant_id}")
+        logger.info(f"[{self.trace_id}] FibonacciExtender initialized for user {self.user_id}")
     
     
     def project_fibonacci_extensions(
@@ -259,7 +259,7 @@ class FibonacciExtender:
 def initialize_fibonacci_extender(
     storage: StorageManager,
     session_service: Optional[Any] = None,
-    tenant_id: str = "DEFAULT"
+    user_id: str = "DEFAULT"
 ) -> FibonacciExtender:
     """
     Factory function para inicializar FibonacciExtender.
@@ -269,7 +269,7 @@ def initialize_fibonacci_extender(
     Args:
         storage: StorageManager instance
         session_service: MarketSessionService instance
-        tenant_id: Tenant identifier
+        user_id: User identifier
         
     Returns:
         FibonacciExtender instance
@@ -277,5 +277,5 @@ def initialize_fibonacci_extender(
     return FibonacciExtender(
         storage=storage,
         session_service=session_service,
-        tenant_id=tenant_id
+        user_id=user_id
     )

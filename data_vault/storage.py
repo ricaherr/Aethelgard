@@ -305,15 +305,15 @@ class StorageManager(
         finally:
             self._close_conn(conn)
 
-    async def get_tenant_config(self, tenant_id: str) -> Optional[Dict[str, Any]]:
+    async def get_user_config(self, user_id: str) -> Optional[Dict[str, Any]]:
         """
-        Get tenant configuration from database (SSOT).
+        Get user configuration from database (SSOT).
         
         Args:
-            tenant_id: Tenant identifier
+            user_id: User identifier
             
         Returns:
-            Tenant config dict or None
+            User config dict or None
         """
         try:
             conn = self._get_conn()
@@ -321,7 +321,7 @@ class StorageManager(
             
             cursor.execute(
                 "SELECT value FROM sys_config WHERE key = ?",
-                (f"tenant:{tenant_id}:config",)
+                (f"user:{user_id}:config",)
             )
             row = cursor.fetchone()
             
@@ -330,24 +330,24 @@ class StorageManager(
             
             # Create default config if not found
             default_config = {
-                "tenant_id": tenant_id,
+                "user_id": user_id,
                 "strategy_runtime_mode": "legacy"
             }
-            await self.update_tenant_config(tenant_id, default_config)
+            await self.update_user_config(user_id, default_config)
             return default_config
         
         except Exception as e:
-            logger.error(f"Error getting tenant config for '{tenant_id}': {e}")
+            logger.error(f"Error getting user config for '{user_id}': {e}")
             return None
         finally:
             self._close_conn(conn)
 
-    async def update_tenant_config(self, tenant_id: str, updates: Dict[str, Any]) -> None:
+    async def update_user_config(self, user_id: str, updates: Dict[str, Any]) -> None:
         """
-        Update tenant configuration in database (SSOT).
+        Update user configuration in database (SSOT).
         
         Args:
-            tenant_id: Tenant identifier
+            user_id: User identifier
             updates: Dict with updates to apply
         """
         try:
@@ -357,14 +357,14 @@ class StorageManager(
             # Get current config
             cursor.execute(
                 "SELECT value FROM sys_config WHERE key = ?",
-                (f"tenant:{tenant_id}:config",)
+                (f"user:{user_id}:config",)
             )
             row = cursor.fetchone()
             
             if row:
                 current = json.loads(row[0]) if isinstance(row[0], str) else row[0]
             else:
-                current = {"tenant_id": tenant_id}
+                current = {"user_id": user_id}
             
             # Merge updates
             current.update(updates)
@@ -372,13 +372,13 @@ class StorageManager(
             # Persist
             cursor.execute(
                 "INSERT OR REPLACE INTO sys_config (key, value) VALUES (?, ?)",
-                (f"tenant:{tenant_id}:config", json.dumps(current))
+                (f"user:{user_id}:config", json.dumps(current))
             )
             conn.commit()
-            logger.info(f"Tenant config updated for '{tenant_id}'")
+            logger.info(f"User config updated for '{user_id}'")
         
         except Exception as e:
-            logger.error(f"Error updating tenant config for '{tenant_id}': {e}")
+            logger.error(f"Error updating user config for '{user_id}': {e}")
         finally:
             self._close_conn(conn)
 

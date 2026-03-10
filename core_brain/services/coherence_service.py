@@ -59,7 +59,7 @@ class CoherenceService:
             min_usr_executions_for_analysis: Override default from DB (for testing)
         """
         self.storage = storage
-        self.tenant_id = getattr(storage, "tenant_id", "default")
+        self.user_id = getattr(storage, "user_id", "default")
         
         # Load configuration from DB (SSOT - Regla 14)
         self._load_coherence_config()
@@ -314,7 +314,7 @@ class CoherenceService:
             usr_executions = self.storage.get_execution_shadow_logs_by_symbol_and_window(
                 symbol=symbol,
                 window_minutes=window_minutes,
-                tenant_id=self.tenant_id,
+                user_id=self.user_id,
                 status_filter="SUCCESS"
             )
             

@@ -49,12 +49,12 @@ class SignalExpirationManager:
         """
         self.storage = storage
     
-    def expire_old_usr_signals(self) -> Dict[str, int]:
+    def expire_old_sys_signals(self) -> Dict[str, int]:
         """
-        Mark PENDING usr_signals as EXPIRED if they exceeded timeframe window.
+        Mark PENDING sys_signals as EXPIRED if they exceeded timeframe window.
         
         Process:
-        1. Get all PENDING usr_signals
+        1. Get all PENDING sys_signals
         2. Calculate age for each signal
         3. Compare age vs timeframe window
         4. Mark as EXPIRED if age > window
@@ -72,17 +72,17 @@ class SignalExpirationManager:
         """
         stats = {'total_expired': 0, 'total_checked': 0, 'by_timeframe': {}}
         
-        # Get all PENDING usr_signals (only these can be expired)
-        pending_usr_signals = self.storage.get_usr_signals(status='PENDING')
-        stats['total_checked'] = len(pending_usr_signals)
+        # Get all PENDING sys_signals (only these can be expired)
+        pending_sys_signals = self.storage.get_sys_signals(status='PENDING')
+        stats['total_checked'] = len(pending_sys_signals)
         
-        if not pending_usr_signals:
+        if not pending_sys_signals:
             return stats
         
         from datetime import timezone
         now = datetime.now(timezone.utc)
         
-        for signal in pending_usr_signals:
+        for signal in pending_sys_signals:
             timeframe = signal.get('timeframe', 'H1')  # Default H1 if missing
             window_minutes = EXPIRATION_WINDOWS.get(timeframe, 60)  # Default 1h if unknown TF
             

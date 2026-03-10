@@ -82,15 +82,15 @@ class StructureShift0001Strategy(BaseStrategy):
         
         self.storage_manager = storage_manager
         self.market_structure_analyzer = market_structure_analyzer
-        self.tenant_id = tenant_id
-        self.trace_id = trace_id or f"STRAT-STRUC-SHIFT-0001-{tenant_id}"
+        self.user_id = user_id
+        self.trace_id = trace_id or f"STRAT-STRUC-SHIFT-0001-{user_id}"
         self.reasoning_event_callback = reasoning_event_callback
         
         # Parámetros dinámicos
         self._load_parameters()
         
         logger.info(
-            f"[{self.trace_id}] StructureShift0001Strategy initialized for tenant {self.tenant_id}. "
+            f"[{self.trace_id}] StructureShift0001Strategy initialized for user {self.user_id}. "
             f"Max daily usr_trades: {self.max_daily_usr_trades}, "
             f"TP1 ratio: {self.tp1_ratio}, TP2 ratio: {self.tp2_ratio}"
         )

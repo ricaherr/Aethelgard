@@ -55,7 +55,7 @@ def _insert_execution_shadow_for_testing(
                 slippage_pips=Decimal("0.0"),   # Zero slippage
                 latency_ms=5.0,                  # Low latency
                 status="SUCCESS",
-                tenant_id="default",
+                user_id="default",
                 trace_id=f"setup_{i}",
                 metadata=None,
             )

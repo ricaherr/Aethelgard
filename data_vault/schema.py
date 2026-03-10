@@ -460,16 +460,14 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             slippage_pips REAL NOT NULL,
             latency_ms REAL NOT NULL,
             status TEXT NOT NULL,
-            tenant_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
             trace_id TEXT NOT NULL,
             metadata TEXT,
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (signal_id) REFERENCES sys_signals (id)
         )
     """)
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_execution_logs_signal_id ON usr_execution_logs (signal_id)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_execution_logs_tenant_id ON usr_execution_logs (tenant_id)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_execution_logs_trace_id ON usr_execution_logs (trace_id)")
+    # Indexes will be created in migrations section below (after any schema fixes)
 
     # ── 16. Regime Configurations (Metric Weighting) ─────────────────────────
     cursor.execute("""
@@ -677,6 +675,47 @@ def run_migrations(conn: sqlite3.Connection) -> None:
         cursor.execute("ALTER TABLE sys_regime_configs ADD COLUMN tenant_id TEXT DEFAULT NULL")
         logger.info("Migration applied: sys_regime_configs.tenant_id added.")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_regime_configs_tenant_id ON sys_regime_configs (tenant_id)")
+
+    # usr_execution_logs: Rename tenant_id to user_id (v2.0 architectural change)
+    cursor.execute("PRAGMA table_info(usr_execution_logs)")
+    exec_cols = [r[1] for r in cursor.fetchall()]
+    if "tenant_id" in exec_cols and "user_id" not in exec_cols:
+        try:
+            # SQLite doesn't have ALTER COLUMN RENAME, so we use CREATE+COPY+DROP+RENAME pattern
+            cursor.execute("""
+                CREATE TABLE usr_execution_logs_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    signal_id TEXT NOT NULL,
+                    symbol TEXT NOT NULL,
+                    theoretical_price REAL NOT NULL,
+                    real_price REAL NOT NULL,
+                    slippage_pips REAL NOT NULL,
+                    latency_ms REAL NOT NULL,
+                    status TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    trace_id TEXT NOT NULL,
+                    metadata TEXT,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (signal_id) REFERENCES sys_signals (id)
+                )
+            """)
+            cursor.execute("""
+                INSERT INTO usr_execution_logs_new
+                SELECT id, signal_id, symbol, theoretical_price, real_price, slippage_pips, latency_ms, status, tenant_id, trace_id, metadata, timestamp
+                FROM usr_execution_logs
+            """)
+            cursor.execute("DROP TABLE usr_execution_logs")
+            cursor.execute("ALTER TABLE usr_execution_logs_new RENAME TO usr_execution_logs")
+            conn.commit()
+            logger.info("Migration applied: usr_execution_logs.tenant_id renamed to user_id.")
+        except Exception as e:
+            logger.error(f"Migration failed for usr_execution_logs: {e}")
+            conn.rollback()
+    
+    # Create indexes for usr_execution_logs (after potential migration)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_execution_logs_signal_id ON usr_execution_logs (signal_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_execution_logs_user_id ON usr_execution_logs (user_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_execution_logs_trace_id ON usr_execution_logs (trace_id)")
 
     # sys_strategies: add readiness & readiness_notes (SSOT: Strategy Registry moved from JSON to BD)
     # TRACE_ID: EXEC-UNIVERSAL-ENGINE-REAL | CORRECTION: Soberanía de Persistencia

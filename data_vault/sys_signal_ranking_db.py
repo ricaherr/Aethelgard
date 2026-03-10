@@ -231,33 +231,33 @@ class StrategyRankingMixin(BaseRepository):
             return [dict(row) for row in rows]
         finally:
             self._close_conn(conn)
-    def get_regime_weights(self, regime: str, tenant_id: str = "default") -> Dict[str, str]:
+    def get_regime_weights(self, regime: str, user_id: str = "default") -> Dict[str, str]:
         """
         Get metric weights for a specific regime from sys_regime_configs table.
         
         Args:
             regime: Market regime (TREND, RANGE, VOLATILE)
-            tenant_id: Tenant identifier for isolation
+            user_id: User identifier for isolation
             
         Returns:
             Dictionary mapping metric_name -> weight (as string for Decimal conversion)
         """
         conn = self._get_conn()
         try:
-            # Note: sys_regime_configs currently might be global or tenant-specific.
-            # If following the isolation protocol, we filter by tenant_id.
+            # Note: sys_regime_configs currently might be global or user-specific.
+            # If following the isolation protocol, we filter by user_id.
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT metric_name, weight FROM sys_regime_configs 
-                WHERE regime = ? AND (tenant_id = ? OR tenant_id IS NULL)
+                WHERE regime = ? AND (user_id = ? OR user_id IS NULL)
                 ORDER BY metric_name
-            """, (regime, tenant_id))
+            """, (regime, user_id))
             rows = cursor.fetchall()
             return {row[0]: row[1] for row in rows}
         finally:
             self._close_conn(conn)
 
-    def get_all_sys_regime_configs(self, tenant_id: str = "default") -> Dict[str, Dict[str, str]]:
+    def get_all_sys_regime_configs(self, user_id: str = "default") -> Dict[str, Dict[str, str]]:
         """
         Get all regime configurations as nested dict.
         
@@ -269,9 +269,9 @@ class StrategyRankingMixin(BaseRepository):
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT regime, metric_name, weight FROM sys_regime_configs
-                WHERE (tenant_id = ? OR tenant_id IS NULL)
+                WHERE (user_id = ? OR user_id IS NULL)
                 ORDER BY regime, metric_name
-            """, (tenant_id,))
+            """, (user_id,))
             rows = cursor.fetchall()
             
             result = {}
