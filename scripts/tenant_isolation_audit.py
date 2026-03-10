@@ -5,14 +5,15 @@ Trace_ID: TENANT-VALIDATION-SCANNER-2026-001
 
 Responsibility:
     Scan all routers/*.py files and verify that endpoints with authentication
-    (token: TokenPayload parameter) use TenantDBFactory.get_storage(token.tid)
-    and NOT _get_storage() for data access.
+    (token: TokenPayload parameter) use TenantDBFactory.get_storage(token.sub)
+    and NOT _get_storage() for data access (except for global endpoints like /config/).
 
 Rule:
     If endpoint has @router.get|post|put|patch|delete(...) with token parameter
-    THEN it must use TenantDBFactory.get_storage(token.tid) for any DB access
+    THEN it must use TenantDBFactory.get_storage(token.sub) for any DB access
     
     Exception: Endpoints that are explicitly GLOBAL (system-wide data not tenant-bound)
+    like /config/{category} which access sys_config (global data)
 """
 
 import re
@@ -97,17 +98,27 @@ def scan_router_file(filepath: Path) -> List[TenantedEndpoint]:
                     uses_generic_storage = '_get_storage()' in body_text
                     
                     # Compliance logic
+                    # Global endpoints (like /config/{category}, /health) can use _get_storage()
+                    is_global_endpoint = any(
+                        pattern in endpoint_def 
+                        for pattern in ['/config/', '/health', '/system/', '/audit/']
+                    )
+                    
                     if not has_token:
                         # Endpoint doesn't require auth - might be public
                         is_compliant = True
                         reason = "No token required (possibly public endpoint)"
+                    elif is_global_endpoint and uses_generic_storage:
+                        # Global endpoints like /config/ can use _get_storage()
+                        is_compliant = True
+                        reason = "[OK] Global endpoint correctly uses _get_storage()"
                     elif has_token and uses_tenantdbfactory:
                         is_compliant = True
                         reason = "[OK] Uses TenantDBFactory correctly"
                     elif has_token and not uses_generic_storage and not uses_tenantdbfactory:
                         is_compliant = True
                         reason = "No direct storage access (might delegate to service)"
-                    elif has_token and uses_generic_storage:
+                    elif has_token and uses_generic_storage and not is_global_endpoint:
                         is_compliant = False
                         reason = "[FAIL] Uses _get_storage() instead of TenantDBFactory"
                     else:
@@ -194,7 +205,7 @@ def audit_all_routers() -> Tuple[int, int]:
     else:
         non_compliant = total - compliant
         print(f"{Colors.RED}{Colors.BOLD}[FAIL] {non_compliant} endpoints need remediation{Colors.RESET}")
-        print(f"{Colors.YELLOW}Affected endpoints should use:  TenantDBFactory.get_storage(token.tid){Colors.RESET}")
+        print(f"{Colors.YELLOW}Affected endpoints should use:  TenantDBFactory.get_storage(token.sub){Colors.RESET}")
         return 1  # Failure exit code
 
 

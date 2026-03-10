@@ -19,7 +19,7 @@ from core_brain.api.routers.trading import get_edge_history
 def mock_token_alice():
     """Mock token for user Alice with tenant_id='alice_uuid'"""
     token = Mock(spec=TokenPayload)
-    token.tid = "alice_uuid"
+    token.sub = "alice_uuid"
     return token
 
 
@@ -27,7 +27,7 @@ def mock_token_alice():
 def mock_token_bob():
     """Mock token for user Bob with tenant_id='bob_uuid'"""
     token = Mock(spec=TokenPayload)
-    token.tid = "bob_uuid"
+    token.sub = "bob_uuid"
     return token
 
 
@@ -37,8 +37,8 @@ async def test_tenant_isolation_edge_history_alice_vs_bob(mock_token_alice, mock
     SECURITY TEST: Verify that Alice cannot access Bob's edge learning history.
     
     Scenario:
-    1. Alice logs in (token.tid='alice_uuid')
-    2. Bob logs in (token.tid='bob_uuid')
+    1. Alice logs in (token.sub='alice_uuid')
+    2. Bob logs in (token.sub='bob_uuid')
     3. Both call GET /api/edge/history
     4. They must get DIFFERENT data from their isolated BDs
     
@@ -107,7 +107,7 @@ async def test_edge_history_response_format():
     Verify that the endpoint returns properly structured data.
     """
     token = Mock(spec=TokenPayload)
-    token.tid = "test_tenant"
+    token.sub = "test_tenant"
     
     result = await get_edge_history(limit=10, token=token)
     
@@ -132,7 +132,7 @@ async def test_tuning_event_structure():
     Verify PARAMETRIC_TUNING events have correct structure.
     """
     token = Mock(spec=TokenPayload)
-    token.tid = "test_tenant"
+    token.sub = "test_tenant"
     
     result = await get_edge_history(limit=100, token=token)
     
@@ -152,7 +152,7 @@ async def test_autonomous_learning_event_structure():
     Verify AUTONOMOUS_LEARNING events have correct structure.
     """
     token = Mock(spec=TokenPayload)
-    token.tid = "test_tenant"
+    token.sub = "test_tenant"
     
     result = await get_edge_history(limit=100, token=token)
     

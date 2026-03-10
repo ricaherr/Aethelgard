@@ -84,7 +84,7 @@ async def mark_notification_read(notification_id: str, token: TokenPayload = Dep
 async def get_all_usr_notification_settings(token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """Retorna la configuración de todos los proveedores de notificaciones"""
     try:
-        tenant_id = token.tid
+        tenant_id = token.sub
         storage = TenantDBFactory.get_storage(tenant_id)
         settings = storage.get_all_usr_notification_settings()
         return {"status": "success", "settings": settings}
@@ -100,7 +100,7 @@ async def update_notification_provider_settings(provider: str, data: dict) -> Di
     config = data.get("config", {})
     
     try:
-        tenant_id = token.tid
+        tenant_id = token.sub
         storage = TenantDBFactory.get_storage(tenant_id)
         success = storage.update_usr_notification_settings(provider, enabled, config)
         
@@ -191,7 +191,7 @@ async def save_telegram_config(data: dict) -> Dict[str, Any]:
         }
         
         # Guardar usando el nuevo SystemMixin (vía Factory)
-        tenant_id = token.tid
+        tenant_id = token.sub
         storage = TenantDBFactory.get_storage(tenant_id)
         success = storage.update_usr_notification_settings("telegram", enabled, telegram_config)
         

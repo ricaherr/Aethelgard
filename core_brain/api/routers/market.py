@@ -84,7 +84,7 @@ def _get_heatmap_service(tenant_id: str) -> HeatmapDataService:
 async def instrument_analysis(symbol: str, token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """Retorna análisis completo de un instrumento (régimen, tendencia, trifecta, estrategias)"""
     try:
-        service = _get_instrument_analysis_service(tenant_id=token.tid)
+        service = _get_instrument_analysis_service(tenant_id=token.sub)
         result = service.get_analysis(symbol)
         return result
     except Exception as e:
@@ -108,7 +108,7 @@ async def get_heatmap_data(token: TokenPayload = Depends(get_current_active_user
     **GARANTÍA**: Siempre retorna respuesta válida (NUNCA 503)
     """
     try:
-        tenant_id = token.tid
+        tenant_id = token.sub
         service = _get_heatmap_service(tenant_id)
         
         # HeatmapService maneja toda la resiliencia y fallbacks internamente
@@ -151,7 +151,7 @@ async def get_predator_radar(
         from core_brain.services.confluence_service import ConfluenceService
         from core_brain.data_provider_manager import DataProviderManager
 
-        tenant_id = token.tid
+        tenant_id = token.sub
         storage = TenantDBFactory.get_storage(tenant_id)
         confluence_service = ConfluenceService(storage=storage)
 
@@ -201,7 +201,7 @@ async def get_predator_radar(
 async def regime_history(symbol: str, limit: int = 100, token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """Retorna el historial de cambios de régimen para un símbolo"""
     try:
-        tenant_id = token.tid
+        tenant_id = token.sub
         storage = TenantDBFactory.get_storage(tenant_id)
         history = storage.get_sys_market_pulse_history(symbol, limit=limit)
         formatted = [
@@ -225,7 +225,7 @@ async def regime_history(symbol: str, limit: int = 100, token: TokenPayload = De
 async def chart_data(symbol: str, timeframe: str = "M5", count: int = 500, token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """Retorna datos de OHLC + indicadores para un símbolo y timeframe"""
     try:
-        service = _get_chart_service(tenant_id=token.tid)
+        service = _get_chart_service(tenant_id=token.sub)
         return service.get_chart_data(symbol, timeframe, count)
     except Exception as e:
         logger.error(f"Error en chart_data: {e}")
@@ -263,7 +263,7 @@ async def get_sys_regime_configs(token: TokenPayload = Depends(get_current_activ
     }
     """
     try:
-        tenant_id = token.tid
+        tenant_id = token.sub
         storage = TenantDBFactory.get_storage(tenant_id)
         # Obtener todos los sys_regime_configs agrupados por régimen (por tenant o global)
         all_configs = storage.get_all_sys_regime_configs(tenant_id=tenant_id)
@@ -324,7 +324,7 @@ async def get_instruments(all: bool = False, token: TokenPayload = Depends(get_c
     Integridad: solo se persiste el default cuando la clave falta; nunca se sobrescriben datos existentes.
     """
     try:
-        tenant_id = token.tid
+        tenant_id = token.sub
         storage = TenantDBFactory.get_storage(tenant_id)
         state = storage.get_sys_config()
         instruments_config = state.get("instruments_config")
@@ -364,7 +364,7 @@ async def update_instruments(payload: dict, token: TokenPayload = Depends(get_cu
     4. Retorna configuración actualizada para UI confirmation
     """
     try:
-        tenant_id = token.tid
+        tenant_id = token.sub
         storage = TenantDBFactory.get_storage(tenant_id)
         market = payload.get("market")
         category = payload.get("category")

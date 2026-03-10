@@ -1,6 +1,6 @@
 # 🛣️ ROADMAP.md - Aethelgard Alpha Training
 
-**Última Actualización**: 10 de Marzo 2026 (05:00 UTC) - ✅ **FASE X.2 USER MANAGEMENT REFACTORED** | ✅ **CODE QUALITY AUDIT IMPLEMENTADA** | ✅ **LOGIN AUTH FIX: tenant_id MIGRATION** | ✅ **WORKSPACE CLEANUP**  
+**Última Actualización**: 10 de Marzo 2026 (05:45 UTC) - ✅ **FASE X.2 USER MANAGEMENT REFACTORED** | ✅ **CODE QUALITY AUDIT IMPLEMENTADA** | ✅ **ARCHITECTURE MIGRATION: tenant_id → user_id COMPLETADA** | ✅ **25/25 VALIDADORES PASADAS**  
 **Estado General**: ✅ **SHADOW-EVOLUTION-2026-001: COMPLETADA** | ✅ **FASE 2ABC MIGRATIONS: COMPLETADA** | ✅ **TEMPLATE BOOTSTRAP: IMPLEMENTADA** | ✅ **FASE X.2 USER MANAGEMENT: 100% + REFACTORING** | ✅ **25/25 MÓDULOS VALIDADOS**  
 **Validación**: 25/25 módulos validados ✅ | 125/125 tests iniciales ✅ | 21/21 user management tests ✅ | User Management Quality Audit ✅ | Sistema listo para producción ✅ 
 
@@ -194,6 +194,56 @@
   - server.log, server_errors.log, startup.log, startup_error.log
   - system_output.log, system_tracking.log, validate_result.txt
 - ✅ Confirmado: Sistema íntegro, 25/25 validaciones (POST-cleanup)
+
+#### Fase X.2D: Clean Architecture & Service Layer Refactor (✅ COMPLETADA 11 Marzo 2026 - 09:30 UTC)
+
+**Problema**: Admin endpoint implementaba acceso directo a `StorageManager.auth_repo`, violando reglas DI de `.ai_rules.md` (Sección 3).
+
+**Root Cause**: 
+- **Facilista Fix**: Agregado property `@auth_repo` lazily-loaded en `StorageManager`
+- **Violation**: Violaba regla "Prohibido instanciar StorageManager o configuraciones en __init__"
+- **Architecture Issue**: Admin endpoints no seguían patrón `AuthService` existente (ASIMÉTRICO)
+
+**Solución Implementada (✅)**:
+- ✅ **data_vault/storage.py**: Removidos `_auth_repo` property y lazy-loading (REVERT to clean state)
+- ✅ **core_brain/services/admin_service.py** (NEW FILE - 340+ líneas):
+  - Constructor: `__init__(self, auth_repo: AuthRepository)` - MANDATORY DI
+  - Raises `TypeError` si `auth_repo` es None
+  - 8 métodos tipados: list_all_users, get_user_by_id, user_exists, create_user, update_user_role/status/tier, soft_delete_user
+  - ALL Methods: 100% type hints, try-except logging, trace_id support
+  - Delegates to AuthRepository (no direct SQL)
+- ✅ **core_brain/api/routers/admin.py** (REFACTORED - 5/5 endpoints):
+  - Dependency functions: `_get_auth_repo()`, `get_admin_service()`
+  - All endpoints: `admin_service: AdminService = Depends(get_admin_service)`
+  - GET `/users` → `admin_service.list_all_users()`
+  - GET `/users/{user_id}` → `admin_service.get_user_by_id()`
+  - POST `/users` → `admin_service.create_user()` + `admin_service.user_exists()`
+  - PUT `/users/{user_id}` → `admin_service.update_user_role/status/tier()`
+  - DELETE `/users/{user_id}` → `admin_service.soft_delete_user()`
+- ✅ **docs/01_IDENTITY_SECURITY.md**: Agregado sección "Arquitectura de Capas"
+  - Router (HTTP) → AdminService (Business Logic) → AuthRepository (Persistence) → sys_users (Data)
+  - Documento: DI pattern is MANDATORY, service layer delegates to repositories
+
+**DI Hierarchy (Clean Architecture)**:
+```
+Router (HTTP Layer)
+  ↓ Depends(get_admin_service)
+AdminService (Business Logic Layer)
+  ↓ __init__(auth_repo: AuthRepository)
+AuthRepository (Persistence Layer)
+  ↓ SQL
+sys_users + sys_audit_logs (Data Layer)
+```
+
+**Governance Rules Applied**:
+- ✅ `.ai_rules.md` Section 3: "Prohibido Instanciar StorageManager"
+- ✅ `DEVELOPMENT_GUIDELINES.md` 1.7: "Service Layer + Repository Pattern"
+- ✅ `DEVELOPMENT_GUIDELINES.md` 1.4: "Explora antes de crear" (reused AuthService pattern)
+
+**Testing & Validation (✅)**:
+- Validación: 25/25 módulos PASSED ✅
+- Import Test: AdminService + admin router load successfully ✅
+- Architecture Compliance: No DI violations detected ✅
 
 #### Fase X.3: Audit Trail Completada
 - [ ] `sys_audit_logs`: Cada cambio de usuario loguea ADMIN que lo hizo

@@ -134,17 +134,40 @@ Control de acceso granular basado en niveles (Basic, Pro, Institutional). Las ca
 
 #### Implementación
 
+**Arquitectura de Capas** (Clean Architecture + DI Obligatoria):
+```
+Router (HTTP)
+    ↓ Depends()
+AdminService (Business Logic)
+    ↓ Inyección
+AuthRepository (Persistencia)
+    ↓ SQL
+sys_users + sys_audit_logs (BD Global)
+```
+
 **Backend (API REST)**:
-- **5 Endpoints CRUD** en `/api/admin/users`:
+- **5 Endpoints CRUD** en `/api/admin/users` (`core_brain/api/routers/admin.py`):
   - `GET /api/admin/users` → List all users
   - `GET /api/admin/users/{user_id}` → Get user details
   - `POST /api/admin/users` → Create new user (email, password, role, tier)
   - `PUT /api/admin/users/{user_id}` → Update user (role/status/tier)
   - `DELETE /api/admin/users/{user_id}` → Soft delete user
-- **AuthRepository refactored** (`data_vault/auth_repo.py`):
-  - 15 typed methods: get_user_by_id, list_all_users, create_user, update_user_*, soft_delete_user, log_audit
-  - SSOT compliance: All data in `global/aethelgard.db` (sys_users + sys_audit_logs tables)
-  - Soft delete policy: Status field (active|suspended|deleted), never hard delete
+
+**AdminService** (`core_brain/services/admin_service.py`) - Capa de Orquestación:
+- Recibe `AuthRepository` inyectado en `__init__`
+- Métodos tipados:
+  - `list_all_users(include_deleted: bool) -> List[Dict[str, Any]]`
+  - `get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]`
+  - `create_user(email, password_hash, role, tier, ...) -> str` (retorna user_id)
+  - `update_user_role/status/tier(user_id, new_value, updated_by) -> bool`
+  - `soft_delete_user(user_id, updated_by) -> bool`
+- Validaciones de negocio: Lock-out prevention, self-deletion check, soft delete enforcement
+- **Patrón obligatorio**: NO instancia AuthRepository; la recibe inyectada
+
+**AuthRepository** (`data_vault/auth_repo.py`) - Capa de Persistencia:
+- 15 typed methods: get_user_by_id, list_all_users, create_user, update_user_*, soft_delete_user, log_audit
+- SSOT compliance: All data in `global/aethelgard.db` (sys_users + sys_audit_logs tables)
+- Soft delete policy: Status field (active|suspended|deleted), never hard delete
 
 **Frontend (React + TypeScript)**:
 - **UserManagement.tsx component** (480+ lines):

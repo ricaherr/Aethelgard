@@ -1,0 +1,91 @@
+
+[1m[96mAETHELGARD SYSTEM INTEGRITY AUDIT - PARALLEL EVOLUTION[0m
+[94m================================================================================[0m
+
+[94m[INFO][0m Desplegando agentes de integridad en paralelo...
+STAGE_START:Architecture
+STAGE_START:Tenant Isolation Scanner
+STAGE_START:QA Guard
+STAGE_START:Code Quality
+STAGE_START:UI Quality
+STAGE_START:UI Build
+STAGE_START:Manifesto
+STAGE_START:Patterns
+STAGE_START:Credentials & Seeds
+STAGE_START:Duplicate Methods
+STAGE_START:User Management Quality
+STAGE_START:Interface Contracts
+STAGE_START:PHASE 8: Economic Veto
+STAGE_START:Core Tests
+STAGE_START:FASE B: NewsValidator
+STAGE_START:Seeds Tests
+STAGE_START:SPRINT S007
+STAGE_START:FASE 5: Tenant-Aware
+STAGE_START:Integration
+STAGE_START:Tenant Security
+STAGE_START:Connectivity
+STAGE_START:System DB
+STAGE_START:DB Integrity
+STAGE_START:Documentation
+STAGE_END:Duplicate Methods:OK:0.18
+DEBUG_FAIL:Tenant Isolation Scanner:[FAIL] [91mL125: get_config()[0m
+
+[91m================================================================================[0m
+[1m[91m[FAIL] Tenant Isolation Scanner: [FAIL] [91mL125: get_config()[0m[0m
+[91m================================================================================[0m
+DEBUG_FAIL:Tenant Isolation Scanner:'charmap' codec can't encode character '\ufffd' in position 1808: character maps to <undefined>
+STAGE_END:Tenant Isolation Scanner:FAIL:0.25
+STAGE_END:User Management Quality:OK:0.22
+STAGE_END:Interface Contracts:OK:0.25
+STAGE_END:Credentials & Seeds:OK:0.28
+STAGE_END:Documentation:OK:0.23
+STAGE_END:Architecture:OK:0.47
+STAGE_END:DB Integrity:OK:1.60
+STAGE_END:Manifesto:OK:2.58
+STAGE_END:UI Quality:OK:2.79
+STAGE_END:Patterns:OK:2.80
+STAGE_END:System DB:OK:4.46
+STAGE_END:Connectivity:OK:5.52
+STAGE_END:Tenant Security:OK:6.45
+STAGE_END:Seeds Tests:OK:6.73
+STAGE_END:PHASE 8: Economic Veto:OK:6.80
+STAGE_END:FASE 5: Tenant-Aware:OK:7.22
+STAGE_END:Integration:OK:8.01
+STAGE_END:SPRINT S007:OK:8.12
+STAGE_END:FASE B: NewsValidator:OK:8.47
+STAGE_END:QA Guard:OK:8.64
+STAGE_END:Core Tests:OK:10.42
+STAGE_END:UI Build:OK:13.89
+STAGE_END:Code Quality:OK:25.71
+
+[1m[96mSYSTEM INTEGRITY MATRIX[0m
+[94m--------------------------------------------------------------------------------[0m
+[1mMODULO                         ESTADO          DURACION       [0m
+Architecture                   [92mPASSED         [0m 0.47s
+Tenant Isolation Scanner       [91mFAILED         [0m 0.25s
+QA Guard                       [92mPASSED         [0m 8.64s
+Code Quality                   [92mPASSED         [0m 25.71s
+UI Quality                     [92mPASSED         [0m 2.79s
+UI Build                       [92mPASSED         [0m 13.89s
+Manifesto                      [92mPASSED         [0m 2.58s
+Patterns                       [92mPASSED         [0m 2.80s
+Credentials & Seeds            [92mPASSED         [0m 0.28s
+Duplicate Methods              [92mPASSED         [0m 0.18s
+User Management Quality        [92mPASSED         [0m 0.22s
+Interface Contracts            [92mPASSED         [0m 0.25s
+PHASE 8: Economic Veto         [92mPASSED         [0m 6.80s
+Core Tests                     [92mPASSED         [0m 10.42s
+FASE B: NewsValidator          [92mPASSED         [0m 8.47s
+Seeds Tests                    [92mPASSED         [0m 6.73s
+SPRINT S007                    [92mPASSED         [0m 8.12s
+FASE 5: Tenant-Aware           [92mPASSED         [0m 7.22s
+Integration                    [92mPASSED         [0m 8.01s
+Tenant Security                [92mPASSED         [0m 6.45s
+Connectivity                   [92mPASSED         [0m 5.52s
+System DB                      [92mPASSED         [0m 4.46s
+DB Integrity                   [92mPASSED         [0m 1.60s
+Documentation                  [92mPASSED         [0m 0.23s
+[94m--------------------------------------------------------------------------------[0m
+[1mTOTAL TIME: 25.73s[0m
+
+[91m[1m[FAIL] 1 VECTORS COMPROMISED - REVIEW LOGS IMMEDIATELY[0m

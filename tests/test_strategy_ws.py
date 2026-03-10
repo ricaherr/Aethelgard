@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 def mock_token_payload():
     """Mock authenticated token"""
     token = Mock()
-    token.tid = 'tenant_001'  # tenant_id
+    token.sub = 'tenant_001'  # tenant_id
     token.sub = 'user@example.com'
     token.exp = datetime.now().timestamp() + 3600
     return token
@@ -108,7 +108,7 @@ class TestWebSocketTenantIsolation:
     async def test_websocket_uses_tenant_db_factory(self):
         """Should use TenantDBFactory.get_storage(tid) - RULE T1"""
         # Verify that the router uses tenant-isolated storage
-        # Pattern: storage = TenantDBFactory.get_storage(token.tid)
+        # Pattern: storage = TenantDBFactory.get_storage(token.sub)
         assert True  # Marked for real implementation
 
 

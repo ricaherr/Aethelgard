@@ -1,6 +1,9 @@
 """
 Admin Router: User Management CRUD endpoints.
 
+Arquitectura: Clean Architecture con Inyección de Dependencias obligatoria.
+- Router → Depends(AdminService) → Depends(AuthService) → AuthRepository
+
 Endpoints:
   GET  /api/admin/users              → List all users
   GET  /api/admin/users/{user_id}    → Get user details
@@ -8,37 +11,54 @@ Endpoints:
   PUT  /api/admin/users/{user_id}    → Update user (role/status/tier)
   DELETE /api/admin/users/{user_id}  → Soft delete user
 
-Validación:
+Seguridad:
   - All endpoints require token with role='admin' (via @require_admin dependency)
   - Cannot modify own role to non-admin (lock-out protection)
   - Soft delete only (never hard delete)
   - All changes logged in sys_audit_logs
   
-Governance:
+Gobernanza:
   - Type hints: 100%
-  - Trace_ID: Required for all operations
+  - Trace_ID: Obligatorio en todas las operaciones
   - Enums: UserRole, UserTier, UserStatus (SSOT)
+  - DI: AdminService inyectado, no instanciado
 """
 import logging
+import uuid
 from typing import Dict, Any, Optional, List
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr
 
+from core_brain.services.admin_service import AdminService
 from core_brain.services.auth_service import AuthService
-from core_brain.api.dependencies.auth import get_auth_service, get_current_active_user
+from core_brain.api.dependencies.auth import get_auth_service
 from core_brain.api.dependencies.rbac import require_admin
 from core_brain.api.schemas import user_to_response
-from data_vault.storage import StorageManager
+from data_vault.auth_repo import AuthRepository
 from models.auth import TokenPayload
 from models.user_enums import UserRole, UserTier, UserStatus
-import uuid
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
 
-# ── Pydantic Models ─────────────────────────────────────────────────────────────
+# ── Dependency Injection ───────────────────────────────────────────────────────
+
+def _get_auth_repo() -> AuthRepository:
+    """Lazy-load AuthRepository singleton."""
+    return AuthRepository()
+
+
+def get_admin_service(auth_repo: AuthRepository = Depends(_get_auth_repo)) -> AdminService:
+    """Inyectar AdminService con AuthRepository.
+    
+    Patrón: Service Layer depende de Repository, nunca lo instancia internamente.
+    """
+    return AdminService(auth_repo=auth_repo)
+
+
+# ── Pydantic Models ────────────────────────────────────────────────────────────
 
 class UserCreateRequest(BaseModel):
     """Request body para crear usuario."""
@@ -66,17 +86,12 @@ class UserResponse(BaseModel):
     updated_at: str
 
 
-def _get_storage() -> StorageManager:
-    """Lazy-load StorageManager."""
-    from core_brain.server import _get_storage as get_storage_from_server
-    return get_storage_from_server()
-
-
 # ── GET /api/admin/users ───────────────────────────────────────────────────────
 
 @router.get("/users", response_model=List[UserResponse])
 async def list_users(
-    token: TokenPayload = Depends(require_admin)
+    token: TokenPayload = Depends(require_admin),
+    admin_service: AdminService = Depends(get_admin_service)
 ) -> List[Dict[str, Any]]:
     """
     List all users (admin/trader).
@@ -84,11 +99,8 @@ async def list_users(
     Requires: admin role
     """
     try:
-        storage = _get_storage()
-        users = storage.auth_repo.list_all_users(include_deleted=False)
-        
+        users = admin_service.list_all_users(include_deleted=False)
         logger.info(f"[AdminRouter] Usuarios listados por {token.sub}: {len(users)} usuarios")
-        
         return users
     except Exception as e:
         logger.error(f"[AdminRouter] Error listing users: {e}", exc_info=True)
@@ -98,12 +110,13 @@ async def list_users(
         )
 
 
-# ── GET /api/admin/users/{user_id} ─────────────────────────────────────────────
+# ── GET /api/admin/users/{user_id} ──────────────────────────────────────────
 
 @router.get("/users/{user_id}", response_model=UserResponse)
 async def get_user(
     user_id: str,
-    token: TokenPayload = Depends(require_admin)
+    token: TokenPayload = Depends(require_admin),
+    admin_service: AdminService = Depends(get_admin_service)
 ) -> Dict[str, Any]:
     """
     Get user details by ID.
@@ -111,8 +124,7 @@ async def get_user(
     Requires: admin role
     """
     try:
-        storage = _get_storage()
-        user = storage.auth_repo.get_user_by_id(user_id)
+        user = admin_service.get_user_by_id(user_id)
         
         if not user:
             raise HTTPException(
@@ -131,13 +143,14 @@ async def get_user(
         )
 
 
-# ── POST /api/admin/users ──────────────────────────────────────────────────────
+# ── POST /api/admin/users ───────────────────────────────────────────────────
 
 @router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(
     request: UserCreateRequest,
     token: TokenPayload = Depends(require_admin),
-    auth_service: AuthService = Depends(get_auth_service)
+    auth_service: AuthService = Depends(get_auth_service),
+    admin_service: AdminService = Depends(get_admin_service)
 ) -> Dict[str, Any]:
     """
     Create new user (admin/trader).
@@ -150,10 +163,8 @@ async def create_user(
     - Tier must be BASIC|PREMIUM|INSTITUTIONAL
     """
     try:
-        storage = _get_storage()
-        
         # Validar que email no exista
-        if storage.auth_repo.user_exists(request.email):
+        if admin_service.user_exists(request.email):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Email {request.email} already exists"
@@ -177,29 +188,20 @@ async def create_user(
         password_hash = auth_service.get_password_hash(request.password)
         
         # Create user
-        user_id = storage.auth_repo.create_user(
+        trace_id = str(uuid.uuid4())
+        user_id = admin_service.create_user(
             email=request.email,
             password_hash=password_hash,
             role=request.role,
             tier=request.tier,
-            created_by=token.sub
-        )
-        
-        # Log audit
-        trace_id = str(uuid.uuid4())
-        storage.auth_repo.log_audit(
-            user_id=token.sub,
-            action="CREATE",
-            resource="sys_users",
-            resource_id=user_id,
-            new_value=f"email={request.email}, role={request.role}, tier={request.tier}",
+            created_by=token.sub,
             trace_id=trace_id
         )
         
         logger.info(f"[AdminRouter] User created: {request.email} (role={request.role}) by {token.sub}, trace_id={trace_id}")
         
         # Return created user
-        user = storage.auth_repo.get_user_by_id(user_id)
+        user = admin_service.get_user_by_id(user_id)
         return user_to_response(user)
         
     except HTTPException:
@@ -212,13 +214,14 @@ async def create_user(
         )
 
 
-# ── PUT /api/admin/users/{user_id} ─────────────────────────────────────────────
+# ── PUT /api/admin/users/{user_id} ──────────────────────────────────────────
 
 @router.put("/users/{user_id}", response_model=UserResponse)
 async def update_user(
     user_id: str,
     request: UserUpdateRequest,
-    token: TokenPayload = Depends(require_admin)
+    token: TokenPayload = Depends(require_admin),
+    admin_service: AdminService = Depends(get_admin_service)
 ) -> Dict[str, Any]:
     """
     Update user (role/status/tier).
@@ -230,10 +233,8 @@ async def update_user(
     - Cannot change own status to suspended|deleted
     """
     try:
-        storage = _get_storage()
-        
         # Get user
-        user = storage.auth_repo.get_user_by_id(user_id)
+        user = admin_service.get_user_by_id(user_id)
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -254,21 +255,18 @@ async def update_user(
                 )
         
         # Update role
+        trace_id = str(uuid.uuid4())
         if request.role and request.role != user["role"]:
             if not UserRole.is_valid(request.role):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Role must be one of: {', '.join(UserRole.valid_roles())}"
                 )
-            storage.auth_repo.update_user_role(user_id, request.role, updated_by=token.sub)
-            storage.auth_repo.log_audit(
-                user_id=token.sub,
-                action="UPDATE",
-                resource="sys_users",
-                resource_id=user_id,
-                old_value=f"role={user['role']}",
-                new_value=f"role={request.role}",
-                trace_id=str(uuid.uuid4())
+            admin_service.update_user_role(
+                user_id=user_id,
+                new_role=request.role,
+                updated_by=token.sub,
+                trace_id=trace_id
             )
         
         # Update status
@@ -278,15 +276,11 @@ async def update_user(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Status must be one of: {', '.join(UserStatus.active_statuses())}"
                 )
-            storage.auth_repo.update_user_status(user_id, request.status, updated_by=token.sub)
-            storage.auth_repo.log_audit(
-                user_id=token.sub,
-                action="UPDATE",
-                resource="sys_users",
-                resource_id=user_id,
-                old_value=f"status={user['status']}",
-                new_value=f"status={request.status}",
-                trace_id=str(uuid.uuid4())
+            admin_service.update_user_status(
+                user_id=user_id,
+                new_status=request.status,
+                updated_by=token.sub,
+                trace_id=trace_id
             )
         
         # Update tier
@@ -296,21 +290,17 @@ async def update_user(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Tier must be one of: {', '.join(UserTier.valid_tiers())}"
                 )
-            storage.auth_repo.update_user_tier(user_id, request.tier, updated_by=token.sub)
-            storage.auth_repo.log_audit(
-                user_id=token.sub,
-                action="UPDATE",
-                resource="sys_users",
-                resource_id=user_id,
-                old_value=f"tier={user['tier']}",
-                new_value=f"tier={request.tier}",
-                trace_id=str(uuid.uuid4())
+            admin_service.update_user_tier(
+                user_id=user_id,
+                new_tier=request.tier,
+                updated_by=token.sub,
+                trace_id=trace_id
             )
         
-        logger.info(f"[AdminRouter] User updated: {user_id} by {token.sub}")
+        logger.info(f"[AdminRouter] User updated: {user_id} by {token.sub} (trace_id={trace_id})")
         
         # Return updated user
-        updated_user = storage.auth_repo.get_user_by_id(user_id)
+        updated_user = admin_service.get_user_by_id(user_id)
         return user_to_response(updated_user)
         
     except HTTPException:
@@ -323,12 +313,13 @@ async def update_user(
         )
 
 
-# ── DELETE /api/admin/users/{user_id} ──────────────────────────────────────────
+# ── DELETE /api/admin/users/{user_id} ────────────────────────────────────────
 
 @router.delete("/users/{user_id}")
 async def delete_user(
     user_id: str,
-    token: TokenPayload = Depends(require_admin)
+    token: TokenPayload = Depends(require_admin),
+    admin_service: AdminService = Depends(get_admin_service)
 ) -> Dict[str, str]:
     """
     Soft delete user (status='deleted').
@@ -338,10 +329,8 @@ async def delete_user(
     Policy: NUNCA borrar registros - audit trail preservation
     """
     try:
-        storage = _get_storage()
-        
         # Get user
-        user = storage.auth_repo.get_user_by_id(user_id)
+        user = admin_service.get_user_by_id(user_id)
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -356,20 +345,14 @@ async def delete_user(
             )
         
         # Soft delete
-        storage.auth_repo.soft_delete_user(user_id, updated_by=token.sub)
-        
-        # Log audit
-        storage.auth_repo.log_audit(
-            user_id=token.sub,
-            action="DELETE",
-            resource="sys_users",
-            resource_id=user_id,
-            old_value=f"status={user['status']}",
-            new_value="status=deleted",
-            trace_id=str(uuid.uuid4())
+        trace_id = str(uuid.uuid4())
+        admin_service.soft_delete_user(
+            user_id=user_id,
+            updated_by=token.sub,
+            trace_id=trace_id
         )
         
-        logger.info(f"[AdminRouter] User soft-deleted: {user_id} by {token.sub}")
+        logger.info(f"[AdminRouter] User deleted: {user_id} by {token.sub} (trace_id={trace_id})")
         
         return {"status": "success", "message": f"User {user_id} soft-deleted"}
         

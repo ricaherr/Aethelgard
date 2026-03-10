@@ -124,15 +124,15 @@ async def health() -> Dict[str, Any]:
 
 @router.get("/config/{category}")
 async def get_config(category: str, token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
-    """Obtiene una categoría de configuración de la DB"""
+    """Obtiene una categoría de configuración de la DB (usando storage global)"""
     db_key = f"config_{category}"
-    tenant_id = token.tid
-    storage = TenantDBFactory.get_storage(tenant_id)
+    # New architecture: use global storage (no tenant_id isolation for config)
+    storage = _get_storage()
     state = storage.get_sys_config()
     config_data = state.get(db_key)
     
     if config_data is None:
-        logger.warning(f"Config '{category}' requested not found in DB for tenant {tenant_id}.")
+        logger.warning(f"Config '{category}' requested not found in DB.")
         return {}
         
     if config_data is None and category == "notifications":
@@ -140,7 +140,7 @@ async def get_config(category: str, token: TokenPayload = Depends(get_current_ac
         try:
             from data_vault.system_db import SystemMixin
             notif_db = SystemMixin()
-            telegram_settings = notif_db.get_usr_notification_settings("telegram", tenant_id=tenant_id)
+            telegram_settings = notif_db.get_usr_notification_settings("telegram", user_id=token.sub)
             if telegram_settings:
                 # Asegurar que config_data sea un diccionario mutable
                 raw_config = telegram_settings.get("config", {})
@@ -170,10 +170,10 @@ async def get_config(category: str, token: TokenPayload = Depends(get_current_ac
 
 @router.post("/config/{category}")
 async def update_config(category: str, new_data: dict, token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
-    """Actualiza una categoría de configuración en la DB"""
+    """Actualiza una categoría de configuración en la DB (using global storage)"""
     db_key = f"config_{category}"
-    tenant_id = token.tid
-    storage = TenantDBFactory.get_storage(tenant_id)
+    # New architecture: use global storage (no tenant_id isolation for config)
+    storage = _get_storage()
     
     try:
         storage.update_sys_config({db_key: new_data})
@@ -330,8 +330,8 @@ async def toggle_module(request: Request) -> Dict[str, Any]:
 async def get_usr_preferences(user_id: str = "default", token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """Returns the user preferences from the database."""
     try:
-        # Ensure we use the token's tid for tenant isolation
-        tenant_id = token.tid
+        # New architecture: use user_id as tenant_id for isolation
+        tenant_id = token.sub if not user_id or user_id == "default" else user_id
         storage = TenantDBFactory.get_storage(tenant_id)
         prefs = storage.get_usr_preferences(user_id)
         if prefs is None:
@@ -350,7 +350,8 @@ async def update_usr_preferences(request: Request, token: TokenPayload = Depends
     try:
         body = await request.json()
         user_id = body.pop("user_id", "default")
-        tenant_id = token.tid
+        # New architecture: use user_id as tenant_id for isolation
+        tenant_id = token.sub if not user_id or user_id == "default" else user_id
 
         if not body:
             raise HTTPException(status_code=400, detail="No preferences provided")

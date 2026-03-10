@@ -57,7 +57,7 @@ async def get_usr_signals(
         logger.info(f"GET /api/usr_signals: limit={limit}, minutes={minutes}, symbols={symbols}, status={status}")
         
         storage = _get_storage()
-        tenant_id = token.tid
+        tenant_id = token.sub
         
         # Get usr_signals from DB with SQL-level filtering
         all_usr_signals = storage.get_recent_usr_signals(
@@ -173,8 +173,8 @@ async def execute_signal_manual(data: dict, token: TokenPayload = Depends(get_cu
         
         logger.info(f"Manual execution requested for signal: {signal_id}")
         
-        # SECURITY: Get tenant-isolated storage using TenantDBFactory
-        storage = TenantDBFactory.get_storage(token.tid)
+        # SECURITY: Get tenant-isolated storage using TenantDBFactory (user_id based after architecture migration)
+        storage = TenantDBFactory.get_storage(token.sub)
         trading_service = _get_trading_service()
         
         # Get signal from database (already tenant-isolated)
@@ -288,7 +288,7 @@ async def get_open_usr_positions(token: TokenPayload = Depends(get_current_activ
     """
     try:
         trading_service = _get_trading_service()
-        return await trading_service.get_open_usr_positions(tenant_id=token.tid)
+        return await trading_service.get_open_usr_positions(tenant_id=token.sub)
     except Exception as e:
         logger.error(f"Error getting open usr_positions: {e}")
         return {"usr_positions": [], "total_risk_usd": 0.0, "count": 0}
@@ -306,8 +306,8 @@ async def get_edge_history(limit: int = 50, token: TokenPayload = Depends(get_cu
     Each user only accesses their own isolated database.
     """
     try:
-        # ✅ SECURITY: Get tenant-isolated storage using TenantDBFactory
-        storage = TenantDBFactory.get_storage(token.tid)
+        # ✅ SECURITY: Get tenant-isolated storage using TenantDBFactory (user_id based after migration)
+        storage = TenantDBFactory.get_storage(token.sub)
         
         # 1. Obtener historial de tuning (legacy)
         tuning_history = storage.get_tuning_history(limit=limit)
@@ -384,7 +384,7 @@ async def toggle_auto_trading(request: Request, token: TokenPayload = Depends(ge
     try:
         body = await request.json()
         enabled = body.get("enabled", False)
-        tenant_id = token.tid
+        tenant_id = token.sub  # Use user_id as tenant_id (after architecture migration)
         storage = TenantDBFactory.get_storage(tenant_id)
         # user_id "default" scoped to tenant DB (preferences row per tenant)
         success = storage.update_usr_preferences("default", {"auto_trading_enabled": enabled})
@@ -403,8 +403,8 @@ async def toggle_auto_trading(request: Request, token: TokenPayload = Depends(ge
 async def get_usr_strategies_library(token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
     """Returns the strategy library: registered usr_strategies from DB + registry (SSOT) + educational catalog."""
     try:
-        # SECURITY: Get tenant-isolated storage using TenantDBFactory
-        storage = TenantDBFactory.get_storage(token.tid)
+        # SECURITY: Get tenant-isolated storage using TenantDBFactory (user_id based after migration)
+        storage = TenantDBFactory.get_storage(token.sub)
         rankings = storage.get_all_signal_rankings()
 
         registered = [

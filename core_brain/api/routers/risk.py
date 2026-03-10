@@ -45,7 +45,7 @@ async def get_risk_status(token: TokenPayload = Depends(get_current_active_user)
     Se apoya puramente en la base de datos para máxima resiliencia.
     """
     try:
-        tenant_id = token.tid
+        tenant_id = token.sub
         storage = TenantDBFactory.get_storage(tenant_id)
         
         # 1. Obtener stats de EdgeTuner desde la DB (SSOT)
@@ -116,7 +116,7 @@ async def get_risk_summary(token: TokenPayload = Depends(get_current_active_user
     """
     try:
         trading_service = _get_trading_service()
-        tenant_id = token.tid
+        tenant_id = token.sub
         
         # Get open usr_positions via TradingService
         usr_positions_response = await trading_service.get_open_usr_positions(tenant_id=tenant_id)
@@ -211,7 +211,7 @@ async def get_tuning_logs(limit: int = 50, token: TokenPayload = Depends(get_cur
     Retorna el historial de ajustes del EdgeTuner (Neuro-evolución).
     """
     try:
-        tenant_id = token.tid
+        tenant_id = token.sub
         storage = TenantDBFactory.get_storage(tenant_id)
         history = storage.get_tuning_history(limit=limit)
         return {"status": "success", "history": history}
@@ -231,7 +231,7 @@ async def get_exposure(token: TokenPayload = Depends(get_current_active_user)) -
     """
     try:
         from core_brain.drawdown_monitor import DrawdownMonitor
-        tenant_id = token.tid
+        tenant_id = token.sub
         trading_service = _get_trading_service()
 
         current_equity = trading_service.get_account_balance(tenant_id=tenant_id)
@@ -280,7 +280,7 @@ async def validate_order_risk(
         from core_brain.risk_manager import RiskManager
         from core_brain.position_size_monitor import PositionSizeMonitor
 
-        tenant_id = token.tid
+        tenant_id = token.sub
         storage = TenantDBFactory.get_storage(tenant_id)
         trading_service = _get_trading_service()
         balance = trading_service.get_account_balance(tenant_id=tenant_id)
