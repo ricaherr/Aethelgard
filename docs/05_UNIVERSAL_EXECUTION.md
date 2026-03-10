@@ -61,7 +61,69 @@ class ExecutionResponse(BaseModel):
 5. **SignalFactory** suprime signals basado en patrones de fallo específicos
 
 **Ejemplo**: Si múltiples fallos de VETO_SLIPPAGE ocurren en BTC/USD, la siguiente señal de BTC/USD es suprimida automáticamente hasta que las condiciones de mercado mejoren.
+## 🔍 LiquidityValidationResult (BUG #2 FIX - Comprehensive Market Liquidity Validation)
 
+### Problema Identificado
+`_get_current_price()` retornaba `None` silenciosamente sin validar:
+- Market halted (bid=0, ask=0)
+- One-sided market (solo bid o solo ask disponible)
+- Inverted market (bid > ask)
+- Detalles específicos del POR QUÉ falló
+
+### Solución: Dataclass de Validación Estructurada
+
+```python
+@dataclass
+class LiquidityValidationResult:
+    """Validación exhaustiva de liquidez del mercado (DOMINIO-05 + BUG #2 Fix)."""
+    is_valid: bool                              # ✅/❌ Mercado tiene liquidez suficiente
+    price: Optional[Decimal]                    # Precio mid (ask para BUY, bid para SELL) o None
+    bid: Optional[Decimal]                      # Precio de compra actual
+    ask: Optional[Decimal]                      # Precio de venta actual
+    spread: Optional[Decimal]                   # Spread absoluto (ask - bid) en unidades de precio
+    spread_pips: Optional[Decimal]              # Spread normalizado en pips
+    failure_reason: Optional[ExecutionFailureReason]  # PRICE_FETCH_ERROR, LIQUIDITY_INSUFFICIENT, VETO_SPREAD
+    failure_details: Dict[str, Any]             # {bid, ask, spread, reason, cause} para diagnostico
+```
+
+### Validación de 7 Pasos (_validate_liquidity() método)
+
+| Paso | Validación | ❌ Fallo | ✅ Éxito |
+|------|-----------|--------|--------|
+| 1 | `tick = connector.get_last_tick(symbol)` | `PRICE_FETCH_ERROR` | Continúa |
+| 2 | `bid is not None AND ask is not None` | `LIQUIDITY_INSUFFICIENT` | Continúa |
+| 3 | `bid > 0 AND ask > 0` | `LIQUIDITY_INSUFFICIENT` | Continúa |
+| 4 | `spread = ask - bid > 0` | `VETO_SPREAD` | Continúa |
+| 5 | `convert to Decimal` | `PRICE_FETCH_ERROR` | Continue |
+| 6 | `spread_pips = spread / pip_size` | Calculate | Continúa |
+| 7 | `price = ask (BUY) o bid (SELL)` | N/A | **SUCCESS** → Retorna `is_valid=True` |
+
+**Resultado de Éxito**: `LiquidityValidationResult(is_valid=True, price=1.0925, bid=1.0920, ask=1.0925, spread=0.0005, spread_pips=5.0)`
+
+**Resultado de Fallo** (ejemplo LIQUIDITY_INSUFFICIENT):
+```python
+LiquidityValidationResult(
+    is_valid=False,
+    failure_reason=ExecutionFailureReason.LIQUIDITY_INSUFFICIENT,
+    failure_details={
+        "symbol": "BTC/USDT",
+        "bid": None,
+        "ask": 45000.5,
+        "reason": "Market missing bid - Insufficient liquidity",
+        "cause": "One-sided market (only ask available)"
+    }
+)
+```
+
+### Impacto en DOMINIO-10 (ExecutionFeedbackCollector)
+
+**Antes (Ciego)**: "BTC/USD 3x failed" → Suprimir (frequency-based)  
+**Después (Inteligente)**: "BTC/USD 3x LIQUIDITY_INSUFFICIENT" → Suprimir BUY cuando liquid empeora
+
+failure_context enriquecido incluye:
+- `bid`, `ask`, `spread`, `spread_pips`
+- `reason`: "Market one-sided" o "Missing bid/ask"
+- `cause`: "Connector unavailable" o "Market halted"
 ## �📟 Guía Técnica de Instalación (MT5)
 1.  **Descarga**: Se recomienda usar la versión directa del broker (Pepperstone, IC Markets, XM).
 2.  **Instalación**: Usar rutas por defecto y cerrar la terminal tras la instalación.

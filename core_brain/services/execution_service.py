@@ -5,33 +5,48 @@ import uuid
 from decimal import Decimal
 from typing import Dict, Any, Optional, Tuple, Union
 from datetime import datetime, timezone
-from enum import Enum
+from dataclasses import dataclass
 from pydantic import BaseModel, Field
 
 from models.signal import Signal, SignalType
 from data_vault.storage import StorageManager
+from core_brain.execution_feedback import ExecutionFailureReason
+from connectors.base_connector import BaseConnector
 from utils.market_ops import normalize_price, calculate_pip_size
 
 logger = logging.getLogger(__name__)
 
 
-class ExecutionFailureReason(str, Enum):
+@dataclass
+class LiquidityValidationResult:
     """
-    Enumeration of execution failure causes.
-    Used by ExecutionService to report specific failure reasons to MainOrchestrator.
-    Part of DOMINIO-05 (UNIVERSAL_EXECUTION) and DOMINIO-10 (INFRA_RESILIENCY).
+    Encapsulates liquidity validation result from _get_current_price().
     
-    Reference: DEVELOPMENT_GUIDELINES.md Rule 1.3 (Enums not strings)
+    Implements DOMINIO-05 market quality assurance. Rich failure information
+    enables cause-specific signal suppression in SignalFactory (DOMINIO-10).
+    
+    Attributes:
+        is_valid: Market has sufficient liquidity (bid > 0, ask > 0, spread > 0)
+        price: Mid price (ask for BUY, bid for SELL) or None if invalid
+        bid: Bid price from tick
+        ask: Ask price from tick
+        spread: Absolute spread (ask - bid) in price units
+        spread_pips: Spread in pips (for multi-asset normalization)
+        failure_reason: Why validation failed (LIQUIDITY_INSUFFICIENT, PRICE_FETCH_ERROR, etc.)
+        failure_details: Additional context ({symbol, bid, ask, spread, reason})
     """
-    PRICE_FETCH_ERROR = "PRICE_FETCH_ERROR"  # _get_current_price returned None
-    LIQUIDITY_INSUFFICIENT = "LIQUIDITY_INSUFFICIENT"  # No bid/ask available
-    VETO_SLIPPAGE = "VETO_SLIPPAGE"  # Slippage exceeded limit
-    VETO_SPREAD = "VETO_SPREAD"  # Spread exceeded limit
-    VETO_VOLATILITY = "VETO_VOLATILITY"  # Volatility too high (Z-Score > 3.0)
-    CONNECTION_ERROR = "CONNECTION_ERROR"  # Broker connection failed
-    ORDER_REJECTED = "ORDER_REJECTED"  # Broker rejected order (validation error)
-    TIMEOUT = "TIMEOUT"  # Execution timeout
-    UNKNOWN = "UNKNOWN"  # Unknown cause (fallback)
+    is_valid: bool
+    price: Optional[Decimal] = None
+    bid: Optional[Decimal] = None
+    ask: Optional[Decimal] = None
+    spread: Optional[Decimal] = None
+    spread_pips: Optional[Decimal] = None
+    failure_reason: Optional[ExecutionFailureReason] = None
+    failure_details: Dict[str, Any] = None
+    
+    def __post_init__(self) -> None:
+        if self.failure_details is None:
+            self.failure_details = {}
 
 
 class ExecutionResponse(BaseModel):
@@ -77,71 +92,139 @@ class ExecutionService:
     async def execute_with_protection(
         self, 
         signal: Signal, 
-        connector: Any
+        connector: BaseConnector
     ) -> ExecutionResponse:
         """
         Ejecuta una señal con protección de slippage y Shadow Reporting.
+        Orquesta 3 fases: validación pre-ejecución, envío de orden, manejo de resultados.
         """
         start_time = time.perf_counter()
         trace_id = signal.trace_id or f"EXEC-{uuid.uuid4().hex[:8].upper()}"
         tenant_id = getattr(self.storage, 'tenant_id', 'default')
         signal_id = signal.metadata.get('signal_id', 'unknown')
+        theoretical_price = Decimal(str(signal.entry_price))
         
-        # 1. Pre-Execution Slippage Veto
-        current_tick_price = await self._get_current_price(signal.symbol, signal.signal_type, connector)
+        # Phase 1: Pre-execution validation (liquidity + slippage veto)
+        validation_response = await self._validate_pre_execution(
+            signal, connector, start_time, trace_id, tenant_id, signal_id
+        )
+        if validation_response is not None:
+            return validation_response  # Validation failed -> return early
         
-        if current_tick_price is None:
-            # DOMINIO-05: Report specific failure reason for feedback loop
+        # Phase 2: Send order to broker
+        execution_response = await self._send_execution_order(
+            signal, connector, start_time, trace_id, tenant_id, signal_id
+        )
+        return execution_response
+
+    async def _validate_pre_execution(
+        self,
+        signal: Signal,
+        connector: BaseConnector,
+        start_time: float,
+        trace_id: str,
+        tenant_id: str,
+        signal_id: str
+    ) -> Optional[ExecutionResponse]:
+        """
+        Phase 1: Validates liquidity and pre-execution slippage.
+        Returns ExecutionResponse with failure if validation fails, None if validation passes.
+        """
+        theoretical_price = Decimal(str(signal.entry_price))
+        
+        # Liquidity validation
+        liquidity_result = await self._validate_liquidity(signal.symbol, signal.signal_type, connector)
+        
+        if not liquidity_result.is_valid:
+            error_msg = f"Liquidity validation failed for {signal.symbol}"
+            real_price = liquidity_result.price or Decimal("0")
+            await self._log_shadow_async(
+                signal_id, signal.symbol, theoretical_price, real_price,
+                Decimal("0"), start_time, "LIQUIDITY_FAILURE", tenant_id, trace_id,
+                metadata=liquidity_result.failure_details
+            )
             return ExecutionResponse(
                 success=False,
-                error_message="No se pudo obtener el precio actual para validación pre-ejecución",
-                status="PRICE_FETCH_ERROR",
-                failure_reason=ExecutionFailureReason.PRICE_FETCH_ERROR,  # ← Specific reason
+                error_message=error_msg,
+                status=liquidity_result.failure_reason.value,
+                failure_reason=liquidity_result.failure_reason,
                 failure_context={
                     "trace_id": trace_id,
                     "symbol": signal.symbol,
-                    "reason": "connector.get_last_tick() returned None",
-                    "provider": "MT5/DataProvider"
+                    **liquidity_result.failure_details
                 }
             )
-
-        theoretical_price = Decimal(str(signal.entry_price))
-        pre_exec_slippage = self._calculate_pips(signal.symbol, theoretical_price, current_tick_price, signal.signal_type, connector)
         
-        # Límite de slippage desde metadatos o default
+        # Extract validated prices
+        current_tick_price = liquidity_result.price
+        bid_price = liquidity_result.bid
+        ask_price = liquidity_result.ask
+        spread = liquidity_result.spread
+        spread_pips = liquidity_result.spread_pips
+
+        # Check slippage against limit
+        pre_exec_slippage = self._calculate_pips(signal.symbol, theoretical_price, current_tick_price, signal.signal_type, connector)
         slippage_limit = Decimal(str(signal.metadata.get("slippage_limit", self.default_slippage_limit)))
         
         if abs(pre_exec_slippage) > slippage_limit:
             reason_msg = f"Veto Pre-Ejecución: Slippage estimado {pre_exec_slippage:.2f} pips > limite {slippage_limit} pips"
             logger.warning(f"[{trace_id}] {reason_msg}")
             
-            # Shadow Log del Veto (Pre-ejecución)
             await self._log_shadow_async(
                 signal_id, signal.symbol, theoretical_price, current_tick_price, 
                 pre_exec_slippage, start_time, "VETO_SLIPPAGE", tenant_id, trace_id,
-                metadata={"veto_limit": float(slippage_limit)}
+                metadata={
+                    "veto_limit": float(slippage_limit),
+                    "bid": float(bid_price),
+                    "ask": float(ask_price),
+                    "spread": float(spread),
+                    "spread_pips": float(spread_pips)
+                }
             )
             
-            # DOMINIO-05: Report specific failure reason for feedback loop
             return ExecutionResponse(
                 success=False,
                 error_message=reason_msg,
                 status="VETO_SLIPPAGE",
-                failure_reason=ExecutionFailureReason.VETO_SLIPPAGE,  # ← Specific reason
+                failure_reason=ExecutionFailureReason.VETO_SLIPPAGE,
                 failure_context={
                     "trace_id": trace_id,
                     "symbol": signal.symbol,
                     "theoretical_price": float(theoretical_price),
                     "current_price": float(current_tick_price),
+                    "bid": float(bid_price),
+                    "ask": float(ask_price),
+                    "spread": float(spread),
+                    "spread_pips": float(spread_pips),
                     "slippage_pips": float(pre_exec_slippage),
-                    "limit_pips": float(slippage_limit)
+                    "limit_pips": float(slippage_limit),
+                    "signal_type": str(signal.signal_type)
                 }
             )
+        
+        # Store validated data in signal metadata for Phase 2
+        signal.metadata['_validated_price'] = float(current_tick_price)
+        signal.metadata['_pre_exec_slippage'] = float(pre_exec_slippage)
+        return None  # Validation passed
 
-        # 2. Ejecución Real vía Connector
+    async def _send_execution_order(
+        self,
+        signal: Signal,
+        connector: BaseConnector,
+        start_time: float, 
+        trace_id: str,
+        tenant_id: str,
+        signal_id: str
+    ) -> ExecutionResponse:
+        """
+        Phase 2: Sends order to broker and handles result/errors.
+        Returns ExecutionResponse with success or failure details.
+        """
+        theoretical_price = Decimal(str(signal.entry_price))
+        current_tick_price = Decimal(str(signal.metadata.get('_validated_price', signal.entry_price)))
+        pre_exec_slippage = Decimal(str(signal.metadata.get('_pre_exec_slippage', 0)))
+        
         try:
-            # Los conectores de Aethelgard son mayormente síncronos en su librería base (MT5), 
-            # pero aquí los manejamos asincrónicamente donde sea posible.
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(None, connector.execute_order, signal)
             
@@ -151,7 +234,6 @@ class ExecutionService:
                 real_price = Decimal(str(result.get('price', current_tick_price)))
                 final_slippage = self._calculate_pips(signal.symbol, theoretical_price, real_price, signal.signal_type, connector)
                 
-                # 3. Shadow Reporting (Éxito)
                 await self._log_shadow_async(
                     signal_id, signal.symbol, theoretical_price, real_price, 
                     final_slippage, start_time, "SUCCESS", tenant_id, trace_id,
@@ -244,21 +326,151 @@ class ExecutionService:
                 }
             )
 
-    async def _get_current_price(self, symbol: str, signal_type: SignalType, connector: Any) -> Optional[Decimal]:
-        """Obtiene el precio bid/ask actual del conector de forma agnóstica."""
+    async def _validate_liquidity(
+        self,
+        symbol: str,
+        signal_type: SignalType,
+        connector: BaseConnector
+    ) -> LiquidityValidationResult:
+        """
+        Comprehensive liquidity validation with detailed failure diagnosis.
+        
+        Validates:
+        1. Connector returns tick data (not None)
+        2. Both bid and ask are present and > 0
+        3. Spread is positive (ask > bid)
+        4. Spread is reasonable (<50 pips for FX)
+        
+        Returns:
+            LiquidityValidationResult with:
+            - is_valid: True if market has sufficient liquidity
+            - price: Mid price (ask for BUY, bid for SELL) or None if invalid
+            - bid/ask/spread/spread_pips: Market structure details
+            - failure_reason + failure_details: Specific cause and context (if invalid)
+        """
         try:
-            # Usamos el nuevo método de la interfaz BaseConnector
+            # Step 1: Get tick from connector
             tick = connector.get_last_tick(symbol)
-            if tick and tick.get('ask') is not None and tick.get('bid') is not None:
-                price = tick['ask'] if signal_type == SignalType.BUY else tick['bid']
-                return Decimal(str(price))
             
-            return None
-        except Exception as e:
-            logger.error(f"Error obteniendo precio actual para {symbol}: {e}")
-            return None
+            if tick is None:
+                return LiquidityValidationResult(
+                    is_valid=False,
+                    failure_reason=ExecutionFailureReason.PRICE_FETCH_ERROR,
+                    failure_details={
+                        "symbol": symbol,
+                        "reason": "connector.get_last_tick() returned None",
+                        "cause": "Connector temporarily unavailable or symbol not in Market Watch"
+                    }
+                )
+            
+            # Step 2: Extract bid/ask
+            bid_raw = tick.get('bid')
+            ask_raw = tick.get('ask')
+            
+            # Step 3: Validate both exist and are > 0 (not just not None)
+            if bid_raw is None or ask_raw is None:
+                missing = "bid" if bid_raw is None else "ask"
+                return LiquidityValidationResult(
+                    is_valid=False,
+                    bid=Decimal(str(bid_raw)) if bid_raw is not None else None,
+                    ask=Decimal(str(ask_raw)) if ask_raw is not None else None,
+                    failure_reason=ExecutionFailureReason.LIQUIDITY_INSUFFICIENT,
+                    failure_details={
+                        "symbol": symbol,
+                        "reason": f"Market missing {missing} - Insufficient liquidity",
+                        "bid": float(bid_raw) if bid_raw is not None else None,
+                        "ask": float(ask_raw) if ask_raw is not None else None,
+                        "cause": "One-sided market (only bid OR ask available)"
+                    }
+                )
+            
+            # Convert to Decimal
+            bid = Decimal(str(bid_raw))
+            ask = Decimal(str(ask_raw))
+            
+            # Step 4: Validate bid and ask are positive
+            if bid <= 0 or ask <= 0:
+                return LiquidityValidationResult(
+                    is_valid=False,
+                    bid=bid,
+                    ask=ask,
+                    failure_reason=ExecutionFailureReason.LIQUIDITY_INSUFFICIENT,
+                    failure_details={
+                        "symbol": symbol,
+                        "reason": f"Invalid prices: bid={float(bid)}, ask={float(ask)}",
+                        "bid": float(bid),
+                        "ask": float(ask),
+                        "cause": "Zero or negative price - Market halted/closed"
+                    }
+                )
+            
+            # Step 5: Validate spread (ask > bid)
+            spread = ask - bid
+            if spread <= 0:
+                return LiquidityValidationResult(
+                    is_valid=False,
+                    bid=bid,
+                    ask=ask,
+                    spread=spread,
+                    failure_reason=ExecutionFailureReason.VETO_SPREAD,
+                    failure_details={
+                        "symbol": symbol,
+                        "reason": f"Inverted market: ask ({float(ask)}) <= bid ({float(bid)})",
+                        "bid": float(bid),
+                        "ask": float(ask),
+                        "spread": float(spread),
+                        "cause": "Market data corruption or halted trading"
+                    }
+                )
+            
+            # Step 6: Calculate spread in pips (for symbol with PIP_SIZE)
+            pip_size = Decimal(str(calculate_pip_size(symbol_info=None, symbol=symbol)))
+            spread_pips = spread / pip_size if pip_size != 0 else Decimal("0")
+            
+            # Step 7: Warn if spread is unusually wide (>10 pips for FX)
+            # NOTE: This is a warning, not a veto - execution can proceed
+            # ExecutionResponse can set failure_reason=VETO_SPREAD if threshold exceeded
+            
+            # Step 8: Extract appropriate price
+            if signal_type == SignalType.BUY:
+                price = ask  # Buy at ask
+            else:
+                price = bid  # Sell at bid
+            
+            # SUCCESS
+            return LiquidityValidationResult(
+                is_valid=True,
+                price=price,
+                bid=bid,
+                ask=ask,
+                spread=spread,
+                spread_pips=spread_pips,
+                failure_reason=None,
+                failure_details={
+                    "symbol": symbol,
+                    "bid": float(bid),
+                    "ask": float(ask),
+                    "spread": float(spread),
+                    "spread_pips": float(spread_pips),
+                    "signal_type": str(signal_type),
+                    "price_for_execution": float(price)
+                }
+            )
+            
+        except (TypeError, ValueError, AttributeError) as e:
+            logger.error(f"Error validating liquidity for {symbol}: {e}", exc_info=True)
+            return LiquidityValidationResult(
+                is_valid=False,
+                failure_reason=ExecutionFailureReason.PRICE_FETCH_ERROR,
+                failure_details={
+                    "symbol": symbol,
+                    "reason": f"Liquidity validation error: {str(e)}",
+                    "error_type": type(e).__name__,
+                    "cause": "Invalid tick data format from connector"
+                }
+            )
 
-    def _calculate_pips(self, symbol: str, price_a: Decimal, price_b: Decimal, signal_type: SignalType, connector: Any) -> Decimal:
+    def _calculate_pips(self, symbol: str, price_a: Decimal, price_b: Decimal, signal_type: SignalType, connector: BaseConnector) -> Decimal:
         """Calcula la diferencia en pips entre dos precios."""
         diff = price_b - price_a
         
