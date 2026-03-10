@@ -296,6 +296,66 @@ Patrón de "Ruptura de Apertura" que captura gaps micro-estructurales durante lo
 
 ---
 
+## 🎯 SIGNAL DEDUPLICATION (Mecanismo Crítico de Filtrado)
+
+### Definición Matemática de "Señal Duplicada"
+
+Una señal es **DUPLICADA** si **TODAS** estas condiciones se cumplen:
+
+```
+Signal_NEW vs Signal_PRIOR:
+  ✓ Mismo símbolo (normalizado)
+  ✓ Mismo tipo (BUY/SELL)
+  ✓ Mismo timeframe (M5/H1/D1)
+  ✓ DENTRO ventana deduplicación DINÁMICA (no fixed 20 min para todo)
+  ✓ MISMO régimen/volatility/sesión de mercado
+
+SI todas cumplen → Candidato a duplicado
+SI alguna falla   → Señal DIFERENTE (válida)
+```
+
+### Categorías de Duplicación
+
+| Categoría | Descripción | Regla |
+|-----------|-------------|-------|
+| **A: Repetición Idéntica** | Misma estrategia, mismo setup, falló | Aplicar cooldown post-fallo basado en failure_reason |
+| **B: Consenso Estratégico** | N estrategias diferentes generan mismo setup | Operar ranking más alto (CONSERVATIVE) o multiplicador dinámico (AGGRESSIVE) |
+| **C: Post-Fallo Reintento** | Ejecución falló, se reintenta | Exponential backoff: 5→10→20 min según intentos |
+| **D: Conflictos Multi-TF** | Mismo símbolo, diferente TF/dirección | SEPARATION: permitir poses paralelas si risk <= 2% total |
+
+### Ventanas de Deduplicación Dinámicas
+
+En lugar de ventanas fijas, el sistema calcula dinámicamente:
+
+```
+DEDUP_WINDOW = BASE_WINDOW × VOLATILITY_FACTOR × REGIME_FACTOR
+
+Base Windows (por timeframe):
+  M5:  5 minutos
+  M15: 15 minutos
+  H1:  60 minutos
+  H4:  240 minutos
+  D1:  1440 minutos
+
+Volatility Factor (ATR-based):
+  Calm:     0.5x  (menos setups → ventana corta)
+  Normal:   1.0x  (baseline)
+  Volatile: 2.0x  (caótico → ventana larga)
+
+Regime Factor (mercado actual):
+  RANGE:    0.75x (rebotes rápidos → ventana corta)
+  TREND:    1.25x (menos reversales → normal)
+  VOLATILE: 2.0x  (picos extremos → ventana larga)
+
+Ejemplo:
+  M5 EURUSD (Normal volatility + RANGE) = 5 × 1.0 × 0.75 = 3.75 min
+  M5 EURUSD (High volatility + VOLATILE) = 5 × 2.0 × 2.0 = 20 min
+```
+
+**Mecanismo EDGE**: Sistema aprende ventanas óptimas cada semana analizando gaps reales entre setups. Para detalles técnicos ver [07_ADAPTIVE_LEARNING.md - Dynamic Deduplication Windows](07_ADAPTIVE_LEARNING.md#-dynamic-deduplication-windows-hu-73).
+
+---
+
 ## Próximas Alphas Candidatas (En Evaluación)
 
 El Protocolo Quanter está listo para recibir firmas adicionales. Candidatos en evaluación pre-shadow:

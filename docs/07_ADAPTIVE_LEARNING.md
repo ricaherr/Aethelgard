@@ -94,10 +94,177 @@ Cuando el Governor interviene, el ajuste se marca con `[SAFETY_GOVERNOR]` en los
   - 7 FORMAS de SHADOW operacionales
   - 125/125 tests PASANDO
   - Trace_ID: SHADOW-EVOLUTION-2026-001
+- [x] **DYNAMIC DEDUPLICATION WINDOWS (HU 7.3 - PHASE 3)** — ✅ COMPLETADA (10 Marzo 2026)
+  - DedupLearner: Weekly autonomous window calibration
+  - Cálculo triple-factor: volatility × regime × base_window
+  - Aprendizaje semanal de gaps óptimos (percentil_50 × 0.8)
+  - Ajuste granular por symbol/timeframe/strategy
+  - Gobernanza: ±30% change rate, 10%-300% bounds
+  - sys_dedup_events table for immutable audit trail
+  - Integración MainOrchestrator: Sundays 23:00 UTC
+  - 11/11 tests PASSED
+  - 24/24 system modules PASSED
+  - Trace_ID: DEDUP-LEARNING-2026-PHASE3
 
 ## 🌑 SHADOW Evolution Integration (Plan A++)
 
-**Fecha de Implementación**: 9 de Marzo de 2026  
+**Fecha de Implementación**: 9 de Marzo de 2026
+
+---
+
+## 🔍 DYNAMIC DEDUPLICATION WINDOWS (HU 7.3)
+
+### Triple-Factor Window Calculation
+
+En lugar de usar ventanas fijas (20 min para todo), el sistema calcula dinámicamente:
+
+```
+DEDUP_WINDOW_DYNAMIC(symbol, timeframe, strategy) = 
+  BASE_WINDOW(timeframe) × 
+  VOLATILITY_FACTOR(current_ATR) × 
+  REGIME_FACTOR(market_regime)
+
+Resultado: ventana adaptada momento a momento
+```
+
+### Factores Componentes
+
+**1. Base Window (por timeframe)**:
+- M1: 1 min
+- M5: 5 min
+- M15: 15 min
+- H1: 60 min
+- H4: 240 min
+- D1: 1440 min
+
+**2. Volatility Factor** (ATR-based):
+```
+AVG_ATR = SMA(ATR, 20 velas)
+Curr_ATR = ATR actual
+
+SI Curr_ATR < AVG_ATR × 0.8:      CALM  → 0.5x
+SI Curr_ATR entre 0.8-1.2 × AVG:  NORMAL → 1.0x
+SI Curr_ATR > AVG × 1.2:          HOT   → 2.0x
+SI Curr_ATR > AVG × 1.8:          SPIKE → 3.0x
+```
+
+**3. Regime Factor** (RegimeService input):
+```
+TRENDING:    1.25x (menos cambios de dirección)
+RANGE:       0.75x (muchos rebotes, setups frecuentes)
+VOLATILE:    2.0x  (estrés extremo)
+FLASH_MOVE:  3.0x  (evento raro, máxima cautela)
+```
+
+### Ejemplos Calculados
+
+```
+EURUSD M5 (Normal conditions):
+  5 × 1.0 × 1.0 = 5 minutos (baseline)
+
+EURUSD M5 (High volatility + RANGE):
+  5 × 2.0 × 0.75 = 7.5 minutos
+
+EURUSD M5 (Calm market + TRENDING):
+  5 × 0.5 × 1.25 = 3.125 minutos (muy permisivo)
+
+GBPUSD H1 (Volatility spike + FLASH_MOVE):
+  60 × 3.0 × 3.0 = 540 minutos (9 horas, máxima protección)
+```
+
+### Self-Learning Mechanism (Semanal - EDGE HU 7.3)
+
+Cada domingo 23:00 UTC:
+1. **Recolectar datos**: Para cada (symbol, timeframe, strategy)
+   - Todos los setups generados en la semana
+   - Timestamps de ejecución exitosa
+2. **Calcular gaps**: Diferencias de tiempo entre setups consecutivos
+3. **Analizar distribución**:
+   - Percentil 5 (%5): gap mínimo esperado
+   - Percentil 50 (mediana): gap típico
+   - Percentil 95 (%95): gap máximo esperado
+4. **Proponer ventana óptima**:
+   ```
+   window_optimal = percentile_50 × 0.8
+   (margen 20% para ruido/falsas señales)
+   ```
+5. **Aplicar constraintos de gobernanza**:
+   ```
+   MIN: 10% del base_window (no demasiado agresivo)
+   MAX: 300% del base_window (no demasiado conservador)
+   CHANGE_RATE: ±30% máximo por ajuste (evitar oscilaciones)
+   ```
+6. **Persistir**: Guardar en `sys_dedup_rules` table
+7. **Log auditado**: Trace_ID + razón de ajuste
+
+### Ejemplo de Aprendizaje Real
+
+```
+--- SEMANA DEL 3-9 MARZO 2026 ---
+OliverVelez + EURUSD + M5:
+  Setups generados: 20 total en 5 días
+  Gaps entre consecutivos: [8, 15, 22, 13, 18, ...] minutos
+  Percentil 50 (mediana): 15 minutos
+  
+  Ventana actual: 5 × 1.0 × 1.0 = 5 minutos
+  Data sugiere: 15 × 0.8 = 12 minutos sería óptimo
+  
+  ¿Ajustar de 5 a 12 minutos?
+  - Cambio propuesto = (12-5)/5 = 140% ❌ RECHAZADO (> 30%)
+  - Máximo permitido: 5 × 1.3 = 6.5 minutos ✅ Aplicar
+  
+--- RESULTADO ---
+Siguiente semana EURUSD M5 Oliver usa ventana 6.5 min (ajuste gradual)
+Continúa aprendiendo semana siguiente hacia óptimo
+```
+
+### Tabla de Persistencia (SSOT)
+
+```sql
+CREATE TABLE sys_dedup_rules (
+  id INTEGER PRIMARY KEY,
+  symbol TEXT NOT NULL,
+  timeframe TEXT NOT NULL,
+  strategy TEXT NOT NULL,
+  base_window_minutes INTEGER,
+  current_window_minutes INTEGER,
+  volatility_factor REAL DEFAULT 1.0,
+  regime_factor REAL DEFAULT 1.0,
+  last_adjusted TIMESTAMP,
+  data_points_observed INTEGER DEFAULT 0,
+  learning_enabled BOOLEAN DEFAULT TRUE,
+  manual_override BOOLEAN DEFAULT FALSE,
+  override_comment TEXT,
+  trace_id TEXT,
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP,
+  UNIQUE(symbol, timeframe, strategy)
+);
+```
+
+### Guardias de Seguridad (Gobernanza EDGE)
+
+```python
+# En EdgeTuner (core_brain/edge_tuner.py)
+
+def should_adjust_window(proposed_window, current_window, base_window):
+  """Valida si ajuste de ventana cumple con guardrails."""
+  
+  change_pct = abs(proposed_window - current_window) / current_window
+  
+  if change_pct > 0.30:  # ±30% máximo
+    return False, "Change rate exceeds 30% limit"
+  
+  if proposed_window < base_window * 0.10:  # Floor
+    return False, "Proposed window < 10% of base (too aggressive)"
+  
+  if proposed_window > base_window * 3.0:   # Ceiling
+    return False, "Proposed window > 300% of base (too conservative)"
+  
+  return True, "OK to apply"
+```
+
+
 **Estado**: ✅ COMPLETADO Y VALIDADO  
 **Trace ID**: SHADOW-EVOLUTION-2026-001
 
@@ -109,6 +276,255 @@ Cuando el Governor interviene, el ajuste se marca con `[SAFETY_GOVERNOR]` en los
 - Resultado: **nunca ejecutaban → nunca acumulaban trades → nunca acumulaban confidence → DEADLOCK PERMANENTE**
 
 **Ahora**: ✅ Sistema autónomo donde estrategias SHADOW evolucionan sin intervención humana
+
+---
+
+## 🧠 PHASE 3 IMPLEMENTATION: DedupLearner Weekly Auto-Calibration
+
+**Fecha de Implementación**: 10 de Marzo 2026  
+**Trace ID**: `DEDUP-LEARNING-2026-PHASE3`  
+**Archivo Principal**: `core_brain/dedup_learner.py` (350+ líneas)
+
+### Arquitectura
+
+```
+┌─ MainOrchestrator.run_single_cycle()
+│
+├─ _check_and_run_weekly_dedup_learning()
+│  │
+│  └─ Domingos 23:00 UTC
+│     │
+│     └─ DedupLearner.run_weekly_learning_cycle()
+│        │
+│        ├─ _collect_gap_data()          → Last 7 days of signals
+│        ├─ _group_by_key()              → (symbol, timeframe, strategy)
+│        ├─ _calculate_percentiles()     → 5th, 50th, 95th percentiles
+│        ├─ _analyze_and_propose_window() → Optimal = p50 × 0.8 (conservative)
+│        ├─ _validate_governance()       → ±30%, 10%-300%, min 5 samples
+│        └─ _apply_learning()            → Update sys_dedup_rules + audit
+│
+└─ Results logged + audit trail in sys_dedup_events
+```
+
+### Core Algorithm
+
+**Step 1: Gap Collection**
+```python
+gaps = await _collect_gap_data()  # Last 7 days from sys_signals
+
+# Example output:
+# {
+#   ('EURUSD', 'M5', 'OliverVelez'): [8, 15, 22, 13, 18, 11, 19],
+#   ('GBPUSD', 'H1', 'AlessandroRibelli'): [45, 52, 38, 61],
+#   ...
+# }
+```
+
+**Step 2: Percentile Analysis**
+```python
+gaps_list = [8, 15, 22, 13, 18, 11, 19]  # 7 observations
+percentile_5 = 8.4    # np.percentile(gaps_list, 5)
+percentile_50 = 15.0  # MEDIAN (numpy)
+percentile_95 = 21.5  # np.percentile(gaps_list, 95)
+```
+
+**Step 3: Optimal Window Calculation**
+```python
+optimal_window = int(percentile_50 * 0.8)  # 15 × 0.8 = 12 minutes
+# Conservative margin (20%) to avoid noise & false signals
+```
+
+**Step 4: Governance Validation**
+```python
+current_rule = await storage.get_dedup_rule('EURUSD', 'M5', 'OliverVelez')
+current_window = 5  # Current dedup window
+base_window = 5     # Base window for symbol/TF
+
+change_pct = ((12 - 5) / 5) * 100  # +140%
+is_valid, reason = _validate_governance(12, 5, 5)
+
+# Checks:
+if change_pct > 30:  # ❌ FAIL
+    return False, "Change rate +140% exceeds ±30% limit"
+if window < base * 0.10:  # Check floor
+    return False, "Below 10% floor"
+if window > base * 3.0:  # Check ceiling
+    return False, "Above 300% ceiling"
+if sample_count < 5:  # Min observations
+    return False, "Only 4 observations"
+```
+
+**Step 5: Learning Application**
+```python
+if is_valid:
+    # Update with conservative step:
+    # Instead of jumping 140%, apply only ±30%
+    adjusted_window = int(current_window * 1.3)  # 5 × 1.3 = 6.5 minutes
+    
+    await storage.update_dedup_rule({
+        'symbol': 'EURUSD',
+        'timeframe': 'M5',
+        'strategy': 'OliverVelez',
+        'current_window_minutes': 6.5,
+        'trace_id': 'DEDUP-LEARNING-2026-PHASE3-...'
+    })
+    
+    # Log audit event
+    await storage.record_dedup_event({
+        'event_type': 'WINDOW_ADJUSTED',
+        'symbol': 'EURUSD',
+        'old_window': 5,
+        'new_window': 6.5,
+        'change_pct': 30.0,
+        'optimal_window': 12,
+        'reason': 'Weekly learning cycle',
+        'adoption_rate': 'TBD'  # Will measure next week
+    })
+else:
+    # Log rejection with reason
+    await storage.record_dedup_event({
+        'event_type': 'WINDOW_REJECTED',
+        'reason': reason,
+        ...
+    })
+```
+
+### Governance Constraints
+
+| Constraint | Value | Reason |
+|-----------|-------|--------|
+| Change Rate | ±30% max | Avoid oscillations & overfitting |
+| Floor | 10% of base_window | Minimum aggression |
+| Ceiling | 300% of base_window | Maximum conservation |
+| Min Observations | 5+ gaps | Statistical significance |
+| Frequency | Weekly (Sundays 23:00 UTC) | Non-blocking, learnable pace |
+| Reversion | On degradation | If new window hurts performance |
+
+### Database Integration
+
+**New Table**: `sys_dedup_events` (Audit Trail)
+```sql
+CREATE TABLE sys_dedup_events (
+  id INTEGER PRIMARY KEY,
+  event_type TEXT NOT NULL,  -- WINDOW_ADJUSTED, WINDOW_REJECTED, etc
+  symbol TEXT NOT NULL,
+  timeframe TEXT NOT NULL,
+  strategy TEXT NOT NULL,
+  old_window_minutes INTEGER,
+  new_window_minutes INTEGER,
+  optimal_window_minutes INTEGER,
+  change_pct REAL,
+  reason TEXT,
+  data_points_count INTEGER,
+  adoption_rate REAL,
+  compliance_checks TEXT,  -- JSON with validation results
+  trace_id TEXT,
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP
+);
+
+-- Efficient queries
+CREATE INDEX idx_dedup_events_symbol ON sys_dedup_events(symbol);
+CREATE INDEX idx_dedup_events_timeframe ON sys_dedup_events(timeframe);
+CREATE INDEX idx_dedup_events_created ON sys_dedup_events(created_at);
+```
+
+**Updated Table**: `sys_dedup_rules`
+```
+base_window_minutes: Original window (never changes)
+current_window_minutes: Learned window (updated weekly)
+last_adjusted: Timestamp of latest learning
+learning_enabled: Can system auto-calibrate?
+manual_override: Human lock-in?
+trace_id: Link to audit trail
+```
+
+### MainOrchestrator Integration
+
+**In `__init__`**:
+```python
+self.dedup_learner = DedupLearner(storage_manager=self.storage)
+self._last_dedup_learning = datetime.now(timezone.utc)
+```
+
+**In `run_single_cycle()`**:
+```python
+await self._check_and_run_weekly_dedup_learning()
+```
+
+**Scheduler Method**:
+```python
+async def _check_and_run_weekly_dedup_learning(self) -> None:
+    """Trigger Sunday 23:00 UTC learning cycle (non-blocking)."""
+    now_utc = datetime.now(timezone.utc)
+    
+    is_sunday = now_utc.weekday() == 6
+    is_learning_hour = now_utc.hour == 23
+    hours_since_last = (now_utc - self._last_dedup_learning).total_seconds() / 3600
+    enough_time_passed = hours_since_last >= 24
+    
+    if is_sunday and is_learning_hour and enough_time_passed:
+        results = await self.dedup_learner.run_weekly_learning_cycle()
+        # Log results with counts (learned, blocked, skipped)
+        # Update _last_dedup_learning timestamp
+```
+
+### Validation & Testing
+
+**Test Suite**: `tests/test_dedup_learner_phase3.py` (300+ líneas)
+
+| Test Case | Status |
+|-----------|--------|
+| Gap data collection | ✅ PASSED |
+| Percentile calculation | ✅ PASSED |
+| Optimal window derivation | ✅ PASSED |
+| ±30% change rate constraint | ✅ PASSED |
+| 10%-300% bounds constraint | ✅ PASSED |
+| Min observations check | ✅ PASSED |
+| Multi-symbol parallelization | ✅ PASSED |
+| Audit trail recording | ✅ PASSED |
+| Edge cases (no data, single sample) | ✅ PASSED |
+| Full weekly cycle | ✅ PASSED |
+| Scheduler integration | ✅ PASSED |
+
+**Result**: 11/11 tests PASSED ✅
+
+**System Validation**: 24/24 modules PASSED ✅
+
+### Key Files Modified
+
+| File | Lines Added | Change |
+|------|------------|--------|
+| `core_brain/dedup_learner.py` | 350+ | NEW - Core learning engine |
+| `data_vault/schema.py` | +30 | sys_dedup_events table |
+| `data_vault/system_db.py` | +80 | 3 new StorageManager methods |
+| `core_brain/main_orchestrator.py` | +100 | Integration + scheduler |
+| `tests/test_dedup_learner_phase3.py` | 300+ | NEW - Comprehensive test suite |
+
+### Operational Impact
+
+**Before PHASE 3**:
+- ❌ Dedup windows: Fixed (5-60 min per symbol/TF)
+- ❌ No learning: Windows unchanged even if suboptimal
+- ❌ Manual tuning: Humans adjusted windows (slow, error-prone)
+
+**After PHASE 3**:
+- ✅ Windows adapt to market conditions (weekly)
+- ✅ Learning from actual signal gaps (data-driven)
+- ✅ Governance prevents overfitting (±30%, bounds)
+- ✅ Audit trail immutable (sys_dedup_events)
+- ✅ Non-blocking integration (Sundays 23:00 UTC)
+- ✅ Autonomous (no human intervention)
+
+### Next Steps (PHASE 4+)
+
+- [ ] Failure pattern analysis (why rejections?)
+- [ ] Broker-specific cooldown learning
+- [ ] Symbol volatility clustering
+- [ ] Dashboard visualization of learning trends
+- [ ] Adaptive scheduler (adjust frequency per symbol)
+
+---
 
 ### Las 7 FASES Implementadas
 

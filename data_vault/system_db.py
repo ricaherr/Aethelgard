@@ -919,3 +919,136 @@ class SystemMixin(BaseRepository):
                 
         return pruned_count
 
+    # ── Deduplication Learn ing (PHASE 3) ────────────────────────────────────
+
+    async def get_dedup_events_since(self, cutoff_date: datetime) -> List[Dict]:
+        """
+        Get all dedup events (signal blockages) since cutoff_date.
+        Used by DedupLearner for weekly gap analysis.
+        
+        Returns:
+            List of {symbol, timeframe, strategy, gap_minutes, created_at}
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT symbol, timeframe, strategy, gap_minutes, created_at
+                FROM sys_dedup_events
+                WHERE created_at >= ?
+                ORDER BY created_at ASC
+            """, (cutoff_date,))
+            
+            rows = cursor.fetchall()
+            events = []
+            for row in rows:
+                events.append({
+                    "symbol": row[0],
+                    "timeframe": row[1],
+                    "strategy": row[2],
+                    "gap_minutes": row[3],
+                    "created_at": row[4]
+                })
+            
+            logger.debug(f"[DEDUP] Fetched {len(events)} events since {cutoff_date}")
+            return events
+        except Exception as e:
+            logger.error(f"[DEDUP] Error fetching dedup events: {e}")
+            return []
+        finally:
+            self._close_conn(conn)
+
+    async def get_dedup_rule(self, symbol: str, timeframe: str, strategy: str) -> Optional[Dict]:
+        """
+        Get dedup rule for specific (symbol, timeframe, strategy).
+        
+        Returns:
+            {id, base_window_minutes, current_window_minutes, learning_enabled, ...}
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, symbol, timeframe, strategy, base_window_minutes, current_window_minutes,
+                       volatility_factor, regime_factor, data_points_observed, learning_enabled,
+                       manual_override, trace_id, last_adjusted, created_at, updated_at
+                FROM sys_dedup_rules
+                WHERE symbol = ? AND timeframe = ? AND strategy = ?
+            """, (symbol, timeframe, strategy))
+            
+            row = cursor.fetchone()
+            if not row:
+                return None
+            
+            return {
+                "id": row[0],
+                "symbol": row[1],
+                "timeframe": row[2],
+                "strategy": row[3],
+                "base_window_minutes": row[4],
+                "current_window_minutes": row[5],
+                "volatility_factor": row[6],
+                "regime_factor": row[7],
+                "data_points_observed": row[8],
+                "learning_enabled": row[9],
+                "manual_override": row[10],
+                "trace_id": row[11],
+                "last_adjusted": row[12],
+                "created_at": row[13],
+                "updated_at": row[14]
+            }
+        except Exception as e:
+            logger.error(f"[DEDUP] Error fetching rule ({symbol}/{timeframe}/{strategy}): {e}")
+            return None
+        finally:
+            self._close_conn(conn)
+
+    async def update_dedup_rule(
+        self,
+        symbol: str,
+        timeframe: str,
+        strategy: str,
+        current_window_minutes: int,
+        data_points_observed: int,
+        learning_enabled: bool = True,
+        trace_id: str = ""
+    ) -> bool:
+        """
+        Update or insert dedup rule with learned window.
+        
+        Args:
+            symbol, timeframe, strategy: Key tuple
+            current_window_minutes: New window value (from learning)
+            data_points_observed: Number of gaps analyzed
+            learning_enabled: Allow further learning
+            trace_id: Audit trace for this update
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            now = datetime.now(timezone.utc)
+            
+            cursor.execute("""
+                INSERT OR REPLACE INTO sys_dedup_rules
+                (symbol, timeframe, strategy, current_window_minutes, data_points_observed,
+                 learning_enabled, trace_id, last_adjusted, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                symbol, timeframe, strategy,
+                current_window_minutes, data_points_observed,
+                1 if learning_enabled else 0,
+                trace_id, now, now
+            ))
+            
+            conn.commit()
+            logger.info(
+                f"[DEDUP] Rule updated: {symbol}/{timeframe}/{strategy} → "
+                f"window={current_window_minutes} min (trace={trace_id})"
+            )
+            return True
+        except Exception as e:
+            logger.error(f"[DEDUP] Error updating rule: {e}")
+            return False
+        finally:
+            self._close_conn(conn)
+

@@ -51,6 +51,9 @@ from core_brain.threshold_optimizer import ThresholdOptimizer
 from core_brain.execution_feedback import ExecutionFeedbackCollector, ExecutionFailureReason
 from core_brain.trade_closure_listener import TradeClosureListener
 from core_brain.strategy_ranker import StrategyRanker
+from core_brain.signal_selector import SignalSelector
+from core_brain.cooldown_manager import CooldownManager
+from core_brain.dedup_learner import DedupLearner
 
 logger = logging.getLogger(__name__)
 
@@ -316,6 +319,10 @@ class MainOrchestrator:
         
         # 9. Economic Calendar Veto Interface (PHASE 8: News-Based Trading Lockdown)
         self._init_economic_integration()
+        
+        # 10. PHASE 3: Deduplication Learner (Weekly Auto-Calibration)
+        self.dedup_learner = DedupLearner(storage_manager=self.storage)
+        self._last_dedup_learning = datetime.now(timezone.utc)
 
     @property
     def signal_factory(self) -> Optional[Any]:
@@ -347,6 +354,11 @@ class MainOrchestrator:
         # Initialize ExecutionFeedbackCollector for autonomous learning loop
         self.execution_feedback_collector = execution_feedback_collector or ExecutionFeedbackCollector(storage=self.storage)
         logger.info(f"[FEEDBACK] ExecutionFeedbackCollector initialized (DOMINIO-10 Auto-Healing)")
+        
+        # PHASE 1: Initialize Signal Deduplication & Cooldown Management (HU 3.3 + 4.7)
+        self.signal_selector = SignalSelector(storage_manager=self.storage)
+        self.cooldown_manager = CooldownManager(storage_manager=self.storage)
+        logger.info(f"[DEDUP] Signal Selector & Cooldown Manager initialized (HU 3.3/4.7)")
 
     def _load_dynamic_usr_strategies(self) -> None:
         """
@@ -926,6 +938,65 @@ class MainOrchestrator:
         except Exception as e:
             logger.error(f"Error checking closed usr_positions: {e}")
 
+    async def _check_and_run_weekly_dedup_learning(self) -> None:
+        """
+        PHASE 3: Check if it's Sunday 23:00 UTC and run dedup learning if needed.
+        
+        Executes weekly dedup window auto-calibration:
+        - Collects signal gaps from past 7 days
+        - Calculates optimal windows (median - 20% margin)
+        - Validates governance constraints (±30% change, 10%-300% bounds)
+        - Persists learned windows to sys_dedup_rules
+        
+        Schedule: Sundays 23:00-23:59 UTC (once per week)
+        """
+        try:
+            now_utc = datetime.now(timezone.utc)
+            
+            # Check if it's Sunday (weekday() returns 6 for Sunday)
+            is_sunday = now_utc.weekday() == 6
+            
+            # Check if it's 23:00-23:59 UTC
+            is_learning_hour = now_utc.hour == 23
+            
+            # Make sure we haven't run in the last 24 hours (to avoid multiple runs)
+            hours_since_last = (now_utc - self._last_dedup_learning).total_seconds() / 3600
+            enough_time_passed = hours_since_last >= 24
+            
+            if is_sunday and is_learning_hour and enough_time_passed:
+                logger.info("[PHASE3-DEDUP] 🔄 Starting weekly dedup window learning cycle...")
+                
+                # Run the learning cycle
+                results = await self.dedup_learner.run_weekly_learning_cycle()
+                
+                # Log results
+                learned_count = len(results.get("learned", []))
+                blocked_count = len(results.get("blocked", []))
+                skipped_count = len(results.get("skipped", []))
+                
+                logger.info(
+                    f"[PHASE3-DEDUP] ✅ Learning cycle complete: "
+                    f"{learned_count} adaptations applied, "
+                    f"{blocked_count} blocked by governance, "
+                    f"{skipped_count} skipped (insufficient data)"
+                )
+                
+                # Update timestamp
+                self._last_dedup_learning = now_utc
+                
+                # Detailed logging for learned rules
+                if results["learned"]:
+                    for result in results["learned"]:
+                        logger.info(
+                            f"[PHASE3-DEDUP] LEARNED: {result.symbol} {result.timeframe} "
+                            f"({result.strategy}): {result.window_old}→{result.window_new} min "
+                            f"(+{result.change_pct:.1f}%, optimal={result.window_optimal} from {result.gap_count} gaps)"
+                        )
+                
+        except Exception as e:
+            logger.error(f"[PHASE3-DEDUP] Error in weekly learning: {e}", exc_info=False)
+            # Don't re-raise - learning errors should not block trading
+
     async def run_single_cycle(self) -> None:
         """
         Execute a single complete trading cycle.
@@ -943,6 +1014,9 @@ class MainOrchestrator:
             
             # Check if we need to reset stats for new day
             self.stats.reset_if_new_day()
+            
+            # PHASE 3: Check if we need to run weekly dedup learning (Sundays 23:00 UTC)
+            await self._check_and_run_weekly_dedup_learning()
             
             # Step 0: Initial heartbeat update and feedback
             self.storage.update_module_heartbeat("orchestrator")
@@ -1355,6 +1429,52 @@ class MainOrchestrator:
                 try:
                     logger.info(f"Executing signal: {signal.symbol} {signal.signal_type}")
                     
+                    # PHASE 1: Signal Deduplication Check (before executor)
+                    # Get recent signals for dedup window check
+                    recent_signals = self.storage.get_recent_signals(
+                        symbol=signal.symbol,
+                        timeframe=getattr(signal, 'timeframe', 'M5'),
+                        lookback_minutes=120  # Default lookback window
+                    )
+                    
+                    market_context = {
+                        "volatility_zscore": getattr(self, 'volatility_zscore', 0.0),
+                        "regime": getattr(self.regime_classifier, 'current_regime', 'UNKNOWN') if self.regime_classifier else 'UNKNOWN'
+                    }
+                    
+                    # Check deduplication
+                    dedup_decision, dedup_metadata = await asyncio.to_thread(
+                        self.signal_selector.should_operate_signal,
+                        signal,
+                        recent_signals,
+                        market_context
+                    )
+                    
+                    # Handle dedup decisions
+                    if dedup_decision.value == 'REJECT_DUPLICATE':
+                        logger.warning(f"Signal {signal.symbol} REJECTED - deduplication: {dedup_metadata.get('reason')}")
+                        self.stats.usr_signals_vetoed += 1
+                        if self.thought_callback:
+                            await self.thought_callback(
+                                f"Señal duplicada rechazada: {signal.symbol} ({dedup_metadata.get('category', 'unknown')})",
+                                level="warning", module="DEDUP"
+                            )
+                        continue
+                    
+                    if dedup_decision.value == 'REJECT_COOLDOWN':
+                        remaining = dedup_metadata.get('remaining_minutes', 0)
+                        logger.warning(
+                            f"Signal {signal.symbol} en COOLDOWN por {dedup_metadata.get('failure_reason')} "
+                            f"- {remaining:.1f} min restantes"
+                        )
+                        self.stats.usr_signals_vetoed += 1
+                        if self.thought_callback:
+                            await self.thought_callback(
+                                f"Señal en enfriamiento: {signal.symbol} (vence en {remaining:.1f} min)",
+                                level="info", module="COOLDOWN"
+                            )
+                        continue
+                    
                     # Check if strategy is authorized for LIVE execution (Shadow Ranking)
                     if not self._is_strategy_authorized_for_execution(signal):
                         logger.warning(
@@ -1396,6 +1516,31 @@ class MainOrchestrator:
                             details=failure_details
                         )
                         
+                        # PHASE 1: Apply cooldown for failed execution
+                        cooldown_result = await asyncio.to_thread(
+                            self.cooldown_manager.apply_cooldown,
+                            getattr(signal, 'id', None),
+                            signal.symbol,
+                            getattr(signal, 'strategy', 'unknown'),
+                            failure_reason.value if isinstance(failure_reason, ExecutionFailureReason) else str(failure_reason),
+                            market_context
+                        )
+                        
+                        logger.warning(
+                            f"Cooldown applied for {signal.symbol}: {cooldown_result['cooldown_minutes']} min "
+                            f"(retry #{cooldown_result['retry_count']})"
+                        )
+                        
+                        # Notify if moving to escalation
+                        if cooldown_result['retry_count'] >= 4:
+                            if self.thought_callback:
+                                await self.thought_callback(
+                                    f"⚠️ ESCALADA: Señal {signal.symbol} ha fallado {cooldown_result['retry_count']} veces. "
+                                    f"Requiere revisión manual.",
+                                    level="critical", module="ESCALATE"
+                                )
+                        
+                
                 except Exception as e:
                     logger.error(f"Error executing signal {signal.symbol}: {e}")
                     self.stats.errors_count += 1

@@ -483,6 +483,74 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
     """)
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_regime_configs_regime ON sys_regime_configs (regime)")
 
+    # ── 17. Signal Deduplication Rules (HU 3.3) ──────────────────────────────
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sys_dedup_rules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT NOT NULL,
+            timeframe TEXT NOT NULL,
+            strategy TEXT NOT NULL,
+            base_window_minutes INTEGER DEFAULT 20,
+            current_window_minutes INTEGER DEFAULT 20,
+            volatility_factor REAL DEFAULT 1.0,
+            regime_factor REAL DEFAULT 1.0,
+            last_adjusted TIMESTAMP,
+            data_points_observed INTEGER DEFAULT 0,
+            learning_enabled BOOLEAN DEFAULT 1,
+            manual_override BOOLEAN DEFAULT 0,
+            override_comment TEXT,
+            trace_id TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(symbol, timeframe, strategy)
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_dedup_rules_symbol ON sys_dedup_rules (symbol)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_dedup_rules_timeframe ON sys_dedup_rules (timeframe)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_dedup_rules_strategy ON sys_dedup_rules (strategy)")
+
+    # ── 17B. Dedup Events (HU 3.3 - PHASE 3 Learning) ────────────────────────
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sys_dedup_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT NOT NULL,
+            timeframe TEXT NOT NULL,
+            strategy TEXT NOT NULL,
+            signal_id TEXT NOT NULL,
+            previous_signal_id TEXT,
+            gap_minutes REAL NOT NULL,
+            dedup_reason TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_dedup_events_symbol ON sys_dedup_events (symbol)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_dedup_events_created_at ON sys_dedup_events (created_at DESC)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_dedup_events_key ON sys_dedup_events (symbol, timeframe, strategy)")
+
+    # ── 18. Cooldown Tracker (HU 4.7) ─────────────────────────────────────────
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sys_cooldown_tracker (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            signal_id TEXT NOT NULL UNIQUE,
+            symbol TEXT NOT NULL,
+            strategy TEXT,
+            failure_reason TEXT NOT NULL,
+            failure_time TIMESTAMP NOT NULL,
+            retry_count INTEGER DEFAULT 1,
+            cooldown_minutes INTEGER NOT NULL,
+            cooldown_expires TIMESTAMP NOT NULL,
+            volatility_zscore REAL DEFAULT 0.0,
+            regime TEXT,
+            trace_id TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_cooldown_tracker_signal_id ON sys_cooldown_tracker (signal_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_cooldown_tracker_symbol ON sys_cooldown_tracker (symbol)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_cooldown_tracker_expires ON sys_cooldown_tracker (cooldown_expires)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_cooldown_tracker_failure_reason ON sys_cooldown_tracker (failure_reason)")
+
     # Seed sys_regime_configs with default weights (SSOT)
     _seed_sys_regime_configs(cursor)
 
