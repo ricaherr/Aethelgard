@@ -8,7 +8,7 @@ Garantizar la operatividad perpetua del sistema mediante una infraestructura aut
 *   **Auto-Healing Engine**: Protocolos de recuperación automática que reinician servicios o resincronizan estados tras detectar fallos.
 *   **Resource Sentinel**: Monitor de consumo de CPU, memoria y espacio en disco con alertas de umbral.
 *   **Log Management (Linux Style)**: Sistema de rotación diaria con retención estricta de 15 días para optimizar el almacenamiento.
-*   **PaperConnector (Hybrid Safety)**: Entorno de simulación de alta fidelidad que desacopla el riesgo financiero del riesgo de infraestructura durante fases de calibración o fallos de red críticos.
+*   **PaperConnector (Hybrid Safety)**: Simulación pura para debugging. **Nota**: Para SHADOW mode (strategy testing), el sistema usa **MT5 DEMO accounts** (real broker, paper account) en lugar de PaperConnector, proporcionando high-fidelity simulation con slippage/spread/commission reales sin riesgo financiero. MT5 DEMO es la opción preferida para calibración de métricas porque proporciona datos auténticos que reflection real market conditions (ver Dominio 05: SHADOW Mode).
 *   **Anomaly Health Integration**: Coordinación automática entre detección de eventos extremos (AnomalyService) y transición de estados de salud operacionales.
 
 ## ⚕️ Protocolo de Salud (EDGE Autónomo)

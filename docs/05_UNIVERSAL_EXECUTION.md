@@ -3,9 +3,78 @@
 ## 🎯 Propósito
 Garantizar una ejecución de órdenes de alta fidelidad y baja latencia mediante una infraestructura de conectividad agnóstica y un control estricto del slippage.
 
-## 🚀 Componentes Críticos
-*   **Execution Service (High-Fidelity)**: Motor de orquestación que implementa protecciones de precio y Shadow Reporting en tiempo real.
-*   **Connectivity Orchestrator**: Gestión centralizada de sesiones y estados de conexión con múltiples brokers.
+## � SHADOW Mode: Strategy Testing & High-Fidelity Simulation
+
+### Propósito
+El modo SHADOW permite a nuevas estrategias ejecutarse con seguridad total usando cuentas DEMO de brokers reales, acumulando métricas auténticas para calibración antes de transicionar a modo LIVE con capital real.
+
+### Arquitectura: MT5 DEMO Routing
+```
+Strategy en SHADOW
+      ↓
+CircuitBreakerGate valida 4 Pillars (Market Structure, Risk, Liquidity, Confluence)
+      ↓
+Executor inyecta account_type='DEMO' en signal.metadata
+      ↓
+MT5Connector.execute_signal()
+      ↓
+Detecta account_type='DEMO' → Usa MT5 DEMO account (real broker, paper account)
+      ↓
+Ejecución con slippage/spread/comisiones reales (sin riesgo financiero)
+      ↓
+TradeClosureListener registra: execution_mode='SHADOW', account_type='DEMO'
+      ↓
+StrategyRanker evalúa PF, WR, Trade Count después de 50+ trades
+```
+
+### Flujo Completo: SHADOW → LIVE Promotion
+```
+1. Nueva estrategia → execution_mode='SHADOW'
+2. Señales validadas → CircuitBreaker (4 Pillars) → Si PASAN, continúa
+3. Executor inyecta account_type='DEMO' en metadata
+4. MT5 ejecuta en DEMO account (real price action, cero riesgo)
+5. 50+ trades acumuladas → Métricas auténticas (PF, WR, DD)
+6. StrategyRanker verifica criterios:
+   - ✅ PF > 1.5 (profit factor)
+   - ✅ WR > 50% (win rate)
+   - ✅ Completed Last 50 >= 50 trades
+7. SI TODOS CUMPLEN → execution_mode='LIVE' (promueve a account REAL)
+8. SI NO → Permanece en SHADOW hasta cumplir
+```
+
+### Ventajas: MT5 DEMO vs Simulación Pura
+| Aspecto | MT5 DEMO ✅ | Simulación Pura ❌ |
+|---------|-----------|-----------|
+| **Slippage Real** | Simulado por broker | Ficticio |
+| **Spread Realista** | Real del broker | Estático |
+| **Comisiones** | Broker fees reales | N/A |
+| **Latencia Red** | Real de red | Simulado |
+| **Validación de Órdenes** | Broker válida límites | Siempre ejecuta |
+| **Calibración Métricas** | Datos auténticos | Datos de prueba |
+| **Confianza del Usuario** | Alta | Baja |
+
+### Provisioning Automático
+- **MainOrchestrator** ejecuta `ensure_optimal_demo_accounts()` al inicio
+- Auto-crea cuentas DEMO en brokers con soporte automático (MT5, Binance, Tradovate)
+- Almacena en `sys_broker_accounts` con `account_type='demo'`
+- Disponibles automáticamente para estrategias SHADOW
+
+### Auditoría & Feedback
+- **Tabla `trades`**: Registra `execution_mode` (LIVE/SHADOW) + `account_type` (REAL/DEMO)
+- **ExecutionFeedbackCollector**: Rastrea patrones de fallo específicos por modo
+- **StrategyRanker**: Consulta trades SHADOW explícitamente para evaluación de promoción
+- **Trazabilidad**: Cada trade incluye `execution_mode` para auditoría regulatoria
+
+## 📊 Shadow Reporting System
+Extension del Sistema de Reporte para SHADOW mode:
+```python
+# Reporte automático de SHADOW trades
+- execution_mode='SHADOW'
+- account_type='DEMO'
+- Slippage, Spread, Commission (reales)
+- Latency metrics
+- Broker validation results
+```
 *   **Adaptive Slippage Controller**: Algoritmo que realiza un "Veto Técnico" si la diferencia entre el precio teórico y el precio de mercado actual supera el límite configurado (default: 2.0 pips).
 *   **Shadow Reporting System**: Registro persistente en `execution_shadow_logs` que mide la latencia y el slippage real de cada orden para auditoría institucional. **Esta capa protege al usuario detectando manipulaciones de precio por parte del broker o ineficiencias de enrutamiento, permitiendo un veto técnico automático si el slippage real excede los límites históricos de confianza.**
 *   **Source Fidelity Guard**: Prohíbe el arbitraje de datos entre proveedores para garantizar la integridad operativa.

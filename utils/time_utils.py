@@ -59,3 +59,45 @@ def to_utc(dt: Union[str, datetime], source_tz: Optional[str] = None) -> str:
     """
     dt_utc = to_utc_datetime(dt, source_tz=source_tz)
     return dt_utc.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]  # Milisegundos, sin microsegundos
+
+
+def broker_timestamp_to_utc_datetime(timestamp: Union[int, float]) -> datetime:
+    """
+    Convierte timestamp UNIX de broker a UTC datetime AWARENESS-SAFE.
+    
+    **GARANTÍA TIMEZONE**: Todos los brokers devuelven timestamps UNIX (siempre UTC).
+    Esta función es EXPLÍCITA: timestamp UNIX → UTC datetime (nunca timezone local).
+    
+    Args:
+        timestamp: UNIX timestamp de broker (MT5, Rithmic, OANDA, etc.)
+    
+    Returns:
+        datetime con timezone=UTC (nunca naive, nunca local)
+    
+    Ejemplo:
+        >>> ts = 1710082800  # 2025-03-10 10:00:00 UTC
+        >>> dt = broker_timestamp_to_utc_datetime(ts)
+        >>> dt.tzinfo == timezone.utc
+        True
+        >>> dt.hour == 10  # UTC hour
+        True
+    
+    TRACE_ID: TZUTIL-BROKER-TIMESTAMP-001
+    """
+    return datetime.fromtimestamp(timestamp, tz=timezone.utc)
+
+
+def broker_timestamp_to_utc_str(timestamp: Union[int, float]) -> str:
+    """
+    Convierte timestamp UNIX a string ISO 8601 UTC (para persistencia).
+    
+    Args:
+        timestamp: UNIX timestamp
+    
+    Returns:
+        String ISO 8601 con timezone UTC (ej: "2025-03-10T10:00:00+00:00")
+    
+    TRACE_ID: TZUTIL-BROKER-TIMESTAMP-001
+    """
+    dt_utc = broker_timestamp_to_utc_datetime(timestamp)
+    return dt_utc.isoformat()

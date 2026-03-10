@@ -89,6 +89,69 @@ class ExecutionService:
         self.default_slippage_limit = Decimal("2.0")
         logger.info("ExecutionService (High-Fidelity) inicializado.")
 
+    def _ensure_connector(self, connector: Optional[BaseConnector], phase: str, symbol: str, trace_id: str) -> Optional[Union[ExecutionResponse, LiquidityValidationResult]]:
+        """
+        Centraliza validación defensiva de connector en los 3 momentos críticos.
+        
+        Args:
+            connector: Connector a validar
+            phase: "pre_execution" (Fase 1) | "send_order" (Fase 2) | "liquidity" (Validación)
+            symbol: Símbolo para contexto
+            trace_id: Trace ID para logging trazable
+        
+        Returns:
+            ExecutionResponse/LiquidityValidationResult con error si connector is None, None si OK.
+            None = connector es válido, procede la ejecución.
+        """
+        if connector is None:
+            phase_context = {
+                "pre_execution": {
+                    "status": "NO_CONNECTOR",
+                    "message": "No active connector for execution",
+                    "cause": "Executor initialization or connector registration failed"
+                },
+                "send_order": {
+                    "status": "CONNECTOR_LOST",
+                    "message": "Connector lost between validation and execution",
+                    "cause": "Race condition or connector cleanup during execution"
+                },
+                "liquidity": {
+                    "status": "CONNECTION_ERROR",
+                    "message": "Connector is None - No active connection",
+                    "cause": "Executor failed to provide valid connector instance"
+                }
+            }
+            
+            ctx = phase_context.get(phase, phase_context["pre_execution"])
+            
+            # LiquidityValidationResult para fase de validación, ExecutionResponse para otras
+            if phase == "liquidity":
+                return LiquidityValidationResult(
+                    is_valid=False,
+                    failure_reason=ExecutionFailureReason.CONNECTION_ERROR,
+                    failure_details={
+                        "symbol": symbol,
+                        "reason": ctx["message"],
+                        "cause": ctx["cause"]
+                    }
+                )
+            else:
+                # ExecutionResponse para pre_execution y send_order
+                return ExecutionResponse(
+                    success=False,
+                    error_message=ctx["message"],
+                    status=ctx["status"],
+                    failure_reason=ExecutionFailureReason.CONNECTION_ERROR,
+                    failure_context={
+                        "trace_id": trace_id,
+                        "symbol": symbol,
+                        "reason": ctx["message"],
+                        "cause": ctx["cause"]
+                    }
+                )
+        
+        return None  # Connector válido, procede normalmente
+
     async def execute_with_protection(
         self, 
         signal: Signal, 
@@ -131,6 +194,17 @@ class ExecutionService:
         Returns ExecutionResponse with failure if validation fails, None if validation passes.
         """
         theoretical_price = Decimal(str(signal.entry_price))
+        
+        # Early validation: Connector must be non-None
+        connector_error = self._ensure_connector(connector, "pre_execution", signal.symbol, trace_id)
+        if connector_error is not None:
+            # Log shadow for failed pre-execution phase
+            await self._log_shadow_async(
+                signal_id, signal.symbol, theoretical_price, Decimal("0"),
+                Decimal("0"), start_time, "NO_CONNECTOR", tenant_id, trace_id,
+                metadata={"reason": "Connector unavailable at execution time"}
+            )
+            return connector_error
         
         # Liquidity validation
         liquidity_result = await self._validate_liquidity(signal.symbol, signal.signal_type, connector)
@@ -223,6 +297,16 @@ class ExecutionService:
         theoretical_price = Decimal(str(signal.entry_price))
         current_tick_price = Decimal(str(signal.metadata.get('_validated_price', signal.entry_price)))
         pre_exec_slippage = Decimal(str(signal.metadata.get('_pre_exec_slippage', 0)))
+        
+        # Defensive: Connector must be non-None (race condition guard)
+        connector_error = self._ensure_connector(connector, "send_order", signal.symbol, trace_id)
+        if connector_error is not None:
+            await self._log_shadow_async(
+                signal_id, signal.symbol, theoretical_price, current_tick_price,
+                pre_exec_slippage, start_time, "CONNECTOR_LOST", tenant_id, trace_id,
+                metadata={"reason": "Connector became None after phase 1 validation"}
+            )
+            return connector_error
         
         try:
             loop = asyncio.get_event_loop()
@@ -336,10 +420,11 @@ class ExecutionService:
         Comprehensive liquidity validation with detailed failure diagnosis.
         
         Validates:
-        1. Connector returns tick data (not None)
-        2. Both bid and ask are present and > 0
-        3. Spread is positive (ask > bid)
-        4. Spread is reasonable (<50 pips for FX)
+        1. Connector is available (not None)
+        2. Connector returns tick data (not None)
+        3. Both bid and ask are present and > 0
+        4. Spread is positive (ask > bid)
+        5. Spread is reasonable (<50 pips for FX)
         
         Returns:
             LiquidityValidationResult with:
@@ -349,6 +434,11 @@ class ExecutionService:
             - failure_reason + failure_details: Specific cause and context (if invalid)
         """
         try:
+            # Step 0: Validate connector is not None (defensive)
+            connector_error = self._ensure_connector(connector, "liquidity", symbol, "")
+            if connector_error is not None:
+                return connector_error
+            
             # Step 1: Get tick from connector
             tick = connector.get_last_tick(symbol)
             

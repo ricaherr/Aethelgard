@@ -275,7 +275,7 @@ class SignalFactory:
             origin_mode = 'SHADOW'  # Safe default: unknown strategy = testing mode (no live trading)
             if strategy_id:
                 try:
-                    ranking = self.storage_manager.get_strategy_ranking(strategy_id)
+                    ranking = self.storage_manager.get_signal_ranking(strategy_id)
                     if ranking and 'execution_mode' in ranking:
                         origin_mode = ranking['execution_mode']
                         logger.debug(f"[SIGNAL-ORIGIN] {strategy_id} mode={origin_mode}")

@@ -119,6 +119,66 @@ El Core Brain no debe conocer detalles del broker (MT5/FIX). Debe trabajar solo 
     4. Eliminar aliases después de validar que todo funciona
     5. Documentar nuevo nombre en esta sección (SSOT)
 
+*   **1.9. Timezone Handling - UTC Single Source of Truth (OBLIGATORIO - 2026-03-10)**:
+    
+    **PRINCIPIO**: Aethelgard opera EXCLUSIVAMENTE en UTC. Todos los timestamps de broker, base de datos, y procesamiento interno DEBEN ser UTC explícito con timezone info.
+    
+    **Garantía de Timezone**:
+    1. **Entrada (Brokers)**: Todos los brokers devuelven timestamps UNIX (universalmente UTC)
+       - MT5, Rithmic, OANDA, etc.: `timestamp` UNIX = segundos desde epoch UTC
+    2. **Conversión explícita**: Usar `broker_timestamp_to_utc_datetime(timestamp)` de `utils/time_utils.py`
+       ```python
+       from utils.time_utils import broker_timestamp_to_utc_datetime
+       
+       # ✅ CORRECTO
+       dt_utc = broker_timestamp_to_utc_datetime(mt5_deal.time)
+       # Retorna: datetime(2026-03-10 10:00:00, tzinfo=timezone.utc)
+       
+       # ❌ PROHIBIDO - Interpreta como timezone local del servidor
+       dt_wrong = datetime.fromtimestamp(mt5_deal.time)
+       # Retorna: datetime(2026-03-10 11:00:00)  # NAIVE, interpreta local!
+       ```
+    3. **Persistencia (Base de Datos)**: SQLite adapter convierte a ISO 8601 UTC
+       ```python
+       # En data_vault/base_repo.py:
+       sqlite3.register_adapter(datetime, 
+           lambda dt: dt.astimezone(timezone.utc).isoformat())
+       ```
+    4. **Procesamiento (Core Logic)**: SessionStateDetector, RiskManager, etc. SIEMPRE usan UTC
+       ```python
+       from datetime import datetime, timezone
+       
+       now_utc = datetime.now(timezone.utc)  # ✅ CORRECTO
+       # ❌ PROHIBIDO: now_local = datetime.now()  # Sin timezone = naive local
+       ```
+    5. **Salida (API/Frontend)**: ISO 8601 UTC en JSON
+       ```python
+       {"timestamp": "2026-03-10T10:00:00+00:00"}  # ✅ CORRECTO (UTC explícito)
+       {"timestamp": "2026-03-10T10:00:00"}        # ❌ INCORRECTO (naive)
+       ```
+    
+    **Por qué esto es crítico en Trading**:
+    - SessionStateDetector compara contra horas UTC (LONDON 08:00 UTC, NY 13:00 UTC, etc.)
+    - Si broker timestamp se interpreta como local (GMT+1, GMT+5, etc.) → FALSE POSITIVES en detección de sesiones
+    - Ejemplo de ERROR:
+      ```
+      Servidor timezone: GMT+5
+      MT5 devuelve: timestamp UNIX (UTC)
+      datetime.fromtimestamp() → Interpreta como GMT+5 → 5 horas adelantado
+      SessionStateDetector compara contra UTC → FALLA overlap detection
+      →  False signals, missed opportunities, financial loss
+      ```
+    
+    **Checklist de Validación** (verificar en `validate_all.py`):
+    - ✅ No existe `datetime.fromtimestamp(x)` sin `tz=timezone.utc` en connectors/
+    - ✅ Todos los broker timestamps convierten vía `broker_timestamp_to_utc_datetime()`
+    - ✅ SessionStateDetector usa `datetime.now(timezone.utc)` o `datetime.now(pytz.UTC)`
+    - ✅ RiskManager timestamps son UTC-aware
+    - ✅ DB reads retornan datetime con tzinfo=UTC
+    - ✅ API responses incluyen timezone (+00:00 o Z)
+    
+    **TRACE_ID**: TZUTIL-BROKER-TIMESTAMP-001
+
 ## 2. Frontend Rules: La Terminal de Inteligencia
 *   **Estética Terminal**: Prohibido el uso de componentes de librerías comunes sin personalización. Estética **Bloomberg-Dark** (#050505, acentos cian/neón).
 *   **Densidad de Datos**: Diseñar para el experto. Mostrar datos de alta fidelidad sin saturar, utilizando transparencias y capas (Glassmorphism).

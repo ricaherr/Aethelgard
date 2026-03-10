@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Optional, Dict, List, Any
 import websockets
 from websockets.exceptions import ConnectionClosed
+from utils.time_utils import broker_timestamp_to_utc_datetime
 
 try:
     import MetaTrader5 as mt5
@@ -536,7 +537,7 @@ class MT5Bridge:
                     'exit_price': deal.price,
                     'profit': deal.profit,
                     'volume': deal.volume,
-                    'close_time': datetime.fromtimestamp(deal.time),
+                    'close_time': broker_timestamp_to_utc_datetime(deal.time),
                     'exit_reason': self._detect_exit_reason(deal),
                     'signal_id': self._extract_signal_id(deal.comment)
                 }
@@ -609,7 +610,7 @@ class MT5Bridge:
                 "bid": tick.bid,
                 "ask": tick.ask,
                 "volume": tick.volume,
-                "timestamp": datetime.fromtimestamp(tick.time).isoformat()
+                "timestamp": broker_timestamp_to_utc_datetime(tick.time).isoformat()
             })
         
         except Exception as e:

@@ -97,23 +97,50 @@ class SessionStateDetector:
     
     def is_session_overlap(self) -> bool:
         """
-        Detecta si hay solapamiento entre sesiones.
+        Detecta si hay solapamiento significativo entre sesiones comerciales.
+        
+        Overlaps existentes:
+        1. LONDON-NEW_YORK: 13:00-16:00 UTC (3 horas)
+           - LONDON: 08:00-16:00, NEW_YORK: 13:00-21:00
+           - Overlap = [13:00, min(16:00, 21:00)) = [13:00, 16:00)
+        
+        2. ASIA-SYDNEY: 00:00-07:00 UTC (7 horas)
+           - ASIA: 00:00-09:00, SYDNEY: 22:00 (prev day)-07:00
+           - Overlap = [max(00:00, 22:00), min(09:00, 07:00)) = [00:00, 07:00)
         
         Returns:
-            True si hay solapamiento significativo
+            True si hay solapamiento significativo, False en caso contrario
         """
         now_utc = datetime.now(pytz.UTC).time()
         
-        # Solapamientos principales:
-        # LONDON-NEWYORK: 13:00-16:00 UTC
-        if time(13, 0) <= now_utc < time(16, 0):
+        # Helper: Verificar si un momento está dentro de un rango
+        def is_in_range(current_time: time, open_time: time, close_time: time) -> bool:
+            """
+            Verifica si current_time está en [open_time, close_time).
+            Maneja rangos que cruzan medianoche (open_time > close_time).
+            """
+            if open_time <= close_time:
+                # Rango normal (no cruza medianoche)
+                return open_time <= current_time < close_time
+            else:
+                # Rango que cruza medianoche (ej. 22:00-07:00)
+                return current_time >= open_time or current_time < close_time
+        
+        # Define sesiones (UTC)
+        london_active = is_in_range(now_utc, time(8, 0), time(16, 0))
+        ny_active = is_in_range(now_utc, time(13, 0), time(21, 0))
+        asia_active = is_in_range(now_utc, time(0, 0), time(9, 0))
+        sydney_active = is_in_range(now_utc, time(22, 0), time(7, 0))
+        
+        # Overlap #1: LONDON-NEW_YORK (máxima volatilidad)
+        if london_active and ny_active:
+            logger.debug(f"[SENSOR-SESSION-STATE-001] LONDON-NEW_YORK overlap detected")
             return True
         
-        # ASIA-SYDNEY: 22:00-9:00 (cruza medianoche)
-        if now_utc >= time(22, 0) or now_utc < time(9, 0):
-            # Solo si no es LONDON
-            if now_utc < time(8, 0):
-                return True
+        # Overlap #2: ASIA-SYDNEY (volatilidad moderada, menor volumen)
+        if asia_active and sydney_active:
+            logger.debug(f"[SENSOR-SESSION-STATE-001] ASIA-SYDNEY overlap detected")
+            return True
         
         return False
     

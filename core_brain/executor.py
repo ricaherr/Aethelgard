@@ -192,19 +192,24 @@ class OrderExecutor:
             self._register_failed_signal(signal, rejection_reason)
             return False
         
-        # Step 1.3: SHADOW Connector Injector - Force PAPER for SHADOW execution mode
-        # If strategy is in SHADOW mode, override connector type to PAPER
+        # Step 1.3: SHADOW Account Type Injector - Force DEMO account for SHADOW execution mode
+        # If strategy is in SHADOW mode, override account_type to DEMO (real broker, paper account)
+        # Architecture: Use real MT5/broker connector but with DEMO account for high fidelity simulation
         if strategy_id:
             try:
                 ranking = self.storage.get_signal_ranking(strategy_id)
                 if ranking and ranking.get('execution_mode') == 'SHADOW':
-                    signal.connector_type = ConnectorType.PAPER
+                    # Mark signal for DEMO execution (keeps original connector, adds metadata)
+                    if not hasattr(signal, 'metadata') or signal.metadata is None:
+                        signal.metadata = {}
+                    signal.metadata['account_type'] = 'DEMO'
+                    signal.metadata['shadow_mode'] = True
                     logger.info(
-                        f"[SHADOW_CONNECTOR_INJECTOR] Strategy {strategy_id} in SHADOW mode. "
-                        f"Connector forced to PAPER for safe execution."
+                        f"[SHADOW_ACCOUNT_INJECTOR] Strategy {strategy_id} in SHADOW mode. "
+                        f"Account type forced to DEMO for high-fidelity simulation."
                     )
             except Exception as e:
-                logger.warning(f"[SHADOW_CONNECTOR_INJECTOR] Error injecting PAPER connector: {e}")
+                logger.warning(f"[SHADOW_ACCOUNT_INJECTOR] Error injecting DEMO account type: {e}")
         
 
         # Step 1.5: Legacy lockdown check (backward compatibility with existing tests)

@@ -27,6 +27,7 @@ from models.signal import Signal, SignalType
 from data_vault.storage import StorageManager
 from models.broker_event import BrokerTradeClosedEvent, TradeResult, BrokerEvent
 from utils.market_ops import normalize_price, normalize_volume
+from datetime import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -875,9 +876,15 @@ class MT5Connector(BaseConnector):
         return self.execute_signal(signal)
 
     def execute_signal(self, signal: Signal) -> Dict:
-        """Execute a trading signal using MT5."""
+        """
+        Execute a trading signal using MT5.
+        
+        Supports account_type selection for SHADOW mode:
+        - If signal.metadata['account_type'] == 'DEMO', use DEMO account
+        - Otherwise, use configured account (REAL or DEMO)
+        """
         # 1. Environment Validation
-        env_result = self._validate_execution_environment()
+        env_result = self._validate_execution_environment(signal)
         if not env_result['success']:
             return env_result
 
@@ -900,12 +907,31 @@ class MT5Connector(BaseConnector):
             logger.error(f"Error executing signal: {e}")
             return {'success': False, 'error': str(e)}
 
-    def _validate_execution_environment(self) -> Dict:
-        """Checks connection and account safety."""
+    def _validate_execution_environment(self, signal: Signal) -> Dict:
+        """
+        Checks connection and account safety.
+        
+        For SHADOW mode: Verifies DEMO account is available and selected.
+        For LIVE mode: Verifies REAL account connection.
+        """
         if not self.is_connected:
             return {'success': False, 'error': 'Not connected'}
-        if not self.is_demo:
-            return {'success': False, 'error': 'Not a demo account'}
+        
+        # Check if SHADOW mode requires DEMO account
+        is_shadow_mode = False
+        if hasattr(signal, 'metadata') and isinstance(signal.metadata, dict):
+            is_shadow_mode = signal.metadata.get('account_type') == 'DEMO' or signal.metadata.get('shadow_mode', False)
+        
+        if is_shadow_mode:
+            # For SHADOW: Verify DEMO account is available
+            if not self.is_demo:
+                return {'success': False, 'error': 'SHADOW mode requires DEMO account (configured account is REAL)'}
+            logger.info(f"[SHADOW_EXECUTION] Using DEMO account for high-fidelity simulation")
+        else:
+            # For LIVE: Just verify connected (can be REAL or DEMO)
+            if not self.is_demo:
+                return {'success': False, 'error': 'Live trading currently restricted to DEMO accounts only'}
+        
         return {'success': True}
 
     def _get_execution_symbol_info(self, raw_symbol: str) -> Optional[Any]:
@@ -1098,7 +1124,7 @@ class MT5Connector(BaseConnector):
                     'exit_price': deal.price,
                     'profit': deal.profit,
                     'volume': deal.volume,
-                    'close_time': datetime.fromtimestamp(deal.time),
+                    'close_time': datetime.fromtimestamp(deal.time, tz=timezone.utc),
                     'exit_reason': self._detect_exit_reason(deal),
                     'signal_id': self._extract_signal_id(deal.comment)
                 }
@@ -1498,8 +1524,8 @@ class MT5Connector(BaseConnector):
             symbol=self.normalize_symbol(position.symbol),
             entry_price=position.price_open,
             exit_price=deal.price,
-            entry_time=datetime.fromtimestamp(position.time),
-            exit_time=datetime.fromtimestamp(deal.time),
+            entry_time=datetime.fromtimestamp(position.time, tz=timezone.utc),
+            exit_time=datetime.fromtimestamp(deal.time, tz=timezone.utc),
             pips=pips,
             profit_loss=deal.profit,
             result=result,
