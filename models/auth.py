@@ -6,10 +6,10 @@ class UserAuth(BaseModel):
     password: str
 
 class TokenPayload(BaseModel):
-    sub: str        # User ID
-    tid: str        # Tenant ID
-    exp: float      # Expiration
-    role: str       # User role
+    sub: str                              # User ID
+    tid: Optional[str] = None             # Tenant ID (legacy, now optional - new arch uses user_id only)
+    exp: float                            # Expiration
+    role: str                             # User role
     token_type: Optional[str] = "access"  # 'access' or 'refresh' (Phase 3 security upgrade)
 
 class TokenResponse(BaseModel):
@@ -20,7 +20,7 @@ class UserInDB(BaseModel):
     id: str
     email: EmailStr
     password_hash: str
-    tenant_id: str
+    tenant_id: Optional[str] = None           # Legacy (now uses user_id-based architecture)
     role: str
     status: str
     created_at: str

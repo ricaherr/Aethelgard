@@ -38,8 +38,7 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 class UserRegister(BaseModel):
     email: EmailStr
     password: str
-    tenant_id: str
-    role: str = "user"
+    role: str = "trader"  # Default to trader, not user
 
 
 class LoginResponse(BaseModel):
@@ -49,8 +48,8 @@ class LoginResponse(BaseModel):
     """
     user_id: str
     email: str
-    tenant_id: str
     role: str
+    tier: str
     message: str = "Logged in successfully"
 
 
@@ -89,13 +88,13 @@ async def register(
                 detail="Email already registered"
             )
         
-        # Hash password and create user
+        # Hash password and create user (no tenant_id - new user_id based architecture)
         hashed_password = auth_service.get_password_hash(user_data.password)
         user_id = auth_service.repo.create_user(
             email=user_data.email,
             password_hash=hashed_password,
-            tenant_id=user_data.tenant_id,
-            role=user_data.role
+            role=user_data.role,
+            tier="BASIC"  # Default tier for new registrations
         )
         
         logger.info(f"User registered: {user_id} ({user_data.email})")
@@ -162,16 +161,14 @@ async def login(
                 detail="Invalid sys_credentials"
             )
         
-        # 2. Create tokens
+        # 2. Create tokens (no tenant_id - new user_id based architecture)
         access_token = auth_service.create_access_token(
             subject=user["id"],
-            tenant_id=user["tenant_id"],
             role=user["role"]
         )
         
         refresh_token = auth_service.create_refresh_token(
-            subject=user["id"],
-            tenant_id=user["tenant_id"]
+            subject=user["id"]
         )
         
         # 3. Create session (store token hashes, set cookies)
@@ -191,12 +188,12 @@ async def login(
         
         logger.info(f"User logged in: {user['id']} ({user['email']})")
         
-        # 4. Return user info only (token is in HttpOnly cookie)
+        # 4. Return user info only (token is in HttpOnly cookie, no tenant_id in new architecture)
         return LoginResponse(
             user_id=user["id"],
             email=user["email"],
-            tenant_id=user["tenant_id"],
-            role=user["role"]
+            role=user["role"],
+            tier=user["tier"]
         )
         
     except HTTPException:
@@ -264,10 +261,9 @@ async def refresh_token(
                 detail="Token revoked"
             )
         
-        # Create new access token
+        # Create new access token (no tenant_id - new user_id based architecture)
         new_access_token = auth_service.create_access_token(
             subject=token_payload.sub,
-            tenant_id=token_payload.tid,
             role=token_payload.role
         )
         
@@ -371,7 +367,7 @@ async def get_current_user(
     Token is extracted from HttpOnly cookie automatically via FastAPI dependency.
     
     Returns:
-        User metadata (user_id, email, tenant_id, role) from JWT token
+        User metadata (user_id, role) from JWT token
         
     Security:
     - Token validated via JWT signature (done in dependency)
@@ -385,7 +381,6 @@ async def get_current_user(
         # so we know it's valid and the data is trustworthy
         return {
             "user_id": token.sub,
-            "tenant_id": token.tid,
             "role": token.role
         }
         

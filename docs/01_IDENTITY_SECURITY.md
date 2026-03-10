@@ -128,12 +128,79 @@ async def get_public_signal(token: TokenPayload = Depends(get_current_active_use
 ### Membership Engine
 Control de acceso granular basado en niveles (Basic, Pro, Institutional). Las características y señales están filtradas por nivel de suscripción, permitiendo monetización SaaS sin duplicación de lógica.
 
+### User Management CRUD (Fase X.2 - IMPLEMENTADA)
+
+**Propósito**: Admin dashboard para crear, leer, actualizar y eliminar usuarios con seguridad, trazabilidad y soft delete policy.
+
+#### Implementación
+
+**Backend (API REST)**:
+- **5 Endpoints CRUD** en `/api/admin/users`:
+  - `GET /api/admin/users` → List all users
+  - `GET /api/admin/users/{user_id}` → Get user details
+  - `POST /api/admin/users` → Create new user (email, password, role, tier)
+  - `PUT /api/admin/users/{user_id}` → Update user (role/status/tier)
+  - `DELETE /api/admin/users/{user_id}` → Soft delete user
+- **AuthRepository refactored** (`data_vault/auth_repo.py`):
+  - 15 typed methods: get_user_by_id, list_all_users, create_user, update_user_*, soft_delete_user, log_audit
+  - SSOT compliance: All data in `global/aethelgard.db` (sys_users + sys_audit_logs tables)
+  - Soft delete policy: Status field (active|suspended|deleted), never hard delete
+
+**Frontend (React + TypeScript)**:
+- **UserManagement.tsx component** (480+ lines):
+  - CRUD UI: Create form, List table, Edit inline, Delete with confirmation
+  - Security: No self-modification, no self-deletion
+  - Styling: GlassPanel, Lucide icons, Tailwind (consistent with app)
+- **ConfigHub integration**: New "User Management" tab (admin-only visible)
+
+**RBAC Decorators** (`core_brain/api/dependencies/rbac.py`):
+- `@require_admin` - Validate ADMIN role
+- `@require_trader` - Validate TRADER role
+- `@require_role()` - Factory for arbitrary role validation
+- Logging: All unauthorized attempts logged
+- HTTP 403 (Forbidden) for access denied
+
+#### Seguridad Implementada
+- **Role-based access control**: Only ADMIN can access /api/admin/* endpoints
+- **Lock-out prevention**: Admin cannot change own role
+- **Self-deletion prevention**: Admin cannot delete own account
+- **Soft delete policy**: Records never deleted (compliance/audit trail)
+- **Audit logging**: Every change logged in sys_audit_logs with trace_id
+- **Type hints 100%**: All methods, parameters, returns fully typed
+
+#### Testing
+- **21 tests** (100% pass rate):
+  - Create: trader/admin users ✅
+  - Read: by ID, by email, list all, list by role/status ✅
+  - Update: role, status, tier ✅
+  - Delete: soft delete preserves records ✅
+  - Audit: log create/update/delete ✅
+  - Edge cases: duplicates, nonexistent, idempotence ✅
+- **System validation**: validate_all.py passses 100% (24/24 modules)
+
+#### Campos de Usuario
+- `id` (UUID)
+- `email` (text, unique)
+- `password_hash` (bcrypt)
+- `role` (admin|trader)
+- `status` (active|suspended|deleted)
+- `tier` (BASIC|PREMIUM|INSTITUTIONAL)
+- `created_at`, `updated_at`, `deleted_at` (ISO timestamps)
+- `created_by`, `updated_by` (admin_id who made change)
+
+#### Gobernanza
+- ✅ SSOT: Single database source of truth (sys_users in global/aethelgard.db)
+- ✅ `sys_*` prefix: Convention for global tables
+- ✅ Soft delete: Compliance with data retention regulations
+- ✅ Audit trail: Trace every change with admin_id + trace_id
+
 ## 🖥️ UI/UX REPRESENTATION
 *   **Auth Terminal**: Interfaz de acceso "Premium Dark" con visualización de handshake técnico.
 *   **Tenant Badge**: Indicador persistente en el header con el `tenant_id` activo y estado de cifrado de la sesión.
 *   **Membership Shield**: Menú de perfil que muestra las capacidades desbloqueadas según el rango del usuario.
+*   **Admin Users Panel**: Settings → User Management tab para CRUD de usuarios (admin-only)
 *   **Audit Monitor**: Time-real visualization de validación de aislamiento multi-tenant (Tenant Isolation Scanner, Tenant Security tests)
-*   **Security Status Badge**: Indicator en dashboard mostrando estado de compliance multi-tenant (8 validation vectors incluyendo "Multi-Tenant" y "Auth Isolation")
+*   **Security Status Badge**: Indicator en dashboard mostrando estado de compliance multi-tenant (8 validation vectors incluyendo "Multi-Tenant" y "Auth Isolation"), RBAC y User Management
 
 ## 📈 Roadmap del Dominio
 - [x] Implementación de JWT y rotación de secretos.

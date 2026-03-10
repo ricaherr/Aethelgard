@@ -1013,7 +1013,110 @@ for signal in approved:
 
 ---
 
-## X. Reglas Constitucionales Inmutables
+## X. Subsystem: User Management CRUD & RBAC (Fase X.2 - COMPLETADA)
+
+**Propósito**: Gestión integral de usuarios con autenticación, autorización, auditoría y cumplimiento regulatorio (soft delete policy).
+
+### Arquitectura de User Management
+
+#### Backend: 3 Capas
+
+**Capa 1: Data Persistence (data_vault/auth_repo.py)**
+- `sys_users`: ID, email, password_hash, role (admin|trader), status (active|suspended|deleted), tier (BASIC|PREMIUM|INSTITUTIONAL)
+- `sys_audit_logs`: trace_id, user_id, action, resource, old_value, new_value, timestamp
+- **15 typed methods**:
+  - Read: `get_user_by_id()`, `get_user_by_email()`, `list_all_users()`, `list_users_by_role()`, `list_users_by_status()`
+  - Write: `create_user()`, `update_user_role()`, `update_user_status()`, `update_user_tier()`, `soft_delete_user()`
+  - Audit: `log_audit()`
+  - JWT: `get_jwt_secret()`, `set_jwt_secret()`
+- **Soft Delete Policy**: Records never hard-deleted (compliance/audit trail preservation)
+
+**Capa 2: API REST (core_brain/api/routers/admin.py)**
+```
+GET    /api/admin/users              → list_all_users()
+GET    /api/admin/users/{user_id}    → get_user_by_id()
+POST   /api/admin/users              → create_user(email, password, role, tier)
+PUT    /api/admin/users/{user_id}    → update_user(role, status, tier)
+DELETE /api/admin/users/{user_id}    → soft_delete_user()
+```
+- **Security**: `@require_admin` RBAC dependency on every endpoint
+- **Protections**:
+  - Lock-out prevention: Admin cannot change own role
+  - Self-deletion prevention: Admin cannot delete own account
+  - Audit logging: Every operation traced with unique trace_id + admin_id
+  - HTTP 403 (Forbidden) for unauthorized access
+
+**Capa 3: Frontend UI (ui/src/components/config/UserManagement.tsx)**
+- **CRUD UI**: Create form + List table + Edit inline + Delete button
+- **Validations**: Email unique, role/tier selectors, status badges
+- **Security**: Blocks operations on own account (visual + API)
+- **Design**: Consistent with app (GlassPanel, Lucide, Tailwind dark theme)
+
+#### RBAC Decorators (core_brain/api/dependencies/rbac.py)
+```python
+# Alias functions
+@require_admin                              # Validate ADMIN role
+@require_trader                             # Validate TRADER role
+
+# Factory function
+@require_role('admin', 'super_admin')       # Validate multiple roles
+@require_any_role('admin', 'auditor')       # Validate if has ANY role
+@require_all_roles('admin', 'auditor')      # Validate if has ALL roles (future-proof)
+```
+- Logging: All unauthorized attempts logged to logger (traceable)
+- Integration: Applied to all `/api/admin/*` endpoints
+
+#### Testing & Validation
+- **21 automated tests** (100% pass):
+  - Create: trader/admin with different tiers
+  - Read: by ID, by email, list all/role/status
+  - Update: role, status, tier
+  - Delete: soft delete preserves records
+  - Audit: log create/update/delete
+  - Edge cases: duplicates, nonexistent, idempotence
+- **System validation**: 24/24 modules PASSED via validate_all.py
+
+### Gobernanza
+
+**SSOT Compliance**:
+- Single database source of truth: `global/aethelgard.db` (sys_users + sys_audit_logs)
+- `sys_*` prefix convention: Global tables, not tenant-specific
+- No redundancy: AuthRepository is unique source of truth, no file-based configs
+
+**Type Hints 100%**:
+- All methods: get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]
+- All parameters typed: email: str, role: str, tier: str
+- Return types explicit: -> List[Dict[str, Any]], -> str, -> bool
+
+**Audit Trail Mandatory**:
+- Every change logged: CREATE, UPDATE, DELETE → sys_audit_logs
+- trace_id: Unique per operation, propagates through stack
+- admin_id: Who made the change, enables accountability
+
+**Soft Delete Policy**:
+- Records NEVER deleted physically (compliance with regulations)
+- Status field changes: active → suspended → deleted
+- deleted_at: ISO timestamp for compliance records
+- Recovery: Possible by changing status back to active (if needed)
+
+### Integración con ConfigHub
+
+**New Tab**: "User Management" in Settings
+- **Visibility**: Admin-only (hidden for traders)
+- **Navigation**: Side selector with tab button
+- **Data Flow**: useApi hook + /api/admin/users endpoints
+- **Styling**: Consistent with rest of ConfigHub (GlassPanel, animations)
+
+### Próximas Mejoras (Fase X.3+)
+- [ ] Audit Trail UI: Show log of user changes (who changed what, when)
+- [ ] MFA Support: Multi-factor authentication for admin operations
+- [ ] Bulk Operations: Import users via CSV, batch role changes
+- [ ] Password Reset: Admin-initiated password resets with temp password
+- [ ] User Activity Log: Track login times, API calls per user
+
+---
+
+## XI. Reglas Constitucionales Inmutables
 
 1. ✅ **Agnosis Absoluta**: Cero imports de broker en core_brain. Solo en connectors/.
 2. ✅ **DI Obligatorio**: Todas las clases reciben dependencias en __init__, no las crean.
@@ -1037,7 +1140,7 @@ for signal in approved:
 
 ---
 
-## XI. Próximas Tareas (Sprint 5: SALTO CUÁNTICO)
+## XII. Próximas Tareas (Sprint 5: SALTO CUÁNTICO)
 
 - [ ] ✅ Crear strategy_validator_quanter.py (4 Pilares) — **COMPLETADO**
 - [ ] ✅ Crear strategy_registry.json (6 firmas) — **COMPLETADO**
@@ -1050,7 +1153,7 @@ for signal in approved:
 
 ---
 
-## XI. Referencia: Los 4 Pilares En Detalle
+## XIII. Referencia: Los 4 Pilares En Detalle
 
 ### Pilar Sensorial - PillarStatus: PASSED | FAILED | BLOCKED
 

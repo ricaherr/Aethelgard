@@ -34,7 +34,7 @@ class AuthService:
         salt = bcrypt.gensalt()
         return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
 
-    def create_access_token(self, subject: str, tenant_id: str, role: str = "user", expires_delta: Optional[timedelta] = None) -> str:
+    def create_access_token(self, subject: str, tenant_id: Optional[str] = None, role: str = "user", expires_delta: Optional[timedelta] = None) -> str:
         if expires_delta:
             expire = datetime.now(timezone.utc) + expires_delta
         else:
@@ -42,7 +42,7 @@ class AuthService:
             
         payload = TokenPayload(
             sub=subject,
-            tid=tenant_id,
+            tid=tenant_id,  # Now optional (legacy field for user_id-based architecture)
             exp=expire.timestamp(),
             role=role
         )
@@ -69,7 +69,7 @@ class AuthService:
         """
         return self.decode_token(token)
     
-    def create_refresh_token(self, subject: str, tenant_id: str, expires_delta: Optional[timedelta] = None) -> str:
+    def create_refresh_token(self, subject: str, tenant_id: Optional[str] = None, expires_delta: Optional[timedelta] = None) -> str:
         """
         Create a refresh token (longer lifetime than access token).
         
@@ -81,7 +81,7 @@ class AuthService:
         
         Args:
             subject: User ID
-            tenant_id: Tenant identifier
+            tenant_id: Tenant identifier (optional, legacy field)
             expires_delta: Custom expiration (default: 30 days)
             
         Returns:

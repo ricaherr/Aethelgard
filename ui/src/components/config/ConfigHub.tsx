@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Save, RefreshCw, AlertTriangle, Shield, Sliders, Settings, Bell, Power, Server } from 'lucide-react';
+import { Save, RefreshCw, AlertTriangle, Shield, Sliders, Settings, Bell, Power, Server, Users } from 'lucide-react';
 import { GlassPanel } from '../common/GlassPanel';
 import { NotificationManager } from './NotificationManager';
 import { ModulesControl } from './ModulesControl';
@@ -8,9 +8,10 @@ import { AutoTradingControl } from './AutoTradingControl';
 import { InstrumentsEditor } from './InstrumentsEditor';
 import { BackupSettings } from './BackupSettings';
 import { ConnectivityHub } from './ConnectivityHub';
+import { UserManagement } from './UserManagement';
 import { useApi } from '../../hooks/useApi';
 
-type ConfigCategory = 'trading' | 'risk' | 'system' | 'notifications' | 'modules' | 'instruments' | 'backups' | 'connectivity';
+type ConfigCategory = 'trading' | 'risk' | 'system' | 'notifications' | 'modules' | 'instruments' | 'backups' | 'connectivity' | 'users';
 
 const CATEGORY_ENDPOINTS: Record<string, string> = {
     'trading': '/api/config/trading',
@@ -32,7 +33,7 @@ export function ConfigHub() {
     const [message, setMessage] = useState<string | null>(null);
     const [retryCount, setRetryCount] = useState(0);
 
-    const isSpecialCategory = ['notifications', 'modules', 'instruments', 'backups', 'connectivity'].includes(activeCategory);
+    const isSpecialCategory = ['notifications', 'modules', 'instruments', 'backups', 'connectivity', 'users'].includes(activeCategory);
     const usesGenericSave = !isSpecialCategory;
 
     const fetchConfig = useCallback(async (category: ConfigCategory, isRetry = false) => {
@@ -230,6 +231,13 @@ export function ConfigHub() {
                         title="Connectivity Hub"
                         description="Satellite management"
                     />
+                    <TabButton
+                        active={activeCategory === 'users'}
+                        onClick={() => setActiveCategory('users')}
+                        icon={<Users size={20} />}
+                        title="User Management"
+                        description="ADMIN: Gestión de usuarios"
+                    />
 
                     {error && (
                         <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex gap-3 animate-pulse">
@@ -292,7 +300,12 @@ export function ConfigHub() {
                                     <ConnectivityHub />
                                 )}
 
-                                {!loading && config && !['notifications', 'modules', 'instruments', 'backups', 'connectivity'].includes(activeCategory) && (
+                                {/* Special case: User Management (ADMIN ONLY) */}
+                                {!loading && activeCategory === 'users' && (
+                                    <UserManagement />
+                                )}
+
+                                {!loading && config && !['notifications', 'modules', 'instruments', 'backups', 'connectivity', 'users'].includes(activeCategory) && (
                                     <>
                                         {/* Auto-Trading Control (only in trading category) */}
                                         {activeCategory === 'trading' && (

@@ -151,6 +151,7 @@ async def main():
         run_audit_module("Patterns", ["python", "scripts/enforce_patterns.py"], workspace),
         run_audit_module("Credentials & Seeds", ["python", "scripts/utilities/credentials_seeds_audit.py"], workspace),
         run_audit_module("Duplicate Methods", ["python", "scripts/detect_duplicate_methods.py"], workspace),
+        run_audit_module("User Management Quality", ["python", "scripts/user_management_quality_audit.py"], workspace),
         run_audit_module("Interface Contracts", ["python", "scripts/validate_interface_contracts.py"], workspace),
         run_audit_module("PHASE 8: Economic Veto", ["python", "scripts/utilities/economic_veto_audit.py"], workspace),
         run_audit_module("Core Tests", ["python", "-m", "pytest", "tests/test_signal_deduplication.py", "tests/test_risk_manager.py", "-q"], workspace),

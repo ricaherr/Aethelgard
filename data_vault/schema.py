@@ -32,6 +32,46 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
     """
     cursor = conn.cursor()
 
+    # ── 0. Identity & Authentication (SSOT - Single Database) ──────────────────
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sys_users (
+            id TEXT PRIMARY KEY,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL CHECK(role IN ('admin', 'trader')),
+            status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'suspended', 'deleted')),
+            tier TEXT NOT NULL DEFAULT 'BASIC' CHECK(tier IN ('BASIC', 'PREMIUM', 'INSTITUTIONAL')),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            deleted_at TIMESTAMP,
+            created_by TEXT,
+            updated_by TEXT
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_users_email ON sys_users (email)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_users_role ON sys_users (role)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_users_status ON sys_users (status)")
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sys_audit_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            action TEXT NOT NULL,
+            resource TEXT NOT NULL,
+            resource_id TEXT,
+            old_value TEXT,
+            new_value TEXT,
+            status TEXT DEFAULT 'success',
+            reason TEXT,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            trace_id TEXT UNIQUE,
+            FOREIGN KEY (user_id) REFERENCES sys_users (id)
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_audit_logs_user_id ON sys_audit_logs (user_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_audit_logs_action ON sys_audit_logs (action)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_audit_logs_timestamp ON sys_audit_logs (timestamp DESC)")
+
     # ── 1. System State & Learning ──────────────────────────────────────────
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS sys_config (
