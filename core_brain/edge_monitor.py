@@ -199,7 +199,7 @@ class EdgeMonitor(threading.Thread):
                     logger.error(f"Error auditing signal {signal_id}: {e}")
                 # NOTE: NO disconnect MT5 here - connection is managed by start.py and shared across components
     
-    def _get_recent_pending_usr_signals(self) -> List[Dict]:
+    def _get_recent_pending_sys_signals(self) -> List[Dict]:
         """Obtener señales recientes que deberían haber sido ejecutadas"""
         conn = self.storage._get_conn()
         try:

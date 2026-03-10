@@ -851,7 +851,7 @@ class MainOrchestrator:
             
             # Get closed positions from connector (agnostic)
             # This avoids direct MetaTrader5 import in core_brain
-            closed_usr_positions = mt5_connector.get_closed_positions(hours=24)
+            closed_usr_positions = mt5_connector.get_closed_usr_positions(hours=24)
             
             if not closed_usr_positions:
                 return

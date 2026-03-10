@@ -1120,7 +1120,7 @@ class MT5Connector(BaseConnector):
             logger.error(f"Error getting open positions: {e}")
             return None
     
-    def get_closed_positions(self, hours: int = 24) -> List[Dict]:
+    def get_closed_usr_positions(self, hours: int = 24) -> List[Dict]:
         """
         Get closed positions from MT5 history
         

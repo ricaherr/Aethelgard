@@ -493,7 +493,7 @@ class MT5Bridge:
             logger.error(f"Error obteniendo P&L: {e}")
             return None
     
-    def get_closed_positions(self, hours: int = 24) -> List[Dict]:
+    def get_closed_usr_positions(self, hours: int = 24) -> List[Dict]:
         """
         Get closed positions from MT5 history (for feedback loop).
         
