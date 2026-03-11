@@ -180,20 +180,13 @@ class EdgeMonitor(threading.Thread):
                     if not mt5.is_connected:
                         mt5.connect()
                     
-                    # Buscar orden por símbolo y tiempo aproximado
-                    usr_orders = mt5.get_usr_orders()
-                    if usr_orders:
-                        # Buscar órdenes recientes para este símbolo
-                        signal_time = signal.get('timestamp')
-                        matching_usr_orders = [
-                            order for order in usr_orders 
-                            if order.symbol == symbol and 
-                            abs((order.time_setup - signal_time).total_seconds()) < 300  # 5 minutos de tolerancia
-                        ]
-                        
-                        if not matching_usr_orders:
-                            # No hay orden correspondiente - investigar
-                            self._investigate_missing_order(signal)
+                    # Buscar orden o posición correspondiente en MT5 (PEDANTIC API COMPLIANCE)
+                    # Method resolution: get_pending_orders() + get_open_positions()
+                    found_matching_order = self._find_mt5_matching_order(mt5, symbol, signal)
+                    
+                    if not found_matching_order:
+                        # No hay orden correspondiente - investigar
+                        self._investigate_missing_order(signal)
                             
                 except Exception as e:
                     logger.error(f"Error auditing signal {signal_id}: {e}")
@@ -214,6 +207,96 @@ class EdgeMonitor(threading.Thread):
             return [dict(row) for row in rows]
         finally:
             self.storage._close_conn(conn)
+    
+    def _find_mt5_matching_order(self, mt5_connector: Any, symbol: str, signal: Dict) -> bool:
+        """
+        Find if signal has a corresponding order or position in MT5.
+        
+        Searches both pending orders AND open positions with 5-minute tolerance window.
+        Uses MT5Connector API correctly (get_pending_orders + get_open_positions).
+        
+        Args:
+            mt5_connector: MT5Connector instance
+            symbol: Trading symbol to search
+            signal: Signal dict with timestamp field
+            
+        Returns:
+            True if matching order/position found, False otherwise
+        """
+        try:
+            signal_time_str = signal.get('timestamp')
+            if not signal_time_str:
+                logger.warning(f"Signal {signal.get('id')} missing timestamp, cannot match")
+                return False
+            
+            # Parse signal timestamp
+            from datetime import datetime, timezone
+            try:
+                if isinstance(signal_time_str, str):
+                    signal_time = datetime.fromisoformat(signal_time_str.replace('Z', '+00:00'))
+                else:
+                    signal_time = signal_time_str
+                    
+                if signal_time.tzinfo is None:
+                    signal_time = signal_time.replace(tzinfo=timezone.utc)
+            except Exception as e:
+                logger.warning(f"Could not parse signal timestamp: {e}")
+                return False
+            
+            tolerance_seconds = 300  # 5-minute window
+            
+            # Strategy 1: Check pending orders (orders not yet executed)
+            try:
+                pending_orders = mt5_connector.get_pending_orders(symbol=symbol)
+                if pending_orders:
+                    for order in pending_orders:
+                        order_time = order.get('time_setup')
+                        if order_time:
+                            # Handle both unix timestamp and datetime
+                            if isinstance(order_time, (int, float)):
+                                from datetime import datetime, timezone
+                                order_time = datetime.fromtimestamp(order_time, tz=timezone.utc)
+                            elif isinstance(order_time, str):
+                                order_time = datetime.fromisoformat(order_time.replace('Z', '+00:00'))
+                            
+                            time_diff = abs((order_time - signal_time).total_seconds())
+                            if time_diff < tolerance_seconds:
+                                logger.info(f"✅ Found matching pending order for {symbol} (diff: {time_diff:.0f}s)")
+                                return True
+            except Exception as e:
+                logger.debug(f"Error checking pending orders: {e}")
+            
+            # Strategy 2: Check open positions (orders already executed)
+            try:
+                open_positions = mt5_connector.get_open_positions()
+                if open_positions:
+                    symbol_positions = [p for p in open_positions if p.get('symbol') == symbol]
+                    if symbol_positions:
+                        # For open positions, check if ANY position matches time window
+                        for position in symbol_positions:
+                            open_time = position.get('open_time')
+                            if open_time:
+                                # Handle both unix timestamp and datetime
+                                if isinstance(open_time, (int, float)):
+                                    from datetime import datetime, timezone
+                                    open_time = datetime.fromtimestamp(open_time, tz=timezone.utc)
+                                elif isinstance(open_time, str):
+                                    open_time = datetime.fromisoformat(open_time.replace('Z', '+00:00'))
+                                
+                                time_diff = abs((open_time - signal_time).total_seconds())
+                                if time_diff < tolerance_seconds:
+                                    logger.info(f"✅ Found matching open position for {symbol} (diff: {time_diff:.0f}s)")
+                                    return True
+            except Exception as e:
+                logger.debug(f"Error checking open positions: {e}")
+            
+            # No match found in either pending or open positions
+            logger.debug(f"❌ No matching order/position found for {symbol}")
+            return False
+            
+        except Exception as e:
+            logger.error(f"Unexpected error in _find_mt5_matching_order: {e}")
+            return False
     
     def _investigate_missing_order(self, signal: Dict) -> None:
         """Investigar por qué una señal no tiene orden correspondiente"""

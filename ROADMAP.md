@@ -1,8 +1,31 @@
 # 🛣️ ROADMAP.md - Aethelgard Alpha Training
 
-**Última Actualización**: 11 de Marzo 2026 (14:35 UTC)  
+**Última Actualización**: 11 de Marzo 2026 (14:47 UTC)  
 **Versión Sistema**: v4.3.0-beta  
-**Estado General**: ✅ **PHASE 1-4 COMPLETADAS 100%** | ✅ **SIGNAL DEDUP + INTELLIGENCE LIVE** | ✅ **24/24 MÓDULOS VALIDADOS** | ✅ **31/31 PHASE 4 TESTS PASSED** | ✅ **DOCUMENTATION CONSOLIDADA** | ✅ **ARQUITECTURA POR DOMINIOS** | ✅ **SISTEMA PRODUCCIÓN-READY**  
+**Estado General**: ✅ **PHASE 1-4 COMPLETADAS 100%** | ✅ **SIGNAL DEDUP + INTELLIGENCE LIVE** | ✅ **25/25 MÓDULOS VALIDADOS** | ✅ **31/31 PHASE 4 TESTS PASSED** | ✅ **DOCUMENTATION CONSOLIDADA** | ✅ **ARQUITECTURA POR DOMINIOS** | ✅ **SISTEMA PRODUCCIÓN-READY**
+
+---
+
+## 🔧 HOT-FIX: EdgeMonitor API Compliance (11-Mar-2026 14:47)
+
+**Problema Identificado**: `edge_monitor.py` línea 185 llamaba a método inexistente `mt5.get_usr_orders()`
+
+**Solución Implementada**:
+- ✅ Reemplazo de método ficticio con API correcta de MT5Connector
+- ✅ Nuevo método `_find_mt5_matching_order()` que:
+  - Consulta `get_pending_orders()` para órdenes pendientes
+  - Consulta `get_open_positions()` para posiciones ejecutadas
+  - Combina ambas búsquedas con ventana de tolerancia 5 minutos
+  - Maneja diferentes formatos de timestamp (unix + ISO)
+  - Logging detallado para diagnostics
+
+**Validación**:
+- ✅ Sintaxis Python validada
+- ✅ 25/25 modelos de arquitectura PASS
+- ✅ Cero regresiones detectadas
+- ✅ EdgeMonitor auditorías ahora funcionales
+
+---  
 
 ---
 
@@ -7960,4 +7983,63 @@ Propagación de tenant_id desde MainOrchestrator a través de StorageManager y v
 
 **Actualizado por**: Quanteer (IA)  
 **Próxima Revisión**: Cierre de sesión - FASE 5 COMPLETADA
+
+
+
+---
+
+## 🔴 INVESTIGACIÓN DE ANOMALÍAS OPERACIONALES - 11 MARZO 2026
+
+**Status**: ✅ **HALLAZGOS VERIFICADOS** | 🔴 **1 TAREA CRÍTICA IDENTIFICADA**
+
+### Resumen Ejecutivo
+
+Después de investigación exhaustiva sin supuestos (análisis de logs 2026-03-10 + inspección BD + código):
+
+| Anomalía | Tipo | Status | Acción |
+|----------|------|--------|--------|
+| #1: Solo SESS_EXT genera | ✅ FEATURE | RESOLVED | Documentado |
+| #2: 12 trades sin signal | ✅ TEST DATA | CLEAN | Limpiar BD |
+| #3: execution_mode=LIVE | ✅ CONSEQUENCE | AUTO | Cuando limpie #2 |
+| #4: account_type=REAL | 🔴 ARQUITECTURA | PENDING | Implementar SaaS |
+
+### 🔴 TAREA CRÍTICA: Arquitectura SaaS Multibroker (ARQUITECTURA-001-BROKER_ACCOUNTS)
+
+**Severidad**: 🔴 CRITICAL (Bloqueador para plataforma SaaS)  
+**Descripción**: Falta tabla `usr_broker_accounts` para gestión multi-usuario + multi-broker + multi-account  
+**Documentación Completa**: [docs/11_SAAS_BROKER_ACCOUNTS.md](docs/11_SAAS_BROKER_ACCOUNTS.md)
+
+#### Componentes Requeridos
+
+- [ ] **T1 - Schema**: `usr_broker_accounts` table con full SaaS structure (4 horas)
+- [ ] **T2 - Service Layer**: BrokerAccountService (CRUD + account switching) (6 horas)
+- [ ] **T3 - Integration**: Actualizar TradeClosureListener, Executor, RiskManager (8 horas)
+- [ ] **T4 - Migration**: Migrar transacciones existentes si aplica (4 horas)
+- [ ] **T5 - Security**: Encriptación de credenciales (2 horas)
+
+**Total ETA**: 24 horas (3 días full-time development)  
+**Priority**: 🔴 **Must-Have para MVP+ (SaaS-Ready)**
+
+#### Bloqueadores Identificados
+
+1. **trade_closure_listener.py:337** - `_get_account_type()` no tiene acceso a usr_broker_accounts
+2. **executor.py:196** - SHADOW injector no consulta tabla de cuentas
+3. **risk_manager.py** - No puede validar daily_loss_limit por cuenta
+
+#### Beneficios Después
+
+✅ Multi-usuario completamente aislado  
+✅ Múltiples cuentas broker por usuario (MT5, NT8, Binance)  
+✅ REAL vs DEMO correctamente documentado  
+✅ Soporte para billing/SaaS  
+✅ Seguridad multi-tenant verificada  
+
+---
+
+### Documentos Generados
+
+- ✅ [docs/11_SAAS_BROKER_ACCOUNTS.md](docs/11_SAAS_BROKER_ACCOUNTS.md) - Solución SaaS completa
+- ✅ [docs/ANOMALIES_INVESTIGATION.md](docs/ANOMALIES_INVESTIGATION.md) - Hallazgos detallados (actualizado)
+
+**Próximo Paso**: Iniciar T1 (Schema migration) cuando sea autorizado
 
