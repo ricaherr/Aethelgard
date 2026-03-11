@@ -6,7 +6,8 @@ import {
     Settings,
     Briefcase,
     ScanEye,
-    Satellite
+    Satellite,
+    Grid
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TerminalHeader } from './TerminalHeader';
@@ -27,6 +28,7 @@ export function MainLayout({ children, activeTab, setActiveTab }: MainLayoutProp
                 </div>
 
                 <div className="flex flex-col gap-6 mt-12">
+                    <NavIcon icon={<Grid size={22} />} active={activeTab === 'home'} onClick={() => setActiveTab('home')} label="Home" />
                     <NavIcon icon={<LayoutDashboard size={22} />} active={activeTab === 'trader'} onClick={() => setActiveTab('trader')} label="Trader" />
                     <NavIcon icon={<Activity size={22} />} active={activeTab === 'analysis'} onClick={() => setActiveTab('analysis')} label="Análisis" />
                     <NavIcon icon={<Briefcase size={22} />} active={activeTab === 'portfolio'} onClick={() => setActiveTab('portfolio')} label="Portfolio" />

@@ -16,6 +16,7 @@ import { GlassPanel } from './components/common/GlassPanel';
 import { AnalysisPage } from './components/analysis';
 import { SatelliteLink } from './components/satellite/SatelliteLink';
 import { MonitorPage } from './components/diagnostic/MonitorPage';
+import { HomePage } from './pages/HomePage';
 
 // New Core Layout & Auth
 import { AuthProvider } from './contexts/AuthContext';
@@ -36,7 +37,7 @@ function App() {
 }
 
 function AuthenticatedView() {
-    const [activeTab, setActiveTab] = useState('trader');
+    const [activeTab, setActiveTab] = useState('home');
     const [isDiagOpen, setIsDiagOpen] = useState(false);
 
     // Real-time data from Cerebro Brain - Only starts when this component mounts
@@ -45,6 +46,18 @@ function AuthenticatedView() {
     return (
         <MainLayout activeTab={activeTab} setActiveTab={setActiveTab}>
             <AnimatePresence mode="wait">
+                {activeTab === 'home' && (
+                    <motion.div
+                        key="home-view"
+                        initial={{ opacity: 0, scale: 0.99 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 1.01 }}
+                        transition={{ duration: 0.3, ease: 'easeOut' }}
+                        className="h-full w-full"
+                    >
+                        <HomePage />
+                    </motion.div>
+                )}
                 {activeTab === 'trader' && (
                     <motion.div
                         key="trader-view"
