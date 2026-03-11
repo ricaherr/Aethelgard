@@ -41,7 +41,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 setRole(data.role);
                 setIsAuthenticated(true);
             } else {
-                // No valid session
+                // No valid session → Try demo auto-login
+                console.log('No valid session, attempting auto-login with demo account...');
+                await attemptDemoLogin();
+            }
+        } catch (error) {
+            console.error('❌ Auth check failed:', error);
+            // Silently attempt demo login as fallback
+            await attemptDemoLogin();
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const attemptDemoLogin = async () => {
+        try {
+            const res = await fetch('/api/auth/demo', {
+                method: 'POST',
+                credentials: 'include',  // Critical: auto-attach & store cookies
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                setUserId(data.user_id);
+                setEmail(data.email);
+                setTenantId(data.user_id);  // Fallback tenant_id
+                setRole(data.role);
+                setIsAuthenticated(true);
+                console.log('✅ Auto-login successful (demo user):', data.email);
+            } else {
+                // Demo login failed
+                console.error('❌ Demo login failed:', res.status);
                 setIsAuthenticated(false);
                 setUserId(null);
                 setEmail(null);
@@ -49,10 +79,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 setRole(null);
             }
         } catch (error) {
-            console.error('❌ Auth check failed:', error);
+            console.error('❌ Demo login error:', error);
             setIsAuthenticated(false);
-        } finally {
-            setIsLoading(false);
+            setUserId(null);
+            setEmail(null);
+            setTenantId(null);
+            setRole(null);
         }
     };
 

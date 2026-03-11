@@ -9,6 +9,7 @@ class TokenPayload(BaseModel):
     sub: str                              # User ID (primary identifier for multitenancy)
     exp: float                            # Expiration
     role: str                             # User role
+    tid: Optional[str] = None             # Tenant ID (optional for backward compatibility)
     token_type: Optional[str] = "access"  # 'access' or 'refresh' (Phase 3 security upgrade)
 
 class TokenResponse(BaseModel):

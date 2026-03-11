@@ -355,6 +355,100 @@ async def logout(
         )
 
 
+# ============ DEMO AUTO-LOGIN ============
+@router.post("/demo", response_model=LoginResponse)
+async def demo_login(
+    response: Response,
+    auth_service: AuthService = Depends(get_auth_service),
+    request: Request = None
+) -> LoginResponse:
+    """
+    Auto-provision demo user and login automatically (DEVELOPMENT ONLY).
+    
+    Behavior:
+    1. Check if demo user exists → use existing
+    2. If not → create with default credentials
+    3. Set HttpOnly cookies with valid session
+    4. Return user info
+    
+    Used by: Frontend auto-login when no valid session exists
+    
+    Demo Credentials:
+    - Email: demo@aethelgard.local
+    - Password: demo123456 (auto-hashed)
+    - Role: trader
+    - Tier: premium
+    """
+    try:
+        storage = _get_storage()
+        session_manager = SessionManager(storage)
+        
+        demo_email = "demo@aethelgard.local"
+        demo_password = "demo123456"
+        
+        # Check if demo user exists
+        user = auth_service.repo.get_user_by_email(demo_email)
+        
+        if not user:
+            # Create demo user with premium tier
+            password_hash = auth_service.get_password_hash(demo_password)
+            user_id = auth_service.repo.create_user(
+                email=demo_email,
+                password_hash=password_hash,
+                role="trader",
+                tier="PREMIUM"
+            )
+            
+            user = {
+                "id": user_id,
+                "email": demo_email,
+                "role": "trader",
+                "tier": "PREMIUM",
+                "password_hash": password_hash
+            }
+            logger.info(f"Auto-created demo user: {demo_email} (ID: {user_id})")
+        
+        # Create tokens
+        access_token = auth_service.create_access_token(
+            subject=user["id"],
+            role=user.get("role", "trader")
+        )
+        
+        refresh_token = auth_service.create_refresh_token(
+            subject=user["id"]
+        )
+        
+        # Create session with HttpOnly cookies
+        user_agent = request.headers.get("user-agent") if request else None
+        client_ip = request.client.host if request and request.client else None
+        
+        session_manager.create_session(
+            response=response,
+            user_id=user["id"],
+            access_token=access_token,
+            refresh_token=refresh_token,
+            user_agent=user_agent,
+            ip_address=client_ip
+        )
+        
+        logger.info(f"Demo login successful: {demo_email} (ID: {user['id']})")
+        
+        return LoginResponse(
+            user_id=user["id"],
+            email=user["email"],
+            role=user.get("role", "trader"),
+            tier=user.get("tier", "PREMIUM"),
+            message="Demo session created"
+        )
+        
+    except Exception as e:
+        logger.error(f"Demo login error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Demo login failed: {str(e)}"
+        )
+
+
 # ============ GET CURRENT USER (HttpOnly Cookie Auth) ============
 @router.get("/me", response_model=Dict[str, Any])
 async def get_current_user(
@@ -367,7 +461,7 @@ async def get_current_user(
     Token is extracted from HttpOnly cookie automatically via FastAPI dependency.
     
     Returns:
-        User metadata (user_id, role) from JWT token
+        User metadata (user_id, role) from validated JWT token
         
     Security:
     - Token validated via JWT signature (done in dependency)
@@ -381,7 +475,10 @@ async def get_current_user(
         # so we know it's valid and the data is trustworthy
         return {
             "user_id": token.sub,
-            "role": token.role
+            "role": token.role,
+            "tenant_id": token.sub,  # Fallback to user_id
+            "email": "user@aethelgard.local",  # Placeholder; will be set in login
+            "tier": "premium"  # Default tier
         }
         
     except Exception as e:

@@ -32,17 +32,29 @@ async def get_current_active_user(
         )
     
     # 2. Validar y decodificar JWT
-    token_data = auth_service.decode_token(token)
+    try:
+        token_data = auth_service.decode_token(token)
+        
+        if token_data is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        # 3. Inyectar tenant_id en el contexto HTTP (Protocolo de Aislamiento)
+        # Use 'sub' (user_id) as tenant_id for isolation
+        request.state.tenant_id = token_data.sub
+        request.state.user_id = token_data.sub
+        
+        return token_data
     
-    if token_data is None:
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Catch any token decoding errors
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate sys_credentials",
+            detail="Invalid token",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
-    # 3. Inyectar tenant_id en el contexto HTTP (Protocolo de Aislamiento)
-    request.state.tenant_id = token_data.tid
-    request.state.user_id = token_data.sub
-    
-    return token_data

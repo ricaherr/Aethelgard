@@ -106,12 +106,6 @@ export const useSynapseTelemetry = (token?: string): UseSynapseTelemetryHook => 
   const frameInterval = 1000 / targetFPS;
 
   const connect = useCallback(() => {
-    if (!token) {
-      setError("No token provided");
-      setLoading(false);
-      return;
-    }
-
     // Prevent duplicate connections
     if (ws.current?.readyState === WebSocket.OPEN || 
         ws.current?.readyState === WebSocket.CONNECTING) {
@@ -124,24 +118,28 @@ export const useSynapseTelemetry = (token?: string): UseSynapseTelemetryHook => 
     }
 
     // Determine WS URL
+    // NOTE: Do NOT include token in query params
+    // Browser auto-attaches HttpOnly cookies via WebSocket handshake
+    // Server reads token from cookies instead
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.hostname === 'localhost' 
       ? 'localhost:8000' 
       : window.location.host;
-    const wsUrl = `${protocol}//${host}/ws/v3/synapse?token=${encodeURIComponent(token)}`;
+    const wsUrl = `${protocol}//${host}/ws/v3/synapse`;
 
     try {
+      console.log("[SYNAPSE] Connecting to", wsUrl);
       ws.current = new WebSocket(wsUrl);
       
       ws.current.onopen = () => {
+        console.log("[SYNAPSE] WebSocket connected");
         setIsConnected(true);
         setError(null);
-        setLoading(false);
+        setLoading(false);  // ← CRITICAL: Mark loading as complete when connected
         reconnectAttempts.current = 0;
         reconnectDelay.current = 1000;
         lastFrameTime.current = 0;
         messageQueue.current = [];
-        console.log("[SYNAPSE] WebSocket connected");
       };
 
       ws.current.onmessage = (event) => {
@@ -204,13 +202,13 @@ export const useSynapseTelemetry = (token?: string): UseSynapseTelemetryHook => 
       setError(errorMsg);
       setLoading(false);
     }
-  }, [token]);
+  }, []);  // No dependencies - connect works without props
 
   useEffect(() => {
-    // Only connect if token is provided
-    if (token) {
-      connect();
-    }
+    // AUTO-CONNECT: Connect when component mounts (no token required)
+    // Browser will auto-send HttpOnly cookies in WebSocket handshake
+    // Server reads token from cookies, not from JS
+    connect();
 
     // Cleanup on unmount
     return () => {
@@ -221,7 +219,7 @@ export const useSynapseTelemetry = (token?: string): UseSynapseTelemetryHook => 
         ws.current.close();
       }
     };
-  }, [token, connect]);
+  }, [connect]);
 
   // Periodic keepalive ping
   useEffect(() => {

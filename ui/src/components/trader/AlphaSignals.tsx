@@ -4,6 +4,7 @@ import { GlassPanel } from '../common/GlassPanel';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { cn } from '../../utils/cn';
+import { useSignalDragDrop } from '../../hooks/useSignalDragDrop';
 
 interface AlphaSignalsProps {
     signals: Signal[];
@@ -11,6 +12,7 @@ interface AlphaSignalsProps {
 
 export function AlphaSignals({ signals, modulesStatus }: AlphaSignalsProps & { modulesStatus?: any }) {
     const scannerEnabled = modulesStatus?.modules?.scanner ?? true;
+    const { onDragStart } = useSignalDragDrop();
 
     return (
         <GlassPanel className="flex-1 flex flex-col border-white/5">
@@ -36,7 +38,7 @@ export function AlphaSignals({ signals, modulesStatus }: AlphaSignalsProps & { m
                         <EmptyState scannerEnabled={scannerEnabled} />
                     ) : (
                         signals.map((signal) => (
-                            <SignalItem key={signal.id} signal={signal} />
+                            <SignalItem key={signal.id} signal={signal} onDragStart={onDragStart} />
                         ))
                     )}
                 </AnimatePresence>
@@ -72,10 +74,11 @@ function EmptyState({ scannerEnabled }: { scannerEnabled: boolean }) {
     );
 }
 
-function SignalItem({ signal }: { signal: Signal }) {
+function SignalItem({ signal, onDragStart }: { signal: Signal; onDragStart?: (signal: Signal, sourceZone: string) => void }) {
     const isBuy = signal.side === 'BUY';
     const executionMode = signal.execution_mode || 'LIVE';
     const rankingScore = signal.ranking_score || signal.score * 20; // Fallback a score si no existe ranking_score
+    const [isDragging, setIsDragging] = useState(false);
 
     // Mapeo de estilos para execution_mode
     const executionModeConfig = {
@@ -104,13 +107,54 @@ function SignalItem({ signal }: { signal: Signal }) {
 
     const modeConfig = executionModeConfig[executionMode as keyof typeof executionModeConfig] || executionModeConfig['LIVE'];
 
+    const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
+        setIsDragging(true);
+        
+        // Set drag image (signal card preview)
+        const dragPreview = document.createElement('div');
+        dragPreview.textContent = `${signal.symbol} ${signal.side}`;
+        dragPreview.style.position = 'absolute';
+        dragPreview.style.top = '-1000px';
+        dragPreview.style.padding = '8px 12px';
+        dragPreview.style.backgroundColor = '#00ffff';
+        dragPreview.style.color = '#000';
+        dragPreview.style.borderRadius = '4px';
+        dragPreview.style.fontWeight = 'bold';
+        document.body.appendChild(dragPreview);
+        
+        e.dataTransfer.setDragImage(dragPreview, 0, 0);
+        e.dataTransfer.effectAllowed = 'copy';
+        
+        // Store signal data in drag transfer
+        e.dataTransfer.setData('application/json', JSON.stringify({
+            signal,
+            sourceZone: 'alpha-signals',
+            timestamp: Date.now()
+        }));
+        
+        // Call hook handler
+        onDragStart?.(signal, 'alpha-signals');
+        
+        // Clean up
+        setTimeout(() => document.body.removeChild(dragPreview), 0);
+    };
+
+    const handleDragEnd = () => {
+        setIsDragging(false);
+    };
+
     return (
-        <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            whileHover={{ scale: 1.005, backgroundColor: 'rgba(255,255,255,0.03)' }}
-            className="p-4 rounded-xl border border-white/5 bg-white/[0.01] flex flex-col lg:flex-row items-start lg:items-center justify-between transition-all group gap-4 lg:gap-0"
+        <div
+            draggable
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            className={cn(
+                'p-4 rounded-xl border flex flex-col lg:flex-row items-start lg:items-center justify-between transition-all group gap-4 lg:gap-0 cursor-grab active:cursor-grabbing',
+                isDragging
+                    ? 'opacity-50 bg-white/5 border-aethelgard-blue/50 shadow-lg shadow-aethelgard-blue/30'
+                    : 'border-white/5 bg-white/[0.01]'
+            )}
+            title="Drag to analyze or drop into a widget"
         >
             {/* Left: Main Signal Info */}
             <div className="flex items-center gap-8 flex-1">
@@ -189,6 +233,6 @@ function SignalItem({ signal }: { signal: Signal }) {
 
                 <ChevronRight size={18} className="text-white/10 group-hover:text-aethelgard-green transition-colors" />
             </div>
-        </motion.div>
+        </div>
     );
 }
