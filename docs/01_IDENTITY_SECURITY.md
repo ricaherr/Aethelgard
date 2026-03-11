@@ -99,6 +99,109 @@ async def get_public_signal(token: TokenPayload = Depends(get_current_active_use
 - Tests de estructura de respuesta e integridad de datos
 - **Estado**: ✅ 5/5 PASSED
 
+---
+
+## 🔄 Tenant Lifecycle Management: Provisioning → Deprovisioning
+
+### Clasificación de Tenants (Ciclo de Vida)
+
+#### **TIPO A: Tenants de Producción (Permanentes)**
+Usuarios activos con suscripciones pagas o trials activos. Están protegidos y respaldados regularmente.
+
+| Estado | Acción | Backup | Retención |
+|--------|--------|--------|-----------|
+| **ACTIVE** | Operativos, datos en uso real | Diario | Indefinida |
+| **SUSPENDED** | Suspensión temporal (pago vencido, violación ToS) | Diario | Indefinida |
+| **ARCHIVED** | Usuario solicitó cierre de cuenta (datos legales) | Semanal | 7 años |
+
+#### **TIPO B: Tenants de Prueba/Testing (Temporales - ❌ PARA ELIMINAR)**
+Creados para desarrollo, QA o demos. No contienen datos operativos reales.
+
+| UUID | Uso | Status | Acción | Deadline |
+|------|-----|--------|--------|----------|
+| `alice_uuid` | Demo trader inicial | OBSOLETO | Eliminar carpeta + backup | 2026-03-15 |
+| `bob_uuid` | Testing de aislamiento | OBSOLETO | Eliminar carpeta + backup | 2026-03-15 |
+| `tenant_test_123` | Automatización QA | OBSOLETO | Eliminar carpeta + backup | 2026-03-15 |
+| `test_tenant` | Sandbox general | OBSOLETO | Eliminar carpeta + backup | 2026-03-15 |
+
+### Provisioning: Crear Nuevo Tenant
+
+**Trigger**: Usuario se registra en UI o via API
+
+**Flujo**:
+```
+1. Auth Gateway: Validar email + contraseña
+2. sys_auth: Insertar nuevo usuario (Capa 0 global)
+3. sys_memberships: Asignar tier (Basic/Premium, fecha expiración)
+4. TenantDBFactory: Crear folder /tenants/{user_id}/
+5. bootstrap_tenant_template(): Clonar usr_template.db → {user_id}/aethelgard.db
+6. sys_audit_logs: Registrar "Tenant {uuid} created" con TRACE_ID
+7. Response: JWT token para new user
+```
+
+**Validaciones Pre-Provisioning**:
+- ✅ Email único (no duplicado)
+- ✅ Password cumple política (8+ chars, uppercase, number)
+- ✅ No existen datos previos (idempotent)
+
+**Estado Post-Provisioning**:
+- Usuario puede autenticarse
+- BD aislada está lista
+- Zero cross-tenant data leakage garantizado
+
+### Deprovisioning: Eliminar Tenant Obsoleto
+
+**Precondiciones (CRÍTICAS)**:
+- ✅ No hay posiciones abiertas en broker (MT5, etc.)
+- ✅ No hay suscripción activa (o ya expiró)
+- ✅ Confirmación de usuario o admin
+- ✅ Backup completo en `backups/` con timestamp
+
+**Procedimiento Seguro**:
+```bash
+# Script: scripts/maintenance/cleanup_obsolete_tenants.py
+
+for tenant_uuid in OBSOLETE_TENANTS:
+    1. Backup: data_vault/tenants/{uuid}/ → backups/{uuid}_YYYYMMDD_hhmmss/
+    2. Verify: SELECT * FROM {uuid}.usr_positions WHERE status='OPEN'
+       → IF any open → ABORT (manual review required)
+    3. Archive: Mover DB a backups/ para auditoría histórica
+    4. Delete: rm -rf data_vault/tenants/{uuid}/
+    5. Audit Log: sys_audit_logs INSERT: "Tenant {uuid} deleted"
+    6. Verify: Confirm folder gone, no orphaned files
+```
+
+**Auditoría Post-Deprovisioning**:
+- ✅ Backup intacto e indexado
+- ✅ Carpeta eliminada
+- ✅ sys_auth: usuario marcado como `inactive`
+- ✅ sys_memberships: estatus `Archived`
+- ✅ TRACE_ID documentado (quién, cuándo, por qué)
+
+**Retención de Datos**:
+- **ACTIVA producción**: Indefinida
+- **ARCHIVADA**: 7 años (cumplimiento legal)
+- **TEST/DEMO**: 30 días (post-eliminación, luego purgar backups)
+
+### Limpiar Tenants Obsoletos: Procedimiento Operacional
+
+**Cuando ejecutar**:
+- Semanalmente (script cron)
+- Post-expiración de trial (7 días después)
+- Manual si se solicita cierre de cuenta
+
+**Validación Final**:
+```bash
+# Verificar sincronización post-limpieza
+python scripts/utilities/verify_tenant_consistency.py
+
+# Output esperado:
+# ✅ TENANT alice_uuid: DELETED (backup: backups/alice_uuid_20260315_120000/)
+# ✅ TENANT bob_uuid: DELETED (backup: backups/bob_uuid_20260315_120000/)
+# ✅ No orphaned files
+# ✅ sys_auth consistency: OK
+```
+
 #### Lecciones Aprendidas (Trace_ID: SECURITY-TENANT-ISOLATION-2026-001)
 
 **Problem**: Endpoint `GET /api/edge/history` no aplicaba aislamiento multi-tenant aunque autenticación y BD aislada existían.

@@ -148,6 +148,84 @@ data_vault/
         └── aethelgard.db                (Capa 1: Clone del template)
 ```
 
+---
+
+## 🗄️ Consolidación de Bases de Datos: SSOT Unificado (auth.db → aethelgard.db)
+
+### Problema Histórico: Redundancia de Autenticación (v1.x)
+
+**Síntoma**:
+- ❌ Dos archivos DB separados: `auth.db` (auth/memberships) + `aethelgard.db` (operativo)
+- ❌ Confusión sobre SSOT: ¿dónde leer credenciales?
+- ❌ Sincronización manual entre BDs (propenso a errores)
+- ❌ Auditoría dispersa (dos fuentes de verdad)
+
+### Solución: Unificación en `aethelgard.db` (v2.x+)
+
+**Arquitectura Unificada**:
+```
+data_vault/global/aethelgard.db
+├── sys_auth           ← Usuarios, contraseñas, roles (Capa 0)
+├── sys_memberships    ← Suscripciones, niveles (Capa 0)
+├── sys_audit_logs     ← Registro de acciones administrativas
+├── sys_state          ← Configuración global
+├── sys_economic_calendar ← Eventos macro
+└── sys_strategies     ← Estrategias disponibles
+```
+
+**REGLA**: `auth.db` es **DEPRECATED** (mantenido como backup histórico, no accesado en runtime).
+
+### Mapping de Migración: auth.db → aethelgard.db
+
+**Script de Migración Única** (ejecutar una sola vez):
+
+```sql
+-- Migration: 003_consolidate_auth_into_aethelgard.sql
+-- Descripción: Unifica auth.db a aethelgard.db (ONE-TIME, IDEMPOTENT)
+
+-- Insertar usuarios de auth.db sin sobrescribir existentes
+INSERT OR IGNORE INTO sys_auth (user_id, email, password_hash, role, created_at)
+SELECT 
+    user_id,
+    email,
+    password_hash,
+    role,
+    created_at
+FROM old_auth.users;
+
+-- Insertar memberships sin sobrescribir
+INSERT OR IGNORE INTO sys_memberships (user_id, tier, status, created_at)
+SELECT 
+    user_id,
+    tier,
+    status,
+    created_at
+FROM old_auth.memberships;
+```
+
+**Fields Mapping**:
+
+| auth.db (v1) | aethelgard.db (v2) | Tipo | Notas |
+|---|---|---|---|
+| `users.user_id` | `sys_auth.user_id` | UUID | PK |
+| `users.email` | `sys_auth.email` | VARCHAR | UNIQUE |
+| `users.password_hash` | `sys_auth.password_hash` | VARCHAR | Fernet-encrypted |
+| `users.role` | `sys_auth.role` | ENUM | {Admin, Trader} |
+| `users.created_at` | `sys_auth.created_at` | DATETIME | Immutable |
+| `memberships.tier` | `sys_memberships.tier` | ENUM | {Basic, Premium, Institutional} |
+| `memberships.status` | `sys_memberships.status` | ENUM | {Active, Suspended, Expired} |
+
+**Validación Post-Migración**:
+- ✅ Todos los usuarios de auth.db importados
+- ✅ Integridad referencial: cada user_id existe en sys_auth
+- ✅ No duplicados (constraint UNIQUE en email)
+- ✅ Passwords íntegros (hash no corrupto)
+
+**Deprecación de auth.db**:
+- 📋 Archivo mantenido como **backup histórico** (no eliminado)
+- ❌ Runtime **NUNCA** accede a auth.db (completamente desacoplado)
+- 🔒 Si se audita usuario histórico → consultar `sys_auth.sys_audit_logs`
+
 ### Signature y Modos de Ejecución
 
 ```python

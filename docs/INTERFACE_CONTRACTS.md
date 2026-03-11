@@ -150,6 +150,126 @@ def evaluate_signal(self, signal: OutputSignal, trader_id: str) -> RiskResult:
 
 ---
 
+## 3️⃣ Contract 3: Failure Pattern Registry Learning Loop
+
+**Purpose**: Guarantee that execution failures feed back into signal quality scoring. Autonomous learning without human intervention.
+
+**Scope**: All execution failures (LIQUIDITY_INSUFFICIENT, SLIPPAGE, VETO_SPREAD, VETO_VOLATILITY, PRICE_FETCH_ERROR).
+
+**Responsibility**: FailurePatternRegistry analyzes 7-day execution history → identifies patterns → calculates severity-weighted penalties → updates scoring thresholds.
+
+### 🔄 Feedback Loop Architecture
+
+**Input**: `execution_feedback` table (populated by Executor after each trade attempt)
+
+| Column | Type | Source | Purpose |
+|--------|------|--------|---------|
+| `executed_at` | Timestamp | System | When trade attempted |
+| `signal_id` | UUID | Signal | Links to original signal |
+| `strategy_id` | String | Strategy | Which strategy generated signal |
+| `symbol` | String | Signal.symbol | Trading pair |
+| `failure_reason` | Enum | Executor | Why failed (NULL = success) |
+| `severity_weight` | Float | FailurePatternRegistry | Penalty weight (0.0-1.0) |
+| `trace_id` | String | System | Audit trail |
+
+**Failure Reason → Severity Mapping**:
+
+| Failure Reason | Weight | Rationale | Recovery |
+|---|---|---|---|
+| `LIQUIDITY_INSUFFICIENT` | 1.0 | Markets need time to fill | 5-10 min |
+| `SLIPPAGE` | 0.9 | Entry worse than expected | 1-3 min |
+| `VETO_SPREAD` | 0.7 | Spread too wide temporarily | 3-5 min |
+| `VETO_VOLATILITY` | 0.6 | Volatility spike, normalize | 5-10 min |
+| `PRICE_FETCH_ERROR` | 0.4 | Technical error, fast recovery | 30-60 sec |
+| `VETO_ECONOMIC` | 0.8 | Economic event impact | 15-30 min |
+| `VETO_REGULATION` | 1.0 | Market restriction | 60+ min |
+
+**Output**: `sys_config["ml_patterns.failure_registry"]` (JSON in sys_state table)
+
+```python
+{
+  "failure_registry": {
+    "EUR/USD": {
+      "total_attempts": 342,
+      "failed_attempts": 18,
+      "failure_rate": 0.0526,
+      "top_reasons": [
+        {"reason": "LIQUIDITY_INSUFFICIENT", "count": 8, "weight": 1.0},
+        {"reason": "SLIPPAGE", "count": 6, "weight": 0.9}
+      ],
+      "penalty_score": 0.014,  # (0.0526 * 0.888 * 0.3)
+      "last_updated": "2026-03-11T14:30:00Z",
+      "confidence": 0.92
+    }
+  }
+}
+```
+
+### 📐 Penalty Calculation
+
+```
+Penalty = (failure_rate × avg_severity_weight × 0.3)
+
+Ejemplo EUR/USD:
+  failure_rate = 18/342 = 0.0526
+  avg_severity = (8×1.0 + 6×0.9) / 18 = 0.944
+  penalty = 0.0526 × 0.944 × 0.3 = 0.015 (1.5% max impact)
+```
+
+### ⚙️ Auto-Trigger Schedule
+
+- **Frequency**: Every 4 hours
+- **Window**: Last 7 days of execution_feedback
+- **Constraints**:
+  - Min 20 observations per symbol/strategy (statistical significance)
+  - Max change ±50% from previous (prevents wild swings)
+  - Revert to historical average if >7 days no data
+- **Graceful Degradation**: If error → use last known penalty (immutable)
+
+### 🔗 Integration Points
+
+**1. SignalQualityScorer reads penalties**:
+```python
+failure_penalty = self.failure_registry.get_penalty(symbol, strategy_id)
+contextual_score = (consensus_bonus - failure_penalty)  # [0.0-1.0]
+```
+
+**2. Executor populates execution_feedback**:
+```python
+if execution_status == FAILED:
+    storage.log_execution_feedback(
+        signal_id=signal.id,
+        strategy_id=signal.strategy,
+        failure_reason=failure_enum,
+        trace_id=signal.trace_id
+    )
+```
+
+**3. MainOrchestrator hooks learner**:
+```python
+# In run_single_cycle() every N iterations:
+if should_trigger_learning():
+    self.failure_registry.analyze_and_update()
+```
+
+### 🛡️ Data Integrity
+
+- **Immutability**: `execution_feedback` append-only (never UPDATE/DELETE)
+- **Auditability**: Each penalty update has timestamp + trace_id
+- **SSOT**: Penalties in `sys_state` (global, read-only for traders)
+- **Caching**: Runtime cache in FailurePatternRegistry (<1ms lookup)
+
+### ✅ Validation Checklist
+
+- ✅ Failure reasons map to severity weights
+- ✅ Penalty respects max 30% impact ceiling
+- ✅ Auto-trigger runs without human intervention
+- ✅ Graceful degradation if data unavailable
+- ✅ Penalties update SignalQualityScorer in real-time
+- ✅ Trace_ID logged for each calculation
+
+---
+
 ## 3️⃣ Contract 3: Signal Generation with sys_ Knowledge + usr_ Filtering
 
 **Purpose**: UniversalEngine genera señales basado en datos globales, pero filtra por configuración personal.

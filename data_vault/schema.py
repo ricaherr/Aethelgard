@@ -551,6 +551,50 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_cooldown_tracker_expires ON sys_cooldown_tracker (cooldown_expires)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_cooldown_tracker_failure_reason ON sys_cooldown_tracker (failure_reason)")
 
+    # ── 19. PHASE 4: Signal Quality Scoring ─────────────────────────────────────
+    # Signal Quality Assessments (unified scoring authority before execution)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sys_signal_quality_assessments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            signal_id TEXT UNIQUE,
+            symbol TEXT NOT NULL,
+            timeframe TEXT,
+            grade TEXT NOT NULL CHECK(grade IN ('A+', 'A', 'B', 'C', 'F')),
+            overall_score REAL NOT NULL,
+            technical_score REAL NOT NULL,
+            contextual_score REAL NOT NULL,
+            consensus_bonus REAL DEFAULT 0.0,
+            failure_penalty REAL DEFAULT 0.0,
+            metadata TEXT,
+            trace_id TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_signal_quality_assessments_symbol ON sys_signal_quality_assessments (symbol)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_signal_quality_assessments_grade ON sys_signal_quality_assessments (grade)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_signal_quality_assessments_created_at ON sys_signal_quality_assessments (created_at DESC)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_signal_quality_assessments_overall_score ON sys_signal_quality_assessments (overall_score DESC)")
+
+    # Consensus Events (multi-strategy signal density analysis)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sys_consensus_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT NOT NULL,
+            direction TEXT NOT NULL CHECK(direction IN ('BUY', 'SELL')),
+            consensus_strength REAL NOT NULL,
+            num_strategies INTEGER NOT NULL,
+            bonus REAL NOT NULL,
+            participating_strategies TEXT,
+            confidence REAL DEFAULT 0.0,
+            trace_id TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_consensus_events_symbol ON sys_consensus_events (symbol)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_consensus_events_direction ON sys_consensus_events (direction)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_consensus_events_strength ON sys_consensus_events (consensus_strength DESC)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_consensus_events_created_at ON sys_consensus_events (created_at DESC)")
+
     # Seed sys_regime_configs with default weights (SSOT)
     _seed_sys_regime_configs(cursor)
 

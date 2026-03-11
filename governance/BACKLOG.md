@@ -75,6 +75,18 @@
     * **Descripción**: Lógica de auto-ajuste de barreras de entrada basada en la equidad de la cuenta y el régimen de volatilidad.
     * **🖥️ UI Representation**: Dial de "Exigencia Algorítmica" en el header, mostrando el umbral de entrada activo.
 
+* **HU 3.6: Signal Quality Scorer (Phase 4)** `[x] DONE`
+    * **Descripción**: Motor unificado de puntuación. Grados: A+ (85+), A (75+), B (65+), C (50+), F (<50). Fórmula: (Técnico × 0.6) + (Contextual × 0.4).
+    * **Estado**: Sprint 4 (11 Marzo 2026). 13/13 tests PASSED. Trace_ID: PHASE4-INTELLIGENCE-SCORER-2026
+
+* **HU 3.7: Consensus Engine (Phase 4)** `[x] DONE`
+    * **Descripción**: Detecta múltiples estrategias convergentes en mismo setup (5 min). STRONG consenso +20%, WEAK +10%.
+    * **Estado**: Sprint 4 (11 Marzo 2026). 11/11 tests PASSED. Trace_ID: PHASE4-CONSENSUS-ENGINE-2026
+
+* **HU 3.8: Failure Pattern Registry (Phase 4)** `[x] DONE`
+    * **Descripción**: Aprendizaje autónomo de patrones de fallo cada 4h. Severity weights mapean failure_reason a penalizaciones. Penalidad máxima 30%.
+    * **Estado**: Sprint 4 (11 Marzo 2026). 6/6 tests PASSED. Trace_ID: PHASE4-FAILURE-LEARNING-2026
+
 ## 04_RISK_GOVERNANCE (Unidades R, Safety Governor, Veto)
 * **HU 4.4: Safety Governor & Sovereignty Gateway** `[DONE]`
     * **Prioridad**: Alta (Vector V2)

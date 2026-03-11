@@ -258,6 +258,9 @@ class MainOrchestrator:
         heartbeat_monitor: Optional[Any] = None,
         conflict_resolver: Optional[Any] = None,
         execution_feedback_collector: Optional[ExecutionFeedbackCollector] = None,
+        signal_quality_scorer: Optional[Any] = None,  # PHASE 4: Unified signal quality authority
+        consensus_engine: Optional[Any] = None,  # PHASE 4: Multi-strategy consensus detection
+        failure_pattern_registry: Optional[Any] = None,  # PHASE 4: Autonomous failure learning
         tenant_id: Optional[str] = None,  # DEPRECATED: Use user_id instead
         user_id: Optional[str] = None  # Multi-user support: User identifier for DB isolation
     ):
@@ -323,6 +326,13 @@ class MainOrchestrator:
         # 10. PHASE 3: Deduplication Learner (Weekly Auto-Calibration)
         self.dedup_learner = DedupLearner(storage_manager=self.storage)
         self._last_dedup_learning = datetime.now(timezone.utc)
+        
+        # 11. PHASE 4: Intelligent Signal Quality Scoring (Unified Authority)
+        self._init_phase4_intelligence_services(
+            signal_quality_scorer=signal_quality_scorer,
+            consensus_engine=consensus_engine,
+            failure_pattern_registry=failure_pattern_registry
+        )
 
     @property
     def signal_factory(self) -> Optional[Any]:
@@ -685,6 +695,58 @@ class MainOrchestrator:
         except Exception as e:
             logger.warning(f"[ECON-INTEGRATION] ⚠️ Could not initialize: {e}")
             self.economic_integration = None
+
+    def _init_phase4_intelligence_services(
+        self,
+        signal_quality_scorer: Optional[Any] = None,
+        consensus_engine: Optional[Any] = None,
+        failure_pattern_registry: Optional[Any] = None
+    ) -> None:
+        """
+        Initializes PHASE 4: Intelligent Signal Quality Scoring Components.
+        
+        Components:
+        1. SignalQualityScorer: Unified authority (technical 60% + contextual 40%)
+        2. ConsensusEngine: Multi-strategy consensus detection
+        3. FailurePatternRegistry: Autonomous failure pattern learning
+        
+        All dependencies are injected from caller or auto-created if None.
+        Trace: PHASE4-INTELLIGENCE-INIT-2026-03-11
+        """
+        try:
+            from core_brain.intelligence import (
+                SignalQualityScorer,
+                ConsensusEngine,
+                FailurePatternRegistry
+            )
+            
+            logger.info("[PHASE4] Initializing Signal Quality Scoring Intelligence...")
+            
+            # 1. SignalQualityScorer (unified scoring authority)
+            self.signal_quality_scorer = signal_quality_scorer or SignalQualityScorer(
+                storage=self.storage
+            )
+            logger.debug("[PHASE4] ✅ SignalQualityScorer initialized")
+            
+            # 2. ConsensusEngine (multi-strategy signal density)
+            self.consensus_engine = consensus_engine or ConsensusEngine(
+                storage=self.storage
+            )
+            logger.debug("[PHASE4] ✅ ConsensusEngine initialized")
+            
+            # 3. FailurePatternRegistry (autonomous learning)
+            self.failure_pattern_registry = failure_pattern_registry or FailurePatternRegistry(
+                storage=self.storage
+            )
+            logger.debug("[PHASE4] ✅ FailurePatternRegistry initialized")
+            
+            logger.info("[PHASE4] ✅ All signal quality intelligence components ready")
+        
+        except Exception as e:
+            logger.warning(f"[PHASE4] ⚠️ Could not initialize intelligence services: {e}")
+            self.signal_quality_scorer = None
+            self.consensus_engine = None
+            self.failure_pattern_registry = None
 
     def _discover_brokers(self) -> List[Dict]:
         """Descubre todos los sys_brokers registrados en la base de datos."""
@@ -1483,6 +1545,39 @@ class MainOrchestrator:
                         )
                         self.stats.usr_signals_vetoed += 1
                         continue
+                    
+                    # PHASE 4: Signal Quality Scoring (unified authority before execution)
+                    quality_result = None
+                    if self.signal_quality_scorer:
+                        try:
+                            quality_result = await asyncio.to_thread(
+                                self.signal_quality_scorer.assess_signal_quality,
+                                signal,
+                                recent_signals,
+                                market_context
+                            )
+                            logger.info(
+                                f"[PHASE4-QUALITY] {signal.symbol}: Grade={quality_result.grade.value} "
+                                f"Score={quality_result.overall_score:.1f}% (Technical={quality_result.technical_score:.1f}% "
+                                f"Contextual={quality_result.contextual_score:.1f}%)"
+                            )
+                            
+                            # Only execute if grade is A+ or A
+                            if quality_result.grade.value not in ['A+', 'A']:
+                                logger.warning(
+                                    f"Signal {signal.symbol} BLOCKED by quality scoring: "
+                                    f"Grade {quality_result.grade.value} (threshold: A+/A only)"
+                                )
+                                self.stats.usr_signals_vetoed += 1
+                                if self.thought_callback:
+                                    await self.thought_callback(
+                                        f"Señal bloqueada por calidad: {signal.symbol} (Calificación {quality_result.grade.value})",
+                                        level="info", module="PHASE4"
+                                    )
+                                continue
+                        except Exception as e:
+                            logger.error(f"[PHASE4-QUALITY] Error assessing signal quality: {e}")
+                            # Graceful degradation: proceed with execution if quality check fails
                     
                     success = await self.executor.execute_signal(signal)
                     
