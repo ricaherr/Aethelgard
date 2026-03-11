@@ -1,9 +1,42 @@
 # 🛣️ ROADMAP.md - Aethelgard Alpha Training
 
-**Última Actualización**: 11 de Marzo 2026 (01:15 UTC)  
+**Última Actualización**: 11 de Marzo 2026 (14:35 UTC)  
 **Versión Sistema**: v4.3.0-beta  
-**Estado General**: ✅ **PHASE 1-4 COMPLETADAS 100%** | ✅ **SIGNAL DEDUP + INTELLIGENCE LIVE** | ✅ **24/24 MÓDULOS VALIDADOS** | ✅ **31/31 PHASE 4 TESTS PASSED** | ✅ **DOCUMENTATION CONSOLIDADA** | ✅ **SISTEMA PRODUCCIÓN-READY**  
-**Validación**: 24 módulos integridad ✅ | Signal dedup implementado ✅ | Dynamic windows operativo ✅ | Multi-strategy selection activo ✅ | Weekly learning corriendo ✅ | Phase 4 Intelligence: 31/31 tests ✅ | MainOrchestrator producción ✅ | Schema completo ✅ | Sistema 100% operacional ✅  
+**Estado General**: ✅ **PHASE 1-4 COMPLETADAS 100%** | ✅ **SIGNAL DEDUP + INTELLIGENCE LIVE** | ✅ **24/24 MÓDULOS VALIDADOS** | ✅ **31/31 PHASE 4 TESTS PASSED** | ✅ **DOCUMENTATION CONSOLIDADA** | ✅ **ARQUITECTURA POR DOMINIOS** | ✅ **SISTEMA PRODUCCIÓN-READY**  
+
+---
+
+## 🎗️ IMPORTANTE: REORGANIZACIÓN ARQUITECTÓNICA (11-Mar-2026)
+
+**Se ha aprovrobado una reorganización fundamental de la arquitectura**:
+
+- ❌ **ANTES**: "PHASE 4", "FASE 5", "SPRINT S007" (línea cronológica, caótica)
+- ✅ **AHORA**: 9 DOMINIOS de negocio (arquitectura clara, escalable)
+
+**Nuevo Marco de Referencia**: [DOMINIOS_MANIFEST.md](./DOMINIOS_MANIFEST.md)
+
+**Cambios Inmediatos**:
+1. **validate_all.py reorganizado** por DOMINIOS con reportes claros
+   - DOMAIN 01: Identity & Security
+   - DOMAIN 02-03: Context Intelligence
+   - DOMAIN 04: Risk Governance
+   - DOMAIN 05: Universal Execution
+   - ISD: Intelligent Signal Deduplication (módulos 1-4)
+   - DOMAIN 08: Data Sovereignty
+   - DOMAIN 09: Institutional UI
+   - Cross-Cutting: Gobernanza & Calidad
+
+2. **PHASE 4 (Signal Quality Scoring) renombrado conceptualmente**:
+   - ❌ Antiguo: "PHASE 4: Signal Quality Scoring"
+   - ✅ Nuevo: "ISD Module 4: Quality Validation" (parte de sistema ISD mayor)
+
+3. **Beneficios**:
+   - ✅ Escalabilidad: Nuevas features → DOMINIO relevante (no PHASE N+1)
+   - ✅ Claridad: Cada componente tiene propósito de negocio definido
+   - ✅ Auditoría: validate_all.py es ESPEJO de estructura
+   - ✅ SaaS-Ready: Multi-tenant es DOMINIO 01 desde inicio
+
+**Acción Requerida**: Leer [DOMINIOS_MANIFEST.md](./DOMINIOS_MANIFEST.md) para entender la nueva estructura.
 
 ---
 

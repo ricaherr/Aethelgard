@@ -236,8 +236,9 @@ def create_app() -> FastAPI:
     from core_brain.api.routers.admin import router as admin_router
     from core_brain.api.routers.anomalies import router as anomalies_router
     from core_brain.api.routers.strategy_ws import router as strategy_ws_router
+    from core_brain.api.routers.telemetry import router as telemetry_router
     
-    # Mount modular routers (Trading, Risk, Market, System, Notifications, Auth, Admin, Anomalies, Strategy WS)
+    # Mount modular routers (Trading, Risk, Market, System, Notifications, Auth, Admin, Anomalies, Strategy WS, Telemetry)
     app.include_router(trading_router, prefix="/api")
     app.include_router(risk_router, prefix="/api")
     app.include_router(market_router, prefix="/api")
@@ -247,6 +248,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_router, prefix="/api")
     app.include_router(anomalies_router)
     app.include_router(strategy_ws_router)  # WebSocket doesn't need /api prefix
+    app.include_router(telemetry_router)  # WebSocket doesn't need /api prefix (Fractal V3)
     logger.info("✅ Micro-ETI 3.1+ Admin Management Router: User CRUD endpoints mounted (/api/admin/users). Trading logic delegated to TradingService.")
 
     # Montar archivos estáticos de la nueva UI si existen
