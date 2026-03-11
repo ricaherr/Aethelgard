@@ -33,7 +33,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, Optional, Any, List
+from typing import Dict, Optional, Any, List, Tuple
 import uuid
 
 # Add project root to path
@@ -906,6 +906,116 @@ class MainOrchestrator:
             logger.info(f"Regime changed: {self.current_regime} -> {new_regime}")
             self.current_regime = new_regime
     
+    # ==================== OPTION A: SCAN ORCHESTRATION METHODS ====================
+    # These methods move timing logic from ScannerEngine to MainOrchestrator
+    # TRACE_ID: OPTION-A-SCAN-ORCHESTRATION-2026-03-11
+    
+    def _get_scan_schedule(self) -> Dict[str, float]:
+        """
+        Build per-symbol|timeframe scan intervals based on current regimes.
+        
+        REPLACES: ScannerEngine._get_assets_to_scan() timing logic.
+        
+        Returns:
+            Dict mapping "symbol|timeframe" -> interval_seconds
+            
+        Example:
+            {"EURUSD|M5": 1.0, "AAPL|M1": 5.0, "BTC|H1": 10.0}
+        """
+        schedule = {}
+        
+        try:
+            for symbol in self.scanner.assets:
+                for tf in self.scanner.active_timeframes:
+                    key = f"{symbol}|{tf}"
+                    
+                    # Get current regime for this symbol|timeframe
+                    regime = self.scanner.last_regime.get(key, MarketRegime.NORMAL)
+                    
+                    # Determine interval based on regime
+                    if regime in [MarketRegime.TREND, MarketRegime.CRASH]:
+                        interval = 1.0  # Aggressive: Trend/Crash scan every 1s
+                    elif regime in [MarketRegime.RANGE, MarketRegime.NORMAL]:
+                        interval = 10.0  # Conservative: Range/Normal scan every 10s
+                    elif regime == MarketRegime.VOLATILE:
+                        interval = 5.0  # Moderate: Volatile scan every 5s
+                    else:
+                        interval = 10.0  # Default
+                    
+                    schedule[key] = interval
+        except Exception as e:
+            logger.warning(f"[OPTION-A] Error building scan schedule: {e}")
+            # Fallback: conservative intervals for all keys
+            for symbol in self.scanner.assets:
+                for tf in self.scanner.active_timeframes:
+                    key = f"{symbol}|{tf}"
+                    schedule[key] = 10.0
+        
+        return schedule
+    
+    def _should_scan_now(self, schedule: Dict[str, float]) -> List[Tuple[str, str]]:
+        """
+        Determine which assets need scanning based on schedule and last scan time.
+        
+        REPLACES: ScannerEngine._get_assets_to_scan() decision logic.
+        
+        Args:
+            schedule: Dict from _get_scan_schedule()
+        
+        Returns:
+            List of (symbol, timeframe) tuples that should be scanned now
+        """
+        to_scan = []
+        now = time.monotonic()
+        
+        try:
+            for key, interval in schedule.items():
+                symbol, tf = key.split("|")
+                last_scan_time = self.scanner.last_scan_time.get(key, 0.0)
+                
+                # Check if interval has elapsed since last scan
+                if now - last_scan_time >= interval:
+                    to_scan.append((symbol, tf))
+        except Exception as e:
+            logger.warning(f"[OPTION-A] Error checking scan readiness: {e}")
+        
+        return to_scan
+    
+    async def _request_scan(self, assets_to_scan: List[Tuple[str, str]]) -> Dict[str, Dict[str, Any]]:
+        """
+        Request ScannerEngine to execute scan for specific assets.
+        
+        REPLACES: MainOrchestrator blindly calling get_scan_results_with_data().
+        MainOrchestrator is now the orchestrator: it DECIDES when to scan,
+        ScannerEngine is pure executor: it DOES the scanning.
+        
+        Args:
+            assets_to_scan: List of (symbol, timeframe) tuples to scan
+        
+        Returns:
+            Dict of scan results: {symbol|timeframe -> {regime, metrics, df, ...}}
+        """
+        if not assets_to_scan:
+            logger.debug("[OPTION-A] No assets need scanning at this moment")
+            return {}
+        
+        logger.info(f"[OPTION-A] Requesting scan for {len(assets_to_scan)} asset-timeframe pairs")
+        
+        try:
+            # Call ScannerEngine.execute_scan() (pure executor, not autonomous)
+            new_results = await asyncio.to_thread(
+                self.scanner.execute_scan,
+                assets_to_scan
+            )
+            
+            logger.info(f"[OPTION-A] ✓ Scan completed: {len(new_results)} results")
+            return new_results
+        except Exception as e:
+            logger.error(f"[OPTION-A] Error requesting scan: {e}")
+            return {}
+    
+    # ==================== END OPTION A METHODS ====================
+    
     async def _check_closed_usr_positions(self) -> None:
         """
         Check connectors for newly closed usr_positions and process them through TradeClosureListener.
@@ -1125,12 +1235,44 @@ class MainOrchestrator:
             
             logger.debug("Getting market regimes with data from scanner...")
             
-            # Scanner trabaja de forma sincrónica en background
-            # Obtenemos su último estado CON DataFrames
-            scan_results_with_data = await asyncio.to_thread(self.scanner.get_scan_results_with_data)
+            # ==================== OPTION A: MainOrchestrator Orchestrates Scanning ====================
+            # TRACE_ID: OPTION-A-RUN-SINGLE-CYCLE-2026-03-11
+            # 
+            # BEFORE (Broken): ScannerEngine ran autonomously + MainOrch called blindly
+            #                  Result: Triple-scanning (67% waste)
+            #
+            # AFTER (Fixed):   MainOrch decides WHEN, ScannerEngine does WHAT
+            #                  Result: Single scan per due asset
+            
+            # Step 1a: Build timing schedule based on current regimes
+            scan_schedule = self._get_scan_schedule()
+            logger.debug(f"[OPTION-A] Built scan schedule: {len(scan_schedule)} symbol|timeframe pairs")
+            
+            # Step 1b: Determine which assets need scanning NOW
+            assets_to_scan = self._should_scan_now(scan_schedule)
+            
+            if assets_to_scan:
+                logger.info(
+                    f"[OPTION-A] {len(assets_to_scan)} assets due for scanning: "
+                    f"{', '.join([f'{s}|{tf}' for s, tf in assets_to_scan[:5]])}{'...' if len(assets_to_scan) > 5 else ''}"
+                )
+                
+                # Step 1c: Request scan from ScannerEngine (pure executor, not autonomous)
+                new_scan_results = await self._request_scan(assets_to_scan)
+            else:
+                logger.debug("[OPTION-A] No assets due for scanning - using cached results")
+                new_scan_results = {}
+            
+            # Step 1d: Merge new results with cached results (ScannerEngine.last_results)
+            scan_results_with_data = getattr(self.scanner, 'last_results', {}).copy()
+            if new_scan_results:
+                scan_results_with_data.update(new_scan_results)
+                logger.info(f"[OPTION-A] Merged {len(new_scan_results)} new scans with {len(scan_results_with_data) - len(new_scan_results)} cached results")
+            
+            # ==================== END OPTION A IMPLEMENTATION ====================
             
             if not scan_results_with_data:
-                logger.warning("No scan results available yet")
+                logger.warning("No scan results available yet (first cycle or all offline)")
                 return
             
             # Update pipeline stats: scans
@@ -2118,11 +2260,12 @@ async def main() -> None:
     # Store references for API/control access
     logger.info("🎛️  Strategy Mode Selector ready for hot-swap via API endpoint /api/tenant/config/strategy-mode")
     
-    # 4. Start Scanner background thread (if needed by your architecture)
-    # The ScannerEngine.run() usually runs in its own thread
-    import threading
-    scanner_thread = threading.Thread(target=_scanner.run, daemon=True)
-    scanner_thread.start()
+    # REMOVED: Scanner background thread (11-Mar-2026 - OPTION A)
+    # ScannerEngine.run() is deprecated. MainOrchestrator now orchestrates scanning via:
+    # - _get_scan_schedule() → timing based on regimes
+    # - _should_scan_now() → determine which assets need scanning
+    # - _request_scan() → execute_scan() on ScannerEngine (pure executor, not autonomous)
+    logger.info("✓ OPTION A: MainOrchestrator is sole scanner orchestrator (ScannerEngine is pure executor)")
     
     # 5. Run the main loop
     print("🚀 System LIVE. Starting event loop...")

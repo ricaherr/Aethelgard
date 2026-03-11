@@ -427,8 +427,6 @@ async def main() -> None:
                 # Cache account balance in system_state for API queries
                 try:
                     account_balance = mt5_connector.get_account_balance()
-                    # TODO: Implement update_system_state() in StorageManager when needed
-                    # storage.update_system_state({...})
                     logger.info(f"   Balance obtenido: ${account_balance:,.2f} (MT5_LIVE)")
                 except Exception as e:
                     logger.warning(f"[WARN] No se pudo obtener balance de MT5: {e}")
@@ -448,16 +446,10 @@ async def main() -> None:
         server_thread = threading.Thread(target=launch_server,daemon=True)
         server_thread.start()
         
-        # Scanner thread: SIEMPRE arranca (verifica toggle internamente con hot-reload)
-        logger.info("[INFO] Iniciando Scanner (con hot-reload toggle)...")
-        scanner_thread = threading.Thread(target=scanner.run, daemon=True)
-        scanner_thread.start()
-        
-        modules_enabled = storage.get_global_modules_enabled()
-        if modules_enabled.get("scanner", True):
-            logger.info("[OK] Scanner ejecutándose (habilitado)")
-        else:
-            logger.warning("[WARNING]  Scanner en espera (deshabilitado - activar desde UI para iniciar)")
+        # OPTION A (11-Mar-2026): Scanner is pure executor, no autonomous thread
+        # MainOrchestrator calls scanner.execute_scan() when it decides timing
+        # REMOVED: scanner_thread = threading.Thread(target=scanner.run, daemon=True)
+        logger.info("[INFO] Scanner initialized as pure executor (OPTION A - MainOrchestrator orchestrates)")
         
         # Iniciar Closing Monitor en tarea asíncrona
         logger.info("[INFO] Inicializando Closing Monitor...")

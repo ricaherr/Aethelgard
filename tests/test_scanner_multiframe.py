@@ -142,11 +142,10 @@ def test_scanner_processes_all_timeframes_independently(mock_provider):
         config_path=config_path
     )
     
-    # Run one scan cycle
-    scanner._run_cycle()
-    
-    # Should have results for all 3 timeframes
-    results = scanner.get_scan_results_with_data()
+    # Run scan for all configured timeframes
+    timeframes = scanner.active_timeframes
+    assets_to_scan = [("EURUSD", tf) for tf in timeframes]
+    results = scanner.execute_scan(assets_to_scan)
     
     assert len(results) == 3
     assert "EURUSD|M5" in results
@@ -188,7 +187,10 @@ def test_scan_results_include_symbol_and_timeframe_metadata(mock_provider):
         config_path=config_path
     )
     
-    scanner._run_cycle()
+    # OPTION A: Use execute_scan() instead of deprecated _run_cycle()
+    timeframes = scanner.active_timeframes
+    assets_to_scan = [("BTCUSD", tf) for tf in timeframes]
+    scanner.execute_scan(assets_to_scan)
     results = scanner.get_scan_results_with_data()
     
     # Verify M5 result
@@ -257,7 +259,10 @@ def test_different_regimes_per_timeframe(mock_provider):
         config_path=config_path
     )
     
-    scanner._run_cycle()
+    # OPTION A: Use execute_scan() instead of deprecated _run_cycle()
+    timeframes = scanner.active_timeframes
+    assets_to_scan = [("EURUSD", tf) for tf in timeframes]
+    scanner.execute_scan(assets_to_scan)
     results = scanner.get_scan_results_with_data()
     
     # Both timeframes should be scanned

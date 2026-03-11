@@ -1,7 +1,11 @@
 """
-Escáner Proactivo Multihilo.
-Orquestador que escanea una lista de activos, clasifica régimen por activo en hilos separados,
-controla recursos (CPU) y prioriza TREND (1s) vs RANGE (10s).
+Escáner Proactivo - Pure Executor (OPTION A - 11-Mar-2026)
+Ejecuta escaneos BAJO DEMANDA desde MainOrchestrator.
+MainOrchestrator es el ÚNICO orquestador de timing.
+
+Antes: ScannerEngine tenía timing logic + autonomía
+Ahora:  MainOrchestrator decide CUÁNDO, ScannerEngine ejecuta QUÉ
+
 Agnóstico de plataforma: recibe un DataProvider inyectado (ej. MT5).
 """
 from __future__ import annotations
@@ -163,6 +167,10 @@ class ScannerEngine:
         self.circuit_breaker_cooldowns: Dict[str, float] = {}
         self._lock = threading.Lock()
         self._running = False
+        
+        # OPTION A: Cache for LATEST scan results (accessed by MainOrchestrator)
+        # MainOrchestrator orchestrates when to scan, ScannerEngine just caches results
+        self.last_results: Dict[str, Dict[str, Any]] = {}
 
     def _init_classifiers(self) -> None:
         """Factory for RegimeClassifiers per asset/timeframe."""
@@ -244,46 +252,85 @@ class ScannerEngine:
             self.circuit_breaker_cooldowns[key] = cooldown_time
             logger.warning(f"[{key}] Circuit Breaker activado: {current_failures} fallos consecutivos. En cooldown por 60s.")
 
-    def _run_cycle(self) -> None:
-        """Executes a full scan cycle for all active assets."""
-        to_scan = self._get_assets_to_scan()
-
-        if not to_scan:
-            return
-
+    def execute_scan(self, assets_to_scan: List[Tuple[str, str]]) -> Dict[str, Dict[str, Any]]:
+        """
+        OPTION A: Pure Executor - Scan ONLY the requested assets.
+        
+        MainOrchestrator decides WHEN and WHAT to scan.
+        ScannerEngine just executes the request.
+        
+        Args:
+            assets_to_scan: List of (symbol, timeframe) tuples to scan now
+        
+        Returns:
+            Dict mapping "symbol|timeframe" -> {regime, metrics, df, provider, ...}
+        """
+        results = {}
+        
+        if not assets_to_scan:
+            logger.debug("[EXECUTE_SCAN] No assets to scan")
+            return results
+        
+        logger.info(f"[EXECUTE_SCAN] Scanning {len(assets_to_scan)} asset-timeframe pairs")
+        
+        # Execute scans in parallel using ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=self._max_workers) as ex:
-            futs = {ex.submit(self._scan_one, sym, tf): (sym, tf) for sym, tf in to_scan}
+            futs = {ex.submit(self._scan_one, sym, tf): (sym, tf) for sym, tf in assets_to_scan}
+            
             for fut in as_completed(futs):
                 try:
                     res = fut.result()
                     if res:
+                        # res = (symbol, timeframe, regime, metrics, df, provider_id)
+                        symbol, timeframe, regime, metrics, df, provider_id = res
+                        key = f"{symbol}|{timeframe}"
+                        
+                        # Store in result dict
+                        results[key] = {
+                            "regime": regime,
+                            "metrics": metrics,
+                            "df": df,
+                            "provider_source": provider_id,
+                            "symbol": symbol,
+                            "timeframe": timeframe
+                        }
+                        
+                        # Also persist using _process_scan_result() for compatibility
                         self._process_scan_result(res)
                 except Exception as e:
                     sym, tf = futs[fut]
-                    logger.warning("Exception in scan thread for %s [%s]: %s", sym, tf, e)
+                    logger.warning(f"[EXECUTE_SCAN] Exception in scan thread for {sym}[{tf}]: {e}")
+        
+        # Update cache
+        self.last_results.update(results)
+        logger.info(f"[EXECUTE_SCAN] ✓ Completed: {len(results)} results cached")
+        
+        return results
+
+    def _run_cycle(self) -> None:
+        """
+        ⚠️ DEPRECATED (OPTION A) - This method is never called anymore.
+        
+        OLD behavior was:
+        - Decide which assets to scan (timing logic)
+        - Call _scan_one for each
+        - Process results
+        
+        NEW: execute_scan() is called by MainOrchestrator with explicit list
+        """
+        logger.debug("[_RUN_CYCLE] This method is deprecated in OPTION A. Use execute_scan() instead.")
 
     def _get_assets_to_scan(self) -> List[Tuple[str, str]]:
-        """Identifies assets that need scanning based on their current regime and timing."""
-        to_scan = []
-        now = time.monotonic()
-
-        with self._lock:
-            for symbol in self.assets:
-                for tf in self.active_timeframes:
-                    key = f"{symbol}|{tf}"
-                    last_scan = self.last_scan_time.get(key, 0.0)
-                    regime = self.last_regime.get(key, MarketRegime.NORMAL)
-
-                    # Prioritization logic
-                    interval = self.base_sleep
-                    if regime in [MarketRegime.TREND, MarketRegime.CRASH]:
-                        interval = self.sleep_trend
-                    elif regime in [MarketRegime.RANGE, MarketRegime.NORMAL]:
-                        interval = self.sleep_range
-
-                    if now - last_scan >= interval:
-                        to_scan.append((symbol, tf))
-        return to_scan
+        """
+        ⚠️ DEPRECATED (OPTION A - 11-Mar-2026)
+        
+        OLD: Timing logic lived here (caused triple-scanning)
+        NEW: MainOrchestrator._get_scan_schedule() + _should_scan_now() handle timing
+        
+        This method is never called anymore but kept for backward compatibility.
+        Returns empty list."""
+        logger.debug("[_GET_ASSETS_TO_SCAN] This method is deprecated in OPTION A. MainOrchestrator handles timing.")
+        return []
 
     def _process_scan_result(self, res: Tuple[str, str, MarketRegime, Dict, Any, str]) -> None:
         """Processes and persists the result of a single asset scan."""
@@ -317,62 +364,37 @@ class ScannerEngine:
         )
 
     def _adaptive_sleep(self) -> float:
-        """Calcula sleep según CPU. Si CPU > límite, aumenta el tiempo entre escaneos."""
-        base = self.base_sleep
-        if not psutil:
-            return base
-        try:
-            cpu = self.cpu_monitor.get_cpu_percent()
-            if cpu <= self.cpu_limit_pct:
-                return base
-            excess = cpu - self.cpu_limit_pct
-            # Aumentar sleep proporcional al exceso, cap por max_sleep_multiplier
-            factor = 1.0 + min(excess / 20.0, self.max_sleep_multiplier - 1.0)
-            t = base * factor
-            logger.debug("CPU %.1f%% > %.1f%%, sleep aumentado a %.2fs", cpu, self.cpu_limit_pct, t)
-            return t
-        except Exception as e:
-            logger.debug("Error en adaptive_sleep: %s", e)
-            return base
+        """
+        ⚠️ DEPRECATED (OPTION A - 11-Mar-2026)
+        
+        OLD: Adjusted sleep based on CPU usage in autonomous loop
+        NEW: MainOrchestrator controls timing, no sleep needed in ScannerEngine
+        
+        This method is never called anymore but kept for backward compatibility.
+        Returns base sleep value.
+        """
+        logger.debug("[_ADAPTIVE_SLEEP] This method is deprecated in OPTION A. MainOrchestrator handles timing.")
+        return self.base_sleep
 
     def run(self) -> None:
-        """Bucle principal del escáner. Ejecutar en proceso o hilo dedicado."""
-        self._running = True
-        logger.info(
-            "Escáner proactivo iniciado. Activos: %s. CPU límite: %.1f%%.",
-            self.assets,
-            self.cpu_limit_pct,
+        """
+        ⚠️ DEPRECATED (OPTION A - 11-Mar-2026)
+        
+        OLD: Autonomous scan loop (caused triple-scanning with MainOrchestrator)
+        NEW: MainOrchestrator is sole orchestrator. ScannerEngine is pure executor.
+        
+        This method is kept for backward compatibility but does NOTHING.
+        MainOrchestrator calls execute_scan() when it decides scans are due.
+        """
+        logger.warning(
+            "[DEPRECATED] ScannerEngine.run() is no-op in OPTION A. "
+            "MainOrchestrator is sole orchestrator. Remove scanner thread from start.py!"
         )
-        while self._running:
-            # HOT-RELOAD: Verificar si scanner está habilitado en DB
-            if self.storage:
-                try:
-                    modules_enabled = self.storage.get_global_modules_enabled()
-                    if not modules_enabled.get("scanner", True):
-                        logger.debug("[SCANNER] Módulo deshabilitado - esperando reactivación...")
-                        time.sleep(10)  # Esperar 10s y verificar de nuevo
-                        continue
-                except Exception as e:
-                    logger.warning(f"[SCANNER] Error verificando toggle: {e}")
-            
-            # HOT-RELOAD: Verificar cambios en timeframes configurados
-            try:
-                self._reload_timeframes_if_changed()
-            except Exception as e:
-                logger.warning(f"[SCANNER] Error reloading timeframes: {e}")
-            
-            # Módulo habilitado - ejecutar ciclo normal
-            try:
-                self._run_cycle()
-            except Exception as e:
-                logger.exception("Error en ciclo del escáner: %s", e)
-            sleep_s = self._adaptive_sleep()
-            deadline = time.monotonic() + sleep_s
-            while self._running and time.monotonic() < deadline:
-                time.sleep(0.2)
+        # No autonomous loop - MainOrchestrator controls timing
+        return
 
     def stop(self) -> None:
-        """Detiene el bucle del escáner."""
+        """Stops the autonomous loop (deprecated in OPTION A, but kept for compatibility)."""
         self._running = False
     
     def _reload_timeframes_if_changed(self) -> None:
@@ -437,37 +459,23 @@ class ScannerEngine:
     
     def get_scan_results_with_data(self) -> Dict[str, Dict[str, Any]]:
         """
-        Obtiene los últimos resultados del scanner con DataFrames incluidos.
+        Returns latest cached scan results with DataFrames.
+        
+        OPTION A: Simply returns self.last_results (updated by execute_scan())
         
         Returns:
-            Dict con "symbol|timeframe" -> {"regime": MarketRegime, "df": DataFrame, "symbol": str, "timeframe": str}
+            Dict with "symbol|timeframe" -> {"regime": ..., "df": ..., "symbol": ..., "timeframe": ...}
         """
         with self._lock:
-            results = {}
-            for key in self.last_regime:
-                # Parse key: "symbol|timeframe"
-                if "|" in key:
-                    symbol, timeframe = key.split("|", 1)
-                else:
-                    # Legacy support
-                    symbol = key
-                    timeframe = self.mt5_timeframe
-                    
-                results[key] = {
-                    "regime": self.last_regime[key],
-                    "df": self.last_dataframes.get(key),
-                    "symbol": symbol,
-                    "timeframe": timeframe,
-                    "provider_source": self.last_providers.get(key, "UNKNOWN")
-                }
-            return results
+            return self.last_results.copy() if self.last_results else {}
 
     def get_status(self) -> Dict[str, Any]:
-        """Estado actual: último régimen por símbolo, CPU, etc."""
+        """Current status: regimes, CPU, last results count (no dedup stats in OPTION A)."""
         with self._lock:
             regimes = dict(self.last_regime)
             last_scan = dict(self.last_scan_time)
         cpu = self.cpu_monitor.get_cpu_percent() if psutil else 0.0
+        
         return {
             "assets": list(self.assets),
             "last_regime": {k: v.value for k, v in regimes.items()},
@@ -475,4 +483,6 @@ class ScannerEngine:
             "cpu_percent": cpu,
             "cpu_limit_pct": self.cpu_limit_pct,
             "running": self._running,
+            # OPTION A: Dedup removed (timing is in MainOrchestrator now)
+            "cached_results": len(self.last_results),
         }

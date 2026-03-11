@@ -320,6 +320,230 @@ sys_users + sys_audit_logs (BD Global)
 - ✅ Soft delete: Compliance with data retention regulations
 - ✅ Audit trail: Trace every change with admin_id + trace_id
 
+### Broker Account Management (Fase X.3 - Arquitectura SaaS Multi-Broker)
+
+**Propósito**: Permitir que cada trader gestione múltiples cuentas broker (MT5, NT8, etc.) con segregación clara entre:
+- **Capa 0 (Global)**: `sys_broker_accounts` - Cuentas DEMO del sistema para data feeds
+- **Capa 1 (Per-Tenant)**: `usr_broker_accounts` - Cuentas personales del trader para ejecución
+
+#### Arquitectura de 2 Capas
+
+**Capa 0: Sistema Global** (`data_vault/global/aethelgard.db`):
+```sql
+CREATE TABLE sys_broker_accounts (
+    id TEXT PRIMARY KEY,                    -- UUID
+    broker_name TEXT NOT NULL,              -- 'MT5', 'NT8', 'BINANCE'
+    account_type TEXT DEFAULT 'DEMO',       -- DEMO only (no REAL)
+    connector_class TEXT,                   -- Python connector class
+    is_enabled BOOLEAN DEFAULT TRUE,        -- ¿está activo?
+    
+    -- Credenciales del sistema (encriptadas)
+    credentials_encrypted TEXT,             -- JSON: {login, password, server}
+    
+    -- Metadata
+    balance DECIMAL(15,2),                  -- Saldo actual (cached)
+    last_sync_utc TIMESTAMP,                -- Última sincronización
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+**Uso**: 
+- Sistema obtiene datos (precios, calendarios económicos, feeds)
+- NO se ejecutan trades en estas cuentas (DEMO only)
+- Admin gestiona para asegurar data availability
+
+**Capa 1: Por Trader** (`data_vault/tenants/{user_id}/aethelgard.db`):
+```sql
+CREATE TABLE usr_broker_accounts (
+    id TEXT PRIMARY KEY,                    -- UUID
+    user_id TEXT NOT NULL,                  -- Foreign key → users
+    broker_name TEXT NOT NULL,              -- 'MT5', 'NT8', 'BINANCE'
+    broker_account_id TEXT NOT NULL,        -- ID en el broker (MT5 account number)
+    
+    -- Configuración
+    account_type TEXT DEFAULT 'DEMO',       -- 'REAL' | 'DEMO' (usuario elige)
+    account_status TEXT DEFAULT 'ACTIVE',   -- 'ACTIVE' | 'SUSPENDED' | 'CLOSED'
+    
+    -- Credenciales (encriptadas con Fernet)
+    credentials_encrypted TEXT,             -- JSON: {login, password, server}
+    
+    -- Limits & Risk per trading account
+    daily_loss_limit DECIMAL(10,2),         -- Máxima pérdida diaria (USD)
+    max_position_size DECIMAL(10,4),        -- Máximo volumen por trade
+    max_open_positions INTEGER DEFAULT 3,   -- Máximo # posiciones simultaneas
+    
+    -- Metadata
+    balance DECIMAL(15,2),                  -- Saldo actual (cached)
+    equity DECIMAL(15,2),                   -- Equity actual (cached)
+    last_sync_utc TIMESTAMP,                -- Última sincronización
+    
+    -- Audit
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    UNIQUE(user_id, broker_name, broker_account_id),
+    FOREIGN KEY(user_id) REFERENCES users(id)
+);
+```
+
+**Uso**:
+- Trader gestiona SUS cuentas (1 o varias)
+- Ejecución de trades ocurre en estas cuentas (REAL o DEMO del trader)
+- Cada trader ve/controla solo sus cuentas (aislamiento + seguridad)
+
+#### Segregación de Responsabilidades
+
+| Aspecto | `sys_broker_accounts` | `usr_broker_accounts` |
+|--------|----------------------|-----------------------|
+| **Sistema** | Capa 0 (global) | Capa 1 (per-tenant) |
+| **Propósito** | Data feeds | Trading execution |
+| **Tipo Cuenta** | DEMO only | REAL o DEMO (trader elige) |
+| **Quién Accede** | Sistema + Admin | Trader + Admin |
+| **Operaciones** | Lectura de datos | Ejecución de trades |
+| **Aislamiento** | N/A (compartida) | Por user_id (completamente aislada) |
+| **Credenciales** | Encriptadas (admin) | Encriptadas (user owns) |
+
+#### Flujo de Trading Seguro
+
+```
+1. Trader inicia sesión (JWT token con user_id)
+   ↓
+2. TradeClosureListener recibe evento de broker
+   - Extrae user_id del JWT/token
+   - Consulta usr_broker_accounts[user_id] para obtener account_type (REAL|DEMO)
+   - Si no existe → Default DEMO (fail-safe)
+   ↓
+3. Executor valida:
+   - ¿Token.user_id == signal.user_id? (ownership)
+   - ¿usr_broker_accounts existe para user_id + broker? (account active)
+   - ¿account_status == 'ACTIVE'? (allowed)
+   ↓
+4. Si todo OK → Ejecuta trade
+   - Registra con account_type correcta (REAL del usuario, no sistema)
+   - Auditar en sys_audit_logs (quién, cuándo, cuenta)
+   ↓
+5. RiskManager monitorea:
+   - daily_loss_limit por cuenta
+   - max_position_size per trade
+   - max_open_positions en paralelo
+```
+
+#### Encriptación de Credenciales
+
+```python
+from cryptography.fernet import Fernet
+
+class CredentialVault:
+    def __init__(self, encryption_key: str):
+        self.cipher = Fernet(encryption_key)
+    
+    def encrypt_credentials(self, creds: Dict) -> str:
+        """Encrypt {login, password, server} to single encrypted string"""
+        json_creds = json.dumps(creds)
+        encrypted = self.cipher.encrypt(json_creds.encode())
+        return encrypted.decode()
+    
+    def decrypt_credentials(self, encrypted: str) -> Dict:
+        """Decrypt back to {login, password, server}"""
+        decrypted = self.cipher.decrypt(encrypted.encode())
+        return json.loads(decrypted.decode())
+```
+
+**Key Management**:
+- Encryption key en `config/` o environment variable (NEVER in code)
+- Key rotation strategy (plan: quarterly)
+- Credentials NEVER logged (risk exposure)
+
+#### Multi-Tenant Security
+
+**Trader A NUNCA puede acceder cuentas de Trader B:**
+
+```python
+# ✅ CORRECTO (broker_account_service.py):
+async def get_active_account(user_id: str, broker_name: str) -> Dict:
+    return storage.fetch_one("""
+        SELECT * FROM usr_broker_accounts 
+        WHERE user_id = ? AND broker_name = ? AND account_status = 'ACTIVE'
+    """, (user_id, broker_name))
+    # user_id garantiza aislamiento técnico (storage es per-tenant)
+
+# ❌ NUNCA (falla de seguridad):
+async def get_account(account_id: str) -> Dict:
+    return storage.fetch_one(
+        "SELECT * FROM usr_broker_accounts WHERE id = ?", (account_id,)
+    )
+    # Sin user_id filter, podría retornar cuenta de otro usuario
+```
+
+**Validación per request:**
+
+```python
+@router.post("/accounts/{account_id}/activate")
+async def activate_account(
+    account_id: str, 
+    token: TokenPayload = Depends(get_current_active_user)
+):
+    storage = TenantDBFactory.get_storage(token.sub)
+    
+    # Verificar propiedad antes de modificar
+    account = storage.fetch_one(
+        "SELECT * FROM usr_broker_accounts WHERE id = ? AND user_id = ?",
+        (account_id, token.sub)  # user_id validation obligatoria
+    )
+    
+    if not account:
+        raise HTTPException(403, "Not owner of this account")
+    
+    # Safe to update
+    storage.execute(
+        "UPDATE usr_broker_accounts SET account_status='ACTIVE' WHERE id=?",
+        (account_id,)
+    )
+```
+
+#### Rate Limiting por Cuenta
+
+```python
+async def check_daily_loss_limit(
+    user_id: str, 
+    account_id: str, 
+    trade_loss: Decimal
+) -> bool:
+    """Enforce daily loss limit configured per account"""
+    
+    account = storage.fetch_one(
+        "SELECT daily_loss_limit FROM usr_broker_accounts WHERE id=? AND user_id=?",
+        (account_id, user_id)
+    )
+    
+    if not account:
+        return False  # Account not found, fail-secure
+    
+    today_loss = storage.fetch_one("""
+        SELECT SUM(ABS(profit)) as total_loss FROM usr_trades
+        WHERE user_id=? AND broker_account_id=? 
+        AND DATE(close_time)=DATE('now')
+        AND profit < 0
+    """, (user_id, account_id))
+    
+    total_so_far = today_loss['total_loss'] or Decimal(0)
+    
+    if total_so_far + trade_loss > account['daily_loss_limit']:
+        logger.warning(f"LOSS LIMIT: User {user_id} exceeded on account {account_id}")
+        return False
+    
+    return True
+```
+
+#### Gobernanza
+
+- ✅ **SSOT**: sys_broker_accounts global, usr_broker_accounts per-tenant
+- ✅ **Encriptación**: Fernet obligatoria para credenciales
+- ✅ **Aislamiento**: user_id en TODAS las queries de usr_broker_accounts
+- ✅ **Audit Trail**: INSERT/UPDATE/DELETE en sys_audit_logs
+- ✅ **Type Hints**: 100% en BrokerAccountService
+- ✅ **Error Handling**: Fail-secure (default DEMO si no existe account)
+
 ## 🖥️ UI/UX REPRESENTATION
 *   **Auth Terminal**: Interfaz de acceso "Premium Dark" con visualización de handshake técnico.
 *   **Tenant Badge**: Indicador persistente en el header con el `tenant_id` activo y estado de cifrado de la sesión.
