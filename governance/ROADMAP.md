@@ -269,6 +269,22 @@
 - [ ] **Capa Institutional (FIX API)**: Transporte QuickFIX para Prime Brokers.
 - [ ] **Adaptive Slippage Controller**: Monitor de desviación y mitigación dinámica (HU 5.2).
 
+---
+
+### 🌐 V5 (Vector de Interfaz Fractal & Experiencia Futurista) — PLANIFICADO
+**Objetivo**: Evolucionar la terminal a una consola de alta densidad de información con navegación fractal y elementos de manipulación directa.
+**Trace_ID**: UI-V3-FRACTAL-FUTURE-2026
+**Dominios**: 09 (Interfaz Institucional)
+
+**Hitos Planificados**:
+- [ ] **Unified Telemetry Stream (The Synapse)**: Endpoint unificado que centralice Scanner, Strategy, Signal y Position Managers en un solo flujo.
+- [ ] **Fractal Zoom Engine**: Navegación por capas (Global → Motor → Atómico) sin recarga de página.
+- [ ] **Direct Manipulation (Drag & Drop)**: 
+    - Arrastrar señales a "Watchlists" o "Live Execution".
+    - Reordenamiento dinámico de widgets de monitoreo.
+- [ ] **Sci-Fi Component Library**: Implementación de HUDs (Heads-Up Display) para salud de satélites y scoring de señales.
+- [ ] **Event Soldering**: Conexión de `ANOMALY_DETECTED` y `REASONING_EVENT` al frontend.
+
 > [!NOTE]
 > El historial completo de V1, V2 y Auditoría ha sido migrado a [SYSTEM_LEDGER.md](docs/SYSTEM_LEDGER.md).
 

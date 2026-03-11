@@ -138,34 +138,85 @@ async def main():
     print(f"\n{Colors.BOLD}{Colors.CYAN}AETHELGARD SYSTEM INTEGRITY AUDIT - PARALLEL EVOLUTION{Colors.RESET}")
     print(f"{Colors.BLUE}{'='*80}{Colors.RESET}\n")
 
-    # Definición de hilos de validación (Paralelización estratégica)
-    # Formato: [ejecutable, script, args...]
-    audit_tasks = [
+    # ═══════════════════════════════════════════════════════════════════════════
+    # AUDIT STRUCTURE BY DOMAIN
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Domain 01: IDENTITY_SECURITY
+    domain_01_identity = [
         run_audit_module("Architecture", ["python", "scripts/utilities/architecture_audit.py"], workspace),
         run_audit_module("Tenant Isolation Scanner", ["python", "scripts/tenant_isolation_audit.py"], workspace),
-        run_audit_module("QA Guard", ["python", "scripts/qa_guard.py"], workspace),
-        run_audit_module("Code Quality", ["python", "scripts/code_quality_analyzer.py"], workspace),
-        run_audit_module("UI Quality", ["python", "scripts/utilities/ui_health_check.py"], workspace),
-        run_audit_module("UI Build", ["npm.cmd", "run", "build"], workspace / "ui"),
-        run_audit_module("Manifesto", ["python", "scripts/manifesto_enforcer.py"], workspace),
-        run_audit_module("Patterns", ["python", "scripts/enforce_patterns.py"], workspace),
         run_audit_module("Credentials & Seeds", ["python", "scripts/utilities/credentials_seeds_audit.py"], workspace),
-        run_audit_module("Duplicate Methods", ["python", "scripts/detect_duplicate_methods.py"], workspace),
         run_audit_module("User Management Quality", ["python", "scripts/user_management_quality_audit.py"], workspace),
-        run_audit_module("Interface Contracts", ["python", "scripts/validate_interface_contracts.py"], workspace),
-        run_audit_module("PHASE 8: Economic Veto", ["python", "scripts/utilities/economic_veto_audit.py"], workspace),
+    ]
+    
+    # Domain 02-03: CONTEXT_INTEL & ALPHA_ENGINE (Core Signal Generation)
+    domain_02_03_signal_gen = [
         run_audit_module("Core Tests", ["python", "-m", "pytest", "tests/test_signal_deduplication.py", "tests/test_risk_manager.py", "-q"], workspace),
+    ]
+    
+    # Domain 04: RISK_GOVERNANCE
+    domain_04_risk = [
         run_audit_module("FASE B: NewsValidator", ["python", "-m", "pytest", "tests/test_news_sanitizer.py", "tests/test_economic_calendar_consolidation.py", "-q"], workspace),
-        run_audit_module("Seeds Tests", ["python", "-m", "pytest", "tests/test_seed_demo_data.py", "-q"], workspace),
+    ]
+    
+    # Domain 05: UNIVERSAL_EXECUTION
+    domain_05_execution = [
         run_audit_module("SPRINT S007", ["python", "-m", "pytest", "tests/test_strategy_ranker.py", "tests/test_strategy_engine_factory_phase3.py", "tests/test_main_orchestrator_phase4.py", "tests/test_circuit_breaker_phase5.py", "tests/test_executor_circuit_breaker_integration.py", "tests/test_qa_phase_integration.py", "tests/test_strategy_monitor_service.py", "tests/test_strategy_ws.py", "tests/test_degradation_alert_service.py", "-q"], workspace),
-        run_audit_module("FASE 5: Tenant-Aware", ["python", "-m", "pytest", "tests/test_fase5_tenant_aware_orchestrator.py", "tests/test_fase5_mixin_tenant_aware.py", "-v"], workspace),
         run_audit_module("Integration", ["python", "-m", "pytest", "tests/test_executor_metadata_integration.py", "-q"], workspace),
-        run_audit_module("Tenant Security", ["python", "-m", "pytest", "tests/test_tenant_isolation_edge_history.py", "-q"], workspace),
-        run_audit_module("Connectivity", ["python", "scripts/utilities/check_connectivity_health.py"], workspace),
+    ]
+    
+    # INTELLIGENT SIGNAL DEDUPLICATION (Multi-module system)
+    # ├─ Module 1: Dynamic Windows + Storage (Phase 1-2)
+    # ├─ Module 2: Autonomous Learning (Phase 3)
+    # ├─ Module 3: Signal Quality Validation (THIS - Signal Quality Scoring)
+    intelligent_dedup = [
+        run_audit_module("ISD: Signal Quality Validation", ["python", "-m", "pytest", "tests/test_signal_quality_scorer_phase4.py", "-v"], workspace),
+    ]
+    
+    # Domain 08: DATA_SOVEREIGNTY
+    domain_08_data = [
         run_audit_module("System DB", ["python", "scripts/utilities/verify_sync_fidelity.py"], workspace),
         run_audit_module("DB Integrity", ["python", "scripts/utilities/db_uniqueness_audit.py"], workspace),
+    ]
+    
+    # Domain 09: INSTITUTIONAL_UI
+    domain_09_ui = [
+        run_audit_module("UI Quality", ["python", "scripts/utilities/ui_health_check.py"], workspace),
+        run_audit_module("UI Build", ["npm.cmd", "run", "build"], workspace / "ui"),
+    ]
+    
+    # CROSS-CUTTING CONCERNS (Governance, Quality, Infrastructure)
+    cross_cutting = [
+        run_audit_module("QA Guard", ["python", "scripts/qa_guard.py"], workspace),
+        run_audit_module("Code Quality", ["python", "scripts/code_quality_analyzer.py"], workspace),
+        run_audit_module("Manifesto", ["python", "scripts/manifesto_enforcer.py"], workspace),
+        run_audit_module("Patterns", ["python", "scripts/enforce_patterns.py"], workspace),
+        run_audit_module("Duplicate Methods", ["python", "scripts/detect_duplicate_methods.py"], workspace),
+        run_audit_module("Interface Contracts", ["python", "scripts/validate_interface_contracts.py"], workspace),
+        run_audit_module("Connectivity", ["python", "scripts/utilities/check_connectivity_health.py"], workspace),
         run_audit_module("Documentation", ["python", "scripts/utilities/documentation_audit.py"], workspace),
     ]
+    
+    # SPECIALIZED DOMAINS
+    specialized = [
+        run_audit_module("PHASE 8: Economic Veto", ["python", "scripts/utilities/economic_veto_audit.py"], workspace),
+        run_audit_module("FASE 5: Tenant-Aware", ["python", "-m", "pytest", "tests/test_fase5_tenant_aware_orchestrator.py", "tests/test_fase5_mixin_tenant_aware.py", "-v"], workspace),
+        run_audit_module("Tenant Security", ["python", "-m", "pytest", "tests/test_tenant_isolation_edge_history.py", "-q"], workspace),
+        run_audit_module("Seeds Tests", ["python", "-m", "pytest", "tests/test_seed_demo_data.py", "-q"], workspace),
+    ]
+    
+    # AGGREGATE ALL AUDIT TASKS
+    audit_tasks = (
+        cross_cutting +      # First: governance & quality baseline
+        domain_01_identity +
+        domain_02_03_signal_gen +
+        domain_04_risk +
+        domain_05_execution +
+        intelligent_dedup +
+        domain_08_data +
+        domain_09_ui +
+        specialized
+    )
 
     # Ejecución paralela masiva
     print(f"{Colors.BLUE}[INFO]{Colors.RESET} Desplegando agentes de integridad en paralelo...")
@@ -173,29 +224,74 @@ async def main():
     
     total_duration = time.monotonic() - start_total
     
-    # Interfaz de resumen sofisticada
-    print(f"\n{Colors.BOLD}{Colors.CYAN}SYSTEM INTEGRITY MATRIX{Colors.RESET}")
-    print(f"{Colors.BLUE}{'-'*80}{Colors.RESET}")
-    print(f"{Colors.BOLD}{'MODULO':<30} {'ESTADO':<15} {'DURACION':<15}{Colors.RESET}")
+    # Interfaz de resumen sofisticada, categorizada por DOMINIO
+    print(f"\n{Colors.BOLD}{Colors.CYAN}AETHELGARD: DOMAIN-BY-DOMAIN INTEGRITY REPORT{Colors.RESET}")
+    print(f"{Colors.BLUE}{'='*100}{Colors.RESET}")
+    
+    # Categorizar resultados por dominio
+    domain_results = {
+        "CROSS-CUTTING (Governance & Quality)": [],
+        "DOMAIN 01: Identity & Security": [],
+        "DOMAIN 02-03: Context Intelligence & Signal Generation": [],
+        "DOMAIN 04: Risk Governance": [],
+        "DOMAIN 05: Universal Execution": [],
+        "INTELLIGENT SIGNAL DEDUP: Quality Validation": [],
+        "DOMAIN 08: Data Sovereignty": [],
+        "DOMAIN 09: Institutional UI": [],
+        "SPECIALIZED (Multidomain Integration)": [],
+    }
+    
+    # Mapear resultados a dominios
+    for res in results:
+        if res['name'] in ["Architecture", "QA Guard", "Code Quality", "Manifesto", "Patterns", "Duplicate Methods", "Interface Contracts", "Documentation"]:
+            domain_results["CROSS-CUTTING (Governance & Quality)"].append(res)
+        elif res['name'] in ["Tenant Isolation Scanner", "Credentials & Seeds", "User Management Quality"]:
+            domain_results["DOMAIN 01: Identity & Security"].append(res)
+        elif res['name'] == "Core Tests":
+            domain_results["DOMAIN 02-03: Context Intelligence & Signal Generation"].append(res)
+        elif res['name'] == "FASE B: NewsValidator":
+            domain_results["DOMAIN 04: Risk Governance"].append(res)
+        elif res['name'] in ["SPRINT S007", "Integration"]:
+            domain_results["DOMAIN 05: Universal Execution"].append(res)
+        elif res['name'] == "ISD: Signal Quality Validation":
+            domain_results["INTELLIGENT SIGNAL DEDUP: Quality Validation"].append(res)
+        elif res['name'] in ["System DB", "DB Integrity"]:
+            domain_results["DOMAIN 08: Data Sovereignty"].append(res)
+        elif res['name'] in ["UI Quality", "UI Build"]:
+            domain_results["DOMAIN 09: Institutional UI"].append(res)
+        else:
+            domain_results["SPECIALIZED (Multidomain Integration)"].append(res)
     
     failures = 0
-    for res in results:
-        status_color = Colors.GREEN if res["success"] else Colors.RED
-        status_text = "PASSED" if res["success"] else "FAILED"
-        if not res["success"]: failures += 1
+    passed = 0
+    for domain, tests in domain_results.items():
+        if not tests:
+            continue
+        domain_pass = sum(1 for t in tests if t["success"])
+        domain_total = len(tests)
+        domain_color = Colors.GREEN if domain_pass == domain_total else Colors.GOLD if domain_pass > 0 else Colors.RED
+        if domain_pass < domain_total: failures += domain_total - domain_pass
+        passed += domain_pass
         
-        print(f"{res['name']:<30} {status_color}{status_text:<15}{Colors.RESET} {res['duration']:.2f}s")
-
-    print(f"{Colors.BLUE}{'-'*80}{Colors.RESET}")
-    print(f"{Colors.BOLD}TOTAL TIME: {total_duration:.2f}s{Colors.RESET}")
+        print(f"\n{Colors.BOLD}{domain_color}[{domain_pass}/{domain_total}] {domain}{Colors.RESET}")
+        print(f"{Colors.BLUE}{'-'*100}{Colors.RESET}")
+        for test in tests:
+            t_color = Colors.GREEN if test["success"] else Colors.RED
+            t_status = "[PASS]" if test["success"] else "[FAIL]"
+            print(f"  {t_color}{test['name']:<40} {t_status:<10}{Colors.RESET} [{test['duration']:.2f}s]")
+    
+    print(f"\n{Colors.BLUE}{'='*100}{Colors.RESET}")
+    print(f"{Colors.BOLD}TOTAL EXECUTION TIME: {total_duration:.2f}s | TOTAL: {passed}/{len(results)} PASSED{Colors.RESET}")
 
     if failures == 0:
-        print(f"\n{Colors.GREEN}{Colors.BOLD}================================================================================{Colors.RESET}")
-        print(f"{Colors.GREEN}{Colors.BOLD}[SUCCESS] SYSTEM INTEGRITY GUARANTEED - READY FOR EXECUTION{Colors.RESET}")
-        print(f"{Colors.GREEN}{Colors.BOLD}================================================================================{Colors.RESET}")
+        print(f"\n{Colors.GREEN}{Colors.BOLD}{'='*100}")
+        print(f"[SUCCESS] SYSTEM INTEGRITY GUARANTEED - ALL DOMAINS COMPLIANT - READY FOR EXECUTION")
+        print(f"{'='*100}{Colors.RESET}")
         return 0
     else:
-        print(f"\n{Colors.RED}{Colors.BOLD}[FAIL] {failures} VECTORS COMPROMISED - REVIEW LOGS IMMEDIATELY{Colors.RESET}")
+        print(f"\n{Colors.RED}{Colors.BOLD}{'='*100}")
+        print(f"[FAIL] {failures} TEST(S) FAILED - REVIEW LOGS AND FIX BEFORE DEPLOYING")
+        print(f"{'='*100}{Colors.RESET}")
         return 1
 
 if __name__ == "__main__":
