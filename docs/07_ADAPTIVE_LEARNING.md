@@ -560,6 +560,162 @@ async def _check_and_run_weekly_dedup_learning(self) -> None:
 - Si recuperan → re-promoción automática a LIVE
 - **Archivo**: `core_brain/strategy_ranker.py` (líneas 167-222)
 
+---
+
+## 🌑 SHADOW EVOLUTION v2.1: Protocolo de Incubación Multi-Instancia
+
+**Introducción**: Aethelgard es una **incubadora de estrategias** que ejecuta múltiples configuraciones EN PARALELO dentro de una única cuenta DEMO, comparando desempeño en vivo para promover automáticamente solo lo que demuestra rentabilidad consistente.
+
+### 0. NÚCLEO DE DECISIÓN: Los 3 Pilares de Viabilidad
+
+Toda SHADOW instance es evaluada ÚNICAMENTE por 3 pilares constitucionales:
+
+**PILAR 1️⃣: PROFITABILIDAD** (¿Gana dinero?)
+- Profit Factor >= 1.5 (dinero ganado / dinero perdido)
+- Win Rate >= 60% (porcentaje de trades ganadores)
+- Si AMBOS fallan → MUERTE INMEDIATA
+
+**PILAR 2️⃣: RESILIENCIA** (¿Sobrevive stress?)
+- Max Drawdown <= 12% del capital
+- Consecutive Losses <= 3 (máximo 3 pérdidas seguidas)
+- Si CUALQUIERA falla bajo volatilidad extrema → CUARENTENA
+
+**PILAR 3️⃣: CONSISTENCIA** (¿Es predecible?)
+- Trades ejecutados >= 15 (muestra estadística mínima)
+- Equity Curve coefficient of variation <= 0.40 (curva suave)
+- Si equity curve es errática → MONITOR 14 días
+
+**MUERTE AUTOMÁTICA**: Si CUALQUIER Pilar falla → exclusión inmediata
+**CUARENTENA**: Si 2+ métricas confirman debilidad → monitor 7 días
+**VIVO**: Si 3 Pilares PASAN → continúa compitiendo
+
+### 1. Arquitectura Multi-Instancia (Pool de Configuraciones)
+
+**Concepto**: Ejecutar **N instancias de la misma estrategia CON PARÁMETROS DIFERENTES** en paralelo dentro de UNA SOLA cuenta DEMO.
+
+```
+CUENTA DEMO ÚNICA (ej: MT5_DEMO_001)
+│
+├─ [INSTANCIA A] BRK_OPEN_0001 + Parameters:{risk:0.01%, lookback:60}
+├─ [INSTANCIA B] BRK_OPEN_0001 + Parameters:{risk:0.02%, lookback:120}
+├─ [INSTANCIA C] BRK_OPEN_0001 + Parameters:{risk:0.01%, lookback:90} + regime_filter=TREND_ONLY
+├─ [INSTANCIA D] OliverVelez + Parameters:{aggressive:true}
+├─ [INSTANCIA E] OliverVelez + Parameters:{aggressive:false}
+└─ [INSTANCIA F] MOM_BIAS_0001 + Parameters:{zcore_threshold:2.5}
+
+Todas ejecutando en paralelo → Resultados registrados individualmente → Sistema elige el mejor
+```
+
+**Gobernanza MULTI-INSTANCIA** (RULE DB-1):
+```python
+class ShadowInstance:
+    """Configuración ejecutable dentro del pool (Account: DEMO)."""
+    instance_id: str                    # UUID único
+    strategy_id: str                    # BRK_OPEN_0001
+    parameter_overrides: Dict           # {"risk_pct": 0.02, "lookback": 120}
+    regime_filters: List                # ["TREND_UP", "EXPANSION"]
+    birth_timestamp: datetime           # Cuando se crea
+    status: str                         # INCUBATING | SHADOW_READY | PROMOTED_TO_REAL | DEAD | QUARANTINED
+    account_type: str                   # DEMO | REAL (vinculación inmutable)
+```
+
+### 2. Métricas Confirmadoras (13 Indicadores: Apoyo a 3 Pilares)
+
+| # | Métrica | Pilar | Threshold | Severidad | Función |
+|---|---------|-------|-----------|-----------|---------|
+| 1️⃣ | **Profit Factor** | PROFITABILIDAD | < 1.2 | 🔴 CRÍTICO | Muerte inmediata |
+| 2️⃣ | **Win Rate** | PROFITABILIDAD | < 35% | 🔴 CRÍTICO | Muerte inmediata |
+| 3️⃣ | **Consecutive Losses** | RESILIENCIA | > 5 | 🔴 CRÍTICO | Muerte inmediata |
+| 4️⃣ | **Max Drawdown** | RESILIENCIA | > 15% | 🔴 CRÍTICO | Muerte inmediata |
+| 5️⃣ | **Calmar Ratio** | RESILIENCIA | < 0.5 | 🟠 ALTO | Cuarentena (7d) |
+| 6️⃣ | **Trade Frequency** | CONSISTENCIA | < 1 trade/día | 🟡 MEDIO | Monitor (14d) |
+| 7️⃣ | **Slippage Impact** | PROFITABILIDAD | > 10 pips avg | 🟠 ALTO | Revisión manual |
+| 8️⃣ | **Recovery Factor** | RESILIENCIA | < 1.5 | 🟡 MEDIO | Cuarentena + retest |
+| 9️⃣ | **Avg Trade Duration** | CONSISTENCIA | > 8 hours | 🟢 BAJO | Monitor overnight risk |
+| 🔟 | **Equity Curve Variability** | CONSISTENCIA | CV > 0.40 | 🟡 MEDIO | Cuarentena |
+| 1️⃣1️⃣ | **Risk-Reward Ratio** | PROFITABILIDAD | < 1:1.5 | 🟠 ALTO | Exclusión persistente |
+| 1️⃣2️⃣ | **Zero-Profit Days** | PROFITABILIDAD | > 40% período | 🟢 BAJO | Monitor trend |
+| 1️⃣3️⃣ | **Inactivity Duration** | CONSISTENCIA | > 48h sin signal | 🟢 BAJO | Review readiness |
+
+**Lógica Core** (Pilares, no métricas):
+```python
+def evaluate_shadow_health(instance: ShadowInstance) -> HealthStatus:
+    """Determina viabilidad SOLO por 3 Pilares (RULE ID-1)."""
+    
+    trace_id = f"TRACE_HEALTH_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{instance.instance_id[:8]}"
+    metrics = instance.performance_metrics
+    
+    # PILAR 1: PROFITABILIDAD
+    pillar1_alive = (metrics.profit_factor >= 1.5 and metrics.win_rate >= 0.60)
+    if not pillar1_alive and instance.trades_executed >= 15:
+        logger.warning(f"[SHADOW] {trace_id}: MUERTE - Pilar 1 (PROFITABILIDAD) fallido")
+        return HealthStatus.DEAD
+    
+    # PILAR 2: RESILIENCIA
+    pillar2_alive = (metrics.max_drawdown <= 0.12 and metrics.consecutive_losses <= 3)
+    if not pillar2_alive:
+        logger.warning(f"[SHADOW] {trace_id}: CUARENTENA - Pilar 2 (RESILIENCIA) comprometido")
+        return HealthStatus.QUARANTINED
+    
+    # PILAR 3: CONSISTENCIA
+    equity_cv = calculate_coefficient_variation(instance.equity_history)
+    pillar3_alive = (instance.trades_executed >= 15 and equity_cv <= 0.40)
+    if not pillar3_alive:
+        logger.info(f"[SHADOW] {trace_id}: MONITOR - Pilar 3 (CONSISTENCIA) bajo revisión")
+        return HealthStatus.MONITOR
+    
+    logger.info(f"[SHADOW] {trace_id}: ✅ HEALTHY - 3 Pilares validados")
+    return HealthStatus.HEALTHY
+```
+
+### 3. Filtros de Promoción Rigurosa (SHADOW → REAL)
+
+**Gobernanza MULTI-INSTANCIA** (RULE DB-1 & RULE ID-1):
+
+```sql
+CREATE TABLE sys_shadow_instances (
+  instance_id TEXT PRIMARY KEY,
+  strategy_id TEXT NOT NULL,
+  parameter_overrides TEXT,        -- JSON
+  account_type TEXT NOT NULL,      -- DEMO | REAL (inmutable)
+  account_id TEXT,
+  birth_timestamp TIMESTAMP,
+  status TEXT,                     -- INCUBATING | SHADOW_READY | PROMOTED_TO_REAL | DEAD | QUARANTINED
+  total_trades_executed INTEGER,
+  profit_factor REAL,
+  win_rate REAL,
+  max_drawdown_pct REAL,
+  consecutive_losses_max INTEGER,
+  equity_curve_cv REAL,
+  promotion_trace_id TEXT,         -- TRACE_PROMOTION_...
+  backtest_trace_id TEXT,          -- TRACE_BACKTEST_...
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP
+);
+
+CREATE TABLE sys_shadow_performance_history (
+  id INTEGER PRIMARY KEY,
+  instance_id TEXT NOT NULL,
+  evaluation_date DATE,
+  pillar1_status TEXT,
+  pillar2_status TEXT,
+  pillar3_status TEXT,
+  event_trace_id TEXT              -- TRACE_EVENT_...
+);
+
+CREATE TABLE sys_shadow_promotion_log (
+  promotion_id INTEGER PRIMARY KEY,
+  instance_id TEXT NOT NULL,
+  trace_id TEXT UNIQUE NOT NULL,   -- TRACE_PROMOTION_REAL_20260312_...
+  promotion_status TEXT,
+  pillar1_passed BOOLEAN,
+  pillar2_passed BOOLEAN,
+  pillar3_passed BOOLEAN
+);
+```
+
+**Status**: ✅ IMPLEMENTACIÓN LISTA (Trace_ID: DOC-V3-QUANTUM-EDGE-PROTOCOL)
+
 ### Las 7 FORMAS DE SHADOW (Operacionales)
 
 Un mismo modo "SHADOW" implementa 7 comportamientos automáticos:

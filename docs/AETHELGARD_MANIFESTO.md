@@ -732,6 +732,157 @@ Con `bootstrap_tenant_template()`:
 
 ---
 
+### IV.D Principio de Selección Natural de Estrategias - SHADOW EVOLUTION v2.1
+
+**Fecha de Introducción**: 12 de Marzo de 2026  
+**Filosofía**: El mercado es el único juez. Las estrategias que ganan dinero consistentemente progresan a capital real. Las que fracasan se excluyen automáticamente.
+
+#### La Verdad Incómoda: Paradoja del Juicio Humano
+
+Antes de SHADOW EVOLUTION, el sistema dependía de **criterios estáticos predefinidos**:
+- Thresholds "mágicos" elegidos por humanos (PF > 1.5, WR > 60%, DD < 12%)
+- Decisiones basadas en confianza, no en hechos
+- Riesgo sistémico: estrategias deficientes infiltrándose en cuenta REAL
+
+**SHADOW EVOLUTION establece Darwinismo Puro**:
+- Cada estrategia debe **ganar en vivo** para progresar
+- La competencia ocurre en DEMO (sin riesgo)
+- Solo probadas son promovidas a REAL (capital protegido)
+
+#### Conceptos Fundamentales
+
+**1. DEMO como Campo de Entrenamiento**:
+- Cuenta separada, números ficticios, sin restricciones operativas
+- 6 instancias de estrategias competindo en paralelo (pool)
+- Cada instancia = misma lógica + PARÁMETROS DIFERENTES
+- Período de prueba: Sin límite temporal (basado en viabilidad demostrables)
+- Métricas registradas: PnL, Sharpe, Drawdown máximo, consecutivas pérdidas
+
+**2. REAL como Santuario Protegido**:
+- Dinero real del usuario
+- Restricción doble: DD máximo 8% (vs 12% en DEMO)
+- Revert automático a DEMO si DD > 8%
+- Escalamiento gradual: Comienza con 10% capital, sube solo después de 100+ trades exitosos
+
+**3. Evaluación por 3 Pilares (No Métricas Secundarias)**:
+
+| Pilar | Condición | Consecuencia |
+|-------|-----------|-------------|
+| **PROFITABILIDAD** | PF ≥ 1.5 AND WR ≥ 60% | Si falla: MUERTE inmediata |
+| **RESILIENCIA** | DD ≤ 12% AND CL ≤ 3 | Si falla: CUARENTENA (7 días) |
+| **CONSISTENCIA** | Trades ≥ 15 AND CV ≤ 0.40 | Si falla: MONITOR (14 días) |
+
+**Lógica de Decisión**:
+```python
+if ALL_3_PILARES_PASS:
+    status = HEALTHY  # Elegible para promoción
+elif ANY_PILAR_FAILS:
+    status = DEAD | QUARANTINED | MONITOR (según severidad)
+```
+
+**4. Proceso Automático de Selección (Lunes 00:00 UTC)**:
+
+Cada lunes a medianoche UTC, el sistema evalúa:
+1. **Calcula métricas** de cada instancia en DEMO
+2. **Evalúa 3 Pilares** (ShadowManager.evaluate_all_instances())
+3. **Identifica candidatos**: Instancias con 3/3 Pilares PASS
+4. **Genera Trace_ID**: TRACE_PROMOTION_REAL_YYYYMMDD_HHMMss_instanceid
+5. **Promueve**: Copia configuración a REAL, inicia ejecución con restricciones
+6. **Registra**: Log inmutable en sys_shadow_promotion_log
+
+**5. Guardia Estricta para REAL Account**:
+
+```
+ANTES DE CADA TRADE EN REAL:
+├─ ¿Drawdown acumulado > 8%?    → SÍ: Revert a DEMO, notificar usuario
+├─ ¿PnL negativo > 24 horas?    → SÍ: Cuarentena de 15 min, reevaluar
+├─ ¿¿Circuit Breaker activado?  → SÍ: Bloqueo total hasta manual review
+└─ Evaluar capital disponible    → Si < $1000: Bloquear nuevas posiciones
+```
+
+#### Flujo Completo Darwiniano
+
+```
+USUARIO CREA ESTRATEGIA
+    ↓
+DEMO: 6 configuraciones en paralelo (Pool)
+    ├─ Instancia A: risk=0.01%, lookback=60
+    ├─ Instancia B: risk=0.02%, lookback=90
+    ├─ Instancia C: risk=0.01%, lookback=120
+    ├─ Instancia D: risk=0.015%, lookback=60
+    ├─ Instancia E: risk=0.02%, lookback=120
+    └─ Instancia F: risk=0.015%, lookback=90
+    
+    ↓ [Ejecución en vivo]
+    
+CADA LUNES 00:00 UTC:
+    Evaluar 3 Pilares:
+    ├─ Instancia A: PF=1.4 → FALLIDO Pilar 1 → MUERTE
+    ├─ Instancia B: PF=1.7, WR=65%, DD=13% → FALLO Pilar 2 → CUARENTENA
+    ├─ Instancia C: PF=1.6, WR=62%, DD=9%, CV=0.38, Tr=45 → 3/3 PASS → PROMOVER
+    ├─ Instancia D: PF=1.2 → FALLIDO Pilar 1 → MUERTE
+    ├─ Instancia E: PF=1.8, WR=68%, DD=8%, CV=0.35, Tr=50 → 3/3 PASS → PROMOVER
+    └─ Instancia F: Tr=8 → Aún en bootstrap, MONITOR (14 días)
+    
+    ↓ [Promociones]
+    
+REAL ACCOUNT:
+    Instancia C activada con:
+    ├─ Size: 10% capital (escalamiento gradual)
+    ├─ Riesgo: max DD = 8% (vs 12% en DEMO)
+    ├─ Histórico: 45 trades ganadores (confianza previa)
+    ├─ Guardia: Auto-revert si DD > 8%
+    └─ Trace_ID: TRACE_PROMOTION_REAL_20260317_000000_insC
+    
+    Instancia E activada con:
+    ├─ Size: 10% capital
+    ├─ Riesgo: max DD = 8%
+    ├─ Histórico: 50 trades ganadores
+    └─ Trace_ID: TRACE_PROMOTION_REAL_20260317_000000_insE
+
+    ↓ [Ejecución con capital real]
+    
+SEMANA 2:
+    Instancia C (REAL): DD = 3%, PnL = +$450 → Sigue vivo
+    Instancia E (REAL): DD = 9% → REVERT a DEMO automático, notificar usuario
+    Instancia B (DEMO): Recuperó métricas → OUT de CUARENTENA
+    Instancia A (DEMO): Sigue bloqueada (MUERTE es definitiva)
+```
+
+#### Beneficios Estructurales
+
+| Aspecto | Antes | Después |
+|---------|-------|---------|
+| **Seguridad capital** | Thresholds mágicos | Darwinismo en DEMO, guardias en REAL |
+| **Velocidad decisión** | Manual, 1x/semana | Automática, cada ciclo |
+| **Visibilidad** | Caja negra | Trace_ID para cada decisión |
+| **Escalabilidad** | 1 estrategia/cuenta | 6 configuraciones en paralelo |
+| **Riesgo de ruina** | Alto (bad performer → REAL) | Bajo (solo ganadores → REAL) |
+| **Confianza del usuario** | Baja (¿por qué no ejecutó?) | Alta (veo el "torneo" en vivo) |
+
+#### Garantías Invariables
+
+1. **Determinismo**: Sin intervención humana, mismos resultados siempre
+2. **Inmutabilidad**: sys_shadow_promotion_log INSERT-ONLY, jamás borrar
+3. **Auditabilidad**: Trace_ID para toda decisión, recuperable 100%
+4. **Protección Capital**: DD > 8% en REAL = revert automático
+5. **Transparencia**: SHADOW HUB muestra estado actual de 6 instancias
+6. **Escala Gradual**: REAL comienza con 10%, sube tras 100+ trades exitosos
+
+#### Tabla Central: Gobernanza sys_shadow_*
+
+Persistencia en 3 tablas (RULE DB-1):
+
+```
+sys_shadow_instances         → Estado actual de cada instancia
+sys_shadow_performance_history → Histórico de evaluaciones
+sys_shadow_promotion_log     → Registro inmutable de promociones
+```
+
+Cada tabla generan Trace_ID para auditabilidad absoluta.
+
+---
+
 ## V. Jerarquía de Validación: Qué se Ejecuta y Cuándo
 
 ### Nivel 1: FundamentalGuard Service (Máximum Veto)

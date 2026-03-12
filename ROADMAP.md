@@ -7081,6 +7081,224 @@ MainOrchestrator (Asyncio) ← ÚNICO ORQUESTADOR
 
 ---
 
+## 🌑 SHADOW EVOLUTION v2.1: Protocolo de Incubación Multi-Instancia (12-Mar-2026 INICIO)
+
+**Status**: 🟡 **SPECIFICATION LOCKED - READY FOR IMPLEMENTATION**  
+**Aprobado Por**: User (11-Mar-2026 22:30 UTC)  
+**Trace_ID Base**: `SHADOW-EVOLUTION-2026-PHASE2`
+
+### Descripción General
+
+Implementar sistema autónomo de **incubadora de estrategias** que ejecuta N configuraciones EN PARALELO dentro de cuenta DEMO única, evaluando desempeño mediante 3 Pilares (PROFITABILIDAD, RESILIENCIA, CONSISTENCIA) y promoviendo automáticamente solo lo que demuestra viabilidad en REAL account.
+
+**Documentación Completa**: `docs/07_ADAPTIVE_LEARNING.md` (Sección: "🌑 SHADOW EVOLUTION v2.1")  
+**UI Specification**: `docs/09_INSTITUTIONAL_UI.md` (PÁGINA 8: SHADOW HUB)
+
+### 6-Week Implementation Timeline
+
+#### **WEEK 1: Database Schema & Core Models (14-20 Mar 2026)**
+
+**Objetivo**: Crear capas de persistencia y modelos de datos para SHADOW eco-system.
+
+| Tarea | Est. | Responsables | Trace_ID |
+|-------|------|-------------|----------|
+| Crear tablas sys_shadow_* (3 tablas) | 2h | DB Engineer | `TRACE_SCHEMA_20260314_001` |
+| Implementar ShadowInstance DTO + validators | 1.5h | Backend | `TRACE_MODELS_20260314_001` |
+| Crear StorageManager methods para SHADOW | 2h | Storage | `TRACE_STORAGE_20260314_001` |
+| Unit tests (schema + models) | 2h | QA | `TRACE_TEST_20260314_001` |
+| **Subtotal** | **7.5h** | | |
+
+**Entregables**:
+- ✅ sys_shadow_instances table
+- ✅ sys_shadow_performance_history table
+- ✅ sys_shadow_promotion_log table
+- ✅ Python ShadowInstance class
+- ✅ StorageManager.create_shadow_instance(), read_health(), log_promotion()
+
+**Validación**: 
+```
+python -c "from data_vault.storage_manager import StorageManager; sm = StorageManager(); sm.log_sys_event('test')"
+→ OK: tables exist, SSOT maintained
+```
+
+#### **WEEK 2: ShadowManager & PromotionValidator (21-27 Mar 2026)**
+
+**Objetivo**: Core orchestration logic para evaluación de healthiness y decisiones de promoción.
+
+| Tarea | Est. | Responsables | Trace_ID |
+|-------|------|-------------|----------|
+| Implementar ShadowManager.evaluate_all_instances() | 3h | Core Brain | `TRACE_SHADOW_MGR_20260321_001` |
+| PromotionValidator (3 Pilares check logic) | 2h | Core Brain | `TRACE_PROMO_VAL_20260321_001` |
+| Health status transitions (DEAD, QUARANTINED, MONITOR) | 1.5h | Core Brain | `TRACE_HEALTH_TRANS_20260321_001` |
+| Unit tests (evaluate_shadow_health, promotability) | 2h | QA | `TRACE_TEST_20260321_001` |
+| **Subtotal** | **8.5h** | | |
+
+**Entregables**:
+- ✅ core_brain/shadow_manager.py (200+ lines)
+- ✅ evaluate_shadow_health(instance) → HealthStatus
+- ✅ is_promotable_to_real(instance) → bool + reason
+- ✅ Trace_ID generation for all decisions
+
+**Lógica Principal**:
+```python
+def evaluate_shadow_health(instance):
+    trace_id = f"TRACE_HEALTH_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{instance.id[:8]}"
+    
+    if (pf >= 1.5 and wr >= 0.60) and (dd <= 0.12 and cl <= 3) and (trades >= 15 and cv <= 0.40):
+        return HealthStatus.HEALTHY  # 3/3 Pilares PASS
+    elif ANY_pilar_fails:
+        return appropriate_status  # DEAD, QUARANTINED, or MONITOR
+```
+
+#### **WEEK 3: MainOrchestrator Integration (28-Apr 3 Apr 2026)**
+
+**Objetivo**: Integrar SHADOW evaluation loop en ciclo principal de MainOrchestrator.
+
+| Tarea | Est. | Responsables | Trace_ID |
+|-------|------|-------------|----------|
+| Agregar weekly_shadow_evolution() hook a MainOrchestrator | 2h | Orchestration | `TRACE_MAIN_INT_20260328_001` |
+| Integrar ShadowManager dependency injection | 1.5h | Orchestration | `TRACE_DI_20260328_001` |
+| Scheduler: Mondays 00:00 UTC = promotion evaluation | 1h | Scheduling | `TRACE_SCHED_20260328_001` |
+| Integration tests (MainOrch + ShadowMgr) | 2.5h | QA | `TRACE_TEST_20260328_001` |
+| **Subtotal** | **7h** | | |
+
+**Entregables**:
+- ✅ MainOrchestrator.__init__: self.shadow_manager = ShadowManager(storage)
+- ✅ run_single_cycle(): await self._check_and_run_weekly_shadow_evolution()
+- ✅ _check_and_run_weekly_shadow_evolution() method (scheduler logic)
+- ✅ Trace_ID: TRACE_PROMOTION_REAL_20260331_...
+
+**Scheduler Logic**:
+```python
+async def _check_and_run_weekly_shadow_evolution(self):
+    now_utc = datetime.now(timezone.utc)
+    is_monday = now_utc.weekday() == 0
+    is_midnight = now_utc.hour == 0 and now_utc.minute == 0
+    
+    if is_monday and is_midnight:
+        results = await self.shadow_manager.evaluate_all_instances()
+        # results: {"promotions": [...], "kills": [...], "quarantines": [...]}
+        logger.info(f"[SHADOW] Weekly evolution complete: {results}")
+```
+
+#### **WEEK 4: UI V2 SHADOW HUB Component (4-10 Apr 2026)**
+
+**Objetivo**: Crear frontend dashboard para visualización y control de SHADOW pool.
+
+| Tarea | Est. | Responsables | Trace_ID |
+|-------|------|-------------|----------|
+| ShadowHub.tsx (parent container + state management) | 2h | Frontend | `TRACE_UI_SHADOW_HUB_20260404_001` |
+| CompetitionDashboard.tsx (3x2 grid component) | 2h | Frontend | `TRACE_UI_COMP_DASH_20260404_001` |
+| EDGE Conciencia badge integration | 1h | Frontend | `TRACE_UI_CONC_20260404_001` |
+| JustifiedActionsLog.tsx (event stream) | 1.5h | Frontend | `TRACE_UI_LOG_20260404_001` |
+| CSS Satellite Link styling (0.5px, glassmorphism) | 1h | Frontend | `TRACE_CSS_20260404_001` |
+| Component tests | 1.5h | QA | `TRACE_TEST_20260404_001` |
+| **Subtotal** | **9h** | | |
+
+**Componentes**:
+1. **CompetitionDashboard**: 3x2 grid, cada celda = instance con Pilares badges
+2. **EDGE Conciencia**: Small badge en HomePage, "SHADOW MODE ACTIVE" + best performer
+3. **JustifiedActionsLog**: Real-time feed de eventos con Trace_ID clickable
+
+**CSS**:
+- Grid gaps: 12px (desktop), 8px (mobile)
+- Líneas: 0.5px solid rgba(59,130,246,0.2)
+- Monospace: JetBrains Mono, 11pt
+- Status: ✅ #10b981, 🟡 #f59e0b, ❌ #ef4444
+
+#### **WEEK 5: WebSocket Integration (11-17 Apr 2026)**
+
+**Objetivo**: Real-time updates para SHADOW status changes.
+
+| Tarea | Est. | Responsables | Trace_ID |
+|-------|------|-------------|----------|
+| Crear WebSocket event SHADOW_STATUS_UPDATE | 1.5h | Backend | `TRACE_WS_EVENT_20260411_001` |
+| SystemService emite SHADOW_STATUS_UPDATE cada evaluación | 2h | Backend | `TRACE_WS_EMIT_20260411_001` |
+| Frontend listener en ShadowHub.tsx | 1.5h | Frontend | `TRACE_WS_LISTEN_20260411_001` |
+| Payload spec: {instance_id, status, pillar1/2/3_status, pf, wr, dd} | 1h | Design | `TRACE_WS_SPEC_20260411_001` |
+| Integration tests (WS + UI) | 2h | QA | `TRACE_TEST_20260411_001` |
+| **Subtotal** | **8h** | | |
+
+**Evento**:
+```json
+{
+  "event_type": "SHADOW_STATUS_UPDATE",
+  "instance_id": "shadow_xyz_001",
+  "status": "HEALTHY",
+  "pillar1_profitability": "PASS",
+  "pillar2_resiliencia": "PASS",
+  "pillar3_consistency": "PASS",
+  "profit_factor": 1.62,
+  "win_rate": 0.65,
+  "max_drawdown": 0.11,
+  "timestamp": "2026-04-13T14:22:33Z",
+  "trace_id": "TRACE_HEALTH_20260413_142233_shadow_xy"
+}
+```
+
+#### **WEEK 6: Integration Tests & Validation (18-24 Apr 2026)**
+
+**Objetivo**: Full system validation end-to-end.
+
+| Tarea | Est. | Responsables | Trace_ID |
+|-------|------|-------------|----------|
+| E2E test: strategy create → incubate → promote → REAL | 3h | QA | `TRACE_E2E_20260418_001` |
+| Performance test: 6 instances parallel execution | 2h | Perf | `TRACE_PERF_20260418_001` |
+| Edge cases: empty pool, all failing, edge thresholds | 1.5h | QA | `TRACE_EDGE_20260418_001` |
+| Documentation validation gegen code | 1h | Docs | `TRACE_DOC_20260418_001` |
+| Production build + smoke tests | 1h | DevOps | `TRACE_BUILD_20260418_001` |
+| **Subtotal** | **8.5h** | | |
+
+**Validación Checklist**:
+- [ ] 6 instances can coexist in DEMO account
+- [ ] Weekly evaluation runs automáticos (Mondays 00:00 UTC)
+- [ ] 3 Pilares evaluate correctly (test con métricas reales)
+- [ ] Promotion to REAL only if 3/3 PASS
+- [ ] Trace_ID generated para cada decisión
+- [ ] SHADOW HUB UI updates in real-time
+- [ ] No data races (SSOT in DB)
+- [ ] Performance: < 500ms evaluation per instance
+- [ ] Logs correct (TRACE_HEALTH, TRACE_PROMOTION_REAL, TRACE_KILL)
+- [ ] validate_all.py: 24/24 modules PASS
+
+### Budget Summary
+
+| Week | Est. Total | Key Deliverable |
+|------|-----------|-----------------|
+| 1 | 7.5h | sys_shadow_* schema complete |
+| 2 | 8.5h | ShadowManager + PromotionValidator working |
+| 3 | 7h | MainOrchestrator integrated + scheduler active |
+| 4 | 9h | ShadowHub UI fully functional |
+| 5 | 8h | WebSocket real-time updates |
+| 6 | 8.5h | Full E2E validation + production ready |
+| **TOTAL** | **48.5h** | **SHADOW EVOLUTION v2.1 IMPLEMENTED** |
+
+**Timeline**: 12 March 2026 - 24 April 2026 (6 + 1 weekend weeks)  
+**Approval Gate**: Sign-off after Week 3 integration tests
+
+### Principios de Implementación
+
+1. **RULE DB-1**: Todos los nombres de tabla usan prefijo `sys_`
+2. **RULE ID-1**: Todas las decisiones generan `TRACE_ID_` con patrón temporal
+3. **Single Source of Truth**: DB es autoridad absoluta, jamás JSON files
+4. **Dependency Injection**: NO self-instantiation de Storage/Config en ShadowManager
+5. **Immutable Audit Trail**: sys_shadow_promotion_log jamás se modifica/borra (INSERT ONLY)
+6. **Darwinian Selection**: Decisión automática, sin intervención humana excepto config
+7. **DEMO as Learning Ground**: Unlimited experimenta ción, ninguna restricción
+8. **REAL as Protected Sanctuary**: DD > 8% = auto-revert a DEMO, usuario autorización requerida
+
+### Estado Actual
+
+✅ **DOCUMENTACIÓN COMPLETADA** (11-Mar-2026 22:45 UTC):
+- `docs/07_ADAPTIVE_LEARNING.md`: 3 Pilares + SQL schema + Python logic
+- `docs/09_INSTITUTIONAL_UI.md`: PÁGINA 8 SHADOW HUB specification
+- `AETHELGARD_MANIFESTO.md`: Section IV.D Principio de Selección Natural (pending)
+
+⏳ **IMPLEMENTATION BLOCKERS**: 
+- NONE - Ready to start WEEK 1 on 12-Mar (contingent on user approval)
+
+---
+
 ## 📋 BACKLOG: FASE 2 - MT5 Thread Coordination & Synchronization (Futuro - Post-Option A)
 
 **Fecha de Documentación**: 11 de Marzo 2026  

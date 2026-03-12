@@ -197,6 +197,93 @@ Proveer una ventana de alta fidelidad al cerebro de Aethelgard mediante una inte
 
 ---
 
+### PÁGINA 8: SHADOW HUB (Incubadora de Estrategias)
+**Ubicación**: `ui/src/components/shadow/ShadowHub.tsx` (NUEVA)  
+**Nombre en UI**: "SHADOW"  
+**Icono**: Zap  
+**Componentes**: Competition Dashboard | EDGE Conciencia Status | Justified Actions Log
+
+| Aspecto | Detalles |
+|---|---|
+| **REST Endpoints Consumidos** | `/api/shadow/instances`, `/api/shadow/health` |
+| **WebSocket Events** | ✅ SHADOW_STATUS_UPDATE (cada ciclo de evaluación) |
+| **Backend Services** | core_brain/shadow_manager.py, system_service.py |
+| **Data Flow** | useAethelgard context + WebSocket listeners |
+| **Estado** | 🟡 **SPECIFICATION LOCKED - AWAITING IMPLEMENTATION** |
+
+**Lo que ves**:
+- Dashboard de Competencia: Grid 3x2 de 6 instancias SHADOWs en paralelo
+- Estado de salud por Pilar: ✅ HEALTHY, 🟡 QUARANTINED, ❌ DEAD
+- Métricas en tiempo real: Trades, PF (Profit Factor), WR (Win Rate), DD (Drawdown)
+- Botón de promoción: "PROMOTE TO REAL" (habilitado solo si 3 Pilares PASS)
+- Log de eventos justificados con Trace_ID (RULE ID-1)
+
+**Componente 1: Competition Dashboard** (3x2 Grid de Instancias):
+```
+┌────────────────────────────────────────────────┐
+│ SHADOW POOL - DEMO TRAINING (MT5_DEMO_001)    │
+├────────────────────────────────────────────────┤
+│                                                │
+│ ┌─ Instance A       ┌─ Instance B          ┐ │
+│ │ BRK_OPEN_0001    │ BRK_OPEN_0001        │ │
+│ │ ✅ HEALTHY [3/3] │ 🟡 MONITOR [2/3]     │ │
+│ │ Tr:20 PF:1.62... │ Tr:8 PF:0.98...      │ │
+│ │ WR:65% DD:11%    │ WR:50% DD:18%        │ │
+│ └──────────────────┴─────────────────────┘ │
+│                                                │
+│ ┌─ Instance C       ┌─ Instance D*         ┐ │
+│ │ OliverVelez      │ OliverVelez          │ │
+│ │ ✅ SHADOW_READY  │ ✅ HEALTHY [3/3]     │ │
+│ │ Tr:25 PF:1.68... │ Tr:18 PF:1.55...     │ │
+│ │ WR:68% DD:9%     │ WR:62% DD:8% (⭐)    │ │
+│ │ [→ PROMOTE]      │ [→ PROMOTE]          │ │
+│ └──────────────────┴─────────────────────┘ │
+└────────────────────────────────────────────────┘
+```
+
+**Componente 2: EDGE Conciencia** (integración HomePage):
+```
+┌──────────────────────────────────────┐
+│ ⚡ EDGE CONCIENCIA - SHADOW MODE      │
+│                                      │
+│ Modo: 🟣 SHADOW_EVOLUTION v2.1      │
+│ Pool Activo: 6 instancias            │
+│ Mejor Performer: Instance D          │
+│ Elegible para promoción: 2           │
+│ Cuenta Vinculada: DEMO_MT5_001       │
+│                                      │
+│ [→ VER SHADOW HUB]                   │
+└──────────────────────────────────────┘
+```
+
+**Componente 3: Justified Actions Log** (Real-time Event Feed):
+```
+SHADOW EVENT LOG (Últimas 72h)
+
+17:45 UTC | [AUTO-PROMO] Instance C → SHADOW_READY
+Traza: TRACE_PROMOTION_20260312_INSTA_C
+✅ 3 Pilares PASS: PF=1.68, DD=9%, CV=0.38
+
+16:30 UTC | [HEALTH] Instance B → QUARANTINED
+Traza: TRACE_HEALTH_20260312_INSTA_B
+Razón: Pilar 1 FALLIDO (PF < 1.2)
+Retest: 2026-03-19
+
+15:12 UTC | [AUTO-KILL] Instance F → DEAD
+Traza: TRACE_KILL_20260312_INSTA_F
+Razón: PF=0.75 + DD=22% (2 Pilares fallidos)
+```
+
+**Estilos CSS** (Satellite Link - Institutional):
+- Líneas: 0.5px solid rgba(59, 130, 246, 0.2)
+- Monospace: 'JetBrains Mono', 11pt para métricas
+- Glassmorphism: rgba(10, 15, 35, 0.4) + backdrop-filter: blur(8px)
+- Status badges: ✅ #10b981 (green), 🟡 #f59e0b (amber), ❌ #ef4444 (red), 🟣 #8b5cf6 (purple)
+- Grid gaps: 12px (responsive, 8px on mobile)
+- Responsive: 3x2 desktop | 2x3 tablet | 1x6 mobile
+
+---
+
 ### OVERLAY: DIAGNOSTIC DRAWER
 **Se abre desde**: Botón en CerebroConsole (click en panel)  
 **Componente**: `DiagnosticDrawer.tsx`
