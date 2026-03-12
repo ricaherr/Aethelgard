@@ -1,0 +1,373 @@
+﻿import React, { useEffect, useState, useCallback } from 'react';
+import { motion } from 'framer-motion';
+import { useAuth } from '../hooks/useAuth';
+import { useApi } from '../hooks/useApi';
+import { IsometricContainer } from '../components/common/IsometricContainer';
+import { CoreOrb } from '../components/core/CoreOrb';
+import { NeuralLinkMap } from '../components/analysis/NeuralLinkMap';
+import { SignalDNARadar } from '../components/charts/SignalDNARadar';
+
+interface HomePageProps {
+  token?: string;
+}
+
+/**
+ * HomePage: Glass Cockpit Institutional Dashboard (V4 - Isometric)
+ * 
+ * - Isometric 3D perspective layout
+ * - Institutional color palette (cyan/blue/green - NO magenta/yellow)
+ * - BlueprintBackground technical aesthetic
+ * - Responsive scaling via dynamic canvas sizing
+ * - Central CoreOrb + surrounding visualization nodes
+ */
+export const HomePage: React.FC<HomePageProps> = ({ token: externalToken }) => {
+  const { isAuthenticated, userId, tenantId } = useAuth();
+  const { apiFetch } = useApi();
+  
+  const [telemetry, setTelemetry] = useState<any | null>(null);
+  const [signals, setSignals] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [viewport, setViewport] = useState({
+    width: typeof window !== 'undefined' ? window.innerWidth : 1920,
+    height: typeof window !== 'undefined' ? window.innerHeight : 1080,
+  });
+
+  const fetchTelemetry = useCallback(async () => {
+    try {
+      const res = await apiFetch('/api/system/telemetry');
+      if (res.ok) {
+        setTelemetry(await res.json());
+        setLoading(false);
+      }
+    } catch (err) {
+      console.error('Telemetry fetch error:', err);
+      setLoading(false);
+    }
+  }, [apiFetch]);
+
+  const fetchSignals = useCallback(async () => {
+    try {
+      const res = await apiFetch('/api/signals?limit=50&sort=timestamp');
+      if (res.ok) {
+        setSignals(await res.json());
+      }
+    } catch (err) {
+      console.error('Signals fetch error:', err);
+    }
+  }, [apiFetch]);
+
+  useEffect(() => {
+    fetchTelemetry();
+    fetchSignals();
+    const telemetryInterval = setInterval(fetchTelemetry, 30000);
+    const signalsInterval = setInterval(fetchSignals, 2000);
+    
+    // Handle window resize
+    const handleResize = () => {
+      setViewport({
+        width: window.innerWidth,
+        height: window.innerHeight,
+      });
+    };
+    window.addEventListener('resize', handleResize);
+    
+    return () => {
+      clearInterval(telemetryInterval);
+      clearInterval(signalsInterval);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [fetchTelemetry, fetchSignals]);
+
+  if (!isAuthenticated && !externalToken) {
+    return <AuthRequired />;
+  }
+
+  if (loading && !telemetry) {
+    return <LoadingScreen />;
+  }
+
+  const data = telemetry || getDefaultTelemetry();
+  
+  // Defensive: Ensure arrays
+  const safeStrategyArray = Array.isArray(data.strategy_array) ? data.strategy_array : [];
+  const safeSatellites = Array.isArray(data.satellites) ? data.satellites : [];
+  const safeSignals = Array.isArray(signals) ? signals : [];
+
+  // Dynamic canvas sizing based on viewport
+  let coreOrbSize = 350;
+  let neuralMapSize = 400;
+  let radarSize = 400;
+  
+  if (viewport.width < 768) {
+    coreOrbSize = 200;
+    neuralMapSize = 250;
+    radarSize = 250;
+  } else if (viewport.width < 1024) {
+    coreOrbSize = 250;
+    neuralMapSize = 320;
+    radarSize = 320;
+  } else if (viewport.width < 1400) {
+    coreOrbSize = 300;
+    neuralMapSize = 360;
+    radarSize = 360;
+  }
+
+  return (
+    <IsometricContainer title="SYNAPSE" subtitle="CORE">
+      {/* ISOMETRIC LAYOUT: Central CoreOrb with surrounding nodes */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr auto 1fr',
+        gap: '24px',
+        width: '100%',
+        maxWidth: '1600px',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}>
+        {/* LEFT NODE: NeuralLinkMap (Strategy Consensus) */}
+        <motion.div
+          initial={{ opacity: 0, x: -30 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.6, delay: 0.2 }}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px',
+          }}
+        >
+          <h3 style={{
+            fontSize: '11px',
+            fontWeight: 'bold',
+            color: '#00D4FF',
+            textTransform: 'uppercase',
+            letterSpacing: '2px',
+            textAlign: 'center',
+            margin: 0,
+          }}>
+            Strategy Consensus
+          </h3>
+          <NeuralLinkMap
+            strategies={safeStrategyArray.map((strat: any, idx: number) => ({
+              strategy_id: strat.id || strat.strategy_id || `STRAT_${idx}`,
+              status: (strat.status || 'IDLE').toUpperCase() as 'LIVE' | 'SHADOW' | 'IDLE' | 'BLOCKED',
+              current_symbol: strat.current_symbol || 'EURUSD',
+              pnl: strat.pnl || 0,
+              affinity_scores: {
+                'EURUSD': 0.85,
+                'GBPUSD': 0.80,
+                'AUDUSD': 0.75,
+              },
+            }))}
+            size={neuralMapSize}
+            updateInterval={2000}
+          />
+        </motion.div>
+
+        {/* CENTER NODE: CoreOrb (Nucleus) */}
+        <motion.div
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.8 }}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px',
+            alignItems: 'center',
+          }}
+        >
+          <h3 style={{
+            fontSize: '11px',
+            fontWeight: 'bold',
+            color: '#00D4FF',
+            textTransform: 'uppercase',
+            letterSpacing: '2px',
+            margin: 0,
+          }}>
+            System Nucleus
+          </h3>
+          <CoreOrb
+            health={data.health_pct || 75}
+            riskExposure={data.risk_buffer || 30}
+            anomalyCount={data.anomalies || 0}
+            satellites={safeSatellites}
+            strategies={safeStrategyArray.map((s: any) => ({
+              strategy_id: s.id || s.strategy_id,
+              status: (s.status || 'IDLE').toUpperCase(),
+              dd_pct: s.dd_pct || 0,
+              pnl: s.pnl || 0,
+            }))}
+            size={coreOrbSize}
+            updateInterval={5000}
+          />
+        </motion.div>
+
+        {/* RIGHT NODE: SignalDNARadar (Scanning) */}
+        <motion.div
+          initial={{ opacity: 0, x: 30 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.6, delay: 0.2 }}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px',
+          }}
+        >
+          <h3 style={{
+            fontSize: '11px',
+            fontWeight: 'bold',
+            color: '#00D4FF',
+            textTransform: 'uppercase',
+            letterSpacing: '2px',
+            textAlign: 'center',
+            margin: 0,
+          }}>
+            Signal Radar
+          </h3>
+          <SignalDNARadar
+            signals={safeSignals.slice(0, 20).map((sig: any, idx: number) => ({
+              signal_id: sig.signal_id || `SIG_${idx}`,
+              strategy_id: sig.strategy_id || 'UNKNOWN',
+              quality_grade: (sig.quality_grade || 'B') as 'A+' | 'A' | 'B' | 'C' | 'F',
+              quality_score: sig.quality_score || 75,
+              symbol: sig.symbol || 'EURUSD',
+              direction: (sig.direction || 'BUY') as 'BUY' | 'SELL',
+            }))}
+            size={radarSize}
+            updateInterval={1000}
+          />
+        </motion.div>
+      </div>
+
+      {/* TELEMETRY FOOTER */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, delay: 0.4 }}
+        style={{
+          marginTop: '32px',
+          paddingTop: '24px',
+          borderTop: '1px solid rgba(0, 180, 220, 0.1)',
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+          gap: '16px',
+          width: '100%',
+        }}
+      >
+        <TelemetryCard label="STATUS" value="OPERATIONAL" color="#2ED573" />
+        <TelemetryCard label="CPU LOAD" value={`${Math.round(data.cpu_percent || 0)}%`} color="#00D4FF" />
+        <TelemetryCard label="MEMORY" value={`${Math.round((data.memory_mb || 0) / 1024)}G`} color="#00A8D8" />
+        <TelemetryCard label="SATELLITES" value={`${safeSatellites.filter((s: any) => s.status === 'CONNECTED').length}/${safeSatellites.length}`} color="#4DB8E6" />
+        <TelemetryCard label="STRATEGIES" value={`${safeStrategyArray.filter((s: any) => s.status === 'LIVE').length}/${safeStrategyArray.length}`} color="#00D4FF" />
+        <TelemetryCard label="ANOMALIES" value={data.anomalies || 0} color={data.anomalies > 0 ? '#2BA0D0' : '#666666'} />
+      </motion.div>
+    </IsometricContainer>
+  );
+};
+
+// Helper Components
+function TelemetryCard({ label, value, color }: { label: string; value: any; color: string }) {
+  return (
+    <div style={{
+      padding: '12px',
+      borderRadius: '8px',
+      background: 'rgba(0, 180, 220, 0.05)',
+      border: `1px solid ${color}30`,
+      textAlign: 'center',
+    }}>
+      <div style={{
+        fontSize: '10px',
+        fontWeight: 'bold',
+        color: '#999',
+        textTransform: 'uppercase',
+        letterSpacing: '1px',
+        marginBottom: '4px',
+      }}>
+        {label}
+      </div>
+      <div style={{
+        fontSize: '14px',
+        fontWeight: 'bold',
+        color: color,
+        fontFamily: 'monospace',
+      }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function AuthRequired() {
+  return (
+    <div style={{
+      width: '100%',
+      height: '100vh',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: '#000',
+      color: '#00D4FF',
+      fontFamily: 'monospace',
+    }}>
+      <div style={{ fontSize: '48px', marginBottom: '20px' }}>âš ï¸</div>
+      <h2 style={{ margin: 0, textTransform: 'uppercase', letterSpacing: '2px' }}>
+        Authentication Required
+      </h2>
+    </div>
+  );
+}
+
+function LoadingScreen() {
+  return (
+    <div style={{
+      width: '100%',
+      height: '100vh',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: '#000',
+      color: '#00D4FF',
+      fontFamily: 'monospace',
+    }}>
+      <div style={{
+        width: '40px',
+        height: '40px',
+        border: '2px solid #00D4FF',
+        borderTopColor: 'transparent',
+        borderRadius: '50%',
+        animation: 'spin 1s linear infinite',
+        marginBottom: '20px',
+      }} />
+      <h2 style={{ margin: 0, textTransform: 'uppercase', letterSpacing: '2px' }}>
+        Initializing Synapse...
+      </h2>
+      <p style={{ margin: '10px 0 0 0', fontFamily: 'sans-serif' }}>
+        Establishing connection to core systems
+      </p>
+      <style>{`
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function getDefaultTelemetry() {
+  return {
+    timestamp: new Date().toISOString(),
+    cpu_percent: 45,
+    memory_mb: 512,
+    satellites: [],
+    strategy_array: [],
+    risk_buffer: 30,
+    anomalies: 0,
+    heartbeat: true,
+    health_pct: 75,
+  };
+}
+  font-family: 'JetBrains Mono', 'Courier New', monospace;
+  background: linear-gradient(135deg, #0a0e27 0%, #1a0a3e 50%, #0f1a2e 100%);
+  color: #00ffff;
+  min-height: 100vh;

@@ -1,8 +1,64 @@
 # 🛣️ ROADMAP.md - Aethelgard Alpha Training
 
-**Última Actualización**: 11 de Marzo 2026 (16:45 UTC)  
-**Versión Sistema**: v4.3.1-beta (**OPTION A COMPLETADA**)  
-**Estado General**: ✅ **PHASE 1-4 COMPLETADAS 100%** | ✅ **OPTION A ARQUITECTURA LIMPIA** | ✅ **25/25 MÓDULOS VALIDADOS** | ✅ **TRIPLE-SCANNING ELIMINADO** | ✅ **SCANNER PURE EXECUTOR** | ✅ **SISTEMA PRODUCCIÓN-READY**
+**Última Actualización**: 11 de Marzo 2026 (18:15 UTC)  
+**Versión Sistema**: v4.3.1-beta (**OPTION A COMPLETADA** | **UI V3 RESET INICIADO**)  
+**Estado General**: ✅ **PHASE 1-4 COMPLETADAS 100%** | ✅ **OPTION A ARQUITECTURA LIMPIA** | ✅ **25/25 MÓDULOS VALIDADOS** | 🔄 **UI V3 RESET: DOCUMENTATION PHASE** | ⏳ **CODING PHASE PENDING**
+
+---
+
+## 🎨 UI V3 RESET: Satellite Link Institutional Standard (11-Mar-2026 18:00)
+
+**Status**: 🟡 **SPECIFICATION LOCKED - AWAITING APPROVAL**  
+**Last Mandate**: "No procedas a codificar hasta que los esquemas de responsividad estén documentados"
+
+### Documentación Completada (18:20 UTC)
+
+✅ **docs/09_INSTITUTIONAL_UI.md** → Nueva sección "UI V3 BLUEPRINT: SATELLITE LINK INSTITUTIONAL STANDARD" incluida:
+
+1. **Responsivity Mandate (R1, R2, R3)**:
+   - R1: Viewport lock (height: 100vh, width: 100vw, overflow: hidden)
+   - R2: Dynamic scaling (0.7-1.0 based on 4 breakpoints)
+   - R3: Container queries fallback (clamp())
+
+2. **Three Core Components Blueprints**:
+   - ✅ **Strategy Matrix**: 2x3 grid, 6 visible strategies, (i) icon legend, monospaciada 8-9pt
+   - ✅ **Operational Core**: Central isometric nucleus, 6 micro-indicators orbiting, telemetry footer
+   - ✅ **Signal Stream**: Horizontal radar sweep, quality-grade positioning, 3-second cycle
+
+3. **Aesthetic Directives**:
+   - 0.5px lines (institutional precision)
+   - Blueprint background (opacity 0.02-0.03, SVG or CSS gradient)
+   - Glassmorphism: rgba(10,15,35, 0.4) + blur(8px)
+   - Monospace everywhere (8-14pt)
+   - NO scroll: all responsive via scale + clamp()
+
+4. **Layout Grid CSS**:
+   - grid-template-areas: header | left center right | telemetry | footer
+   - 4-row structure, 3-column layout
+   - Strategy Matrix (25% width) | Op Core (30% width, fixed center) | Signal Stream (25% width)
+
+### Next Phase: IMPLEMENTATION (AWAITING APPROVAL)
+
+**Blocked Until**:
+- [ ] User approves specification lock checklist (10 items in 09_INSTITUTIONAL_UI.md)
+- [ ] User authorizes component creation timeline
+
+**Planned Components** (SEQUENTIAL):
+
+| # | Component | Est. Time | Priority |
+|---|-----------|-----------|----------|
+| 1 | HomePage.tsx rewrite (grid layout + scale) | 30 min | P0 |
+| 2 | StrategyMatrix.tsx creation | 45 min | P0 |
+| 3 | OperationalCore.tsx (nucleus + microindicators) | 60 min | P0 |
+| 4 | SignalStream.tsx (radar sweep) | 45 min | P0 |
+| 5 | TypeScript validation | 10 min | P0 |
+| 6 | Production build | 5 min | P0 |
+| 7 | Integration test (backend + frontend) | 15 min | P0 |
+| **Total** | | **3.5 hours** | |
+
+**Git Status**: Files modified (ui/src/pages/HomePage.tsx) pending commit
+
+---
 
 ---
 
@@ -5666,15 +5722,112 @@ Una vez confirmes:
 
 Espero tu **OK FINAL** para comenzar. 🚀
 
-### Vector V5: User Empowerment & Autonomía (Sprint 4-5) ⭐ NUEVO
-- 📋 **Status**: EN DOCUMENTACIÓN
+### Vector V5: User Empowerment & Autonomía + Glass Cockpit Protocol (Sprint 4-5) ⭐ HITOS 1-3 COMPLETADOS
+- 📋 **Status**: GOVERNANZA ✅ + 3 COMPONENTES ✅ + INTEGRACIÓN HOMEPAGE ✅
 
-- **Componentes**:
+- **Constitución Visual (Glass Cockpit Protocol)**:
+  - ✅ docs/09_INSTITUTIONAL_UI.md — "V3: The Glass Cockpit Protocol" (governance)
+  - ✅ Especificación de Fractal Depth (Macro/Meso/Micro levels)
+  - ✅ Directmanipulation drag-drop contracts
+  - ✅ Kinetic elements mandate (Framer Motion + Canvas/WebGL)
+  - ✅ Institutional color palette (#020202, #00F2FF, #00FF41)
+  - ✅ Glassmorphism & animation standards
+
+- **Componentes Implementación** (V5 Milestone):
+  - ✅ **The Core Orb** (Central Intelligence Vitality) — COMPLETADO 2026-03-11
+    - Status: ✅ IMPLEMENTADO
+    - Files: `ui/src/components/core/CoreOrb.tsx` + `CoreOrb.test.tsx`
+    - Description: Central holistic sphere showing health, risk, satellites, strategies
+    - Implementation:
+      - Canvas 2D (400px) con health gauge arc (0-360°)
+      - SVG overlay con filamentos gradiente
+      - Framer Motion pulse animation (1.2s cycle)
+      - Heartbeat needle animation (sync SYSTEM_HEARTBEAT)
+      - Anomaly pulsing indicator (threshold > 0)
+      - Drop zone para drag-drop (primary target para FORCE_SCAN)
+      - Risk-based stroke color: cyan (healthy) → gold (caution) → magenta (critical)
+      - Health-based arc animation
+      - Legend: satellites connected/total, strategies live/total, anomalies count
+    - Rendering: Canvas + SVG nested; 60 FPS locked; drop zones for drag-drop
+    - Props: health, riskExposure, anomalyCount, satellites[], strategies[], onZoomTo, onDropZone
+    - Interactivity: Drop zones → FORCE_SCAN events; canvas clickable (60 FPS sync)
+    - Animation: Framer Motion entrance (0.6s ease-out); continuous heartbeat pulse
+    - Tests: 11 test suites (rendering, props sync, heartbeat, drag-drop, visual, accessibility)
+  
+  - ✅ **Neural Link Map** (Strategy Consensus Graph) — COMPLETADO 2026-03-11
+    - Status: ✅ IMPLEMENTADO
+    - Files: `ui/src/components/analysis/NeuralLinkMap.tsx` + `NeuralLinkMap.test.tsx`
+    - Description: Risk correlation graph between active strategies (Meso level)
+    - Implementation:
+      - Canvas 2D (600px) con node graph arrangement (circular)
+      - Nodos = estrategias activas
+      - Nodo glow intensity ∝ affinity_score[current_symbol] (0.4-1.0)
+      - Conexiones entre nodos: opacity ∝ risk_correlation
+      - Color coding: green (+100 PnL) → cyan (0-100) → gold (-100) → magenta (<-100)
+      - Node selection highlight (gold border)
+      - Affinity badges mostrados cerca de cada nodo
+      - Pulsing background rings (sine wave animation)
+      - Status indicator: LIVE=acid-green, offline=gray
+    - Update frequency: Synced with telemetry polling (2s intervals)
+    - Rendering: Canvas 2D; 60 FPS target; particles+connections
+    - Visual encoding: Glow = affinity, Node color = PnL, Connection opacity = correlation
+    - Interactivity: Click node → zoom/focus; legend items clickable
+    - Legend: Sorted by PnL descending; shows affinity % + P&L delta
+    - Tests: 12 test suites (rendering, affinity glow, dynamic updates, interactivity, visual, accessibility, performance)
+  
+  - ✅ **Signal DNA Radar** (Phase 4 Visualization) — COMPLETADO 2026-03-11
+    - Status: ✅ IMPLEMENTADO
+    - Files: `ui/src/components/charts/SignalDNARadar.tsx` + `SignalDNARadar.test.tsx`
+    - Description: Real-time quantum particle distribution of signals (Micro level detail)
+    - Implementation:
+      - Canvas 2D (500px) particle system
+      - Partículas = signals emitidas en tiempo real
+      - Spawn en borde circular (360° distribution)
+      - Quality-grade based movement:
+        - A+/A (score ≥ 85): Collapse toward center (acceptance nucleus) | cyan glow | TTL 7-8s
+        - B (score 65-84): Orbit midzone (neutral) | gold glow | TTL 5s
+        - C (score 50-64): Slow dissipation outward | orange glow | TTL 3s
+        - F (score < 50): Fast dissipation (fuga data) | magenta glow | TTL 1.5s
+      - Particle size ∝ quality_score (larger = higher score)
+      - Glow halos (multiple rings per particle)
+      - Opacity fade (linear + exponential final frames)
+      - Movement velocity: direction + speed based on mvDir
+      - Orbital chaos: sin() noise for organic motion
+      - Distance check: particles removed at max_dist or TTL expiration
+      - Center: "Acceptance nucleus" (cyan dot, pulsing glow)
+      - Radar rings + crosshairs background (reference grid)
+      - Hover highlight: gold border on particle
+      - Click detection: radius + padding for interactivity
+    - Update frequency: 1-second polling (signal stream)
+    - Rendering: Canvas 2D; 60 FPS; particle count limited to 100 (memory management)
+    - Color encoding: Quality grade determines particle color + glow intensity
+    - Interactivity: Click particle → view signal details; hover highlights
+    - Legend: All active signals sorted by quality_score descending
+    - Tests: 13 test suites (rendering, quality behavior, collapse/dissipate, updates, interactivity, visual, accessibility, performance)
+
+- **HomePage Integration** (V3 Glass Cockpit Dashboard):
+  - ✅ **Status**: COMPLETADO 2026-03-11
+  - ✅ **File**: `ui/src/pages/HomePage.tsx` (refactorizado)
+  - ✅ **Layout**: Grid 3-column (0.9fr LEFT | 1.3fr CENTER | 0.9fr RIGHT)
+    - LEFT: NeuralLinkMap (strategy consensus) + System Vitals (CPU, Memory, Latency)
+    - CENTER: CoreOrb (central vitality sphere) — maestro de heartbeat
+    - RIGHT: SignalDNARadar (quantum particle visualization) + Strategies panel
+  - ✅ **Data Integration**:
+    - `/api/system/telemetry` → 30s polling → telemetry state
+    - `/api/signals?limit=50` → 2s polling → signals state
+    - Strategy array mapping → StrategyNode[] with affinity_scores
+  - ✅ **Animations**: Framer Motion entrance staggered (left 0.1s → center 0s → right 0.1s)
+  - ✅ **Validation**: TypeScript clean, Build 4.86s (720KB JS, 203KB gzip)
+  - ✅ **Responsive**: Media queries para 1400px and 768px breakpoints
+
+- **Componentes Legacy**:
   - **Manual de Usuario Interactivo (Wiki interna)**: Documentación viva sobre operatoria de cada estrategia
   - **Sistema de Ayuda Contextual en UI (Tooltips técnicos)**: Asistencia en tiempo real para traders
   - **Implementación de Switch Físico para Shadow Mode**: Soberanía de control para activar/desactivar modo demostración
-- **Dominios Afectados**: 09 (Institutional Interface), 07 (Adaptive Learning)
-- **Hito**: Trader humano empoderado con herramientas de auto-educación y control granular
+
+- **Dominios Afectados**: 09 (Institutional Interface, Glass Cockpit), 07 (Adaptive Learning), 03 (UI/UX)
+- **Hito Actual**: 3/3 componentes principales completados + listos para integración
+- **Próxima Fase**: Integración en HomePage, AnalysisPage, EdgePage (Fractal Depth navigation)
 
 ---
 

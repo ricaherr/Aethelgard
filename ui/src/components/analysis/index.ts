@@ -6,6 +6,8 @@ export { default as ScannerStatusMonitor } from './ScannerStatusMonitor';
 export { default as SymbolSelector } from './SymbolSelector';
 export { default as StrategyExplorer } from './StrategyExplorer';
 export { default as SignalTrace } from './SignalTrace';
+export { NeuralLinkMap } from './NeuralLinkMap';
+export type { NeuralLinkMapProps, StrategyNode } from './NeuralLinkMap';
 
 // Analysis Hub EDGE Components (Fase 1 & 2)
 export { ProfileSelector } from './ProfileSelector';

@@ -281,6 +281,83 @@ Cada nueva funcionalidad o Historia de Usuario (HU) debe cumplir con:
 3.  **Agnosticismo**: Verificación de que el Core Brain sigue funcionando si se cambia el conector de datos.
 4.  **Trazabilidad**: Toda tarea debe estar registrada en el [Central Backlog](../governance/BACKLOG.md) siguiendo la jerarquía de los 10 Dominios.
 
+## 6. Frontend UI Rules: La Constitución Visual (Glass Cockpit Protocol) — OBLIGATORIO desde V3
+
+### 6.1 Rule UI-1: Aesthetic Mandate — Institutional Visual Constitution
+
+**PRINCIPIO RECTOR**: Aethelgard es un sistema financiero **técnicamente agresivo** que requiere una interfaz visual **institucional y futurista**, no superficial. La UI no es decorativa; es un instrumento de precisión que refleja la complejidad operativa del sistema.
+
+**PROHIBICIÓN ABSOLUTA** (Penalidad: PR Rejection):
+- ❌ Bordes sólidos (1px, 2px, cualquier grosor)
+- ❌ Colores planos sin profundidad (sin gradientes, sin glow, sin alpha layering)
+- ❌ Layouts de rejilla tradicional (grid 12-col, flex estático, tablas en Macro/Meso)
+- ❌ Animaciones CSS vanilla (usar EXCLUSIVAMENTE Framer Motion)
+- ❌ Tipografía por defecto (usar JetBrains Mono + serif moderno)
+- ❌ Componentes de librerías sin personalización (MUI, Chakra, etc. → custom build obligatorio)
+
+**MANDATO OBLIGATORIO** (Penalidad: PR Request Changes):
+- ✅ Glassmorphism en TODOS los contenedores:
+  ```css
+  background: rgba(10, 15, 35, 0.4);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(0, 255, 255, 0.2);  /* Gradiente + alpha, NO sólido */
+  box-shadow: 0 0 20px rgba(0, 255, 255, 0.08),
+              inset 0 0 20px rgba(0, 255, 255, 0.04);
+  ```
+- ✅ Animaciones Framer Motion en TODO cambio de estado:
+  - Entrada: `initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}`
+  - Transición: `transition={{ type: "spring", damping: 30, stiffness: 100 }}`
+  - Salida: Reverse animation + cleanup
+- ✅ Paleta institucional ESTRICTA:
+  - Fondo: `#020202` (True Black EXCLUSIVAMENTE)
+  - Cyan-Electric: `#00F2FF` (salud, conexión, datos buenos)
+  - Acid-Green: `#00FF41` (rentabilidad, éxito, confirmación)
+  - Magenta: `#FF0066` (crítico, anomalía, error)
+  - Gold: `#FFD700` (caution, zona gris)
+  - Gray Neutral: `#666666` (desactivado, offline)
+- ✅ Visualizaciones abstractas FUNCIONALES:
+  - **Macro/Meso**: Gauges, Heatmaps, Node graphs, Particle fields, Canvas SVG nur
+  - **Microonly**: Tablas permitidas (con animación de fila al actualizar)
+  - **Prohibido**: Histogramas de barras, pie charts, líneas rectas
+- ✅ Framer Motion + Canvas/WebGL obligatorio para:
+  - Signal DNA Radar (partículas 60 FPS)
+  - Neural Link Map (nodos interactivos)
+  - Core Orb (gauges rotativos con needle animation)
+  - Risk threshold transitions (stagger entry sequence)
+- ✅ Densidad de datos EXPERTO:
+  - Sin resumen simplificado → mostrar todo con transparencia + capas
+  - Hover → mostra más detalles (tooltip técnico)
+  - Click → zoom a siguiente nivel Fractal (Macro → Meso → Micro)
+
+**FRACTAL DEPTH COMPLIANCE**:
+- **Macro HUD** (Command Orb): Solo gauges circulares, glow effects, drop zones
+  - Zero tablas, zero grillas, zero textos densos
+- **Meso Managers** (Trader/Analysis/Portfolio/EDGE): Heatmaps, Node graphs, animaciones staggered
+  - Tablas PROHIBIDAS (usar Canvas + tooltips en hover)
+  - Grillas tradicionales → SVG asymmetric layouts
+- **Micro Atomic** (Trade details, Signal reasoning):
+  - Única zona donde tablas son permitidas
+  - Fondos oscuro con glassmorphism ON rows
+  - Columnas: timestamp | symbol | action | p&l (coloreado por valor)
+
+**VALIDACIÓN AUTOMÁTICA** (PR Merge Gate):
+```bash
+python scripts/validate_all.py
+# Incluye: 
+#  - scan_ui_for_solid_borders()  → grep /@media|border:|\.border/ en .tsx files
+#  - scan_ui_color_compliance()   → verifica palette (#020202, #00F2FF, #00FF41)
+#  - scan_ui_animation_compliance() → grep /motion\.|transition|animation/ (Framer Motion)
+#  - scan_ui_table_location()     → valida tablas solo en Micro level
+```
+
+**EXCEPCIONES** (Raras):
+- Admin panel (settings, credentials): Puede usar tablas en Meso (logged as EXCEPTION_UI_ADMIN_001)
+- Legacy components en deprecation: 6 meses de tolerancia después de deprecation notice
+- A/B testing temporal: Máximo 2 semanas, debe documentarse en ticket
+
+**TRACE_ID**: UI-CONSTITUTION-V3-001  
+**Documento de Referencia Completo**: [docs/09_INSTITUTIONAL_UI.md#V3 The Glass Cockpit Protocol](docs/09_INSTITUTIONAL_UI.md#v3-the-glass-cockpit-protocol)
+
 ---
 *Este documento es dinámico y representa el estándar de excelencia técnica de Aethelgard.*
 
