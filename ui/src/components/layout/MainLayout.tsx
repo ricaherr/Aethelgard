@@ -7,10 +7,12 @@ import {
     Briefcase,
     ScanEye,
     Satellite,
-    Grid
+    Grid,
+    Sparkles
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TerminalHeader } from './TerminalHeader';
+import EdgeConciensiaBadge from '../edge/EdgeConciensiaBadge';
 
 interface MainLayoutProps {
     children: ReactNode;
@@ -33,6 +35,7 @@ export function MainLayout({ children, activeTab, setActiveTab }: MainLayoutProp
                     <NavIcon icon={<Activity size={22} />} active={activeTab === 'analysis'} onClick={() => setActiveTab('analysis')} label="Análisis" />
                     <NavIcon icon={<Briefcase size={22} />} active={activeTab === 'portfolio'} onClick={() => setActiveTab('portfolio')} label="Portfolio" />
                     <NavIcon icon={<Cpu size={22} />} active={activeTab === 'edge'} onClick={() => setActiveTab('edge')} label="EDGE" />
+                    <NavIcon icon={<Sparkles size={22} />} active={activeTab === 'shadow'} onClick={() => setActiveTab('shadow')} label="SHADOW" />
                     <NavIcon icon={<Satellite size={22} />} active={activeTab === 'satellite'} onClick={() => setActiveTab('satellite')} label="Satellite Link" />
                     <NavIcon icon={<ScanEye size={22} />} active={activeTab === 'monitor'} onClick={() => setActiveTab('monitor')} label="Monitor" />
                 </div>
@@ -46,6 +49,9 @@ export function MainLayout({ children, activeTab, setActiveTab }: MainLayoutProp
                 {/* Decorative Background Elements */}
                 <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-aethelgard-cyan/5 blur-[120px] rounded-full -translate-y-1/2 translate-x-1/2 pointer-events-none" />
                 <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-aethelgard-blue/5 blur-[120px] rounded-full translate-y-1/2 -translate-x-1/2 pointer-events-none" />
+
+                {/* EDGE Conciencia Badge - Shows SHADOW mode status */}
+                <EdgeConciensiaBadge />
 
                 <TerminalHeader />
 

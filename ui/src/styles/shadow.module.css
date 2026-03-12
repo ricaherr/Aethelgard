@@ -1,0 +1,481 @@
+/* ============================================================================
+   SHADOW HUB - Satellite Link Institutional Standard
+   Estilos centralizados para SHADOW pool dashboard
+   ============================================================================ */
+
+/* @import Google Fonts - JetBrains Mono */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+/* ============================================================================
+   GLOBAL VARIABLES
+   ============================================================================ */
+
+:root {
+  /* Colors - Institutional Blue Palette */
+  --color-blue-primary: #3b82f6;      /* 500 */
+  --color-blue-dark: #1e40af;         /* 800 */
+  --color-green-status: #10b981;      /* HEALTHY */
+  --color-amber-status: #f59e0b;      /* MONITOR */
+  --color-red-status: #ef4444;        /* DEAD/QUARANTINED */
+
+  /* Opacity & Glassmorphism */
+  --glass-bg: rgba(10, 15, 35, 0.4);
+  --border-color: rgba(59, 130, 246, 0.2);
+  --border-width: 0.5px;
+  --blur-sm: blur(8px);
+  --blur-md: blur(12px);
+
+  /* Spacing */
+  --gap-desktop: 12px;
+  --gap-mobile: 8px;
+  --gap-sm: 8px;
+  --gap-md: 12px;
+  --gap-lg: 16px;
+
+  /* Typography */
+  --font-mono: 'JetBrains Mono', 'Monaco', 'Courier New', monospace;
+  --font-size-xs: 10px;
+  --font-size-sm: 11px;
+  --font-size-base: 12px;
+  --font-size-lg: 14px;
+  --font-size-xl: 16px;
+
+  /* Z-index */
+  --z-badge: 50;
+  --z-dropdown: 40;
+}
+
+/* ============================================================================
+   CONTAINER & LAYOUT
+   ============================================================================ */
+
+.shadowHub {
+  width: 100%;
+  height: 100%;
+  padding: 1.5rem;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.shadowHub .space-section {
+  margin-bottom: 1.5rem;
+}
+
+.shadowHub .section-title {
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+  color: rgba(59, 130, 246, 1);
+  margin-bottom: 1rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* ============================================================================
+   COMPETITION DASHBOARD - Grid Responsive
+   ============================================================================ */
+
+.competitionDashboard {
+  width: 100%;
+}
+
+.gridContainer {
+  display: grid;
+  grid-auto-rows: auto;
+  gap: var(--gap-desktop);
+  /* Responsive: 3 cols desktop → 2 cols tablet → 1 col mobile */
+}
+
+@media (max-width: 1024px) {
+  .gridContainer {
+    --tw-grid-cols: repeat(2, minmax(0, 1fr));
+    gap: var(--gap-desktop);
+  }
+}
+
+@media (max-width: 640px) {
+  .gridContainer {
+    --tw-grid-cols: repeat(1, minmax(0, 1fr));
+    gap: var(--gap-mobile);
+  }
+}
+
+/* ============================================================================
+   INSTANCE CARD - 3x2 Grid Item
+   ============================================================================ */
+
+.instanceCard {
+  border: var(--border-width) solid var(--border-color);
+  border-radius: 0.75rem;
+  backdrop-filter: var(--blur-md);
+  background-color: rgba(59, 130, 246, 0.05);
+  padding: 1rem;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  transition: all 0.2s ease-out;
+}
+
+.instanceCard:hover {
+  border-color: rgba(59, 130, 246, 0.4);
+  background-color: rgba(59, 130, 246, 0.08);
+}
+
+/* Header: Instance ID + Status */
+.instanceCardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.75rem;
+  border-bottom: var(--border-width) solid var(--border-color);
+}
+
+.instanceId {
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  color: rgb(147, 197, 253);
+  word-break: break-all;
+  flex: 1;
+}
+
+.statusBadge {
+  padding: 0.3rem 0.5rem;
+  border-radius: 0.35rem;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  white-space: nowrap;
+  margin-left: 0.5rem;
+}
+
+.statusBadge.healthy {
+  background-color: rgba(16, 185, 129, 0.2);
+  color: rgb(16, 185, 129);
+}
+
+.statusBadge.monitor {
+  background-color: rgba(245, 158, 11, 0.2);
+  color: rgb(245, 158, 11);
+}
+
+.statusBadge.dead,
+.statusBadge.quarantined {
+  background-color: rgba(239, 68, 68, 0.2);
+  color: rgb(239, 68, 68);
+}
+
+/* Pilar Badges Row */
+.pilarBadgesRow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--gap-sm);
+  margin-bottom: 0.75rem;
+}
+
+.pilarBadge {
+  text-align: center;
+}
+
+.pilarLabel {
+  font-size: var(--font-size-xs);
+  color: rgba(156, 163, 175, 1);
+  margin-bottom: 0.25rem;
+}
+
+.pilarStatus {
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  padding: 0.3rem 0.5rem;
+  border-radius: 0.25rem;
+}
+
+.pilarStatus.pass {
+  background-color: rgba(34, 197, 94, 0.2);
+  color: rgb(34, 197, 94);
+}
+
+.pilarStatus.fail {
+  background-color: rgba(239, 68, 68, 0.2);
+  color: rgb(239, 68, 68);
+}
+
+.pilarStatus.unknown {
+  background-color: rgba(107, 114, 128, 0.2);
+  color: rgba(107, 114, 128, 1);
+}
+
+/* Metrics Section */
+.metricsSection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  font-size: var(--font-size-xs);
+}
+
+.metricRow {
+  display: flex;
+  justify-content: space-between;
+}
+
+.metricLabel {
+  color: rgba(107, 114, 128, 1);
+}
+
+.metricValue {
+  font-weight: 700;
+}
+
+.metricValue.profitFactor {
+  color: rgb(251, 191, 36);
+}
+
+.metricValue.winRate {
+  color: rgb(59, 130, 246);
+}
+
+.metricValue.drawdown {
+  color: rgb(239, 68, 68);
+}
+
+/* Footer: Trade Count */
+.instanceCardFooter {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: var(--border-width) solid var(--border-color);
+  font-size: var(--font-size-xs);
+  color: rgba(107, 114, 128, 1);
+}
+
+.emptyState {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: rgba(107, 114, 128, 1);
+  font-size: var(--font-size-sm);
+}
+
+/* ============================================================================
+   EDGE CONCIENCIA BADGE
+   ============================================================================ */
+
+.edgeBadge {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: var(--z-badge);
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  border: var(--border-width) solid rgba(59, 130, 246, 0.4);
+  backdrop-filter: var(--blur-md);
+  background-color: rgba(59, 130, 246, 0.1);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  color: rgb(96, 165, 250);
+  white-space: nowrap;
+  transition: all 0.2s ease-out;
+}
+
+.edgeBadge:hover {
+  border-color: rgba(59, 130, 246, 0.6);
+  background-color: rgba(59, 130, 246, 0.15);
+}
+
+.edgeBadgeTitle {
+  font-weight: 700;
+  color: rgb(59, 130, 246);
+  margin-bottom: 0.25rem;
+}
+
+.edgeBadgeContent {
+  color: rgba(156, 163, 175, 1);
+  margin-top: 0.25rem;
+}
+
+/* ============================================================================
+   JUSTIFIED ACTIONS LOG
+   ============================================================================ */
+
+.actionsLog {
+  width: 100%;
+  border: var(--border-width) solid var(--border-color);
+  border-radius: 0.5rem;
+  backdrop-filter: var(--blur-md);
+  background-color: rgba(59, 130, 246, 0.05);
+  padding: 1rem;
+  max-height: 400px;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+}
+
+.actionsLogTitle {
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: rgb(59, 130, 246);
+  margin-bottom: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.actionsLogEmpty {
+  font-size: var(--font-size-xs);
+  color: rgba(107, 114, 128, 1);
+}
+
+.actionEventRow {
+  font-size: var(--font-size-xs);
+  color: rgba(209, 213, 219, 1);
+  border-bottom: var(--border-width) solid rgba(59, 130, 246, 0.1);
+  padding: 0.5rem -0.5rem;
+  margin: 0 -0.5rem;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+  border-radius: 0.25rem;
+  transition: background-color 0.2s ease-out;
+}
+
+.actionEventRow:hover {
+  background-color: rgba(59, 130, 246, 0.05);
+}
+
+.eventTimestamp {
+  color: rgba(107, 114, 128, 1);
+  font-weight: 400;
+}
+
+.eventAction {
+  font-weight: 700;
+  margin: 0 0.5rem;
+}
+
+.eventAction.promotion {
+  color: rgb(16, 185, 129);
+}
+
+.eventAction.demotion {
+  color: rgb(239, 68, 68);
+}
+
+.eventAction.quarantine {
+  color: rgb(245, 158, 11);
+}
+
+.eventAction.monitor {
+  color: rgb(59, 130, 246);
+}
+
+.eventInstanceId {
+  color: rgb(96, 165, 250);
+}
+
+.traceIdLink {
+  color: rgb(59, 130, 246);
+  text-decoration: none;
+  cursor: pointer;
+  max-width: 20ch;
+  display: inline-block;
+  word-break: break-all;
+  transition: color 0.2s ease-out;
+}
+
+.traceIdLink:hover {
+  color: rgb(147, 197, 253);
+  text-decoration: underline;
+}
+
+.eventMessage {
+  color: rgba(107, 114, 128, 1);
+  font-style: italic;
+  margin-top: 0.25rem;
+  font-size: var(--font-size-xs);
+}
+
+/* ============================================================================
+   SCROLLBAR STYLING
+   ============================================================================ */
+
+.actionsLog::-webkit-scrollbar {
+  width: 6px;
+}
+
+.actionsLog::-webkit-scrollbar-track {
+  background: rgba(59, 130, 246, 0.05);
+  border-radius: 3px;
+}
+
+.actionsLog::-webkit-scrollbar-thumb {
+  background: rgba(59, 130, 246, 0.3);
+  border-radius: 3px;
+}
+
+.actionsLog::-webkit-scrollbar-thumb:hover {
+  background: rgba(59, 130, 246, 0.5);
+}
+
+/* ============================================================================
+   UTILITY CLASSES
+   ============================================================================ */
+
+.glassmorphic {
+  backdrop-filter: var(--blur-md);
+  background-color: var(--glass-bg);
+  border: var(--border-width) solid var(--border-color);
+}
+
+.monospace {
+  font-family: var(--font-mono);
+}
+
+.truncate-trace {
+  max-width: 20ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ============================================================================
+   RESPONSIVE ADJUSTMENTS
+   ============================================================================ */
+
+@media (max-width: 768px) {
+  .shadowHub {
+    padding: 1rem;
+  }
+
+  .edgeBadge {
+    top: 0.5rem;
+    right: 0.5rem;
+    font-size: var(--font-size-xs);
+    padding: 0.5rem 0.75rem;
+  }
+
+  .actionsLog {
+    max-height: 300px;
+  }
+
+  .instanceCard {
+    padding: 0.75rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .shadowHub {
+    padding: 0.75rem;
+  }
+
+  .instanceCard {
+    padding: 0.5rem;
+  }
+
+  .instanceCardHeader {
+    flex-direction: column;
+  }
+
+  .statusBadge {
+    margin-left: 0;
+    margin-top: 0.5rem;
+  }
+
+  .edgeBadge {
+    font-size: var(--font-size-xs);
+    padding: 0.4rem 0.6rem;
+  }
+}

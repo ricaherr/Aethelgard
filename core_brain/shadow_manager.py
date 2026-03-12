@@ -20,8 +20,9 @@ Rules:
 """
 
 import logging
+import sqlite3
 from datetime import datetime, timezone
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Union
 from dataclasses import dataclass
 
 from models.shadow import (
@@ -182,14 +183,39 @@ class ShadowManager:
       - storage: ShadowStorageManager (NOT self-instantiated)
     """
 
-    def __init__(self, storage: ShadowStorageManager):
+    def __init__(self, storage: Union[ShadowStorageManager, 'StorageManager']):
         """
         Initialize ShadowManager with injected dependencies.
         
         Args:
-            storage: ShadowStorageManager instance (injected, NOT self-created)
+            storage: Either ShadowStorageManager instance OR generic StorageManager
+                    If StorageManager, will create ShadowStorageManager internally
+                    (injected, NOT self-created)
         """
-        self.storage = storage
+        # Handle both ShadowStorageManager and generic StorageManager
+        if isinstance(storage, ShadowStorageManager):
+            self.storage = storage
+        else:
+            # Assume it's a StorageManager with a .conn attribute (SQLite connection)
+            try:
+                # Try to get connection from generic storage manager
+                if hasattr(storage, 'conn'):
+                    conn = storage.conn
+                elif hasattr(storage, 'connection'):
+                    conn = storage.connection
+                elif hasattr(storage, 'get_conn'):
+                    conn = storage.get_conn()
+                else:
+                    # If no connection found, raise informative error
+                    raise AttributeError(
+                        f"Cannot extract SQLite connection from {type(storage).__name__}. "
+                        f"Expected .conn or .connection attribute or get_conn() method."
+                    )
+                self.storage = ShadowStorageManager(conn)
+            except (AttributeError, TypeError) as e:
+                logger.error(f"Failed to create ShadowStorageManager: {e}")
+                raise
+        
         self.promotion_validator = PromotionValidator()
         self.logger = logging.getLogger(__name__)
 

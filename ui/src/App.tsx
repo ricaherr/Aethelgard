@@ -17,10 +17,12 @@ import { AnalysisPage } from './components/analysis';
 import { SatelliteLink } from './components/satellite/SatelliteLink';
 import { MonitorPage } from './components/diagnostic/MonitorPage';
 import { HomePage } from './pages/HomePage';
+import ShadowHub from './components/shadow/ShadowHub';
 
 // New Core Layout & Auth
 import { AuthProvider } from './contexts/AuthContext';
 import { AethelgardProvider } from './contexts/AethelgardContext';
+import { ShadowProvider } from './contexts/ShadowContext';
 import { AuthGuard } from './components/auth/AuthGuard';
 import { MainLayout } from './components/layout/MainLayout';
 
@@ -44,7 +46,8 @@ function AuthenticatedView() {
     const { regime, signals, thoughts, status, metrics, riskStatus, modulesStatus, sendCommand, runAudit, runRepair } = useAethelgard();
 
     return (
-        <MainLayout activeTab={activeTab} setActiveTab={setActiveTab}>
+        <ShadowProvider>
+            <MainLayout activeTab={activeTab} setActiveTab={setActiveTab}>
             <AnimatePresence mode="wait">
                 {activeTab === 'home' && (
                     <motion.div
@@ -172,6 +175,18 @@ function AuthenticatedView() {
                         <MonitorPage status={status} thoughts={thoughts} runAudit={runAudit} runRepair={runRepair} />
                     </motion.div>
                 )}
+                {activeTab === 'shadow' && (
+                    <motion.div
+                        key="shadow-view"
+                        initial={{ opacity: 0, scale: 0.99 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 1.01 }}
+                        transition={{ duration: 0.3, ease: 'easeOut' }}
+                        className="h-full"
+                    >
+                        <ShadowHub />
+                    </motion.div>
+                )}
             </AnimatePresence>
 
             {/* Diagnostic Drawer Overlay */}
@@ -181,6 +196,7 @@ function AuthenticatedView() {
                 status={status}
             />
         </MainLayout>
+        </ShadowProvider>
     );
 }
 

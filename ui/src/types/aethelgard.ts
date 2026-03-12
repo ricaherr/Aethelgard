@@ -134,3 +134,77 @@ export interface TuningLog {
     details?: string;
 }
 
+// ============================================================================
+// SHADOW EVOLUTION v2.1: Multi-Instance Strategy Incubation Protocol (NEW)
+// ============================================================================
+
+export type HealthStatus = 'HEALTHY' | 'DEAD' | 'QUARANTINED' | 'MONITOR' | 'INCUBATING';
+export type ShadowStatus = 'INCUBATING' | 'SHADOW_READY' | 'PROMOTED_TO_REAL' | 'DEAD' | 'QUARANTINED';
+export type PillarStatus = 'PASS' | 'FAIL' | 'UNKNOWN';
+
+export interface ShadowMetrics {
+    // PILAR 1: PROFITABILIDAD
+    profit_factor: number;
+    win_rate: number;
+    
+    // PILAR 2: RESILIENCIA
+    max_drawdown_pct: number;
+    consecutive_losses_max: number;
+    
+    // PILAR 3: CONSISTENCIA
+    equity_curve_cv: number;
+    total_trades_executed: number;
+    
+    // 13 CONFIRMATORY METRICS
+    calmar_ratio: number;
+    trade_frequency_per_day: number;
+    avg_slippage_pips: number;
+    recovery_factor: number;
+    avg_trade_duration_hours: number;
+    risk_reward_ratio: number;
+    zero_profit_days_pct: number;
+    last_activity_hours_ago: number;
+}
+
+export interface ShadowInstance {
+    instance_id: string;
+    strategy_id: string;
+    account_id: string;
+    account_type: 'DEMO' | 'REAL';
+    parameter_overrides: Record<string, any>;
+    regime_filters: string[];
+    birth_timestamp: string;
+    created_at: string;
+    health_status: HealthStatus;
+    shadow_status: ShadowStatus;
+    metrics: ShadowMetrics;
+    last_evaluation: string;
+    pilar1_status: PillarStatus;
+    pilar2_status: PillarStatus;
+    pilar3_status: PillarStatus;
+}
+
+export interface ActionEvent {
+    id: string;
+    timestamp: string;
+    instance_id: string;
+    action: 'PROMOTION' | 'DEMOTION' | 'QUARANTINE' | 'MONITOR';
+    trace_id: string;
+    message: string;
+    metrics_snapshot: Partial<ShadowMetrics>;
+}
+
+export interface WebSocketShadowEvent {
+    event_type: 'SHADOW_STATUS_UPDATE';
+    instance_id: string;
+    health_status: HealthStatus;
+    pillar1_profitability: PillarStatus;
+    pillar2_resiliencia: PillarStatus;
+    pillar3_consistency: PillarStatus;
+    profit_factor: number;
+    win_rate: number;
+    max_drawdown: number;
+    timestamp: string;
+    trace_id: string;
+}
+

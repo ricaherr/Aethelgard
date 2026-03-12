@@ -327,7 +327,19 @@ class MainOrchestrator:
         self.dedup_learner = DedupLearner(storage_manager=self.storage)
         self._last_dedup_learning = datetime.now(timezone.utc)
         
-        # 11. PHASE 4: Intelligent Signal Quality Scoring (Unified Authority)
+        # 11. WEEK 3: SHADOW Evolution Manager (Weekly Instance Promotion)
+        try:
+            from core_brain.shadow_manager import ShadowManager
+            # Note: ShadowManager creates its own ShadowStorageManager internally with storage.conn
+            self.shadow_manager = ShadowManager(storage=self.storage)
+            self.last_shadow_evolution = None  # Track last weekly run (datetime)
+        except Exception as e:
+            logger.warning(f"[WEEK3] Failed to initialize ShadowManager: {e}")
+            # In testing with mocks, ShadowManager might fail - this is non-critical
+            self.shadow_manager = None
+            self.last_shadow_evolution = None
+        
+        # 12. PHASE 4: Intelligent Signal Quality Scoring (Unified Authority)
         self._init_phase4_intelligence_services(
             signal_quality_scorer=signal_quality_scorer,
             consensus_engine=consensus_engine,
@@ -1169,6 +1181,105 @@ class MainOrchestrator:
             logger.error(f"[PHASE3-DEDUP] Error in weekly learning: {e}", exc_info=False)
             # Don't re-raise - learning errors should not block trading
 
+    async def _check_and_run_weekly_shadow_evolution(self) -> None:
+        """
+        WEEK 3: Check if it's Monday 00:00 UTC and run SHADOW evolution if needed.
+        
+        Executes weekly SHADOW instance evaluation:
+        - Retrieve all INCUBATING instances from DB
+        - Evaluate health using 3-Pilar framework
+        - Classify: HEALTHY (promote to REAL) | QUARANTINED | MONITOR | DEAD
+        - Update instance status and persist results
+        - Generate Trace_ID audit trail for all decisions
+        
+        Schedule: Mondays 00:00-00:59 UTC (once per week)
+        """
+        # Skip if ShadowManager not initialized (e.g., in testing with mocks)
+        if not self.shadow_manager:
+            return
+        
+        try:
+            now_utc = datetime.now(timezone.utc)
+            
+            # Check if it's Monday (weekday() returns 0 for Monday)
+            is_monday = now_utc.weekday() == 0
+            
+            # Check if it's 00:00-00:59 UTC (midnight window)
+            is_evolution_hour = now_utc.hour == 0
+            
+            # Make sure we haven't run in the last 24 hours (to avoid multiple runs)
+            if self.last_shadow_evolution:
+                hours_since_last = (now_utc - self.last_shadow_evolution).total_seconds() / 3600
+                enough_time_passed = hours_since_last >= 24
+            else:
+                enough_time_passed = True
+            
+            if is_monday and is_evolution_hour and enough_time_passed:
+                logger.info("[WEEK3-SHADOW] 🔄 Starting weekly SHADOW instance evolution cycle...")
+                trace_base = f"TRACE_EVOLUTION_WEEKLY_{now_utc.strftime('%Y%m%d_%H%M%S')}"
+                
+                try:
+                    # Evaluate all SHADOW instances
+                    results = self.shadow_manager.evaluate_all_instances()
+                    
+                    # Extract classifications
+                    promotions = results.get("promotions", [])
+                    kills = results.get("kills", [])
+                    quarantines = results.get("quarantines", [])
+                    monitors = results.get("monitors", [])
+                    
+                    # Log comprehensive results
+                    total_evaluated = len(promotions) + len(kills) + len(quarantines) + len(monitors)
+                    
+                    logger.info(
+                        f"[WEEK3-SHADOW] ✅ Evolution cycle complete: "
+                        f"{len(promotions)} promoted to REAL, "
+                        f"{len(kills)} marked DEAD, "
+                        f"{len(quarantines)} QUARANTINED (retest), "
+                        f"{len(monitors)} in MONITOR status "
+                        f"({total_evaluated} total evaluated) | {trace_base}"
+                    )
+                    
+                    # Update timestamp to prevent re-running
+                    self.last_shadow_evolution = now_utc
+                    
+                    # Detailed logging for promoted instances
+                    if promotions:
+                        for promo in promotions:
+                            instance_id = promo.get('instance_id', 'UNKNOWN')
+                            trace_id = promo.get('trace_id', '')
+                            logger.info(
+                                f"[WEEK3-SHADOW] ✅ PROMOTED: {instance_id} → REAL account "
+                                f"({trace_id})"
+                            )
+                    
+                    # Log deaths
+                    if kills:
+                        for kill in kills:
+                            instance_id = kill.get('instance_id', 'UNKNOWN')
+                            reason = kill.get('reason', 'UNKNOWN')
+                            trace_id = kill.get('trace_id', '')
+                            logger.warning(
+                                f"[WEEK3-SHADOW] ❌ DEAD: {instance_id} → {reason} "
+                                f"({trace_id})"
+                            )
+                    
+                    # Emit callback notification
+                    if self.thought_callback:
+                        message = (
+                            f"Evolución SHADOW: {len(promotions)} instancias promovidas a REAL, "
+                            f"{len(kills)} eliminadas, {len(quarantines)} en cuarentena, "
+                            f"{len(monitors)} en monitoreo."
+                        )
+                        await self.thought_callback(message, level="info", module="SHADOW")
+                    
+                except Exception as e:
+                    logger.error(f"[WEEK3-SHADOW] Error during evolution: {e}", exc_info=True)
+                    
+        except Exception as e:
+            logger.error(f"[WEEK3-SHADOW] Error checking schedule: {e}", exc_info=False)
+            # Don't re-raise - scheduler errors should not block trading
+
     async def run_single_cycle(self) -> None:
         """
         Execute a single complete trading cycle.
@@ -1189,6 +1300,9 @@ class MainOrchestrator:
             
             # PHASE 3: Check if we need to run weekly dedup learning (Sundays 23:00 UTC)
             await self._check_and_run_weekly_dedup_learning()
+            
+            # PHASE 4: Check if we need to run weekly SHADOW evolution (Mondays 00:00 UTC)
+            await self._check_and_run_weekly_shadow_evolution()
             
             # Step 0: Initial heartbeat update and feedback
             self.storage.update_module_heartbeat("orchestrator")
