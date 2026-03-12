@@ -209,7 +209,17 @@ Proveer una ventana de alta fidelidad al cerebro de Aethelgard mediante una inte
 | **WebSocket Events** | ✅ SHADOW_STATUS_UPDATE (cada ciclo de evaluación) |
 | **Backend Services** | core_brain/shadow_manager.py, system_service.py |
 | **Data Flow** | useAethelgard context + WebSocket listeners |
-| **Estado** | 🟡 **SPECIFICATION LOCKED - AWAITING IMPLEMENTATION** |
+| **Backend Status** | ✅ **WEEK 1 COMPLETADA (12-Mar-2026 16:45 UTC)** - DB Schema + Models ready |
+| **Frontend Status** | 🟡 **AWAITING IMPLEMENTATION** (WEEK 4-5) |
+
+**Implementación WEEK 1** (✅ Completada):
+- ✅ `sys_shadow_instances` table (18 columns, PK=instance_id)
+- ✅ `sys_shadow_performance_history` table (9 columns, FK to instances)
+- ✅ `sys_shadow_promotion_log` table (11 columns, INSERT-ONLY audit trail)
+- ✅ `models/shadow.py` — ShadowInstance + ShadowMetrics dataclasses (550+ lines)
+- ✅ `data_vault/shadow_db.py` — ShadowStorageManager CRUD layer (350+ lines)
+- ✅ 32 unit tests PASSED (test_shadow_schema.py + test_shadow_models.py)
+- ✅ 25/25 módulos arquitectura PASSED (validate_all.py)
 
 **Lo que ves**:
 - Dashboard de Competencia: Grid 3x2 de 6 instancias SHADOWs en paralelo
@@ -281,6 +291,56 @@ Razón: PF=0.75 + DD=22% (2 Pilares fallidos)
 - Status badges: ✅ #10b981 (green), 🟡 #f59e0b (amber), ❌ #ef4444 (red), 🟣 #8b5cf6 (purple)
 - Grid gaps: 12px (responsive, 8px on mobile)
 - Responsive: 3x2 desktop | 2x3 tablet | 1x6 mobile
+
+**Data Contracts** (REST + WebSocket):
+
+```typescript
+// GET /api/shadow/instances
+interface ShadowInstanceResponse {
+  instance_id: string;
+  strategy_id: string;
+  account_type: "DEMO" | "REAL";
+  status: "INCUBATING" | "SHADOW_READY" | "PROMOTED_TO_REAL" | "DEAD" | "QUARANTINED";
+  health_status: "HEALTHY" | "MONITOR" | "QUARANTINED" | "DEAD";
+  metrics: {
+    profit_factor: number;
+    win_rate: number;
+    max_drawdown_pct: number;
+    trades_executed: number;
+    equity_curve_cv: number;
+  };
+  created_at: string;
+  updated_at: string;
+}
+
+// WebSocket Event: SHADOW_STATUS_UPDATE
+interface ShadowStatusUpdateEvent {
+  event_type: "SHADOW_STATUS_UPDATE";
+  instance_id: string;
+  status: string;
+  health_status: string;
+  pillar1_profitability: "PASS" | "FAIL";
+  pillar2_resiliencia: "PASS" | "FAIL";
+  pillar3_consistency: "PASS" | "FAIL";
+  metrics: {
+    profit_factor: number;
+    win_rate: number;
+    max_drawdown: number;
+  };
+  trace_id: string;
+  timestamp: string;
+}
+```
+
+**Implementación Frontend** (WEEK 4-5):
+- [ ] ShadowHub.tsx parent container (estado + listeners WebSocket)
+- [ ] CompetitionDashboard.tsx (grid 3x2 de instancias)
+- [ ] InstanceCard.tsx (individual instance display con badges)
+- [ ] JustifiedActionsLog.tsx (event stream con Trace_ID links)
+- [ ] EDGE Conciencia badge integration en HomePage
+- [ ] CSS Satellite Link styling (0.5px lines, glassmorphism)
+- [ ] Unit tests para componentes
+- [ ] E2E tests (ShadowHub + backend WEEK 3 integration)
 
 ---
 

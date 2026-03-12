@@ -595,6 +595,77 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_consensus_events_strength ON sys_consensus_events (consensus_strength DESC)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_consensus_events_created_at ON sys_consensus_events (created_at DESC)")
 
+    # ── SHADOW EVOLUTION v2.1: Multi-Instance Strategy Incubation (RULE DB-1) ────────
+    # These tables implement the Darwinian selection protocol for strategy promotion.
+    # TRACE_ID pattern: TRACE_PROMOTION_REAL_YYYYMMDD_HHMMSS_instanceid
+    
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sys_shadow_instances (
+            instance_id TEXT PRIMARY KEY,
+            strategy_id TEXT NOT NULL,
+            account_id TEXT NOT NULL,
+            account_type TEXT NOT NULL CHECK(account_type IN ('DEMO', 'REAL')),
+            parameter_overrides TEXT,
+            regime_filters TEXT,
+            birth_timestamp TIMESTAMP,
+            status TEXT NOT NULL DEFAULT 'INCUBATING' CHECK(status IN ('INCUBATING', 'SHADOW_READY', 'PROMOTED_TO_REAL', 'DEAD', 'QUARANTINED')),
+            total_trades_executed INTEGER DEFAULT 0,
+            profit_factor REAL DEFAULT 0.0,
+            win_rate REAL DEFAULT 0.0,
+            max_drawdown_pct REAL DEFAULT 0.0,
+            consecutive_losses_max INTEGER DEFAULT 0,
+            equity_curve_cv REAL DEFAULT 0.0,
+            promotion_trace_id TEXT,
+            backtest_trace_id TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_shadow_instances_strategy_id ON sys_shadow_instances (strategy_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_shadow_instances_account_id ON sys_shadow_instances (account_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_shadow_instances_account_type ON sys_shadow_instances (account_type)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_shadow_instances_status ON sys_shadow_instances (status)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_shadow_instances_created_at ON sys_shadow_instances (created_at DESC)")
+    
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sys_shadow_performance_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            instance_id TEXT NOT NULL,
+            evaluation_date DATE NOT NULL,
+            pillar1_status TEXT CHECK(pillar1_status IN ('PASS', 'FAIL', 'UNKNOWN')),
+            pillar2_status TEXT CHECK(pillar2_status IN ('PASS', 'FAIL', 'UNKNOWN')),
+            pillar3_status TEXT CHECK(pillar3_status IN ('PASS', 'FAIL', 'UNKNOWN')),
+            overall_health TEXT CHECK(overall_health IN ('HEALTHY', 'DEAD', 'QUARANTINED', 'MONITOR', 'INCUBATING')),
+            event_trace_id TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (instance_id) REFERENCES sys_shadow_instances (instance_id)
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_shadow_performance_history_instance_id ON sys_shadow_performance_history (instance_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_shadow_performance_history_evaluation_date ON sys_shadow_performance_history (evaluation_date DESC)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_shadow_performance_history_overall_health ON sys_shadow_performance_history (overall_health)")
+    
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sys_shadow_promotion_log (
+            promotion_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            instance_id TEXT NOT NULL,
+            trace_id TEXT UNIQUE NOT NULL,
+            promotion_status TEXT NOT NULL DEFAULT 'PENDING' CHECK(promotion_status IN ('PENDING', 'APPROVED', 'REJECTED', 'EXECUTED')),
+            pillar1_passed BOOLEAN DEFAULT 0,
+            pillar2_passed BOOLEAN DEFAULT 0,
+            pillar3_passed BOOLEAN DEFAULT 0,
+            approval_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            execution_timestamp TIMESTAMP,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (instance_id) REFERENCES sys_shadow_instances (instance_id)
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_shadow_promotion_log_instance_id ON sys_shadow_promotion_log (instance_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_shadow_promotion_log_trace_id ON sys_shadow_promotion_log (trace_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_shadow_promotion_log_promotion_status ON sys_shadow_promotion_log (promotion_status)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_shadow_promotion_log_created_at ON sys_shadow_promotion_log (created_at DESC)")
+
     # Seed sys_regime_configs with default weights (SSOT)
     _seed_sys_regime_configs(cursor)
 
