@@ -26,6 +26,11 @@ class BaseRepository:
         if self.db_path == ":memory:":
             self._persistent_conn = self._get_conn()
 
+    @property
+    def conn(self) -> sqlite3.Connection:
+        """Public accessor to get the database connection."""
+        return self._get_conn()
+
     def _get_conn(self) -> sqlite3.Connection:
         """Get database connection with row factory"""
         if self._persistent_conn is not None:

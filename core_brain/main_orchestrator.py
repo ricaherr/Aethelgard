@@ -54,6 +54,7 @@ from core_brain.strategy_ranker import StrategyRanker
 from core_brain.signal_selector import SignalSelector
 from core_brain.cooldown_manager import CooldownManager
 from core_brain.dedup_learner import DedupLearner
+from core_brain.api.routers.shadow_ws import broadcast_shadow_update
 
 logger = logging.getLogger(__name__)
 
@@ -355,6 +356,72 @@ class MainOrchestrator:
     def signal_factory(self, factory: Optional[Any]) -> None:
         """Setter for backward compatibility."""
         self._signal_factory = factory
+
+    async def initialize_shadow_pool(
+        self,
+        strategy_engines: Dict[str, Any],
+        account_id: str = "DEMO_MT5_001",
+        variations_per_strategy: int = 2
+    ) -> Dict[str, Any]:
+        """
+        Bootstrap SHADOW pool with automatic instance creation.
+        
+        Called during start.py initialization AFTER loading strategies.
+        Creates M parameter variations per strategy to enable Darwinian selection.
+        
+        Args:
+            strategy_engines: Dict of loaded strategy engines
+            account_id: DEMO account to associate instances with
+            variations_per_strategy: How many parameter sets per strategy (2-4 recommended)
+            
+        Returns:
+            Dict with creation stats {'created': N, 'skipped': M}
+        """
+        if not self.shadow_manager:
+            logger.warning("[SHADOW] ShadowManager not initialized, skipping pool bootstrap")
+            return {"created": 0, "skipped": len(strategy_engines)}
+        
+        # Parameter variation templates (creates diversity in the pool)
+        param_variations = [
+            {"risk_pct": 0.01, "regime_filters": ["TREND_UP", "EXPANSION"]},
+            {"risk_pct": 0.015, "regime_filters": ["TREND_UP"]},
+            # Optional 3rd variation if requested
+            {"risk_pct": 0.02, "regime_filters": []},
+        ][:variations_per_strategy]
+        
+        created_count = 0
+        skipped_count = 0
+        
+        for strategy_id, engine in strategy_engines.items():
+            for variation_idx, params in enumerate(param_variations):
+                try:
+                    instance_id = f"SHADOW_{strategy_id}_V{variation_idx}_{uuid.uuid4().hex[:8]}"
+                    
+                    # Create instance
+                    instance = self.shadow_manager.storage.create_shadow_instance(
+                        instance_id=instance_id,
+                        strategy_id=strategy_id,
+                        account_id=account_id,
+                        account_type="DEMO",
+                        parameter_overrides={"risk_pct": params["risk_pct"]},
+                        regime_filters=params.get("regime_filters", [])
+                    )
+                    
+                    logger.info(
+                        f"[SHADOW] ✅ Created pool instance {strategy_id} "
+                        f"(V{variation_idx}, risk={params['risk_pct']:.2%})"
+                    )
+                    created_count += 1
+                    
+                except Exception as e:
+                    logger.error(f"[SHADOW] ✗ Failed to create instance for {strategy_id}: {e}")
+                    skipped_count += 1
+        
+        logger.info(
+            f"[SHADOW] 🏠 Pool bootstrap complete: {created_count} instances created, "
+            f"{skipped_count} failed"
+        )
+        return {"created": created_count, "skipped": skipped_count}
 
     def _init_core_dependencies(self, scanner: Any, factory: Optional[Any] = None, risk: Any = None, executor: Any = None, storage: Optional[Any] = None, config_path: Optional[str] = None, strategy_ranker: Optional[StrategyRanker] = None, execution_feedback_collector: Optional[ExecutionFeedbackCollector] = None, user_id: Optional[str] = None, tenant_id: Optional[str] = None) -> None:
         """Initializes core engines and resolves storage/config.
@@ -736,19 +803,19 @@ class MainOrchestrator:
             
             # 1. SignalQualityScorer (unified scoring authority)
             self.signal_quality_scorer = signal_quality_scorer or SignalQualityScorer(
-                storage=self.storage
+                storage_manager=self.storage
             )
             logger.debug("[PHASE4] ✅ SignalQualityScorer initialized")
             
             # 2. ConsensusEngine (multi-strategy signal density)
             self.consensus_engine = consensus_engine or ConsensusEngine(
-                storage=self.storage
+                storage_manager=self.storage
             )
             logger.debug("[PHASE4] ✅ ConsensusEngine initialized")
             
             # 3. FailurePatternRegistry (autonomous learning)
             self.failure_pattern_registry = failure_pattern_registry or FailurePatternRegistry(
-                storage=self.storage
+                storage_manager=self.storage
             )
             logger.debug("[PHASE4] ✅ FailurePatternRegistry initialized")
             
@@ -1252,6 +1319,23 @@ class MainOrchestrator:
                                 f"[WEEK3-SHADOW] ✅ PROMOTED: {instance_id} → REAL account "
                                 f"({trace_id})"
                             )
+                            # WEEK 5: Emit WebSocket event for promotion
+                            await self.emit_shadow_status_update(
+                                instance_id=instance_id,
+                                health_status="HEALTHY",
+                                pilar1_status="PASS",
+                                pilar2_status="PASS",
+                                pilar3_status="PASS",
+                                metrics={
+                                    "profit_factor": 0,
+                                    "win_rate": 0,
+                                    "max_drawdown_pct": 0,
+                                    "consecutive_losses_max": 0,
+                                    "trade_count": 0
+                                },
+                                trace_id=trace_id,
+                                action="PROMOTE"
+                            )
                     
                     # Log deaths
                     if kills:
@@ -1262,6 +1346,75 @@ class MainOrchestrator:
                             logger.warning(
                                 f"[WEEK3-SHADOW] ❌ DEAD: {instance_id} → {reason} "
                                 f"({trace_id})"
+                            )
+                            # WEEK 5: Emit WebSocket event for death
+                            await self.emit_shadow_status_update(
+                                instance_id=instance_id,
+                                health_status="DEAD",
+                                pilar1_status="FAIL",
+                                pilar2_status="UNKNOWN",
+                                pilar3_status="UNKNOWN",
+                                metrics={
+                                    "profit_factor": 0,
+                                    "win_rate": 0,
+                                    "max_drawdown_pct": 0,
+                                    "consecutive_losses_max": 0,
+                                    "trade_count": 0
+                                },
+                                trace_id=trace_id,
+                                action="DEMOTE"
+                            )
+                    
+                    # WEEK 5: Emit events for quarantined instances
+                    if quarantines:
+                        for quar in quarantines:
+                            instance_id = quar.get('instance_id', 'UNKNOWN')
+                            trace_id = quar.get('trace_id', '')
+                            logger.warning(
+                                f"[WEEK3-SHADOW] ⚠️ QUARANTINED: {instance_id} "
+                                f"({trace_id})"
+                            )
+                            await self.emit_shadow_status_update(
+                                instance_id=instance_id,
+                                health_status="QUARANTINED",
+                                pilar1_status="PASS",
+                                pilar2_status="FAIL",
+                                pilar3_status="UNKNOWN",
+                                metrics={
+                                    "profit_factor": 0,
+                                    "win_rate": 0,
+                                    "max_drawdown_pct": 0,
+                                    "consecutive_losses_max": 0,
+                                    "trade_count": 0
+                                },
+                                trace_id=trace_id,
+                                action="QUARANTINE"
+                            )
+                    
+                    # WEEK 5: Emit events for monitored instances
+                    if monitors:
+                        for mon in monitors:
+                            instance_id = mon.get('instance_id', 'UNKNOWN')
+                            trace_id = mon.get('trace_id', '')
+                            logger.info(
+                                f"[WEEK3-SHADOW] 👁️ MONITOR: {instance_id} "
+                                f"({trace_id})"
+                            )
+                            await self.emit_shadow_status_update(
+                                instance_id=instance_id,
+                                health_status="MONITOR",
+                                pilar1_status="PASS",
+                                pilar2_status="PASS",
+                                pilar3_status="FAIL",
+                                metrics={
+                                    "profit_factor": 0,
+                                    "win_rate": 0,
+                                    "max_drawdown_pct": 0,
+                                    "consecutive_losses_max": 0,
+                                    "trade_count": 0
+                                },
+                                trace_id=trace_id,
+                                action="MONITOR"
                             )
                     
                     # Emit callback notification
@@ -1279,6 +1432,56 @@ class MainOrchestrator:
         except Exception as e:
             logger.error(f"[WEEK3-SHADOW] Error checking schedule: {e}", exc_info=False)
             # Don't re-raise - scheduler errors should not block trading
+
+    async def emit_shadow_status_update(
+        self,
+        instance_id: str,
+        health_status: str,
+        pilar1_status: str,
+        pilar2_status: str,
+        pilar3_status: str,
+        metrics: dict,
+        trace_id: str,
+        action: str
+    ) -> None:
+        """
+        Emit SHADOW_STATUS_UPDATE WebSocket event to all registered clients.
+        
+        Called from _check_and_run_weekly_shadow_evolution() for each evaluated instance.
+        
+        Args:
+            instance_id: UUID of SHADOW instance
+            health_status: 'HEALTHY' | 'DEAD' | 'QUARANTINED' | 'MONITOR' | 'INCUBATING'
+            pilar1_status: 'PASS' | 'FAIL' | 'UNKNOWN'
+            pilar2_status: 'PASS' | 'FAIL' | 'UNKNOWN'
+            pilar3_status: 'PASS' | 'FAIL' | 'UNKNOWN'
+            metrics: Dict with profit_factor, win_rate, max_drawdown_pct, consecutive_losses_max, trade_count
+            trace_id: Unique audit trail ID (format: SHADOW_STATUS_UPDATE_YYYYMMDD_HHMMSS_uuid)
+            action: 'PROMOTE' | 'DEMOTE' | 'QUARANTINE' | 'MONITOR'
+        """
+        try:
+            payload = {
+                "event_type": "SHADOW_STATUS_UPDATE",
+                "instance_id": instance_id,
+                "health_status": health_status,
+                "pilar1_status": pilar1_status,
+                "pilar2_status": pilar2_status,
+                "pilar3_status": pilar3_status,
+                "metrics": metrics,
+                "action": action,
+                "trace_id": trace_id
+            }
+            
+            # Broadcast to all registered SHADOW WebSocket clients (RULE T1: per-tenant)
+            await broadcast_shadow_update(self.user_id, payload)
+            logger.debug(
+                f"[SHADOW_WS] Emitted SHADOW_STATUS_UPDATE for {instance_id} "
+                f"({action}), {trace_id}"
+            )
+                
+        except Exception as e:
+            logger.error(f"[SHADOW_WS] Error emitting shadow status update: {e}")
+            # Don't re-raise - WebSocket errors should not block evaluation
 
     async def run_single_cycle(self) -> None:
         """

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Debug Test</title>
+    <style>
+        body { font-family: monospace; background: #1e1e1e; color: #d4d4d4; padding: 20px; }
+        #logs { 
+            border: 1px solid #666; 
+            padding: 10px; 
+            height: 400px; 
+            overflow-y: auto; 
+            background: #252526;
+            margin: 10px 0;
+        }
+        .log-line { margin: 2px 0; }
+        .error { color: #ce9178; }
+        .success { color: #6a9955; }
+        .info { color: #569cd6; }
+    </style>
+</head>
+<body>
+<h1>WebSocket Debug Test</h1>
+<button onclick="testWebSocket()">Connect to /ws/shadow</button>
+<button onclick="clearLogs()">Clear Logs</button>
+
+<div id="logs"></div>
+
+<script>
+let ws = null;
+
+function log(msg, type = 'info') {
+    const logsDiv = document.getElementById('logs');
+    const line = document.createElement('div');
+    line.className = `log-line ${type}`;
+    const timestamp = new Date().toLocaleTimeString();
+    line.textContent = `[${timestamp}] ${msg}`;
+    logsDiv.appendChild(line);
+    logsDiv.scrollTop = logsDiv.scrollHeight;
+    console.log(`[${type}] ${msg}`);
+}
+
+function clearLogs() {
+    document.getElementById('logs').innerHTML = '';
+}
+
+function testWebSocket() {
+    log('Starting WebSocket test...', 'info');
+    const url = 'ws://localhost:8000/ws/shadow';
+    log(`Attempting to connect to: ${url}`, 'info');
+    
+    try {
+        ws = new WebSocket(url);
+        
+        ws.onopen = function(event) {
+            log('✓ WebSocket OPEN event fired', 'success');
+            log(`readyState: ${ws.readyState} (OPEN)`, 'success');
+        };
+        
+        ws.onmessage = function(event) {
+            log('✓ onmessage fired!', 'success');
+            log(`Raw data: ${event.data}`, 'success');
+            try {
+                const msg = JSON.parse(event.data);
+                log(`Parsed JSON - event_type: ${msg.event_type}`, 'success');
+                log(`Full message: ${JSON.stringify(msg)}`, 'success');
+            } catch (e) {
+                log(`Failed to parse JSON: ${e}`, 'error');
+            }
+        };
+        
+        ws.onerror = function(event) {
+            log(`✗ WebSocket ERROR: ${event.type}`, 'error');
+            log(`readyState: ${ws.readyState}`, 'error');
+        };
+        
+        ws.onclose = function(event) {
+            log(`✗ WebSocket CLOSE event fired`, 'error');
+            log(`Code: ${event.code}, Reason: ${event.reason}`, 'error');
+            log(`readyState: ${ws.readyState} (CLOSED)`, 'error');
+            log(`wasClean: ${event.wasClean}`, 'error');
+        };
+        
+        log('WebSocket object created, waiting for onopen...', 'info');
+        
+    } catch (error) {
+        log(`Error creating WebSocket: ${error.message}`, 'error');
+    }
+}
+
+// Auto-test on page load
+window.addEventListener('load', function() {
+    log('Page loaded. Click "Connect" button to test.', 'info');
+});
+</script>
+</body>
+</html>

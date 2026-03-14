@@ -94,7 +94,7 @@ export function AethelgardProvider({ children }: { children: ReactNode }) {
         // Determine WS URL (handling dev/prod)
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const host = window.location.hostname === 'localhost' ? 'localhost:8000' : window.location.host;
-        const wsUrl = `${protocol}//${host}/ws/GENERIC/dashboard_nextgen`;
+        const wsUrl = `${protocol}//${host}/ws/terminal/GENERIC/dashboard_nextgen`;
 
         console.log('🔌 [CONTEXT] Connecting to Brain WebSocket...');
         const socket = new WebSocket(wsUrl);

@@ -37,7 +37,7 @@ export const useAnalysisWebSocket = () => {
         const host = window.location.hostname === 'localhost' 
             ? 'localhost:8000' 
             : window.location.host;
-        const wsUrl = `${protocol}//${host}/ws/GENERIC/analysis`;
+        const wsUrl = `${protocol}//${host}/ws/terminal/GENERIC/analysis`;
 
         console.log('🔌 [ANALYSIS WS] Connecting to analysis stream:', wsUrl);
 

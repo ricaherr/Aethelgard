@@ -140,7 +140,7 @@ class StorageManager(
         Template location: data_vault/templates/usr_template.db
         This ensures new tenants get the correct usr_* schema without sys_* tables.
         """
-        if self.tenant_id is None:
+        if self.user_id is None:
             return  # Global DB, no auto-provisioning needed
         
         tenant_db = Path(self.db_path)

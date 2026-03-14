@@ -408,6 +408,18 @@ async def main() -> None:
         orchestrator.set_signal_factory(signal_factory)
         logger.info("[INIT] ✓ Orquestador listo con SignalFactory")
         
+        # STEP 4.5: Bootstrap SHADOW pool (auto-create instances for Darwinian selection)
+        logger.info("[INIT] Inicializando SHADOW pool (instancias automáticas)...")
+        if active_engines:
+            shadow_stats = await orchestrator.initialize_shadow_pool(
+                strategy_engines=active_engines,
+                account_id="DEMO_MT5_001",
+                variations_per_strategy=2
+            )
+            logger.info(f"[INIT] ✓ SHADOW pool: {shadow_stats['created']} instancias, {shadow_stats['skipped']} skipped")
+        else:
+            logger.warning("[INIT] ⚠️  No strategies loaded, skipping SHADOW pool initialization")
+        
         # 9. Autonomous Health Service (EDGE Autonomy)
         logger.info("[INIT] Inicializando Servicio de Salud Autónomo...")
         from core_brain.health_service import AutonomousHealthService

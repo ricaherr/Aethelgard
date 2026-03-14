@@ -195,16 +195,23 @@ export interface ActionEvent {
 }
 
 export interface WebSocketShadowEvent {
-    event_type: 'SHADOW_STATUS_UPDATE';
-    instance_id: string;
-    health_status: HealthStatus;
-    pillar1_profitability: PillarStatus;
-    pillar2_resiliencia: PillarStatus;
-    pillar3_consistency: PillarStatus;
-    profit_factor: number;
-    win_rate: number;
-    max_drawdown: number;
-    timestamp: string;
-    trace_id: string;
+    event_type: 'SHADOW_STATUS_UPDATE' | 'SHADOW_CONNECTION_ESTABLISHED';
+    instance_id?: string;
+    health_status?: HealthStatus;
+    pilar1_status?: PillarStatus;
+    pilar2_status?: PillarStatus;
+    pilar3_status?: PillarStatus;
+    metrics?: {
+        profit_factor: number;
+        win_rate: number;
+        max_drawdown_pct: number;
+        consecutive_losses_max: number;
+        total_trades_executed: number;
+    };
+    action?: 'PROMOTE' | 'DEMOTE' | 'QUARANTINE' | 'MONITOR';
+    trace_id?: string;
+    tenant_id?: string;
+    timestamp?: string;
+    message?: string;
 }
 

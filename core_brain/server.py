@@ -17,7 +17,7 @@ from typing import Dict, Set, Any, AsyncGenerator, Optional
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
 
@@ -150,11 +150,11 @@ def create_app() -> FastAPI:
     orchestrator = ConnectivityOrchestrator()
     orchestrator.set_storage(storage())
 
-    @app.websocket("/ws/{connector}/{client_id}")
+    @app.websocket("/ws/terminal/{connector}/{client_id}")
     async def websocket_endpoint(websocket: WebSocket, connector: str, client_id: str) -> None:
         """
-        Endpoint WebSocket principal
-        Formato: /ws/{connector}/{client_id}
+        Endpoint WebSocket principal (Terminal)
+        Formato: /ws/terminal/{connector}/{client_id}
         Connector puede ser: NT, MT5, TV
         """
         # Validar tipo de conector
@@ -243,6 +243,105 @@ def create_app() -> FastAPI:
             logger.error(f"Error procesando señal HTTP: {e}")
             raise HTTPException(status_code=400, detail=str(e))
 
+    @app.get("/api/test-ws")
+    async def serve_websocket_test() -> HTMLResponse:
+        """Serve WebSocket debug test page"""
+        return HTMLResponse("""<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Debug Test</title>
+    <style>
+        body { font-family: monospace; background: #1e1e1e; color: #d4d4d4; padding: 20px; }
+        #logs { 
+            border: 1px solid #666; 
+            padding: 10px; 
+            height: 400px; 
+            overflow-y: auto; 
+            background: #252526;
+            margin: 10px 0;
+        }
+        .log-line { margin: 2px 0; }
+        .error { color: #ce9178; }
+        .success { color: #6a9955; }
+        .info { color: #569cd6; }
+    </style>
+</head>
+<body>
+<h1>WebSocket Debug Test</h1>
+<button onclick="testWebSocket()">Connect to /ws/shadow</button>
+<button onclick="clearLogs()">Clear Logs</button>
+
+<div id="logs"></div>
+
+<script>
+let ws = null;
+
+function log(msg, type = 'info') {
+    const logsDiv = document.getElementById('logs');
+    const line = document.createElement('div');
+    line.className = `log-line ${type}`;
+    const timestamp = new Date().toLocaleTimeString();
+    line.textContent = `[${timestamp}] ${msg}`;
+    logsDiv.appendChild(line);
+    logsDiv.scrollTop = logsDiv.scrollHeight;
+    console.log(`[${type}] ${msg}`);
+}
+
+function clearLogs() {
+    document.getElementById('logs').innerHTML = '';
+}
+
+function testWebSocket() {
+    log('Starting WebSocket test...', 'info');
+    const url = 'ws://localhost:8000/ws/shadow';
+    log(`Attempting to connect to: ${url}`, 'info');
+    
+    try {
+        ws = new WebSocket(url);
+        
+        ws.onopen = function(event) {
+            log('✓ WebSocket OPEN event fired', 'success');
+            log(`readyState: ${ws.readyState} (OPEN)`, 'success');
+        };
+        
+        ws.onmessage = function(event) {
+            log('✓ onmessage fired!', 'success');
+            log(`Raw data: ${event.data}`, 'success');
+            try {
+                const msg = JSON.parse(event.data);
+                log(`Parsed JSON - event_type: ${msg.event_type}`, 'success');
+                log(`Full message: ${JSON.stringify(msg)}`, 'success');
+            } catch (e) {
+                log(`Failed to parse JSON: ${e}`, 'error');
+            }
+        };
+        
+        ws.onerror = function(event) {
+            log(`✗ WebSocket ERROR: ${event.type}`, 'error');
+            log(`readyState: ${ws.readyState}`, 'error');
+        };
+        
+        ws.onclose = function(event) {
+            log(`✗ WebSocket CLOSE event fired`, 'error');
+            log(`Code: ${event.code}, Reason: ${event.reason}`, 'error');
+            log(`readyState: ${ws.readyState} (CLOSED)`, 'error');
+            log(`wasClean: ${event.wasClean}`, 'error');
+        };
+        
+        log('WebSocket object created, waiting for onopen...', 'info');
+        
+    } catch (error) {
+        log(`Error creating WebSocket: ${error.message}`, 'error');
+    }
+}
+
+window.addEventListener('load', function() {
+    log('Page loaded. Click "Connect" button to test.', 'info');
+});
+</script>
+</body>
+</html>""")
+
     # ============ Micro-ETI 2 & 3: Include modular routers ============
     from core_brain.api.routers.trading import router as trading_router
     from core_brain.api.routers.risk import router as risk_router
@@ -254,8 +353,10 @@ def create_app() -> FastAPI:
     from core_brain.api.routers.anomalies import router as anomalies_router
     from core_brain.api.routers.strategy_ws import router as strategy_ws_router
     from core_brain.api.routers.telemetry import router as telemetry_router
+    from core_brain.api.routers.shadow import router as shadow_router
+    from core_brain.api.routers.shadow_ws import router as shadow_ws_router
     
-    # Mount modular routers (Trading, Risk, Market, System, Notifications, Auth, Admin, Anomalies, Strategy WS, Telemetry)
+    # Mount modular routers (Trading, Risk, Market, System, Notifications, Auth, Admin, Anomalies, Strategy WS, Telemetry, SHADOW)
     app.include_router(trading_router, prefix="/api")
     app.include_router(risk_router, prefix="/api")
     app.include_router(market_router, prefix="/api")
@@ -263,9 +364,11 @@ def create_app() -> FastAPI:
     app.include_router(notifications_router, prefix="/api")
     app.include_router(auth_router, prefix="/api")
     app.include_router(admin_router, prefix="/api")
+    app.include_router(shadow_router, prefix="/api")  # SHADOW REST endpoints
     app.include_router(anomalies_router)
     app.include_router(strategy_ws_router)  # WebSocket doesn't need /api prefix
     app.include_router(telemetry_router)  # WebSocket doesn't need /api prefix (Fractal V3)
+    app.include_router(shadow_ws_router)  # WebSocket doesn't need /api prefix (SHADOW)
     logger.info("✅ Micro-ETI 3.1+ Admin Management Router: User CRUD endpoints mounted (/api/admin/users). Trading logic delegated to TradingService.")
 
     # Montar archivos estáticos de la nueva UI si existen
