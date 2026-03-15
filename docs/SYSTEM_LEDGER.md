@@ -1,10 +1,62 @@
 # AETHELGARD: SYSTEM LEDGER
 
-**Version**: 4.3.0-beta
+**Version**: 4.3.1-beta
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-11 01:15 UTC)**: Trace_ID: PHASE4-TRIFECTA-COMPLETION-2026 | PHASE 4 COMPLETADA: INTELIGENCIA COLECTIVA DE SEÑALES | Signal Quality Scorer + Consensus Engine + Failure Pattern Registry
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-14 UTC)**: Trace_ID: ARCH-SSOT-NIVEL0-2026-03-14 | NIVEL 0 COMPLETADO: Sprint de Saneamiento Arquitectónico | DDL consolidado en schema.py, 4 naming violations corregidas, 4 módulos limpiados
+
+---
+
+## 📅 Registro: 2026-03-14 — NIVEL 0: SPRINT DE SANEAMIENTO ARQUITECTÓNICO (TRACE_ID: ARCH-SSOT-NIVEL0-2026-03-14)
+
+### ✅ HITO COMPLETADO: Consolidación SSOT de Base de Datos (Nivel 0)
+
+**Timestamp**: 14 de Marzo 2026 (UTC)
+**Status**: ✅ COMPLETADO
+**Severity**: ARCHITECTURAL REFACTOR
+**Domain**: INFRA (00) — Schema Governance
+**Versión Sistema**: v4.3.1-beta (actualizado desde 4.3.0-beta)
+
+### 🎯 Problema Resuelto
+
+Auditoría forense `docs/AUDITORIA_ESTADO_REAL.md` detectó 4 violaciones críticas de SSOT:
+- **CRÍTICO-1**: `sys_signal_ranking` no existía en schema.py — DDL ausente, tabla creada fuera de SSOT
+- **CRÍTICO-2**: 3 tablas creadas fuera de schema.py (session_tokens, sys_execution_feedback, position_metadata)
+- **ALTO-1**: FK huérfana en `usr_strategy_logs` → `usr_strategies` (tabla no existe, debería ser `sys_strategies`)
+- **ALTO-4**: Tabla `notifications` sin prefijo `usr_` violando naming convention
+
+### 🛠️ Cambios Implementados
+
+| Tarea | Archivo Modificado | Cambio |
+|-------|-------------------|--------|
+| **N0-1** | `data_vault/schema.py` | `usr_performance` → `sys_signal_ranking` + índices actualizados |
+| **N0-1** | `data_vault/schema.py` `run_migrations()` | Migration actualizada para `sys_signal_ranking` |
+| **N0-2** | `data_vault/schema.py` | DDL de `session_tokens` consolidado desde `session_manager.py` |
+| **N0-2** | `data_vault/schema.py` | DDL de `sys_execution_feedback` consolidado desde `execution_feedback.py` |
+| **N0-2** | `data_vault/schema.py` | DDL de `position_metadata` consolidado desde `trades_db.py` |
+| **N0-2** | `core_brain/api/dependencies/session_manager.py` | `_ensure_schema()` → no-op |
+| **N0-2** | `core_brain/execution_feedback.py` | `_ensure_feedback_table()` → no-op |
+| **N0-2** | `data_vault/trades_db.py` | `CREATE TABLE position_metadata` + AUTO-MIGRATION eliminados |
+| **N0-3** | `data_vault/schema.py` | FK `usr_strategy_logs → sys_strategies` (era `→ usr_strategies`) |
+| **N0-4** | `data_vault/schema.py` | `notifications` → `usr_notifications` (tabla + índices) |
+| **N0-4** | `data_vault/system_db.py` | 4 queries SQL actualizadas: `notifications` → `usr_notifications` |
+
+### 📊 Estado Post-Implementación
+
+| Criterio | Antes | Después |
+|----------|-------|---------|
+| **DDL en schema.py** | 46 tablas en DB, 43 en schema.py | 49 tablas, 49 en schema.py ✅ |
+| **Naming violations** | 2 (notifications, usr_performance prefix) | 0 ✅ |
+| **FK huérfanas** | 1 (`usr_strategy_logs → usr_strategies`) | 0 ✅ |
+| **DDL fuera de SSOT** | 3 módulos con inline CREATE TABLE | 0 ✅ |
+
+### 📁 Archivos de Gobernanza Actualizados
+
+- ✅ `ROADMAP.md` — Nivel 0 marcado como COMPLETADO
+- ✅ `governance/BACKLOG.md` — Sprint saneamiento N0-N2 registrado
+- ✅ `docs/DATABASE_SCHEMA.md` — Tablas actualizadas, `usr_performance` deprecada
+- ✅ `docs/SYSTEM_LEDGER.md` — Este registro
 
 ---
 

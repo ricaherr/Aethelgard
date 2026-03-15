@@ -32,6 +32,14 @@
 
 ## II. Componentes Centrales (Arquitectura v2.0)
 
+### 2.0 Glosario Arquitectónico (Nomenclatura Oficial)
+*Para mantener consistencia absoluta en el código y las comunicaciones, se establecen los siguientes términos inmutables:*
+- **Market Data Feed (MDF):** El proveedor de datos puros (OHLCV, Ticks). *Ej: Yahoo, Bloomberg, Oanda.*
+- **Market Scanner:** El radar que barre múltiples activos buscando configuraciones base en crudo.
+- **Strategy Engine:** El analista lógico. Evalúa si el setup cumple las reglas estrictas de la estrategia (S-0001, S-0006, etc.).
+- **Signal Validator:** El determinador de señales. Pasa la señal por los 4 Pilares (Sensorial, Régimen, Multi-Tenant, Coherencia) para aprobarla o vetarla.
+- **Execution Gateway:** La conexión FINAL al broker donde se envían las órdenes y el capital. *Ej: MT5, NinjaTrader, Binance.*
+
 ### 2.1 UniversalStrategyEngine (core_brain/universal_strategy_engine.py)
 
 **Responsabilidad**: Interpreta esquemas JSON de estrategias → Genera señales operativas.
@@ -1898,4 +1906,3 @@ Scanner/Strategies
 - Machine Learning: Ajustar suppression threshold basado en histórico de false positives
 - Integration: Comunicar failure_reason al usuario vía Telegram API
 - Extensión: Aplicar patrón a otros fallos (RiskManager vetos, CircuitBreaker trips)
-

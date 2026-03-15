@@ -69,26 +69,8 @@ class SessionManager:
         self._ensure_schema()
     
     def _ensure_schema(self) -> None:
-        """Create session_tokens table if not exists (idempotent)."""
-        create_table_sql = """
-        CREATE TABLE IF NOT EXISTS session_tokens (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            token_hash TEXT UNIQUE NOT NULL,
-            user_id TEXT NOT NULL,
-            token_type TEXT NOT NULL,
-            expires_at DATETIME NOT NULL,
-            revoked BOOLEAN DEFAULT 0,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            last_used_at DATETIME,
-            user_agent TEXT,
-            ip_address TEXT
-        )
-        """
-        try:
-            self.storage.execute_query(create_table_sql)
-            logger.info("session_tokens table ready")
-        except Exception as e:
-            logger.warning(f"session_tokens table creation/check: {e}")
+        """No-op: session_tokens DDL managed by data_vault/schema.py (ARCH-SSOT-NIVEL0-2026-03-14)."""
+        pass
     
     def create_session(
         self,

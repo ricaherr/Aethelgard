@@ -29,7 +29,7 @@
 
 ### Contenido Actual (Real - 9 Marzo 2026):
 
-**TABLAS SYS_* (Compartidas - Global)**: 15 tablas
+**TABLAS SYS_* (Compartidas - Global)**: 16 tablas
 ```
 sys_broker_accounts       - Configuración de cuentas de broker
 sys_brokers              - Metadatos de brokers
@@ -37,6 +37,7 @@ sys_config               - Configuración del sistema (SSOT)
 sys_credentials          - Credenciales encriptadas
 sys_data_providers       - Proveedores de datos
 sys_economic_calendar    - Calendario económico
+sys_execution_feedback   - Feedback de ejecución (rejection logger — NIVEL0 SSOT)
 sys_market_pulse         - Estado del mercado (global scanner)
 sys_platforms            - Plataformas de trading
 sys_regime_configs       - Configuración de regímenes de mercado
@@ -64,13 +65,15 @@ usr_trades                       - Ejecuciones/trades del ADMIN
 usr_tuning_adjustments           - Ajustes de tuning del sistema
 ```
 
-**OTRAS TABLAS**: 4 tablas (Sistema)
+**OTRAS TABLAS**: 4 tablas (Sistema/Legacy)
 ```
 edge_learning            - Tabla de aprendizaje EDGE (legacy)
-notifications            - Notificaciones internas
-session_tokens          - Tokens de sesión
+position_metadata        - Metadatos de posiciones abiertas (monitoreo — NIVEL0 SSOT)
+session_tokens          - Tokens de sesión (auth — NIVEL0 SSOT)
 sqlite_sequence         - Secuencia de SQLite
 ```
+
+> ⚠️ **NIVEL0 NOTA**: `notifications` (Tablas legacy) fue renombrada a `usr_notifications` (ya listada en USR_* arriba). `session_tokens` movida de session_manager.py a schema.py. `position_metadata` movida de trades_db.py a schema.py.
 
 ---
 
@@ -299,37 +302,9 @@ storage = StorageManager(user_id="new_user_uuid")
 
 ---
 
-### `usr_performance` (Your Strategy Performance)
+### `usr_performance` ~~(Deprecated — Use `sys_signal_ranking`)~~
 
-**Scope**: Personal strategy ranking (Darwin-style per asset, per execution mode).  
-**Ownership**: Tenant owns performance history based on their equity.
-
-| Column | Type | Purpose |
-|--------|------|---------|
-| id | INTEGER | Rank entry ID |
-| strategy_id | INTEGER | Strategy evaluated |
-| asset | TEXT | Asset evaluated (use "asset" terminology) |
-| timeframe | TEXT | Candle period |
-| execution_mode | TEXT | LIVE, SHADOW, DEMO, BACKTEST |
-| trades_count | INTEGER | Total trades |
-| wins | INTEGER | Winning trades |
-| losses | INTEGER | Losing trades |
-| win_rate | REAL | Win% (0-1) |
-| profit_factor | REAL | Gross Profit / Gross Loss |
-| sharpe_ratio | REAL | Risk-adjusted return |
-| max_drawdown_pct | REAL | Maximum drawdown % |
-| cumulative_pnl | REAL | Total P&L |
-| avg_pnl_per_trade | REAL | Average P&L per trade |
-| ranking_score | REAL | Composite ranking |
-| ranking_date | TIMESTAMP | Calculation date |
-
-**Indexes**:
-- `idx_usr_performance_strategy_id` on strategy_id
-- `idx_usr_performance_asset` on asset
-- `idx_usr_performance_win_rate` on win_rate DESC
-- `idx_usr_performance_sharpe` on sharpe_ratio DESC
-
-**Relationships**: FK → usr_strategies.id
+> ⛔ **DEPRECATED** (ARCH-SSOT-NIVEL0-2026-03-14): Tabla renombrada a `sys_signal_ranking`. La tabla `usr_performance` puede existir en DBs antiguas pero NO se crea en nuevas instalaciones. Ver sección `sys_signal_ranking` arriba.
 
 ---
 

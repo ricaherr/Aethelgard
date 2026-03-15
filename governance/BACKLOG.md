@@ -27,6 +27,35 @@
 
 ---
 
+## 00_INFRA_SANEAMIENTO (Sprint Arquitectónico — 14-Mar-2026)
+*Origen: Auditoría forense `docs/AUDITORIA_ESTADO_REAL.md`. Prerequisito bloqueante para todo el Canvas de Ideación.*
+
+### Nivel 0 — Fundacional (✅ COMPLETADO — Trace_ID: ARCH-SSOT-NIVEL0-2026-03-14)
+* **N0-1: sys_signal_ranking como DDL oficial** `[DONE]`
+    * Eliminar `usr_performance` de `initialize_schema()`. Crear `sys_signal_ranking` con todos los campos. Actualizar `run_migrations()`. Impacto: CRÍTICO-1.
+* **N0-2: Consolidación de DDL fragmentado** `[DONE]`
+    * Mover `session_tokens` (de `session_manager.py`), `sys_execution_feedback` (de `execution_feedback.py`) y `position_metadata` (de `trades_db.py`) a `schema.py`. Impacto: CRÍTICO-2.
+* **N0-3: FK huérfana corregida** `[DONE]`
+    * `usr_strategy_logs`: `REFERENCES usr_strategies` → `REFERENCES sys_strategies`. Impacto: ALTO-1.
+* **N0-4: Naming convention restaurada** `[DONE]`
+    * `notifications` → `usr_notifications` en `schema.py` y `system_db.py`. Impacto: ALTO-4.
+
+### Nivel 1 — Crítico (📋 BACKLOG)
+* **N1-1: MT5 Message Queue** `[TODO]`
+    * Crear `MT5ExecutorThread` con cola de mensajes para garantizar que `mt5.order_send()` e `mt5.initialize()` siempre ocurran en el mismo hilo. Archivos: `connectors/mt5_connector.py`. Impacto: CRÍTICO-3.
+* **N1-2: StrategyGatekeeper Integration** `[TODO]`
+    * Instanciar `StrategyGatekeeper` en `MainOrchestrator` via DI. Conectar al flujo de señales antes de ejecución. Archivos: `core_brain/main_orchestrator.py`. Impacto: ALTO-2.
+* **N1-3: usr_broker_accounts — Multi-Broker SaaS** `[TODO]`
+    * Diseñar e implementar tabla `usr_broker_accounts` (per-tenant). Actualizar `_get_account_type()` en `trade_closure_listener.py` para leerla. Prerequisito: Objetivo 3 del Canvas (Perfiles de Riesgo). Impacto: Objetivo Estratégico 3.
+
+### Nivel 2 — Inteligencia (📋 BACKLOG)
+* **N2-1: JSON_SCHEMA Interpreter** `[TODO]`
+    * Implementar rama `JSON_SCHEMA` en `StrategyEngineFactory`. Permite que el Bucle de Generación (Canvas Punto 4.3) cree estrategias sin código Python. Archivos: `core_brain/services/strategy_engine_factory.py`. Impacto: MEDIO-6.
+* **N2-2: WebSocket Auth Standardization** `[TODO]`
+    * Estandarizar `telemetry.py`, `shadow_ws.py`, `strategy_ws.py` para usar `Depends(get_current_active_user)` en lugar de `_verify_token()` manual. Impacto: ALTO-6.
+
+---
+
 ## 01_IDENTITY_SECURITY (SaaS, Auth, Isolation)
 * **HU 1.3: User Role & Membership Level** `[TODO]`
     * **Qué**: Definir jerarquías de acceso (Admin, Pro, Basic).

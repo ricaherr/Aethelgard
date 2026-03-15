@@ -351,32 +351,6 @@ class TradesMixin(BaseRepository):
             merged = {**(existing or {}), **metadata, "ticket": ticket}
 
             cursor.execute("""
-                CREATE TABLE IF NOT EXISTS position_metadata (
-                    ticket INTEGER PRIMARY KEY,
-                    symbol TEXT NOT NULL,
-                    entry_price REAL NOT NULL,
-                    entry_time TEXT NOT NULL,
-                    direction TEXT,
-                    sl REAL,
-                    tp REAL,
-                    volume REAL NOT NULL,
-                    initial_risk_usd REAL,
-                    entry_regime TEXT,
-                    timeframe TEXT,
-                    strategy TEXT,
-                    data TEXT
-                )
-            """)
-
-            # AUTO-MIGRATION: ensure optional columns exist
-            for col in ("direction", "strategy"):
-                try:
-                    cursor.execute(f"SELECT {col} FROM position_metadata LIMIT 1")
-                except Exception:
-                    cursor.execute(f"ALTER TABLE position_metadata ADD COLUMN {col} TEXT")
-                    conn.commit()
-
-            cursor.execute("""
                 REPLACE INTO position_metadata
                 (ticket, symbol, entry_price, entry_time, direction, sl, tp, volume,
                  initial_risk_usd, entry_regime, timeframe, strategy, data)

@@ -401,7 +401,7 @@ class SystemMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT OR REPLACE INTO notifications 
+                INSERT OR REPLACE INTO usr_notifications 
                 (id, user_id, category, priority, title, message, details, actions, read, timestamp)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
@@ -431,7 +431,7 @@ class SystemMixin(BaseRepository):
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            query = "SELECT * FROM notifications WHERE user_id = ?"
+            query = "SELECT * FROM usr_notifications WHERE user_id = ?"
             params = [user_id]
             
             if unread_only:
@@ -467,7 +467,7 @@ class SystemMixin(BaseRepository):
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            cursor.execute("UPDATE notifications SET read = 1 WHERE id = ?", (notification_id,))
+            cursor.execute("UPDATE usr_notifications SET read = 1 WHERE id = ?", (notification_id,))
             conn.commit()
             return cursor.rowcount > 0
         except Exception as e:
@@ -484,7 +484,7 @@ class SystemMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                DELETE FROM notifications 
+                DELETE FROM usr_notifications 
                 WHERE timestamp < datetime('now', '-' || ? || ' hours')
             """, (hours,))
             conn.commit()

@@ -1,8 +1,40 @@
 # 🛣️ ROADMAP.md - Aethelgard Alpha Training
 
-**Última Actualización**: 11 de Marzo 2026 (18:15 UTC)  
-**Versión Sistema**: v4.3.1-beta (**OPTION A COMPLETADA** | **UI V3 RESET INICIADO**)  
-**Estado General**: ✅ **PHASE 1-4 COMPLETADAS 100%** | ✅ **OPTION A ARQUITECTURA LIMPIA** | ✅ **25/25 MÓDULOS VALIDADOS** | 🔄 **UI V3 RESET: DOCUMENTATION PHASE** | ⏳ **CODING PHASE PENDING**
+**Última Actualización**: 14 de Marzo 2026 (UTC)  
+**Versión Sistema**: v4.3.1-beta  
+**Estado General**: ✅ **PHASE 1-4 COMPLETADAS** | ✅ **OPTION A** | ✅ **SPRINT SANEAMIENTO NIVEL 0: COMPLETADO** | 🔄 **UI V3 RESET: DOCUMENTATION PHASE** | ⏳ **CODING PHASE PENDING**
+
+---
+
+## 🔧 SPRINT DE SANEAMIENTO ARQUITECTÓNICO — Consolidación DDL SSOT (14-Mar-2026)
+
+**Origen**: Auditoría forense `docs/AUDITORIA_ESTADO_REAL.md`  
+**Objetivo**: Consolidar Base de Datos como única fuente de verdad (SSOT) antes de escalar features del Canvas de Ideación.  
+**Trace_ID**: `ARCH-SSOT-NIVEL0-2026-03-14`
+
+### Nivel 0 — Fundacional: Consolidación DDL (✅ COMPLETADO — 14-Mar-2026)
+
+| ID | Tarea | Impacto | Estado |
+|---|---|---|---|
+| N0-1 | `sys_signal_ranking` en `schema.py` — eliminar `usr_performance` duplicada | CRÍTICO-1 | ✅ DONE |
+| N0-2 | Consolidar DDL fragmentado: `session_tokens`, `sys_execution_feedback`, `position_metadata` | CRÍTICO-2 | ✅ DONE |
+| N0-3 | FK huérfana: `usr_strategy_logs → sys_strategies` (era `usr_strategies`) | ALTO-1 | ✅ DONE |
+| N0-4 | Naming violation: `notifications → usr_notifications` en `schema.py` + `system_db.py` | ALTO-4 | ✅ DONE |
+
+### Nivel 1 — Crítico: Funcionalidad Desconectada (⏳ BACKLOG)
+
+| ID | Tarea | Impacto | Estado |
+|---|---|---|---|
+| N1-1 | MT5 Message Queue — Thread Safety (`connect_blocking` + background thread comparten estado) | CRÍTICO-3 | 📋 BACKLOG |
+| N1-2 | Conectar `StrategyGatekeeper` al flujo de producción (`MainOrchestrator`) | ALTO-2 | 📋 BACKLOG |
+| N1-3 | Arquitectura Multi-Broker SaaS — tabla `usr_broker_accounts` para aislamiento DEMO/REAL por usuario | Objetivo 3 Canvas | 📋 BACKLOG |
+
+### Nivel 2 — Inteligencia: Expansión Controlada (⏳ BACKLOG)
+
+| ID | Tarea | Impacto | Estado |
+|---|---|---|---|
+| N2-1 | Intérprete `JSON_SCHEMA` en `StrategyEngineFactory` — habilita el Bucle de Generación autónoma | MEDIO-6 | 📋 BACKLOG |
+| N2-2 | Estandarizar Auth WebSockets con `Depends()` — salir del patrón `_verify_token()` manual | ALTO-6 | 📋 BACKLOG |
 
 ---
 

@@ -205,29 +205,8 @@ class ExecutionFeedbackCollector:
             logger.error(f"Error persisting feedback to DB: {e}")
     
     async def _ensure_feedback_table(self) -> None:
-        """Create sys_execution_feedback table if not exists."""
-        try:
-            conn = self.storage._get_conn()
-            try:
-                cursor = conn.cursor()
-                query = """
-                    CREATE TABLE IF NOT EXISTS sys_execution_feedback (
-                        feedback_id TEXT PRIMARY KEY,
-                        signal_id TEXT,
-                        symbol TEXT NOT NULL,
-                        strategy TEXT,
-                        reason TEXT NOT NULL,
-                        timestamp TEXT NOT NULL,
-                        details TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                """
-                cursor.execute(query)
-                conn.commit()
-            finally:
-                self.storage._close_conn(conn)
-        except Exception as e:
-            logger.debug(f"Table already exists or error: {e}")
+        """No-op: sys_execution_feedback DDL managed by data_vault/schema.py (ARCH-SSOT-NIVEL0-2026-03-14)."""
+        pass
     
     def get_symbol_failure_metrics(self, symbol: str) -> Dict[str, Any]:
         """

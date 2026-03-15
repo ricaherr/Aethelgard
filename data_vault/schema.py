@@ -72,6 +72,26 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_audit_logs_action ON sys_audit_logs (action)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_audit_logs_timestamp ON sys_audit_logs (timestamp DESC)")
 
+    # ── 0.1. Session Tokens (API Auth — SSOT) ────────────────────────────────
+    # TRACE_ID: ARCH-SSOT-NIVEL0-2026-03-14 | Moved from session_manager.py._ensure_schema()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS session_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            token_hash TEXT UNIQUE NOT NULL,
+            user_id TEXT NOT NULL,
+            token_type TEXT NOT NULL,
+            expires_at DATETIME NOT NULL,
+            revoked BOOLEAN DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            last_used_at DATETIME,
+            user_agent TEXT,
+            ip_address TEXT
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_session_tokens_token_hash ON session_tokens (token_hash)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_session_tokens_user_id ON session_tokens (user_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_session_tokens_expires_at ON session_tokens (expires_at)")
+
     # ── 1. System State & Learning ──────────────────────────────────────────
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS sys_config (
@@ -158,6 +178,28 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             metadata TEXT
         )
     """)
+
+    # ── 3.1. Position Metadata (Open Position Monitoring — SSOT) ─────────────
+    # TRACE_ID: ARCH-SSOT-NIVEL0-2026-03-14 | Moved from trades_db.py.update_position_metadata()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS position_metadata (
+            ticket INTEGER PRIMARY KEY,
+            symbol TEXT NOT NULL,
+            entry_price REAL NOT NULL,
+            entry_time TEXT NOT NULL,
+            direction TEXT,
+            sl REAL,
+            tp REAL,
+            volume REAL NOT NULL,
+            initial_risk_usd REAL,
+            entry_regime TEXT,
+            timeframe TEXT,
+            strategy TEXT,
+            data TEXT
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_position_metadata_symbol ON position_metadata (symbol)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_position_metadata_entry_time ON position_metadata (entry_time DESC)")
 
     # ── 4. Market State & Coherence ──────────────────────────────────────────
     cursor.execute("""
@@ -348,9 +390,10 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
         )
     """)
 
-    # ── 10. Notifications (Persistent internal alerts) ──────────────────────
+    # ── 10. Notifications (Persistent internal alerts — SSOT) ────────────────
+    # TRACE_ID: ARCH-SSOT-NIVEL0-2026-03-14 | Renamed notifications → usr_notifications
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS notifications (
+        CREATE TABLE IF NOT EXISTS usr_notifications (
             id TEXT PRIMARY KEY,
             user_id TEXT DEFAULT 'default',
             category TEXT NOT NULL,
@@ -363,8 +406,8 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications (user_id)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications (read)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_notifications_user_id ON usr_notifications (user_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_notifications_read ON usr_notifications (read)")
 
     # ── 11. Connector Control ────────────────────────────────────────────────
     cursor.execute("""
@@ -391,9 +434,11 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
         )
     """)
 
-    # ── 13. Strategy Ranking (Darwinismo Algorítmico) ────────────────────────
+    # ── 13. Strategy Ranking (Darwinismo Algorítmico — SSOT) ─────────────────
+    # TRACE_ID: ARCH-SSOT-NIVEL0-2026-03-14 | Renamed usr_performance → sys_signal_ranking
+    # RATIONALE: Table is global (system-wide), not per-user. sys_* prefix is correct.
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS usr_performance (
+        CREATE TABLE IF NOT EXISTS sys_signal_ranking (
             strategy_id TEXT PRIMARY KEY,
             profit_factor REAL DEFAULT 0.0,
             win_rate REAL DEFAULT 0.0,
@@ -409,8 +454,9 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_performance_mode ON usr_performance (execution_mode)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_performance_profit_factor ON usr_performance (profit_factor DESC)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_signal_ranking_mode ON sys_signal_ranking (execution_mode)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_signal_ranking_profit_factor ON sys_signal_ranking (profit_factor DESC)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_signal_ranking_sharpe ON sys_signal_ranking (sharpe_ratio DESC)")
 
     # ── 14. Strategies (Strategy Metadata & Affinity Scoring) ──────────────────
     cursor.execute("""
@@ -440,7 +486,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             profit_factor REAL DEFAULT 0.0,
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             trace_id TEXT,
-            FOREIGN KEY (strategy_id) REFERENCES usr_strategies (class_id),
+            FOREIGN KEY (strategy_id) REFERENCES sys_strategies (class_id),
             UNIQUE(strategy_id, asset, timestamp)
         )
     """)
@@ -468,6 +514,24 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
         )
     """)
     # Indexes will be created in migrations section below (after any schema fixes)
+
+    # ── 15.1. Execution Feedback (Broker Rejection Logger — SSOT) ────────────
+    # TRACE_ID: ARCH-SSOT-NIVEL0-2026-03-14 | Moved from execution_feedback.py._ensure_feedback_table()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sys_execution_feedback (
+            feedback_id TEXT PRIMARY KEY,
+            signal_id TEXT,
+            symbol TEXT NOT NULL,
+            strategy TEXT,
+            reason TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            details TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_execution_feedback_symbol ON sys_execution_feedback (symbol)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_execution_feedback_timestamp ON sys_execution_feedback (timestamp DESC)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_execution_feedback_reason ON sys_execution_feedback (reason)")
 
     # ── 16. Regime Configurations (Metric Weighting) ─────────────────────────
     cursor.execute("""
@@ -687,28 +751,23 @@ def run_migrations(conn: sqlite3.Connection) -> None:
     cursor = conn.cursor()
 
     # usr_performance: add missing columns incrementally
-    cursor.execute("PRAGMA table_info(usr_performance)")
-    perf_cols = [r[1] for r in cursor.fetchall()]
-    
-    # Add sharpe_ratio if missing
-    if "sharpe_ratio" not in perf_cols:
-        cursor.execute("ALTER TABLE usr_performance ADD COLUMN sharpe_ratio REAL DEFAULT 0.0")
-        logger.info("Migration applied: usr_performance.sharpe_ratio added.")
-        perf_cols.append("sharpe_ratio")
-    
-    # Add total_usr_trades if missing
-    if "total_usr_trades" not in perf_cols:
-        cursor.execute("ALTER TABLE usr_performance ADD COLUMN total_usr_trades INTEGER DEFAULT 0")
-        logger.info("Migration applied: usr_performance.total_usr_trades added.")
-        perf_cols.append("total_usr_trades")
-    
-    # Add completed_last_50 if missing
-    if "completed_last_50" not in perf_cols:
-        cursor.execute("ALTER TABLE usr_performance ADD COLUMN completed_last_50 INTEGER DEFAULT 0")
-        logger.info("Migration applied: usr_performance.completed_last_50 added.")
-        perf_cols.append("completed_last_50")
-    
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_performance_sharpe ON usr_performance (sharpe_ratio DESC)")
+    # MIGRATION (NIVEL-0): sys_signal_ranking replaces usr_performance as Strategy Ranking SSOT
+    # TRACE_ID: ARCH-SSOT-NIVEL0-2026-03-14
+    # - New installs: table has all columns from initialize_schema() — ALTER checks are no-ops.
+    # - Existing DBs: columns may be missing (added incrementally). Guards handle both cases.
+    cursor.execute("PRAGMA table_info(sys_signal_ranking)")
+    ranking_cols = [r[1] for r in cursor.fetchall()]
+    if ranking_cols:  # Table exists (skip if somehow absent — initialize_schema creates it)
+        if "sharpe_ratio" not in ranking_cols:
+            cursor.execute("ALTER TABLE sys_signal_ranking ADD COLUMN sharpe_ratio REAL DEFAULT 0.0")
+            logger.info("Migration applied: sys_signal_ranking.sharpe_ratio added.")
+        if "total_usr_trades" not in ranking_cols:
+            cursor.execute("ALTER TABLE sys_signal_ranking ADD COLUMN total_usr_trades INTEGER DEFAULT 0")
+            logger.info("Migration applied: sys_signal_ranking.total_usr_trades added.")
+        if "completed_last_50" not in ranking_cols:
+            cursor.execute("ALTER TABLE sys_signal_ranking ADD COLUMN completed_last_50 INTEGER DEFAULT 0")
+            logger.info("Migration applied: sys_signal_ranking.completed_last_50 added.")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_signal_ranking_sharpe ON sys_signal_ranking (sharpe_ratio DESC)")
 
     # sys_data_providers: add capability columns if missing
     cursor.execute("PRAGMA table_info(sys_data_providers)")
