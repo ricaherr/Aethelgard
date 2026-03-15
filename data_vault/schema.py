@@ -782,6 +782,9 @@ def run_migrations(conn: sqlite3.Connection) -> None:
         ("api_secret", "TEXT"),
         ("additional_config", "TEXT"),
         ("is_system", "BOOLEAN DEFAULT 0"),
+        # Dynamic loading: stored in DB so no code change is needed to add a new connector
+        ("connector_module", "TEXT"),
+        ("connector_class", "TEXT"),
     ]
     for col, col_type in migrations_to_add:
         if col not in dp_cols:

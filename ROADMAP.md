@@ -2,7 +2,7 @@
 
 **Última Actualización**: 14 de Marzo 2026 (UTC)  
 **Versión Sistema**: v4.3.1-beta  
-**Estado General**: ✅ **PHASE 1-4 COMPLETADAS** | ✅ **OPTION A** | ✅ **SPRINT SANEAMIENTO NIVEL 0: COMPLETADO** | 🔄 **UI V3 RESET: DOCUMENTATION PHASE** | ⏳ **CODING PHASE PENDING**
+**Estado General**: ✅ **PHASE 1-4 COMPLETADAS** | ✅ **OPTION A** | ✅ **SPRINT SANEAMIENTO NIVEL 0: COMPLETADO** | ⏳ **NIVEL 1: FOREX CONNECTIVITY STACK (PENDIENTE)** | 🔄 **UI V3 RESET: AWAITING APPROVAL**
 
 ---
 
@@ -21,13 +21,28 @@
 | N0-3 | FK huérfana: `usr_strategy_logs → sys_strategies` (era `usr_strategies`) | ALTO-1 | ✅ DONE |
 | N0-4 | Naming violation: `notifications → usr_notifications` en `schema.py` + `system_db.py` | ALTO-4 | ✅ DONE |
 
-### Nivel 1 — Crítico: Funcionalidad Desconectada (⏳ BACKLOG)
+### Nivel 1 — Crítico: Stack de Conectividad FOREX (⏳ BACKLOG)
 
-| ID | Tarea | Impacto | Estado |
-|---|---|---|---|
-| N1-1 | MT5 Message Queue — Thread Safety (`connect_blocking` + background thread comparten estado) | CRÍTICO-3 | 📋 BACKLOG |
-| N1-2 | Conectar `StrategyGatekeeper` al flujo de producción (`MainOrchestrator`) | ALTO-2 | 📋 BACKLOG |
-| N1-3 | Arquitectura Multi-Broker SaaS — tabla `usr_broker_accounts` para aislamiento DEMO/REAL por usuario | Objetivo 3 Canvas | 📋 BACKLOG |
+**Foco**: FOREX-first. cTrader como conector primario (WebSocket nativo, sin DLL). MT5 estabilizado como alternativa. Otros mercados (stocks, futuros) en Nivel 2 una vez FOREX funcione.
+
+| ID | Tarea | Archivos Clave | Impacto | Estado |
+|---|---|---|---|---|
+| N1-1 | **MT5 Single-Thread Executor** — crear `_MT5Task` dataclass + `_dll_executor_loop` + cola de mensajes. Elimina race condition entre `MT5-Background-Connector`, `_schedule_retry()` y caller thread | `connectors/mt5_connector.py` | CRÍTICO-3 | ✅ DONE |
+| N1-2 | **cTrader Connector** — `ctrader_connector.py` (~200 líneas). WebSocket tick/OHLC streaming (M1 sin latencia) + REST order execution. Reemplaza MT5 como conector primario FOREX | `connectors/ctrader_connector.py` (nuevo) | LIVE + M1 | ✅ DONE |
+| N1-3 | **Data Stack FOREX default** — cTrader priority=100, MT5 priority=70, TwelveData disabled. M1 `enabled: false` en config por defecto. Stocks/futuros deshabilitados hasta Nivel 2 | `core_brain/data_provider_manager.py`, `config/config.json` | CRÍTICO-3 datos | ✅ DONE |
+| N1-4 | **Warning latencia M1** — en `ScannerEngine._scan_one()`: si provider no-local + M1 activo → WARNING log + entrada `usr_notifications` con `category: DATA_RISK` | `core_brain/scanner.py` | Riesgo operacional | ✅ DONE |
+| N1-5 | **StrategyGatekeeper → MainOrchestrator** — instanciar vía DI en `MainOrchestrator`. Conectar al flujo de señales pre-ejecución | `core_brain/main_orchestrator.py` | ALTO-2 | ✅ DONE |
+| N1-6 | **Provisión cuenta cTrader DEMO** — bug fix `client_secret` hardcodeado en `_connect_async()`, seed placeholder en `demo_broker_accounts.json`, script `setup_ctrader_demo.py` con guía OAuth2 interactiva | `connectors/ctrader_connector.py`, `data_vault/seed/demo_broker_accounts.json`, `scripts/utilities/setup_ctrader_demo.py` | OPERACIONAL | ✅ DONE |
+
+**Orden de ejecución**: N1-1 → N1-2 → N1-3 → N1-4 → N1-5 → N1-6
+
+**Provider stack post-Nivel 1**:
+```
+cTrader (N1-2)     priority=100   M1=✅ nativo   Scope=FOREX ejecución + datos
+MT5 (alternativa)  priority=70    M1=✅ local   Scope=FOREX (si instalado)
+TwelveData         disabled       —              Activar en Nivel 2 para stocks
+Yahoo              disabled       —              Activar en Nivel 2 como fallback
+```
 
 ### Nivel 2 — Inteligencia: Expansión Controlada (⏳ BACKLOG)
 

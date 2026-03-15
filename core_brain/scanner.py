@@ -165,6 +165,9 @@ class ScannerEngine:
         self.last_providers: Dict[str, str] = {}
         self.consecutive_failures: Dict[str, int] = {}
         self.circuit_breaker_cooldowns: Dict[str, float] = {}
+        # DATA_RISK throttle: persist notification at most once per M1 candle (60s) per symbol.
+        # Prevents flooding usr_notifications when scanner cycle << timeframe duration.
+        self._data_risk_last_notif: Dict[str, float] = {}
         self._lock = threading.Lock()
         self._running = False
         
@@ -189,6 +192,38 @@ class ScannerEngine:
         if key in self.circuit_breaker_cooldowns and time.monotonic() < self.circuit_breaker_cooldowns[key]:
             logger.debug(f"[{key}] En cooldown por Circuit Breaker. Saltando escaneo.")
             return None
+
+        # N1-4: DATA_RISK — M1 with a non-local provider has 30-90s polling latency.
+        # Signal quality is degraded: price may be stale when the candle closes.
+        # Throttle: fire at most once per M1 candle duration (60s) per symbol to avoid
+        # flooding usr_notifications when the scanner cycle is faster than the timeframe.
+        if timeframe == "M1" and not self.is_local_provider:
+            notif_key = f"DATA_RISK|{symbol}|M1"
+            now = time.monotonic()
+            _M1_CANDLE_SECONDS = 60.0
+            if now - self._data_risk_last_notif.get(notif_key, 0.0) >= _M1_CANDLE_SECONDS:
+                self._data_risk_last_notif[notif_key] = now
+                logger.warning(
+                    "[DATA_RISK] %s M1 active on non-local provider — "
+                    "current candle may reflect a price up to 90s stale. "
+                    "Signal quality degraded.",
+                    symbol,
+                )
+                if self.storage:
+                    try:
+                        self.storage.save_notification({
+                            "category": "DATA_RISK",
+                            "priority": "high",
+                            "title": f"M1 con proveedor remoto ({symbol})",
+                            "message": (
+                                f"Symbol {symbol}: timeframe M1 activo con proveedor no-local. "
+                                "El precio actual puede estar hasta 90 segundos atrasado. "
+                                "Calidad de señal degradada — considera usar M5 o activar proveedor local."
+                            ),
+                            "details": {"symbol": symbol, "timeframe": timeframe, "risk": "stale_price_90s"},
+                        })
+                    except Exception as _exc:
+                        logger.debug("[DATA_RISK] Could not persist notification for %s: %s", symbol, _exc)
 
         try:
             # Obtener datos del proveedor (usando protocolo DataProvider: fetch_ohlc)

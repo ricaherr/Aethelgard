@@ -49,5 +49,19 @@
       "credential_password": null,
       "recovery_note": "NEVER IMPLEMENTED in production. No git history or backups found. User must create account manually at https://pepperstone.com/demo-account and run scripts/utilities/setup_mt5_demo.py"
     }
+,{
+      "account_id": "ic_markets_ctrader_demo_20001",
+      "broker_id": "ic_markets",
+      "platform_id": "ctrader",
+      "account_name": "IC Markets cTrader Demo",
+      "account_number": null,
+      "server": "demo.ctraderapi.com",
+      "account_type": "demo",
+      "enabled": false,
+      "supports_data": true,
+      "supports_exec": true,
+      "credential_password": null,
+      "recovery_note": "Requires OAuth2 credentials (client_id, client_secret, access_token) from Spotware Developer Portal. Run scripts/utilities/setup_ctrader_demo.py to configure."
+    }
   ]
 }

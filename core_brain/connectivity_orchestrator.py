@@ -55,72 +55,96 @@ class ConnectivityOrchestrator:
 
     def load_connectors_from_db(self) -> None:
         """
-        Instantiate connectors based on DB enabled providers and accounts.
-        FOLLOWS SSOT RULE.
+        Instantiate connectors based on the DB (SSOT).
+
+        Two sources are consulted in order:
+          1. sys_data_providers  — connector_module + connector_class columns drive instantiation.
+          2. sys_broker_accounts — uses platform_id to look up module/class from
+                                   sys_data_providers, so no hardcoded registry exists.
+
+        To add a new connector:
+          1. Add a row to sys_data_providers with connector_module, connector_class, enabled=True.
+          2. Zero code changes needed here or anywhere in the codebase.
         """
         if not self.storage:
             return
 
         logger.info("Loading connectors from Database (SSOT)...")
-        
-        # 1. Load Data Providers
+
+        # Pre-fetch all providers once; used by both section 1 and section 2.
         try:
-            providers = self.storage.get_sys_data_providers()
-            for p in providers:
-                if not p.get('enabled', False): continue
-                
-                pid = p['name']
-                # Avoid re-loading if already active
-                if pid in self.connectors: continue
-
-                # Logic to instantiate correct provider class
-                if pid == 'yahoo':
-                    from connectors.yahoo_connector import YahooConnector
-                    try:
-                        conn = YahooConnector(storage=self.storage)
-                        self.register_connector(conn)
-                        self.supports_info[pid] = {
-                            "data": bool(p.get('supports_data', 0)),
-                            "exec": bool(p.get('supports_exec', 0))
-                        }
-                    except Exception as e:
-                        logger.error(f"Failed to load Yahoo connector: {e}")
-                elif pid == 'mt5' and pid not in self.connectors:
-                    from connectors.mt5_connector import MT5Connector
-                    try:
-                        conn = MT5Connector(storage=self.storage)
-                        self.register_connector(conn)
-                        self.supports_info[pid] = {
-                            "data": bool(p.get('supports_data', 0)),
-                            "exec": bool(p.get('supports_exec', 0))
-                        }
-                    except Exception as e:
-                        logger.error(f"Failed to load MT5 connector: {e}")
-
+            all_providers = self.storage.get_sys_data_providers()
         except Exception as e:
-            logger.error(f"Error loading providers from DB: {e}")
+            logger.error(f"[ConnOrch] Cannot read sys_data_providers: {e}")
+            return
 
-        # 2. Load Broker Accounts
+        # Build lookup: provider_name → (module_path, class_name)
+        # Used by the broker-accounts section to resolve platform connectors.
+        platform_lookup: Dict[str, tuple] = {
+            p['name']: (p.get('connector_module'), p.get('connector_class'))
+            for p in all_providers
+            if p.get('connector_module') and p.get('connector_class')
+        }
+
+        # 1. sys_data_providers — drives which data-feed connectors are active
+        for p in all_providers:
+            if not p.get('enabled', False):
+                continue  # DB says disabled → skip entirely
+
+            pid = p['name']
+            if pid in self.connectors:
+                continue  # already loaded
+
+            module_path = p.get('connector_module')
+            class_name = p.get('connector_class')
+            if not module_path or not class_name:
+                logger.debug(f"[ConnOrch] No connector_module/class in DB for '{pid}', skipping.")
+                continue
+
+            try:
+                module = importlib.import_module(module_path)
+                conn = getattr(module, class_name)(storage=self.storage)
+                self.register_connector(conn)
+                self.supports_info[pid] = {
+                    "data": bool(p.get('supports_data', 1)),
+                    "exec": bool(p.get('supports_exec', 0)),
+                }
+                logger.info(f"[ConnOrch] Loaded provider connector: {pid} ({class_name})")
+            except Exception as e:
+                logger.error(f"[ConnOrch] Failed to load connector '{pid}': {e}")
+
+        # 2. sys_broker_accounts — execution accounts whose platform is not yet loaded.
         try:
-            accounts = self.storage.get_sys_broker_accounts(enabled_only=True)
-            for acc in accounts:
-                pid = acc['broker_id']
-                if pid in self.connectors: continue
-                
-                # If it uses MT5, we might already have it or need a specific account instance
-                if acc['platform_id'] == 'mt5':
-                    from connectors.mt5_connector import MT5Connector
-                    try:
-                        conn = MT5Connector(storage=self.storage, account_id=acc['account_id'])
-                        self.register_connector(conn)
-                        self.supports_info[pid] = {
-                            "data": bool(acc.get('supports_data', 0)),
-                            "exec": bool(acc.get('supports_exec', 0))
-                        }
-                    except Exception as e:
-                        logger.error(f"Failed to load broker connector {pid}: {e}")
+            for acc in self.storage.get_sys_broker_accounts(enabled_only=True):
+                platform = acc.get('platform_id', '')
+                if not platform:
+                    continue
+                if platform in self.connectors:
+                    continue  # already loaded from sys_data_providers
+
+                broker_pid = acc.get('broker_id', '')
+                if broker_pid in self.connectors:
+                    continue
+
+                module_path, class_name = platform_lookup.get(platform, (None, None))
+                if not module_path or not class_name:
+                    logger.debug(f"[ConnOrch] No connector info in DB for platform '{platform}', skipping.")
+                    continue
+
+                account_id = acc.get('account_id')
+                try:
+                    module = importlib.import_module(module_path)
+                    conn = getattr(module, class_name)(storage=self.storage, account_id=account_id)
+                    self.register_connector(conn)
+                    self.supports_info[conn.provider_id] = {
+                        "data": bool(acc.get('supports_data', 0)),
+                        "exec": bool(acc.get('supports_exec', 0)),
+                    }
+                    logger.info(f"[ConnOrch] Loaded broker connector: {conn.provider_id} ({class_name})")
+                except Exception as e:
+                    logger.error(f"[ConnOrch] Failed to load broker connector '{broker_pid}': {e}")
         except Exception as e:
-            logger.error(f"Error loading accounts from DB: {e}")
+            logger.error(f"[ConnOrch] Error reading sys_broker_accounts: {e}")
 
     def get_connector(self, provider_id: str) -> Optional[BaseConnector]:
         """Retrieve a registered connector by its ID."""

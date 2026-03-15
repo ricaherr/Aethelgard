@@ -40,13 +40,22 @@
 * **N0-4: Naming convention restaurada** `[DONE]`
     * `notifications` → `usr_notifications` en `schema.py` y `system_db.py`. Impacto: ALTO-4.
 
-### Nivel 1 — Crítico (📋 BACKLOG)
-* **N1-1: MT5 Message Queue** `[TODO]`
-    * Crear `MT5ExecutorThread` con cola de mensajes para garantizar que `mt5.order_send()` e `mt5.initialize()` siempre ocurran en el mismo hilo. Archivos: `connectors/mt5_connector.py`. Impacto: CRÍTICO-3.
-* **N1-2: StrategyGatekeeper Integration** `[TODO]`
-    * Instanciar `StrategyGatekeeper` en `MainOrchestrator` via DI. Conectar al flujo de señales antes de ejecución. Archivos: `core_brain/main_orchestrator.py`. Impacto: ALTO-2.
-* **N1-3: usr_broker_accounts — Multi-Broker SaaS** `[TODO]`
-    * Diseñar e implementar tabla `usr_broker_accounts` (per-tenant). Actualizar `_get_account_type()` en `trade_closure_listener.py` para leerla. Prerequisito: Objetivo 3 del Canvas (Perfiles de Riesgo). Impacto: Objetivo Estratégico 3.
+### Nivel 1 — Crítico: Stack de Conectividad FOREX (📋 BACKLOG)
+
+**Foco**: FOREX-first. cTrader como conector primario nativo async (WebSocket, sin DLL). MT5 estabilizado como alternativa. Otros mercados en Nivel 2.
+
+* **N1-1: MT5 Single-Thread Executor** `[TODO]`
+    * Crear `_MT5Task` dataclass + `_dll_executor_loop` + `_submit_to_executor` + `_submit_async` en `mt5_connector.py`. Elimina race condition entre `MT5-Background-Connector` thread (lines 223, 555), `_schedule_retry()` Timer thread y FastAPI caller thread. MT5 queda estable como alternativa. Archivos: `connectors/mt5_connector.py`. Impacto: CRÍTICO-3.
+* **N1-2: cTrader Connector** `[TODO]`
+    * Crear `connectors/ctrader_connector.py` (~200 líneas, hereda `BaseConnector`). WebSocket Spotware Open API para tick/OHLC streaming (M1 sin latencia, <100ms). REST para order execution. Reemplaza MT5 como conector primario FOREX. Requisito: cuenta IC Markets cTrader (free). Archivos: `connectors/ctrader_connector.py` (nuevo). Impacto: LIVE + M1 viable.
+* **N1-3: Data Stack FOREX default** `[TODO]`
+    * Reordenar prioridades en `DataProviderManager`: cTrader=100, MT5=70, TwelveData=disabled, Yahoo=disabled. Desactivar M1 en `config/config.json` (`enabled: false` por defecto). Stocks y futuros deshabilitados hasta Nivel 2. Archivos: `core_brain/data_provider_manager.py`, `config/config.json`. Impacto: CRÍTICO-3 datos.
+* **N1-4: Warning latencia M1** `[TODO]`
+    * En `ScannerEngine._scan_one()`: detectar si provider activo no es local (cTrader o MT5) Y timeframe = M1 → emitir WARNING en log + insertar entrada en `usr_notifications` con `category: DATA_RISK`, `message: "M1 con provider no-local: riesgo de señal en precio stale"`. Archivos: `core_brain/scanner.py`. Impacto: Riesgo operacional.
+* **N1-5: StrategyGatekeeper Integration** `[TODO]`
+    * Instanciar `StrategyGatekeeper` en `MainOrchestrator` vía DI. Conectar al flujo de señales pre-ejecución. `strategy_gatekeeper.py` ya existe (290 líneas, 17/17 tests passing) — solo falta el wiring. Archivos: `core_brain/main_orchestrator.py`. Impacto: ALTO-2.
+
+**Orden de ejecución**: N1-1 → N1-2 → N1-3 → N1-4 → N1-5
 
 ### Nivel 2 — Inteligencia (📋 BACKLOG)
 * **N2-1: JSON_SCHEMA Interpreter** `[TODO]`

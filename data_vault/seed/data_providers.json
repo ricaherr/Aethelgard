@@ -4,6 +4,8 @@
   "providers": [
     {
       "name": "mt5",
+      "connector_module": "connectors.mt5_connector",
+      "connector_class": "MT5Connector",
       "type": "market_data",
       "enabled": true,
       "supports_data": true,
@@ -18,6 +20,8 @@
     },
     {
       "name": "finnhub",
+      "connector_module": "connectors.finnhub_provider",
+      "connector_class": "FinnhubProvider",
       "type": "market_data",
       "enabled": true,
       "supports_data": true,
@@ -32,7 +36,9 @@
       }
     },
     {
-      "name": "alphavantagе",
+      "name": "alphavantage",
+      "connector_module": "connectors.alphavantage_provider",
+      "connector_class": "AlphaVantageProvider",
       "type": "market_data",
       "enabled": false,
       "supports_data": true,
@@ -48,6 +54,8 @@
     },
     {
       "name": "iex_cloud",
+      "connector_module": "connectors.iex_cloud_provider",
+      "connector_class": "IEXCloudProvider",
       "type": "market_data",
       "enabled": false,
       "supports_data": true,
@@ -63,6 +71,8 @@
     },
     {
       "name": "polygon",
+      "connector_module": "connectors.polygon_provider",
+      "connector_class": "PolygonProvider",
       "type": "market_data",
       "enabled": false,
       "supports_data": true,
@@ -78,6 +88,8 @@
     },
     {
       "name": "ccxt",
+      "connector_module": "connectors.ccxt_provider",
+      "connector_class": "CCXTProvider",
       "type": "market_data",
       "enabled": true,
       "supports_data": true,
@@ -91,7 +103,9 @@
       }
     },
     {
-      "name": "yahoo_finance",
+      "name": "yahoo",
+      "connector_module": "connectors.yahoo_connector",
+      "connector_class": "YahooConnector",
       "type": "market_data",
       "enabled": true,
       "supports_data": true,
@@ -104,7 +118,9 @@
       }
     },
     {
-      "name": "twelve_data",
+      "name": "twelvedata",
+      "connector_module": "connectors.twelvedata_provider",
+      "connector_class": "TwelveDataProvider",
       "type": "market_data",
       "enabled": false,
       "supports_data": true,
@@ -116,6 +132,21 @@
       "additional_config": {
         "description": "Twelve Data - Real-time and historical market data",
         "base_url": "https://api.twelvedata.com"
+      }
+    },
+    {
+      "name": "ctrader",
+      "connector_module": "connectors.ctrader_connector",
+      "connector_class": "CTraderConnector",
+      "type": "market_data",
+      "enabled": false,
+      "supports_data": true,
+      "supports_exec": true,
+      "priority": 95,
+      "requires_auth": true,
+      "is_system": true,
+      "additional_config": {
+        "description": "cTrader - Spotware API for CFD/Forex DEMO execution"
       }
     }
   ]

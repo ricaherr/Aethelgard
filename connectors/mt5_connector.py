@@ -4,8 +4,11 @@ Simplified connector for OrderExecutor and ClosingMonitor
 ARCHITECTURE: Single source of truth = DATABASE (no JSON files)
 """
 import logging
+import queue
 import threading
 import time
+from concurrent.futures import Future as _Future
+from dataclasses import dataclass, field
 from enum import Enum
 import pandas as pd
 from typing import Optional, Dict, List, Any, Union, TYPE_CHECKING
@@ -57,6 +60,16 @@ class ConnectionState(Enum):
 
 
 from connectors.base_connector import BaseConnector
+
+
+@dataclass
+class _MT5Task:
+    """Bundles a DLL call for the single-thread executor queue."""
+    fn: Any  # Callable
+    args: tuple
+    kwargs: dict
+    future: "_Future[Any]" = field(default_factory=_Future)
+
 
 class MT5Connector(BaseConnector):
     """
@@ -136,6 +149,17 @@ class MT5Connector(BaseConnector):
         self.available_symbols = set()
         self.last_error = None
 
+        # Single-Thread Executor: ALL mt5.* DLL calls are routed to this thread.
+        # Eliminates COM-apartment race conditions between background connector,
+        # retry timer, and FastAPI caller threads.
+        self._dll_queue: queue.Queue = queue.Queue()
+        self._dll_executor_thread = threading.Thread(
+            target=self._dll_executor_loop,
+            name="MT5-DLL-Executor",
+            daemon=True,
+        )
+        self._dll_executor_thread.start()
+
         logger.info(f"[INSTANCE {id(self)}] MT5Connector initialized from database. Config enabled: {self.config.get('enabled', False)}, Account: {self.config.get('login', 'N/A')}")
     
     def _load_config_from_db(self) -> Dict:
@@ -199,7 +223,58 @@ class MT5Connector(BaseConnector):
         except Exception as e:
             logger.error(f"Error loading MT5 config from database: {e}", exc_info=True)
             return {'enabled': False}
-    
+
+    # ------------------------------------------------------------------
+    # Single-Thread Executor — all mt5.* DLL calls serialized here
+    # ------------------------------------------------------------------
+
+    def _dll_executor_loop(self) -> None:
+        """
+        Main loop of the DLL executor thread (MT5-DLL-Executor).
+
+        ALL mt5.* calls must be dispatched here via _submit_to_executor or
+        _submit_async. This guarantees COM-apartment thread affinity: MT5 is
+        initialized once in this thread and never touched from any other.
+        A None sentinel on the queue triggers a clean shutdown.
+        """
+        logger.info("[MT5-DLL-Executor] Dedicated DLL thread started")
+        while True:
+            task: _MT5Task = self._dll_queue.get()
+            if task is None:  # shutdown sentinel
+                logger.info("[MT5-DLL-Executor] Shutdown sentinel received")
+                break
+            try:
+                result = task.fn(*task.args, **task.kwargs)
+                if not task.future.done():
+                    task.future.set_result(result)
+            except Exception as exc:
+                if not task.future.done():
+                    task.future.set_exception(exc)
+
+    def _submit_to_executor(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
+        """
+        Submit a callable to the DLL executor thread (blocking).
+
+        The caller blocks until the function finishes executing in the
+        MT5-DLL-Executor thread. Raises the same exception if the callable fails.
+        """
+        task = _MT5Task(fn=fn, args=args, kwargs=kwargs, future=_Future())
+        self._dll_queue.put(task)
+        return task.future.result(timeout=60)
+
+    async def _submit_async(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
+        """
+        Submit a callable to the DLL executor thread from an async context.
+
+        Returns an awaitable that resolves when the DLL call completes in the
+        MT5-DLL-Executor thread without blocking the asyncio event loop.
+        """
+        import asyncio
+        task = _MT5Task(fn=fn, args=args, kwargs=kwargs, future=_Future())
+        self._dll_queue.put(task)
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, task.future.result, 60)
+
     def start(self) -> None:
         """
         Start MT5 connection in background thread.
@@ -231,33 +306,29 @@ class MT5Connector(BaseConnector):
     def _connect_background(self) -> None:
         """
         Background connection loop with retries.
-        Runs indefinitely until connected or system shutdown.
+        Routes all DLL calls through the executor thread.
         """
         logger.info("[THREAD] Background connection thread started (daemon mode)")
         
         while True:
             try:
                 if self.connection_state == ConnectionState.CONNECTED:
-                    # Already connected, just wait
                     time.sleep(30)
                     continue
                     
                 self.connection_state = ConnectionState.CONNECTING
                 self.last_attempt = time.time()
-                self.connection_state = ConnectionState.CONNECTING
-                self.last_attempt = time.time()
                 
-                logger.info("[CONNECT] [BACKGROUND] Attempting MT5 connection...")
-                logger.info(f"   Current state: {self.connection_state}, Available symbols: {len(self.available_symbols)}")
+                logger.info("[CONNECT] [BACKGROUND] Attempting MT5 connection via DLL executor...")
                 
-                # Try to connect with timeout
-                success = self._connect_sync_once()
+                # Route through DLL executor — not direct DLL call
+                success = self._submit_to_executor(self._connect_sync_once)
                 
                 if success:
-                    logger.info(f"[OK] [BACKGROUND] MT5 CONNECTED! Symbols loaded: {len(self.available_symbols)}")
-                    return  # Exit loop when connected
+                    logger.info(f"[OK] [BACKGROUND] MT5 CONNECTED via executor! Symbols loaded: {len(self.available_symbols)}")
+                    return
                 else:
-                    logger.error("[ERROR] [BACKGROUND] MT5 connection FAILED (_connect_sync_once returned False)")
+                    logger.error("[ERROR] [BACKGROUND] MT5 connection FAILED")
                     logger.warning("[WARNING]  [BACKGROUND] Retrying in 30 seconds...")
                     self.connection_state = ConnectionState.FAILED
                     time.sleep(30)
@@ -564,8 +635,8 @@ class MT5Connector(BaseConnector):
     
     def connect_blocking(self) -> bool:
         """
-        SYNCHRONOUS connection in caller's thread (MT5 library is thread-specific).
-        Use this when you need MT5 initialized in the SAME thread that will execute trades.
+        Synchronous connection via DLL executor (safe to call from any thread).
+        Dispatches the actual MT5 init/login to the executor thread.
         
         Returns:
             True if connection successful
@@ -579,11 +650,11 @@ class MT5Connector(BaseConnector):
             logger.info("MT5 already connected.")
             return True
         
-        logger.info("[CONNECT] Conectando a MT5 sincrónicamente en thread actual...")
-        success = self._connect_sync_once()
+        logger.info("[CONNECT] Submitting MT5 connection to DLL executor...")
+        success = self._submit_to_executor(self._connect_sync_once)
         
         if success:
-            logger.info(f"[OK] MT5 connected! Thread: {threading.current_thread().name}, Symbols: {len(self.available_symbols)}")
+            logger.info(f"[OK] MT5 connected via executor! Thread: {threading.current_thread().name}, Symbols: {len(self.available_symbols)}")
         else:
             logger.error("[ERROR] MT5 connection failed")
             
@@ -702,18 +773,33 @@ class MT5Connector(BaseConnector):
     
     def _schedule_retry(self) -> None:
         """
-        Schedule automatic retry in background
+        Schedule MT5 reconnection in 30 seconds.
+
+        The timer fires a lightweight callback that routes the actual DLL calls
+        through the executor — no new raw DLL threads are created.
         """
         if self.retry_timer is not None:
             self.retry_timer.cancel()
-        
-        def retry() -> None:
-            logger.info("[RETRY] Retrying MT5 connection...")
-            self.connect()
-        
-        self.retry_timer = threading.Timer(30.0, retry)  # Retry every 30 seconds
+
+        def retry_via_executor() -> None:
+            logger.info("[RETRY] Retrying MT5 connection via DLL executor...")
+            self.connection_state = ConnectionState.CONNECTING
+            try:
+                success = self._submit_to_executor(self._connect_sync_once)
+                if success:
+                    logger.info("[OK] MT5 reconnected via executor!")
+                else:
+                    self.connection_state = ConnectionState.FAILED
+                    self._schedule_retry()
+            except Exception as exc:
+                logger.error(f"[RETRY] Executor error during reconnect: {exc}")
+                self.connection_state = ConnectionState.FAILED
+                self._schedule_retry()
+
+        self.retry_timer = threading.Timer(30.0, retry_via_executor)
+        self.retry_timer.daemon = True
         self.retry_timer.start()
-        logger.info("[WAIT] Next MT5 retry in 30 seconds")
+        logger.info("[WAIT] Next MT5 retry in 30 seconds (via executor)")
     
     def _load_available_symbols(self) -> None:
         """
@@ -1368,7 +1454,7 @@ class MT5Connector(BaseConnector):
             logger.error(f"Error calculating margin: {e}")
             return None
     
-    def reconcile_closed_trades(self, listener: Any, hours_back: int = 24) -> None:
+    def reconcile_closed_usr_trades(self, listener: Any, hours_back: int = 24) -> None:
         """
         Reconcile closed trades from MT5 history with the listener.
         
@@ -1436,21 +1522,22 @@ class MT5Connector(BaseConnector):
         try:
             event = self._create_trade_closed_event(position, deal)
             broker_event = BrokerEvent.from_trade_closed(event)
-            
-            # Call async method in sync context using event loop
+
+            # Emit event synchronously — reconciliation runs at startup before
+            # the event loop is fully active, so we call the handler directly.
             import asyncio
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # If loop is running, schedule as task (don't wait)
-                    asyncio.create_task(listener.handle_trade_closed_event(broker_event))
-                    success = True  # Assume success, will be processed async
-                else:
-                    # If no loop running, run synchronously
-                    success = loop.run_until_complete(listener.handle_trade_closed_event(broker_event))
-            except RuntimeError:
-                # No event loop, create one for this call
-                success = asyncio.run(listener.handle_trade_closed_event(broker_event))
+            import inspect
+            if inspect.iscoroutinefunction(listener.handle_trade_closed_event):
+                try:
+                    loop = asyncio.get_running_loop()
+                    # Schedule as a fire-and-forget coroutine on the running loop
+                    loop.create_task(listener.handle_trade_closed_event(broker_event))
+                    success = True
+                except RuntimeError:
+                    # No running loop — run synchronously
+                    success = asyncio.run(listener.handle_trade_closed_event(broker_event))
+            else:
+                success = listener.handle_trade_closed_event(broker_event)
             
             if success:
                 logger.info(f"Reconciled trade: {event.ticket} {event.symbol} {event.result.value}")

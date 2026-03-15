@@ -138,12 +138,23 @@ class DataProviderManager:
             "name": "mt5",
             "enabled": False,
             "requires_auth": True,
-            "priority": 100, # Highest priority
+            "priority": 70,  # Alternative FOREX connector (needs local MT5 install)
             "free_tier": True,
             "module": "connectors.mt5_data_provider",
             "class": "MT5DataProvider",
             "description": "MetaTrader 5 - Requiere instalación local",
             "supports": ["forex", "stocks", "commodities", "indices"]
+        },
+        "ctrader": {
+            "name": "ctrader",
+            "enabled": False,
+            "requires_auth": True,
+            "priority": 100,  # Primary FOREX connector (WebSocket, no DLL, M1 viable)
+            "free_tier": False,
+            "module": "connectors.ctrader_connector",
+            "class": "CTraderConnector",
+            "description": "cTrader Open API - WebSocket streaming, <100ms latency, M1 viable",
+            "supports": ["forex"]
         }
     }
     
@@ -230,9 +241,12 @@ class DataProviderManager:
                     if name == "yahoo":
                         # Yahoo is ALWAYS fallback priority, never override
                         priority = 50
-                    elif name == "mt5":
-                        # MT5 is ALWAYS highest priority when available
+                    elif name == "ctrader":
+                        # cTrader is ALWAYS primary FOREX connector (highest priority)
                         priority = 100
+                    elif name == "mt5":
+                        # MT5 is alternative connector (lower than cTrader)
+                        priority = 70
                     else:
                         # For other providers, allow DB to override but use default as fallback
                         db_priority = config_data.get('priority')
@@ -332,12 +346,20 @@ class DataProviderManager:
                 logger.warning(f"MT5 account incomplete: login={bool(login)}, server={bool(server)}. Sync skipped.")
                 return
             
+            # Respect the existing enabled state in sys_data_providers.
+            # This sync only updates credentials — it NEVER re-enables a provider
+            # that the user has explicitly disabled.
+            existing_providers = self.storage.get_sys_data_providers()
+            existing_mt5 = next((p for p in existing_providers if p.get('name') == 'mt5'), None)
+            # If the user explicitly disabled MT5, keep it disabled
+            keep_enabled = existing_mt5['enabled'] if existing_mt5 is not None else True
+
             # Persist MT5 sys_credentials to sys_data_providers in DB
             # This updates the DB entry; _load_configuration() will read these values afterward
             self.storage.save_data_provider(
                 name='mt5',
-                enabled=True,
-                priority=100,
+                enabled=keep_enabled,
+                priority=70,
                 requires_auth=True,
                 api_key='',
                 api_secret='',
@@ -348,11 +370,11 @@ class DataProviderManager:
                 },
                 is_system=True
             )
-            
+
             logger.info(
-                f"[SYNC] MT5 provider synced to database "
+                f"[SYNC] MT5 credentials synced to sys_data_providers "
                 f"(Account: {mt5_account.get('account_name')}, "
-                f"Login: {login}, Server: {server})"
+                f"Login: {login}, Server: {server}, enabled={keep_enabled})"
             )
             
         except Exception as e:

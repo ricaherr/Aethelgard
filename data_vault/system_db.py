@@ -133,8 +133,14 @@ class SystemMixin(BaseRepository):
     def save_data_provider(self, name: str, enabled: bool = True, priority: int = 50, 
                           requires_auth: bool = False, api_key: Optional[str] = None, 
                           api_secret: Optional[str] = None, additional_config: Optional[Dict] = None,
-                          is_system: bool = False, provider_type: str = "generic") -> None:
-        """Save data provider configuration"""
+                          is_system: bool = False, provider_type: str = "generic",
+                          connector_module: Optional[str] = None,
+                          connector_class: Optional[str] = None) -> None:
+        """Save data provider configuration.
+
+        COALESCE on connector_module/class ensures existing values are never overwritten
+        by NULL when callers omit those arguments (preserves data already in DB).
+        """
         if additional_config is None:
             additional_config = {}
         
@@ -142,12 +148,25 @@ class SystemMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT OR REPLACE INTO sys_data_providers 
-                (name, type, enabled, priority, requires_auth, api_key, api_secret, additional_config, is_system)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO sys_data_providers
+                (name, type, enabled, priority, requires_auth, api_key, api_secret,
+                 additional_config, is_system, connector_module, connector_class)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(name) DO UPDATE SET
+                    type=excluded.type,
+                    enabled=excluded.enabled,
+                    priority=excluded.priority,
+                    requires_auth=excluded.requires_auth,
+                    api_key=excluded.api_key,
+                    api_secret=excluded.api_secret,
+                    additional_config=excluded.additional_config,
+                    is_system=excluded.is_system,
+                    connector_module=COALESCE(excluded.connector_module, sys_data_providers.connector_module),
+                    connector_class=COALESCE(excluded.connector_class, sys_data_providers.connector_class)
             """, (
-                name, provider_type, enabled, priority, requires_auth, 
-                api_key, api_secret, json.dumps(additional_config), is_system
+                name, provider_type, enabled, priority, requires_auth,
+                api_key, api_secret, json.dumps(additional_config), is_system,
+                connector_module, connector_class
             ))
             conn.commit()
         finally:

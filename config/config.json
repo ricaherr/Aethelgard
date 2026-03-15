@@ -18,7 +18,7 @@
     "timeframes": [
       {
         "timeframe": "M1",
-        "enabled": true
+        "enabled": false
       },
       {
         "timeframe": "M5",

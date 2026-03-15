@@ -262,6 +262,7 @@ class MainOrchestrator:
         signal_quality_scorer: Optional[Any] = None,  # PHASE 4: Unified signal quality authority
         consensus_engine: Optional[Any] = None,  # PHASE 4: Multi-strategy consensus detection
         failure_pattern_registry: Optional[Any] = None,  # PHASE 4: Autonomous failure learning
+        strategy_gatekeeper: Optional[Any] = None,  # N1-5: Pre-execution asset efficiency filter
         tenant_id: Optional[str] = None,  # DEPRECATED: Use user_id instead
         user_id: Optional[str] = None  # Multi-user support: User identifier for DB isolation
     ):
@@ -346,6 +347,9 @@ class MainOrchestrator:
             consensus_engine=consensus_engine,
             failure_pattern_registry=failure_pattern_registry
         )
+
+        # N1-5: StrategyGatekeeper — pre-execution asset efficiency filter (injected via DI)
+        self.strategy_gatekeeper = strategy_gatekeeper
 
     @property
     def signal_factory(self) -> Optional[Any]:
@@ -1944,7 +1948,40 @@ class MainOrchestrator:
                 logger.info("All usr_signals filtered by economic veto")
                 self.stats.cycles_completed += 1
                 return
-            
+
+            # N1-5: StrategyGatekeeper — pre-execution asset efficiency filter
+            # Veto signals whose asset affinity score is below the strategy threshold.
+            # < 1ms per check (in-memory only). Gatekeeper is optional (backward compatible).
+            if self.strategy_gatekeeper is not None:
+                # Read configurable threshold from dynamic_params (SSOT).
+                # Starts at 0.0 (allow-all) until the learning loop establishes baselines.
+                # Once asset_scores are populated via trades, raise threshold to ~0.5.
+                _gk_min = self.config.get("gatekeeper_min_threshold", 0.0)
+                gatekeeper_passed = []
+                for signal in validated_usr_signals:
+                    strategy_id = getattr(signal, "strategy_id", None) or "default"
+                    if self.strategy_gatekeeper.can_execute_on_tick(
+                        asset=signal.symbol,
+                        min_threshold=_gk_min,
+                        strategy_id=strategy_id,
+                    ):
+                        gatekeeper_passed.append(signal)
+                    else:
+                        logger.info(
+                            "[GATEKEEPER] Signal vetoed: %s (strategy=%s)",
+                            signal.symbol, strategy_id
+                        )
+                        self.stats.usr_signals_vetoed += 1
+                vetoed_count = len(validated_usr_signals) - len(gatekeeper_passed)
+                if vetoed_count:
+                    logger.info("[GATEKEEPER] %d signal(s) vetoed by StrategyGatekeeper", vetoed_count)
+                validated_usr_signals = gatekeeper_passed
+
+            if not validated_usr_signals:
+                logger.info("[GATEKEEPER] All signals vetoed by StrategyGatekeeper")
+                self.stats.cycles_completed += 1
+                return
+
             # Step 5: Execute validated usr_signals with DB persistence
             for signal in validated_usr_signals:
                 try:
