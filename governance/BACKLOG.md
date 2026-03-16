@@ -1,6 +1,13 @@
-# AETHELGARD: MASTER BACKLOG
+﻿# AETHELGARD: MASTER BACKLOG
 
-"ESTÁNDAR DE EDICIÓN: Este documento se rige por una jerarquía de 10 Dominios Críticos. Toda nueva tarea o Historia de Usuario (HU) debe ser numerada según su dominio (ej. Tarea 4.1 para Riesgo). No se permiten cambios en esta nomenclatura para garantizar la trazabilidad del sistema."
+> **📋 REGLAS DE EDICIÓN — Leer antes de modificar este documento**
+> - **Propósito**: Catálogo oficial y único de todos los requerimientos del sistema.
+> - **Estructura**: 10 dominios fijos. Toda HU numerada como `HU X.Y` (X = dominio, Y = secuencia correlativa).
+> - **Nuevo requerimiento**: SIEMPRE registrar aquí primero, sin estado, bajo el dominio correcto.
+> - **Estados únicos permitidos**: *(sin estado)* · `[TODO]` · `[DEV]` · `[DONE]`
+> - **`[DONE]`** solo si `validate_all.py` ✅ 100%. HUs completadas NO se eliminan — permanecen como `[DONE]` y se archivan en SYSTEM_LEDGER.
+> - **PROHIBIDO**: `[x]`, `[QA]`, `[IN_PROGRESS]`, `[COMPLETADA]`, `✅ DONE`, `[ACTIVO]`
+> - **Framework completo**: `.ai_orchestration_protocol.md` Sección 4.
 
 ## 🛠️ ESTÁNDAR TÉCNICO DE CONSTRUCCIÓN
 1. **Backend: La Fortaleza Asíncrona**
@@ -16,14 +23,15 @@
    * **Estado Centralizado en el Servidor**: El frontend es "tonto". Solo renderiza lo que el cerebro (Backend) le dice. La lógica de trading nunca reside en React.
 
 > [!NOTE]
-> **Convenciones de Estado de HU:**
+> **Estados de HU** *(ver header de este documento y `.ai_orchestration_protocol.md` Sección 4)*:
 > | Estado | Significado |
 > |---|---|
-> | *(vacío)* | HU no seleccionada para ningún Sprint |
-> | `[TODO]` | Seleccionada para el Sprint activo |
+> | *(sin estado)* | Identificada, sin Sprint asignado |
+> | `[TODO]` | En Sprint activo, no iniciada |
 > | `[DEV]` | En desarrollo activo |
-> | `[QA]` | En fase de pruebas/validación |
-> | `[DONE]` | Completada — eliminar del backlog y actualizar SPRINT |
+> | `[DONE]` | Completada — prerequisito: `validate_all.py` ✅ 100% |
+>
+> **PROHIBIDO**: `[x]` · `[QA]` · `[IN_PROGRESS]` · `[COMPLETADA]` · `✅ DONE`
 
 ---
 
@@ -40,22 +48,24 @@
 * **N0-4: Naming convention restaurada** `[DONE]`
     * `notifications` → `usr_notifications` en `schema.py` y `system_db.py`. Impacto: ALTO-4.
 
-### Nivel 1 — Crítico: Stack de Conectividad FOREX (📋 BACKLOG)
+### Nivel 1 — Crítico: Stack de Conectividad FOREX (✅ COMPLETADO — 15-Mar-2026)
 
 **Foco**: FOREX-first. cTrader como conector primario nativo async (WebSocket, sin DLL). MT5 estabilizado como alternativa. Otros mercados en Nivel 2.
 
-* **N1-1: MT5 Single-Thread Executor** `[TODO]`
+* **N1-1: MT5 Single-Thread Executor** `[DONE]`
     * Crear `_MT5Task` dataclass + `_dll_executor_loop` + `_submit_to_executor` + `_submit_async` en `mt5_connector.py`. Elimina race condition entre `MT5-Background-Connector` thread (lines 223, 555), `_schedule_retry()` Timer thread y FastAPI caller thread. MT5 queda estable como alternativa. Archivos: `connectors/mt5_connector.py`. Impacto: CRÍTICO-3.
-* **N1-2: cTrader Connector** `[TODO]`
+* **N1-2: cTrader Connector** `[DONE]`
     * Crear `connectors/ctrader_connector.py` (~200 líneas, hereda `BaseConnector`). WebSocket Spotware Open API para tick/OHLC streaming (M1 sin latencia, <100ms). REST para order execution. Reemplaza MT5 como conector primario FOREX. Requisito: cuenta IC Markets cTrader (free). Archivos: `connectors/ctrader_connector.py` (nuevo). Impacto: LIVE + M1 viable.
-* **N1-3: Data Stack FOREX default** `[TODO]`
+* **N1-3: Data Stack FOREX default** `[DONE]`
     * Reordenar prioridades en `DataProviderManager`: cTrader=100, MT5=70, TwelveData=disabled, Yahoo=disabled. Desactivar M1 en `config/config.json` (`enabled: false` por defecto). Stocks y futuros deshabilitados hasta Nivel 2. Archivos: `core_brain/data_provider_manager.py`, `config/config.json`. Impacto: CRÍTICO-3 datos.
-* **N1-4: Warning latencia M1** `[TODO]`
+* **N1-4: Warning latencia M1** `[DONE]`
     * En `ScannerEngine._scan_one()`: detectar si provider activo no es local (cTrader o MT5) Y timeframe = M1 → emitir WARNING en log + insertar entrada en `usr_notifications` con `category: DATA_RISK`, `message: "M1 con provider no-local: riesgo de señal en precio stale"`. Archivos: `core_brain/scanner.py`. Impacto: Riesgo operacional.
-* **N1-5: StrategyGatekeeper Integration** `[TODO]`
+* **N1-5: StrategyGatekeeper Integration** `[DONE]`
     * Instanciar `StrategyGatekeeper` en `MainOrchestrator` vía DI. Conectar al flujo de señales pre-ejecución. `strategy_gatekeeper.py` ya existe (290 líneas, 17/17 tests passing) — solo falta el wiring. Archivos: `core_brain/main_orchestrator.py`. Impacto: ALTO-2.
+* **N1-6: Provisión + Estabilización cTrader** `[DONE]`
+    * (a) Bug fix `client_secret` hardcodeado en `ctrader_connector.py`; (b) seed placeholder `demo_broker_accounts.json` con cuenta IC Markets; (c) script `setup_ctrader_demo.py` con guía OAuth2 interactiva; (d) fix MT5 re-activation (`_sync_sys_broker_accounts_to_providers()` preserva estado `enabled`); (e) refactor `ConnectivityOrchestrator` a DB-driven: elimina `_CONNECTOR_REGISTRY` hardcodeado, columnas `connector_module`/`connector_class` en `sys_data_providers`; (f) `save_data_provider()` con `COALESCE` para no pisar datos existentes. Archivos: `connectors/ctrader_connector.py`, `core_brain/data_provider_manager.py`, `core_brain/connectivity_orchestrator.py`, `data_vault/schema.py`, `data_vault/system_db.py`, `data_vault/seed/data_providers.json`, `data_vault/seed/demo_broker_accounts.json`, `scripts/utilities/setup_ctrader_demo.py`. Impacto: OPERACIONAL + ARQUITECTURA.
 
-**Orden de ejecución**: N1-1 → N1-2 → N1-3 → N1-4 → N1-5
+**Orden de ejecución**: N1-1 → N1-2 → N1-3 → N1-4 → N1-5 → N1-6
 
 ### Nivel 2 — Inteligencia (📋 BACKLOG)
 * **N2-1: JSON_SCHEMA Interpreter** `[TODO]`
@@ -73,7 +83,7 @@
 
 ## 02_CONTEXT_INTELLIGENCE (Regime, Multi-Scale)
 * **HU 2.1: Multi-Scale Regime Vectorizer** `[DONE]`
-    * **Prioridad**: Alta (Vector V3 - Dominio Sensorial)
+    * **Prioridad**: Alta (E3 - Dominio Sensorial)
     * **Descripción**: Motor de unificación temporal que lee regímenes en M15, H1, H4 con Regla de Veto Fractal (H4=BEAR + M15=BULL → RETRACEMENT_RISK).
     * **Estado**: Implementado en Sprint 3. RegimeService operativo (337 líneas, <500). 15/15 tests PASSED.
     * **🖥️ UI Representation**: Widget "Fractal Context Manager" con visualización de "Alineación de Engranajes".
@@ -83,61 +93,61 @@
       - `tests/test_regime_service.py` (15 tests, 100% coverage)
       - `ui/components/FractalContextManager.tsx` (Widget React)
 * **HU 2.2: Inter-Market Divergence Scanner** `[DONE]`
-    * **Prioridad**: Media (Vector V3)
+    * **Prioridad**: Media (E3)
     * **Descripción**: Implementación del scanner de correlación inter-mercado para validación de fuerza de régimen.
     * **🖥️ UI Representation**: Matriz de correlación dinámica con alertas de divergencia "Alpha-Sync".
 * **HU 2.3: Contextual Memory Calibration**
-    * **Prioridad**: Baja (Vector V2)
+    * **Prioridad**: Baja (E2)
     * **Descripción**: Lógica de lookback adaptativo para ajustar la profundidad del análisis según el ruido del mercado.
     * **🖥️ UI Representation**: Slider de "Profundidad Cognitiva" que muestra cuánta historia está procesando el cerebro en tiempo real.
 
 ## 03_ALPHA_GENERATION (Signal Factory, Indicators)
 * **HU 3.1: Contextual Alpha Scoring System**
-    * **Prioridad**: Alta (Vector V2)
+    * **Prioridad**: Alta (E2)
     * **Descripción**: Desarrollo del motor de puntuación dinámica ponderada por el Regime Classifier y métricas del Shadow Portfolio.
     * **🖥️ UI Representation**: Dashboard "Alpha Radar" con medidores de confianza (0-100%) y etiquetas de régimen activo.
 * **HU 3.2: Institutional Footprint Core** `[DONE]`
-    * **Prioridad**: Media (Vector V3)
+    * **Prioridad**: Media (E3)
     * **Descripción**: Lógica de detección de huella institucional basada en micro-estructura de precios y volumen.
     * **🖥️ UI Representation**: Superposición visual de "Liquidity Zones" y clústeres de volumen en el visor de estrategias.
 * **HU 3.3: Multi-Market Alpha Correlator**
-    * **Prioridad**: Baja (Vector V3)
+    * **Prioridad**: Baja (E3)
     * **Descripción**: Scanner de confluencia inter-mercado para validación cruzada de señales de alta fidelidad.
     * **🖥️ UI Representation**: Widget de "Correlación Sistémica" con indicadores de fuerza y dirección multi-activo.
 * **HU 3.4: Signal Post-Mortem Analytics** `[DONE]`
-    * **Prioridad**: Media (Vector V2)
+    * **Prioridad**: Media (E2)
     * **Descripción**: Motor de auditoría post-trade que vincula resultados con datos de micro-estructura para alimentar el Meta-Aprendizaje.
     * **🖥️ UI Representation**: Vista "Post-Mortem" con visualización de velas de tick y marcadores de anomalías detectadas.
 * **HU 3.5: Dynamic Alpha Thresholding**
-    * **Prioridad**: Alta (Vector V2)
+    * **Prioridad**: Alta (E2)
     * **Descripción**: Lógica de auto-ajuste de barreras de entrada basada en la equidad de la cuenta y el régimen de volatilidad.
     * **🖥️ UI Representation**: Dial de "Exigencia Algorítmica" en el header, mostrando el umbral de entrada activo.
 
-* **HU 3.6: Signal Quality Scorer (Phase 4)** `[x] DONE`
+* **HU 3.6: Signal Quality Scorer (Phase 4)** `[DONE]`
     * **Descripción**: Motor unificado de puntuación. Grados: A+ (85+), A (75+), B (65+), C (50+), F (<50). Fórmula: (Técnico × 0.6) + (Contextual × 0.4).
     * **Estado**: Sprint 4 (11 Marzo 2026). 13/13 tests PASSED. Trace_ID: PHASE4-INTELLIGENCE-SCORER-2026
 
-* **HU 3.7: Consensus Engine (Phase 4)** `[x] DONE`
+* **HU 3.7: Consensus Engine (Phase 4)** `[DONE]`
     * **Descripción**: Detecta múltiples estrategias convergentes en mismo setup (5 min). STRONG consenso +20%, WEAK +10%.
     * **Estado**: Sprint 4 (11 Marzo 2026). 11/11 tests PASSED. Trace_ID: PHASE4-CONSENSUS-ENGINE-2026
 
-* **HU 3.8: Failure Pattern Registry (Phase 4)** `[x] DONE`
+* **HU 3.8: Failure Pattern Registry (Phase 4)** `[DONE]`
     * **Descripción**: Aprendizaje autónomo de patrones de fallo cada 4h. Severity weights mapean failure_reason a penalizaciones. Penalidad máxima 30%.
     * **Estado**: Sprint 4 (11 Marzo 2026). 6/6 tests PASSED. Trace_ID: PHASE4-FAILURE-LEARNING-2026
 
 ## 04_RISK_GOVERNANCE (Unidades R, Safety Governor, Veto)
 * **HU 4.4: Safety Governor & Sovereignty Gateway** `[DONE]`
-    * **Prioridad**: Alta (Vector V2)
+    * **Prioridad**: Alta (E2)
     * **Descripción**: Gobernanza de riesgo basada en Unidades R con veto granular y auditoría de rechazos.
     * **Estado**: Implementado en Sprint 2. RiskManager + RejectionAudit + Endpoint /api/risk/validate.
 
 * **HU 4.5: Exposure & Drawdown Monitor Multi-Tenant** `[DONE]`
-    * **Prioridad**: Alta (Vector V2)
+    * **Prioridad**: Alta (E2)
     * **Descripción**: Monitoreo en tiempo real de picos de equidad y umbrales de Drawdown (Soft/Hard) por tenant.
     * **Estado**: Implementado en Sprint 2. DrawdownMonitor + Endpoint /api/risk/exposure.
 
 * **HU 4.6: Anomaly Sentinel (Antifragility Engine)** `[DONE]`
-    * **Prioridad**: Alta (Vector V3 - Dominio Sensorial)
+    * **Prioridad**: Alta (E3 - Dominio Sensorial)
     * **Descripción**: Monitor de eventos de baja probabilidad y anomalías sistémicas (Cisnes Negros) para activar protocolos de defensa instantáneos.
     * **Estado**: Implementado en Sprint 3 (1 Marzo 2026). AnomalyService operativo (530 líneas, <500 chunks). 21/21 tests PASSED.
     * **🖥️ UI Representation**: Consola de "Thought" con tag [ANOMALY_DETECTED] y sugerencias proactivas de intervención basadas en severidad.
@@ -150,7 +160,7 @@
     * **Trace_ID**: BLACK-SWAN-SENTINEL-2026-001
 
 * **HU 4.7: Economic Calendar Veto Filter (News-Based Trading Lockdown)** `[TODO]`
-    * **Prioridad**: Alta (Vector V3 - Dominio Sensorial)
+    * **Prioridad**: Alta (E3 - Dominio Sensorial)
     * **Descripción**: Implementación del filtro de veto por calendario económico. El sistema bloquea automáticamente nuevas posiciones durante eventos de alto impacto (NFP, decisiones de bancos centrales) basado en buffers pre/post evento (HIGH: 15m/10m, MEDIUM: 5m/3m, LOW: 0/0).
     * **Propósito**: Evitar pérdidas catastróficas por volatilidad extrema en eventos macroeconómicos sin intervención manual. Preservar agnosis: MainOrchestrator NO conoce proveedores de datos.
     * **Contrato**:
@@ -199,41 +209,41 @@
 
 ## 05_UNIVERSAL_EXECUTION (EMS, Conectores FIX)
 * **HU 5.1: High-Fidelity FIX Connector Core** `[DEV]`
-    * **Prioridad**: Media (Vector V3)
+    * **Prioridad**: Media (E3)
     * **Descripción**: Desarrollo de la capa de transporte FIX basada en QuickFIX para conectividad directa con Prime Brokers.
     * **Estado**: Normalización de conectores completada. ExecutionService operativo. Integración FIX con Prime Brokers en progreso.
     * **🖥️ UI Representation**: Terminal de telemetría FIX con visualización de latencia ida y vuelta (RTT).
 * **HU 5.2: Adaptive Slippage Controller**
-    * **Prioridad**: Alta (Vector V3)
+    * **Prioridad**: Alta (E3)
     * **Descripción**: Implementación del monitor de desviación de ejecución (Slippage) con integración en la lógica de riesgo.
     * **🖥️ UI Representation**: Badge de "Ejecución Eficiente %" en cada trade cerrado dentro del historial.
 * **HU 5.3: Infrastructure Feedback Loop (The Pulse)**
-    * **Prioridad**: Media (Vector V1 - Conexión básica / V3 - Feedback avanzado)
+    * **Prioridad**: Media (E1 - Conexión básica / V3 - Feedback avanzado)
     * **Descripción**: Sistema de telemetría que informa al cerebro sobre el estado de los recursos y la red para decisiones de veto técnico.
     * **🖥️ UI Representation**: Widget de "System Vital Signs" con métricas de salud técnica y red.
 
 ## 06_PORTFOLIO_INTELLIGENCE (Shadow, Performance)
 * **HU 6.1: Shadow Reality Engine (Penalty Injector)**
-    * **Prioridad**: Alta (Vector V2 - Inteligencia)
+    * **Prioridad**: Alta (E2 - Inteligencia)
     * **Descripción**: Desarrollo del motor de ajuste que inyecta latencia y slippage real en el rendimiento de estrategias Shadow (Lineamiento F-001).
     * **🖥️ UI Representation**: Gráfico de equity "Shadow vs Theory" con desglose de pips perdidos por ineficiencia.
 * **HU 6.2: Multi-Tenant Strategy Ranker**
-    * **Prioridad**: Media (Vector V1 - SaaS)
+    * **Prioridad**: Media (E1 - SaaS)
     * **Descripción**: Sistema de clasificación darwinista para organizar estrategias por rendimiento ajustado al riesgo para cada usuario.
     * **🖥️ UI Representation**: Dashboard "Strategy Darwinism" con rankings dinámicos y estados de cuarentena.
 * **HU 6.3: Coherence Drift Monitor**
-    * **Prioridad**: Media (Vector V3)
+    * **Prioridad**: Media (E3)
     * **Descripción**: Algoritmo de detección de divergencia entre el comportamiento esperado del modelo y la ejecución en vivo.
     * **🖥️ UI Representation**: Medidor de "Coherencia de Modelo" con alertas visuales de deriva técnica.
 
 ## 07_ADAPTIVE_LEARNING (EdgeTuner, Feedback Loops)
 * **HU 7.1: Confidence Threshold Optimizer**
-    * **Prioridad**: Media (Vector V2)
+    * **Prioridad**: Media (E2)
     * **Descripción**: Optimización dinámica de umbrales de entrada basada en el desempeño histórico reciente.
     * **🖥️ UI**: Visualizador de "Curva de Exigencia Algorítmica".
 
 * **HU 7.2: Asset Efficiency Score Gatekeeper** `[DONE]`
-    * **Prioridad**: Alta (Vector V3 - Dominio Sensorial)
+    * **Prioridad**: Alta (E3 - Dominio Sensorial)
     * **Estado**: Implementado en Sprint 3 (2 Marzo 2026). StrategyGatekeeper operativo. 17/17 tests PASSED.
     * **Descripción**: Sistema de filtrado de eficiencia de activos que valida la performance histórica antes de cada ejecución de estrategia mediante scores en memoria (< 1ms latencia).
     * **Componentes**:
@@ -270,6 +280,6 @@
 
 ## 10_INFRASTRUCTURE_RESILIENCY (Health, Self-Healing)
 * **HU 10.1: Autonomous Heartbeat & Self-Healing**
-    * **Prioridad**: Media (Vector V3)
+    * **Prioridad**: Media (E3)
     * **Descripción**: Sistema de monitoreo de signos vitales y auto-recuperación de servicios.
     * **🖥️ UI**: Widget de "Status Vital" con log de eventos técnicos.

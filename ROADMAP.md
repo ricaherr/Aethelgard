@@ -1,8 +1,8 @@
 # 🛣️ ROADMAP.md - Aethelgard Alpha Training
 
-**Última Actualización**: 14 de Marzo 2026 (UTC)  
-**Versión Sistema**: v4.3.1-beta  
-**Estado General**: ✅ **PHASE 1-4 COMPLETADAS** | ✅ **OPTION A** | ✅ **SPRINT SANEAMIENTO NIVEL 0: COMPLETADO** | ⏳ **NIVEL 1: FOREX CONNECTIVITY STACK (PENDIENTE)** | 🔄 **UI V3 RESET: AWAITING APPROVAL**
+**Última Actualización**: 15 de Marzo 2026 (UTC)  
+**Versión Sistema**: v4.3.2-beta  
+**Estado General**: ✅ **PHASE 1-4 COMPLETADAS** | ✅ **OPTION A** | ✅ **NIVEL 0: COMPLETADO** | ✅ **NIVEL 1: FOREX CONNECTIVITY STACK: COMPLETADO** | 🔄 **UI V3 RESET: AWAITING APPROVAL**
 
 ---
 
@@ -32,7 +32,7 @@
 | N1-3 | **Data Stack FOREX default** — cTrader priority=100, MT5 priority=70, TwelveData disabled. M1 `enabled: false` en config por defecto. Stocks/futuros deshabilitados hasta Nivel 2 | `core_brain/data_provider_manager.py`, `config/config.json` | CRÍTICO-3 datos | ✅ DONE |
 | N1-4 | **Warning latencia M1** — en `ScannerEngine._scan_one()`: si provider no-local + M1 activo → WARNING log + entrada `usr_notifications` con `category: DATA_RISK` | `core_brain/scanner.py` | Riesgo operacional | ✅ DONE |
 | N1-5 | **StrategyGatekeeper → MainOrchestrator** — instanciar vía DI en `MainOrchestrator`. Conectar al flujo de señales pre-ejecución | `core_brain/main_orchestrator.py` | ALTO-2 | ✅ DONE |
-| N1-6 | **Provisión cuenta cTrader DEMO** — bug fix `client_secret` hardcodeado en `_connect_async()`, seed placeholder en `demo_broker_accounts.json`, script `setup_ctrader_demo.py` con guía OAuth2 interactiva | `connectors/ctrader_connector.py`, `data_vault/seed/demo_broker_accounts.json`, `scripts/utilities/setup_ctrader_demo.py` | OPERACIONAL | ✅ DONE |
+| N1-6 | **Provisión + Estabilización cTrader** — (a) bug fix `client_secret` hardcodeado en `_connect_async()`; (b) seed placeholder `demo_broker_accounts.json`; (c) script `setup_ctrader_demo.py` con guía OAuth2; (d) fix MT5 re-activation en `_sync_sys_broker_accounts_to_providers()`; (e) refactor `ConnectivityOrchestrator` a DB-driven (elimina `_CONNECTOR_REGISTRY` hardcodeado, columnas `connector_module`/`connector_class` en `sys_data_providers`); (f) `save_data_provider()` con `COALESCE` para no pisar datos existentes | `connectors/ctrader_connector.py`, `data_vault/seed/demo_broker_accounts.json`, `scripts/utilities/setup_ctrader_demo.py`, `core_brain/data_provider_manager.py`, `core_brain/connectivity_orchestrator.py`, `data_vault/schema.py`, `data_vault/system_db.py`, `data_vault/seed/data_providers.json` | OPERACIONAL + ARQUITECTURA | ✅ DONE |
 
 **Orden de ejecución**: N1-1 → N1-2 → N1-3 → N1-4 → N1-5 → N1-6
 
@@ -43,6 +43,8 @@ MT5 (alternativa)  priority=70    M1=✅ local   Scope=FOREX (si instalado)
 TwelveData         disabled       —              Activar en Nivel 2 para stocks
 Yahoo              disabled       —              Activar en Nivel 2 como fallback
 ```
+
+> 💡 **Nota Arquitectónica (15-Mar-2026)**: Agregar un nuevo conector ya NO requiere modificar Python. Solo se necesita un `INSERT` en `sys_data_providers` con `connector_module`, `connector_class` y `enabled=1`. Zero cambios de código en `ConnectivityOrchestrator`.
 
 ### Nivel 2 — Inteligencia: Expansión Controlada (⏳ BACKLOG)
 

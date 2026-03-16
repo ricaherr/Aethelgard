@@ -1,10 +1,130 @@
 # AETHELGARD: SYSTEM LEDGER
 
-**Version**: 4.3.1-beta
+**Version**: 4.3.2-beta
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-14 UTC)**: Trace_ID: ARCH-SSOT-NIVEL0-2026-03-14 | NIVEL 0 COMPLETADO: Sprint de Saneamiento Arquitectónico | DDL consolidado en schema.py, 4 naming violations corregidas, 4 módulos limpiados
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-15 UTC)**: Trace_ID: CONN-SSOT-NIVEL1-2026-03-15 | NIVEL 1 COMPLETADO: Stack FOREX Conectividad + Refactor DB-Driven ConnectivityOrchestrator | cTrader operativo en Monitor UI, MT5 estabilizado, connector loading 100% data-driven, 25/25 validate_all PASSED
+
+---
+
+## � FORMATO ÉPICA-ARCHIVO
+
+Cuando una Épica se completa, se archiva aquí con el siguiente formato comprimido y luego **se elimina del ROADMAP**. El historial técnico detallado permanece en los Registros cronológicos más abajo.
+
+| Campo | Descripción |
+|---|---|
+| **Épica** | `E[N] — Nombre` |
+| **Trace_ID** | Identificador único (vincula al registro cronológico correspondiente) |
+| **Sprints** | Sprint(s) de ejecución |
+| **Completada** | Fecha UTC |
+| **Dominios** | Dominios cubiertos |
+| **Objetivo** | Descripción de una línea |
+| **HUs** | Lista o conteo de HUs completadas |
+| **Validate_all** | ✅ N/N PASSED al momento del cierre |
+
+---
+
+## 🏛️ ÉPICAS ARCHIVADAS
+
+### E1 — Cimientos SaaS (Dominios 01, 08)
+| Campo | Valor |
+|---|---|
+| **Trace_ID** | `DOC-SYNC-2026-003` |
+| **Sprints** | Sprint 1 |
+| **Completada** | Mar-2026 |
+| **Dominios** | 01, 08 |
+| **Objetivo** | Evolucionar el sistema de un solo usuario a arquitectura multi-tenant con autenticación JWT e aislamiento de datos por tenant. |
+| **HUs** | Fundación multi-tenant · JWT Auth · DB segmentada por tenant · Aislamiento de credenciales por usuario |
+| **Validate_all** | ✅ ver Registro `DOC-SYNC-2026-003` |
+
+### E2 — Inteligencia & Supremacía de Ejecución (Dominios 02, 04)
+| Campo | Valor |
+|---|---|
+| **Trace_ID** | `SAAS-GENESIS-2026-001` |
+| **Sprints** | Sprint 2 |
+| **Completada** | 27-Feb-2026 |
+| **Dominios** | 02, 04 |
+| **Objetivo** | Control de riesgo avanzado, optimización de Alpha y gobernanza institucional de riesgo. |
+| **HUs** | HU 4.4 Safety Governor · HU 4.5 Exposure & Drawdown Monitor · HU 2.3 Contextual Memory · HU 3.1 Alpha Scoring |
+| **Validate_all** | ✅ ver Registros `2026-02-27` |
+
+---
+
+## �📅 Registro: 2026-03-15 — NIVEL 1: STACK FOREX + REFACTOR ARQUITECTÓNICO CONNECTIVITY (TRACE_ID: CONN-SSOT-NIVEL1-2026-03-15)
+
+### ✅ HITO COMPLETADO: Stack de Conectividad FOREX + ConnectivityOrchestrator SSOT
+
+**Timestamp**: 15 de Marzo 2026 (UTC)
+**Status**: ✅ COMPLETADO
+**Severity**: BUG FIX + ARCHITECTURAL REFACTOR
+**Domain**: INFRA (00) — Connectivity Stack
+**Versión Sistema**: v4.3.2-beta (actualizado desde 4.3.1-beta)
+
+### 🎯 Problemas Resueltos
+
+**Bug 1 — MT5 se re-activaba en cada arranque** (regresión N1-3):
+- `_sync_sys_broker_accounts_to_providers()` en `data_provider_manager.py` llamaba `save_data_provider(enabled=True)` incondicionalmente en cada startup, pisando el `enabled=False` guardado por el usuario en DB.
+
+**Bug 2 — cTrader no aparecía en Distributed Satellites (Monitor UI)**:
+- `load_connectors_from_db()` tenía cadena `if/elif` hardcodeada solo para `yahoo` y `mt5`. El registro en DB tenía `name='cTrade'` (mayúscula) causando mismatch. El conector nunca se instanciaba.
+
+**Defecto Arquitectónico — Registry hardcodeado en Python**:
+- `_CONNECTOR_REGISTRY` en `connectivity_orchestrator.py` requería modificar código Python para agregar cualquier nuevo conector. Violaba SSOT: la DB ya conoce el provider, el código no debería.
+
+**Bug 3 — `save_data_provider()` destruía datos existentes**:
+- `INSERT OR REPLACE` borraba y recreaba la fila completa, reseteando `connector_module`/`connector_class` a NULL en cada sync del DataProviderManager.
+
+### 🛠️ Cambios Implementados
+
+| Archivo | Cambio | Tipo |
+|---------|--------|---------|
+| `core_brain/data_provider_manager.py` | `_sync_sys_broker_accounts_to_providers()`: lee `enabled` existente antes de guardar. Solo sincroniza credenciales, nunca el estado habilitado. | BUG FIX |
+| `core_brain/connectivity_orchestrator.py` | Eliminado `_CONNECTOR_REGISTRY` hardcodeado + `Tuple` import. `load_connectors_from_db()` lee `connector_module`/`connector_class` de `sys_data_providers`. Zero código por conector. | ARCH REFACTOR |
+| `data_vault/schema.py` | `run_migrations()`: agrega columnas `connector_module TEXT` y `connector_class TEXT` a `sys_data_providers` (aditivo, idempotente). | SCHEMA MIGRATION |
+| `data_vault/system_db.py` | `save_data_provider()`: `INSERT OR REPLACE` → `INSERT ... ON CONFLICT DO UPDATE SET ... COALESCE(excluded.connector_module, sys_data_providers.connector_module)`. Preserva valores existentes. | BUG FIX |
+| `data_vault/seed/data_providers.json` | `connector_module` y `connector_class` en todos los providers. Nombres normalizados: `yahoo_finance`→`yahoo`, `twelve_data`→`twelvedata`. Entrada `ctrader` agregada. | SEED UPDATE |
+| `data_vault/global/aethelgard.db` | Fix quirúrgico directo: `ctrade`→`ctrader` (rename), columnas `connector_module`/`connector_class` pobladas donde eran NULL. Sin borrar datos existentes. | DATA FIX |
+| `connectors/ctrader_connector.py` | `clientSecret` hardcodeado `""` → `self.config.get("client_secret", "")`. `_load_config_from_db()` retorna `client_secret` desde credenciales. | BUG FIX |
+| `scripts/utilities/setup_ctrader_demo.py` | Script interactivo CLI para provisionar cuenta cTrader DEMO con guía OAuth2 completa. | NEW FILE |
+| `data_vault/seed/demo_broker_accounts.json` | Placeholder `ic_markets_ctrader_demo_20001` con `enabled: false` y `recovery_note` apuntando al script de setup. | SEED UPDATE |
+
+### 📐 Diseño Arquitectónico Post-Refactor
+
+**Antes**: Agregar conector nuevo = modificar `_CONNECTOR_REGISTRY` en Python (requiere programador).
+
+**Después**: Agregar conector nuevo = 1 `INSERT` en `sys_data_providers` con `connector_module`, `connector_class`, `enabled=1`. Zero cambios de código.
+
+```sql
+-- Así se agrega un nuevo conector desde hoy:
+INSERT INTO sys_data_providers (name, enabled, connector_module, connector_class)
+VALUES ('nuevo_broker', 1, 'connectors.nuevo_broker', 'NuevoBrokerConnector');
+```
+
+### 📊 Reglas DB Aplicadas (`.ai_rules.md`)
+
+| Regla | Aplicación |
+|-------|------------|
+| 2.3 — Migraciones aditivas | Solo `ALTER TABLE ADD COLUMN` en `run_migrations()`. Ningún `UPDATE` de datos en código de arranque. |
+| 2.4 — No sobrescribir | `COALESCE` en `save_data_provider()` preserva `connector_module`/`connector_class` existentes. |
+| Fix puntual | Datos reparados directamente en DB con script one-shot, no en código de arranque recurrente. |
+
+### 📊 Estado Post-Implementación
+
+| Criterio | Antes | Después |
+|----------|-------|---------|
+| **cTrader en Monitor UI** | ❌ No aparecía | ✅ Visible (ONLINE cuando conectado) |
+| **MT5 enabled state** | ❌ Se reseteaba en cada arranque | ✅ Persiste la elección del usuario |
+| **Nuevo conector = código** | ❌ Requería editar Python | ✅ Solo requiere fila en DB |
+| **DB-driven loading** | ❌ `if/elif` hardcodeado | ✅ `importlib` + columnas `sys_data_providers` |
+| **validate_all.py** | 25/25 | ✅ 25/25 PASSED |
+
+### 📁 Archivos de Gobernanza Actualizados
+
+- ✅ `ROADMAP.md` — N1 completo, header actualizado 15-Mar-2026
+- ✅ `governance/BACKLOG.md` — N1-1 a N1-6 marcados [DONE]
+- ✅ `governance/SPRINT.md` — Sprint N1 registrado como COMPLETADO
+- ✅ `docs/SYSTEM_LEDGER.md` — Este registro
 
 ---
 
