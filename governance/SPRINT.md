@@ -334,3 +334,18 @@
   - **Archivos de test**: `tests/test_economic_veto_interface.py` (+3 tests: caution reduce 50%, floor 0.01, no-caution sin cambio).
   - ✅ 20/20 tests PASSED · ✅ 25/25 validate_all.py PASSED
 
+- [DONE] **HU 5.2: Adaptive Slippage Controller** *(SSOT desde DB)*
+  - **Problema raíz**: `self.default_slippage_limit = Decimal("2.0")` hardcodeado en `ExecutionService` — ignoraba volatilidad por asset class (GBPJPY vetado igual que EURUSD). Violación de SSOT (límites en código, no en DB).
+  - **Solución**:
+    - `SlippageController` nuevo (`core_brain/services/slippage_controller.py`) — límites por asset class + multiplicadores de régimen leídos de `dynamic_params["slippage_config"]` (DB, SSOT). p90 auto-calibración desde `usr_execution_logs`.
+    - `market_type` pasado explícitamente por el caller desde `signal.metadata` — cero detección por nombre de símbolo.
+    - Fallback `_DEFAULT_CONFIG` solo en bootstrap (DB vacía).
+    - `get_slippage_p90(symbol, min_records)` agregado a `ExecutionMixin` — lee `ABS(slippage_pips)` de `usr_execution_logs`.
+    - `ExecutionService.__init__` ahora recibe `slippage_controller: SlippageController` (DI obligatoria).
+    - `OrderExecutor` instancia `SlippageController(storage)` e inyecta en `ExecutionService`.
+    - Override por señal preservado: `signal.metadata["slippage_limit"]` tiene prioridad absoluta.
+  - **Archivos creados**: `core_brain/services/slippage_controller.py`, `tests/test_slippage_controller.py` (17 tests: base limits ×6, regime multipliers ×4, p90 calibration ×4, integration ×3).
+  - **Archivos modificados**: `core_brain/services/execution_service.py`, `core_brain/executor.py`, `data_vault/execution_db.py`.
+  - ✅ 17/17 tests PASSED · ✅ 25/25 validate_all.py PASSED
+  - Trace_ID: HU-5.2-ADAPTIVE-SLIPPAGE-2026
+

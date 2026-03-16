@@ -57,7 +57,7 @@
 | HU | Nombre | Dominio | Sprint | Estado |
 |---|---|---|---|---|
 | HU 5.1 | Capa Institutional FIX API (Prime Brokers) | 05 | Sprint N2 | [TODO] |
-| HU 5.2 | Adaptive Slippage Controller | 05 | Sprint N2 | [TODO] |
+| HU 5.2 | Adaptive Slippage Controller | 05 | Sprint N2 | [DONE] |
 | N2-1 | JSON_SCHEMA Interpreter | 03 | Sprint N2 | [DONE] |
 | N2-2 | WebSocket Auth Standardization | 01 | Sprint N2 | [DONE] |
 

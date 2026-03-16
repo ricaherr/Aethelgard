@@ -17,6 +17,7 @@ from core_brain.multi_timeframe_limiter import MultiTimeframeLimiter
 from data_vault.storage import StorageManager
 from core_brain.notification_service import NotificationService, NotificationCategory
 from core_brain.services.execution_service import ExecutionService
+from core_brain.services.slippage_controller import SlippageController
 from core_brain.services.circuit_breaker_gate import CircuitBreakerGate
 from core_brain.services.signal_lifecycle_manager import SignalLifecycleManager
 
@@ -97,7 +98,8 @@ class OrderExecutor:
             self.multi_tf_limiter = multi_tf_limiter
             
         if execution_service is None:
-            self.execution_service = ExecutionService(self.storage)
+            slippage_ctrl = SlippageController(self.storage)
+            self.execution_service = ExecutionService(self.storage, slippage_controller=slippage_ctrl)
         else:
             self.execution_service = execution_service
             

@@ -3,7 +3,7 @@ import logging
 import sqlite3
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
-from typing import Optional, Dict, List, Any
+from typing import Optional, Dict, List, Any, Tuple
 
 from .base_repo import BaseRepository
 from utils.time_utils import to_utc, to_utc_datetime
@@ -160,5 +160,31 @@ class ExecutionMixin(BaseRepository):
             
             logs = [dict(row) for row in rows]
             return logs
+        finally:
+            self._close_conn(conn)
+
+    def get_slippage_p90(self, symbol: str, min_records: int = 50) -> Optional[Decimal]:
+        """
+        Return the 90th-percentile absolute slippage (pips) for a symbol.
+
+        Reads from usr_execution_logs for auto-calibration of SlippageController.
+        Returns None when fewer than min_records exist (insufficient history).
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT ABS(slippage_pips) FROM usr_execution_logs "
+                "WHERE symbol = ? ORDER BY ABS(slippage_pips) ASC",
+                (symbol,),
+            )
+            values = [row[0] for row in cursor.fetchall()]
+            if len(values) < min_records:
+                return None
+            idx = min(int(len(values) * 0.9), len(values) - 1)
+            return Decimal(str(values[idx]))
+        except Exception as exc:
+            logger.debug("[ExecutionMixin] get_slippage_p90 failed for %s: %s", symbol, exc)
+            return None
         finally:
             self._close_conn(conn)

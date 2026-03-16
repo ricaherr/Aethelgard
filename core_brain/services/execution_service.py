@@ -3,7 +3,7 @@ import time
 import asyncio
 import uuid
 from decimal import Decimal
-from typing import Dict, Any, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Dict, Any, Optional, Tuple, Union
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from pydantic import BaseModel, Field
@@ -13,6 +13,9 @@ from data_vault.storage import StorageManager
 from core_brain.execution_feedback import ExecutionFailureReason
 from connectors.base_connector import BaseConnector
 from utils.market_ops import normalize_price, calculate_pip_size
+
+if TYPE_CHECKING:
+    from core_brain.services.slippage_controller import SlippageController
 
 logger = logging.getLogger(__name__)
 
@@ -83,10 +86,9 @@ class ExecutionService:
     Responsable de la normalización, control de slippage adaptativo y shadow reporting.
     """
 
-    def __init__(self, storage: StorageManager) -> None:
+    def __init__(self, storage: StorageManager, slippage_controller: "SlippageController") -> None:
         self.storage = storage
-        # Slippage default: 2.0 pips (Veto si se excede antes de enviar)
-        self.default_slippage_limit = Decimal("2.0")
+        self.slippage_controller = slippage_controller
         logger.info("ExecutionService (High-Fidelity) inicializado.")
 
     def _ensure_connector(self, connector: Optional[BaseConnector], phase: str, symbol: str, trace_id: str) -> Optional[Union[ExecutionResponse, LiquidityValidationResult]]:
@@ -238,7 +240,14 @@ class ExecutionService:
 
         # Check slippage against limit
         pre_exec_slippage = self._calculate_pips(signal.symbol, theoretical_price, current_tick_price, signal.signal_type, connector)
-        slippage_limit = Decimal(str(signal.metadata.get("slippage_limit", self.default_slippage_limit)))
+        # Per-signal override wins; otherwise use adaptive controller (SSOT: limits from DB)
+        per_signal_override = signal.metadata.get("slippage_limit")
+        if per_signal_override is not None:
+            slippage_limit = Decimal(str(per_signal_override))
+        else:
+            market_type: Optional[str] = signal.metadata.get("market_type")
+            regime: Optional[str] = signal.metadata.get("regime")
+            slippage_limit = self.slippage_controller.get_limit(signal.symbol, regime=regime, market_type=market_type)
         
         if abs(pre_exec_slippage) > slippage_limit:
             reason_msg = f"Veto Pre-Ejecución: Slippage estimado {pre_exec_slippage:.2f} pips > limite {slippage_limit} pips"
