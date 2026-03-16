@@ -271,3 +271,51 @@
 | **Regresiones** | 0 |
 | **Fecha Cierre** | 15 de Marzo, 2026 |
 
+---
+
+# SPRINT N2: SEGURIDAD & VISUALIZACIÓN EN VIVO — [TODO]
+
+**Inicio**: 15 de Marzo, 2026
+**Objetivo**: Estandarizar la seguridad WebSocket (auth production-ready), desbloquear la visualización en tiempo real en React y activar el filtro de veto por calendario económico.
+**Versión Target**: v4.4.0-beta
+**Épicas**: E3 (HU 9.3) · E4 (N2-2) · Backlog Suelto (HU 4.7)
+
+---
+
+## 📋 Tareas del Sprint
+
+- [DONE] **N2-2: WebSocket Auth Standardization** *(🔴 SEGURIDAD — 15-Mar-2026)*
+  - ✅ `get_ws_user()` creado en `auth.py` — única dependencia WS del sistema (cookie → header → query, sin fallback demo)
+  - ✅ `_verify_token()` eliminado de `strategy_ws.py` y `telemetry.py`
+  - ✅ Bloque fallback demo eliminado de `telemetry.py` y `shadow_ws.py` (vulnerabilidad crítica cerrada)
+  - ✅ 3 routers refactorizados: `strategy_ws.py`, `telemetry.py`, `shadow_ws.py`
+  - ✅ 16/16 tests PASSED (`test_ws_auth_standardization.py`)
+  - ✅ 25/25 validate_all.py PASSED — sin regresiones
+  - Trace_ID: WS-AUTH-STD-N2-2026-03-15
+
+> ⚠️ **DEUDA TÉCNICA DETECTADA — Sprint N2** (no causada por N2-2, detectada durante validación)
+> - **Archivo**: `tests/test_shadow_ws_integration.py`
+> - **Síntoma**: 9 tests fallan en setup con `AttributeError: module 'core_brain.main_orchestrator' has no attribute 'SocketService'`
+> - **Causa raíz**: Los fixtures usan `patch('core_brain.main_orchestrator.SocketService')` pero `main_orchestrator.py` importa `get_socket_service` **localmente** (línea 695), no a nivel de módulo. El target de `patch()` no existe en el namespace del módulo.
+> - **Tipo**: Bug de tests (target de patch incorrecto) — sin impacto en producción
+> - **Relación con N2-2**: indirecta — `shadow_ws.py` fue refactorizado en esta HU y `test_shadow_ws_integration.py` valida el sistema shadow
+> - **Acción pendiente**: Corregir fixtures en `test_shadow_ws_integration.py` — cambiar `patch('core_brain.main_orchestrator.SocketService')` por `patch('core_brain.services.socket_service.get_socket_service')` o inyectar `socket_service` directamente en el constructor de `MainOrchestrator`
+> - **Severidad**: Media — no bloquea ejecución pero oculta cobertura real del sistema shadow
+
+- [DONE] **HU 9.3: Frontend WebSocket Rendering** *(15-Mar-2026)*
+  - **Root causes corregidos (4)**:
+    - RC-A: URL hardcodeada `localhost:8000` en `useSynapseTelemetry`, `AethelgardContext`, `useAnalysisWebSocket` — bypassaba proxy Vite, cookie `a_token` nunca se enviaba.
+    - RC-B: `localStorage.getItem('access_token')` en `useStrategyMonitor` — siempre `null` (auth via cookie HttpOnly).
+    - RC-C: Prop default `ws://localhost:8000/ws/shadow` en `ShadowHub` — mismo problema cross-origin.
+    - RC-D: `useSynapseTelemetry` huérfano — hook completo pero sin consumidor en ningún componente.
+  - **Solución**: `ui/src/utils/wsUrl.ts` — función `getWsUrl(path)` usa `window.location.host` para respetar el proxy Vite en dev.
+  - **Archivos modificados**: `useStrategyMonitor.ts`, `useSynapseTelemetry.ts`, `AethelgardContext.tsx`, `useAnalysisWebSocket.ts`, `ShadowHub.tsx`, `MonitorPage.tsx`.
+  - **Archivos creados**: `ui/src/utils/wsUrl.ts`, `src/__tests__/utils/wsUrl.test.ts`, `src/__tests__/hooks/useStrategyMonitor.test.ts`.
+  - **Wiring Glass Box Live**: `MonitorPage` consume `useSynapseTelemetry` mostrando CPU, Memory, Risk Mode, Anomalías en tiempo real vía `/ws/v3/synapse`.
+  - ✅ 84/84 vitest PASSED · ✅ 25/25 validate_all.py PASSED
+
+- [TODO] **HU 4.7: Economic Calendar Veto Filter** *(infraestructura lista)*
+  - Implementar `get_trading_status()` usando infraestructura `economic_fetch_persist.py` ya existente.
+  - Integrar veto en flujo pre-ejecución del `MainOrchestrator`.
+  - Prerequisito: ninguno.
+

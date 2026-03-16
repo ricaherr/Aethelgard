@@ -1906,3 +1906,68 @@ Scanner/Strategies
 - Machine Learning: Ajustar suppression threshold basado en histórico de false positives
 - Integration: Comunicar failure_reason al usuario vía Telegram API
 - Extensión: Aplicar patrón a otros fallos (RiskManager vetos, CircuitBreaker trips)
+
+---
+
+## XV. HU 9.3 — Frontend WebSocket Rendering (v4.4.0 · 15-Mar-2026)
+
+**Tipo**: Bug Fix + Feature Wiring  
+**Sprint**: N2 · **Épica**: E3 (Dominio Sensorial & Adaptabilidad)  
+**Estado**: ✅ COMPLETADO
+
+### Problema
+
+Múltiples hooks de WebSocket del frontend nunca establecían conexión a pesar de que los backends (`/ws/v3/synapse`, `/ws/shadow`, `/ws/strategy/monitor`) estaban operacionales con auth N2-2. Los componentes mostraban estados de error permanente o nunca actualizaban datos en tiempo real.
+
+### Root Causes Corregidos (4)
+
+| RC | Afectaba | Descripción | Fix |
+|----|----------|-------------|-----|
+| A | `useSynapseTelemetry`, `AethelgardContext`, `useAnalysisWebSocket` | URL hardcodeada `localhost:8000` bypassaba el proxy Vite — cookie `a_token` no se enviaba (cross-origin) | Usar `window.location.host` via `getWsUrl()` |
+| B | `useStrategyMonitor` | `localStorage.getItem('access_token')` siempre `null` — auth es via cookie HttpOnly | Eliminar localStorage. Guard `isAuthenticated` de `useAuth` |
+| C | `ShadowHub` | Prop default `ws://localhost:8000/ws/shadow` mismo problema cross-origin | Eliminar prop `wsUrl`. URL calculada internamente |
+| D | `useSynapseTelemetry` | Hook completo implementado pero ningún componente lo consumía | Wired en `MonitorPage` como panel "Glass Box Live" |
+
+### Patrón Establecido: `getWsUrl()`
+
+```typescript
+// ui/src/utils/wsUrl.ts
+export function getWsUrl(
+    path: string,
+    location: { protocol: string; host: string } = window.location
+): string {
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${location.host}${path}`;
+}
+```
+
+**Regla**: Todo WebSocket URL del frontend DEBE usar `getWsUrl()`. En dev (Vite proxy en `localhost:3000`), el browser envía la cookie al mismo origen, el proxy forwardea al backend en `localhost:8000`. En producción (misma origin), funciona directamente.
+
+### Archivos Modificados
+
+| Archivo | Cambio |
+|---------|--------|
+| `ui/src/utils/wsUrl.ts` | CREADO — función `getWsUrl(path, location?)` |
+| `ui/src/hooks/useStrategyMonitor.ts` | Eliminar localStorage + token query param. Agregar `useAuth` guard + `getWsUrl` |
+| `ui/src/hooks/useSynapseTelemetry.ts` | Reemplazar cálculo manual de host por `getWsUrl` |
+| `ui/src/contexts/AethelgardContext.tsx` | Reemplazar cálculo manual de host por `getWsUrl` |
+| `ui/src/hooks/useAnalysisWebSocket.ts` | Reemplazar cálculo manual de host por `getWsUrl` |
+| `ui/src/components/shadow/ShadowHub.tsx` | Eliminar prop `wsUrl`. URL calculada internamente con `getWsUrl` |
+| `ui/src/components/diagnostic/MonitorPage.tsx` | Agregar `useSynapseTelemetry()`. Nuevo panel "Glass Box Live" |
+| `ui/tsconfig.json` | Agregar `exclude: ["src/__tests__"]` — evitar errores tsc en code de tests (node modules) |
+
+### Feature: Panel "Glass Box Live" en MonitorPage
+
+`MonitorPage` ahora consume datos en tiempo real de `/ws/v3/synapse` y los renderiza en un panel dedicado con indicador de conexión:
+
+- **CPU %** — `system_heartbeat.cpu_percent`
+- **Memory MB** — `system_heartbeat.memory_mb`
+- **Risk Mode** — `risk_buffer.risk_mode` (coloreado: NORMAL verde, DEFENSIVE naranja, AGGRESSIVE rojo)
+- **Anomalías (5m)** — `anomalies.count_last_5m` (rojo si > 0)
+
+### Validación
+
+- ✅ 84/84 vitest PASSED
+- ✅ 25/25 validate_all.py PASSED
+- ✅ TypeScript: 0 errores (`tsc --noEmit`)
+- ✅ Build: `vite build` success (1900 modules, 4.7s)

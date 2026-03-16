@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from './useAuth';
+import { getWsUrl } from '../utils/wsUrl';
 
 export interface AnalysisUpdate {
     type: 'ANALYSIS_UPDATE' | 'TRADER_PAGE_UPDATE';
@@ -32,12 +33,8 @@ export const useAnalysisWebSocket = () => {
             return;
         }
 
-        // Determine WS URL
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.hostname === 'localhost' 
-            ? 'localhost:8000' 
-            : window.location.host;
-        const wsUrl = `${protocol}//${host}/ws/terminal/GENERIC/analysis`;
+        // Browser auto-sends HttpOnly cookie on WS handshake — no token in URL needed.
+        const wsUrl = getWsUrl('/ws/terminal/GENERIC/analysis');
 
         console.log('🔌 [ANALYSIS WS] Connecting to analysis stream:', wsUrl);
 

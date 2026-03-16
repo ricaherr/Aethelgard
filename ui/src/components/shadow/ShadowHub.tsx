@@ -4,12 +4,9 @@ import { ShadowInstance, WebSocketShadowEvent } from '../../types/aethelgard';
 import CompetitionDashboard from './CompetitionDashboard';
 import JustifiedActionsLog from './JustifiedActionsLog';
 import styles from '../../styles/shadow.module.css';
+import { getWsUrl } from '../../utils/wsUrl';
 
-interface ShadowHubProps {
-    wsUrl?: string;
-}
-
-const ShadowHub: React.FC<ShadowHubProps> = ({ wsUrl = 'ws://localhost:8000/ws/shadow' }) => {
+const ShadowHub: React.FC = () => {
     const { instances, setInstances, updateInstance, bestPerformer, setBesPerformer } = useShadow();
     const wsRef = useRef<WebSocket | null>(null);
     const reconnectAttemptsRef = useRef<number>(0);
@@ -62,6 +59,7 @@ const ShadowHub: React.FC<ShadowHubProps> = ({ wsUrl = 'ws://localhost:8000/ws/s
 
     // WebSocket connection - STABLE with refs
     useEffect(() => {
+        const wsUrl = getWsUrl('/ws/shadow');
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
         let keepaliveIntervalId: ReturnType<typeof setInterval> | null = null;
@@ -136,7 +134,7 @@ const ShadowHub: React.FC<ShadowHubProps> = ({ wsUrl = 'ws://localhost:8000/ws/s
                 console.log(`[ShadowHub] Reconnecting in ${delayMs}ms...`);
                 setTimeout(() => {
                     if (wsRef.current?.readyState === WebSocket.CLOSED) {
-                        const newWs = new WebSocket(wsUrl);
+                        const newWs = new WebSocket(getWsUrl('/ws/shadow'));
                         wsRef.current = newWs;
                         
                         newWs.onopen = () => {
@@ -168,7 +166,7 @@ const ShadowHub: React.FC<ShadowHubProps> = ({ wsUrl = 'ws://localhost:8000/ws/s
                 ws.close();
             }
         };
-    }, [wsUrl]); // ← SOLO wsUrl, las funciones se acceden vía refs
+    }, []); // ← runs once on mount; URL computed internally via getWsUrl
 
     return (
         <div data-testid="shadow-hub" className="w-full h-full space-y-6 p-6">

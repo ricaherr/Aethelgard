@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { getWsUrl } from '../utils/wsUrl';
 
 /**
  * Unified Telemetry Data from /ws/v3/synapse
@@ -118,14 +119,9 @@ export const useSynapseTelemetry = (token?: string): UseSynapseTelemetryHook => 
     }
 
     // Determine WS URL
-    // NOTE: Do NOT include token in query params
-    // Browser auto-attaches HttpOnly cookies via WebSocket handshake
-    // Server reads token from cookies instead
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.hostname === 'localhost' 
-      ? 'localhost:8000' 
-      : window.location.host;
-    const wsUrl = `${protocol}//${host}/ws/v3/synapse`;
+    // NOTE: Browser auto-attaches HttpOnly cookies via WebSocket handshake.
+    // Server reads token from cookies instead of query params.
+    const wsUrl = getWsUrl('/ws/v3/synapse');
 
     try {
       console.log("[SYNAPSE] Connecting to", wsUrl);

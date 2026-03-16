@@ -2,6 +2,7 @@ import React, { createContext, useContext, ReactNode, useState, useEffect, useCa
 import { MarketRegime, Signal, CerebroThought, SystemStatus, EdgeMetrics } from '../types/aethelgard';
 import { useAuthContext } from './AuthContext';
 import { useApi } from '../hooks/useApi';
+import { getWsUrl } from '../utils/wsUrl';
 
 interface AethelgardContextType {
     regime: MarketRegime;
@@ -91,10 +92,8 @@ export function AethelgardProvider({ children }: { children: ReactNode }) {
         if (!isAuthenticated) return;
         if (ws.current?.readyState === WebSocket.OPEN || ws.current?.readyState === WebSocket.CONNECTING) return;
 
-        // Determine WS URL (handling dev/prod)
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.hostname === 'localhost' ? 'localhost:8000' : window.location.host;
-        const wsUrl = `${protocol}//${host}/ws/terminal/GENERIC/dashboard_nextgen`;
+        // Determine WS URL (handling dev/prod via Vite proxy)
+        const wsUrl = getWsUrl('/ws/terminal/GENERIC/dashboard_nextgen');
 
         console.log('🔌 [CONTEXT] Connecting to Brain WebSocket...');
         const socket = new WebSocket(wsUrl);

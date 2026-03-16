@@ -6,6 +6,7 @@ import { cn } from '../../utils/cn';
 import { useState } from 'react';
 import { CerebroThought } from '../../types/aethelgard';
 import { AuditLiveMonitor } from './AuditLiveMonitor';
+import { useSynapseTelemetry } from '../../hooks/useSynapseTelemetry';
 
 interface MonitorPageProps {
     status: SystemStatus;
@@ -18,6 +19,7 @@ export const MonitorPage = ({ status, thoughts, runAudit, runRepair }: MonitorPa
     const [isAuditing, setIsAuditing] = useState(false);
     const [auditResult, setAuditResult] = useState<{ success: boolean, time: string } | null>(null);
     const [isLiveMonitorOpen, setIsLiveMonitorOpen] = useState(false);
+    const { telemetry: liveData, isConnected: wsLive } = useSynapseTelemetry();
 
     const handleAudit = async () => {
         if (!runAudit || isAuditing) return;
@@ -284,6 +286,62 @@ export const MonitorPage = ({ status, thoughts, runAudit, runRepair }: MonitorPa
                     </div>
                 </GlassPanel>
             </div>
+
+            {/* Glass Box Live — Real-time /ws/v3/synapse stream */}
+            <GlassPanel className="p-5 border-aethelgard-blue/15">
+                <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                        <LineChart size={16} className="text-aethelgard-blue" />
+                        <h3 className="text-xs font-black uppercase tracking-[0.2em] text-white/60">Glass Box Live</h3>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <div className={cn(
+                            "w-1.5 h-1.5 rounded-full",
+                            wsLive ? "bg-aethelgard-green animate-pulse" : "bg-white/20"
+                        )} />
+                        <span className={cn(
+                            "text-[8px] font-black uppercase tracking-widest",
+                            wsLive ? "text-aethelgard-green" : "text-white/30"
+                        )}>
+                            {wsLive ? "SYNAPSE_ONLINE" : "SYNAPSE_OFFLINE"}
+                        </span>
+                    </div>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="flex flex-col gap-1">
+                        <span className="text-[9px] text-white/30 uppercase tracking-widest">CPU</span>
+                        <span className="text-sm font-mono font-bold text-white/80">
+                            {liveData ? `${liveData.system_heartbeat.cpu_percent.toFixed(1)}%` : '—'}
+                        </span>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                        <span className="text-[9px] text-white/30 uppercase tracking-widest">Memory</span>
+                        <span className="text-sm font-mono font-bold text-white/80">
+                            {liveData ? `${liveData.system_heartbeat.memory_mb.toFixed(0)} MB` : '—'}
+                        </span>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                        <span className="text-[9px] text-white/30 uppercase tracking-widest">Risk Mode</span>
+                        <span className={cn(
+                            "text-sm font-mono font-bold",
+                            liveData?.risk_buffer.risk_mode === 'DEFENSIVE' ? 'text-orange-400' :
+                            liveData?.risk_buffer.risk_mode === 'AGGRESSIVE' ? 'text-red-400' :
+                            'text-aethelgard-green'
+                        )}>
+                            {liveData?.risk_buffer.risk_mode ?? '—'}
+                        </span>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                        <span className="text-[9px] text-white/30 uppercase tracking-widest">Anomalies (5m)</span>
+                        <span className={cn(
+                            "text-sm font-mono font-bold",
+                            (liveData?.anomalies.count_last_5m ?? 0) > 0 ? 'text-red-400' : 'text-white/50'
+                        )}>
+                            {liveData ? liveData.anomalies.count_last_5m : '—'}
+                        </span>
+                    </div>
+                </div>
+            </GlassPanel>
 
             <AuditLiveMonitor
                 isOpen={isLiveMonitorOpen}

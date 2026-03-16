@@ -43,14 +43,14 @@
 | Shadow UI | Shadow Evolution Frontend UI | 09 | Sprint 4 | [DONE] |
 | Shadow WS | Shadow WebSocket Backend Integration | 06/09 | Sprint 4 | [DONE] |
 | N1-1→N1-6 | FOREX Connectivity Stack | 05/08 | Sprint N1 | [DONE] |
-| HU 9.3 | Frontend WebSocket Rendering | 09 | Sprint N1 | [TODO] — BLOQUEADO |
+| HU 9.3 | Frontend WebSocket Rendering | 09 | Sprint N2 | [DONE] |
 | HU 5.3 | The Pulse (Advanced Feedback) | 05 | — | [TODO] |
 | HU 7.1 | Confidence Threshold Adaptive | 07 | — | [TODO] |
 
 ---
 
-### E4: Expansión Institucional & Conectividad Nivel 2 (Dominios 01, 03, 05) — PENDIENTE
-**Sprints**: Sprint N2 (por definir) | **Trace_ID**: pendiente
+### E4: Expansión Institucional & Conectividad Nivel 2 (Dominios 01, 03, 05) — ACTIVA
+**Sprints**: Sprint N2 | **Trace_ID**: pendiente
 **Objetivo**: FIX API para Prime Brokers + WebSocket Auth estandarizado + JSON_SCHEMA Interpreter.
 
 | HU | Nombre | Dominio | Sprint | Estado |
@@ -58,7 +58,7 @@
 | HU 5.1 | Capa Institutional FIX API (Prime Brokers) | 05 | Sprint N2 | [TODO] |
 | HU 5.2 | Adaptive Slippage Controller | 05 | Sprint N2 | [TODO] |
 | N2-1 | JSON_SCHEMA Interpreter | 03 | Sprint N2 | [TODO] |
-| N2-2 | WebSocket Auth Standardization | 01 | Sprint N2 | [TODO] |
+| N2-2 | WebSocket Auth Standardization | 01 | Sprint N2 | [DONE] |
 
 ---
 

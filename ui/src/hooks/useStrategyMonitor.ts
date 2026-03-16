@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { useAuth } from './useAuth';
+import { getWsUrl } from '../utils/wsUrl';
 
 interface StrategyMetrics {
   strategy_id: string;
@@ -26,7 +28,8 @@ interface UseStrategyMonitorHook {
  * Usage:
  * const { strategies, loading, error, isConnected } = useStrategyMonitor();
  */
-export const useStrategyMonitor = (token?: string): UseStrategyMonitorHook => {
+export const useStrategyMonitor = (_token?: string): UseStrategyMonitorHook => {
+  const { isAuthenticated } = useAuth();
   const [strategies, setStrategies] = useState<StrategyMetrics[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -38,19 +41,14 @@ export const useStrategyMonitor = (token?: string): UseStrategyMonitorHook => {
   const reconnectDelay = useRef(1000); // Start at 1s, exponential backoff
 
   const connect = useCallback(() => {
-    // Get token from props or localStorage
-    const authToken = token || localStorage.getItem('access_token');
-    
-    if (!authToken) {
-      setError('No authentication token available');
+    // Auth guard: browser auto-sends HttpOnly cookie on WS handshake
+    if (!isAuthenticated) {
       setLoading(false);
       return;
     }
 
     try {
-      // RULE T1: WebSocket URL includes tenant token
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const url = `${protocol}//${window.location.host}/ws/strategy/monitor?token=${encodeURIComponent(authToken)}`;
+      const url = getWsUrl('/ws/strategy/monitor');
       
       const socket = new WebSocket(url);
 
@@ -122,7 +120,7 @@ export const useStrategyMonitor = (token?: string): UseStrategyMonitorHook => {
       setError(`Connection error: ${err}`);
       setLoading(false);
     }
-  }, [token]);
+  }, [isAuthenticated]);
 
   // Setup and cleanup
   useEffect(() => {

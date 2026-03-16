@@ -9,7 +9,9 @@
         "tsc-check": "tsc --noEmit",
         "tsc-strict": "tsc --noEmit --strict",
         "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-        "preview": "vite preview"
+        "preview": "vite preview",
+        "test": "vitest run",
+        "test:watch": "vitest"
     },
     "dependencies": {
         "clsx": "^2.1.0",
