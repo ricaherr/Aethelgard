@@ -98,6 +98,23 @@ class SignalSelector:
             )
             return SignalSelectorResult.REJECT_COOLDOWN, cooldown_check
         
+        # Step 2: Fetch recent signals from storage if not provided
+        if not recent_signals:
+            symbol = signal.get("symbol", "")
+            timeframe = signal.get("timeframe", "M5")
+            try:
+                import inspect
+                fn = self.storage.get_recent_sys_signals
+                if inspect.iscoroutinefunction(fn):
+                    recent_signals = await fn(symbol=symbol, timeframe=timeframe) or []
+                else:
+                    result = fn(symbol=symbol, timeframe=timeframe)
+                    if asyncio.iscoroutine(result):
+                        result = await result
+                    recent_signals = result or []
+            except Exception:
+                recent_signals = []
+
         # Step 2: Detect deduplication category
         dup_category, dup_details = await self._detect_duplicate_category(
             signal, recent_signals, market_context
@@ -135,9 +152,12 @@ class SignalSelector:
             cooldown = await self.storage.get_active_cooldown(signal_id)
             
             if cooldown:
-                expires_at = cooldown.get("cooldown_expires")
+                expires_at = cooldown.get("expires_at") or cooldown.get("cooldown_expires")
                 if isinstance(expires_at, str):
                     expires_at = datetime.fromisoformat(expires_at)
+                
+                if expires_at is None:
+                    return {"is_active": False, "expires_at": None, "failure_reason": None, "retry_count": 0}
                 
                 is_active = datetime.utcnow() < expires_at
                 return {
@@ -191,8 +211,8 @@ class SignalSelector:
             if isinstance(recent_time, str):
                 recent_time = datetime.fromisoformat(recent_time)
             
-            if recent_time < window_expires:
-                continue  # Outside window
+            if recent_time is None or recent_time < window_expires:
+                continue  # Outside window or no timestamp
             
             # Symbol + type + timeframe match = potential duplicate
             if (recent.get("symbol") == symbol and
@@ -215,6 +235,21 @@ class SignalSelector:
         
         # Categorize
         if not matching:
+            # Check for cross-timeframe duplicates (CATEGORY D)
+            cross_tf_matching = []
+            for recent in recent_signals:
+                recent_time = recent.get("created_at")
+                if isinstance(recent_time, str):
+                    recent_time = datetime.fromisoformat(recent_time)
+                if recent_time is None or recent_time < window_expires:
+                    continue
+                if (recent.get("symbol") == symbol and
+                        recent.get("signal_type") == signal_type and
+                        recent.get("timeframe") != timeframe):
+                    cross_tf_matching.append(recent)
+            if cross_tf_matching:
+                details["cross_tf_matching"] = cross_tf_matching
+                return DuplicateCategory.D_MULTI_TIMEFRAME, details
             return DuplicateCategory.DIFFERENT, details
         
         # Check if same strategy (CATEGORY A: Repetition)
@@ -395,7 +430,7 @@ class SignalSelector:
         
         # Check if have overrides in DB (sys_dedup_rules)
         try:
-            db_rule = self.storage.get_dedup_rule(symbol, timeframe, strategy)
+            db_rule = await self.storage.get_dedup_rule(symbol, timeframe, strategy)
             if db_rule and db_rule.get("manual_override"):
                 manual_window = db_rule.get("current_window_minutes", base)
                 self.logger.info(

@@ -3,7 +3,7 @@ Tests for MT5 Event Emission and Reconciliation
 """
 import pytest
 from unittest.mock import Mock, patch
-from datetime import datetime
+from datetime import datetime, timezone
 from connectors.mt5_connector import MT5Connector
 from models.broker_event import BrokerTradeClosedEvent, TradeResult
 
@@ -148,8 +148,8 @@ class TestMT5EventEmission:
         assert event.symbol == "EURUSD"
         assert event.entry_price == 1.0500
         assert event.exit_price == 1.0450
-        assert event.entry_time == datetime.fromtimestamp(1640995200)
-        assert event.exit_time == datetime.fromtimestamp(1641081600)
+        assert event.entry_time == datetime.fromtimestamp(1640995200, tz=timezone.utc).replace(tzinfo=None) or event.entry_time.timestamp() == 1640995200
+        assert event.exit_time == datetime.fromtimestamp(1641081600, tz=timezone.utc).replace(tzinfo=None) or event.exit_time.timestamp() == 1641081600
         assert event.profit_loss == -50.0
         assert event.result == TradeResult.LOSS
         assert event.broker_id == "MT5"

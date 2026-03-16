@@ -127,7 +127,7 @@ class TestShadowValidation:
         - Expected: AUTHORIZED (True, None)
         """
         # Arrange
-        self.storage.get_usr_performance.return_value = {
+        self.storage.get_signal_ranking.return_value = {
             'strategy_id': TEST_STRATEGY_ID,
             'execution_mode': 'SHADOW',
             'win_rate': 0.55
@@ -159,7 +159,7 @@ class TestShadowValidation:
         - Expected: REJECTED (False, reason)
         """
         # Arrange
-        self.storage.get_usr_performance.return_value = {
+        self.storage.get_signal_ranking.return_value = {
             'strategy_id': TEST_STRATEGY_ID,
             'execution_mode': 'SHADOW'
         }
@@ -187,7 +187,7 @@ class TestShadowValidation:
         - Expected: REJECTED (False, reason)
         """
         # Arrange
-        self.storage.get_usr_performance.return_value = {
+        self.storage.get_signal_ranking.return_value = {
             'strategy_id': TEST_STRATEGY_ID,
             'execution_mode': 'SHADOW'
         }
@@ -215,7 +215,7 @@ class TestShadowValidation:
         - Expected: REJECTED (False, reason)
         """
         # Arrange
-        self.storage.get_usr_performance.return_value = {
+        self.storage.get_signal_ranking.return_value = {
             'strategy_id': TEST_STRATEGY_ID,
             'execution_mode': 'SHADOW'
         }
@@ -243,7 +243,7 @@ class TestShadowValidation:
         - Expected: REJECTED (False, reason)
         """
         # Arrange
-        self.storage.get_usr_performance.return_value = {
+        self.storage.get_signal_ranking.return_value = {
             'strategy_id': TEST_STRATEGY_ID,
             'execution_mode': 'SHADOW'
         }
@@ -271,7 +271,7 @@ class TestShadowValidation:
         - Expected: AUTHORIZED (default lenient behavior)
         """
         # Arrange
-        self.storage.get_usr_performance.return_value = {
+        self.storage.get_signal_ranking.return_value = {
             'strategy_id': TEST_STRATEGY_ID,
             'execution_mode': 'SHADOW'
         }
@@ -297,7 +297,7 @@ class TestShadowValidation:
         - Expected: AUTHORIZED (True, None)
         """
         # Arrange
-        self.storage.get_usr_performance.return_value = {
+        self.storage.get_signal_ranking.return_value = {
             'strategy_id': TEST_STRATEGY_ID,
             'execution_mode': 'LIVE'
         }
@@ -339,7 +339,7 @@ class TestShadowConnectorInjection:
         )
         
         storage = Mock()
-        storage.get_usr_performance.return_value = {
+        storage.get_signal_ranking.return_value = {
             'strategy_id': TEST_STRATEGY_ID,
             'execution_mode': 'SHADOW'
         }
@@ -347,7 +347,7 @@ class TestShadowConnectorInjection:
         # Act: Simulate the logic that would happen in executor
         # (This is what Step 1.3 does in the actual executor)
         strategy_id = TEST_STRATEGY_ID
-        ranking = storage.get_usr_performance(strategy_id)
+        ranking = storage.get_signal_ranking(strategy_id)
         if ranking and ranking.get('execution_mode') == 'SHADOW':
             signal.connector_type = ConnectorType.PAPER
         
@@ -374,14 +374,14 @@ class TestShadowConnectorInjection:
         )
         
         storage = Mock()
-        storage.get_usr_performance.return_value = {
+        storage.get_signal_ranking.return_value = {
             'strategy_id': TEST_STRATEGY_ID,
             'execution_mode': 'LIVE'
         }
         
         # Act: Simulate the logic
         strategy_id = TEST_STRATEGY_ID
-        ranking = storage.get_usr_performance(strategy_id)
+        ranking = storage.get_signal_ranking(strategy_id)
         if ranking and ranking.get('execution_mode') == 'SHADOW':
             signal.connector_type = ConnectorType.PAPER
         
@@ -500,7 +500,7 @@ class TestEndToEndShadowFlow:
         )
         
         # Setup storage to return SHADOW strategy
-        storage.get_usr_performance.return_value = {
+        storage.get_signal_ranking.return_value = {
             'strategy_id': TEST_STRATEGY_ID,
             'execution_mode': 'SHADOW'
         }

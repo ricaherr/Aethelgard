@@ -33,7 +33,7 @@ class TestSignalSelectorPhase2:
         """Mock StorageManager with required methods."""
         storage = AsyncMock()
         storage.get_active_cooldown = AsyncMock(return_value=None)
-        storage.get_recent_signals = AsyncMock(return_value=[])
+        storage.get_recent_sys_signals = AsyncMock(return_value=[])
         storage.get_dedup_rule = AsyncMock(return_value=None)
         storage.check_cooldown_active = AsyncMock(return_value=(False, None))
         return storage
@@ -158,7 +158,7 @@ class TestSignalSelectorPhase2:
     async def test_category_a_repetition_rejected(self, selector, sample_signal, market_context_calm):
         """Test: Category A (repetition) is always rejected."""
         selector.storage.get_active_cooldown.return_value = None
-        selector.storage.get_recent_signals.return_value = [
+        selector.storage.get_recent_sys_signals.return_value = [
             {
                 "signal_id": "OLD-001",
                 "symbol": "EURUSD",
@@ -197,7 +197,7 @@ class TestSignalSelectorPhase2:
         }
         
         selector.storage.get_active_cooldown.return_value = None
-        selector.storage.get_recent_signals.return_value = [previous_signal]
+        selector.storage.get_recent_sys_signals.return_value = [previous_signal]
         
         # Mock determine_consensus_approach to return CONSERVATIVE
         with patch.object(selector, '_determine_consensus_approach', return_value="CONSERVATIVE"):
@@ -228,7 +228,7 @@ class TestSignalSelectorPhase2:
         }
         
         selector.storage.get_active_cooldown.return_value = None
-        selector.storage.get_recent_signals.return_value = [previous_signal]
+        selector.storage.get_recent_sys_signals.return_value = [previous_signal]
         
         # Mock methods to enable AGGRESSIVE
         with patch.object(
@@ -252,7 +252,7 @@ class TestSignalSelectorPhase2:
     ):
         """Test: Multi-TF signals allowed if sufficiently separated in time/price."""
         # Sample signal: M5 BUY @ 1.0850
-        # Previous signal: H1 BUY @ 1.0855 (5 pips different, 1 hour ago)
+        # Previous signal: H1 BUY @ 1.0855 (5 pips different, 1 minute ago)
         
         previous_signal = {
             "signal_id": "OLD-004",
@@ -261,13 +261,13 @@ class TestSignalSelectorPhase2:
             "timeframe": "H1",
             "strategy": "Strategy2",
             "confidence": 0.75,
-            "created_at": datetime.utcnow() - timedelta(hours=1),
+            "created_at": datetime.utcnow() - timedelta(minutes=1),
             "price": 1.0855,
             "entry_price": 1.0855
         }
         
         selector.storage.get_active_cooldown.return_value = None
-        selector.storage.get_recent_signals.return_value = [previous_signal]
+        selector.storage.get_recent_sys_signals.return_value = [previous_signal]
         
         # Create a signal with same symbol/type but different timeframe
         d_signal = sample_signal.copy()
@@ -308,7 +308,7 @@ class TestSignalSelectorPhase2:
         }
         
         selector.storage.get_active_cooldown.return_value = None
-        selector.storage.get_recent_signals.return_value = [previous_signal]
+        selector.storage.get_recent_sys_signals.return_value = [previous_signal]
         
         with patch.object(
             selector, '_analyze_multi_timeframe_conflict',
@@ -359,7 +359,7 @@ class TestSignalSelectorPhase2:
     ):
         """Test: Completely different signal is always operated."""
         selector.storage.get_active_cooldown.return_value = None
-        selector.storage.get_recent_signals.return_value = []
+        selector.storage.get_recent_sys_signals.return_value = []
         
         decision, metadata = await selector.should_operate_signal(
             sample_signal, [], market_context_calm

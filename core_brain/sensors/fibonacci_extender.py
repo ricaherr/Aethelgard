@@ -19,7 +19,7 @@ TRACE_ID: SENSOR-FIBONACCI-EXTENDER-2026
 import logging
 from datetime import datetime, timezone
 from typing import Dict, Tuple, Optional, List, Any
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from data_vault.storage import StorageManager
 
@@ -28,24 +28,22 @@ logger = logging.getLogger(__name__)
 
 class FibonacciLevel(BaseModel):
     """Validación de un nivel Fibonacci proyectado."""
+    model_config = ConfigDict(str_strip_whitespace=True)
+
     label: str = Field(..., description="Nivel (e.g., 'FIB_127', 'FIB_161')")
     price: float = Field(..., gt=0, description="Nivel de precio calculado")
     ratio: float = Field(..., ge=0, description="Ratio Fibonacci (e.g., 1.27, 1.618)")
     range_component: float = Field(..., gt=0, description="Componente de rango usado")
-    
-    class Config:
-        str_strip_whitespace = True
 
 
 class FibonacciExtensionData(BaseModel):
     """Validación de datos de extensión Fibonacci desde sesión Londres."""
+    model_config = ConfigDict(str_strip_whitespace=True)
+
     london_high: float = Field(..., gt=0, description="Session High Londres")
     london_low: float = Field(..., gt=0, description="Session Low Londres")
     london_range: float = Field(..., gt=0, description="Rango Londres (high - low)")
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    
-    class Config:
-        str_strip_whitespace = True
 
 
 class FibonacciExtender:

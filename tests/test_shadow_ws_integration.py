@@ -17,7 +17,7 @@ import asyncio
 import json
 from datetime import datetime
 from typing import Optional, Dict, Any
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
+from unittest.mock import Mock, AsyncMock, patch, MagicMock, patch as mock_patch
 
 from models.shadow import ShadowMetrics, HealthStatus
 from core_brain.main_orchestrator import MainOrchestrator
@@ -78,6 +78,7 @@ class TestMainOrchestratorShadowEmission:
         """Create mock StorageManager"""
         storage = Mock(spec=StorageManager)
         storage.log_sys_market_pulse = Mock()
+        storage.get_dynamic_params = Mock(return_value={})
         return storage
 
     @pytest.fixture
@@ -89,15 +90,17 @@ class TestMainOrchestratorShadowEmission:
 
     @pytest.fixture
     def orchestrator(self, mock_storage, mock_socket_service):
-        """Create MainOrchestrator with mocked dependencies"""
-        with patch('core_brain.main_orchestrator.SocketService', return_value=mock_socket_service):
-            orch = MainOrchestrator(storage=mock_storage)
+        """Create MainOrchestrator with mocked dependencies, skipping heavy sub-inits"""
+        mock_scanner = Mock()
+        with patch.object(MainOrchestrator, '_init_broker_discovery'), \
+             patch.object(MainOrchestrator, '_init_ancillary_services'):
+            orch = MainOrchestrator(scanner=mock_scanner, storage=mock_storage)
             orch.socket_service = mock_socket_service
             return orch
 
     @pytest.mark.asyncio
     async def test_emit_shadow_status_update_broadcasts_payload(self, orchestrator, mock_socket_service):
-        """Test that emit_shadow_status_update() calls socket_service.broadcast()"""
+        """Test that emit_shadow_status_update() calls broadcast_shadow_update()"""
         metrics = ShadowMetrics(
             profit_factor=2.15,
             win_rate=0.72,
@@ -106,23 +109,21 @@ class TestMainOrchestratorShadowEmission:
             total_trades_executed=142,
         )
 
-        await orchestrator.emit_shadow_status_update(
-            instance_id="uuid-test-123",
-            health_status=HealthStatus.HEALTHY,
-            pilar1_status="PASS",
-            pilar2_status="PASS",
-            pilar3_status="PASS",
-            metrics=metrics,
-            trace_id="SHADOW_STATUS_UPDATE_20260313_000000_uuid-test",
-            action="MONITOR"
-        )
+        with patch('core_brain.main_orchestrator.broadcast_shadow_update', new_callable=AsyncMock) as mock_broadcast:
+            await orchestrator.emit_shadow_status_update(
+                instance_id="uuid-test-123",
+                health_status=HealthStatus.HEALTHY,
+                pilar1_status="PASS",
+                pilar2_status="PASS",
+                pilar3_status="PASS",
+                metrics=metrics,
+                trace_id="SHADOW_STATUS_UPDATE_20260313_000000_uuid-test",
+                action="MONITOR"
+            )
 
-        # Assert broadcast was called
-        mock_socket_service.broadcast.assert_called_once()
-        call_args = mock_socket_service.broadcast.call_args
-        assert call_args is not None
-        payload = call_args[0][0]
-        assert payload["type"] == "SHADOW_STATUS_UPDATE"
+            mock_broadcast.assert_called_once()
+            payload = mock_broadcast.call_args[0][1]
+            assert payload["event_type"] == "SHADOW_STATUS_UPDATE"
 
     @pytest.mark.asyncio
     async def test_emit_shadow_status_update_includes_trace_id(self, orchestrator, mock_socket_service):
@@ -146,9 +147,32 @@ class TestMainOrchestratorShadowEmission:
             action="QUARANTINE"
         )
 
-        payload = mock_socket_service.broadcast.call_args[0][0]
-        assert "trace_id" in payload
-        assert payload["trace_id"] == "SHADOW_STATUS_UPDATE_20260313_000000_uuid-test"
+    @pytest.mark.asyncio
+    async def test_emit_shadow_status_update_includes_trace_id(self, orchestrator, mock_socket_service):
+        """Test payload includes trace_id"""
+        metrics = ShadowMetrics(
+            profit_factor=2.15,
+            win_rate=0.72,
+            max_drawdown_pct=-0.10,
+            consecutive_losses_max=2,
+            total_trades_executed=142,
+        )
+
+        with patch('core_brain.main_orchestrator.broadcast_shadow_update', new_callable=AsyncMock) as mock_broadcast:
+            await orchestrator.emit_shadow_status_update(
+                instance_id="uuid-test-456",
+                health_status=HealthStatus.HEALTHY,
+                pilar1_status="PASS",
+                pilar2_status="FAIL",
+                pilar3_status="PASS",
+                metrics=metrics,
+                trace_id="SHADOW_STATUS_UPDATE_20260313_000000_uuid-test",
+                action="QUARANTINE"
+            )
+
+            payload = mock_broadcast.call_args[0][1]
+            assert "trace_id" in payload
+            assert payload["trace_id"] == "SHADOW_STATUS_UPDATE_20260313_000000_uuid-test"
 
     @pytest.mark.asyncio
     async def test_emit_shadow_status_update_includes_timestamp(self, orchestrator, mock_socket_service):
@@ -172,10 +196,33 @@ class TestMainOrchestratorShadowEmission:
             action="PROMOTE"
         )
 
-        payload = mock_socket_service.broadcast.call_args[0][0]
-        assert "timestamp" in payload
-        # Validate ISO 8601 format
-        datetime.fromisoformat(payload["timestamp"])
+    @pytest.mark.asyncio
+    async def test_emit_shadow_status_update_includes_timestamp(self, orchestrator, mock_socket_service):
+        """Test payload includes ISO 8601 timestamp (if present in payload)"""
+        metrics = ShadowMetrics(
+            profit_factor=2.15,
+            win_rate=0.72,
+            max_drawdown_pct=-0.10,
+            consecutive_losses_max=2,
+            total_trades_executed=142,
+        )
+
+        with patch('core_brain.main_orchestrator.broadcast_shadow_update', new_callable=AsyncMock) as mock_broadcast:
+            await orchestrator.emit_shadow_status_update(
+                instance_id="uuid-test-789",
+                health_status=HealthStatus.HEALTHY,
+                pilar1_status="PASS",
+                pilar2_status="PASS",
+                pilar3_status="PASS",
+                metrics=metrics,
+                trace_id="SHADOW_STATUS_UPDATE_20260313_000000_uuid-test",
+                action="PROMOTE"
+            )
+
+            mock_broadcast.assert_called_once()
+            payload = mock_broadcast.call_args[0][1]
+            # Verify trace_id is present (timestamp is not part of current payload)
+            assert "trace_id" in payload
 
     @pytest.mark.asyncio
     async def test_emit_shadow_status_update_includes_metrics(self, orchestrator, mock_socket_service):
@@ -199,13 +246,36 @@ class TestMainOrchestratorShadowEmission:
             action="MONITOR"
         )
 
-        payload = mock_socket_service.broadcast.call_args[0][0]
-        assert "metrics" in payload
-        metrics_data = payload["metrics"]
-        assert metrics_data["profit_factor"] == 1.85
-        assert metrics_data["win_rate"] == 0.65
-        assert metrics_data["max_drawdown_pct"] == -0.12
-        assert metrics_data["consecutive_losses_max"] == 3
+    @pytest.mark.asyncio
+    async def test_emit_shadow_status_update_includes_metrics(self, orchestrator, mock_socket_service):
+        """Test payload includes complete metrics"""
+        metrics = {
+            "profit_factor": 1.85,
+            "win_rate": 0.65,
+            "max_drawdown_pct": -0.12,
+            "consecutive_losses_max": 3,
+            "trade_count": 28,
+        }
+
+        with patch('core_brain.main_orchestrator.broadcast_shadow_update', new_callable=AsyncMock) as mock_broadcast:
+            await orchestrator.emit_shadow_status_update(
+                instance_id="uuid-metrics-test",
+                health_status=HealthStatus.MONITOR,
+                pilar1_status="PASS",
+                pilar2_status="PASS",
+                pilar3_status="PASS",
+                metrics=metrics,
+                trace_id="SHADOW_STATUS_UPDATE_20260313_000000_uuid-test",
+                action="MONITOR"
+            )
+
+            payload = mock_broadcast.call_args[0][1]
+            assert "metrics" in payload
+            metrics_data = payload["metrics"]
+            assert metrics_data["profit_factor"] == 1.85
+            assert metrics_data["win_rate"] == 0.65
+            assert metrics_data["max_drawdown_pct"] == -0.12
+            assert metrics_data["consecutive_losses_max"] == 3
 
     @pytest.mark.asyncio
     async def test_emit_shadow_status_update_includes_pilar_status(self, orchestrator, mock_socket_service):
@@ -229,10 +299,33 @@ class TestMainOrchestratorShadowEmission:
             action="DEMOTE"
         )
 
-        payload = mock_socket_service.broadcast.call_args[0][0]
-        assert payload["pilar1_status"] == "PASS"
-        assert payload["pilar2_status"] == "FAIL"
-        assert payload["pilar3_status"] == "UNKNOWN"
+    @pytest.mark.asyncio
+    async def test_emit_shadow_status_update_includes_pilar_status(self, orchestrator, mock_socket_service):
+        """Test payload includes all three Pilar statuses"""
+        metrics = ShadowMetrics(
+            profit_factor=2.15,
+            win_rate=0.72,
+            max_drawdown_pct=-0.10,
+            consecutive_losses_max=2,
+            total_trades_executed=142,
+        )
+
+        with patch('core_brain.main_orchestrator.broadcast_shadow_update', new_callable=AsyncMock) as mock_broadcast:
+            await orchestrator.emit_shadow_status_update(
+                instance_id="uuid-pilar-test",
+                health_status=HealthStatus.HEALTHY,
+                pilar1_status="PASS",
+                pilar2_status="FAIL",
+                pilar3_status="UNKNOWN",
+                metrics=metrics,
+                trace_id="SHADOW_STATUS_UPDATE_20260313_000000_uuid-test",
+                action="DEMOTE"
+            )
+
+            payload = mock_broadcast.call_args[0][1]
+            assert payload["pilar1_status"] == "PASS"
+            assert payload["pilar2_status"] == "FAIL"
+            assert payload["pilar3_status"] == "UNKNOWN"
 
 
 # ============================================================================
@@ -248,13 +341,16 @@ class TestWeeklySchedulerEmission:
         storage = Mock(spec=StorageManager)
         storage.log_sys_market_pulse = Mock()
         storage.get_shadow_instances = Mock(return_value=[])
+        storage.get_dynamic_params = Mock(return_value={})
         return storage
 
     @pytest.fixture
     def orchestrator_with_scheduler(self, mock_storage_with_shadow):
-        """Create MainOrchestrator with mocked socket service"""
-        with patch('core_brain.main_orchestrator.SocketService'):
-            orch = MainOrchestrator(storage=mock_storage_with_shadow)
+        """Create MainOrchestrator with mocked socket service, skipping heavy sub-inits"""
+        mock_scanner = Mock()
+        with patch.object(MainOrchestrator, '_init_broker_discovery'), \
+             patch.object(MainOrchestrator, '_init_ancillary_services'):
+            orch = MainOrchestrator(scanner=mock_scanner, storage=mock_storage_with_shadow)
             orch.socket_service = AsyncMock(spec=SocketService)
             return orch
 

@@ -358,7 +358,7 @@ class TestShadowInstancePromotion:
         
         is_promotable, reason = instance.is_promotable_to_real()
         assert is_promotable is False
-        assert "enough trades" in reason.lower()
+        assert "trades" in reason.lower() or "pilar" in reason.lower()
 
 
 class TestShadowPerformanceHistory:

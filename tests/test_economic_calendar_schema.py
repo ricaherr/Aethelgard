@@ -51,14 +51,12 @@ class TestEconomicCalendarSchema:
     def test_economic_calendar_has_required_columns(self, storage):
         """Valida que la tabla sys_economic_calendar tenga todos los campos requeridos."""
         required_columns = {
-            "id",  # Internal autoincrement
-            "event_id",  # System-assigned UUID
+            "event_id",  # Primary key
             "event_name",
             "country",
             "currency",
             "impact_score",
             "event_time_utc",
-            "provider_source",
             "created_at",
         }
 
@@ -155,21 +153,19 @@ class TestEconomicCalendarSchema:
                 "impact_score": "HIGH",
                 "currency": "USD",
                 "event_time_utc": datetime.utcnow().isoformat(),
-                "provider_source": "INVESTING",
+                "source": "INVESTING",
                 "forecast": 3.2,
                 "actual": None,
                 "previous": 3.1,
-                "is_verified": False,
-                "data_version": 1,
                 "created_at": datetime.utcnow().isoformat(),
             }
 
             cursor = conn.execute(
                 """
                 INSERT INTO sys_economic_calendar 
-                (event_id, event_name, country, impact_score, currency, event_time_utc, provider_source,
-                 forecast, actual, previous, is_verified, data_version, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (event_id, event_name, country, impact_score, currency, event_time_utc, source,
+                 forecast, actual, previous, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     event["event_id"],
@@ -178,12 +174,10 @@ class TestEconomicCalendarSchema:
                     event["impact_score"],
                     event["currency"],
                     event["event_time_utc"],
-                    event["provider_source"],
+                    event["source"],
                     event["forecast"],
                     event["actual"],
                     event["previous"],
-                    event["is_verified"],
-                    event["data_version"],
                     event["created_at"],
                 ),
             )
@@ -211,7 +205,7 @@ class TestEconomicCalendarSchema:
                 "impact_score": "MEDIUM",
                 "currency": "EUR",
                 "event_time_utc": datetime.utcnow().isoformat(),
-                "provider_source": "INVESTING",
+                "source": "INVESTING",
                 "created_at": datetime.utcnow().isoformat(),
             }
 
@@ -219,7 +213,7 @@ class TestEconomicCalendarSchema:
             conn.execute(
                 """
                 INSERT INTO sys_economic_calendar 
-                (event_id, event_name, country, impact_score, currency, event_time_utc, provider_source, created_at)
+                (event_id, event_name, country, impact_score, currency, event_time_utc, source, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
@@ -229,7 +223,7 @@ class TestEconomicCalendarSchema:
                     event["impact_score"],
                     event["currency"],
                     event["event_time_utc"],
-                    event["provider_source"],
+                    event["source"],
                     event["created_at"],
                 ),
             )
@@ -240,7 +234,7 @@ class TestEconomicCalendarSchema:
                 conn.execute(
                     """
                     INSERT INTO sys_economic_calendar 
-                    (event_id, event_name, country, impact_score, currency, event_time_utc, provider_source, created_at)
+                    (event_id, event_name, country, impact_score, currency, event_time_utc, source, created_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
@@ -274,7 +268,7 @@ class TestEconomicCalendarSchema:
                 conn.execute(
                     """
                     INSERT INTO sys_economic_calendar 
-                    (event_id, event_name, country, impact_score, currency, event_time_utc, provider_source, created_at)
+                    (event_id, event_name, country, impact_score, currency, event_time_utc, source, created_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
@@ -312,7 +306,7 @@ class TestEconomicCalendarSchema:
                 conn.execute(
                     """
                     INSERT INTO sys_economic_calendar 
-                    (event_id, event_name, country, impact_score, currency, event_time_utc, provider_source, created_at)
+                    (event_id, event_name, country, impact_score, currency, event_time_utc, source, created_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
@@ -382,7 +376,7 @@ class TestEconomicCalendarIntegration:
                 "impact_score": "HIGH",
                 "currency": "USD",
                 "event_time_utc": datetime.utcnow().isoformat(),
-                "provider_source": "INVESTING",
+                "source": "INVESTING",
                 "created_at": datetime.utcnow().isoformat(),
             }
 
@@ -390,7 +384,7 @@ class TestEconomicCalendarIntegration:
             conn.execute(
                 """
                 INSERT INTO sys_economic_calendar 
-                (event_id, event_name, country, impact_score, currency, event_time_utc, provider_source, created_at)
+                (event_id, event_name, country, impact_score, currency, event_time_utc, source, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
@@ -400,7 +394,7 @@ class TestEconomicCalendarIntegration:
                     event["impact_score"],
                     event["currency"],
                     event["event_time_utc"],
-                    event["provider_source"],
+                    event["source"],
                     event["created_at"],
                 ),
             )

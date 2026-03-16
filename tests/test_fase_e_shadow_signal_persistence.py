@@ -68,7 +68,7 @@ class TestShadowSignalPersistence:
         # Verify column default
         cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='sys_signals'")
         create_sql = cursor.fetchone()[0]
-        assert "origin_mode" in create_sql.upper()
+        assert "origin_mode" in create_sql.lower()
 
     def test_schema_index_origin_mode_created(self, test_db):
         """Verify index on origin_mode for efficient querying."""

@@ -54,7 +54,7 @@ def mock_connector():
     connector.get_symbol_info = Mock(return_value=symbol_info)
     
     # Positions mock
-    connector.get_open_usr_positions = Mock(return_value=[])
+    connector.get_open_positions = Mock(return_value=[])
     
     # Modification mock
     connector.modify_position = Mock(return_value={'success': True})
@@ -151,7 +151,7 @@ def test_emergency_close_max_drawdown(position_manager, mock_position, mock_conn
     """
     # Setup: Position with loss >= 2x initial risk
     mock_position['profit'] = -200.0
-    mock_connector.get_open_usr_positions = Mock(return_value=[mock_position])
+    mock_connector.get_open_positions = Mock(return_value=[mock_position])
     
     # Mock metadata with initial risk
     mock_storage.get_position_metadata = Mock(return_value={
@@ -181,7 +181,7 @@ def test_adjust_sl_trend_to_range(position_manager, mock_position, mock_connecto
     """
     # Setup: Position opened in TREND, now in RANGE
     mock_position['profit'] = -10.0  # Below max drawdown
-    mock_connector.get_open_usr_positions = Mock(return_value=[mock_position])
+    mock_connector.get_open_positions = Mock(return_value=[mock_position])
     
     # Mock metadata
     mock_storage.get_position_metadata = Mock(return_value={
@@ -217,7 +217,7 @@ def test_time_based_exit_range_4_hours(position_manager, mock_position, mock_con
     """
     # Setup: Position 5 hours old in RANGE
     mock_position['profit'] = -5.0
-    mock_connector.get_open_usr_positions = Mock(return_value=[mock_position])
+    mock_connector.get_open_positions = Mock(return_value=[mock_position])
     
     # Mock metadata - 5 hours ago
     mock_storage.get_position_metadata = Mock(return_value={
@@ -250,7 +250,7 @@ def test_time_based_exit_trend_72_hours(position_manager, mock_position, mock_co
     """
     # Setup: Position 50 hours old in TREND
     mock_position['profit'] = -5.0
-    mock_connector.get_open_usr_positions = Mock(return_value=[mock_position])
+    mock_connector.get_open_positions = Mock(return_value=[mock_position])
     
     # Mock metadata - 50 hours ago
     mock_storage.get_position_metadata = Mock(return_value={
@@ -407,7 +407,7 @@ def test_full_monitor_cycle_integration(position_manager, mock_position, mock_co
     """
     # Setup: One healthy position
     mock_position['profit'] = -10.0  # Below max drawdown
-    mock_connector.get_open_usr_positions = Mock(return_value=[mock_position])
+    mock_connector.get_open_positions = Mock(return_value=[mock_position])
     
     # Mock metadata - recent position
     mock_storage.get_position_metadata = Mock(return_value={

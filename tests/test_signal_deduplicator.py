@@ -33,7 +33,7 @@ class TestSignalDeduplicator:
         """Mock MT5Connector for reconciliation"""
         connector = MagicMock()
         # Default: MT5 has matching usr_positions
-        connector.get_open_usr_positions.return_value = [
+        connector.get_open_positions.return_value = [
             {'symbol': 'EURUSD', 'ticket': 12345},
             {'symbol': 'GBPUSD', 'ticket': 12346},
         ]
@@ -139,7 +139,7 @@ class TestSignalDeduplicator:
                 'symbol': 'EURUSD'
             }
         ]
-        mock_mt5_connector.get_open_usr_positions.return_value = []  # Empty = ghost position
+        mock_mt5_connector.get_open_positions.return_value = []  # Empty = ghost position
         
         # Act
         result = deduplicator_with_mt5.is_duplicate(sample_signal)
@@ -158,7 +158,7 @@ class TestSignalDeduplicator:
                 'symbol': 'EURUSD'
             }
         ]
-        mock_mt5_connector.get_open_usr_positions.return_value = [
+        mock_mt5_connector.get_open_positions.return_value = [
             {'symbol': 'EURUSD', 'ticket': 12345}
         ]
         
@@ -236,7 +236,7 @@ class TestSignalDeduplicator:
         mock_storage.get_open_operations.return_value = [
             {'id': 'sig_ghost_001', 'symbol': 'GBPUSD'}
         ]
-        mock_mt5_connector.get_open_usr_positions.return_value = []
+        mock_mt5_connector.get_open_positions.return_value = []
         
         # Act
         deduplicator_with_mt5.is_duplicate(signal)

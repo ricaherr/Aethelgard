@@ -292,10 +292,8 @@ class MainOrchestrator:
         # 1. Base dependencies and config
         self._init_core_dependencies(scanner, signal_factory, risk_manager, executor, storage, config_path, strategy_ranker, execution_feedback_collector=execution_feedback_collector, user_id=effective_user_id, tenant_id=tenant_id)
         
-        # 1.5 Load usr_strategies dynamically ONLY if signal_factory was provided
-        # Otherwise, user must call initialize_sensors() + set_signal_factory() explicitly
-        if signal_factory is not None:
-            self._load_dynamic_usr_strategies()
+        # 1.5 Dynamic strategy loading is done explicitly via set_signal_factory() or start()
+        # Do NOT auto-load here; it would replace injected signal_factory (tests and production use explicit injection)
         
         # 2. Classifier and Position Management
         self.regime_classifier = regime_classifier or RegimeClassifier(storage=self.storage)
@@ -1028,9 +1026,9 @@ class MainOrchestrator:
                     schedule[key] = interval
         except Exception as e:
             logger.warning(f"[OPTION-A] Error building scan schedule: {e}")
-            # Fallback: conservative intervals for all keys
-            for symbol in self.scanner.assets:
-                for tf in self.scanner.active_timeframes:
+            # Fallback: conservative intervals for all keys (use getattr for compatibility)
+            for symbol in getattr(self.scanner, 'assets', []):
+                for tf in getattr(self.scanner, 'active_timeframes', []):
                     key = f"{symbol}|{tf}"
                     schedule[key] = 10.0
         
@@ -1585,10 +1583,17 @@ class MainOrchestrator:
                 new_scan_results = {}
             
             # Step 1d: Merge new results with cached results (ScannerEngine.last_results)
-            scan_results_with_data = getattr(self.scanner, 'last_results', {}).copy()
+            raw_last = getattr(self.scanner, 'last_results', {})
+            scan_results_with_data = raw_last.copy() if isinstance(raw_last, dict) else {}
             if new_scan_results:
                 scan_results_with_data.update(new_scan_results)
                 logger.info(f"[OPTION-A] Merged {len(new_scan_results)} new scans with {len(scan_results_with_data) - len(new_scan_results)} cached results")
+            
+            # Fallback: if still empty, try legacy get_scan_results_with_data() (used in tests/older integrations)
+            if not scan_results_with_data and hasattr(self.scanner, 'get_scan_results_with_data'):
+                scan_results_with_data = self.scanner.get_scan_results_with_data() or {}
+                if scan_results_with_data:
+                    logger.debug("[OPTION-A] Fallback to get_scan_results_with_data() succeeded")
             
             # ==================== END OPTION A IMPLEMENTATION ====================
             
@@ -2002,10 +2007,10 @@ class MainOrchestrator:
                     
                     # PHASE 1: Signal Deduplication Check (before executor)
                     # Get recent signals for dedup window check
-                    recent_signals = self.storage.get_recent_signals(
+                    recent_signals = self.storage.get_recent_sys_signals(
                         symbol=signal.symbol,
                         timeframe=getattr(signal, 'timeframe', 'M5'),
-                        lookback_minutes=120  # Default lookback window
+                        minutes=120  # Default lookback window
                     )
                     
                     market_context = {
@@ -2014,9 +2019,11 @@ class MainOrchestrator:
                     }
                     
                     # Check deduplication
-                    dedup_decision, dedup_metadata = await asyncio.to_thread(
-                        self.signal_selector.should_operate_signal,
-                        signal,
+                    signal_dict = signal.model_dump() if hasattr(signal, 'model_dump') else vars(signal)
+                    signal_dict['signal_id'] = signal_dict.get('trace_id') or signal_dict.get('signal_id')
+                    signal_dict['strategy'] = signal_dict.get('strategy_id')
+                    dedup_decision, dedup_metadata = await self.signal_selector.should_operate_signal(
+                        signal_dict,
                         recent_signals,
                         market_context
                     )
@@ -2059,8 +2066,7 @@ class MainOrchestrator:
                     quality_result = None
                     if self.signal_quality_scorer:
                         try:
-                            quality_result = await asyncio.to_thread(
-                                self.signal_quality_scorer.assess_signal_quality,
+                            quality_result = await self.signal_quality_scorer.assess_signal_quality(
                                 signal,
                                 recent_signals,
                                 market_context
@@ -2121,8 +2127,7 @@ class MainOrchestrator:
                         )
                         
                         # PHASE 1: Apply cooldown for failed execution
-                        cooldown_result = await asyncio.to_thread(
-                            self.cooldown_manager.apply_cooldown,
+                        cooldown_result = await self.cooldown_manager.apply_cooldown(
                             getattr(signal, 'id', None),
                             signal.symbol,
                             getattr(signal, 'strategy', 'unknown'),

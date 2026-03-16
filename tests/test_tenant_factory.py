@@ -82,8 +82,8 @@ class TestAutoProvisioning:
         finally:
             storage._close_conn(conn)
 
-        assert "usr_signals" in tables
-        assert "trade_results" in tables
+        assert "sys_signals" in tables
+        assert "usr_trades" in tables
         assert "sys_config" in tables
         assert "usr_preferences" in tables
 

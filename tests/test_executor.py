@@ -35,6 +35,7 @@ class TestOrderExecutor:
         storage.is_duplicate_signal = Mock(return_value=False)
         storage.has_recent_signal = Mock(return_value=False)
         storage.has_open_position = Mock(return_value=False)
+        storage.get_slippage_p90 = Mock(return_value=None)
         return storage
     
     @pytest.fixture
@@ -48,9 +49,18 @@ class TestOrderExecutor:
     def mock_mt5_connector(self):
         """Create a mock MT5 connector."""
         connector = Mock()
-        connector.execute_signal = Mock(return_value={"status": "success", "order_id": "MT5_12345", "price": 1.1050, "entry_price": 1.1050, "sl": 1.1000, "tp": 1.1150, "volume": 0.01})
+        connector.execute_order = Mock(return_value={"success": True, "ticket": "MT5_12345", "price": 1.1050, "order_id": "MT5_12345"})
         connector.is_connected = True
         connector.get_open_positions = Mock(return_value=[])
+        connector.get_last_tick = Mock(return_value={"bid": 1.1049, "ask": 1.1051, "time": 0})
+        symbol_info = Mock()
+        symbol_info.digits = 5
+        symbol_info.point = 0.00001
+        symbol_info.trade_contract_size = 100000
+        symbol_info.volume_min = 0.01
+        symbol_info.volume_max = 100.0
+        symbol_info.volume_step = 0.01
+        connector.get_symbol_info = Mock(return_value=symbol_info)
         connector.contract_size = 1.0
         return connector
     
@@ -58,7 +68,16 @@ class TestOrderExecutor:
     def mock_nt8_connector(self):
         """Create a mock NT8 connector."""
         connector = Mock()
-        connector.execute_signal = Mock(return_value={"status": "success", "order_id": "NT8_67890"})
+        connector.execute_order = Mock(return_value={"success": True, "ticket": "NT8_67890", "price": 15000.0})
+        connector.get_last_tick = Mock(return_value={"bid": 15000.0, "ask": 15000.25, "time": 0})
+        nt8_symbol_info = Mock()
+        nt8_symbol_info.digits = 2
+        nt8_symbol_info.point = 0.25
+        nt8_symbol_info.trade_contract_size = 20
+        nt8_symbol_info.volume_min = 1.0
+        nt8_symbol_info.volume_max = 100.0
+        nt8_symbol_info.volume_step = 1.0
+        connector.get_symbol_info = Mock(return_value=nt8_symbol_info)
         return connector
     
     @pytest.fixture
@@ -138,7 +157,7 @@ class TestOrderExecutor:
         result = await executor.execute_signal(sample_signal)
         # Assert
         assert result is True
-        mock_mt5_connector.execute_signal.assert_called_once_with(sample_signal)
+        mock_mt5_connector.execute_order.assert_called_once_with(sample_signal)
         mock_risk_manager.is_locked.assert_called()
 
     @pytest.mark.asyncio
@@ -152,7 +171,7 @@ class TestOrderExecutor:
         mock_storage.has_open_position.return_value = False
         mock_storage.get_open_operations.return_value = []
         mock_storage.is_duplicate_signal.return_value = False
-        mock_mt5_connector.execute_signal.return_value = {"success": True}
+        mock_mt5_connector.execute_order.return_value = {"success": True}
         sample_signal.metadata['signal_id'] = 'test-signal-mt5-no-ticket'
         result = await executor.execute_signal(sample_signal)
         assert result is False
@@ -180,7 +199,7 @@ class TestOrderExecutor:
         
         result_mt5 = await executor.execute_signal(signal_mt5)
         assert result_mt5 is True
-        mock_mt5_connector.execute_signal.assert_called_once_with(signal_mt5)
+        mock_mt5_connector.execute_order.assert_called_once_with(signal_mt5)
         
         # Test NT8 routing
         signal_nt8 = Signal(
@@ -194,7 +213,7 @@ class TestOrderExecutor:
         
         result_nt8 = await executor.execute_signal(signal_nt8)
         assert result_nt8 is True
-        mock_nt8_connector.execute_signal.assert_called_once_with(signal_nt8)
+        mock_nt8_connector.execute_order.assert_called_once_with(signal_nt8)
     
     @pytest.mark.asyncio
     async def test_executor_handles_connector_failure_with_resilience(
@@ -205,7 +224,7 @@ class TestOrderExecutor:
         When connector fails, mark signal as REJECTED and notify Telegram.
         """
         # Arrange: Simular falla de conexión
-        mock_mt5_connector.execute_signal.side_effect = ConnectionError("Broker disconnected")
+        mock_mt5_connector.execute_order.side_effect = ConnectionError("Broker disconnected")
         mock_storage.has_open_position.return_value = False
         
         signal = Signal(

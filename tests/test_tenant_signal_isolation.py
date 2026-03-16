@@ -35,18 +35,22 @@ def clear_factory_cache():
     TenantDBFactory._instances.clear()
 
 
-def _make_signal(signal_id: str, symbol: str = "EURUSD") -> dict:
-    """Helper: build a minimal valid signal dict for save_signal()."""
-    return {
-        "id": signal_id,
-        "symbol": symbol,
-        "signal_type": "BUY",
-        "confidence": 0.92,
-        "timeframe": "H1",
-        "price": 1.1050,
-        "direction": "LONG",
-        "status": "active",
-    }
+def _make_signal(signal_id: str, symbol: str = "EURUSD"):
+    """Helper: build a minimal valid Signal object for save_signal()."""
+    from models.signal import Signal, ConnectorType
+    from datetime import datetime
+    return Signal(
+        symbol=symbol,
+        signal_type="BUY",
+        confidence=0.92,
+        connector_type=ConnectorType.GENERIC,
+        timeframe="H1",
+        entry_price=1.1050,
+        stop_loss=1.0990,
+        take_profit=1.1150,
+        timestamp=datetime.utcnow(),
+        metadata={"signal_id": signal_id}
+    )
 
 
 # ---------------------------------------------------------------------------

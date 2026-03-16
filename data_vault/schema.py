@@ -249,7 +249,8 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
     # ── 4.7 Economic Calendar (News-Based Veto) ──────────────────────────────
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS sys_economic_calendar (
-            event_id TEXT PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_id TEXT UNIQUE NOT NULL,
             event_name TEXT NOT NULL,
             country TEXT NOT NULL,
             currency TEXT NOT NULL,
@@ -259,7 +260,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             previous REAL,
             actual REAL,
             source TEXT DEFAULT 'economic_data_gateway',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)

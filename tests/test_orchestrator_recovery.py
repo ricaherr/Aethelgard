@@ -299,7 +299,7 @@ async def test_orchestrator_persistence_after_execution(storage):
     await orchestrator.run_single_cycle()
     
     # Verify signal was persisted
-    executed_count = storage.count_executed_sys_signals(date.today())
+    executed_count = storage.count_executed_usr_signals(date.today())
     assert executed_count == 1
     
     # Verify sys_signals in DB
@@ -356,7 +356,7 @@ async def test_orchestrator_recovery_after_crash(storage):
     )
     
     # Verify stats were recovered
-    assert orchestrator2.stats.sys_signals_executed == 2  # Recovered from DB
+    assert orchestrator2.stats.usr_signals_executed == 2  # Recovered from DB
     assert orchestrator2.stats.date == date.today()
     
     # Verify DB still has sys_signals
@@ -521,7 +521,7 @@ def test_count_executed_usr_signals_filters_by_date(storage):
     }
     
     cursor.execute("""
-        INSERT INTO usr_signals 
+        INSERT INTO sys_signals 
         (id, symbol, signal_type, confidence, timestamp, metadata, connector_type, status)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, (

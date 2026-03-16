@@ -49,14 +49,14 @@ class TestStrategyEngineFactoryBasics:
         assert factory.load_errors == {}
 
     def test_factory_instantiate_all_sys_strategies_empty_bd(self):
-        """Verifica que factory reporta error si BD está vacía."""
+        """Verifica que factory retorna {} si BD estß vacÝa (comportamiento resiliente)."""
         mock_storage = Mock()
         mock_storage.get_all_sys_strategies.return_value = []
         
         factory = StrategyEngineFactory(storage=mock_storage)
         
-        with pytest.raises(RuntimeError, match="Tabla sys_strategies vacía"):
-            factory.instantiate_all_sys_strategies()
+        result = factory.instantiate_all_sys_strategies()
+        assert result == {}
 
     def test_factory_instantiate_all_strategies_db_error(self):
         """Verifica manejo de errores al acceder a BD."""
@@ -69,7 +69,8 @@ class TestStrategyEngineFactoryBasics:
             factory.instantiate_all_sys_strategies()
 
     def test_factory_validates_readiness(self):
-        """Verifica que usr_strategies con readiness != READY_FOR_ENGINE se salten."""
+        """Verifica que estrategias con readiness=LOGIC_PENDING se salten.
+        Cuando TODAS las estrategias tienen readiness incorrecto → RuntimeError."""
         mock_storage = Mock()
         mock_storage.get_all_sys_strategies.return_value = [
             {
@@ -79,28 +80,28 @@ class TestStrategyEngineFactoryBasics:
                 "required_sensors": []
             },
             {
-                "class_id": "READY_STRAT",
+                "class_id": "INVALID_READINESS_STRAT",
                 "type": "JSON_SCHEMA",
-                "readiness": "READY_FOR_ENGINE",
+                "readiness": "DRAFT",
                 "required_sensors": []
             }
         ]
-        
+
         factory = StrategyEngineFactory(storage=mock_storage)
-        
+
         with patch("core_brain.services.strategy_engine_factory.logger"):
             with pytest.raises(RuntimeError, match="No sys_strategies instantiated"):
-                # El segundo strategy no se puede instanciar porque UniversalStrategyEngine
-                # fallaría en esta prueba, pero el primero se saltaría correctamente
+                # Todas tienen readiness inválido → LOGIC_PENDING y DRAFT se bloquean
+                # → active_engines vacío → RuntimeError
                 factory.instantiate_all_sys_strategies()
 
     def test_factory_validates_dependencies(self):
-        """Verifica validación de dependencias de sensores."""
+        """Verifica validaciˇn de dependencias de sensores."""
         mock_storage = Mock()
         mock_storage.get_all_sys_strategies.return_value = [
             {
                 "class_id": "NEEDS_SENSOR",
-                "type": "JSON_SCHEMA",
+                "type": "PYTHON_CLASS",  # Solo PYTHON_CLASS valida sensores
                 "readiness": "READY_FOR_ENGINE",
                 "required_sensors": ["ElephantCandleDetector", "MovingAverageSensor"]
             }
@@ -108,7 +109,7 @@ class TestStrategyEngineFactoryBasics:
         
         factory = StrategyEngineFactory(
             storage=mock_storage,
-            available_sensors={}  # Ningún sensor disponible
+            available_sensors={}  # Ningßn sensor disponible
         )
         
         with patch("core_brain.services.strategy_engine_factory.logger"):
@@ -176,11 +177,12 @@ class TestSignalFactoryDictIntegration:
         mock_confluence = Mock()
         mock_trifecta = Mock()
         
-        # Crear motores mock
-        engine_1 = Mock()
+        # Crear motores mock — usar spec para que NO tengan execute_from_registry
+        from core_brain.strategies.oliver_velez import OliverVelezStrategy
+        engine_1 = MagicMock(spec=['analyze'])
         engine_1.analyze = AsyncMock(return_value=None)
         
-        engine_2 = Mock()
+        engine_2 = MagicMock(spec=['analyze'])
         engine_2.analyze = AsyncMock(return_value=None)
         
         engines_dict = {
@@ -258,7 +260,7 @@ class TestNOHardcodingOfStrategies:
         import re
         
         mo_file = Path(__file__).parent.parent / "core_brain" / "main_orchestrator.py"
-        content = mo_file.read_text()
+        content = mo_file.read_text(encoding='utf-8')
         
         # Buscar la sección de estrategias (línea ~1320)
         # Verificar que NO contiene: "ov_strategy = OliverVelezStrategy(...)"
@@ -295,7 +297,7 @@ class TestDependencyValidation:
             storage=mock_storage,
             available_sensors={
                 "ElephantCandleDetector": Mock(),
-                "Moving AverageSensor": Mock()
+                "MovingAverageSensor": Mock()
             }
         )
         

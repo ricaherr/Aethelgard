@@ -198,10 +198,9 @@ class ShadowInstance:
             return HealthStatus.QUARANTINED, f"Pilar 2 COMPROMETIDO (DD={self.metrics.max_drawdown_pct}%, CL={self.metrics.consecutive_losses_max})"
         
         if not pillar3_alive:
+            if self.metrics.total_trades_executed < 15:
+                return HealthStatus.INCUBATING, "Bootstrap phase (< 15 trades)"
             return HealthStatus.MONITOR, f"Pilar 3 BAJO REVISIÓN (Trades={self.metrics.total_trades_executed}, CV={self.metrics.equity_curve_cv})"
-        
-        if self.metrics.total_trades_executed < 15:
-            return HealthStatus.INCUBATING, "Bootstrap phase (< 15 trades)"
         
         return HealthStatus.HEALTHY, "3/3 Pilares PASSED"
     

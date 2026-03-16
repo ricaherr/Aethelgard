@@ -76,7 +76,7 @@ class SignalsMixin(BaseRepository):
             return signal_type.value
         return str(signal_type)
 
-    def save_signal(self, signal: dict, origin_mode: str = 'SHADOW') -> str:
+    def save_signal(self, signal: dict, origin_mode: str = 'LIVE') -> str:
         """Save a signal to persistent storage with full traceability.
         
         Args:

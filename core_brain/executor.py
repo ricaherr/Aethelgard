@@ -467,7 +467,13 @@ class OrderExecutor:
                     signal.metadata['execution_observation'] = f"Execution failed: {error_msg}"
                 # Marcar como REJECTED (consolidamos FAILED en REJECTED)
                 self._register_failed_signal(signal, f"Execution failed: {error_msg}")
-                
+
+                # Notify for critical connection/timeout errors (same as exception path)
+                if self.notificator and result.get('status') in ('CONNECTION_ERROR', 'TIMEOUT', 'CONNECTOR_LOST'):
+                    await self.notificator.send_alert(
+                        f"[ERROR] Execution Failed\nSymbol: {signal.symbol}\nError: {error_msg}"
+                    )
+
                 if self.internal_notifier:
                     self.internal_notifier.create_notification(
                         category=NotificationCategory.EXECUTION,

@@ -17,10 +17,17 @@ from connectors.economic_data_gateway import (
     EconomicDataGateway,
     EconomicDataProviderRegistry,
     BaseEconomicDataAdapter,
-    InvestingAdapterStub,
-    BloombergAdapterStub,
-    ForexFactoryAdapterStub,
 )
+from connectors.economic_adapters import (
+    InvestingAdapter,
+    BloombergAdapter,
+    ForexFactoryAdapter,
+)
+
+# Backward-compat aliases used throughout this test file
+InvestingAdapterStub = InvestingAdapter
+BloombergAdapterStub = BloombergAdapter
+ForexFactoryAdapterStub = ForexFactoryAdapter
 
 
 class TestEconomicDataProviderRegistry:

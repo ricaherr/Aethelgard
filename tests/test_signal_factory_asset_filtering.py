@@ -34,21 +34,24 @@ class TestSignalFactoryAssetFiltering:
         
         storage.get_dynamic_params.return_value = {}
         storage.save_signal = Mock(return_value="signal_123")
+        storage.has_open_position = Mock(return_value=False)
+        storage.has_recent_signal = Mock(return_value=False)
+        storage.get_signal_ranking = Mock(return_value={'execution_mode': 'LIVE'})
         
         return storage
     
     @pytest.fixture
     def mock_strategy_engine(self):
-        """Mock strategy engine that generates signals."""
+        """Mock strategy engine that generates signals via execute_from_registry."""
         engine = Mock()
-        
-        async def mock_analyze(symbol, df, regime):
-            # Devolver resultado simple para cualquier símbolo
-            if regime == MarketRegime.TREND:
-                return Mock(signal="BUY", confidence=0.75)
-            return None
-        
-        engine.analyze = AsyncMock(side_effect=mock_analyze)
+        # Use AsyncMock so 'await engine.execute_from_registry(...)' works
+        engine.execute_from_registry = AsyncMock(
+            return_value=Mock(
+                signal="BUY", confidence=0.75,
+                entry_price=1.1000, stop_loss=1.0950,
+                take_profit=1.1100, volume=0.1
+            )
+        )
         return engine
     
     @pytest.fixture
@@ -70,10 +73,6 @@ class TestSignalFactoryAssetFiltering:
             strategy_engines={"TEST_STRATEGY": mock_strategy_engine},
             confluence_analyzer=Mock(enabled=False),
             trifecta_analyzer=Mock(),
-            signal_enricher=Mock(),
-            signal_deduplicator=Mock(is_duplicate=Mock(return_value=False)),
-            signal_conflict_analyzer=Mock(),
-            signal_trifecta_optimizer=Mock(),
             notification_service=Mock(),
             fundamental_guard=Mock()
         )

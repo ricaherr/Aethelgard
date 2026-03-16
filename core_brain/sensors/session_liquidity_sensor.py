@@ -14,21 +14,20 @@ import logging
 from datetime import datetime, timezone
 from typing import Dict, Tuple, Optional, List
 import pandas as pd
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from data_vault.storage import StorageManager
 
 
 class CandleData(BaseModel):
     """Validación de datos de vela OHLC para SessionLiquiditySensor."""
+    model_config = ConfigDict(str_strip_whitespace=True)
+
     open: float = Field(..., gt=0, description="Open price")
     high: float = Field(..., gt=0, description="High price")
     low: float = Field(..., gt=0, description="Low price")
     close: float = Field(..., gt=0, description="Close price")
     volume: Optional[float] = Field(default=None, ge=0, description="Volume (opcional)")
-    
-    class Config:
-        str_strip_whitespace = True
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +144,7 @@ class SessionLiquiditySensor:
             if prev_df.empty:
                 # Si no hay día anterior, usar último día disponible
                 logger.debug(f"[{self.trace_id}] No previous day data, using last available day")
-                prev_df = df.iloc[:-24] if len(df) >= 24 else df
+                prev_df = df.iloc[:-24] if len(df) > 24 else df
             
             if prev_df.empty:
                 return None, None

@@ -11,14 +11,16 @@ from fastapi.testclient import TestClient
 
 @pytest.mark.asyncio
 async def test_synapse_websocket_authentication_required():
-    """Test que /ws/v3/synapse rechaza sin token."""
-    # Este test requeriría un cliente WebSocket real
-    # Por ahora usamos mock para demostrar la estructura
-    from core_brain.api.routers.telemetry import _verify_token
-    
-    # Token inválido retorna None
-    result = _verify_token("invalid_token")
-    assert result is None
+    """Test que /ws/v3/synapse requiere autenticación via get_ws_user dependency."""
+    # Authentication is handled by get_ws_user FastAPI dependency.
+    # Verify the endpoint uses it (not a local _verify_token helper).
+    import inspect
+    from core_brain.api.routers import telemetry as telemetry_module
+    from core_brain.api.dependencies.auth import get_ws_user
+
+    source = inspect.getsource(telemetry_module.websocket_synapse)
+    assert "get_ws_user" in source, "websocket_synapse must use get_ws_user dependency"
+    assert "_verify_token" not in source, "websocket_synapse must NOT call legacy _verify_token"
 
 
 @pytest.mark.asyncio

@@ -333,9 +333,10 @@ class ExecutionService:
                     metadata={"ticket": result.get('ticket')}
                 )
                 
+                _oid = result.get('ticket') or result.get('order_id')
                 return ExecutionResponse(
                     success=True,
-                    order_id=str(result.get('ticket') or result.get('order_id')),
+                    order_id=str(_oid) if _oid is not None else None,
                     real_price=real_price,
                     slippage_pips=final_slippage,
                     latency_ms=latency_ms,

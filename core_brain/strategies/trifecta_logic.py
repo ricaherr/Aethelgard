@@ -162,10 +162,7 @@ class TrifectaAnalyzer:
         if has_momentum:
             score += 15.0      # +15 por Vela Elefante
         if not in_doldrums:
-            score += 15.0      # +15 por buen horario
-        
-        if in_doldrums:
-            score -= 20.0
+            score += 15.0      # +15 por buen horario (doldrums = sin bonus, sin penalización extra)
         
         if trend_class in ["UPTREND_STRONG", "DOWNTREND_STRONG"]:
             score += 15.0

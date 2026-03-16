@@ -222,14 +222,27 @@ class TestTrifectaAnalyzer:
         assert result["valid"] is False
         assert "Extended" in result["reason"] and "Rubber Band" in result["reason"]
 
-    def test_narrow_state_bonus(self, analyzer, bullish_aligned_data):
+    def test_narrow_state_bonus(self, analyzer, bullish_aligned_data, monkeypatch):
         """
         GIVEN: SMA20 y SMA200 comprimidas (<1.5% distancia)
-        WHEN: TrifectaAnalyzer.analyze() se ejecuta
+        WHEN: TrifectaAnalyzer.analyze() se ejecuta (forzando hora no-doldrums)
         THEN: Debe aplicar bonus de +20 puntos (is_narrow=True)
         """
+        # Aislar variable de tiempo: fijar hora fuera de doldrums (09:00 EST)
+        # sin esto el test es no-determinista (falla si se ejecuta entre 11:30-14:00)
+        class MockDatetime:
+            @staticmethod
+            def now():
+                class MockNow:
+                    @staticmethod
+                    def time():
+                        return time(9, 0)  # 09:00 EST - apertura de mercado, fuera de doldrums
+                return MockNow()
+        import core_brain.strategies.trifecta_logic
+        monkeypatch.setattr(core_brain.strategies.trifecta_logic, 'datetime', MockDatetime)
+
         result = analyzer.analyze("EURUSD", bullish_aligned_data)
-        
+
         # Si el estado es "narrow", el score debe ser mayor
         if result["valid"] and result["metadata"].get("is_narrow"):
             # Base 50 + Narrow 20 + otros bonuses

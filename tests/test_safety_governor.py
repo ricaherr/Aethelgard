@@ -54,6 +54,9 @@ def _make_storage(max_r: float = 1.0, risk_per_trade: float = 0.01) -> MagicMock
         "lot_step": 0.01,
         "lot_min": 0.01,
     }
+    # Coherence service: mark as SHADOW bootstrap so veto is skipped in unit tests
+    mock.get_signal_ranking.return_value = {"execution_mode": "SHADOW", "completed_last_50": 0}
+    mock.get_recent_sys_signals.return_value = []
     return mock
 
 
@@ -77,7 +80,12 @@ def _make_risk_manager(storage: MagicMock) -> "RiskManager":
     from core_brain.risk_manager import RiskManager
     from core_brain.position_size_monitor import PositionSizeMonitor
     monitor = PositionSizeMonitor()
-    return RiskManager(storage=storage, initial_capital=10000.0, monitor=monitor)
+    rm = RiskManager(storage=storage, initial_capital=10000.0, monitor=monitor)
+    # Bypass coherence veto: not under test here, tested separately in test_coherence_monitor.py
+    rm._enforcer.coherence_service.detect_drift = MagicMock(return_value={
+        "coherence_score": 1.0, "status": "COHERENT", "veto_new_entries": False, "reason": "test_bypass",
+    })
+    return rm
 
 
 # ─── HU 4.4: Veto by R-Unit ───────────────────────────────────────────────────

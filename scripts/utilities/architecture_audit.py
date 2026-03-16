@@ -21,7 +21,12 @@ class CodeAudit:
     def scan_python_files(self):
         """Scan all Python files in workspace"""
         py_files = list(self.workspace_root.rglob("*.py"))
-        py_files = [f for f in py_files if "venv" not in str(f) and "__pycache__" not in str(f)]
+        py_files = [
+            f for f in py_files
+            if "venv" not in str(f)
+            and "__pycache__" not in str(f)
+            and "tests" not in f.parts  # test helpers are local by design
+        ]
         
         print(f"[DIR] Escaneando {len(py_files)} archivos Python...")
         for py_file in py_files:

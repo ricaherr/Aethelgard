@@ -206,7 +206,7 @@ class RegistryLoader:
             }
             
             self._registry_cache = registry
-            logger.info(f"Registry cargado de BD: {len(usr_strategies)} estrategias")
+            logger.info(f"Registry cargado de BD: {len(sys_strategies)} estrategias")
             return registry
         
         except Exception as e:

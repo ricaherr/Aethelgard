@@ -13,20 +13,19 @@ TRACE_ID: SENSOR-LIQUIDITY-SWEEP-2026
 
 import logging
 from typing import Dict, Tuple, Optional
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from data_vault.storage import StorageManager
 
 
 class CandleData(BaseModel):
     """Validación de datos de vela OHLC para LiquiditySweepDetector."""
+    model_config = ConfigDict(str_strip_whitespace=True)
+
     open: float = Field(..., gt=0, description="Open price")
     high: float = Field(..., gt=0, description="High price")
     low: float = Field(..., gt=0, description="Low price")
     close: float = Field(..., gt=0, description="Close price")
     volume: Optional[float] = Field(default=None, ge=0, description="Volume (opcional)")
-    
-    class Config:
-        str_strip_whitespace = True
 
 logger = logging.getLogger(__name__)
 

@@ -112,7 +112,7 @@ class TestWeightedStrategyRanking:
             'execution_mode': 'LIVE'
         }
         
-        mock_storage.get_usr_performance.return_value = ranking
+        mock_storage.get_signal_ranking.return_value = ranking
         
         # Calculate weighted score for VOLATILE regime
         score = ranker.calculate_weighted_score(strategy_id, current_regime)
@@ -151,7 +151,7 @@ class TestWeightedStrategyRanking:
             'execution_mode': 'LIVE'
         }
         
-        mock_storage.get_usr_performance.return_value = ranking
+        mock_storage.get_signal_ranking.return_value = ranking
         
         # Calculate weighted score for TREND regime
         score_trend = ranker.calculate_weighted_score(strategy_id, 'TREND')
@@ -188,7 +188,7 @@ class TestWeightedStrategyRanking:
             'execution_mode': 'LIVE'
         }
         
-        mock_storage.get_usr_performance.return_value = ranking
+        mock_storage.get_signal_ranking.return_value = ranking
         
         # Get normalized values from ranker
         normalized = ranker._normalize_metrics(ranking)
@@ -217,7 +217,7 @@ class TestWeightedStrategyRanking:
             'execution_mode': 'SHADOW'
         }
         
-        mock_storage.get_usr_performance.return_value = ranking
+        mock_storage.get_signal_ranking.return_value = ranking
         
         # Calculate score
         score = ranker.calculate_weighted_score(strategy_id, 'TREND')
@@ -258,7 +258,7 @@ class TestWeightedStrategyRanking:
             'execution_mode': 'LIVE'
         }
         
-        mock_storage.get_usr_performance.return_value = ranking
+        mock_storage.get_signal_ranking.return_value = ranking
         
         # Score in RANGE regime
         score = ranker.calculate_weighted_score(strategy_id, 'RANGE')
@@ -284,7 +284,7 @@ class TestWeightedStrategyRanking:
             'execution_mode': 'LIVE'
         }
         
-        mock_storage.get_usr_performance.return_value = ranking
+        mock_storage.get_signal_ranking.return_value = ranking
         
         # Calculate scores for each regime
         score_trend = ranker.calculate_weighted_score(strategy_id, 'TREND')
@@ -314,7 +314,7 @@ class TestWeightedStrategyRanking:
             'execution_mode': 'LIVE'
         }
         
-        mock_storage.get_usr_performance.return_value = ranking
+        mock_storage.get_signal_ranking.return_value = ranking
         
         # Calculate score
         score = ranker.calculate_weighted_score(strategy_id, 'VOLATILE')
@@ -342,7 +342,7 @@ class TestWeightedStrategyRanking:
             'execution_mode': 'LIVE'
         }
         
-        mock_storage.get_usr_performance.return_value = ranking
+        mock_storage.get_signal_ranking.return_value = ranking
         
         # Normalize metrics
         normalized = ranker._normalize_metrics(ranking)
@@ -368,7 +368,7 @@ class TestWeightedStrategyRanking:
             'execution_mode': 'LIVE'
         }
         
-        mock_storage.get_usr_performance.return_value = ranking
+        mock_storage.get_signal_ranking.return_value = ranking
         
         # Should not raise exception
         score = ranker.calculate_weighted_score(strategy_id, 'VOLATILE')

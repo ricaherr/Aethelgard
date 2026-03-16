@@ -52,15 +52,11 @@ def test_signal_id():
 
 @pytest.fixture
 def storage(test_db):
-    """Create StorageManager with test DB."""
-    # Use :memory: like the fixture
+    """Create StorageManager backed by the pre-initialized test_db connection."""
     storage_instance = StorageManager(db_path=':memory:')
-    # Manually use our test_db by monkey-patching (for isolation)
-    storage_instance._local.db = test_db
+    # Redirect the persistent connection to the schema-initialised test_db
+    storage_instance._persistent_conn = test_db
     yield storage_instance
-    # Cleanup
-    if hasattr(storage_instance._local, 'db'):
-        delattr(storage_instance._local, 'db')
 
 
 class TestSchemaMigration:
