@@ -44,6 +44,7 @@
 | Shadow WS | Shadow WebSocket Backend Integration | 06/09 | Sprint 4 | [DONE] |
 | N1-1→N1-6 | FOREX Connectivity Stack | 05/08 | Sprint N1 | [DONE] |
 | HU 9.3 | Frontend WebSocket Rendering | 09 | Sprint N2 | [DONE] |
+| HU 4.7 | Economic Calendar Veto Filter | 04 | Sprint N2 | [DONE] |
 | HU 5.3 | The Pulse (Advanced Feedback) | 05 | — | [TODO] |
 | HU 7.1 | Confidence Threshold Adaptive | 07 | — | [TODO] |
 

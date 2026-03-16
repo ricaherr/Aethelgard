@@ -314,8 +314,11 @@
   - **Wiring Glass Box Live**: `MonitorPage` consume `useSynapseTelemetry` mostrando CPU, Memory, Risk Mode, Anomalías en tiempo real vía `/ws/v3/synapse`.
   - ✅ 84/84 vitest PASSED · ✅ 25/25 validate_all.py PASSED
 
-- [TODO] **HU 4.7: Economic Calendar Veto Filter** *(infraestructura lista)*
-  - Implementar `get_trading_status()` usando infraestructura `economic_fetch_persist.py` ya existente.
-  - Integrar veto en flujo pre-ejecución del `MainOrchestrator`.
-  - Prerequisito: ninguno.
+- [DONE] **HU 4.7: Economic Calendar Veto Filter** *(CAUTION reduction completada)*
+  - **Gap implementado**: bloque CAUTION en `run_single_cycle()` — volumen reducido al 50% para señales BUY/SELL en símbolos con evento MEDIUM activo (floor 0.01).
+  - **Comentarios renombrados**: `PHASE 8` → `Step 4a` y `N1-5` → `Step 4b` para consistencia con convención `Step N` del método.
+  - **Scripts actualizados**: `economic_veto_audit.py` contador actualizado de 17 → 20 tests.
+  - **Archivos modificados**: `core_brain/main_orchestrator.py`, `scripts/utilities/economic_veto_audit.py`.
+  - **Archivos de test**: `tests/test_economic_veto_interface.py` (+3 tests: caution reduce 50%, floor 0.01, no-caution sin cambio).
+  - ✅ 20/20 tests PASSED · ✅ 25/25 validate_all.py PASSED
 

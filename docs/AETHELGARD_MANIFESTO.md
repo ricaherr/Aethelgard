@@ -1059,7 +1059,7 @@ async def get_trading_status(
 3. **MEDIUM Impact (5m pre / 3m post)**:
    - `is_tradeable = True` pero `restriction_level = "CAUTION"`
    - MainOrchestrator permite entrada CON VALIDACIÓN EXTRA (Coherence >= 0.80)
-   - Unit R escalado al 50% del normal
+   - Unit R escalado al 50% del normal → **implementado vía `signal.volume * 0.5` en `Step 4a` de `run_single_cycle()`, floor mínimo 0.01**
 
 4. **LOW Impact o Sin Evento**:
    - `is_tradeable = True`

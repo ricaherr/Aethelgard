@@ -22,6 +22,7 @@ from core_brain.economic_integration import EconomicIntegrationManager, DEFAULT_
 from connectors.economic_data_gateway import EconomicDataProviderRegistry
 from core_brain.news_sanitizer import NewsSanitizer
 from data_vault.storage import StorageManager
+from models.signal import Signal, SignalType, ConnectorType
 from conftest import (
     ECON_CACHE_TTL_SECONDS,
     ECON_MAX_LATENCY_MS,
@@ -426,6 +427,59 @@ async def test_reason_formatting_post_event(manager_with_mock_events):
     assert "HIGH" in reason
     assert "5m" in reason or "5 minutes" in reason.lower()
     assert "ago" in reason
+
+
+# ============================================================================
+# Test 8: CAUTION Volume Reduction (Step 4a — MEDIUM impact)
+# ============================================================================
+
+def _make_signal(symbol: str, signal_type: SignalType = SignalType.BUY, volume: float = 0.10) -> Signal:
+    """Helper: create a minimal Signal for testing."""
+    return Signal(
+        symbol=symbol,
+        signal_type=signal_type,
+        confidence=0.8,
+        connector_type=ConnectorType.PAPER,
+        volume=volume,
+    )
+
+
+def _apply_caution_reduction(signals: list, caution_symbols: set) -> list:
+    """Pure helper that mirrors the Step 4a caution logic in run_single_cycle()."""
+    if not caution_symbols:
+        return signals
+    result = list(signals)
+    for i, sig in enumerate(result):
+        if sig.symbol in caution_symbols and sig.signal_type.value in ('BUY', 'SELL'):
+            old_vol = sig.volume
+            new_vol = max(round(old_vol * 0.5, 2), 0.01)
+            result[i] = sig.model_copy(update={"volume": new_vol})
+    return result
+
+
+def test_caution_reduces_signal_volume_to_50pct():
+    """MEDIUM impact (CAUTION): BUY/SELL signal volume should be halved."""
+    sig = _make_signal("EURUSD", SignalType.BUY, volume=0.10)
+    result = _apply_caution_reduction([sig], {"EURUSD"})
+
+    assert len(result) == 1
+    assert result[0].volume == 0.05
+
+
+def test_caution_volume_floor_is_001():
+    """CAUTION volume reduction must not go below 0.01 (minimum lot size)."""
+    sig = _make_signal("EURUSD", SignalType.SELL, volume=0.01)
+    result = _apply_caution_reduction([sig], {"EURUSD"})
+
+    assert result[0].volume == 0.01  # floor: stays at minimum, not 0.005
+
+
+def test_non_caution_signal_volume_unchanged():
+    """Signals whose symbol is NOT in the caution set should keep original volume."""
+    sig = _make_signal("GBPUSD", SignalType.BUY, volume=0.20)
+    result = _apply_caution_reduction([sig], {"EURUSD"})  # GBPUSD not in set
+
+    assert result[0].volume == 0.20
 
 
 if __name__ == "__main__":

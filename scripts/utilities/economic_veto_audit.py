@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-PHASE 8: Economic Veto Interface - Compliance & Quality Audit
+Economic Veto Filter - Compliance & Quality Audit
 
 Validates:
 1. File existence (economic_integration.py, test_economic_veto_interface.py)
@@ -17,7 +17,7 @@ from pathlib import Path
 def main():
     workspace = Path(__file__).parent.parent.parent
     
-    print("PHASE 8: Economic Veto Interface Audit")
+    print("Economic Veto Filter Audit")
     print("=" * 80)
     
     failures = []
@@ -120,7 +120,7 @@ def main():
     # ========================================================================
     # Check 5: Test Execution
     # ========================================================================
-    print("\n[5/5] Test execution (17 tests)...")
+    print("\n[5/5] Test execution (20 tests)...")
     
     # Use the same Python executable that's running this script
     # This ensures we use the correct venv
@@ -141,14 +141,14 @@ def main():
     # Check both stdout for PASSED count and returncode
     passed_count = result.stdout.count(" PASSED")
     
-    if result.returncode == 0 and passed_count == 17:
+    if result.returncode == 0 and passed_count == 20:
         print(f"  [OK] All tests PASSED ({passed_count} tests)")
-    elif passed_count == 17:
-        # Tests passed all 17, but return code might have warnings
+    elif passed_count == 20:
+        # Tests passed all 20, but return code might have warnings
         print(f"  [OK] All tests PASSED ({passed_count} tests)")
     else:
-        failures.append(f"Tests failed: return code {result.returncode}, passed {passed_count}/17")
-        print(f"  [X] Tests FAILED (return code {result.returncode}, passed {passed_count}/17)")
+        failures.append(f"Tests failed: return code {result.returncode}, passed {passed_count}/20")
+        print(f"  [X] Tests FAILED (return code {result.returncode}, passed {passed_count}/20)")
         if "FAILED" in result.stdout:
             failed_tests = [line for line in result.stdout.split('\n') if "FAILED" in line]
             for test in failed_tests[:3]:
@@ -166,7 +166,7 @@ def main():
             print(f"  [X] {failure}")
         return 1
     else:
-        print("RESULT: PASSED - PHASE 8 Compliant")
+        print("RESULT: PASSED - Economic Veto Filter Compliant")
         return 0
 
 if __name__ == "__main__":

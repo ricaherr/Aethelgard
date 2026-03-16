@@ -1894,7 +1894,7 @@ class MainOrchestrator:
                 return
             
             # ════════════════════════════════════════════════════════════════════════════════════
-            # PHASE 8: Filter usr_signals vetoed by economic calendar
+            # Step 4a: Economic calendar veto filter (news-based lockdown, symbol-level)
             # ════════════════════════════════════════════════════════════════════════════════════
             
             # Remove usr_signals for symbols under economic veto
@@ -1943,13 +1943,26 @@ class MainOrchestrator:
                     filtered_usr_signals.append(signal)
             
             validated_usr_signals = filtered_usr_signals
-            
+
+            # Apply 50% volume reduction for CAUTION symbols (MEDIUM impact event active)
+            econ_caution_symbols = getattr(self, '_econ_caution_symbols', set())
+            if econ_caution_symbols:
+                for i, sig in enumerate(validated_usr_signals):
+                    if sig.symbol in econ_caution_symbols and sig.signal_type.value in ('BUY', 'SELL'):
+                        old_vol = sig.volume
+                        new_vol = max(round(old_vol * 0.5, 2), 0.01)
+                        validated_usr_signals[i] = sig.model_copy(update={"volume": new_vol})
+                        logger.info(
+                            f"[ECON-CAUTION] {sig.symbol} volume {old_vol}\u2192{new_vol} "
+                            f"(MEDIUM impact event active)"
+                        )
+
             if not validated_usr_signals:
                 logger.info("All usr_signals filtered by economic veto")
                 self.stats.cycles_completed += 1
                 return
 
-            # N1-5: StrategyGatekeeper — pre-execution asset efficiency filter
+            # Step 4b: StrategyGatekeeper — pre-execution asset efficiency filter
             # Veto signals whose asset affinity score is below the strategy threshold.
             # < 1ms per check (in-memory only). Gatekeeper is optional (backward compatible).
             if self.strategy_gatekeeper is not None:

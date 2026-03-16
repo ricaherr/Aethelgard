@@ -199,7 +199,7 @@ async def main():
     
     # SPECIALIZED DOMAINS
     specialized = [
-        run_audit_module("PHASE 8: Economic Veto", ["python", "scripts/utilities/economic_veto_audit.py"], workspace),
+        run_audit_module("Economic Veto Filter", ["python", "scripts/utilities/economic_veto_audit.py"], workspace),
         run_audit_module("FASE 5: Tenant-Aware", ["python", "-m", "pytest", "tests/test_fase5_tenant_aware_orchestrator.py", "tests/test_fase5_mixin_tenant_aware.py", "-v"], workspace),
         run_audit_module("Tenant Security", ["python", "-m", "pytest", "tests/test_tenant_isolation_edge_history.py", "-q"], workspace),
         run_audit_module("Seeds Tests", ["python", "-m", "pytest", "tests/test_seed_demo_data.py", "-q"], workspace),
