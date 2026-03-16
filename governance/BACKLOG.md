@@ -70,8 +70,8 @@
 ### Nivel 2 — Inteligencia (📋 BACKLOG)
 * **N2-1: JSON_SCHEMA Interpreter** `[TODO]`
     * Implementar rama `JSON_SCHEMA` en `StrategyEngineFactory`. Permite que el Bucle de Generación (Canvas Punto 4.3) cree estrategias sin código Python. Archivos: `core_brain/services/strategy_engine_factory.py`. Impacto: MEDIO-6.
-* **N2-2: WebSocket Auth Standardization** `[TODO]`
-    * Estandarizar `telemetry.py`, `shadow_ws.py`, `strategy_ws.py` para usar `Depends(get_current_active_user)` en lugar de `_verify_token()` manual. Impacto: ALTO-6.
+* **N2-2: WebSocket Auth Standardization** `[DONE]`
+    * Estandarizar `telemetry.py`, `shadow_ws.py`, `strategy_ws.py` para usar `Depends(get_ws_user)` en lugar de `_verify_token()` manual y fallback demo. Impacto: ALTO-6.
 
 ---
 

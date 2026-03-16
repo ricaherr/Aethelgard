@@ -36,6 +36,7 @@ Sistema autónomo, proactivo y agnóstico de trading multihilo. Capacidad de aut
 16. **Scripts Mínimos y Útiles**: NO crear scripts de validación/debugging redundantes. Mantener solo los scripts que agregan valor real al usuario final (setup, diagnóstico end-to-end, tests de flujo completo).
 17. **Validaciones Completas Obligatorias**: Después de TODA implementación, tests y validación, comprobar que el sistema funciona sin errores (ejecutar validate_all.py + start.py) antes de dar por terminada la tarea
 18. **Scripts Mínimos y Útiles**: NO crear scripts de validación/debugging redundantes. Mantener solo los scripts que agregan valor real al usuario final (setup, diagnóstico end-to-end, tests de flujo completo).
+19. **Spec Técnico Obligatorio (ETI)**: Antes de escribir UNA SOLA línea de código en cualquier HU o tarea, generar un Spec Técnico con 8 partes y esperar aprobación explícita. Ver `.ai_orchestration_protocol.md` Sección 5 para formato completo. **Partes obligatorias**: (1) Problema · (2) Análisis Técnico/Decisiones de Diseño · (3) Solución · (4) Cambios por Archivo · (5) Criterios de Aceptación · (6) Tests TDD · (7) Riesgos · (8) Orden de Ejecución. **Sin spec aprobado = sin código**.
 
 ## � Reglas de Desarrollo de Código (Resumen - Ver MANIFESTO Completo)
 

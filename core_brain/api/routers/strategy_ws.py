@@ -12,12 +12,13 @@ import asyncio
 import json
 from typing import Dict, Any, Set, Optional
 from datetime import datetime
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from data_vault.storage import StorageManager
 from data_vault.tenant_factory import TenantDBFactory
 from core_brain.services.strategy_monitor_service import StrategyMonitorService
-from core_brain.services.auth_service import AuthService
 from core_brain.circuit_breaker import CircuitBreaker
+from core_brain.api.dependencies.auth import get_ws_user
+from models.auth import TokenPayload
 
 logger = logging.getLogger(__name__)
 
@@ -26,28 +27,6 @@ router = APIRouter(tags=["Strategy Monitoring"])
 # Active WebSocket connections per tenant (RULE T1: isolated)
 active_connections: Dict[str, Set[WebSocket]] = {}
 strategy_monitor_services: Dict[str, StrategyMonitorService] = {}
-
-
-def _verify_token(token: str) -> Optional[Dict[str, Any]]:
-    """
-    Verify JWT token and extract tenant_id.
-    
-    Returns:
-        Dict with 'tid' (tenant_id) or None if invalid
-    """
-    try:
-        auth_service = AuthService()
-        token_data = auth_service.decode_token(token)
-        if token_data:
-            return {
-                'tid': token_data.tid,
-                'sub': token_data.sub,
-                'exp': token_data.exp
-            }
-    except Exception as exc:
-        logger.warning(f"[STRATEGY_WS] Token validation error: {exc}")
-    
-    return None
 
 
 def _get_or_create_monitor_service(tenant_id: str) -> StrategyMonitorService:
@@ -73,46 +52,32 @@ def _get_or_create_monitor_service(tenant_id: str) -> StrategyMonitorService:
 @router.websocket("/ws/strategy/monitor")
 async def websocket_strategy_monitor(
     websocket: WebSocket,
-    token: str = Query(...)
+    token_data: TokenPayload = Depends(get_ws_user),
 ) -> None:
     """
     WebSocket endpoint for real-time strategy monitoring.
-    
+
+    Authentication: via get_ws_user dependency (cookie → header → query param).
     Protocol:
-    1. Client sends token via query parameter
-    2. Server validates and authenticates
+    1. Client connects (browser auto-sends HttpOnly cookie)
+    2. Server validates token via get_ws_user — rejects with 1008 if invalid
     3. Server sends initial metrics
     4. Client receives metrics every 5 seconds
     5. Server broadcasts on status changes
-    
+
     Message Format:
     {
         "type": "metrics" | "status_changed" | "error",
         "data": {...},
         "timestamp": "2026-03-05T22:00:00Z"
     }
-    
+
     RULE T1: Tenant isolation enforced
     RULE 4.3: All operations try/except protected
     """
-    
-    # RULE T1: Validate authentication and extract tenant_id
-    token_data = _verify_token(token)
-    
-    if not token_data:
-        await websocket.close(code=1008, reason="Authentication failed")
-        logger.warning(f"[STRATEGY_WS] Connection rejected: invalid token")
-        return
-    
-    tenant_id = token_data.get('tid')
-    if not tenant_id:
-        await websocket.close(code=1008, reason="No tenant_id in token")
-        logger.warning(f"[STRATEGY_WS] Connection rejected: missing tenant_id")
-        return
-    
+    tenant_id = token_data.sub
     logger.debug(f"[STRATEGY_WS] Authenticated tenant: {tenant_id}")
-    
-    # Accept connection
+
     try:
         await websocket.accept()
         logger.info(f"[STRATEGY_WS] Client connected for tenant {tenant_id}")
