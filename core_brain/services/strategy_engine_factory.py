@@ -19,6 +19,7 @@ PRINCIPIOS:
 5. Trazable: Logging exhaustivo de cada paso
 """
 
+import json
 import logging
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
@@ -411,7 +412,21 @@ class StrategyEngineFactory:
                 indicator_provider=indicator_provider,
                 storage=self.storage
             )
-            
+
+            # Pre-load spec into engine cache — avoids DB round-trip per cycle (N2-1)
+            logic_data = strategy_spec.get("logic")
+            if logic_data:
+                if isinstance(logic_data, str):
+                    try:
+                        logic_data = json.loads(logic_data)
+                    except Exception:
+                        logic_data = None
+                if isinstance(logic_data, dict):
+                    schema = dict(logic_data)
+                    schema.setdefault("strategy_id", strategy_id)
+                    instance._schema_cache[strategy_id] = schema
+                    logger.debug(f"[FACTORY] ✓ {strategy_id}: schema pre-loaded into engine cache")
+
             logger.debug(f"[FACTORY] ✓ {strategy_id}: UniversalStrategyEngine creado")
             return instance
             

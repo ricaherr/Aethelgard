@@ -314,6 +314,18 @@
   - **Wiring Glass Box Live**: `MonitorPage` consume `useSynapseTelemetry` mostrando CPU, Memory, Risk Mode, Anomalías en tiempo real vía `/ws/v3/synapse`.
   - ✅ 84/84 vitest PASSED · ✅ 25/25 validate_all.py PASSED
 
+- [DONE] **N2-1: JSON_SCHEMA Interpreter** *(23-Mar-2026)*
+  - **Root causes corregidos (4)**:
+    - F1: `sys_strategies` sin columnas `type`/`logic` → migración `ALTER TABLE` idempotente en `schema.py`.
+    - F2: `_instantiate_json_schema_strategy()` descartaba el spec → pre-carga en `engine._schema_cache` desde el factory.
+    - F3: `_calculate_indicators()` leía de `self._schema_cache` roto (siempre `{}`) → ahora recibe `strategy_schema` como parámetro.
+    - F4: `eval()` con `__builtins__: {}` (OWASP A03 injection) → reemplazado por `SafeConditionEvaluator`.
+  - **`SafeConditionEvaluator`**: clase nueva en `universal_strategy_engine.py`. Evalúa condiciones `"RSI < 30"`, `"RSI < 30 and MACD > 0"`, `"RSI > 70 or MACD > 0"`. Operadores: `<`, `>`, `<=`, `>=`, `==`, `!=`. Fail-safe: cualquier indicador desconocido o formato inválido → `False`. Sin `eval()`/`exec()`.
+  - **Archivos modificados**: `data_vault/schema.py`, `data_vault/strategies_db.py`, `core_brain/universal_strategy_engine.py`, `core_brain/services/strategy_engine_factory.py`.
+  - **Tests creados**: `tests/test_json_schema_interpreter.py` (25 tests: SafeConditionEvaluator ×14, DB migration ×4, execute_from_registry ×4, _calculate_indicators ×2, factory ×1).
+  - ✅ 25/25 tests PASSED · ✅ 25/25 validate_all.py PASSED
+  - Trace_ID: N2-1-JSON-SCHEMA-INTERPRETER-2026
+
 - [DONE] **HU 4.7: Economic Calendar Veto Filter** *(CAUTION reduction completada)*
   - **Gap implementado**: bloque CAUTION en `run_single_cycle()` — volumen reducido al 50% para señales BUY/SELL en símbolos con evento MEDIUM activo (floor 0.01).
   - **Comentarios renombrados**: `PHASE 8` → `Step 4a` y `N1-5` → `Step 4b` para consistencia con convención `Step N` del método.

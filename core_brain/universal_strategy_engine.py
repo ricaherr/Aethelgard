@@ -30,6 +30,88 @@ from enum import Enum
 logger = logging.getLogger(__name__)
 
 
+class SafeConditionEvaluator:
+    """
+    Evaluates strategy conditions without eval().
+    OWASP A03 compliant: no arbitrary code execution.
+
+    Supported format: "<indicator> <operator> <value>" [and|or ...]
+    Supported operators: <, >, <=, >=, ==, !=
+    Fail-safe: any unknown indicator or malformed input -> False
+    """
+
+    _OPERATOR_MAP = {
+        "<=": lambda a, b: a <= b,
+        ">=": lambda a, b: a >= b,
+        "!=": lambda a, b: a != b,
+        "<":  lambda a, b: a < b,
+        ">": lambda a, b: a > b,
+        "==": lambda a, b: a == b,
+    }
+
+    @classmethod
+    def evaluate(cls, condition: str, indicators: Dict[str, Any]) -> bool:
+        """
+        Safely evaluates a condition string against indicator values.
+
+        Args:
+            condition: e.g. "RSI < 30" or "RSI < 30 and MACD > 0"
+            indicators: dict of calculated indicator values
+
+        Returns:
+            bool: result of condition, False on any error (fail-safe)
+        """
+        if not condition or not isinstance(condition, str):
+            return False
+        try:
+            condition = condition.strip()
+            lower = condition.lower()
+
+            if " and " in lower:
+                idx = lower.find(" and ")
+                left = condition[:idx].strip()
+                right = condition[idx + 5:].strip()
+                return (
+                    cls._evaluate_single(left, indicators)
+                    and cls._evaluate_single(right, indicators)
+                )
+
+            if " or " in lower:
+                idx = lower.find(" or ")
+                left = condition[:idx].strip()
+                right = condition[idx + 4:].strip()
+                return (
+                    cls._evaluate_single(left, indicators)
+                    or cls._evaluate_single(right, indicators)
+                )
+
+            return cls._evaluate_single(condition, indicators)
+        except Exception:
+            return False  # Fail-safe: never raise
+
+    @classmethod
+    def _evaluate_single(cls, condition: str, indicators: Dict[str, Any]) -> bool:
+        """Evaluates a single atom: '<indicator> <op> <value>'. Operators checked longest-first."""
+        for op_str in ["<=", ">=", "!=", "<", ">", "=="]:
+            if op_str in condition:
+                parts = condition.split(op_str, 1)
+                if len(parts) != 2:
+                    return False
+                left = parts[0].strip()
+                right = parts[1].strip()
+                if left not in indicators:
+                    return False
+                try:
+                    right_val = float(right)
+                except ValueError:
+                    return False
+                left_val = indicators[left]
+                if left_val is None:
+                    return False
+                return cls._OPERATOR_MAP[op_str](float(left_val), right_val)
+        return False
+
+
 class ExecutionMode(Enum):
     """Strategy execution result codes."""
     SIGNAL_GENERATED = "signal_generated"
@@ -389,7 +471,7 @@ class UniversalStrategyEngine:
             strategy_id = strategy_schema["strategy_id"]
             
             # Calculate all required indicators
-            indicator_results = await self._calculate_indicators(data_frame)
+            indicator_results = await self._calculate_indicators(data_frame, strategy_schema)
             
             # Evaluate entry logic
             entry_signal = await self._evaluate_logic(
@@ -438,56 +520,75 @@ class UniversalStrategyEngine:
     def _get_or_load_schema(self, strategy_metadata: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
         Obtiene schema desde cache o lo carga dinámicamente.
-        
-        Soporta:
-        - type="JSON_SCHEMA": Carga desde schema_file
-        - type="PYTHON_CLASS": Para soporte futuro (por ahora, retorna None)
+
+        Prioridad para JSON_SCHEMA:
+          1. logic inline desde BD (SSOT, N2-1)
+          2. schema_file en disco (solo seed/fallback)
+        - type="PYTHON_CLASS": retorna None
         """
-        strategy_id = strategy_metadata.get("strategy_id")
-        
-        # Check cache
-        if strategy_id in self._schema_cache:
+        strategy_id = strategy_metadata.get("strategy_id") or strategy_metadata.get("class_id")
+
+        # Check cache first
+        if strategy_id and strategy_id in self._schema_cache:
             return self._schema_cache[strategy_id]
-        
+
         strategy_type = strategy_metadata.get("type")
         schema = None
-        
+
         if strategy_type == "JSON_SCHEMA":
-            schema_file = strategy_metadata.get("schema_file")
-            if schema_file:
-                try:
-                    with open(schema_file, "r") as f:
-                        schema = json.load(f)
-                    logger.debug(f"Schema cargado: {schema_file}")
-                except Exception as e:
-                    logger.error(f"Fallo al cargar schema {schema_file}: {e}")
-                    return None
-        
+            # Priority 1: inline logic from DB (SSOT)
+            logic_data = strategy_metadata.get("logic")
+            if logic_data:
+                if isinstance(logic_data, str):
+                    try:
+                        logic_data = json.loads(logic_data)
+                    except Exception:
+                        logic_data = None
+                if isinstance(logic_data, dict):
+                    schema = dict(logic_data)
+                    if strategy_id:
+                        schema.setdefault("strategy_id", strategy_id)
+
+            # Priority 2: schema_file fallback (seed/migration only)
+            if not schema:
+                schema_file = strategy_metadata.get("schema_file")
+                if schema_file:
+                    try:
+                        with open(schema_file, "r") as f:
+                            schema = json.load(f)
+                        logger.debug(f"Schema cargado desde archivo: {schema_file}")
+                    except Exception as e:
+                        logger.error(f"Fallo al cargar schema {schema_file}: {e}")
+                        return None
+
         elif strategy_type == "PYTHON_CLASS":
-            # TODO: Futuro - cargar lógica Python dinámicamente
-            # Por ahora: returna None (estrategia requiere implementación Python)
             logger.warning(f"Estrategia {strategy_id} requiere implementación Python (no soportado aún)")
             return None
-        
-        if schema:
+
+        if schema and strategy_id:
             self._schema_cache[strategy_id] = schema
-        
+
         return schema
     
-    async def _calculate_indicators(self, data_frame: Any) -> Dict[str, Any]:
+    async def _calculate_indicators(
+        self,
+        data_frame: Any,
+        strategy_schema: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """
         Calculate all indicators required by strategy.
-        
+
         Args:
             data_frame: Input market data
-            
+            strategy_schema: Strategy schema dict (contains indicators section)
+
         Returns:
             Dictionary mapping indicator names to calculated values
-            
+
         Raises:
             ValueError: If indicator calculation fails
         """
-        indicators = getattr(self, "_schema_cache", {}).get("indicators", {})
+        indicators = (strategy_schema or {}).get("indicators", {})
         results = {}
         
         for ind_name, ind_config in indicators.items():
@@ -538,23 +639,17 @@ class UniversalStrategyEngine:
             return None
         
         try:
-            # SAFETY: Create safe evaluation namespace
-            safe_namespace = {
-                "__builtins__": {},
-                **{ind: val for ind, val in indicators.items()}
-            }
-            
-            # Evaluate condition
-            result = eval(condition, safe_namespace)
-            
+            # OWASP A03 compliant: no eval(), use SafeConditionEvaluator
+            result = SafeConditionEvaluator.evaluate(condition, indicators)
+
             if result:
                 return {
                     "direction": logic.get("direction"),
-                    "confidence": logic.get("confidence", 0.5)
+                    "confidence": logic.get("confidence", 0.5),
                 }
-            
+
             return None
-        
+
         except Exception as e:
             raise ValueError(f"Logic evaluation failed: {str(e)}")
     

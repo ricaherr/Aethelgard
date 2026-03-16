@@ -94,6 +94,23 @@ async def analyze(
     """Interpreta schema → genera señal validando 4 pilares."""
 ```
 
+**N2-1 — JSON_SCHEMA Interpreter (2026-03-23)**
+
+Correcciones aplicadas al path JSON_SCHEMA:
+
+| Fix | Componente | Detalle |
+|---|---|---|
+| F1 | `data_vault/schema.py` | Migration `ALTER TABLE sys_strategies ADD COLUMN type/logic` — idempotente |
+| F2 | `strategy_engine_factory.py` | `_instantiate_json_schema_strategy()` pre-carga spec en `engine._schema_cache` |
+| F3 | `universal_strategy_engine.py` | `_calculate_indicators(df, strategy_schema)` — recibe schema como parámetro |
+| F4 | `universal_strategy_engine.py` | `eval()` eliminado → `SafeConditionEvaluator` (OWASP A03 compliant) |
+
+**`SafeConditionEvaluator`** (nueva clase en `universal_strategy_engine.py`):
+- Evalúa condiciones tipo `"RSI < 30"`, `"RSI < 30 and MACD > 0"`, `"RSI > 70 or MACD > 0"`
+- Operadores: `<`, `>`, `<=`, `>=`, `==`, `!=` (verificados longest-first para evitar `<=` matcheando `<`)
+- Fail-safe: cualquier indicador desconocido, valor `None`, o formato inválido → `False` (nunca lanza excepción)
+- Sin `eval()`/`exec()`/`import` — cumple OWASP A03 Injection prevention
+
 ---
 
 ### 2.2 StrategySignalValidator - Los 4 Pilares (core_brain/strategy_validator_quanter.py)

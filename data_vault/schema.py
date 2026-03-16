@@ -972,6 +972,13 @@ def run_migrations(conn: sqlite3.Connection) -> None:
     if "readiness_notes" not in strat_cols:
         cursor.execute("ALTER TABLE sys_strategies ADD COLUMN readiness_notes TEXT DEFAULT NULL")
         logger.info("Migration applied: sys_strategies.readiness_notes added.")
+    # N2-1: JSON_SCHEMA Interpreter — strategy type + inline logic (SSOT: no schema_file at runtime)
+    if "type" not in strat_cols:
+        cursor.execute("ALTER TABLE sys_strategies ADD COLUMN type TEXT DEFAULT 'PYTHON_CLASS'")
+        logger.info("Migration applied: sys_strategies.type added.")
+    if "logic" not in strat_cols:
+        cursor.execute("ALTER TABLE sys_strategies ADD COLUMN logic TEXT DEFAULT NULL")
+        logger.info("Migration applied: sys_strategies.logic added.")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_strategies_readiness ON sys_strategies (readiness)")
 
     # instruments_config: seed only when key is absent (never overwrite existing data)

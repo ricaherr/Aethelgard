@@ -33,7 +33,9 @@ class StrategiesMixin(BaseRepository):
         version: str = "1.0",
         affinity_scores: Optional[Dict[str, float]] = None,
         market_whitelist: Optional[List[str]] = None,
-        description: Optional[str] = None
+        description: Optional[str] = None,
+        type: str = "PYTHON_CLASS",
+        logic: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """
         Create a new strategy record in the database.
@@ -55,19 +57,22 @@ class StrategiesMixin(BaseRepository):
             
             affinity_json = json.dumps(affinity_scores or {})
             whitelist_json = json.dumps(market_whitelist or [])
-            
+            logic_json = json.dumps(logic) if logic is not None else None
+
             cursor.execute("""
                 INSERT INTO sys_strategies (
                     class_id, mnemonic, version, affinity_scores,
-                    market_whitelist, description
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    market_whitelist, description, type, logic
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 class_id,
                 mnemonic,
                 version,
                 affinity_json,
                 whitelist_json,
-                description
+                description,
+                type,
+                logic_json,
             ))
             conn.commit()
             logger.info(f"Strategy created: {class_id} ({mnemonic})")
@@ -109,6 +114,12 @@ class StrategiesMixin(BaseRepository):
             # Parse JSON fields
             result['affinity_scores'] = json.loads(result.get('affinity_scores', '{}'))
             result['market_whitelist'] = json.loads(result.get('market_whitelist', '[]'))
+            raw_logic = result.get('logic')
+            if raw_logic and isinstance(raw_logic, str):
+                try:
+                    result['logic'] = json.loads(raw_logic)
+                except (json.JSONDecodeError, ValueError):
+                    result['logic'] = None
             return result
         except sqlite3.OperationalError as e:
             logger.error(f"[STRATEGIES] ✗ Error reading strategy {class_id} from global DB: {e}")
@@ -141,6 +152,12 @@ class StrategiesMixin(BaseRepository):
                 result = dict(row)
                 result['affinity_scores'] = json.loads(result.get('affinity_scores', '{}'))
                 result['market_whitelist'] = json.loads(result.get('market_whitelist', '[]'))
+                raw_logic = result.get('logic')
+                if raw_logic and isinstance(raw_logic, str):
+                    try:
+                        result['logic'] = json.loads(raw_logic)
+                    except (json.JSONDecodeError, ValueError):
+                        result['logic'] = None
                 results.append(result)
             return results
         except sqlite3.OperationalError as e:
