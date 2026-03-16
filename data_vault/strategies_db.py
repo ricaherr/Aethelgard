@@ -34,7 +34,7 @@ class StrategiesMixin(BaseRepository):
         affinity_scores: Optional[Dict[str, float]] = None,
         market_whitelist: Optional[List[str]] = None,
         description: Optional[str] = None,
-        type: str = "PYTHON_CLASS",
+        strategy_type: str = "PYTHON_CLASS",
         logic: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """
@@ -47,6 +47,8 @@ class StrategiesMixin(BaseRepository):
             affinity_scores: Dict mapping assets to efficiency scores (0-1)
             market_whitelist: List of allowed assets for this strategy
             description: Optional description
+            strategy_type: Execution type ('PYTHON_CLASS' | 'JSON_SCHEMA')
+            logic: Inline JSON logic for JSON_SCHEMA strategies (SSOT, N2-1)
             
         Returns:
             True if successful, raises exception on conflict
@@ -71,7 +73,7 @@ class StrategiesMixin(BaseRepository):
                 affinity_json,
                 whitelist_json,
                 description,
-                type,
+                strategy_type,
                 logic_json,
             ))
             conn.commit()

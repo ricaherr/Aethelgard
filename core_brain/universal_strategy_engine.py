@@ -21,8 +21,10 @@ Cambios vs v2:
 4. Zero JSON en runtime
 """
 import asyncio
+import inspect
 import json
 import logging
+import re
 from typing import Dict, Any, Optional, Callable, List
 from dataclasses import dataclass
 from enum import Enum
@@ -40,7 +42,7 @@ class SafeConditionEvaluator:
     Fail-safe: any unknown indicator or malformed input -> False
     """
 
-    _OPERATOR_MAP = {
+    _OPERATOR_MAP: Dict[str, Callable[[float, float], bool]] = {
         "<=": lambda a, b: a <= b,
         ">=": lambda a, b: a >= b,
         "!=": lambda a, b: a != b,
@@ -48,6 +50,10 @@ class SafeConditionEvaluator:
         ">": lambda a, b: a > b,
         "==": lambda a, b: a == b,
     }
+
+    # Compiled patterns for case-insensitive N-ary and/or splitting
+    _RE_AND: re.Pattern[str] = re.compile(r" and ", re.IGNORECASE)
+    _RE_OR: re.Pattern[str] = re.compile(r" or ", re.IGNORECASE)
 
     @classmethod
     def evaluate(cls, condition: str, indicators: Dict[str, Any]) -> bool:
@@ -67,22 +73,17 @@ class SafeConditionEvaluator:
             condition = condition.strip()
             lower = condition.lower()
 
+            # N-ary AND/OR support: split on all occurrences, not just the first
             if " and " in lower:
-                idx = lower.find(" and ")
-                left = condition[:idx].strip()
-                right = condition[idx + 5:].strip()
-                return (
-                    cls._evaluate_single(left, indicators)
-                    and cls._evaluate_single(right, indicators)
+                return all(
+                    cls._evaluate_single(part.strip(), indicators)
+                    for part in cls._RE_AND.split(condition)
                 )
 
             if " or " in lower:
-                idx = lower.find(" or ")
-                left = condition[:idx].strip()
-                right = condition[idx + 4:].strip()
-                return (
-                    cls._evaluate_single(left, indicators)
-                    or cls._evaluate_single(right, indicators)
+                return any(
+                    cls._evaluate_single(part.strip(), indicators)
+                    for part in cls._RE_OR.split(condition)
                 )
 
             return cls._evaluate_single(condition, indicators)
@@ -600,7 +601,7 @@ class UniversalStrategyEngine:
                 calc_params = {k: v for k, v in ind_config.items() if k != "type"}
                 
                 # Execute indicator calculation
-                if asyncio.iscoroutinefunction(func):
+                if inspect.iscoroutinefunction(func):
                     value = await func(data_frame, **calc_params)
                 else:
                     value = func(data_frame, **calc_params)
