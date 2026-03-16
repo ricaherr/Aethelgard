@@ -16,7 +16,7 @@ class TestTrifectaAnalyzer:
     @pytest.fixture
     def analyzer(self):
         """Import here para que falle claramente si el módulo no existe"""
-        from core_brain.usr_strategies.trifecta_logic import TrifectaAnalyzer
+        from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
         return TrifectaAnalyzer()
 
     @pytest.fixture
@@ -327,7 +327,7 @@ class TestTrifectaTimeOfDay:
 
     @pytest.fixture
     def analyzer(self):
-        from core_brain.usr_strategies.trifecta_logic import TrifectaAnalyzer
+        from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
         return TrifectaAnalyzer()
 
     def test_doldrums_penalty(self, analyzer, monkeypatch):
@@ -346,8 +346,8 @@ class TestTrifectaTimeOfDay:
                         return time(12, 30)  # 12:30 PM (doldrums)
                 return MockNow()
         
-        import core_brain.usr_strategies.trifecta_logic
-        monkeypatch.setattr(core_brain.usr_strategies.trifecta_logic, 'datetime', MockDatetime)
+        import core_brain.strategies.trifecta_logic
+        monkeypatch.setattr(core_brain.strategies.trifecta_logic, 'datetime', MockDatetime)
         
         # Datos bullish alineados
         dates = pd.date_range(start='2024-01-01', periods=250, freq='1min')
@@ -375,7 +375,7 @@ class TestTrifectaTrapZone:
 
     @pytest.fixture
     def analyzer(self):
-        from core_brain.usr_strategies.trifecta_logic import TrifectaAnalyzer
+        from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
         return TrifectaAnalyzer(auto_enable_tfs=False)
 
     def test_trap_zone_bullish_rejected(self, analyzer):

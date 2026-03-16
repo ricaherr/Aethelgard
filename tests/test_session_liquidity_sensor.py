@@ -29,10 +29,10 @@ class TestSessionLiquiditySensorInitialization:
         THEN: Debe inicializar correctamente con trace_id y tenant_id
         """
         mock_storage = MagicMock()
-        sensor = SessionLiquiditySensor(storage=mock_storage, tenant_id="TEST_TENANT", trace_id="TEST-001")
+        sensor = SessionLiquiditySensor(storage=mock_storage, user_id="TEST_TENANT", trace_id="TEST-001")
         
         assert sensor.storage_manager == mock_storage
-        assert sensor.tenant_id == "TEST_TENANT"
+        assert sensor.user_id == "TEST_TENANT"
         assert sensor.trace_id == "TEST-001"
         assert sensor.london_session_start == 8  # 08:00 GMT
         assert sensor.london_session_end == 17   # 17:00 GMT
@@ -57,7 +57,7 @@ class TestSessionLiquiditySensorSessionHighLow:
         }, index=times)
         
         mock_storage = MagicMock()
-        sensor = SessionLiquiditySensor(storage=mock_storage, tenant_id="TEST_TENANT", trace_id="TEST-002")
+        sensor = SessionLiquiditySensor(storage=mock_storage, user_id="TEST_TENANT", trace_id="TEST-002")
         
         session_high, session_low = sensor.get_london_session_high_low(df)
         
@@ -74,7 +74,7 @@ class TestSessionLiquiditySensorSessionHighLow:
         """
         df = pd.DataFrame({'high': [], 'low': []})
         mock_storage = MagicMock()
-        sensor = SessionLiquiditySensor(storage=mock_storage, tenant_id="TEST_TENANT")
+        sensor = SessionLiquiditySensor(storage=mock_storage, user_id="TEST_TENANT")
         
         session_high, session_low = sensor.get_london_session_high_low(df)
         
@@ -94,7 +94,7 @@ class TestSessionLiquiditySensorSessionHighLow:
         }, index=times)
         
         mock_storage = MagicMock()
-        sensor = SessionLiquiditySensor(storage=mock_storage, tenant_id="TEST_TENANT")
+        sensor = SessionLiquiditySensor(storage=mock_storage, user_id="TEST_TENANT")
         
         session_high, session_low = sensor.get_london_session_high_low(df)
         
@@ -125,7 +125,7 @@ class TestSessionLiquiditySensorPreviousDayHighLow:
         }, index=times)
         
         mock_storage = MagicMock()
-        sensor = SessionLiquiditySensor(storage=mock_storage, tenant_id="TEST_TENANT")
+        sensor = SessionLiquiditySensor(storage=mock_storage, user_id="TEST_TENANT")
         
         # Get previous day high/low con current_date = 2 de Marzo
         prev_high, prev_low = sensor.get_previous_day_high_low(df, current_date=datetime(2026, 3, 2, tzinfo=timezone.utc))
@@ -147,7 +147,7 @@ class TestSessionLiquiditySensorPreviousDayHighLow:
         }, index=times)
         
         mock_storage = MagicMock()
-        sensor = SessionLiquiditySensor(storage=mock_storage, tenant_id="TEST_TENANT")
+        sensor = SessionLiquiditySensor(storage=mock_storage, user_id="TEST_TENANT")
         
         prev_high, prev_low = sensor.get_previous_day_high_low(df)
         
@@ -167,7 +167,7 @@ class TestSessionLiquiditySensorBreakoutDetection:
         THEN: Debe retornar (True, 'BULLISH', 0.0005)
         """
         mock_storage = MagicMock()
-        sensor = SessionLiquiditySensor(storage=mock_storage, tenant_id="TEST_TENANT")
+        sensor = SessionLiquiditySensor(storage=mock_storage, user_id="TEST_TENANT")
         
         is_breakout, direction, distance = sensor.detect_breakout(
             current_price=1.0955,
@@ -186,7 +186,7 @@ class TestSessionLiquiditySensorBreakoutDetection:
         THEN: Debe retornar (True, 'BEARISH', 0.0005)
         """
         mock_storage = MagicMock()
-        sensor = SessionLiquiditySensor(storage=mock_storage, tenant_id="TEST_TENANT")
+        sensor = SessionLiquiditySensor(storage=mock_storage, user_id="TEST_TENANT")
         
         is_breakout, direction, distance = sensor.detect_breakout(
             current_price=1.0835,
@@ -205,7 +205,7 @@ class TestSessionLiquiditySensorBreakoutDetection:
         THEN: Debe retornar (False, None, distance_pequeña)
         """
         mock_storage = MagicMock()
-        sensor = SessionLiquiditySensor(storage=mock_storage, tenant_id="TEST_TENANT")
+        sensor = SessionLiquiditySensor(storage=mock_storage, user_id="TEST_TENANT")
         
         is_breakout, direction, distance = sensor.detect_breakout(
             current_price=1.0945,
@@ -229,7 +229,7 @@ class TestSessionLiquiditySensorLiquidityZoneMapping:
         THEN: Debe retornar dict con todos los niveles críticos
         """
         mock_storage = MagicMock()
-        sensor = SessionLiquiditySensor(storage=mock_storage, tenant_id="TEST_TENANT")
+        sensor = SessionLiquiditySensor(storage=mock_storage, user_id="TEST_TENANT")
         
         zones = sensor.get_liquidity_zones(
             london_high=1.0950,
@@ -263,7 +263,7 @@ class TestSessionLiquiditySensorIntegration:
         }, index=times)
         
         mock_storage = MagicMock()
-        sensor = SessionLiquiditySensor(storage=mock_storage, tenant_id="TEST_TENANT", trace_id="TEST-INTEG-001")
+        sensor = SessionLiquiditySensor(storage=mock_storage, user_id="TEST_TENANT", trace_id="TEST-INTEG-001")
         
         result = sensor.analyze_session_liquidity(df)
         

@@ -28,7 +28,7 @@ class TestLiquiditySweepDetectorInitialization:
         THEN: Debe inicializar correctamente
         """
         mock_storage = MagicMock()
-        detector = LiquiditySweepDetector(storage=mock_storage, tenant_id="TEST_TENANT", trace_id="TEST-001")
+        detector = LiquiditySweepDetector(storage=mock_storage, user_id="TEST_TENANT", trace_id="TEST-001")
         
         assert detector.storage_manager == mock_storage
         assert detector.trace_id == "TEST-001"
@@ -46,7 +46,7 @@ class TestLiquiditySweepDetectorPinBar:
         THEN: Debe retornar (True, 'BULLISH', confidence)
         """
         mock_storage = MagicMock()
-        detector = LiquiditySweepDetector(storage=mock_storage, tenant_id="TEST_TENANT")
+        detector = LiquiditySweepDetector(storage=mock_storage, user_id="TEST_TENANT")
         
         current_candle = {
             'open': 1.0850,
@@ -78,7 +78,7 @@ class TestLiquiditySweepDetectorPinBar:
         THEN: Debe retornar (True, 'BEARISH', confidence)
         """
         mock_storage = MagicMock()
-        detector = LiquiditySweepDetector(storage=mock_storage, tenant_id="TEST_TENANT")
+        detector = LiquiditySweepDetector(storage=mock_storage, user_id="TEST_TENANT")
         
         # Crear vela con wick superior >= 50% del rango
         # high - max(open, close) >= 0.50 * rango_total
@@ -104,7 +104,7 @@ class TestLiquiditySweepDetectorPinBar:
         THEN: Debe retornar (False, None, 0)
         """
         mock_storage = MagicMock()
-        detector = LiquiditySweepDetector(storage=mock_storage, tenant_id="TEST_TENANT")
+        detector = LiquiditySweepDetector(storage=mock_storage, user_id="TEST_TENANT")
         
         current_candle = {
             'open': 1.0850,
@@ -129,7 +129,7 @@ class TestLiquiditySweepDetectorEngulfing:
         THEN: Debe retornar (True, 'BULLISH', confidence)
         """
         mock_storage = MagicMock()
-        detector = LiquiditySweepDetector(storage=mock_storage, tenant_id="TEST_TENANT")
+        detector = LiquiditySweepDetector(storage=mock_storage, user_id="TEST_TENANT")
         
         previous_candle = {
             'open': 1.0850,
@@ -158,7 +158,7 @@ class TestLiquiditySweepDetectorEngulfing:
         THEN: Debe retornar (True, 'BEARISH', confidence)
         """
         mock_storage = MagicMock()
-        detector = LiquiditySweepDetector(storage=mock_storage, tenant_id="TEST_TENANT")
+        detector = LiquiditySweepDetector(storage=mock_storage, user_id="TEST_TENANT")
         
         previous_candle = {
             'open': 1.0850,
@@ -187,7 +187,7 @@ class TestLiquiditySweepDetectorEngulfing:
         THEN: Debe retornar (False, None, 0)
         """
         mock_storage = MagicMock()
-        detector = LiquiditySweepDetector(storage=mock_storage, tenant_id="TEST_TENANT")
+        detector = LiquiditySweepDetector(storage=mock_storage, user_id="TEST_TENANT")
         
         previous_candle = {
             'open': 1.0850,
@@ -219,7 +219,7 @@ class TestLiquiditySweepDetectorRangeValidation:
         THEN: Debe retornar True (falsa ruptura validada)
         """
         mock_storage = MagicMock()
-        detector = LiquiditySweepDetector(storage=mock_storage, tenant_id="TEST_TENANT")
+        detector = LiquiditySweepDetector(storage=mock_storage, user_id="TEST_TENANT")
         
         # Nivel anterior: 1.0840-1.0850
         # Breakout sube a 1.0860
@@ -240,7 +240,7 @@ class TestLiquiditySweepDetectorRangeValidation:
         THEN: Debe retornar False (no es falsa ruptura)
         """
         mock_storage = MagicMock()
-        detector = LiquiditySweepDetector(storage=mock_storage, tenant_id="TEST_TENANT")
+        detector = LiquiditySweepDetector(storage=mock_storage, user_id="TEST_TENANT")
         
         is_within = detector.is_within_previous_range(
             current_close=1.0855,
@@ -261,7 +261,7 @@ class TestLiquiditySweepDetectorFalseBreakout:
         THEN: Debe retornar (True, pattern_type, strength)
         """
         mock_storage = MagicMock()
-        detector = LiquiditySweepDetector(storage=mock_storage, tenant_id="TEST_TENANT")
+        detector = LiquiditySweepDetector(storage=mock_storage, user_id="TEST_TENANT")
         
         breakout_level = 1.0950  # Session High
         current_candle = {
@@ -324,7 +324,7 @@ class TestLiquiditySweepDetectorVolumeValidation:
         THEN: Debe retornar (True, confidence_boost)
         """
         mock_storage = MagicMock()
-        detector = LiquiditySweepDetector(storage=mock_storage, tenant_id="TEST_TENANT")
+        detector = LiquiditySweepDetector(storage=mock_storage, user_id="TEST_TENANT")
         
         ohlcv_data = [
             {'volume': 1000},
@@ -351,7 +351,7 @@ class TestLiquiditySweepDetectorVolumeValidation:
         THEN: Debe retornar (False, 0)
         """
         mock_storage = MagicMock()
-        detector = LiquiditySweepDetector(storage=mock_storage, tenant_id="TEST_TENANT")
+        detector = LiquiditySweepDetector(storage=mock_storage, user_id="TEST_TENANT")
         
         is_confirmed, confidence_boost = detector.validate_volume_confirmation(
             reversal_volume=800,

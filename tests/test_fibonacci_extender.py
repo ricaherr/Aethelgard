@@ -49,7 +49,7 @@ def fibonacci_extender(mock_storage, mock_session_service):
     return FibonacciExtender(
         storage=mock_storage,
         session_service=mock_session_service,
-        tenant_id="TEST",
+        user_id="TEST",
         trace_id="TEST-FIBONACCI-001"
     )
 
@@ -59,7 +59,7 @@ class TestFibonacciExtenderInitialization:
     
     def test_initialization(self, fibonacci_extender):
         """Verifica que el extractor se inicializa correctamente."""
-        assert fibonacci_extender.tenant_id == "TEST"
+        assert fibonacci_extender.user_id == "TEST"
         assert fibonacci_extender.trace_id == "TEST-FIBONACCI-001"
         assert fibonacci_extender.fib_levels['FIB_127'] == 1.27
         assert fibonacci_extender.fib_levels['FIB_161'] == 1.618
@@ -69,7 +69,7 @@ class TestFibonacciExtenderInitialization:
         extender = FibonacciExtender(
             storage=mock_storage,
             session_service=mock_session_service,
-            tenant_id="PROD"
+            user_id="PROD"
         )
         assert "SENSOR-FIBONACCI-PROD" in extender.trace_id
     
@@ -78,10 +78,10 @@ class TestFibonacciExtenderInitialization:
         extender = initialize_fibonacci_extender(
             storage=mock_storage,
             session_service=mock_session_service,
-            tenant_id="FACTORY_TEST"
+            user_id="FACTORY_TEST"
         )
         assert isinstance(extender, FibonacciExtender)
-        assert extender.tenant_id == "FACTORY_TEST"
+        assert extender.user_id == "FACTORY_TEST"
 
 
 class TestFibonacciProjection:
@@ -409,7 +409,7 @@ class TestFibonacciExtenderMultiTenant:
         alice_extender = FibonacciExtender(
             storage=mock_storage,
             session_service=mock_service,
-            tenant_id="ALICE",
+            user_id="ALICE",
             trace_id=None  # Auto-generate
         )
         
@@ -417,13 +417,13 @@ class TestFibonacciExtenderMultiTenant:
         bob_extender = FibonacciExtender(
             storage=mock_storage,
             session_service=mock_service,
-            tenant_id="BOB",
+            user_id="BOB",
             trace_id=None  # Auto-generate
         )
         
         # Validar que cada uno tiene su tenant_id
-        assert alice_extender.tenant_id == "ALICE"
-        assert bob_extender.tenant_id == "BOB"
+        assert alice_extender.user_id == "ALICE"
+        assert bob_extender.user_id == "BOB"
         
         # Validar que TRACE_ID contiene el tenant_id
         assert "ALICE" in alice_extender.trace_id
@@ -447,13 +447,13 @@ class TestFibonacciExtenderMultiTenant:
         alice_extender = FibonacciExtender(
             storage=mock_storage,
             session_service=mock_service,
-            tenant_id="ALICE"
+            user_id="ALICE"
         )
         
         bob_extender = FibonacciExtender(
             storage=mock_storage,
             session_service=mock_service,
-            tenant_id="BOB"
+            user_id="BOB"
         )
         
         # Mismo rango Londres para ambos
@@ -470,7 +470,7 @@ class TestFibonacciExtenderMultiTenant:
         
         # Pero sus niveles Fibonacci tienen metadata de tenant diferente
         # (implícitamente: si hubiera logueo, ALICE y BOB tendrían TRACE_IDs diferentes)
-        assert alice_extender.tenant_id != bob_extender.tenant_id
+        assert alice_extender.user_id != bob_extender.user_id
     
     def test_fibonacci_storage_manager_isolation(self):
         """
@@ -496,14 +496,14 @@ class TestFibonacciExtenderMultiTenant:
         alice_extender = FibonacciExtender(
             storage=alice_storage,
             session_service=mock_session_service,
-            tenant_id="ALICE"
+            user_id="ALICE"
         )
         
         # BOB recibe su storage
         bob_extender = FibonacciExtender(
             storage=bob_storage,
             session_service=mock_session_service,
-            tenant_id="BOB"
+            user_id="BOB"
         )
         
         # Validar que están usando diferentes storage
@@ -524,14 +524,14 @@ class TestFibonacciExtenderMultiTenant:
         alice_factory = initialize_fibonacci_extender(
             storage=mock_storage,
             session_service=mock_service,
-            tenant_id="ALICE"
+            user_id="ALICE"
         )
         
         # Factory para BOB
         bob_factory = initialize_fibonacci_extender(
             storage=mock_storage,
             session_service=mock_service,
-            tenant_id="BOB"
+            user_id="BOB"
         )
         
         # Ambos deben ser instancias correctas
@@ -539,8 +539,8 @@ class TestFibonacciExtenderMultiTenant:
         assert isinstance(bob_factory, FibonacciExtender)
         
         # Con sus respectivos tenant_ids
-        assert alice_factory.tenant_id == "ALICE"
-        assert bob_factory.tenant_id == "BOB"
+        assert alice_factory.user_id == "ALICE"
+        assert bob_factory.user_id == "BOB"
         
         # Y TRACE_IDs únicos
         assert alice_factory.trace_id != bob_factory.trace_id
