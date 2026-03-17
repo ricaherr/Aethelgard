@@ -1534,14 +1534,38 @@ class MainOrchestrator:
             elif self.position_manager:
                 if self.thought_callback:
                     await self.thought_callback("Evaluando salud de posiciones abiertas...", module="MGMT")
-                position_stats = self.position_manager.monitor_usr_positions()
-                if position_stats['actions']:
-                    logger.info(
-                        f"[POSITION_MANAGER] Monitored {position_stats['monitored']} usr_positions, "
-                        f"executed {len(position_stats['actions'])} actions"
-                    )
-                    for action in position_stats['actions']:
-                        logger.info(f"[POSITION_MANAGER] [OK] {action['action']}: ticket={action.get('ticket')}")
+                
+                # Iterate over ALL active execution connectors (multi-account architecture)
+                # Each user's broker account is interrogated independently for open positions
+                from core_brain.connectivity_orchestrator import ConnectivityOrchestrator
+                _orch = ConnectivityOrchestrator()
+                exec_connectors = {
+                    pid: conn
+                    for pid, conn in _orch.connectors.items()
+                    if _orch.supports_info.get(pid, {}).get("exec", False)
+                       and getattr(conn, 'is_connected', False)
+                }
+
+                if not exec_connectors:
+                    logger.debug("[POSITION_MANAGER] No active execution connectors — position monitoring skipped")
+                else:
+                    combined_actions = []
+                    total_monitored = 0
+                    for account_id, exec_connector in exec_connectors.items():
+                        try:
+                            position_stats = self.position_manager.monitor_usr_positions(connector=exec_connector)
+                            total_monitored += position_stats.get('monitored', 0)
+                            combined_actions.extend(position_stats.get('actions', []))
+                        except Exception as pm_err:
+                            logger.error(f"[POSITION_MANAGER] Error monitoring account '{account_id}': {pm_err}")
+
+                    if combined_actions:
+                        logger.info(
+                            f"[POSITION_MANAGER] Monitored {total_monitored} positions across "
+                            f"{len(exec_connectors)} account(s), executed {len(combined_actions)} actions"
+                        )
+                        for action in combined_actions:
+                            logger.info(f"[POSITION_MANAGER] ✓ {action['action']}: ticket={action.get('ticket')}")
             
             # MODULE TOGGLE: Scanner
             if not self.modules_enabled_global.get("scanner", True):

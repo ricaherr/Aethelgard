@@ -225,9 +225,9 @@ class AccountsMixin(BaseRepository):
             query = "SELECT * FROM usr_broker_accounts WHERE 1=1"
             params = []
             if enabled_only:
-                query += " AND enabled = 1"
+                query += " AND account_status = 'ACTIVE'"
             if broker_id:
-                query += " AND broker_id = ?"
+                query += " AND broker_name = ?"
                 params.append(broker_id)
             if account_type:
                 query += " AND account_type = ?"

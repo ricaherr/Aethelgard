@@ -98,17 +98,27 @@ class PositionManager:
                 logger.debug("InstrumentManager(storage=...) fallback due to invalid storage mock: %s", e)
         return InstrumentManager()
     
-    def monitor_usr_positions(self) -> Dict[str, Any]:
+    def monitor_usr_positions(self, connector=None) -> Dict[str, Any]:
         """
         Main monitoring loop - checks all open usr_positions and applies necessary adjustments.
-        
+
+        Args:
+            connector: Broker connector to interrogate. If None, falls back to self.connector
+                       (kept for backward compatibility with tests).
+
         Returns:
             dict: Summary of actions taken
         """
         logger.debug("Starting position monitoring cycle")
-        
+
+        # Resolve the effective connector: parameter takes priority over instance attribute
+        effective_connector = connector or self.connector
+        if not effective_connector:
+            logger.debug("No connector available for position monitoring — skipping cycle")
+            return {"monitored": 0, "actions": []}
+
         # Get all open usr_positions from connector
-        open_usr_positions = self.connector.get_open_positions()
+        open_usr_positions = effective_connector.get_open_positions()
         
         if not open_usr_positions:
             logger.debug("No open usr_positions to monitor")
@@ -119,38 +129,38 @@ class PositionManager:
         for position in open_usr_positions:
             ticket = position.get('ticket')
             symbol = position.get('symbol')
-            
+
             try:
                 # 0. Sync metadata for orphan usr_positions (opened outside Aethelgard)
-                self._sync_orphan_position(position)
-                
+                self._sync_orphan_position(position, effective_connector)
+
                 # 1. Check for emergency close (max drawdown exceeded)
                 if self._exceeds_max_drawdown(position):
                     logger.warning(
                         f"Position {ticket} ({symbol}) exceeds max drawdown - "
                         f"Emergency close triggered"
                     )
-                    self._emergency_close(position, "MAX_DRAWDOWN")
+                    self._emergency_close(position, "MAX_DRAWDOWN", effective_connector)
                     actions.append({
                         'ticket': ticket,
                         'action': 'EMERGENCY_CLOSE',
                         'reason': 'MAX_DRAWDOWN'
                     })
                     continue
-                
+
                 # 2. Check for stale position (time-based exit)
                 if self._is_stale_position(position):
                     logger.info(
                         f"Position {ticket} ({symbol}) is stale - Closing"
                     )
-                    self._close_stale_position(position)
+                    self._close_stale_position(position, effective_connector)
                     actions.append({
                         'ticket': ticket,
                         'action': 'TIME_EXIT',
                         'reason': 'STALE_POSITION'
                     })
                     continue
-                
+
                 # 3. Check for breakeven opportunity (FASE 3)
                 metadata = self.storage.get_position_metadata(ticket)
                 if metadata:
@@ -159,23 +169,22 @@ class PositionManager:
                         f"Breakeven check for {ticket}: should_move={should_move}, reason={reason}"
                     )
                     if should_move:
-                        breakeven_price = self._calculate_breakeven_real(position, metadata)
+                        breakeven_price = self._calculate_breakeven_real(position, metadata, effective_connector)
                         if breakeven_price:
                             # Keep current TP, only modify SL to breakeven
                             current_tp = position.get('tp', 0)
-                            
+
                             # Ensure price is normalized before sending to broker
                             im = self._get_instrument_manager()
-                            symbol_info = self.connector.get_symbol_info(symbol)
+                            symbol_info = effective_connector.get_symbol_info(symbol)
                             breakeven_price = normalize_price(breakeven_price, symbol_info, symbol, im)
-                            
+
                             logger.info(
                                 f"Position {ticket} ({symbol}) moving SL to breakeven - "
                                 f"New SL: {breakeven_price}"
                             )
-                            
-                            # Modify position directly via connector with informative comment
-                            result = self.connector.modify_position(ticket, breakeven_price, current_tp, reason="BREAKEVEN")
+
+                            result = effective_connector.modify_position(ticket, breakeven_price, current_tp, reason="BREAKEVEN")
                             if result and result.get('success', False):
                                 self._modification_failures[ticket] = 0
                                 actions.append({
@@ -192,7 +201,7 @@ class PositionManager:
                                 )
                 else:
                     logger.debug(f"No metadata found for position {ticket} - Skipping breakeven check")
-                
+
                 # 4. Check for trailing stop opportunity (FASE 4)
                 if metadata:
                     should_apply, reason = self._should_apply_trailing_stop(position, metadata)
@@ -200,23 +209,22 @@ class PositionManager:
                         f"Trailing stop check for {ticket}: should_apply={should_apply}, reason={reason}"
                     )
                     if should_apply:
-                        trailing_sl = self._calculate_trailing_stop_atr(position, metadata)
+                        trailing_sl = self._calculate_trailing_stop_atr(position, metadata, effective_connector)
                         if trailing_sl:
                             # Keep current TP, only modify SL to trailing
                             current_tp = position.get('tp', 0)
-                            
+
                             # Ensure price is normalized before sending to broker
                             im = self._get_instrument_manager()
-                            symbol_info = self.connector.get_symbol_info(symbol)
+                            symbol_info = effective_connector.get_symbol_info(symbol)
                             trailing_sl = normalize_price(trailing_sl, symbol_info, symbol, im)
-                            
+
                             logger.info(
                                 f"Position {ticket} ({symbol}) applying trailing stop - "
                                 f"New SL: {trailing_sl}"
                             )
-                            
-                            # Modify position directly via connector with informative comment
-                            result = self.connector.modify_position(ticket, trailing_sl, current_tp, reason="TRAILING_STOP")
+
+                            result = effective_connector.modify_position(ticket, trailing_sl, current_tp, reason="TRAILING_STOP")
                             if result and result.get('success', False):
                                 self._modification_failures[ticket] = 0
                                 actions.append({
@@ -238,7 +246,7 @@ class PositionManager:
                         f"Position {ticket} ({symbol}) regime changed - "
                         f"Adjusting SL/TP"
                     )
-                    if self._adjust_for_regime_change(position):
+                    if self._adjust_for_regime_change(position, effective_connector):
                         self._modification_failures[ticket] = 0
                         actions.append({
                             'ticket': ticket,
@@ -272,7 +280,7 @@ class PositionManager:
         
         return summary
     
-    def _sync_orphan_position(self, position: Dict[str, Any]) -> None:
+    def _sync_orphan_position(self, position: Dict[str, Any], connector=None) -> None:
         """
         Auto-sync metadata for usr_positions without it (orphan usr_positions).
         
@@ -316,8 +324,9 @@ class PositionManager:
         initial_risk_usd = 0.0
         if current_sl and current_sl > 0 and entry_price > 0 and volume > 0:
             # Usar utilidades globales agnósticas
+            _conn = connector or self.connector
             im = self._get_instrument_manager()
-            symbol_info = self.connector.get_symbol_info(symbol)
+            symbol_info = _conn.get_symbol_info(symbol) if _conn else None
             pip_size = calculate_pip_size(symbol_info, symbol, im)
             
             # Calculate risk in pips/points
@@ -647,7 +656,7 @@ class PositionManager:
         
         return False
     
-    def _adjust_for_regime_change(self, position: Dict) -> bool:
+    def _adjust_for_regime_change(self, position: Dict, connector=None) -> bool:
         """
         Adjust SL/TP based on regime change.
         
@@ -739,10 +748,11 @@ class PositionManager:
             symbol=symbol,
             new_sl=new_sl,
             new_tp=new_tp,
-            reason=f"RGM_{regime_short}"
+            reason=f"RGM_{regime_short}",
+            connector=connector
         )
     
-    def _emergency_close(self, position: Dict, reason: str) -> bool:
+    def _emergency_close(self, position: Dict, reason: str, connector=None) -> bool:
         """
         Emergency close position (max drawdown exceeded).
         
@@ -758,7 +768,8 @@ class PositionManager:
         
         try:
             # Close position via connector
-            result = self.connector.close_position(ticket, reason)
+            _conn = connector or self.connector
+            result = _conn.close_position(ticket, reason)
             
             if result.get('success'):
                 logger.warning(
@@ -786,7 +797,7 @@ class PositionManager:
             )
             return False
     
-    def _close_stale_position(self, position: Dict) -> bool:
+    def _close_stale_position(self, position: Dict, connector=None) -> bool:
         """
         Close stale position (time-based exit).
         
@@ -801,7 +812,8 @@ class PositionManager:
         
         try:
             # Close position via connector
-            result = self.connector.close_position(ticket, "STALE_POSITION")
+            _conn = connector or self.connector
+            result = _conn.close_position(ticket, "STALE_POSITION")
             
             if result.get('success'):
                 logger.info(
@@ -834,7 +846,8 @@ class PositionManager:
         symbol: str,
         new_sl: float,
         new_tp: Optional[float] = None,
-        reason: str = ""
+        reason: str = "",
+        connector=None
     ) -> bool:
         """
         Modify position with freeze level validation and rollback on failure.
@@ -850,7 +863,7 @@ class PositionManager:
             bool: True if modification successful
         """
         # 1. Validate freeze level
-        if not self._validate_freeze_level(symbol, new_sl, new_tp):
+        if not self._validate_freeze_level(symbol, new_sl, new_tp, connector=connector):
             logger.warning(
                 f"Freeze level validation failed for position {ticket} ({symbol})"
             )
@@ -879,8 +892,9 @@ class PositionManager:
             # Get old SL/TP for logging
             old_sl = old_metadata.get('sl') if old_metadata else None
             old_tp = old_metadata.get('tp') if old_metadata else None
-            
-            result = self.connector.modify_position(ticket, new_sl, new_tp, reason=reason)
+
+            _conn = connector or self.connector
+            result = _conn.modify_position(ticket, new_sl, new_tp, reason=reason)
             
             if result.get('success'):
                 logger.info(
@@ -962,7 +976,8 @@ class PositionManager:
         self,
         symbol: str,
         new_sl: float,
-        new_tp: Optional[float] = None
+        new_tp: Optional[float] = None,
+        connector=None
     ) -> bool:
         """
         Validate that new SL/TP respect broker's freeze level (minimum distance).
@@ -978,7 +993,11 @@ class PositionManager:
             bool: True if valid
         """
         # Get symbol info from connector
-        symbol_info = self.connector.get_symbol_info(symbol)
+        _conn = connector or self.connector
+        if not _conn:
+            logger.warning(f"No connector available to validate freeze level for {symbol} — skipping")
+            return True  # Permissive fallback: do not block modification if no connector
+        symbol_info = _conn.get_symbol_info(symbol)
         if not symbol_info:
             logger.error(
                 f"Could not get symbol info for {symbol} - Cannot validate freeze level"
@@ -999,7 +1018,7 @@ class PositionManager:
         safe_freeze_level = freeze_level * 1.1
         
         # Get current price
-        current_price = self.connector.get_current_price(symbol)
+        current_price = _conn.get_current_price(symbol)
         if not current_price or current_price <= 0:
             logger.error(
                 f"Could not get current price for {symbol}"
@@ -1108,7 +1127,7 @@ class PositionManager:
         
         return True
     
-    def get_current_atr(self, symbol: str) -> Optional[float]:
+    def get_current_atr(self, symbol: str, connector=None) -> Optional[float]:
         """
         Get current ATR for symbol.
         
@@ -1135,9 +1154,13 @@ class PositionManager:
                 f"Could not get ATR from regime classifier for {symbol}: {e}"
             )
         
-        # Fallback: Estimate ATR from MT5 symbol info (use typical ATR = 0.1% of price)
+        # Fallback: Estimate ATR from connector symbol info (use typical ATR = 0.1% of price)
         try:
-            symbol_info = self.connector.get_symbol_info(symbol)
+            _conn = connector or self.connector
+            if not _conn:
+                logger.warning(f"No connector available to estimate ATR for {symbol}")
+                return None
+            symbol_info = _conn.get_symbol_info(symbol)
             if symbol_info:
                 # Use current price to estimate conservative ATR
                 price = self._info_get(symbol_info, 'ask', 0)
@@ -1161,7 +1184,8 @@ class PositionManager:
     def _calculate_breakeven_real(
         self,
         position: Dict,
-        metadata: Dict
+        metadata: Dict,
+        connector=None
     ) -> Optional[float]:
         """
         Calculate TRUE breakeven price including all broker costs.
@@ -1235,7 +1259,8 @@ class PositionManager:
             # 3. Spread cost at entry
             spread_cost = 0.0
             if breakeven_config.get('include_spread', True):
-                symbol_info = self.connector.get_symbol_info(symbol)
+                _conn = connector or self.connector
+                symbol_info = _conn.get_symbol_info(symbol) if _conn else None
                 if symbol_info:
                     ask = float(self._info_get(symbol_info, 'ask', 0))
                     bid = float(self._info_get(symbol_info, 'bid', 0))
@@ -1263,7 +1288,9 @@ class PositionManager:
             # Calculate pip value dynamically for multi-asset support
             # Universal formula: pip_value = volume * contract_size * pip_size
             # Where pip_size depends on digits (0.0001 for 5 digits, 0.01 for 2-3 digits, etc.)
-            symbol_info = self.connector.get_symbol_info(symbol)
+            # Reuse _conn resolved earlier (connector param → self.connector fallback)
+            _conn = connector or self.connector
+            symbol_info = _conn.get_symbol_info(symbol) if _conn else None
             if not symbol_info:
                 logger.warning(f"Cannot calculate breakeven: no symbol_info for {symbol}")
                 return None
@@ -1430,7 +1457,8 @@ class PositionManager:
     def _calculate_trailing_stop_atr(
         self,
         position: Dict,
-        metadata: Dict
+        metadata: Dict,
+        connector=None
     ) -> Optional[float]:
         """
         Calculate trailing stop price based on ATR (Average True Range).
@@ -1467,7 +1495,7 @@ class PositionManager:
                 return None
             
             # Get ATR from regime classifier
-            atr = self.get_current_atr(symbol)
+            atr = self.get_current_atr(symbol, connector=connector)
             if not atr or atr <= 0:
                 logger.debug(f"ATR not available for {symbol} - Cannot calculate trailing stop")
                 return None
@@ -1524,6 +1552,10 @@ class PositionManager:
         position: Dict,
         metadata: Dict
     ) -> tuple[bool, str]:
+        # Note: this method does not need connector parameter because it relies
+        # on self.connector as fallback for symbol_info (used only for pip size estimation).
+        # The actual trailing SL calculation is delegated to _calculate_trailing_stop_atr
+        # which already accepts connector.
         """
         Determine if trailing stop should be applied.
         
@@ -1555,8 +1587,9 @@ class PositionManager:
                 return False, "Trailing stop disabled in config"
             
             # 1. Check minimum profit requirement (FASE 4B: Dynamic with ATR)
-            # Get pip size
-            symbol_info = self.connector.get_symbol_info(symbol)
+            # Get pip size from connector (fallback to self.connector)
+            _conn = self.connector
+            symbol_info = _conn.get_symbol_info(symbol) if _conn else None
             pip_size = 0.0001  # Default
             if symbol_info:
                 # SymbolInfo is a namedtuple, not a dict - use attribute access
