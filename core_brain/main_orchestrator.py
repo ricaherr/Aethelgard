@@ -28,6 +28,7 @@ import os
 import asyncio
 import json
 import logging
+import psutil
 import signal
 import time
 from dataclasses import dataclass, field
@@ -1547,7 +1548,30 @@ class MainOrchestrator:
                 logger.debug("[TOGGLE] scanner deshabilitado globalmente - ciclo terminado")
                 self.stats.cycles_completed += 1
                 return
-            
+
+            # Step 0.5: Infrastructure veto (HU 5.3 — The Pulse)
+            # TRACE_ID: INFRA-PULSE-HU53-2026-001
+            # Reads CPU% non-blocking (interval=None avoids sleep in hot loop).
+            # Threshold is read from dynamic_params (SSOT) with 90% default.
+            # Only new trade scanning is vetoed — PositionManager already ran above.
+            _dyn = self.storage.get_dynamic_params() or {}
+            _cpu_threshold = _dyn.get("cpu_veto_threshold", 90)
+            _cpu_now = psutil.cpu_percent(interval=None)
+            if _cpu_now > _cpu_threshold:
+                logger.warning(
+                    f"[PULSE] CPU veto: {_cpu_now:.1f}% > {_cpu_threshold}% — skipping trade scan cycle"
+                )
+                self.storage.save_notification({
+                    "category": "SYSTEM_STRESS",
+                    "priority": "high",
+                    "title": "CPU Critical — Scan Cycle Vetoed",
+                    "message": f"CPU at {_cpu_now:.1f}% exceeds {_cpu_threshold}% threshold. Trade scanning skipped.",
+                    "details": {"cpu_percent": _cpu_now, "threshold": _cpu_threshold},
+                    "read": False,
+                })
+                self.stats.cycles_completed += 1
+                return
+
             # Step 1: Get current market regimes from scanner WITH DataFrames
             if self.thought_callback:
                 await self.thought_callback("Escaneando mercados en busca de anomalías...", module="SCANNER")

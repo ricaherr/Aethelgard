@@ -68,7 +68,7 @@
 **Orden de ejecución**: N1-1 → N1-2 → N1-3 → N1-4 → N1-5 → N1-6
 
 ### Nivel 2 — Inteligencia (📋 BACKLOG)
-* **N2-1: JSON_SCHEMA Interpreter** `[TODO]`
+* **N2-1: JSON_SCHEMA Interpreter** `[DONE]`
     * Implementar rama `JSON_SCHEMA` en `StrategyEngineFactory`. Permite que el Bucle de Generación (Canvas Punto 4.3) cree estrategias sin código Python. Archivos: `core_brain/services/strategy_engine_factory.py`. Impacto: MEDIO-6.
 * **N2-2: WebSocket Auth Standardization** `[DONE]`
     * Estandarizar `telemetry.py`, `shadow_ws.py`, `strategy_ws.py` para usar `Depends(get_ws_user)` en lugar de `_verify_token()` manual y fallback demo. Impacto: ALTO-6.
@@ -159,7 +159,7 @@
       - `data_vault/schema.py` (+table anomaly_events, 3 índices)
     * **Trace_ID**: BLACK-SWAN-SENTINEL-2026-001
 
-* **HU 4.7: Economic Calendar Veto Filter (News-Based Trading Lockdown)** `[TODO]`
+* **HU 4.7: Economic Calendar Veto Filter (News-Based Trading Lockdown)** `[DONE]`
     * **Prioridad**: Alta (E3 - Dominio Sensorial)
     * **Descripción**: Implementación del filtro de veto por calendario económico. El sistema bloquea automáticamente nuevas posiciones durante eventos de alto impacto (NFP, decisiones de bancos centrales) basado en buffers pre/post evento (HIGH: 15m/10m, MEDIUM: 5m/3m, LOW: 0/0).
     * **Propósito**: Evitar pérdidas catastróficas por volatilidad extrema en eventos macroeconómicos sin intervención manual. Preservar agnosis: MainOrchestrator NO conoce proveedores de datos.
@@ -213,13 +213,13 @@
     * **Descripción**: Desarrollo de la capa de transporte FIX basada en QuickFIX para conectividad directa con Prime Brokers.
     * **Estado**: Normalización de conectores completada. ExecutionService operativo. Integración FIX con Prime Brokers en progreso.
     * **🖥️ UI Representation**: Terminal de telemetría FIX con visualización de latencia ida y vuelta (RTT).
-* **HU 5.2: Adaptive Slippage Controller**
+* **HU 5.2: Adaptive Slippage Controller** `[DONE]`
     * **Prioridad**: Alta (E3)
     * **Descripción**: Implementación del monitor de desviación de ejecución (Slippage) con integración en la lógica de riesgo.
     * **🖥️ UI Representation**: Badge de "Ejecución Eficiente %" en cada trade cerrado dentro del historial.
-* **HU 5.3: Infrastructure Feedback Loop (The Pulse)**
+* **HU 5.3: Infrastructure Feedback Loop (The Pulse)** `[DONE]`
     * **Prioridad**: Media (E1 - Conexión básica / V3 - Feedback avanzado)
-    * **Descripción**: Sistema de telemetría que informa al cerebro sobre el estado de los recursos y la red para decisiones de veto técnico.
+    * **Descripción**: Sistema de telemetría que informa al cerebro sobre el estado de los recursos y la red para decisiones de veto técnico. `_get_system_heartbeat()` retorna CPU%/RAM real vía psutil; bloque veto en `run_single_cycle()` corta scan cuando CPU > `cpu_veto_threshold` (SSOT: dynamic_params). [Sprint N3]
     * **🖥️ UI Representation**: Widget de "System Vital Signs" con métricas de salud técnica y red.
 
 ## 06_PORTFOLIO_INTELLIGENCE (Shadow, Performance)
@@ -237,7 +237,8 @@
     * **🖥️ UI Representation**: Medidor de "Coherencia de Modelo" con alertas visuales de deriva técnica.
 
 ## 07_ADAPTIVE_LEARNING (EdgeTuner, Feedback Loops)
-* **HU 7.1: Confidence Threshold Optimizer**
+* **HU 7.1: Confidence Threshold Optimizer** `[DONE]`
+    * **Estado**: Implementado. `ThresholdOptimizer` (370 líneas), 21/21 tests PASSED. Wired en `MainOrchestrator` vía `TradeClosureListener`. Trace_ID: ADAPTIVE-THRESHOLD-2026-001.
     * **Prioridad**: Media (E2)
     * **Descripción**: Optimización dinámica de umbrales de entrada basada en el desempeño histórico reciente.
     * **🖥️ UI**: Visualizador de "Curva de Exigencia Algorítmica".

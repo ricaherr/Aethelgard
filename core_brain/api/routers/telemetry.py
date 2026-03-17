@@ -13,6 +13,7 @@ RULE 4.3: All operations try/except protected with graceful degradation
 import logging
 import asyncio
 import json
+import psutil
 from typing import Dict, Any, Set, Optional, List
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
@@ -53,9 +54,9 @@ async def _get_system_heartbeat(storage: StorageManager) -> Dict[str, Any]:
             })
         
         return {
-            "cpu_percent": 0.0,  # Placeholder: ScannerEngine maintains CPU% internally
-            "memory_mb": 0,      # Placeholder: Would need psutil integration
-            "broker_latency_ms": 0,  # Placeholder: Extracted from satellite metrics
+            "cpu_percent": psutil.cpu_percent(interval=None),
+            "memory_mb": psutil.virtual_memory().used // (1024 * 1024),
+            "broker_latency_ms": int(sum(s["last_sync_ms"] for s in satellites) / len(satellites)) if satellites else 0,
             "satellites": satellites,
             "timestamp": datetime.now(timezone.utc).isoformat()
         }

@@ -18,38 +18,6 @@
 
 > ℹ️ Solo se muestran Épicas en estado `ACTIVA` o `PENDIENTE`. Las Épicas `COMPLETADA` se archivan en [docs/SYSTEM_LEDGER.md](../docs/SYSTEM_LEDGER.md) (sección ÉPICAS ARCHIVADAS) y se eliminan de este documento.
 
-### E3: Dominio Sensorial & Adaptabilidad (Dominios 02, 03, 04, 05, 06, 07, 09, 10) — ACTIVA
-**Sprints**: Sprint 3 · Sprint 4 · Sprint N1 | **Trace_ID**: VECTOR-V3-SANITY-2026-001
-**Objetivo**: Supremacía analítica mediante detección de anomalías, coherencia de modelos, auto-calibración adaptativa y stack FOREX operacional.
-
-| HU | Nombre | Dominio | Sprint | Estado |
-|---|---|---|---|---|
-| HU 2.1 | Multi-Scale Regime Vectorizer | 02 | Sprint 3 | [DONE] |
-| HU 4.6 | Anomaly Sentinel | 04 | Sprint 3 | [DONE] |
-| HU 2.2 | Global Liquidity Clock | 02 | Sprint 3 | [DONE] |
-| HU 3.3 | Detector de Ineficiencias (FVG) | 03 | Sprint 3 | [DONE] |
-| HU 3.4 | Configuración Estrategia S-0001 | 03 | Sprint 3 | [DONE] |
-| HU 6.3 | Coherence Drift Monitoring | 06 | Sprint 3 | [DONE] |
-| HU 3.6 | Universal Strategy Engine | 03 | Sprint 3 | [DONE] |
-| HU 3.9 | Hybrid Runtime Switch | 03 | Sprint 3 | [DONE] |
-| HU 3.3b | Market Structure Analyzer Sensorial | 03 | Sprint 4 | [DONE] |
-| HU 5.2/6.2 | Conflict Resolver (Orquestación) | 05/06 | Sprint 4 | [DONE] |
-| HU 9.1/9.2 | UI Mapping Service & Terminal 2.0 | 09 | Sprint 4 | [DONE] |
-| HU 10.1 | Strategy Heartbeat Monitor | 10 | Sprint 4 | [DONE] |
-| HU 3.6b | Signal Quality Scorer | 03 | Sprint 4 | [DONE] |
-| HU 3.7 | Consensus Engine | 03 | Sprint 4 | [DONE] |
-| HU 3.8 | Failure Pattern Registry | 03 | Sprint 4 | [DONE] |
-| HU 7.2 | Asset Efficiency Score Gatekeeper | 07 | Sprint 4 | [DONE] |
-| Shadow UI | Shadow Evolution Frontend UI | 09 | Sprint 4 | [DONE] |
-| Shadow WS | Shadow WebSocket Backend Integration | 06/09 | Sprint 4 | [DONE] |
-| N1-1→N1-6 | FOREX Connectivity Stack | 05/08 | Sprint N1 | [DONE] |
-| HU 9.3 | Frontend WebSocket Rendering | 09 | Sprint N2 | [DONE] |
-| HU 4.7 | Economic Calendar Veto Filter | 04 | Sprint N2 | [DONE] |
-| HU 5.3 | The Pulse (Advanced Feedback) | 05 | — | [TODO] |
-| HU 7.1 | Confidence Threshold Adaptive | 07 | — | [TODO] |
-
----
-
 ### E4: Expansión Institucional & Conectividad Nivel 2 (Dominios 01, 03, 05) — ACTIVA
 **Sprints**: Sprint N2 | **Trace_ID**: pendiente
 **Objetivo**: FIX API para Prime Brokers + WebSocket Auth estandarizado + JSON_SCHEMA Interpreter.

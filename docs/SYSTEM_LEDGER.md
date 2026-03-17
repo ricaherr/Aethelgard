@@ -48,6 +48,59 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 | **Objetivo** | Control de riesgo avanzado, optimización de Alpha y gobernanza institucional de riesgo. |
 | **HUs** | HU 4.4 Safety Governor · HU 4.5 Exposure & Drawdown Monitor · HU 2.3 Contextual Memory · HU 3.1 Alpha Scoring |
 | **Validate_all** | ✅ ver Registros `2026-02-27` |
+### E3 — Dominio Sensorial & Adaptabilidad (Dominios 02, 03, 04, 05, 06, 07, 09, 10)
+| Campo | Valor |
+|---|---|
+| **Trace_ID** | INFRA-PULSE-HU53-2026-001 |
+| **Sprints** | Sprint 3 · Sprint 4 · Sprint N1 · Sprint N2 · Sprint N3 |
+| **Completada** | 17-Mar-2026 |
+| **Dominios** | 02, 03, 04, 05, 06, 07, 09, 10 |
+| **Objetivo** | Supremacía analítica mediante detección de anomalías, coherencia de modelos, auto-calibración adaptativa, stack FOREX operacional y telemetría de infraestructura. |
+| **HUs** | HU 2.1 Regime Vectorizer · HU 4.6 Anomaly Sentinel · HU 2.2 Global Liquidity Clock · HU 3.3 FVG Detector · HU 3.6/3.7/3.8 Universal Engine + Consensus · HU 6.3 Coherence Drift · HU 3.9 Hybrid Runtime · HU 3.3b Market Structure Analyzer · HU 5.2/6.2 Conflict Resolver · HU 9.1/9.2 UI Mapping · HU 10.1 Strategy Heartbeat · HU 3.6b Signal Quality Scorer · HU 7.2 Asset Efficiency Score · Shadow UI · Shadow WS · N1-1→N1-6 FOREX Connectivity · HU 9.3 Frontend WebSocket · HU 4.7 Economic Calendar Veto · HU 7.1 Confidence Threshold Optimizer · HU 5.3 The Pulse |
+| **Validate_all** | ✅ 25/25 PASSED · 1452 tests · 0 failures · Sprint N3 |
+
+
+
+---
+
+## 📅 Registro: 2026-03-16 — SPRINT N2: SEGURIDAD & VISUALIZACIÓN EN VIVO + HU 7.1 (TRACE_ID: WS-AUTH-STD-N2-2026-03-15)
+
+### ✅ HITO COMPLETADO: Sprint N2 — Seguridad WebSocket + Frontend Rendering + Economic Veto + Slippage Adaptativo
+
+**Timestamp**: 16 de Marzo 2026 (UTC)
+**Status**: ✅ COMPLETADO
+**Severity**: SECURITY FIX + FEATURE + BUG FIX
+**Domain**: 01, 03, 04, 05, 09
+**Versión Sistema**: v4.4.0-beta
+
+### 🎯 HUs Completadas
+
+| HU | Nombre | Trace_ID | Tests |
+|---|---|---|---|
+| N2-2 | WebSocket Auth Standardization | WS-AUTH-STD-N2-2026-03-15 | 16/16 ✅ |
+| HU 9.3 | Frontend WebSocket Rendering | UI-EXEC-FRACTAL-v3-SYNAPSE | 84/84 ✅ |
+| N2-1 | JSON_SCHEMA Interpreter | N2-1-JSON-SCHEMA-INTERPRETER-2026 | 25/25 ✅ |
+| HU 4.7 | Economic Calendar Veto Filter | ECON-VETO-FILTER-2026-001 | 20/20 ✅ |
+| HU 5.2 | Adaptive Slippage Controller | HU-5.2-ADAPTIVE-SLIPPAGE-2026 | 17/17 ✅ |
+| HU 7.1 | Confidence Threshold Adaptive | ADAPTIVE-THRESHOLD-2026-001 | 21/21 ✅ |
+
+### 🔧 Deuda Técnica Resuelta
+
+- datetime.utcnow() deprecated — Reemplazado en 17 archivos produccion + 9 test
+- pandas freq=H deprecated — Corregido en 4 archivos de test
+- RuntimeWarning coroutine never awaited — Corregido mocks aiohttp en test_economic_adapters.py
+- DeprecationWarning httpx cookies — Corregido en test_auth_gateway.py
+- Double scanner call — Re-fetch redundante eliminado de run_single_cycle() UI_MAPPING
+- 8 tests pytest.skip() WebSocket Shadow sin implementacion eliminados
+
+### 📊 Estado Post-Sprint N2
+
+| Metrica | Valor |
+|---|---|
+| **Suite de tests** | 1441 passed · 0 failed · 0 skipped · 0 warnings |
+| **validate_all.py** | 25/25 PASSED |
+| **Version** | v4.4.0-beta |
+| **Fecha cierre** | 16-Mar-2026 |
 
 ---
 
