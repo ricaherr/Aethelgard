@@ -9,27 +9,14 @@
 > - **NO agregar aquí**: listas de archivos modificados, métricas de tests, detalles de implementación (eso va en SPRINT.md).
 > - **Framework completo**: `.ai_orchestration_protocol.md` Sección 4.
 
-**Versión Log**: v4.3.2-beta
-**Última Actualización**: 15 de Marzo, 2026
+**Versión Log**: v4.4.2-beta
+**Última Actualización**: 18 de Marzo, 2026
 
 ---
 
 ## 📈 ÉPICAS ESTRATÉGICAS
 
 > ℹ️ Solo se muestran Épicas en estado `ACTIVA` o `PENDIENTE`. Las Épicas `COMPLETADA` se archivan en [docs/SYSTEM_LEDGER.md](../docs/SYSTEM_LEDGER.md) (sección ÉPICAS ARCHIVADAS) y se eliminan de este documento.
-
-### E4: Expansión Institucional & Conectividad Nivel 2 (Dominios 01, 03, 05) — ACTIVA
-**Sprints**: Sprint N2 | **Trace_ID**: pendiente
-**Objetivo**: FIX API para Prime Brokers + WebSocket Auth estandarizado + JSON_SCHEMA Interpreter.
-
-| HU | Nombre | Dominio | Sprint | Estado |
-|---|---|---|---|---|
-| HU 5.1 | Capa Institutional FIX API (Prime Brokers) | 05 | Sprint N2 | [TODO] |
-| HU 5.2 | Adaptive Slippage Controller | 05 | Sprint N2 | [DONE] |
-| N2-1 | JSON_SCHEMA Interpreter | 03 | Sprint N2 | [DONE] |
-| N2-2 | WebSocket Auth Standardization | 01 | Sprint N2 | [DONE] |
-
----
 
 ### E5: Interfaz Fractal & Experiencia Futurista (Dominio 09) — PENDIENTE
 **Sprint**: por definir | **Trace_ID**: UI-V3-FRACTAL-FUTURE-2026

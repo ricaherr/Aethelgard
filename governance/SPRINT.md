@@ -359,6 +359,53 @@
 
 ---
 
+# SPRINT N4: FIX PROTOCOL CORE — [DONE]
+
+**Inicio**: 18 de Marzo, 2026
+**Fin**: 18 de Marzo, 2026
+**Épica**: E4 (cierre)
+**Objetivo**: Implementar la capa de transporte FIX 4.2 para conectividad con Prime Brokers institucionales.
+**Versión Target**: v4.4.2-beta
+
+---
+
+## 📋 Tareas del Sprint
+
+- [DONE] **HU 5.1: FIX Connector Core — librería simplefix + requirements.txt**
+  - `simplefix>=1.0.17` añadido a `requirements.txt`.
+  - TRACE_ID: FIX-CORE-HU51-2026-001
+
+- [DONE] **HU 5.1: FIX Connector Core — TDD (14 tests)**
+  - Creado `tests/test_fix_connector.py` con 14 tests en 5 grupos:
+    - Interface & Identity (2) · Logon Handshake (4)
+    - Availability Lifecycle (2) · Order Execution (4) · Logout & Latency (2)
+
+- [DONE] **HU 5.1: FIX Connector Core — Implementación FIXConnector**
+  - Creado `connectors/fix_connector.py` — hereda `BaseConnector`.
+  - Mensajes: Logon (A) · Logout (5) · New Order Single (D) · Execution Report (8).
+  - Config SSOT vía `storage.get_data_provider_config("fix_prime")`.
+  - `socket_factory` injectable para tests sin broker real.
+  - `ConnectorType.FIX = "FIX"` añadido a `models/signal.py`.
+  - Bug encontrado y corregido: `simplefix.get(tag, nth)` — 2do arg es ordinal (no default).
+
+---
+
+## 📸 Snapshot Sprint N4 (Final)
+
+| Métrica | Valor |
+|---|---|
+| **Versión Sistema** | v4.4.2-beta |
+| **Tareas Completadas** | 3/3 ✅ |
+| **validate_all.py** | 25/25 PASSED ✅ |
+| **Suite de Tests** | 1466 passed · 0 failed · 0 skipped · 0 warnings |
+| **Nuevos Tests** | +14 (test_fix_connector.py) |
+| **Archivos Creados** | `connectors/fix_connector.py` · `tests/test_fix_connector.py` |
+| **Archivos Modificados** | `requirements.txt` · `models/signal.py` · `governance/BACKLOG.md` |
+| **Regresiones** | 0 |
+| **Fecha Cierre** | 18 de Marzo, 2026 |
+
+---
+
 # SPRINT N3: PULSO DE INFRAESTRUCTURA — [DONE]
 
 **Inicio**: 17 de Marzo, 2026

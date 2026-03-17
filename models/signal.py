@@ -10,6 +10,7 @@ class ConnectorType(Enum):
     NINJATRADER8 = "NINJATRADER8"
     GENERIC = "GENERIC"
     PAPER = "PAPER"
+    FIX = "FIX"
 
 class SignalType(Enum):
     """Define los tipos de señales de trading."""

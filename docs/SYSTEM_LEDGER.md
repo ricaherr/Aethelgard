@@ -59,6 +59,17 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 | **HUs** | HU 2.1 Regime Vectorizer · HU 4.6 Anomaly Sentinel · HU 2.2 Global Liquidity Clock · HU 3.3 FVG Detector · HU 3.6/3.7/3.8 Universal Engine + Consensus · HU 6.3 Coherence Drift · HU 3.9 Hybrid Runtime · HU 3.3b Market Structure Analyzer · HU 5.2/6.2 Conflict Resolver · HU 9.1/9.2 UI Mapping · HU 10.1 Strategy Heartbeat · HU 3.6b Signal Quality Scorer · HU 7.2 Asset Efficiency Score · Shadow UI · Shadow WS · N1-1→N1-6 FOREX Connectivity · HU 9.3 Frontend WebSocket · HU 4.7 Economic Calendar Veto · HU 7.1 Confidence Threshold Optimizer · HU 5.3 The Pulse |
 | **Validate_all** | ✅ 25/25 PASSED · 1452 tests · 0 failures · Sprint N3 |
 
+### E4 — Expansión Institucional & Conectividad Nivel 2 (Dominios 01, 03, 05)
+| Campo | Valor |
+|---|---|
+| **Trace_ID** | FIX-CORE-HU51-2026-001 |
+| **Sprints** | Sprint N2 · Sprint N4 |
+| **Completada** | 18-Mar-2026 |
+| **Dominios** | 01, 03, 05 |
+| **Objetivo** | FIX 4.2 Connector para Prime Brokers + WebSocket Auth estandarizado + JSON_SCHEMA Interpreter. |
+| **HUs** | HU 5.1 FIX Connector Core · HU 5.2 Adaptive Slippage · N2-1 JSON_SCHEMA Interpreter · N2-2 WS Auth Standardization |
+| **Validate_all** | ✅ 25/25 PASSED · 1466 tests · 0 failures · Sprint N4 |
+
 
 
 ---

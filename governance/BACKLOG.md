@@ -208,10 +208,10 @@
     * **Gobernanza**: Agnosis obligatoria (no imports de brokers), DI obligatorio, SSOT (DB única fuente), degradación graciosa, <100ms latencia, auditoría vía TRACE_ID.
 
 ## 05_UNIVERSAL_EXECUTION (EMS, Conectores FIX)
-* **HU 5.1: High-Fidelity FIX Connector Core** `[DEV]`
+* **HU 5.1: High-Fidelity FIX Connector Core** `[DONE]`
     * **Prioridad**: Media (E3)
-    * **Descripción**: Desarrollo de la capa de transporte FIX basada en QuickFIX para conectividad directa con Prime Brokers.
-    * **Estado**: Normalización de conectores completada. ExecutionService operativo. Integración FIX con Prime Brokers en progreso.
+    * **Descripción**: Desarrollo de la capa de transporte FIX basada en simplefix para conectividad directa con Prime Brokers. FIXConnector implementa BaseConnector (Logon/Logout/Heartbeat/New Order Single/Execution Report). Config SSOT desde DB, socket_factory injectable para tests. [Sprint N4]
+    * **Estado**: FIXConnector completado. 14/14 tests TDD. 1466 passed · 0 failed. validate_all 25/25.
     * **🖥️ UI Representation**: Terminal de telemetría FIX con visualización de latencia ida y vuelta (RTT).
 * **HU 5.2: Adaptive Slippage Controller** `[DONE]`
     * **Prioridad**: Alta (E3)
