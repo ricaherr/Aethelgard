@@ -220,6 +220,10 @@
 * **HU 5.4: RuntimeFix — Cooldown Storage + Provider kwargs Injection** `[DONE]`
     * **Descripción**: (a) Implementar 4 métodos de cooldown en `ExecutionMixin` sobre `sys_cooldown_tracker` (`get_active_cooldown`, `register_cooldown`, `clear_cooldown`, `count_active_cooldowns`). (b) Filtrar `kwargs` por introspección de firma (`inspect.signature`) en `_get_provider_instance` para que solo pasen los parámetros aceptados por el constructor del provider. Resuelve `errors=52/52` en runtime.
     * **Impacto**: CRÍTICO — bloquea 100% del pipeline de señales. Trace_ID: RUNTIME-FIX-COOLDOWN-KWARGS-2026-N5
+* **HU 5.5: RuntimeFix — Orchestrator kwargs Injection** `[DONE]`
+    * **Descripción**: Implementar introspección segura (`inspect.signature`) en `core_brain/connectivity_orchestrator.py` para instanciar correctament los proveedores de datos sin romper kwargs. Resuelve `AlphaVantageProvider.__init__() TypeError` en el orquestador principal.
+* **HU 5.6: RuntimeFix — AlphaVantage Rate Limits Resilience** `[DONE]`
+    * **Descripción**: Manejar el agotamiento del Free Tier en `AlphaVantageProvider` silenciosamente como `WARNING` y devolver `None` en lugar de saturar el disco con `ERROR` de No time series.
 * **HU 5.3: Infrastructure Feedback Loop (The Pulse)** `[DONE]`
     * **Prioridad**: Media (E1 - Conexión básica / V3 - Feedback avanzado)
     * **Descripción**: Sistema de telemetría que informa al cerebro sobre el estado de los recursos y la red para decisiones de veto técnico. `_get_system_heartbeat()` retorna CPU%/RAM real vía psutil; bloque veto en `run_single_cycle()` corta scan cuando CPU > `cpu_veto_threshold` (SSOT: dynamic_params). [Sprint N3]

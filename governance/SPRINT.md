@@ -357,6 +357,40 @@
 | **Regresiones** | 0 |
 | **Fecha Cierre** | 16 de Marzo, 2026 |
 
+# SPRINT N6: FEED INTEGRATION & RATE LIMITS — [DONE]
+
+**Inicio**: 17 de Marzo, 2026  
+**Fin**: 17 de Marzo, 2026  
+**Objetivo**: Corregir instanciación en ConnectivityOrchestrator y manejar el agotamiento del Free Tier en Alpha Vantage de forma resiliente.  
+**Versión Target**: v4.4.4-beta  
+**Estado Final**: ✅ COMPLETADO | 2/2 tareas DONE | validate_all 100% PASSED  
+**Épica**: E6 (Estabilización Core)  
+**HUs**: HU 5.5, HU 5.6  
+**Trace_ID**: RUNTIME-FIX-FEEDS-2026-N6
+
+---
+
+## 📋 Tareas del Sprint N6
+
+- [DONE] **T1: Inyección Selectiva en ConnectivityOrchestrator** *(HU 5.5)*
+  - Filtrar `kwargs` con `inspect.signature` antes de instanciar providers en `load_connectors_from_db()`.
+  
+- [DONE] **T2: Manejar Rate Limits de Alpha Vantage** *(HU 5.6)*
+  - Bajar severidad de limit/no time series data en AlphaVantageProvider. Retornar `None` silenciosamente.
+  - Se agregó `provider_id` a la clase `AlphaVantageProvider` para alinear el contrato de `ConnectivityOrchestrator`.
+
+---
+
+## 📸 Snapshot Sprint N6 (Final)
+
+| Métrica | Valor |
+|---|---|
+| **Versión Sistema** | v4.4.4-beta |
+| **Tareas Completadas** | 2/2 ✅ |
+| **validate_all.py** | PASSED ✅ en todos los dominios |
+| **Runtime Errors** | Crashes de orquestador eliminados (0 previstos) |
+| **Fecha Cierre** | 17 de Marzo, 2026 |
+
 ---
 
 # SPRINT N5: CORRECCIÓN RUNTIME CORE — [DONE]

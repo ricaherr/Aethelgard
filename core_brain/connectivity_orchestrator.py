@@ -1,6 +1,7 @@
 import os
 import importlib
 import logging
+import inspect
 from enum import Enum
 from typing import Dict, Optional, Type, Any, List
 from connectors.base_connector import BaseConnector
@@ -53,6 +54,35 @@ class ConnectivityOrchestrator:
         self.failure_counts[pid] = 0
         logger.info(f"Connector registered: {pid}")
 
+    def _instantiate_connector(self, connector_class: Type, base_kwargs: Dict[str, Any]) -> BaseConnector:
+        """
+        Instantiates a connector dynamically, filtering kwargs based on its __init__ signature.
+        Prevents TypeError when trying to inject arguments (like storage) into classes that
+        don't explicitly declare them and lack **kwargs.
+        """
+        try:
+            sig = inspect.signature(connector_class.__init__)
+        except ValueError:
+            # Fallback if signature cannot be determined (e.g. built-ins)
+            return connector_class(**base_kwargs)
+            
+        accepted_params = {
+            name for name, param in sig.parameters.items()
+            if name != 'self' and param.kind != inspect.Parameter.VAR_KEYWORD
+        }
+        
+        has_var_kwargs = any(
+            param.kind == inspect.Parameter.VAR_KEYWORD 
+            for param in sig.parameters.values()
+        )
+        
+        if has_var_kwargs:
+            filtered_kwargs = base_kwargs
+        else:
+            filtered_kwargs = {k: v for k, v in base_kwargs.items() if k in accepted_params}
+            
+        return connector_class(**filtered_kwargs)
+
     def load_connectors_from_db(self) -> None:
         """
         Instantiate connectors based on the DB (SSOT).
@@ -103,7 +133,8 @@ class ConnectivityOrchestrator:
 
             try:
                 module = importlib.import_module(module_path)
-                conn = getattr(module, class_name)(storage=self.storage)
+                connector_class = getattr(module, class_name)
+                conn = self._instantiate_connector(connector_class, {'storage': self.storage})
                 self.register_connector(conn)
                 self.supports_info[pid] = {
                     "data": bool(p.get('supports_data', 1)),
@@ -134,7 +165,8 @@ class ConnectivityOrchestrator:
                 account_id = acc.get('account_id')
                 try:
                     module = importlib.import_module(module_path)
-                    conn = getattr(module, class_name)(storage=self.storage, account_id=account_id)
+                    connector_class = getattr(module, class_name)
+                    conn = self._instantiate_connector(connector_class, {'storage': self.storage, 'account_id': account_id})
                     self.register_connector(conn)
                     self.supports_info[conn.provider_id] = {
                         "data": bool(acc.get('supports_data', 0)),

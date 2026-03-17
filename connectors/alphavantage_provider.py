@@ -28,6 +28,7 @@ class AlphaVantageProvider:
     """
     
     BASE_URL = "https://www.alphavantage.co/query"
+    provider_id = "alphavantage"
     
     # Timeframe mapping
     TIMEFRAME_MAP = {
@@ -145,7 +146,7 @@ class AlphaVantageProvider:
         # Parse response
         time_series_key = [k for k in data.keys() if "Time Series" in k]
         if not time_series_key:
-            logger.error("No time series data in response")
+            logger.warning(f"No time series data in response for {symbol} (Possible rate limit)")
             return None
         
         time_series = data[time_series_key[0]]
@@ -213,7 +214,7 @@ class AlphaVantageProvider:
         # Parse response
         time_series_key = [k for k in data.keys() if "Time Series" in k]
         if not time_series_key:
-            logger.error("No time series data in response")
+            logger.warning(f"No time series data in response for {symbol} (Possible rate limit)")
             return None
         
         time_series = data[time_series_key[0]]
@@ -275,7 +276,7 @@ class AlphaVantageProvider:
         # Parse response
         time_series_key = [k for k in data.keys() if "Time Series" in k]
         if not time_series_key:
-            logger.error("No time series data in response")
+            logger.warning(f"No time series data in response for stock {symbol} (Possible rate limit)")
             return None
         
         time_series = data[time_series_key[0]]
