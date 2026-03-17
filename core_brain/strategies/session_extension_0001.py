@@ -14,7 +14,7 @@ TRACE_ID: STRAT-SESS-EXT-0001
 """
 import logging
 from typing import Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from models.signal import Signal, SignalType, ConnectorType
 
 logger = logging.getLogger(__name__)
@@ -100,7 +100,7 @@ class SessionExtension0001Strategy:
                 take_profit=round(take_profit, 5),
                 confidence=0.5,
                 volume=0.01,
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 strategy_id="SESS_EXT_0001",
                 trace_id=self.trace_id,
                 metadata={

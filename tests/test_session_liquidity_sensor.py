@@ -87,7 +87,7 @@ class TestSessionLiquiditySensorSessionHighLow:
         WHEN: Se llama get_london_session_high_low()
         THEN: Debe procesar lo disponible correctamente
         """
-        times = pd.date_range('2026-03-02 12:00', periods=4, freq='H', tz=timezone.utc)
+        times = pd.date_range('2026-03-02 12:00', periods=4, freq='h', tz=timezone.utc)
         df = pd.DataFrame({
             'high': [1.0890, 1.0900, 1.0910, 1.0920],
             'low':  [1.0875, 1.0885, 1.0895, 1.0905],
@@ -254,7 +254,7 @@ class TestSessionLiquiditySensorIntegration:
         WHEN: Se ejecuta análisis completo
         THEN: Debe identificar niveles, breakouts y zonas de liquidez
         """
-        times = pd.date_range('2026-03-02 08:00', periods=12, freq='H', tz=timezone.utc)
+        times = pd.date_range('2026-03-02 08:00', periods=12, freq='h', tz=timezone.utc)
         df = pd.DataFrame({
             'open': [1.0850 + i*0.0005 for i in range(12)],
             'high': [1.0860 + i*0.0005 for i in range(12)],

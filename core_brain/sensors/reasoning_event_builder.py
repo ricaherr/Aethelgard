@@ -16,7 +16,7 @@ TRACE_ID: SENSOR-REASONING-EVENT-001
 import logging
 import json
 from typing import Optional, Dict, Any, List
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 logger = logging.getLogger(__name__)
@@ -72,7 +72,7 @@ class ReasoningEventBuilder:
             "symbol": symbol,
             "event_type": event_type,
             "source": source,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "data": data,
             "confidence": confidence,
             "status": "CREATED",
@@ -113,7 +113,7 @@ class ReasoningEventBuilder:
             "event_type": "CONFLUENCE_REASONING",
             "sources": sources,
             "source_count": len(sources),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "component_events": [e["id"] for e in events],
             "avg_confidence": avg_confidence,
             "consolidated_data": {
@@ -150,7 +150,7 @@ class ReasoningEventBuilder:
             "symbol": symbol,
             "event_type": "STRUCTURE_REASONING",
             "source": "MARKET_STRUCTURE",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "structure_analysis": structure_data,
             "confidence": structure_data.get("confidence", 0.5),
             "status": "STRUCTURE_BASED",

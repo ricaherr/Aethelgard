@@ -10,7 +10,7 @@ Comprehensive test suite covering all 3 pillars of validation:
 Plus UUID generation, batch processing, and integration with StorageManager.
 """
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List
 from uuid import UUID
 
@@ -41,7 +41,7 @@ class TestNewsSanitizerSchemaValidation:
             "country": "USA",
             "currency": "USD",
             "impact_score": "HIGH",
-            "event_time_utc": datetime.utcnow().isoformat(),
+            "event_time_utc": datetime.now(timezone.utc).isoformat(),
             "forecast": 150000.0,
             "actual": None,
             "previous": 145000.0,
@@ -144,49 +144,49 @@ class TestNewsSanitizerLatencyValidation:
     
     def test_recent_event_accepted(self, sanitizer, base_event):
         """Test that event from 5 days ago is accepted"""
-        base_event["event_time_utc"] = (datetime.utcnow() - timedelta(days=5)).isoformat()
+        base_event["event_time_utc"] = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
         
         # Should not raise
         sanitizer._validate_latency(base_event)
     
     def test_event_at_boundary_30_days_accepted(self, sanitizer, base_event):
         """Test that event from exactly 30 days ago is accepted"""
-        base_event["event_time_utc"] = (datetime.utcnow() - timedelta(days=30)).isoformat()
+        base_event["event_time_utc"] = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
         
         # Should not raise
         sanitizer._validate_latency(base_event)
     
     def test_stale_event_31_days_rejected(self, sanitizer, base_event):
         """Test that event from 31 days ago is rejected (DataLatencyError)"""
-        base_event["event_time_utc"] = (datetime.utcnow() - timedelta(days=31)).isoformat()
+        base_event["event_time_utc"] = (datetime.now(timezone.utc) - timedelta(days=31)).isoformat()
         
         with pytest.raises(DataLatencyError, match="exceeds 30-day window"):
             sanitizer._validate_latency(base_event)
     
     def test_very_old_event_rejected(self, sanitizer, base_event):
         """Test that very old event (60 days) is rejected"""
-        base_event["event_time_utc"] = (datetime.utcnow() - timedelta(days=60)).isoformat()
+        base_event["event_time_utc"] = (datetime.now(timezone.utc) - timedelta(days=60)).isoformat()
         
         with pytest.raises(DataLatencyError):
             sanitizer._validate_latency(base_event)
     
     def test_future_forecast_accepted(self, sanitizer, base_event):
         """Test that future event (forecast) is accepted if < 30 days forward"""
-        base_event["event_time_utc"] = (datetime.utcnow() + timedelta(days=10)).isoformat()
+        base_event["event_time_utc"] = (datetime.now(timezone.utc) + timedelta(days=10)).isoformat()
         
         # Should not raise
         sanitizer._validate_latency(base_event)
     
     def test_future_forecast_boundary_30_days_accepted(self, sanitizer, base_event):
         """Test that future event at exactly 30 days forward is accepted"""
-        base_event["event_time_utc"] = (datetime.utcnow() + timedelta(days=30)).isoformat()
+        base_event["event_time_utc"] = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
         
         # Should not raise
         sanitizer._validate_latency(base_event)
     
     def test_too_far_future_rejected(self, sanitizer, base_event):
         """Test that event > 30 days in future is rejected"""
-        base_event["event_time_utc"] = (datetime.utcnow() + timedelta(days=31)).isoformat()
+        base_event["event_time_utc"] = (datetime.now(timezone.utc) + timedelta(days=31)).isoformat()
         
         with pytest.raises(DataLatencyError, match="exceeds forecast window"):
             sanitizer._validate_latency(base_event)
@@ -207,7 +207,7 @@ class TestNewsSanitizerNormalization:
             "country": "United States",
             "currency": "USD",
             "impact_score": "HIGH",
-            "event_time_utc": datetime.utcnow().isoformat(),
+            "event_time_utc": datetime.now(timezone.utc).isoformat(),
         }
         
         # First validate, then normalize
@@ -236,7 +236,7 @@ class TestNewsSanitizerNormalization:
                 "country": "USA",
                 "currency": "USD",
                 "impact_score": input_val,
-                "event_time_utc": datetime.utcnow().isoformat(),
+                "event_time_utc": datetime.now(timezone.utc).isoformat(),
             }
             
             sanitizer._validate_schema(event, TEST_PROVIDER_SOURCE)
@@ -259,7 +259,7 @@ class TestNewsSanitizerUUIDGeneration:
             "country": "USA",
             "currency": "USD",
             "impact_score": "HIGH",
-            "event_time_utc": datetime.utcnow().isoformat(),
+            "event_time_utc": datetime.now(timezone.utc).isoformat(),
         }
         
         sanitizer._validate_schema(event, TEST_PROVIDER_SOURCE)
@@ -279,7 +279,7 @@ class TestNewsSanitizerUUIDGeneration:
             "country": "USA",
             "currency": "USD",
             "impact_score": "HIGH",
-            "event_time_utc": datetime.utcnow().isoformat(),
+            "event_time_utc": datetime.now(timezone.utc).isoformat(),
             "event_id": "provider-id-12345",  # Should be ignored
         }
         
@@ -298,7 +298,7 @@ class TestNewsSanitizerUUIDGeneration:
                 "country": "USA",
                 "currency": "USD",
                 "impact_score": "HIGH",
-                "event_time_utc": datetime.utcnow().isoformat(),
+                "event_time_utc": datetime.now(timezone.utc).isoformat(),
             }
             for i in range(5)
         ]
@@ -330,27 +330,27 @@ class TestNewsSanitizerBatchProcessing:
                 "country": "USA",
                 "currency": "USD",
                 "impact_score": "HIGH",
-                "event_time_utc": datetime.utcnow().isoformat(),
+                "event_time_utc": datetime.now(timezone.utc).isoformat(),
             },
             {  # Invalid: missing country
                 "event_name": "Event 2",
                 "currency": "USD",
                 "impact_score": "HIGH",
-                "event_time_utc": datetime.utcnow().isoformat(),
+                "event_time_utc": datetime.now(timezone.utc).isoformat(),
             },
             {  # Valid
                 "event_name": "Event 3",
                 "country": "GBR",
                 "currency": "GBP",
                 "impact_score": "MEDIUM",
-                "event_time_utc": datetime.utcnow().isoformat(),
+                "event_time_utc": datetime.now(timezone.utc).isoformat(),
             },
             {  # Invalid: stale (>30 days)
                 "event_name": "Event 4",
                 "country": "JPY",
                 "currency": "JPY",
                 "impact_score": "LOW",
-                "event_time_utc": (datetime.utcnow() - timedelta(days=35)).isoformat(),
+                "event_time_utc": (datetime.now(timezone.utc) - timedelta(days=35)).isoformat(),
             },
         ]
         
@@ -369,7 +369,7 @@ class TestNewsSanitizerBatchProcessing:
                 "country": "USA",
                 "currency": "USD",
                 "impact_score": "HIGH",
-                "event_time_utc": datetime.utcnow().isoformat(),
+                "event_time_utc": datetime.now(timezone.utc).isoformat(),
             }
             for i in range(3)
         ]
@@ -413,7 +413,7 @@ class TestNewsSanitizerStorageIntegration:
             "country": "USA",
             "currency": "USD",
             "impact_score": "HIGH",
-            "event_time_utc": datetime.utcnow().isoformat(),
+            "event_time_utc": datetime.now(timezone.utc).isoformat(),
             "forecast": 150000.0,
             "provider_source": "INVESTING",
         }
@@ -438,7 +438,7 @@ class TestNewsSanitizerStorageIntegration:
                 "country": "USA",
                 "currency": "USD",
                 "impact_score": "HIGH",
-                "event_time_utc": datetime.utcnow().isoformat(),
+                "event_time_utc": datetime.now(timezone.utc).isoformat(),
                 "provider_source": "INVESTING",
             }
             

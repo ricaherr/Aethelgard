@@ -17,7 +17,7 @@ Test Coverage:
 
 import pytest
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any
 from unittest.mock import Mock, patch, AsyncMock, MagicMock
 import uuid
@@ -214,11 +214,12 @@ class TestInvestingAdapter:
         investing_adapter: InvestingAdapter
     ) -> None:
         """Verify timeout handling returns empty list."""
-        # Simulate a timeout by mocking aiohttp to raise TimeoutError
+        # Simulate a timeout by raising at the ClientSession level
         with patch('connectors.economic_adapters.aiohttp') as mock_aiohttp:
-            mock_aiohttp.ClientSession.return_value.__aenter__.return_value.get.side_effect = (
-                asyncio.TimeoutError()
+            mock_aiohttp.ClientSession.return_value.__aenter__ = AsyncMock(
+                side_effect=asyncio.TimeoutError()
             )
+            mock_aiohttp.ClientSession.return_value.__aexit__ = AsyncMock(return_value=False)
             
             result = await investing_adapter.fetch_events(days_back=7)
             assert result == []
@@ -231,13 +232,13 @@ class TestInvestingAdapter:
     ) -> None:
         """Verify old events are filtered by days_back."""
         # Create a cutoff date in the past
-        cutoff = datetime.utcnow() - timedelta(days=10)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=10)
         
         # Parse HTML that should be filtered
         events = investing_adapter._parse_events(sample_html_investing, days_back=7)
         
         # Check that all returned events are within the date range
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         for event in events:
             event_time = datetime.fromisoformat(
                 event['event_time_utc'].replace('Z', '+00:00')
@@ -327,15 +328,12 @@ class TestBloombergAdapter:
             mock_response = AsyncMock()
             mock_response.status = 200
             mock_response.json = AsyncMock(side_effect=asyncio.TimeoutError())
-            
-            mock_session = AsyncMock()
-            mock_session.get = AsyncMock()
-            mock_session.get.return_value.__aenter__ = AsyncMock(
-                return_value=mock_response
-            )
-            mock_session.get.return_value.__aexit__ = AsyncMock(
-                return_value=None
-            )
+
+            mock_get_context = AsyncMock()
+            mock_get_context.__aenter__ = AsyncMock(return_value=mock_response)
+            mock_get_context.__aexit__ = AsyncMock(return_value=False)
+            mock_session = Mock()
+            mock_session.get = Mock(return_value=mock_get_context)
             
             mock_aiohttp.ClientSession.return_value.__aenter__ = AsyncMock(
                 return_value=mock_session
@@ -361,15 +359,12 @@ class TestBloombergAdapter:
         with patch('connectors.economic_adapters.aiohttp') as mock_aiohttp:
             mock_response = AsyncMock()
             mock_response.status = 401
-            
-            mock_session = AsyncMock()
-            mock_session.get = AsyncMock()
-            mock_session.get.return_value.__aenter__ = AsyncMock(
-                return_value=mock_response
-            )
-            mock_session.get.return_value.__aexit__ = AsyncMock(
-                return_value=None
-            )
+
+            mock_get_context = AsyncMock()
+            mock_get_context.__aenter__ = AsyncMock(return_value=mock_response)
+            mock_get_context.__aexit__ = AsyncMock(return_value=False)
+            mock_session = Mock()
+            mock_session.get = Mock(return_value=mock_get_context)
             
             mock_aiohttp.ClientSession.return_value.__aenter__ = AsyncMock(
                 return_value=mock_session
@@ -490,10 +485,11 @@ class TestForexFactoryAdapter:
     ) -> None:
         """Verify timeout handling returns empty list."""
         with patch('connectors.economic_adapters.aiohttp') as mock_aiohttp:
-            mock_aiohttp.ClientSession.return_value.__aenter__.return_value.get.side_effect = (
-                asyncio.TimeoutError()
+            mock_aiohttp.ClientSession.return_value.__aenter__ = AsyncMock(
+                side_effect=asyncio.TimeoutError()
             )
-            
+            mock_aiohttp.ClientSession.return_value.__aexit__ = AsyncMock(return_value=False)
+
             result = await forexfactory_adapter.fetch_events(days_back=7)
             assert result == []
     

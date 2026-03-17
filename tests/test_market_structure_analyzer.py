@@ -241,7 +241,7 @@ class TestMarketStructureAnalyzer(unittest.TestCase):
         """✓ Test: Estructura requiere mínimo de pivots válidos."""
         # Generar datos sin estructura clara (random)
         random_candles = pd.DataFrame({
-            'datetime': pd.date_range('2026-03-01', periods=10, freq='1H'),
+            'datetime': pd.date_range('2026-03-01', periods=10, freq='1h'),
             'open': np.random.uniform(1.0900, 1.1000, 10),
             'high': np.random.uniform(1.0950, 1.1050, 10),
             'low': np.random.uniform(1.0850, 1.0950, 10),

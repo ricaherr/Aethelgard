@@ -22,7 +22,7 @@ Integración:
 
 import logging
 from typing import Optional, Dict, Any, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -266,7 +266,7 @@ class DXYService:
                 limit_records=100,
                 metadata={
                     "ttl_seconds": self.cache_ttl_seconds,
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                     "provider": "multi-fallback"
                 }
             )
@@ -302,7 +302,7 @@ class DXYService:
             "agnotic": "List[Dict] output (Rule #4)",
             "cache_ttl_seconds": self.cache_ttl_seconds,
             "fallback_levels": 5,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
 

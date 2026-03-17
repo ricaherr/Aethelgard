@@ -12,7 +12,7 @@ Pilar 3: Immutability Enforcement (no updates after persistence)
 Responsibility: Act as gate keeper before sys_economic_calendar table persistence.
 """
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional, List, Tuple
 from uuid import uuid4
 
@@ -220,7 +220,7 @@ class NewsSanitizer:
                 event_dt = time_str
             
             # Ensure UTC comparison
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             if event_dt.tzinfo is not None:
                 now = now.replace(tzinfo=event_dt.tzinfo)
             
@@ -310,7 +310,7 @@ class NewsSanitizer:
         
         # System fields set by Sanitizer
         normalized["event_id"] = str(uuid4())  # ALWAYS generate, never from provider
-        normalized["created_at"] = datetime.utcnow().isoformat() + "Z"
+        normalized["created_at"] = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
         normalized["data_version"] = 1
         
         return normalized

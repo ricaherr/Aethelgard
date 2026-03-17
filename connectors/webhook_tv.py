@@ -5,7 +5,7 @@ Recibe alertas de TradingView y las envía a Aethelgard
 import json
 import logging
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
@@ -74,7 +74,7 @@ def parse_tradingview_alert(alert_data: dict) -> dict:
             "symbol": symbol,
             "signal_type": signal_type,
             "price": price,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "volume": volume,
             "stop_loss": stop_loss,
             "take_profit": take_profit,

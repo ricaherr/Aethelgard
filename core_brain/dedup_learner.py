@@ -17,7 +17,7 @@ Rule:
 
 import logging
 from typing import Dict, List, Optional, Tuple, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 import statistics
 import numpy as np
@@ -92,7 +92,7 @@ class DedupLearner:
             "total_processed": 0
         }
         
-        learning_id = f"DEDUP-LEARNING-{datetime.utcnow().isoformat()}"
+        learning_id = f"DEDUP-LEARNING-{datetime.now(timezone.utc).isoformat()}"
         
         self.logger.info(f"[DEDUP_LEARNER] Starting weekly learning cycle: {learning_id}")
         
@@ -160,7 +160,7 @@ class DedupLearner:
         Returns:
             List of dicts: {symbol, timeframe, strategy, gap_minutes, created_at}
         """
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
         
         try:
             # Query sys_dedup_events table (contains when signals were deduplicated)

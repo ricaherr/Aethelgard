@@ -11,7 +11,7 @@ Coverage:
 
 import pytest
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from unittest.mock import Mock, AsyncMock, MagicMock, patch
 import sys
 from pathlib import Path
@@ -54,7 +54,7 @@ class TestSignalSelectorPhase2:
             "strategy": "OliverVelez",
             "confidence": 0.85,
             "entry_price": 1.0850,
-            "created_at": datetime.utcnow()
+            "created_at": datetime.now(timezone.utc)
         }
 
     @pytest.fixture
@@ -166,7 +166,7 @@ class TestSignalSelectorPhase2:
                 "timeframe": "M5",
                 "strategy": "OliverVelez",  # SAME strategy
                 "confidence": 0.80,
-                "created_at": datetime.utcnow() - timedelta(minutes=1)
+                "created_at": datetime.now(timezone.utc) - timedelta(minutes=1)
             }
         ]
         
@@ -193,7 +193,7 @@ class TestSignalSelectorPhase2:
             "timeframe": "M5",
             "strategy": "MovingAvgCross",  # DIFFERENT strategy
             "confidence": 0.82,
-            "created_at": datetime.utcnow() - timedelta(minutes=1)
+            "created_at": datetime.now(timezone.utc) - timedelta(minutes=1)
         }
         
         selector.storage.get_active_cooldown.return_value = None
@@ -223,7 +223,7 @@ class TestSignalSelectorPhase2:
             "timeframe": "M5",
             "strategy": "RSIDivergence",  # DIFFERENT strategy
             "confidence": 0.80,
-            "created_at": datetime.utcnow() - timedelta(minutes=1),
+            "created_at": datetime.now(timezone.utc) - timedelta(minutes=1),
             "price": 1.0850
         }
         
@@ -261,7 +261,7 @@ class TestSignalSelectorPhase2:
             "timeframe": "H1",
             "strategy": "Strategy2",
             "confidence": 0.75,
-            "created_at": datetime.utcnow() - timedelta(minutes=1),
+            "created_at": datetime.now(timezone.utc) - timedelta(minutes=1),
             "price": 1.0855,
             "entry_price": 1.0855
         }
@@ -302,7 +302,7 @@ class TestSignalSelectorPhase2:
             "timeframe": "H1",
             "strategy": "Strategy2",
             "confidence": 0.75,
-            "created_at": datetime.utcnow() - timedelta(minutes=2),
+            "created_at": datetime.now(timezone.utc) - timedelta(minutes=2),
             "price": 1.0851,  # Only 0.1 pip difference
             "entry_price": 1.0851
         }
@@ -337,7 +337,7 @@ class TestSignalSelectorPhase2:
         """Test: Active cooldown blocks signal execution."""
         selector.storage.get_active_cooldown.return_value = {
             "is_active": True,
-            "expires_at": datetime.utcnow() + timedelta(minutes=5),
+            "expires_at": datetime.now(timezone.utc) + timedelta(minutes=5),
             "failure_reason": "LIQUIDITY_INSUFFICIENT",
             "retry_count": 2
         }

@@ -15,7 +15,7 @@ Test Coverage:
 import logging
 import pytest
 from unittest.mock import Mock, MagicMock, patch
-from datetime import datetime
+from datetime import datetime, timezone
 
 from models.signal import Signal, SignalType, ConnectorType
 from core_brain.services.circuit_breaker_gate import CircuitBreakerGate, PermissionLevel
@@ -108,7 +108,7 @@ class TestShadowValidation:
             connector_type=ConnectorType.GENERIC,
             strategy_id=TEST_STRATEGY_ID,
             timeframe='M5',
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             metadata={
                 'strategy_id': TEST_STRATEGY_ID,
                 'signal_id': f'TEST-{symbol}-001',
@@ -334,7 +334,7 @@ class TestShadowConnectorInjection:
             confidence=0.75,
             connector_type=ConnectorType.GENERIC,
             strategy_id=TEST_STRATEGY_ID,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             metadata={'strategy_id': TEST_STRATEGY_ID}
         )
         
@@ -369,7 +369,7 @@ class TestShadowConnectorInjection:
             confidence=0.75,
             connector_type=ConnectorType.METATRADER5,
             strategy_id=TEST_STRATEGY_ID,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             metadata={'strategy_id': TEST_STRATEGY_ID}
         )
         
@@ -488,7 +488,7 @@ class TestEndToEndShadowFlow:
             confidence=0.78,
             connector_type=ConnectorType.GENERIC,
             strategy_id=TEST_STRATEGY_ID,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             metadata={
                 'strategy_id': TEST_STRATEGY_ID,
                 'signal_id': 'SHADOW-001',

@@ -27,46 +27,6 @@ from data_vault.storage import StorageManager
 
 
 # ============================================================================
-# TEST 1: ShadowWSRouter Connection/Disconnection
-# ============================================================================
-
-class TestShadowWSRouter:
-    """Test WebSocket endpoint /ws/shadow"""
-
-    @pytest.mark.asyncio
-    async def test_websocket_connection_success(self):
-        """Test successful WebSocket connection with valid token"""
-        # PENDING: Backend router implementation
-        # This test expects router at /ws/shadow to accept connections
-        # and register them in active_shadow_connections[tenant_id]
-        pytest.skip("Router /ws/shadow not implemented yet (PENDING STEP 1)")
-
-    @pytest.mark.asyncio
-    async def test_websocket_invalid_token_rejected(self):
-        """Test invalid token causes WebSocket rejection (1008 code)"""
-        # PENDING: WebSocket authentication logic
-        pytest.skip("WebSocket token validation not implemented (PENDING STEP 1)")
-
-    @pytest.mark.asyncio
-    async def test_websocket_multiple_clients_isolated_by_tenant(self):
-        """Test that clients are isolated per tenant_id"""
-        # PENDING: Tenant isolation in WebSocket router
-        pytest.skip("Tenant isolation not implemented (PENDING STEP 1)")
-
-    @pytest.mark.asyncio
-    async def test_websocket_disconnect_cleanup(self):
-        """Test that disconnections clean up active_shadow_connections"""
-        # PENDING: Cleanup logic on WebSocketDisconnect
-        pytest.skip("Disconnect cleanup not implemented (PENDING STEP 1)")
-
-    @pytest.mark.asyncio
-    async def test_websocket_keepalive_ping_pong(self):
-        """Test client keepalive mechanism (ping/pong)"""
-        # PENDING: Keepalive logic in WebSocket loop
-        pytest.skip("Keepalive mechanism not implemented (PENDING STEP 1)")
-
-
-# ============================================================================
 # TEST 2: MainOrchestrator.emit_shadow_status_update()
 # ============================================================================
 
@@ -360,24 +320,6 @@ class TestWeeklySchedulerEmission:
         # This is a basic structural test
         assert hasattr(orchestrator_with_scheduler, "_check_and_run_weekly_shadow_evolution")
         assert callable(orchestrator_with_scheduler._check_and_run_weekly_shadow_evolution)
-
-    @pytest.mark.asyncio
-    async def test_scheduler_calls_emit_shadow_event_per_result(self, orchestrator_with_scheduler):
-        """Test that scheduler calls emit_shadow_status_update for each instance"""
-        # PENDING: Integration with ShadowManager evaluation results
-        pytest.skip("Scheduler emit integration not implemented (PENDING STEP 4)")
-
-    @pytest.mark.asyncio
-    async def test_scheduler_respects_24h_debounce(self, orchestrator_with_scheduler):
-        """Test that scheduler doesn't run twice in 24 hours"""
-        # PENDING: Debounce logic verification
-        pytest.skip("Scheduler debounce verification not implemented (PENDING STEP 4)")
-
-    @pytest.mark.asyncio
-    async def test_scheduler_generates_valid_trace_ids(self, orchestrator_with_scheduler):
-        """Test that all emitted events have valid trace IDs"""
-        # PENDING: Trace ID format validation
-        pytest.skip("Trace ID validation not implemented (PENDING STEP 4)")
 
 
 # ============================================================================

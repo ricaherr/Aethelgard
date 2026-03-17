@@ -65,7 +65,7 @@ def anomaly_service(mock_storage, mock_risk_manager, mock_socket_service):
 @pytest.fixture
 def normal_price_data():
     """Generador de datos OHLC normales (sin anomalías)."""
-    dates = pd.date_range(start="2026-01-01", periods=100, freq="1H")
+    dates = pd.date_range(start="2026-01-01", periods=100, freq="1h")
     np.random.seed(42)
     base_price = 1.0500
     returns = np.random.normal(0.0001, 0.0005, 100)  # Pequeños retornos normales
@@ -85,7 +85,7 @@ def normal_price_data():
 @pytest.fixture
 def extreme_volatility_data():
     """Generador de datos con picos extremos (Z-Score > 3)."""
-    dates = pd.date_range(start="2026-01-01", periods=100, freq="1H")
+    dates = pd.date_range(start="2026-01-01", periods=100, freq="1h")
     base_price = 1.0500
     
     # Primeras 50 velas normales
@@ -114,7 +114,7 @@ def extreme_volatility_data():
 @pytest.fixture
 def flash_crash_data():
     """Generador de datos con Flash Crash (caída > -2% en 1 vela)."""
-    dates = pd.date_range(start="2026-01-01", periods=100, freq="1H")
+    dates = pd.date_range(start="2026-01-01", periods=100, freq="1h")
     base_price = 1.0500
     
     prices = base_price + np.random.normal(0, 0.0002, 99)

@@ -16,7 +16,7 @@ Rule:
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional, Tuple
 from enum import Enum
 
@@ -127,10 +127,10 @@ class CooldownManager:
             cooldown_capped = False
         
         # Calculate expiration time
-        cooldown_expires = datetime.utcnow() + timedelta(minutes=final_cooldown)
+        cooldown_expires = datetime.now(timezone.utc) + timedelta(minutes=final_cooldown)
         
         # Persistence (SSOT)
-        trace_id = f"COOLDOWN-{signal_id}-{datetime.utcnow().isoformat()}"
+        trace_id = f"COOLDOWN-{signal_id}-{datetime.now(timezone.utc).isoformat()}"
         
         try:
             await self.storage.register_cooldown(
@@ -270,11 +270,11 @@ class CooldownManager:
             if isinstance(expires, str):
                 expires = datetime.fromisoformat(expires)
             
-            is_active = datetime.utcnow() < expires
+            is_active = datetime.now(timezone.utc) < expires
             
             if is_active:
                 # Still in cooldown
-                remaining_min = (expires - datetime.utcnow()).total_seconds() / 60
+                remaining_min = (expires - datetime.now(timezone.utc)).total_seconds() / 60
                 return True, {
                     "expires_at": expires,
                     "remaining_minutes": round(remaining_min, 2),

@@ -27,7 +27,7 @@ events = await gateway.fetch_economic_events(
 import logging
 import asyncio
 from typing import List, Dict, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from abc import ABC, abstractmethod
 import json
 from pathlib import Path
@@ -364,7 +364,7 @@ class EconomicDataGateway:
             return False
         
         cached_time = self.cache[provider_name]["timestamp"]
-        if datetime.utcnow() - cached_time > self.cache_ttl:
+        if datetime.now(timezone.utc) - cached_time > self.cache_ttl:
             logger.info(f"[{provider_name}] Cache expired")
             # DON'T delete - keep it for fallback use
             return False
@@ -374,7 +374,7 @@ class EconomicDataGateway:
     def _update_cache(self, provider_name: str, events: List[Dict[str, Any]]) -> None:
         """Update cache with new data."""
         self.cache[provider_name] = {
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(timezone.utc),
             "data": events
         }
     

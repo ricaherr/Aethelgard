@@ -6,7 +6,7 @@ Ahora incluye capacidad de ejecutar señales automáticamente en cuenta Demo
 import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, List, Any
 import websockets
 from websockets.exceptions import ConnectionClosed
@@ -96,7 +96,7 @@ class MT5Bridge:
                 "type": "init",
                 "client_id": self.client_id,
                 "symbol": self.symbol,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             })
             
         except Exception as e:
@@ -640,7 +640,7 @@ class MT5Bridge:
             "symbol": self.symbol,
             "signal_type": signal_type,
             "price": price,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "volume": volume,
             "stop_loss": stop_loss,
             "take_profit": take_profit,

@@ -7,7 +7,7 @@ FASE C.1: Validar DDL, constraints, e integridad de datos.
 import pytest
 import sqlite3
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from typing import List, Dict
 
@@ -152,12 +152,12 @@ class TestEconomicCalendarSchema:
                 "country": "USA",
                 "impact_score": "HIGH",
                 "currency": "USD",
-                "event_time_utc": datetime.utcnow().isoformat(),
+                "event_time_utc": datetime.now(timezone.utc).isoformat(),
                 "source": "INVESTING",
                 "forecast": 3.2,
                 "actual": None,
                 "previous": 3.1,
-                "created_at": datetime.utcnow().isoformat(),
+                "created_at": datetime.now(timezone.utc).isoformat(),
             }
 
             cursor = conn.execute(
@@ -204,9 +204,9 @@ class TestEconomicCalendarSchema:
                 "country": "EUR",
                 "impact_score": "MEDIUM",
                 "currency": "EUR",
-                "event_time_utc": datetime.utcnow().isoformat(),
+                "event_time_utc": datetime.now(timezone.utc).isoformat(),
                 "source": "INVESTING",
-                "created_at": datetime.utcnow().isoformat(),
+                "created_at": datetime.now(timezone.utc).isoformat(),
             }
 
             # Insert first time
@@ -243,9 +243,9 @@ class TestEconomicCalendarSchema:
                         "GBP",
                         "HIGH",
                         "GBP",
-                        datetime.utcnow().isoformat(),
+                        datetime.now(timezone.utc).isoformat(),
                         "BLOOMBERG",
-                        datetime.utcnow().isoformat(),
+                        datetime.now(timezone.utc).isoformat(),
                     ),
                 )
                 conn.commit()
@@ -277,9 +277,9 @@ class TestEconomicCalendarSchema:
                         country,
                         impact,
                         currency,
-                        datetime.utcnow().isoformat(),
+                        datetime.now(timezone.utc).isoformat(),
                         "INVESTING",
-                        datetime.utcnow().isoformat(),
+                        datetime.now(timezone.utc).isoformat(),
                     ),
                 )
             conn.commit()
@@ -315,9 +315,9 @@ class TestEconomicCalendarSchema:
                         country,
                         impact,
                         currency,
-                        datetime.utcnow().isoformat(),
+                        datetime.now(timezone.utc).isoformat(),
                         "INVESTING",
-                        datetime.utcnow().isoformat(),
+                        datetime.now(timezone.utc).isoformat(),
                     ),
                 )
             conn.commit()
@@ -375,9 +375,9 @@ class TestEconomicCalendarIntegration:
                 "country": "USA",
                 "impact_score": "HIGH",
                 "currency": "USD",
-                "event_time_utc": datetime.utcnow().isoformat(),
+                "event_time_utc": datetime.now(timezone.utc).isoformat(),
                 "source": "INVESTING",
-                "created_at": datetime.utcnow().isoformat(),
+                "created_at": datetime.now(timezone.utc).isoformat(),
             }
 
             # Insert

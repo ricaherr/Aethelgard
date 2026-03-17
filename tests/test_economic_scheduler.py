@@ -12,7 +12,7 @@ Type Hints: 100% coverage
 
 import pytest
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 import psutil
@@ -72,21 +72,21 @@ class TestSchedulerEvolution:
         # Simulate job metrics
         scheduler.metrics = [
             CPUMetrics(
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 system_cpu_percent=50.0,
                 scheduler_overhead_percent=5.0,
                 job_duration_sec=1.0,
                 is_job_skipped=False
             ),
             CPUMetrics(
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 system_cpu_percent=52.0,
                 scheduler_overhead_percent=6.0,
                 job_duration_sec=1.1,
                 is_job_skipped=False
             ),
             CPUMetrics(
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 system_cpu_percent=51.0,
                 scheduler_overhead_percent=5.5,
                 job_duration_sec=1.05,
@@ -108,7 +108,7 @@ class TestSchedulerEvolution:
         for i in range(scheduler_config.calibration_samples):
             scheduler.metrics.append(
                 CPUMetrics(
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(timezone.utc),
                     system_cpu_percent=50.0 + i,
                     scheduler_overhead_percent=5.0 + i * 0.5,
                     job_duration_sec=1.0,
@@ -142,7 +142,7 @@ class TestSchedulerEvolution:
         for cpu, overhead in metrics_data:
             scheduler.metrics.append(
                 CPUMetrics(
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(timezone.utc),
                     system_cpu_percent=cpu,
                     scheduler_overhead_percent=overhead,
                     job_duration_sec=1.0,
@@ -172,7 +172,7 @@ class TestSchedulerAdaptive:
         for i in range(5):
             scheduler.metrics.append(
                 CPUMetrics(
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(timezone.utc),
                     system_cpu_percent=50.0 + i * 3,  # Rising: 50, 53, 56, 59, 62
                     scheduler_overhead_percent=5.0,
                     job_duration_sec=1.0,
@@ -191,7 +191,7 @@ class TestSchedulerAdaptive:
         for i in range(5):
             scheduler.metrics.append(
                 CPUMetrics(
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(timezone.utc),
                     system_cpu_percent=70.0 - i * 3,  # Falling: 70, 67, 64, 61, 58
                     scheduler_overhead_percent=5.0,
                     job_duration_sec=1.0,
@@ -210,7 +210,7 @@ class TestSchedulerAdaptive:
         for _ in range(5):
             scheduler.metrics.append(
                 CPUMetrics(
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(timezone.utc),
                     system_cpu_percent=50.0,  # Stable: always 50
                     scheduler_overhead_percent=5.0,
                     job_duration_sec=1.0,
@@ -232,7 +232,7 @@ class TestSchedulerAdaptive:
         for cpu in volatile_metrics:
             scheduler.metrics.append(
                 CPUMetrics(
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(timezone.utc),
                     system_cpu_percent=float(cpu),
                     scheduler_overhead_percent=5.0,
                     job_duration_sec=1.0,
@@ -256,7 +256,7 @@ class TestSchedulerAdaptive:
         for i in range(5):
             scheduler.metrics.append(
                 CPUMetrics(
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(timezone.utc),
                     system_cpu_percent=80.0 - i * 5,  # Falling
                     scheduler_overhead_percent=5.0,
                     job_duration_sec=1.0,
@@ -317,7 +317,7 @@ class TestSchedulerGraceful:
         for _ in range(5):
             scheduler.metrics.append(
                 CPUMetrics(
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(timezone.utc),
                     system_cpu_percent=95.0,
                     scheduler_overhead_percent=0,
                     job_duration_sec=0,
@@ -345,7 +345,7 @@ class TestSchedulerScalable:
         for _ in range(3):
             scheduler.metrics.append(
                 CPUMetrics(
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(timezone.utc),
                     system_cpu_percent=50.0,
                     scheduler_overhead_percent=5.0,
                     job_duration_sec=0.5,  # Fast
@@ -365,7 +365,7 @@ class TestSchedulerScalable:
         for i in range(10):
             scheduler.metrics.append(
                 CPUMetrics(
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(timezone.utc),
                     system_cpu_percent=50.0 + (i % 2) * 40,
                     scheduler_overhead_percent=5.0,
                     job_duration_sec=1.0,
@@ -394,7 +394,7 @@ class TestEDGEPhilosophy:
         for i in range(3):
             scheduler.metrics.append(
                 CPUMetrics(
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(timezone.utc),
                     system_cpu_percent=50.0 + i,
                     scheduler_overhead_percent=5.0 + i * 0.5,
                     job_duration_sec=1.0,
@@ -420,7 +420,7 @@ class TestEDGEPhilosophy:
         for _ in range(3):
             scheduler.metrics.append(
                 CPUMetrics(
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(timezone.utc),
                     system_cpu_percent=50.0,
                     scheduler_overhead_percent=5.0,
                     job_duration_sec=1.0,

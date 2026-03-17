@@ -15,7 +15,7 @@ Rule:
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 from enum import Enum
 
@@ -159,7 +159,7 @@ class SignalSelector:
                 if expires_at is None:
                     return {"is_active": False, "expires_at": None, "failure_reason": None, "retry_count": 0}
                 
-                is_active = datetime.utcnow() < expires_at
+                is_active = datetime.now(timezone.utc) < expires_at
                 return {
                     "is_active": is_active,
                     "expires_at": expires_at if is_active else None,
@@ -202,7 +202,7 @@ class SignalSelector:
         window_minutes = await self._get_dedup_window(
             symbol, timeframe, strategy, market_context
         )
-        window_expires = datetime.utcnow() - timedelta(minutes=window_minutes)
+        window_expires = datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
         
         matching = []
         for recent in recent_signals:
@@ -224,7 +224,7 @@ class SignalSelector:
                     "strategy": recent.get("strategy"),
                     "confidence": recent.get("confidence", 0.5),
                     "created_at": recent_time,
-                    "age_minutes": (datetime.utcnow() - recent_time).total_seconds() / 60
+                    "age_minutes": (datetime.now(timezone.utc) - recent_time).total_seconds() / 60
                 })
         
         details = {
@@ -620,7 +620,7 @@ class SignalSelector:
             }
         
         signal_price = signal.get("entry_price", 0.0)
-        signal_time = datetime.utcnow()
+        signal_time = datetime.now(timezone.utc)
         
         conflicts = []
         for m in matching:

@@ -10,7 +10,7 @@ Includes:
 
 import pytest
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any
 
 from connectors.economic_data_gateway import (
@@ -160,7 +160,7 @@ class TestEconomicDataGateway:
         
         # Manually expire cache
         if 'INVESTING' in gateway.cache:
-            gateway.cache['INVESTING']['timestamp'] = datetime.utcnow() - timedelta(minutes=2)
+            gateway.cache['INVESTING']['timestamp'] = datetime.now(timezone.utc) - timedelta(minutes=2)
         
         # Next call (cache expired)
         await gateway.fetch_economic_events('INVESTING', days_back=7)
@@ -174,7 +174,7 @@ class TestEconomicDataGateway:
         """Validate fallback to stale cache when provider fails."""
         # Populate cache with some data
         gateway.cache['INVESTING'] = {
-            "timestamp": datetime.utcnow() - timedelta(minutes=2),
+            "timestamp": datetime.now(timezone.utc) - timedelta(minutes=2),
             "data": [{"event_id": "cached-event"}]
         }
         

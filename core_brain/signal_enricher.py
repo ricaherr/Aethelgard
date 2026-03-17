@@ -12,7 +12,7 @@ Enriquece con:
 """
 import logging
 from typing import Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 from models.signal import Signal
 from data_vault.storage import StorageManager
@@ -206,7 +206,7 @@ class SignalEnricher:
             "fundamental_reason": fundamental_reason,
             "reasoning": reasoning,
             "strategy_id": strategy_id,
-            "timestamp": signal.timestamp.isoformat() if signal.timestamp else datetime.utcnow().isoformat(),
+            "timestamp": signal.timestamp.isoformat() if signal.timestamp else datetime.now(timezone.utc).isoformat(),
             "status": "APPROVED" if fundamental_safe else "VETOED",
         }
     

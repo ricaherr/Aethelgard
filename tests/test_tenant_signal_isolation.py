@@ -38,7 +38,7 @@ def clear_factory_cache():
 def _make_signal(signal_id: str, symbol: str = "EURUSD"):
     """Helper: build a minimal valid Signal object for save_signal()."""
     from models.signal import Signal, ConnectorType
-    from datetime import datetime
+    from datetime import datetime, timezone
     return Signal(
         symbol=symbol,
         signal_type="BUY",
@@ -48,7 +48,7 @@ def _make_signal(signal_id: str, symbol: str = "EURUSD"):
         entry_price=1.1050,
         stop_loss=1.0990,
         take_profit=1.1150,
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         metadata={"signal_id": signal_id}
     )
 

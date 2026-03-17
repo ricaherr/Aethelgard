@@ -10,7 +10,7 @@ Coverage:
 
 import pytest
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from unittest.mock import AsyncMock, Mock
 import sys
 from pathlib import Path
@@ -64,14 +64,14 @@ class TestDedupLearner:
                 "timeframe": "M5",
                 "strategy": "OliverVelez",
                 "gap_minutes": 8.5,
-                "created_at": datetime.utcnow()
+                "created_at": datetime.now(timezone.utc)
             },
             {
                 "symbol": "EURUSD",
                 "timeframe": "M5",
                 "strategy": "OliverVelez",
                 "gap_minutes": 15.2,
-                "created_at": datetime.utcnow()
+                "created_at": datetime.now(timezone.utc)
             }
         ]
         
@@ -227,14 +227,14 @@ class TestDedupLearner:
                 "timeframe": "M5",
                 "strategy": "Oliver",
                 "gap_minutes": 10,
-                "created_at": datetime.utcnow()
+                "created_at": datetime.now(timezone.utc)
             },
             {
                 "symbol": "EURUSD",
                 "timeframe": "M5",
                 "strategy": "Oliver",
                 "gap_minutes": 15,
-                "created_at": datetime.utcnow()
+                "created_at": datetime.now(timezone.utc)
             }
         ]
         
@@ -270,35 +270,35 @@ class TestDedupLearner:
                 "timeframe": "M5",
                 "strategy": "Oliver",
                 "gap_minutes": 5.0,
-                "created_at": datetime.utcnow()
+                "created_at": datetime.now(timezone.utc)
             },
             {
                 "symbol": "EURUSD",
                 "timeframe": "M5",
                 "strategy": "Oliver",
                 "gap_minutes": 6.5,
-                "created_at": datetime.utcnow()
+                "created_at": datetime.now(timezone.utc)
             },
             {
                 "symbol": "EURUSD",
                 "timeframe": "M5",
                 "strategy": "Oliver",
                 "gap_minutes": 7.0,
-                "created_at": datetime.utcnow()
+                "created_at": datetime.now(timezone.utc)
             },
             {
                 "symbol": "EURUSD",
                 "timeframe": "M5",
                 "strategy": "Oliver",
                 "gap_minutes": 8.0,
-                "created_at": datetime.utcnow()
+                "created_at": datetime.now(timezone.utc)
             },
             {
                 "symbol": "EURUSD",
                 "timeframe": "M5",
                 "strategy": "Oliver",
                 "gap_minutes": 9.0,
-                "created_at": datetime.utcnow()
+                "created_at": datetime.now(timezone.utc)
             }
         ]
         

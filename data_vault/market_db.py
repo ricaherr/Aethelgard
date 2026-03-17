@@ -1,7 +1,7 @@
 import json
 import logging
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 from .base_repo import BaseRepository
 
@@ -206,7 +206,7 @@ class MarketMixin(BaseRepository):
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            timestamp_str = datetime.utcnow().isoformat()
+            timestamp_str = datetime.now(timezone.utc).isoformat()
             
             # Prepare cache entry with metadata
             cache_entry = {

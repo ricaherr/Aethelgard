@@ -3,7 +3,7 @@ import os
 import uuid
 import logging
 from typing import Optional, Dict, Any, List
-from datetime import datetime
+from datetime import datetime, timezone
 from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
@@ -141,7 +141,7 @@ class AuthRepository:
         if user_id is None:
             user_id = str(uuid.uuid4())
         
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         
         with self._get_connection() as conn:
             try:
@@ -174,7 +174,7 @@ class AuthRepository:
             logger.warning(f"[AuthRepo] User not found: {user_id}")
             return False
         
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         
         with self._get_connection() as conn:
             conn.execute(
@@ -197,7 +197,7 @@ class AuthRepository:
             logger.warning(f"[AuthRepo] User not found: {user_id}")
             return False
         
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         deleted_at = now if new_status == 'deleted' else None
         
         with self._get_connection() as conn:
@@ -216,7 +216,7 @@ class AuthRepository:
         if not user:
             return False
         
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         
         with self._get_connection() as conn:
             conn.execute(
@@ -267,7 +267,7 @@ class AuthRepository:
         if trace_id is None:
             trace_id = str(uuid.uuid4())
         
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         
         with self._get_connection() as conn:
             try:
@@ -298,7 +298,7 @@ class AuthRepository:
 
     def set_jwt_secret(self, secret: str) -> None:
         """Set JWT secret in sys_config."""
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         
         with self._get_connection() as conn:
             conn.execute(

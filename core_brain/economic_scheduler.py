@@ -58,7 +58,7 @@ import asyncio
 import time
 import psutil
 from typing import Optional, Dict, Any, Callable, List, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, field
 from enum import Enum
 import traceback
@@ -466,7 +466,7 @@ class EconomicDataScheduler:
             # Record skip (backpressure = graceful, not error)
             current_cpu, _ = self._check_cpu_health()
             metric = CPUMetrics(
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 system_cpu_percent=current_cpu,
                 scheduler_overhead_percent=0,
                 job_duration_sec=0,
@@ -509,7 +509,7 @@ class EconomicDataScheduler:
             
             # Record metric (EDGE learns)
             metric = CPUMetrics(
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 system_cpu_percent=cpu_after,
                 scheduler_overhead_percent=overhead,
                 job_duration_sec=job_duration,
@@ -532,7 +532,7 @@ class EconomicDataScheduler:
             # Record error (still learning from failures)
             current_cpu, _ = self._check_cpu_health()
             metric = CPUMetrics(
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 system_cpu_percent=current_cpu,
                 scheduler_overhead_percent=0,
                 job_duration_sec=0,

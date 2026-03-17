@@ -11,7 +11,7 @@ Soporta dos tipos de engines:
 """
 import logging
 from typing import Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pandas as pd
 
@@ -74,7 +74,7 @@ class StrategySignalConverter:
                 timeframe=timeframe or "M5",
                 trace_id=trace_id,
                 provider_source=provider_source or "UniversalStrategyEngine",
-                timestamp=datetime.utcnow()
+                timestamp=datetime.now(timezone.utc)
             )
             
             # Copiar campos opcionales si existen

@@ -1632,23 +1632,12 @@ class MainOrchestrator:
             # EXEC-UI-DATA-INTEGRATION: Analyze market structure and populate UI mapping
             # (Always run, even if no trading usr_signals are generated)
             if self.market_structure_analyzer and self.ui_mapping_service:
-                # Defensive check: if too many snapshots lack data, wait a bit
                 snapshots_with_data = sum(
-                    1 for s in price_snapshots.values() 
+                    1 for s in price_snapshots.values()
                     if s.df is not None and len(s.df) > 0
                 )
                 if snapshots_with_data == 0:
-                    logger.warning(f"[UI_MAPPING] All {len(price_snapshots)} snapshots have df=None, waiting for data...")
-                    await asyncio.sleep(0.5)  # Brief wait for scanner to populate data
-                    # Re-fetch after wait
-                    scan_results_with_data = await asyncio.to_thread(self.scanner.get_scan_results_with_data)
-                    for key, data in scan_results_with_data.items():
-                        if key in price_snapshots and data.get("df") is not None:
-                            price_snapshots[key].df = data["df"]
-                    snapshots_with_data = sum(
-                        1 for s in price_snapshots.values() 
-                        if s.df is not None and len(s.df) > 0
-                    )
+                    logger.warning(f"[UI_MAPPING] All {len(price_snapshots)} snapshots have df=None — skipping structure analysis this cycle")
                 
                 available_pct = (snapshots_with_data / len(price_snapshots) * 100) if price_snapshots else 0
                 logger.info(f"[UI_MAPPING][GATE PASSED] analyzer=✅ service=✅ | Starting structure analysis for {len(price_snapshots)} price snapshots ({available_pct:.1f}% with data)")

@@ -38,7 +38,7 @@ def regime_service(mock_storage):
 @pytest.fixture
 def sample_ohlc_data():
     """Genera datos OHLCV de prueba (temporalidad neutral)."""
-    dates = pd.date_range(start="2026-01-01", periods=100, freq="H")
+    dates = pd.date_range(start="2026-01-01", periods=100, freq="h")
     df = pd.DataFrame({
         "timestamp": dates,
         "open": [1.0500 + i * 0.0001 for i in range(100)],
@@ -52,7 +52,7 @@ def sample_ohlc_data():
 @pytest.fixture
 def bullish_ohlc_data():
     """Genera datos con tendencia alcista (fuerte para M15, débil para H4)."""
-    dates = pd.date_range(start="2026-01-01", periods=100, freq="H")
+    dates = pd.date_range(start="2026-01-01", periods=100, freq="h")
     prices = [1.0500 + i * 0.0005 for i in range(100)]  # Subida progresiva
     df = pd.DataFrame({
         "timestamp": dates,
@@ -67,7 +67,7 @@ def bullish_ohlc_data():
 @pytest.fixture
 def bearish_ohlc_data():
     """Genera datos con tendencia bajista."""
-    dates = pd.date_range(start="2026-01-01", periods=100, freq="H")
+    dates = pd.date_range(start="2026-01-01", periods=100, freq="h")
     prices = [1.0500 - i * 0.0005 for i in range(100)]  # Bajada progresiva
     df = pd.DataFrame({
         "timestamp": dates,

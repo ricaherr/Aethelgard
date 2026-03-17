@@ -64,7 +64,8 @@ def test_risk_status_with_valid_token_accepted(client, auth_service, auth_repo):
     token = auth_service.create_access_token(subject="user_123", tenant_id=user_id)
     
     headers = {"Authorization": f"Bearer {token}"}
-    response = client.get("/api/risk/status", cookies={"a_token": token})
+    client.cookies.set("a_token", token)
+    response = client.get("/api/risk/status")
     
     # Podría ser 200, o si falta configuración en storage devolver otro código, pero no debe ser 401
     assert response.status_code != 401

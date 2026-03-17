@@ -19,7 +19,7 @@ Error Handling: Exceptions caught and logged, fallback to cache in gateway
 import logging
 import asyncio
 from typing import List, Dict, Any, Optional, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from abc import ABC, abstractmethod
 import uuid
 import re
@@ -142,7 +142,7 @@ class InvestingAdapter(BaseEconomicDataAdapter):
                 class_=re.compile(r'.*event.*', re.IGNORECASE)
             )
             
-            cutoff_date = datetime.utcnow() - timedelta(days=days_back)
+            cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_back)
             
             for row in rows:
                 try:
@@ -296,7 +296,7 @@ class BloombergAdapter(BaseEconomicDataAdapter):
                 return []
             
             # Prepare request
-            start_date = (datetime.utcnow() - timedelta(days=days_back)).date()
+            start_date = (datetime.now(timezone.utc) - timedelta(days=days_back)).date()
             params = {
                 "start_date": start_date.isoformat(),
                 "api_key": self.api_key
@@ -403,7 +403,7 @@ class BloombergAdapter(BaseEconomicDataAdapter):
                 "currency": "USD",
                 "impact_score": "HIGH",
                 "event_time_utc": (
-                    datetime.utcnow() + timedelta(days=3)
+                    datetime.now(timezone.utc) + timedelta(days=3)
                 ).isoformat() + "Z",
                 "provider_source": self.provider_name,
                 "forecast": 200000,
@@ -417,7 +417,7 @@ class BloombergAdapter(BaseEconomicDataAdapter):
                 "currency": "EUR",
                 "impact_score": "HIGH",
                 "event_time_utc": (
-                    datetime.utcnow() + timedelta(days=5)
+                    datetime.now(timezone.utc) + timedelta(days=5)
                 ).isoformat() + "Z",
                 "provider_source": self.provider_name,
                 "forecast": 4.75,
@@ -540,7 +540,7 @@ class ForexFactoryAdapter(BaseEconomicDataAdapter):
                 class_=re.compile(r'.*eventRow.*', re.IGNORECASE)
             )
             
-            cutoff_date = datetime.utcnow() - timedelta(days=days_back)
+            cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_back)
             
             for row in rows:
                 try:

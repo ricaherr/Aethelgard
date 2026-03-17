@@ -16,7 +16,7 @@ import asyncio
 import logging
 from typing import Optional, Dict, Any
 from enum import Enum
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 logger = logging.getLogger(__name__)
@@ -252,7 +252,7 @@ class StrategyModeSelector:
             
             # Audit in SYSTEM_LEDGER
             ledger_entry = {
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "trace_id": self.trace_id,
                 "event_type": "MODE_SWITCH",
                 "user_id": self.user_id,
@@ -294,5 +294,5 @@ class StrategyModeSelector:
             "current_mode": self._current_mode.value if self._current_mode else None,
             "initialized": self._initialized,
             "trace_id": self.trace_id,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
