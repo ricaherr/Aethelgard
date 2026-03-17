@@ -1,4 +1,4 @@
-﻿# AETHELGARD: SPRINT LOG
+# AETHELGARD: SPRINT LOG
 
 > **📋 REGLAS DE EDICIÓN — Leer antes de modificar este documento**
 > - **Propósito**: Diario de ejecución. Cada Sprint referencia una Épica del ROADMAP y las HUs del BACKLOG que ejecuta.
@@ -356,6 +356,56 @@
 | **Cobertura** | WebSocket rendering React · Economic veto · Slippage adaptativo · JSON schema |
 | **Regresiones** | 0 |
 | **Fecha Cierre** | 16 de Marzo, 2026 |
+
+---
+
+# SPRINT N5: CORRECCIÓN RUNTIME CORE — [DONE]
+
+**Inicio**: 17 de Marzo, 2026  
+**Fin**: 17 de Marzo, 2026  
+**Objetivo**: Resolver `errors=52/52` en ejecución real, corregir inyección de kwargs en providers, e implementar la separación arquitectónica de cuentas de broker (`usr_broker_accounts`).  
+**Versión Target**: v4.4.3-beta  
+**Estado Final**: ✅ COMPLETADO | 4/4 tareas DONE | validate_all 100% PASSED  
+**Épica**: E6 (nueva — Estabilización Core)  
+**HUs**: HU 5.4, HU 8.1  
+**Trace_ID**: RUNTIME-FIX-COOLDOWN-KWARGS-2026-N5
+
+---
+
+## 📋 Tareas del Sprint N5
+
+- [DONE] **T4: WARNING → DEBUG en RiskManager** *(HU 5.4 - prep)*
+  - `logger.warning("[SSOT]...")` → `logger.debug(...)` cuando se usan parámetros por defecto.
+
+- [DONE] **T2: Inyección Selectiva de kwargs en DataProviderManager** *(HU 5.4)*
+  - Especificación: `docs/specs/SPEC-T2-provider-kwargs-injection.md`
+  - Filtrar kwargs con `inspect.signature` antes de instanciar providers para evitar ValueError.
+  - Fixeado instanciación de AlphaVantageProvider y CTraderConnector.
+
+- [DONE] **T1: Métodos de Cooldown en StorageManager** *(HU 5.4)*
+  - Especificación: `docs/specs/SPEC-T1-cooldown-storage.md`
+  - Implementado `get_active_cooldown`, `register_cooldown`, `clear_cooldown`, `count_active_cooldowns` en `ExecutionMixin`.
+  - Agregados tests TDD y añadidos a `validate_all.py`. Resuelve AttributeError en CooldownManager y SignalSelector.
+
+- [DONE] **T3: Implementar `usr_broker_accounts`** *(HU 8.1)*
+  - Especificación: `docs/specs/SPEC-T3-usr-broker-accounts.md`
+  - DDL insertado en `schema.py` debajo de `sys_data_providers`.
+  - Creado `BrokerAccountsMixin` con operaciones CRUD y aislamiento por `user_id`.
+  - Script idempotente de migración `migrate_broker_accounts.py` transferió 2 cuentas reales.
+  - Tests TDD añadidos en `test_usr_broker_accounts.py` y validados.
+
+---
+
+## 📸 Snapshot Sprint N5 (Final)
+
+| Métrica | Valor |
+|---|---|
+| **Versión Sistema** | v4.4.3-beta |
+| **Tareas Completadas** | 4/4 ✅ |
+| **validate_all.py** | PASSED ✅ (incluyendo tests TDD) |
+| **Runtime Errors** | Bajado de 52/52 a 0 |
+| **Arquitectura** | sys_broker_accounts (DEMO) vs usr_broker_accounts aislando al trader |
+| **Fecha Cierre** | 17 de Marzo, 2026 |
 
 ---
 

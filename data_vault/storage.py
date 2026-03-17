@@ -18,6 +18,7 @@ from .sys_signal_ranking_db import StrategyRankingMixin
 from .strategies_db import StrategiesMixin
 from .execution_db import ExecutionMixin
 from .anomalies_db import AnomaliesMixin
+from .broker_accounts_db import BrokerAccountsMixin
 
 from .schema import (
     initialize_schema,
@@ -40,7 +41,8 @@ class StorageManager(
     StrategyRankingMixin,
     StrategiesMixin,
     ExecutionMixin,
-    AnomaliesMixin
+    AnomaliesMixin,
+    BrokerAccountsMixin
 ):
     """
     Centralized storage manager for Aethelgard (ARCH-SSOT-2026-006).

@@ -5,6 +5,7 @@ Follows Rule #2: Agnóstico de código - lógica agnóstica de plataforma
 """
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 from dataclasses import dataclass, field, asdict
@@ -611,18 +612,40 @@ class DataProviderManager:
             # Get configuration
             config: ProviderConfig = self.providers[name]
             
-            # Create instance with configuration
+            # Build kwargs from config
             kwargs = {}
             if config.api_key:
                 kwargs['api_key'] = config.api_key
             if config.api_secret:
                 kwargs['api_secret'] = config.api_secret
             kwargs.update(config.additional_config)
-            
-            # Inject storage if available (Critical for MT5DataProvider and others)
+
+            # Inject storage if available
             if self.storage and 'storage' not in kwargs:
                 kwargs['storage'] = self.storage
-            
+
+            # Selective injection: filter kwargs to only accepted constructor params
+            # (prevents TypeError when additional_config has fields unknown to the provider)
+            try:
+                sig = inspect.signature(provider_class.__init__)
+                params = sig.parameters
+                accepted = {p for p in params if p != 'self'}
+                has_var_kwargs = any(
+                    p.kind == inspect.Parameter.VAR_KEYWORD
+                    for p in params.values()
+                )
+                if not has_var_kwargs:
+                    filtered = {k: v for k, v in kwargs.items() if k in accepted}
+                    if len(filtered) < len(kwargs):
+                        ignored = set(kwargs) - set(filtered)
+                        logger.debug(
+                            f"[PROVIDER] Filtered {len(ignored)} unsupported kwargs for "
+                            f"{class_name}: {ignored}"
+                        )
+                    kwargs = filtered
+            except (ValueError, TypeError) as e:
+                logger.debug(f"[PROVIDER] Could not introspect {class_name} signature: {e}. Passing all kwargs.")
+
             instance = provider_class(**kwargs)
             
             # Cache instance only if successfully initialized

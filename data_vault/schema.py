@@ -332,6 +332,33 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
         )
     """)
 
+    # usr_broker_accounts: per-trader execution accounts (REAL or DEMO)
+    # Implements the 2-layer architecture defined in docs/01_IDENTITY_SECURITY.md
+    # Trace_ID: ARCH-USR-BROKER-ACCOUNTS-2026-N5
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS usr_broker_accounts (
+            id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+            user_id TEXT NOT NULL,
+            broker_name TEXT NOT NULL,
+            broker_account_id TEXT NOT NULL,
+            account_type TEXT DEFAULT 'DEMO' CHECK(account_type IN ('REAL', 'DEMO')),
+            account_status TEXT DEFAULT 'ACTIVE' CHECK(account_status IN ('ACTIVE', 'SUSPENDED', 'CLOSED')),
+            credentials_encrypted TEXT,
+            daily_loss_limit DECIMAL(10,2),
+            max_position_size DECIMAL(10,4),
+            max_open_positions INTEGER DEFAULT 3,
+            balance DECIMAL(15,2),
+            equity DECIMAL(15,2),
+            last_sync_utc TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, broker_name, broker_account_id),
+            FOREIGN KEY(user_id) REFERENCES sys_users(id)
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_broker_accounts_user_id ON usr_broker_accounts(user_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_broker_accounts_status ON usr_broker_accounts(account_status)")
+
     # ── 6. Tuning ────────────────────────────────────────────────────────────
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS usr_tuning_adjustments (

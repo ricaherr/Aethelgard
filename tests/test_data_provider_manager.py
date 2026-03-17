@@ -223,10 +223,16 @@ class TestDataProviderManager:
         
         # Should return MT5DataProvider (highest priority 100)
         # NOT GenericDataProvider (Yahoo at priority 50)
+        # Should return the highest-priority provider that can be instantiated
+        # MT5 needs local install (may not be available in test env)
+        # If MT5 unavailable → AlphaVantage (priority 80) → Yahoo (priority 50, fallback)
         assert best is not None
-        # MT5 should have been selected (or Yahoo if MT5 not available)
         provider_name = best.__class__.__name__
-        assert provider_name in ["MT5DataProvider", "GenericDataProvider"], f"Got {provider_name}"
+        assert provider_name in [
+            "MT5DataProvider",
+            "AlphaVantageProvider",
+            "GenericDataProvider",
+        ], f"Got {provider_name}"
     
     def test_fetch_data_with_fallback(self):
         """Test data fetching with automatic fallback"""

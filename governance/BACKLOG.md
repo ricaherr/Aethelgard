@@ -1,4 +1,4 @@
-﻿# AETHELGARD: MASTER BACKLOG
+# AETHELGARD: MASTER BACKLOG
 
 > **📋 REGLAS DE EDICIÓN — Leer antes de modificar este documento**
 > - **Propósito**: Catálogo oficial y único de todos los requerimientos del sistema.
@@ -217,6 +217,9 @@
     * **Prioridad**: Alta (E3)
     * **Descripción**: Implementación del monitor de desviación de ejecución (Slippage) con integración en la lógica de riesgo.
     * **🖥️ UI Representation**: Badge de "Ejecución Eficiente %" en cada trade cerrado dentro del historial.
+* **HU 5.4: RuntimeFix — Cooldown Storage + Provider kwargs Injection** `[DONE]`
+    * **Descripción**: (a) Implementar 4 métodos de cooldown en `ExecutionMixin` sobre `sys_cooldown_tracker` (`get_active_cooldown`, `register_cooldown`, `clear_cooldown`, `count_active_cooldowns`). (b) Filtrar `kwargs` por introspección de firma (`inspect.signature`) en `_get_provider_instance` para que solo pasen los parámetros aceptados por el constructor del provider. Resuelve `errors=52/52` en runtime.
+    * **Impacto**: CRÍTICO — bloquea 100% del pipeline de señales. Trace_ID: RUNTIME-FIX-COOLDOWN-KWARGS-2026-N5
 * **HU 5.3: Infrastructure Feedback Loop (The Pulse)** `[DONE]`
     * **Prioridad**: Media (E1 - Conexión básica / V3 - Feedback avanzado)
     * **Descripción**: Sistema de telemetría que informa al cerebro sobre el estado de los recursos y la red para decisiones de veto técnico. `_get_system_heartbeat()` retorna CPU%/RAM real vía psutil; bloque veto en `run_single_cycle()` corta scan cuando CPU > `cpu_veto_threshold` (SSOT: dynamic_params). [Sprint N3]
@@ -276,6 +279,9 @@
     * **Trace_ID**: EXEC-EFFICIENCY-SCORE-001
 
 ## 08_DATA_SOVEREIGNTY (SSOT, Persistence)
+* **HU 8.1: usr_broker_accounts — Separación Arquitectónica de Cuentas** `[DONE]`
+    * **Descripción**: Implementar tabla `usr_broker_accounts` en `schema.py` y `usr_template.db` para separar cuentas de usuario de cuentas del sistema. `sys_broker_accounts` queda exclusivamente para cuentas DEMO del sistema (data feeds, SHADOW mode sin usuario). `usr_broker_accounts` almacena cuentas REAL/DEMO por trader, aisladas por `user_id`. Crear `BrokerAccountsMixin` con métodos CRUD y script de migración idempotente.
+    * **Referencia arquitectónica**: `docs/01_IDENTITY_SECURITY.md` Sección "Broker Account Management". Trace_ID: ARCH-USR-BROKER-ACCOUNTS-2026-N5
 
 ## 09_INSTITUTIONAL_INTERFACE (UI/UX, Terminal)
 

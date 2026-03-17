@@ -188,3 +188,106 @@ class ExecutionMixin(BaseRepository):
             return None
         finally:
             self._close_conn(conn)
+
+    # ── Cooldown Tracker (sys_cooldown_tracker) ───────────────────────────────
+
+    def get_active_cooldown(self, signal_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Returns the active cooldown record for a signal_id if it has not expired.
+        Returns None if no record exists or the cooldown has already expired.
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT * FROM sys_cooldown_tracker
+                WHERE signal_id = ?
+                  AND cooldown_expires > datetime('now')
+                """,
+                (signal_id,),
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
+        except Exception as exc:
+            logger.error("[ExecutionMixin] get_active_cooldown error for %s: %s", signal_id, exc)
+            return None
+        finally:
+            self._close_conn(conn)
+
+    def register_cooldown(
+        self,
+        signal_id: str,
+        failure_reason: str,
+        retry_count: int,
+        cooldown_expires: datetime,
+    ) -> None:
+        """
+        Inserts or replaces a cooldown record for a signal.
+        Called by CooldownManager after a signal execution failure.
+        """
+        def _write(conn: sqlite3.Connection) -> None:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT OR REPLACE INTO sys_cooldown_tracker
+                    (signal_id, failure_reason, retry_count, cooldown_expires, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    signal_id,
+                    failure_reason,
+                    retry_count,
+                    cooldown_expires.isoformat() if isinstance(cooldown_expires, datetime) else str(cooldown_expires),
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+            conn.commit()
+
+        try:
+            self._execute_serialized(_write)
+            logger.debug(
+                "[ExecutionMixin] Cooldown registered: signal=%s reason=%s expires=%s",
+                signal_id, failure_reason, cooldown_expires,
+            )
+        except Exception as exc:
+            logger.error("[ExecutionMixin] register_cooldown error for %s: %s", signal_id, exc)
+
+    def clear_cooldown(self, signal_id: str) -> None:
+        """
+        Removes the cooldown record for a signal_id.
+        Called when a signal is retried successfully or manually cleared.
+        """
+        def _delete(conn: sqlite3.Connection) -> None:
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM sys_cooldown_tracker WHERE signal_id = ?",
+                (signal_id,),
+            )
+            conn.commit()
+
+        try:
+            self._execute_serialized(_delete)
+            logger.debug("[ExecutionMixin] Cooldown cleared for signal=%s", signal_id)
+        except Exception as exc:
+            logger.error("[ExecutionMixin] clear_cooldown error for %s: %s", signal_id, exc)
+
+    def count_active_cooldowns(self) -> int:
+        """
+        Returns the number of signals currently under active cooldown (not yet expired).
+        Used by SignalSelector to gate the pipeline when too many cooldowns accumulate.
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT COUNT(*) FROM sys_cooldown_tracker WHERE cooldown_expires > datetime('now')"
+            )
+            row = cursor.fetchone()
+            return int(row[0]) if row else 0
+        except Exception as exc:
+            logger.error("[ExecutionMixin] count_active_cooldowns error: %s", exc)
+            return 0
+        finally:
+            self._close_conn(conn)
+

@@ -163,6 +163,8 @@ async def main():
     domain_05_execution = [
         run_audit_module("SPRINT S007", ["python", "-m", "pytest", "tests/test_strategy_ranker.py", "tests/test_strategy_engine_factory_phase3.py", "tests/test_main_orchestrator_phase4.py", "tests/test_circuit_breaker_phase5.py", "tests/test_executor_circuit_breaker_integration.py", "tests/test_qa_phase_integration.py", "tests/test_strategy_monitor_service.py", "tests/test_strategy_ws.py", "tests/test_degradation_alert_service.py", "-q"], workspace),
         run_audit_module("Integration", ["python", "-m", "pytest", "tests/test_executor_metadata_integration.py", "-q"], workspace),
+        run_audit_module("Cooldown Manager", ["python", "-m", "pytest", "tests/test_cooldown_manager_phase2.py", "-q"], workspace),
+        run_audit_module("Data Provider Manager", ["python", "-m", "pytest", "tests/test_data_provider_manager.py", "-q"], workspace),
     ]
     
     # INTELLIGENT SIGNAL DEDUPLICATION (Multi-module system)
@@ -251,7 +253,7 @@ async def main():
             domain_results["DOMAIN 02-03: Context Intelligence & Signal Generation"].append(res)
         elif res['name'] == "FASE B: NewsValidator":
             domain_results["DOMAIN 04: Risk Governance"].append(res)
-        elif res['name'] in ["SPRINT S007", "Integration"]:
+        elif res['name'] in ["SPRINT S007", "Integration", "Cooldown Manager", "Data Provider Manager"]:
             domain_results["DOMAIN 05: Universal Execution"].append(res)
         elif res['name'] == "ISD: Signal Quality Validation":
             domain_results["INTELLIGENT SIGNAL DEDUP: Quality Validation"].append(res)
