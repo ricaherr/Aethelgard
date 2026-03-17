@@ -224,6 +224,31 @@
     * **Descripción**: Implementar introspección segura (`inspect.signature`) en `core_brain/connectivity_orchestrator.py` para instanciar correctament los proveedores de datos sin romper kwargs. Resuelve `AlphaVantageProvider.__init__() TypeError` en el orquestador principal.
 * **HU 5.6: RuntimeFix — AlphaVantage Rate Limits Resilience** `[DONE]`
     * **Descripción**: Manejar el agotamiento del Free Tier en `AlphaVantageProvider` silenciosamente como `WARNING` y devolver `None` en lugar de saturar el disco con `ERROR` de No time series.
+
+### HU 5.5: Connectivity Orchestrator (Inyección Extendida) - [DONE]
+**Como** Analista / Tester
+**Quiero** que el orquestador valide dependencias y omita argumentos que no son compatibles con el proveedor.
+**Para** soportar diferentes arquitecturas sin romper el ciclo por `TypeError` (e.g., inyectar storage donde no va).
+
+### HU 5.6: AlphaVantage Robust Connector - [DONE]
+**Como** Trader Autónomo
+**Quiero** que el AlphaVantage rechace silenciosamente o use Warnings cuando no existan datos
+**Para** no ensuciar el log con excesivos ERRORS y evadir paros completos de sistema.
+
+### HU 5.6b: Saneamiento Profundo de Alpha Vantage - [DONE]
+**Como** Administrador del Sistema
+**Quiero** que los errores de Rate Limit y "No time series data" en funciones de forex y crypto se reporten correctamente como WARNING/DEBUG y sin usar la palabra "stock"
+**Para** mantener la telemetría limpia y la semántica correcta de los errores.
+
+### HU 5.2.1: Refactorización Arquitectónica Multi-Usuario y Ejecución Agnóstica - [DONE]
+**Como** Sistema Autónomo (SaaS)
+**Quiero** que `start.py` dependa de `ConnectivityOrchestrator` de forma dinámica, leyendo proveedores de `sys_data_providers` y cuentas de ejecución separadas desde `usr_broker_accounts` **exclusivamente de las BD**
+**Para** quebrar la inyección estática de `MT5Connector`, eliminar cualquier tipo de credencial o setting hardcodeado o en JSON, y permitir la escalabilidad hacia multi-tenant.
+
+### HU 5.7: Saneamiento de Advertencias Normales - [DONE]
+**Como** Administrador del Sistema
+**Quiero** que los eventos esperados como el Timeout de WARMUP y el inicio de NotificationEngine vacío se emitan como INFO/DEBUG en lugar de WARNING
+**Para** evitar ruido innecesario en los logs durante operaciones nominales.
 * **HU 5.3: Infrastructure Feedback Loop (The Pulse)** `[DONE]`
     * **Prioridad**: Media (E1 - Conexión básica / V3 - Feedback avanzado)
     * **Descripción**: Sistema de telemetría que informa al cerebro sobre el estado de los recursos y la red para decisiones de veto técnico. `_get_system_heartbeat()` retorna CPU%/RAM real vía psutil; bloque veto en `run_single_cycle()` corta scan cuando CPU > `cpu_veto_threshold` (SSOT: dynamic_params). [Sprint N3]

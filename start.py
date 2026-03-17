@@ -244,13 +244,17 @@ async def main() -> None:
         # 3. Connectors & Data Provider (Unificación de Conexión)
         # ----------------------------------------------------------------
         
-        # A) Inicializar MT5 Connector (Instancia Única)
-        logger.info("[INIT] Inicializando MT5 Connector (Instancia Única)...")
-        mt5_connector = None
-        try:
-            mt5_connector = MT5Connector(storage=storage)
-        except Exception as e:
-            logger.warning(f"[FAIL] Error inicializando MT5 Connector: {e}. El sistema continuará sin MT5 (Modo Limitado).")
+        # A) Inicializar ConnectivityOrchestrator y Connectors Dinámicos (SSOT)
+        logger.info("[INIT] Inicializando ConnectivityOrchestrator y conectores desde BD...")
+        from core_brain.connectivity_orchestrator import ConnectivityOrchestrator
+        orchestrator = ConnectivityOrchestrator()
+        orchestrator.set_storage(storage)
+        
+        # MT5Connector sigue operando como referencia global por retrocompatibilidad temporal 
+        # para Data Feed y Scanner, las operaciones se delegan al broker account de c/u.
+        mt5_connector = orchestrator.get_connector('mt5')
+        if not mt5_connector:
+            logger.warning("[FAIL] MT5 no está habilitado en BD como proveedor global. El sistema continuará sin MT5 global (Modo Limitado).")
         
         # B) Inicializar Data Provider Manager
         logger.info("[INIT] Inicializando Data Provider Manager (DI)...")

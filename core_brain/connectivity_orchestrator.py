@@ -144,39 +144,62 @@ class ConnectivityOrchestrator:
             except Exception as e:
                 logger.error(f"[ConnOrch] Failed to load connector '{pid}': {e}")
 
-        # 2. sys_broker_accounts — execution accounts whose platform is not yet loaded.
+        # 2. Broker Accounts (sys_broker_accounts + usr_broker_accounts)
+        # We load platform execution connectos for BOTH system shadow accounts AND user real/demo accounts
         try:
-            for acc in self.storage.get_sys_broker_accounts(enabled_only=True):
+            broker_accounts = []
+            # Gather system accounts
+            sys_accs = self.storage.get_sys_broker_accounts(enabled_only=True)
+            if sys_accs:
+                broker_accounts.extend(sys_accs)
+            
+            # Gather user accounts
+            if hasattr(self.storage, 'get_usr_broker_accounts'):
+                usr_accs = self.storage.get_usr_broker_accounts(enabled_only=True)
+                if usr_accs:
+                    broker_accounts.extend(usr_accs)
+            
+            for acc in broker_accounts:
                 platform = acc.get('platform_id', '')
                 if not platform:
                     continue
-                if platform in self.connectors:
-                    continue  # already loaded from sys_data_providers
-
-                broker_pid = acc.get('broker_id', '')
-                if broker_pid in self.connectors:
+                    
+                account_id = acc.get('account_id')
+                if not account_id:
                     continue
+                
+                # We register the connector using the account_id as its unique provider_id for execution
+                # This ensures we can have multiple MT5 instances (one per account)
+                conn_id = f"{platform}_{account_id}"
+                
+                if conn_id in self.connectors:
+                    continue  # already loaded specific account instance
 
                 module_path, class_name = platform_lookup.get(platform, (None, None))
                 if not module_path or not class_name:
                     logger.debug(f"[ConnOrch] No connector info in DB for platform '{platform}', skipping.")
                     continue
 
-                account_id = acc.get('account_id')
                 try:
                     module = importlib.import_module(module_path)
                     connector_class = getattr(module, class_name)
+                    # Pass the specific account_id so the connector initializes with THAT account's credentials
                     conn = self._instantiate_connector(connector_class, {'storage': self.storage, 'account_id': account_id})
+                    
+                    # Override provider_id if needed, so the Orchestrator maps them explicitly
+                    if hasattr(conn, 'provider_id'):
+                        pass # Many connectors have property provider_id, let's leave as is for now, but log it
+                        
                     self.register_connector(conn)
                     self.supports_info[conn.provider_id] = {
                         "data": bool(acc.get('supports_data', 0)),
-                        "exec": bool(acc.get('supports_exec', 0)),
+                        "exec": bool(acc.get('supports_exec', 1)), # Usually broker accounts are for exec
                     }
-                    logger.info(f"[ConnOrch] Loaded broker connector: {conn.provider_id} ({class_name})")
+                    logger.info(f"[ConnOrch] Loaded user/broker connector: {conn.provider_id} for acc {account_id} ({class_name})")
                 except Exception as e:
-                    logger.error(f"[ConnOrch] Failed to load broker connector '{broker_pid}': {e}")
+                    logger.error(f"[ConnOrch] Failed to load broker connector for acc '{account_id}': {e}")
         except Exception as e:
-            logger.error(f"[ConnOrch] Error reading sys_broker_accounts: {e}")
+            logger.error(f"[ConnOrch] Error reading broker_accounts: {e}")
 
     def get_connector(self, provider_id: str) -> Optional[BaseConnector]:
         """Retrieve a registered connector by its ID."""

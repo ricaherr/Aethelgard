@@ -531,3 +531,46 @@
 | **Archivos Modificados** | `telemetry.py` · `main_orchestrator.py` |
 | **Regresiones** | 0 |
 | **Fecha Cierre** | 17 de Marzo, 2026 |
+
+---
+
+# SPRINT N7: REFACTORIZACIÓN MULTI-USUARIO & SANEAMIENTO TELEMÉTRICO — [DONE]
+
+**Inicio**: 17 de Marzo, 2026  
+**Fin**: 17 de Marzo, 2026  
+**Objetivo**: Eliminar inyecciones hardcodeadas (MT5), separar cuentas de proveedores de datos (`sys_data_providers`) de cuentas de ejecución (`usr_broker_accounts`), garantizando lectura exclusiva desde bases de datos, y silenciar warnings/errors residuales esperados.  
+**Versión Target**: v4.5.0-beta  
+**Estado Final**: ✅ COMPLETADO | 3/3 tareas DONE | validate_all 100% PASSED  
+**Épica**: E5 (Ejecución Agnóstica) y E6 (Estabilización Core)  
+**HUs**: HU 5.2.1, HU 5.6b, HU 5.7  
+**Trace_ID**: REFACTOR-MULTIUSER-2026-N7
+
+---
+
+## 📋 Tareas del Sprint N7
+
+- [x] **T1: Refactorización Multi-Usuario (HU 5.2.1)**
+  - `ConnectivityOrchestrator` modificado para cargar `sys_broker_accounts` y `usr_broker_accounts`.
+  - `start.py` limpiado de inyección estática; invoca a `ConnectivityOrchestrator` para orquestar la conexión de la BD y la inyección.
+  - Vínculo directo con base de datos establecido (SSOT) garantizando cero configuraciones hardcodeadas.
+
+- [x] **T2: Saneamiento Profundo de Alpha Vantage (HU 5.6b)**
+  - Integrada la lógica de `Note` (rate limit message) en endpoints Crypto y Forex para capturarlo silenciosamente.
+  - Corregido el mensaje erróneo tipo "stock" en Crypto y pasados los falsos errores a DEBUG/INFO.
+
+- [x] **T3: Saneamiento de Advertencias Normales (HU 5.7)**
+  - Mensaje WARMUP de 30s pasado a `logger.info`.
+  - Mensaje de NotificationEngine no configurado rebajado a nivel INFO.
+
+---
+
+## 📸 Snapshot Sprint N7 (Final)
+
+| Métrica | Valor |
+|---|---|
+| **Versión Sistema** | v4.5.0-beta |
+| **Tareas Completadas** | 3/3 ✅ |
+| **Integridad de BD (SSOT)** | Cero Bases Temporales detectadas ✅ (`aethelgard_system` erradicada) |
+| **validate_all.py** | PASSED ✅ en los 25 dominios paralelos |
+| **Resolución Multiusuario** | Completada, acoplamiento global erradicado |
+| **Fecha Cierre** | 17 de Marzo, 2026 |

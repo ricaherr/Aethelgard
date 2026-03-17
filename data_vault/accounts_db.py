@@ -211,6 +211,36 @@ class AccountsMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
+    def get_usr_broker_accounts(self, enabled_only: bool = False, broker_id: Optional[str] = None, account_type: Optional[str] = None) -> List[Dict]:
+        """Get all user broker accounts, optionally filtered by enabled status, broker_id, and account_type"""
+        conn = self._get_conn()
+        try:
+            # Check if table exists first (graceful degradation)
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='usr_broker_accounts'")
+            if not cursor.fetchone():
+                logger.warning("Table usr_broker_accounts does not exist yet. Returning empty list.")
+                return []
+                
+            query = "SELECT * FROM usr_broker_accounts WHERE 1=1"
+            params = []
+            if enabled_only:
+                query += " AND enabled = 1"
+            if broker_id:
+                query += " AND broker_id = ?"
+                params.append(broker_id)
+            if account_type:
+                query += " AND account_type = ?"
+                params.append(account_type)
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"Error querying usr_broker_accounts: {e}")
+            return []
+        finally:
+            self._close_conn(conn)
+
     def get_account(self, account_id: str) -> Optional[Dict]:
         """Get specific broker account by ID"""
         conn = self._get_conn()

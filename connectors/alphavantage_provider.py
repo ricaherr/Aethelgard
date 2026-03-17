@@ -136,7 +136,7 @@ class AlphaVantageProvider:
         
         # Check for errors
         if "Error Message" in data:
-            logger.error(f"Alpha Vantage error: {data['Error Message']}")
+            logger.debug(f"Alpha Vantage API Message: {data['Error Message']}")
             return None
         
         if "Note" in data:
@@ -208,7 +208,11 @@ class AlphaVantageProvider:
         
         # Check for errors
         if "Error Message" in data:
-            logger.error(f"Alpha Vantage error: {data['Error Message']}")
+            logger.debug(f"Alpha Vantage API Message: {data['Error Message']}")
+            return None
+            
+        if "Note" in data:
+            logger.debug(f"Alpha Vantage limit reached: {data['Note']}")
             return None
         
         # Parse response
@@ -270,13 +274,17 @@ class AlphaVantageProvider:
         
         # Check for errors
         if "Error Message" in data:
-            logger.error(f"Alpha Vantage error: {data['Error Message']}")
+            logger.debug(f"Alpha Vantage API Message: {data['Error Message']}")
+            return None
+            
+        if "Note" in data:
+            logger.debug(f"Alpha Vantage limit reached: {data['Note']}")
             return None
         
         # Parse response
         time_series_key = [k for k in data.keys() if "Time Series" in k]
         if not time_series_key:
-            logger.warning(f"No time series data in response for stock {symbol} (Possible rate limit)")
+            logger.debug(f"No time series data in response for crypto {symbol} (Possible rate limit)")
             return None
         
         time_series = data[time_series_key[0]]

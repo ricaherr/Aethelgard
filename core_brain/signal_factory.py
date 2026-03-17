@@ -123,7 +123,7 @@ class SignalFactory:
         )
         
         if not self.notifier or not self.notifier.is_configured():
-            logger.warning("NotificationEngine no está configurado o no tiene canales activos.")
+            logger.info("NotificationEngine no está configurado o no tiene canales activos.")
 
         logger.info(
             f"SignalFactory initialized with {len(self.strategy_engines)} injected engines. "

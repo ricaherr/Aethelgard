@@ -276,7 +276,7 @@ class OrderExecutor:
         
         # Step 3.5: Get connector (needed for risk validation and execution)
         try:
-            connector = self._get_connector(signal.connector_type)
+            connector = self._get_connector(signal)
         except Exception as e:
             self.last_rejection_reason = f"Connector unavailable: {signal.connector_type.value} not connected"
             logger.error(f"Failed to get connector for {signal.connector_type}: {e}")
@@ -558,18 +558,36 @@ class OrderExecutor:
         
         return True
     
-    def _get_connector(self, connector_type: ConnectorType) -> Optional[Any]:
+    def _get_connector(self, signal: Signal) -> Optional[Any]:
         """
         Get connector using Factory pattern.
-        Agnostic routing based on ConnectorType.
+        Agnostic routing based on account_id via ConnectivityOrchestrator, with fallback to ConnectorType.
         
         Args:
-            connector_type: Type of connector to retrieve
+            signal: Signal object with metadata containing the target account_id
         
         Returns:
             Connector instance or None if not found
         """
-        return self.connectors.get(connector_type)
+        from core_brain.connectivity_orchestrator import ConnectivityOrchestrator
+        orchestrator = ConnectivityOrchestrator()
+        
+        account_id = signal.metadata.get('account_id') if hasattr(signal, 'metadata') and hasattr(signal.metadata, 'get') else None
+        platform = signal.connector_type.value if hasattr(signal.connector_type, 'value') else str(signal.connector_type)
+        
+        # 1. Attempt lookup by account_id in orchestrator
+        if account_id:
+            conn_id = f"{platform}_{account_id}"
+            conn = orchestrator.get_connector(conn_id)
+            if conn:
+                return conn
+                
+        # 2. Check explicitly injected connectors (backward compat / tests)
+        if signal.connector_type in self.connectors:
+            return self.connectors[signal.connector_type]
+            
+        # 3. Fallback to orchestrator by generic platform name
+        return orchestrator.get_connector(platform)
     
     def _calculate_position_size(self, signal: Signal) -> float:
         """
@@ -578,7 +596,7 @@ class OrderExecutor:
         DELEGATED to RiskManager.calculate_position_size_master() - Single Source of Truth.
         """
         try:
-            connector = self._get_connector(signal.connector_type)
+            connector = self._get_connector(signal)
             if not connector:
                 logger.error(f"No connector found for {signal.connector_type}")
                 return 0.01  # Fallback
