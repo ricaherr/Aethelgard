@@ -229,7 +229,13 @@ async def test_monitor_usr_positions_called_in_single_cycle(
     })
     
     # Execute one cycle
-    await orchestrator.run_single_cycle()
+    with patch("core_brain.connectivity_orchestrator.ConnectivityOrchestrator") as mock_orch_cls:
+        mock_conn = MagicMock()
+        mock_conn.is_connected = True
+        mock_orch_instance = mock_orch_cls.return_value
+        mock_orch_instance.connectors = {"TEST_PID": mock_conn}
+        mock_orch_instance.supports_info = {"TEST_PID": {"exec": True}}
+        await orchestrator.run_single_cycle()
     
     # Assert: monitor_usr_positions called
     orchestrator.position_manager.monitor_usr_positions.assert_called_once()
@@ -274,8 +280,14 @@ async def test_monitor_usr_positions_executed_periodically(
     })
     
     # Execute 3 cycles
-    for _ in range(3):
-        await orchestrator.run_single_cycle()
+    with patch("core_brain.connectivity_orchestrator.ConnectivityOrchestrator") as mock_orch_cls:
+        mock_conn = MagicMock()
+        mock_conn.is_connected = True
+        mock_orch_instance = mock_orch_cls.return_value
+        mock_orch_instance.connectors = {"TEST_PID": mock_conn}
+        mock_orch_instance.supports_info = {"TEST_PID": {"exec": True}}
+        for _ in range(3):
+            await orchestrator.run_single_cycle()
     
     # Assert: monitor_usr_positions called 3 times
     assert orchestrator.position_manager.monitor_usr_positions.call_count == 3

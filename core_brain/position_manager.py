@@ -98,7 +98,7 @@ class PositionManager:
                 logger.debug("InstrumentManager(storage=...) fallback due to invalid storage mock: %s", e)
         return InstrumentManager()
     
-    def monitor_usr_positions(self, connector=None) -> Dict[str, Any]:
+    def monitor_usr_positions(self, connector: Optional[Any] = None) -> Dict[str, Any]:
         """
         Main monitoring loop - checks all open usr_positions and applies necessary adjustments.
 
@@ -280,7 +280,7 @@ class PositionManager:
         
         return summary
     
-    def _sync_orphan_position(self, position: Dict[str, Any], connector=None) -> None:
+    def _sync_orphan_position(self, position: Dict[str, Any], connector: Optional[Any] = None) -> None:
         """
         Auto-sync metadata for usr_positions without it (orphan usr_positions).
         
@@ -656,7 +656,7 @@ class PositionManager:
         
         return False
     
-    def _adjust_for_regime_change(self, position: Dict, connector=None) -> bool:
+    def _adjust_for_regime_change(self, position: Dict, connector: Optional[Any] = None) -> bool:
         """
         Adjust SL/TP based on regime change.
         
@@ -752,7 +752,7 @@ class PositionManager:
             connector=connector
         )
     
-    def _emergency_close(self, position: Dict, reason: str, connector=None) -> bool:
+    def _emergency_close(self, position: Dict, reason: str, connector: Optional[Any] = None) -> bool:
         """
         Emergency close position (max drawdown exceeded).
         
@@ -797,7 +797,7 @@ class PositionManager:
             )
             return False
     
-    def _close_stale_position(self, position: Dict, connector=None) -> bool:
+    def _close_stale_position(self, position: Dict, connector: Optional[Any] = None) -> bool:
         """
         Close stale position (time-based exit).
         
@@ -847,7 +847,7 @@ class PositionManager:
         new_sl: float,
         new_tp: Optional[float] = None,
         reason: str = "",
-        connector=None
+        connector: Optional[Any] = None
     ) -> bool:
         """
         Modify position with freeze level validation and rollback on failure.
@@ -977,7 +977,7 @@ class PositionManager:
         symbol: str,
         new_sl: float,
         new_tp: Optional[float] = None,
-        connector=None
+        connector: Optional[Any] = None
     ) -> bool:
         """
         Validate that new SL/TP respect broker's freeze level (minimum distance).
@@ -1127,7 +1127,7 @@ class PositionManager:
         
         return True
     
-    def get_current_atr(self, symbol: str, connector=None) -> Optional[float]:
+    def get_current_atr(self, symbol: str, connector: Optional[Any] = None) -> Optional[float]:
         """
         Get current ATR for symbol.
         
@@ -1185,7 +1185,7 @@ class PositionManager:
         self,
         position: Dict,
         metadata: Dict,
-        connector=None
+        connector: Optional[Any] = None
     ) -> Optional[float]:
         """
         Calculate TRUE breakeven price including all broker costs.
@@ -1458,7 +1458,7 @@ class PositionManager:
         self,
         position: Dict,
         metadata: Dict,
-        connector=None
+        connector: Optional[Any] = None
     ) -> Optional[float]:
         """
         Calculate trailing stop price based on ATR (Average True Range).

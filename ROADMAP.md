@@ -6,6 +6,19 @@
 
 ---
 
+## 🔧 SHIELD: Polimorfismo de Datos para MarketStructureAnalyzer - ✅ COMPLETADO (17-Mar-2026)
+ 
+ **Problema Identificado**: Alerta `HEALTH_CHECK: 0 structures`. El `MarketStructureAnalyzer` estaba bloqueado fallando la validación del canvas porque exigía la columna `volume`. Proveedores de Forex puros o fallbacks no entregan volumen.
+-**Directriz Arquitectónica**: En lugar de relajar negligentemente la validación (provocando deuda técnica), se optó por el **Polimorfismo Consciente de Activo** (Solución 2).
+- ✅ **DataSchemaValidator Integrado**: El ScannerEngine inyecta ahora el `asset_class` o `symbol` al analizador.
+- ✅ **Taxonomía Dinámica**: 
+  - Si OTC (Forex): Exige estrictamente `{'open', 'high', 'low', 'close'}`.
+  - Si Centralizado (Crypto/Stocks): Exige estrictamente `{'open', 'high', 'low', 'close', 'volume'}`.
+- ✅ Los tests de `PositionManager` y los Pilares Económicos fueron actualizados y verificados al 100% (Green Build).
+- ✅ El algoritmo ZigZag institucional de Aethelgard NO requiere volumen.
+
+---
+
 ## 🔧 SPRINT DE SANEAMIENTO ARQUITECTÓNICO — Consolidación DDL SSOT (14-Mar-2026)
 
 **Origen**: Auditoría forense `docs/AUDITORIA_ESTADO_REAL.md`  

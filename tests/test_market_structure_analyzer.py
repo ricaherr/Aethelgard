@@ -119,7 +119,7 @@ class TestMarketStructureAnalyzer(unittest.TestCase):
     
     def test_detect_structure_uptrend(self):
         """✓ Test: Detectar estructura de tendencia alcista (HH/HL)."""
-        structure = self.analyzer.detect_market_structure(self.test_candles)
+        structure = self.analyzer.detect_market_structure("EURUSD", self.test_candles)
         
         self.assertIsNotNone(structure)
         self.assertEqual(structure['type'], 'UPTREND')
@@ -137,7 +137,7 @@ class TestMarketStructureAnalyzer(unittest.TestCase):
         downtrend_candles['open'] = 1.1500 - downtrend_candles['open']
         downtrend_candles['close'] = 1.1500 - downtrend_candles['close']
         
-        structure = self.analyzer.detect_market_structure(downtrend_candles)
+        structure = self.analyzer.detect_market_structure("EURUSD", downtrend_candles)
         
         self.assertEqual(structure['type'], 'DOWNTREND')
         self.assertGreater(structure['lh_count'], 2)
@@ -147,7 +147,7 @@ class TestMarketStructureAnalyzer(unittest.TestCase):
     
     def test_calculate_breaker_block(self):
         """✓ Test: Calcular zona de Breaker Block."""
-        structure = self.analyzer.detect_market_structure(self.test_candles)
+        structure = self.analyzer.detect_market_structure("EURUSD", self.test_candles)
         breaker = self.analyzer.calculate_breaker_block(
             structure=structure,
             candles=self.test_candles
@@ -162,7 +162,7 @@ class TestMarketStructureAnalyzer(unittest.TestCase):
     
     def test_breaker_block_has_buffer(self):
         """✓ Test: Breaker Block incluye buffer configurado."""
-        structure = self.analyzer.detect_market_structure(self.test_candles)
+        structure = self.analyzer.detect_market_structure("EURUSD", self.test_candles)
         breaker = self.analyzer.calculate_breaker_block(structure, self.test_candles)
         
         # El rango debe ser coherente con los pivots y buffer
@@ -175,7 +175,7 @@ class TestMarketStructureAnalyzer(unittest.TestCase):
     def test_detect_break_of_structure_uptrend(self):
         """✓ Test: Detectar ruptura de estructura en tendencia alcista."""
         # Usar datos de tendencia alcista
-        structure = self.analyzer.detect_market_structure(self.test_candles)
+        structure = self.analyzer.detect_market_structure("EURUSD", self.test_candles)
         breaker = self.analyzer.calculate_breaker_block(structure, self.test_candles)
         
         # Nueva vela que rompe por debajo del HL
@@ -198,7 +198,7 @@ class TestMarketStructureAnalyzer(unittest.TestCase):
     
     def test_detect_no_break_if_above_breaker(self):
         """✓ Test: NO detectar ruptura si precio está dentro del Breaker Block."""
-        structure = self.analyzer.detect_market_structure(self.test_candles)
+        structure = self.analyzer.detect_market_structure("EURUSD", self.test_candles)
         breaker = self.analyzer.calculate_breaker_block(structure, self.test_candles)
         
         # Vela dentro del Breaker Block
@@ -217,7 +217,7 @@ class TestMarketStructureAnalyzer(unittest.TestCase):
     
     def test_calculate_pullback_zone(self):
         """✓ Test: Calcular zona de pullback después de ruptura."""
-        structure = self.analyzer.detect_market_structure(self.test_candles)
+        structure = self.analyzer.detect_market_structure("EURUSD", self.test_candles)
         breaker = self.analyzer.calculate_breaker_block(structure, self.test_candles)
         
         # Simular ruptura
@@ -249,7 +249,7 @@ class TestMarketStructureAnalyzer(unittest.TestCase):
             'volume': np.random.randint(500, 2000, 10)
         })
         
-        structure = self.analyzer.detect_market_structure(random_candles)
+        structure = self.analyzer.detect_market_structure("EURUSD", random_candles)
         
         # Datos random no deben ser válidos
         self.assertFalse(structure['is_valid'])
@@ -258,10 +258,10 @@ class TestMarketStructureAnalyzer(unittest.TestCase):
     def test_caching_of_structure(self):
         """✓ Test: Sistema cachea resultados de estructura."""
         # Primera llamada (calcula)
-        struct1 = self.analyzer.detect_market_structure(self.test_candles)
+        struct1 = self.analyzer.detect_market_structure("EURUSD", self.test_candles)
         
         # Segunda llamada (recupera del cache)
-        struct2 = self.analyzer.detect_market_structure(self.test_candles)
+        struct2 = self.analyzer.detect_market_structure("EURUSD", self.test_candles)
         
         # Deben ser idénticos
         self.assertEqual(struct1['type'], struct2['type'])
@@ -273,7 +273,7 @@ class TestMarketStructureAnalyzer(unittest.TestCase):
     def test_full_structure_analysis_workflow(self):
         """✓ Test: Workflow completo de análisis de estructura."""
         # 1. Detectar estructura
-        structure = self.analyzer.detect_market_structure(self.test_candles)
+        structure = self.analyzer.detect_market_structure("EURUSD", self.test_candles)
         self.assertTrue(structure['is_valid'])
         self.assertEqual(structure['type'], 'UPTREND')
         

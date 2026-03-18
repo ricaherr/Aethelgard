@@ -93,7 +93,7 @@ class TestMarketStructureClassification:
         Esperado: validation_level = STRONG, is_valid = True
         """
         candles = create_candles_with_structure(100, trend="uptrend")
-        result = analyzer.detect_market_structure(candles)
+        result = analyzer.detect_market_structure("EURUSD", candles)
         
         # Validaciones
         assert result['validation_level'] == "STRONG", \
@@ -113,7 +113,7 @@ class TestMarketStructureClassification:
         Esperado: validation_level = STRONG, is_valid = True
         """
         candles = create_candles_with_structure(100, trend="downtrend")
-        result = analyzer.detect_market_structure(candles)
+        result = analyzer.detect_market_structure("EURUSD", candles)
         
         assert result['validation_level'] == "STRONG", \
             f"Downtrend fuerte debería ser STRONG"
@@ -130,7 +130,7 @@ class TestMarketStructureClassification:
         Esperado: validation_level = PARTIAL, is_valid = False
         """
         candles = create_candles_with_structure(100, trend="mixed")
-        result = analyzer.detect_market_structure(candles)
+        result = analyzer.detect_market_structure("EURUSD", candles)
         
         # Si es partial o strong, está bien (depende de la simulación)
         # Lo importante es que NO sea INSUFFICIENT si hay pivots
@@ -163,7 +163,7 @@ class TestMarketStructureClassification:
             'volume': np.full(50, 1000)
         })
         
-        result = analyzer.detect_market_structure(df)
+        result = analyzer.detect_market_structure("EURUSD", df)
         
         assert result['validation_level'] == "INSUFFICIENT", \
             f"Sin movimiento ni pivots debería ser INSUFFICIENT"
@@ -178,7 +178,7 @@ class TestMarketStructureClassification:
         """
         for _ in range(5):
             candles = create_candles_with_structure(100, trend="uptrend")
-            result = analyzer.detect_market_structure(candles)
+            result = analyzer.detect_market_structure("EURUSD", candles)
             
             assert isinstance(result['confidence'], float), \
                 f"Confidence debe ser float"
@@ -192,7 +192,7 @@ class TestMarketStructureClassification:
         """
         for trend in ["uptrend", "downtrend", "mixed"]:
             candles = create_candles_with_structure(100, trend=trend)
-            result = analyzer.detect_market_structure(candles)
+            result = analyzer.detect_market_structure("EURUSD", candles)
             
             assert result['validation_level'] in ["STRONG", "PARTIAL", "INSUFFICIENT"], \
                 f"validation_level debe ser STRONG/PARTIAL/INSUFFICIENT, obtuvo {result['validation_level']}"
@@ -204,7 +204,7 @@ class TestMarketStructureClassification:
         Esperado: Con >6 pivots totales, mínimo PARTIAL
         """
         candles = create_candles_with_structure(100, trend="mixed")
-        result = analyzer.detect_market_structure(candles)
+        result = analyzer.detect_market_structure("EURUSD", candles)
         
         pivot_count = (result['hh_count'] + result['hl_count'] + 
                        result['lh_count'] + result['ll_count'])
@@ -219,7 +219,7 @@ class TestMarketStructureClassification:
         Uptrend con HH=8, HL=7, LH=1, LL=1 debería tener >60% confidence
         """
         candles = create_candles_with_structure(100, trend="uptrend")
-        result = analyzer.detect_market_structure(candles)
+        result = analyzer.detect_market_structure("EURUSD", candles)
         
         if result['validation_level'] == "STRONG":
             # Si es STRONG uptrend, HH+HL debe ser mayoría
@@ -240,7 +240,7 @@ class TestMarketStructureClassification:
         """
         for trend in ["uptrend", "downtrend", "mixed"]:
             candles = create_candles_with_structure(100, trend=trend)
-            result = analyzer.detect_market_structure(candles)
+            result = analyzer.detect_market_structure("EURUSD", candles)
             
             expected_is_valid = (result['validation_level'] == "STRONG")
             assert result['is_valid'] == expected_is_valid, \
@@ -260,7 +260,7 @@ class TestEdgeCases:
         
         # Debería manejar gracefully sin crash
         try:
-            result = analyzer.detect_market_structure(empty_df)
+            result = analyzer.detect_market_structure("EURUSD", empty_df)
             assert result['validation_level'] == "INSUFFICIENT"
         except Exception as e:
             pytest.fail(f"analyze debería manejar DF vacío: {e}")
@@ -275,7 +275,7 @@ class TestEdgeCases:
             'volume': [1000]
         })
         
-        result = analyzer.detect_market_structure(df)
+        result = analyzer.detect_market_structure("EURUSD", df)
         assert result['validation_level'] == "INSUFFICIENT"
         assert result['confidence'] == 0.0
     
@@ -289,7 +289,7 @@ class TestEdgeCases:
             'volume': np.full(50, 1000)
         })
         
-        result = analyzer.detect_market_structure(df)
+        result = analyzer.detect_market_structure("EURUSD", df)
         # Sin movimiento = sin pivots = INSUFFICIENT
         assert result['validation_level'] == "INSUFFICIENT"
 

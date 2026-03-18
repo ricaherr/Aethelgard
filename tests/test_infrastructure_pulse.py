@@ -324,8 +324,18 @@ class TestPositionManagerUnaffectedByVeto:
             "monitored": 2, "actions": []
         }
 
-        with patch("core_brain.main_orchestrator.psutil") as mock_psutil:
+        with patch("core_brain.main_orchestrator.psutil") as mock_psutil, \
+             patch("core_brain.connectivity_orchestrator.ConnectivityOrchestrator") as mock_orch_cls:
+            
             mock_psutil.cpu_percent.return_value = 99.0  # Max CPU — veto fires
+            
+            # Setup fake connectors so the loop runs
+            mock_conn = MagicMock()
+            mock_conn.is_connected = True
+            mock_orch_instance = mock_orch_cls.return_value
+            mock_orch_instance.connectors = {"TEST_PID": mock_conn}
+            mock_orch_instance.supports_info = {"TEST_PID": {"exec": True}}
+            
             with patch.object(orc, "_check_and_run_weekly_dedup_learning", new=AsyncMock()), \
                  patch.object(orc, "_check_and_run_weekly_shadow_evolution", new=AsyncMock()):
                 await orc.run_single_cycle()

@@ -149,8 +149,7 @@ class TestStructureShift0001Strategy(unittest.TestCase):
     
     def test_detect_structure_in_candles(self):
         """✓ Test: Detectar estructura en datos."""
-        structure = self.strategy.market_structure_analyzer.detect_market_structure(
-            self.uptrend_candles
+        structure = self.strategy.market_structure_analyzer.detect_market_structure("EURUSD", self.uptrend_candles
         )
         
         # Tendencia alcista debe tener HH y HL
@@ -161,8 +160,7 @@ class TestStructureShift0001Strategy(unittest.TestCase):
     
     def test_breaker_block_calculation(self):
         """✓ Test: Calcular Breaker Block desde estructura."""
-        structure = self.strategy.market_structure_analyzer.detect_market_structure(
-            self.uptrend_candles
+        structure = self.strategy.market_structure_analyzer.detect_market_structure("EURUSD", self.uptrend_candles
         )
         
         breaker = self.strategy.market_structure_analyzer.calculate_breaker_block(
@@ -177,8 +175,7 @@ class TestStructureShift0001Strategy(unittest.TestCase):
     
     def test_validate_confluence_uptrend(self):
         """✓ Test: Validar confluencia en ruptura UPTREND."""
-        structure = self.strategy.market_structure_analyzer.detect_market_structure(
-            self.uptrend_candles
+        structure = self.strategy.market_structure_analyzer.detect_market_structure("EURUSD", self.uptrend_candles
         )
         breaker = self.strategy.market_structure_analyzer.calculate_breaker_block(
             structure, self.uptrend_candles
@@ -233,7 +230,7 @@ class TestStructureShift0001Strategy(unittest.TestCase):
         # Crear una estructura clara de ruptura
         candles = self.uptrend_candles.copy()
         
-        structure = self.strategy.market_structure_analyzer.detect_market_structure(candles)
+        structure = self.strategy.market_structure_analyzer.detect_market_structure("EURUSD", candles)
         breaker = self.strategy.market_structure_analyzer.calculate_breaker_block(
             structure, candles
         )
@@ -252,7 +249,7 @@ class TestStructureShift0001Strategy(unittest.TestCase):
         """✓ Test: SL se coloca en Breaker Block bajo + buffer."""
         candles = self.uptrend_candles.copy()
         
-        structure = self.strategy.market_structure_analyzer.detect_market_structure(candles)
+        structure = self.strategy.market_structure_analyzer.detect_market_structure("EURUSD", candles)
         breaker = self.strategy.market_structure_analyzer.calculate_breaker_block(
             structure, candles
         )
@@ -282,9 +279,7 @@ class TestStructureShift0001Strategy(unittest.TestCase):
             'volume': np.random.randint(500, 2000, 10)
         })
         
-        structure = self.strategy.market_structure_analyzer.detect_market_structure(
-            random_candles
-        )
+        structure = self.strategy.market_structure_analyzer.detect_market_structure("EURUSD", random_candles)
         
         # Estructura debe ser inválida
         self.assertFalse(structure['is_valid'])
@@ -295,8 +290,7 @@ class TestStructureShift0001Strategy(unittest.TestCase):
     def test_full_strategy_workflow_uptrend(self):
         """✓ Test: Workflow completo en tendencia alcista."""
         # 1. Detectar estructura
-        structure = self.strategy.market_structure_analyzer.detect_market_structure(
-            self.uptrend_candles
+        structure = self.strategy.market_structure_analyzer.detect_market_structure("EURUSD", self.uptrend_candles
         )
         self.assertTrue(structure['is_valid'])
         self.assertEqual(structure['type'], 'UPTREND')

@@ -171,7 +171,7 @@ class StructureShift0001Strategy(BaseStrategy):
                 return None
             
             # 1. Detectar estructura
-            structure = self.market_structure_analyzer.detect_market_structure(df)
+            structure = self.market_structure_analyzer.detect_market_structure(symbol, df)
             
             if not structure['is_valid']:
                 logger.debug(f"[{self.trace_id}] Estructura no válida en {symbol}")

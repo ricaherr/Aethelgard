@@ -90,13 +90,7 @@ class EconomicIntegrationManager:
     - get_trading_status() uses in-memory cache (60s TTL, <50ms latency)
     """
     
-    def __init__(
-        self,
-        gateway: EconomicDataProviderRegistry,
-        sanitizer: NewsSanitizer,
-        storage: StorageManager,
-        scheduler_config: Optional[SchedulerConfig] = None
-    ):
+    def __init__(self, gateway: EconomicDataProviderRegistry, sanitizer: NewsSanitizer, storage: StorageManager, scheduler_config: Optional[SchedulerConfig] = None) -> None:
         """
         Initialize integration manager.
         
@@ -449,11 +443,7 @@ class EconomicIntegrationManager:
                 "degraded_mode": True
             }
     
-    def _query_economic_calendar(
-        self,
-        symbol: str,
-        current_time: datetime
-    ) -> List[Dict[str, Any]]:
+    def _query_economic_calendar(self, symbol: str, current_time: datetime) -> List[Dict[str, Any]]:
         """
         Query sys_economic_calendar for upcoming events affecting this symbol.
         
@@ -540,12 +530,7 @@ class EconomicIntegrationManager:
         # Fallback
         return []
     
-    def _format_reason(
-        self,
-        impact_level: str,
-        time_to_event: float,
-        pre_buf_secs: float
-    ) -> str:
+    def _format_reason(self, impact_level: str, time_to_event: float, pre_buf_secs: float) -> str:
         """Format human-readable reason for trading restriction."""
         if time_to_event < 0:
             minutes_ago = int(abs(time_to_event) / 60)
@@ -559,12 +544,7 @@ class EconomicIntegrationManager:
 # INTEGRATION WITH MAIMORCHESTRATOR
 # ============================================================================
 
-def create_economic_integration(
-    gateway: EconomicDataProviderRegistry,
-    sanitizer: NewsSanitizer,
-    storage: StorageManager,
-    scheduler_config: Optional[SchedulerConfig] = None
-) -> EconomicIntegrationManager:
+def create_economic_integration(gateway: EconomicDataProviderRegistry, sanitizer: NewsSanitizer, storage: StorageManager, scheduler_config: Optional[SchedulerConfig] = None) -> EconomicIntegrationManager:
     """
     Factory function for creating economic integration manager.
     

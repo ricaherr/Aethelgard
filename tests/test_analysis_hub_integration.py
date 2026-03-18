@@ -132,7 +132,7 @@ class TestMarketStructureDetection:
         caused 0 structures to be detected.
         """
         analyzer = MarketStructureAnalyzer(storage=None)
-        result = analyzer.detect_market_structure(sample_dataframe)
+        result = analyzer.detect_market_structure("EURUSD", sample_dataframe)
         
         # Key assertion: NOT empty/None
         assert result is not None, "Analyzer must return structure result"

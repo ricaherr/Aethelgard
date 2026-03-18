@@ -1694,7 +1694,7 @@ class MainOrchestrator:
                     for key, snapshot in price_snapshots.items():
                         if snapshot.df is not None and len(snapshot.df) > 0:
                             # Detect market structure (HH/HL/LH/LL, breakers, etc.)
-                            structure_result = self.market_structure_analyzer.detect_market_structure(snapshot.df)
+                            structure_result = self.market_structure_analyzer.detect_market_structure(snapshot.symbol, snapshot.df)
                             
                             if structure_result:
                                 # Flexibilize: emit even if is_valid=False, as long as we have some pivots

@@ -475,6 +475,21 @@ for signal in active_signals:
 
 ---
 
+### 2.5 MarketStructureAnalyzer & Polimorfismo de Datos (NUEVO v2.2)
+
+**Responsabilidad**: Análisis del Price Action, ZigZag y liquidez. El pilar fundamental para detectar *estructura del mercado*.
+
+**Regla de Polimorfismo Consciente de Activo (Data Schema Validation):**
+- **Problema Histórico**: Ciertos proveedores descentralizados (Forex OTC) no proveen volumen. Forzar un proxy de volumen en un DataFrame corrompe la pureza de los datos. Relajar las validaciones globalmente genera *Deuda Técnica*.
+- **Arquitectura de Solución**: El validador dinámico `DataSchemaValidator` ha sido inyectado en el procesador de Market Structure.
+  - **Identidad Taxonómica**: Recibe el `symbol` desde el orquestador principal.
+  - **Mapeo Dinámico**:
+    - Si el activo es **FOREX o OTC** (`EURUSD`, `GBPUSD`), la regla cambia a exigir rígidamente `{'open', 'high', 'low', 'close'}`.
+    - Si el activo es **CRYPTO o STOCKS** (`BTC/USD`, `AAPL`), preserva la rigidez total: `{'open', 'high', 'low', 'close', 'volume'}`.
+- **Resultado**: Agnosis preservado. No se inyecta data artificial ni se rebaja la guardia arquitectónica. Los tests unitarios no sufren de caídas sistémicas por aserciones de columnas faltantes.
+
+---
+
 ## II.5 Data Services: Provisión de Contexto Macro
 
 Antes del Pipeline de Validación, el sistema requiere datos confiables de contexto macro para decisiones inteligentes.

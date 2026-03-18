@@ -209,7 +209,7 @@ class MarketStructureAnalyzer:
     
     # ============= DETECCIÓN DE ESTRUCTURA =============
     
-    def detect_market_structure(self, candles: pd.DataFrame) -> Dict[str, Any]:
+    def detect_market_structure(self, symbol: str, candles: pd.DataFrame) -> Dict[str, Any]:
         """
         Detecta estructura de mercado (tendencia alcista o bajista).
         
@@ -219,20 +219,21 @@ class MarketStructureAnalyzer:
         - INSUFFICIENT: Datos insuficientes o sin patrón claro
         
         Arquitectura mejorada:
-        1. Validación de entrada (edge cases)
+        1. Validación de entrada (edge cases con Polimorfismo por Asset Class)
         2. Detección de pivots
         3. Clasificación via método separado (SoC)
         4. Scoring profesional de confianza
         5. Caching
         
         Args:
+            symbol: Ticker del activo (ej. 'EUR/USD' o 'BTC/USD'). Utilizado para Polimorfismo OHLC vs OHLCV.
             candles: DataFrame con OHLC
             
         Returns:
             Dict con estructura, validez, niveles de confianza y pivots
         """
-        # PASO 1: Validación de entrada (edge cases protection)
-        if self._validate_input_candles(candles) is False:
+        # PASO 1: Validación de entrada inteligente (Polimorfismo de Asset Class)
+        if self._validate_input_candles(symbol, candles) is False:
             return self._create_insufficient_result(0, "Por validar antes de procesar detectores pivots")
         
         # PASO 2: Buscar en cache
@@ -295,33 +296,52 @@ class MarketStructureAnalyzer:
         return result
     
     
-    def _validate_input_candles(self, candles: pd.DataFrame) -> bool:
+    def _validate_input_candles(self, symbol: str, candles: pd.DataFrame) -> bool:
         """
-        Valida que el DataFrame de velas sea válido.
+        Valida que el DataFrame de velas sea válido de acuerdo al tipo de activo.
+        Implementa "Polimorfismo de Datos" (Solución 2 - Institucional).
         
         Checks:
         - No vacío
         - Tiene suficientes velas (>= 2)
-        - Tiene columnas requeridas
+        - VALIDACIÓN INTELIGENTE: Forex/Índices (OTC) exigen solo OHLC. Crypto/Stocks exigen OHLCV.
         
         Args:
+            symbol: Símbolo del activo para derivar su Asset Class
             candles: DataFrame a validar
             
         Returns:
             bool: True si es válido, False si hay problema
         """
         if candles is None or len(candles) == 0:
-            logger.debug(f"[{self.trace_id}] Canvas validation FAILED: Empty or None DataFrame")
+            logger.debug(f"[{self.trace_id}] Canvas validation FAILED for {symbol}: Empty or None DataFrame")
             return False
+            
+        # Determinar Asset Class por taxonomía del Símbolo
+        # Forex típicamente tiene 6 letras o formato XXX/YYY y representa monedas fiduciarias comunes.
+        # Una heurística robusta para "Forex/OTC" vs "Mercado Centralizado" es requerir `volume` a menos que
+        # sepamos que es Forex puro.
+        is_forex = False
+        clean_symbol = symbol.replace('/', '').replace('-', '').replace('_', '').upper()
+        if len(clean_symbol) == 6 and not any(crypto in clean_symbol for crypto in ['BTC', 'ETH', 'SOL', 'USDT']):
+             is_forex = True # Ej: EURUSD, GBPJPY, USDCAD
         
-        required_cols = {'open', 'high', 'low', 'close', 'volume'}
+        # Polimorfismo Estructural
+        if is_forex:
+            required_cols = {'open', 'high', 'low', 'close'}
+        else:
+            required_cols = {'open', 'high', 'low', 'close', 'volume'}
+            
         if not required_cols.issubset(set(candles.columns)):
-            logger.warning(f"[{self.trace_id}] Canvas validation FAILED: Missing columns")
+            logger.warning(
+                f"[{self.trace_id}] Canvas validation FAILED for {symbol}: "
+                f"Missing columns. Required {required_cols}, Found {list(candles.columns)}"
+            )
             return False
         
         # Mínimo 2 velas para detectar algo
         if len(candles) < 2:
-            logger.debug(f"[{self.trace_id}] Canvas validation FAILED: Only {len(candles)} candle(s)")
+            logger.debug(f"[{self.trace_id}] Canvas validation FAILED for {symbol}: Only {len(candles)} candle(s)")
             return False
         
         return True
