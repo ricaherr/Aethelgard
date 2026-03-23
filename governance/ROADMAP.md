@@ -9,14 +9,34 @@
 > - **NO agregar aquí**: listas de archivos modificados, métricas de tests, detalles de implementación (eso va en SPRINT.md).
 > - **Framework completo**: `.ai_orchestration_protocol.md` Sección 4.
 
-**Versión Log**: v4.4.2-beta
-**Última Actualización**: 18 de Marzo, 2026
+**Versión Log**: v4.5.0-beta
+**Última Actualización**: 21 de Marzo, 2026
 
 ---
 
 ## 📈 ÉPICAS ESTRATÉGICAS
 
 > ℹ️ Solo se muestran Épicas en estado `ACTIVA` o `PENDIENTE`. Las Épicas `COMPLETADA` se archivan en [docs/SYSTEM_LEDGER.md](../docs/SYSTEM_LEDGER.md) (sección ÉPICAS ARCHIVADAS) y se eliminan de este documento.
+
+### E7: cTrader WebSocket Data Protocol — COMPLETADA
+**Sprint**: 5 | **Trace_ID**: CTRADER-WS-PROTO-2026-03-21
+**Objetivo**: Completar el conector cTrader como proveedor de datos primario FOREX. Implementar el protocolo WebSocket protobuf (Spotware Open API) para obtener OHLC bars reales. Corregir los endpoints REST de ejecución usando `api.spotware.com` con `oauth_token`. El conector debe ser la única fuente de datos FOREX del sistema sin depender de Yahoo como fallback.
+
+| HU | Nombre | Dominio | Sprint | Estado |
+|---|---|---|---|---|
+| N1-7 | cTrader WebSocket Protocol — OHLC via Protobuf | 00_INFRA / 05_EXEC | 5 | [DONE] |
+
+---
+
+### E6: Purga de DB Legacy & SSOT Enforcement (Dominio 00_INFRA) — ACTIVA
+**Sprint**: 4 | **Trace_ID**: DB-LEGACY-PURGE-2026-03-21
+**Objetivo**: Eliminar `data_vault/aethelgard.db` (legacy) y toda referencia hardcodeada a su ruta. La única BD global del sistema debe ser `data_vault/global/aethelgard.db`.
+
+| HU | Nombre | Dominio | Sprint | Estado |
+|---|---|---|---|---|
+| N0-5 | Legacy DB Purge & SSOT Enforcement | 00_INFRA | 4 | [DONE] |
+
+---
 
 ### E5: Interfaz Fractal & Experiencia Futurista (Dominio 09) — PENDIENTE
 **Sprint**: por definir | **Trace_ID**: UI-V3-FRACTAL-FUTURE-2026

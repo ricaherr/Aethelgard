@@ -11,6 +11,55 @@
 
 ---
 
+# SPRINT 5: CTRADER WEBSOCKET DATA PROTOCOL — [DONE]
+
+**Inicio**: 21 de Marzo, 2026
+**Fin**: 21 de Marzo, 2026
+**Objetivo**: Completar el conector cTrader como proveedor de datos FOREX primario implementando el protocolo WebSocket protobuf de Spotware Open API. Corregir los endpoints REST de ejecución. El sistema debe obtener OHLC bars reales desde cTrader sin depender de Yahoo como fallback para FOREX.
+**Épica**: E7 | **Trace_ID**: CTRADER-WS-PROTO-2026-03-21
+**Dominios**: 00_INFRA, 05_UNIVERSAL_EXECUTION
+**Estado Final**: 40/40 tests PASSED | EURUSD M5 fetch real verificado (25 bars Thursday, 10 bars con anchor weekend)
+
+## 📋 Tareas del Sprint
+
+- [DONE] **N1-7: cTrader WebSocket Protocol — OHLC via Protobuf**
+  - Instalado `ctrader-open-api` (--no-deps, sin Twisted) + `protobuf` ya disponible.
+  - Parcheado `ctrader_open_api/__init__.py`: graceful import fallback para Twisted no instalado en Windows.
+  - Implementado `_fetch_bars_via_websocket()` — 4-step Spotware Open API asyncio: APP_AUTH → ACCOUNT_AUTH → SYMBOLS_LIST → GET_TRENDBARS.
+  - Implementados helpers: `_build_app_auth_req`, `_build_acct_auth_req`, `_build_symbols_list_req`, `_build_trendbars_req`, `_parse_proto_response`, `_decode_trendbars_response` (delta-encoding: low + deltaOpen/Close/High).
+  - Caché de symbol IDs (`EURUSD` → symbolId=1) y digits cache para evitar lookups repetidos por sesión.
+  - `_get_last_market_close_ts()`: anchor al viernes 21:00 UTC cuando el mercado está cerrado (fin de semana).
+  - Corregido `execute_order`: `api.spotware.com/connect/tradingaccounts/{ctid}/orders?oauth_token=...`
+  - Corregido `get_positions`: `api.spotware.com/connect/tradingaccounts/{ctid}/positions?oauth_token=...`
+  - Actualizado `_build_config` con `ctid_trader_account_id` parameter.
+  - Guardado `ctid_trader_account_id=46662210` + `account_name` en `sys_data_providers.additional_config` DB.
+  - Tests TDD: 40/40 PASSED (añadidos `TestCTraderProtobufHelpers` + `test_config_loads_ctid_trader_account_id`).
+  - Verificación E2E: fetch real EURUSD M5 confirmado con datos auténticos de precio (1.1540-1.1570 rango).
+
+---
+
+# SPRINT 4: SSOT ENFORCEMENT & DB LEGACY PURGE — [DONE]
+
+**Inicio**: 21 de Marzo, 2026
+**Fin**: 21 de Marzo, 2026
+**Objetivo**: Eliminar la BD legacy `data_vault/aethelgard.db` y garantizar SSOT único en `data_vault/global/aethelgard.db`.
+**Épica**: E6 | **Trace_ID**: DB-LEGACY-PURGE-2026-03-21
+**Estado Final**: 7/7 tests PASSED | 0 referencias legacy en producción
+
+## 📋 Tareas del Sprint
+
+- [DONE] **N0-5: Legacy DB Purge & SSOT Enforcement**
+  - Eliminado `data_vault/aethelgard.db` del disco.
+  - Corregido `data_vault/base_repo.py`: fallback path → `global/aethelgard.db`.
+  - Corregido `core_brain/health.py`: `db_path` → `DATA_DIR / "global" / "aethelgard.db"`.
+  - Corregido `core_brain/strategy_loader.py`: default `db_path` → `data_vault/global/aethelgard.db`.
+  - Eliminado bloque de sync legacy en `core_brain/api/routers/market.py`.
+  - Actualizados scripts: `cleanup_db.py`, `db_uniqueness_audit.py`, `check_correct_db.py`.
+  - Actualizado `tests/verify_architecture_ready.py`.
+  - Tests TDD: `tests/test_db_legacy_purge.py` — 7/7 PASSED.
+
+---
+
 # SPRINT 2: SUPREMACÍA DE EJECUCIÓN (Risk Governance) — [DONE]
 
 **Inicio**: 27 de Febrero, 2026  

@@ -21,7 +21,7 @@ class BaseRepository:
     _db_lock = threading.Lock()
 
     def __init__(self, db_path: Optional[str] = None):
-        self.db_path = db_path or os.path.join(os.path.dirname(__file__), "aethelgard.db")
+        self.db_path = db_path or os.path.join(os.path.dirname(__file__), "global", "aethelgard.db")
         self._persistent_conn = None
         if self.db_path == ":memory:":
             self._persistent_conn = self._get_conn()

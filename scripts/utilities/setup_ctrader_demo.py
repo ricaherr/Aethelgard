@@ -167,10 +167,10 @@ def validate_inputs(creds: dict) -> bool:
 # Connection test
 # ---------------------------------------------------------------------------
 
-def test_connection(account_id: str) -> bool:
-    """Instantiate CTraderConnector and verify WebSocket handshake."""
+def test_connection(_account_id: object) -> bool:
+    """Instantiate CTraderConnector via DataProviderManager and verify connectivity."""
     print()
-    print("[CONNECT] Testing cTrader WebSocket connection...")
+    print("[CONNECT] Verificando credenciales cTrader (REST + WebSocket)...")
 
     try:
         import websockets  # noqa: F401 — ensure library available
@@ -181,42 +181,42 @@ def test_connection(account_id: str) -> bool:
 
     storage = StorageManager()
 
-    # Import here to avoid heavy import at module load
-    from connectors.ctrader_connector import CTraderConnector  # noqa: PLC0415
+    from core_brain.data_provider_manager import DataProviderManager  # noqa: PLC0415
 
-    connector = CTraderConnector(storage=storage)
+    manager = DataProviderManager(storage=storage)
+    connector = manager._get_provider_instance("ctrader")
 
-    if not connector.config.get("enabled"):
-        print("[ERROR] Connector reports 'enabled=False'. Check that the account")
-        print("         was saved correctly and that credentials are not empty.")
+    if connector is None or not connector.config.get("enabled"):
+        print("[ERROR] El conector reporta 'enabled=False'.")
+        print("         Verifica que las credenciales se guardaron correctamente.")
         return False
+
+    print(f"   REST listo:   {connector.is_available()}")
+    print(f"   Account:      {connector.config.get('account_name', 'N/A')}")
+    print(f"   Account type: {connector.config.get('account_type', 'N/A')}")
+    print(f"   Host:         {connector.config.get('host', 'N/A')}")
 
     success = connector.connect()
 
     if success:
         print()
         print("=" * 70)
-        print("[OK] CONNECTION SUCCESSFUL!")
+        print("[OK] CONEXION WebSocket EXITOSA!")
         print("=" * 70)
-        print()
-        print(f"   Account ID:   {connector.config.get('account_id')}")
-        print(f"   Account name: {connector.config.get('account_name', 'N/A')}")
-        print(f"   Account type: {connector.config.get('account_type', 'N/A')}")
-        print(f"   Host:         {connector.config.get('host', 'N/A')}")
-        print(f"   Latency:      {connector.get_latency():.1f} ms")
+        print(f"   Latencia: {connector.get_latency():.1f} ms")
         print()
         connector.disconnect()
     else:
         print()
-        print("[ERROR] WebSocket connection failed.")
+        print("[ERROR] Conexion WebSocket fallida.")
         print()
-        print("  Common causes:")
-        print("  - Invalid or expired access_token (tokens typically expire in 1 hour)")
-        print("  - Wrong client_id / client_secret")
-        print("  - cTrader account not linked to the registered application")
-        print("  - Network / firewall blocking port 5035")
+        print("  Causas comunes:")
+        print("  - access_token inválido o expirado (expiran ~1 hora)")
+        print("  - client_id / client_secret incorrectos")
+        print("  - Cuenta cTrader no vinculada a la aplicación registrada")
+        print("  - Firewall bloqueando puerto 5035")
         print()
-        print("  Fix: re-generate access_token and run this script again.")
+        print("  Solución: regenera el access_token y ejecuta este script de nuevo.")
 
     return success
 
@@ -225,39 +225,34 @@ def test_connection(account_id: str) -> bool:
 # DB persistence
 # ---------------------------------------------------------------------------
 
-def save_to_db(broker: dict, creds: dict) -> str:
-    """Save broker account + credentials to DB (SSOT)."""
+def save_to_db(broker: dict, creds: dict) -> None:
+    """Save cTrader credentials to sys_data_providers.additional_config (SSOT)."""
     print()
-    print("[SAVE] Saving configuration to database...")
+    print("[SAVE] Saving configuration to sys_data_providers...")
 
     storage = StorageManager()
-    account_id = f"{broker['broker_id']}_ctrader_demo_20001"
 
-    # 1. Broker account row
-    storage.save_broker_account(
-        account_id=account_id,
-        broker_id=broker["broker_id"],
-        platform_id="ctrader",
-        account_name=f"{broker['name']} cTrader Demo",
-        account_number=creds["account_number"],
-        server=broker["server"],
-        account_type="demo",
+    additional_config = {
+        "access_token": creds["access_token"],
+        "account_number": creds["account_number"],
+        "client_id": creds["client_id"],
+        "client_secret": creds["client_secret"],
+        "account_type": "DEMO",
+        "account_name": f"{broker['name']} cTrader Demo",
+    }
+
+    storage.save_data_provider(
+        name="ctrader",
         enabled=True,
+        priority=100,
+        requires_auth=True,
+        additional_config=additional_config,
+        connector_module="connectors.ctrader_connector",
+        connector_class="CTraderConnector",
     )
 
-    # 2. Encrypted credentials (access_token + OAuth app keys)
-    storage.update_credential(
-        account_id,
-        {
-            "access_token": creds["access_token"],
-            "client_id": creds["client_id"],
-            "client_secret": creds["client_secret"],
-        },
-    )
-
-    print(f"[OK] Account saved in DB (ID: {account_id})")
-    print("[OK] Credentials encrypted and stored in sys_credentials")
-    return account_id
+    print("[OK] Credenciales guardadas en sys_data_providers (ctrader)")
+    print("[OK] additional_config: access_token, account_number, client_id, client_secret")
 
 
 # ---------------------------------------------------------------------------
@@ -299,10 +294,10 @@ def main() -> None:
         return
 
     # Step 3 — Persist to DB first (so connector can load config)
-    account_id = save_to_db(broker, creds)
+    save_to_db(broker, creds)
 
     # Step 4 — Test connectivity
-    ok = test_connection(account_id)
+    ok = test_connection(None)
 
     if not ok:
         print("[WARN] Account saved in DB but connection test failed.")

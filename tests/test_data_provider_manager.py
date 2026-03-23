@@ -9,6 +9,7 @@ from core_brain.data_provider_manager import (
     ProviderStatus,
     ProviderConfig
 )
+from data_vault.storage import StorageManager
 
 
 class TestProviderConfig:
@@ -47,7 +48,15 @@ class TestProviderConfig:
 
 class TestDataProviderManager:
     """Test DataProviderManager functionality"""
-    
+
+    @pytest.fixture(autouse=True)
+    def isolated_storage(self, tmp_path):
+        """Patch StorageManager so DataProviderManager() uses a temp DB, not the real global DB."""
+        real_storage = StorageManager(db_path=str(tmp_path / "test_dpm.db"))
+        with patch("core_brain.data_provider_manager.StorageManager", return_value=real_storage):
+            yield real_storage
+
+
     def test_manager_initialization(self):
         """Test manager initializes with default providers"""
         manager = DataProviderManager()

@@ -119,10 +119,11 @@ def launch_server() -> None:
                 logger.error(f"[ERROR] Falló la compilación de la UI: {e}. Se servirá solo la API.")
 
         # Ejecutar uvicorn como módulo en subproceso detached
+        _uvicorn_log = open("logs/uvicorn_debug.log", "w")
         server_process = subprocess.Popen(
             [sys.executable, "-m", "uvicorn", "core_brain.server:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "warning"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=_uvicorn_log,
+            stderr=_uvicorn_log,
             cwd=os.getcwd(),
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0
         )

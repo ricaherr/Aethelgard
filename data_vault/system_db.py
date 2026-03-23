@@ -130,20 +130,27 @@ class SystemMixin(BaseRepository):
         query = "SELECT * FROM usr_edge_learning ORDER BY timestamp DESC LIMIT ?"
         return self.execute_query(query, (limit,))
 
-    def save_data_provider(self, name: str, enabled: bool = True, priority: int = 50, 
-                          requires_auth: bool = False, api_key: Optional[str] = None, 
+    def save_data_provider(self, name: str, enabled: bool = True, priority: int = 50,
+                          requires_auth: bool = False, api_key: Optional[str] = None,
                           api_secret: Optional[str] = None, additional_config: Optional[Dict] = None,
                           is_system: bool = False, provider_type: str = "generic",
                           connector_module: Optional[str] = None,
                           connector_class: Optional[str] = None) -> None:
         """Save data provider configuration.
 
-        COALESCE on connector_module/class ensures existing values are never overwritten
-        by NULL when callers omit those arguments (preserves data already in DB).
+        SSOT rule: On conflict (row already exists), the `enabled` column is NEVER
+        overwritten by this UPSERT.  The `enabled` state is the single source of
+        truth and may only be changed through `update_provider_enabled()` (called
+        by `enable_provider()` / `disable_provider()`).  This prevents any code
+        path that reconstructs in-memory state from accidentally corrupting the
+        user-configured enabled/disabled state.
+
+        COALESCE on connector_module/class preserves existing values when callers
+        omit those arguments.
         """
         if additional_config is None:
             additional_config = {}
-        
+
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
@@ -154,7 +161,7 @@ class SystemMixin(BaseRepository):
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(name) DO UPDATE SET
                     type=excluded.type,
-                    enabled=excluded.enabled,
+                    enabled=COALESCE(sys_data_providers.enabled, excluded.enabled),
                     priority=excluded.priority,
                     requires_auth=excluded.requires_auth,
                     api_key=excluded.api_key,

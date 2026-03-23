@@ -24,7 +24,7 @@ def verify_architecture():
     
     # 1. Conexión a la DB de Producción
     try:
-        storage = StorageManager(db_path='data_vault/aethelgard.db')
+        storage = StorageManager(db_path='data_vault/global/aethelgard.db')
         logger.info("✅ Conexión a SQLite establecida.")
     except Exception as e:
         logger.critical(f"❌ Fallo crítico de conexión: {e}")

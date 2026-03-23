@@ -39,6 +39,8 @@
 *Origen: Auditoría forense `docs/AUDITORIA_ESTADO_REAL.md`. Prerequisito bloqueante para todo el Canvas de Ideación.*
 
 ### Nivel 0 — Fundacional (✅ COMPLETADO — Trace_ID: ARCH-SSOT-NIVEL0-2026-03-14)
+* **N0-5: Legacy DB Purge & SSOT Enforcement** `[DONE]`
+    * Eliminar `data_vault/aethelgard.db` del disco. Corregir toda referencia hardcodeada a esa ruta en código de producción (`base_repo.py`, `health.py`, `strategy_loader.py`, `market.py`). Garantizar que el sistema solo use `data_vault/global/aethelgard.db` como BD global. Trace_ID: `DB-LEGACY-PURGE-2026-03-21`.
 * **N0-1: sys_signal_ranking como DDL oficial** `[DONE]`
     * Eliminar `usr_performance` de `initialize_schema()`. Crear `sys_signal_ranking` con todos los campos. Actualizar `run_migrations()`. Impacto: CRÍTICO-1.
 * **N0-2: Consolidación de DDL fragmentado** `[DONE]`
@@ -65,7 +67,20 @@
 * **N1-6: Provisión + Estabilización cTrader** `[DONE]`
     * (a) Bug fix `client_secret` hardcodeado en `ctrader_connector.py`; (b) seed placeholder `demo_broker_accounts.json` con cuenta IC Markets; (c) script `setup_ctrader_demo.py` con guía OAuth2 interactiva; (d) fix MT5 re-activation (`_sync_sys_broker_accounts_to_providers()` preserva estado `enabled`); (e) refactor `ConnectivityOrchestrator` a DB-driven: elimina `_CONNECTOR_REGISTRY` hardcodeado, columnas `connector_module`/`connector_class` en `sys_data_providers`; (f) `save_data_provider()` con `COALESCE` para no pisar datos existentes. Archivos: `connectors/ctrader_connector.py`, `core_brain/data_provider_manager.py`, `core_brain/connectivity_orchestrator.py`, `data_vault/schema.py`, `data_vault/system_db.py`, `data_vault/seed/data_providers.json`, `data_vault/seed/demo_broker_accounts.json`, `scripts/utilities/setup_ctrader_demo.py`. Impacto: OPERACIONAL + ARQUITECTURA.
 
-**Orden de ejecución**: N1-1 → N1-2 → N1-3 → N1-4 → N1-5 → N1-6
+* **N1-7: cTrader WebSocket Protocol — OHLC via Protobuf** `[DONE]`
+    * **Contexto**: N1-2 implementó el conector con una capa REST para OHLC que apuntaba a una URL incorrecta (`demo.ctrader.com/ctrader/api/v3`). Verificación real contra la API de Spotware confirmó: (a) la API REST de Spotware **no expone endpoint de barras OHLC**; (b) la URL base correcta para REST es `api.spotware.com` con `oauth_token` como query param; (c) el `ctidTraderAccountId` es diferente al `accountNumber` visible en el broker.
+    * **Implementado**:
+      - `_fetch_bars_via_websocket()`: protocolo Spotware Open API sobre WebSocket binario. Flujo: `APP_AUTH_REQ → ACCOUNT_AUTH_REQ → SYMBOLS_LIST_REQ (cache) → GET_TRENDBARS_REQ → DataFrame`. Dependencia: `ctrader-open-api` (--no-deps, sin Twisted) + `protobuf`. Asyncio puro.
+      - `_fetch_bars_via_rest()` → eliminado. Spotware no expone REST OHLC.
+      - `execute_order`: `POST api.spotware.com/connect/tradingaccounts/{ctidTraderAccountId}/orders?oauth_token=...`
+      - `get_positions`: corregir a `GET api.spotware.com/connect/tradingaccounts/{ctidTraderAccountId}/positions?oauth_token=...`
+      - `_build_config`: aceptar y almacenar `ctidTraderAccountId` (ID interno Spotware, distinto a `account_number`).
+      - `additional_config` en DB: agregar campo `ctid_trader_account_id`.
+    * **Dependencias nuevas**: `ctrader-open-api`, `protobuf`
+    * **Archivos**: `connectors/ctrader_connector.py`, `tests/test_ctrader_connector.py`, `docs/05_UNIVERSAL_EXECUTION.md`
+    * **Trace_ID**: CTRADER-WS-PROTO-2026-03-21
+
+**Orden de ejecución**: N1-1 → N1-2 → N1-3 → N1-4 → N1-5 → N1-6 → N1-7
 
 ### Nivel 2 — Inteligencia (📋 BACKLOG)
 * **N2-1: JSON_SCHEMA Interpreter** `[DONE]`

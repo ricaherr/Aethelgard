@@ -1,8 +1,8 @@
 import sqlite3
 from pathlib import Path
 
-# Correct DB path
-db_path = Path("data_vault/aethelgard.db")
+# Correct DB path (SSOT: data_vault/global/aethelgard.db)
+db_path = Path("data_vault/global/aethelgard.db")
 print(f"DB Path: {db_path}")
 print(f"DB Exists: {db_path.exists()}")
 print()

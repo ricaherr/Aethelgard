@@ -2,11 +2,11 @@
 TDD: cTrader Connector
 ======================
 Validates CTraderConnector complies with BaseConnector contract and
-correctly wraps the Spotware Open API (WebSocket streaming + REST execution).
+correctly wraps the Spotware Open API (WebSocket protobuf + REST execution).
 
-N1-2 scope:
-  - Async WebSocket for tick/OHLC (M1 viable, <100ms latency)
-  - REST for order execution (no DLL dependencies)
+N1-7 scope (Sprint 5):
+  - Async WebSocket protobuf for OHLC (ctrader-open-api, asyncio, no Twisted)
+  - REST for order execution (api.spotware.com + oauth_token + ctidTraderAccountId)
   - Inherits BaseConnector, compatible with DataProviderManager
 """
 import asyncio
@@ -24,30 +24,19 @@ from connectors.base_connector import BaseConnector
 # ---------------------------------------------------------------------------
 
 def _make_connector(enabled: bool = True) -> CTraderConnector:
-    """Create connector with mocked storage — no real DB needed."""
-    mock_storage = Mock()
-    mock_storage.get_sys_broker_accounts.return_value = (
-        [
-            {
-                "account_id": "ctrader-demo-001",
-                "platform_id": "ctrader",
-                "enabled": enabled,
-                "account_type": "DEMO",
-                "server": "demo",
-                "account_number": "123456",
-                "account_name": "IC Markets Demo",
-            }
-        ]
-        if enabled
-        else []
-    )
-    mock_storage.get_credentials.return_value = {
-        "password": "",
-        "client_id": "test_client_id",
-        "client_secret": "test_secret",
-        "access_token": "test_access_token",
-    }
-    return CTraderConnector(storage=mock_storage)
+    """Create connector injecting credentials directly (mirrors DataProviderManager flow)."""
+    if enabled:
+        return CTraderConnector(
+            access_token="test_access_token",
+            account_number="123456",
+            ctid_trader_account_id="46662210",
+            client_id="test_client_id",
+            client_secret="test_secret",
+            account_type="DEMO",
+            account_name="IC Markets Demo",
+        )
+    # No credentials → disabled
+    return CTraderConnector()
 
 
 # ---------------------------------------------------------------------------
@@ -70,13 +59,14 @@ class TestCTraderBaseContract:
         connector = _make_connector()
         assert connector.is_local() is False
 
-    def test_is_available_false_when_not_connected(self):
-        connector = _make_connector()
+    def test_is_available_false_when_no_credentials(self):
+        """Connector is unavailable when no REST credentials are configured."""
+        connector = _make_connector(enabled=False)
         assert connector.is_available() is False
 
-    def test_is_available_true_when_connected(self):
+    def test_is_available_true_when_rest_credentials_present(self):
+        """Connector is available as soon as valid REST credentials exist (WebSocket optional)."""
         connector = _make_connector()
-        connector._connected = True
         assert connector.is_available() is True
 
     def test_get_latency_returns_float(self):
@@ -132,10 +122,14 @@ class TestCTraderConfigLoading:
         assert connector.config.get("account_type") in ("DEMO", "LIVE", "REAL")
 
     def test_config_loads_host_based_on_account_type(self):
-        """DEMO account must use demo endpoint."""
+        """DEMO account must use demo WebSocket endpoint."""
         connector = _make_connector()
-        host = connector.config.get("host", "")
+        host = connector.config.get("ws_host", "")
         assert "demo" in host.lower()
+
+    def test_config_loads_ctid_trader_account_id(self):
+        connector = _make_connector()
+        assert connector.config.get("ctid_trader_account_id") == "46662210"
 
 
 # ---------------------------------------------------------------------------
@@ -181,14 +175,34 @@ class TestCTraderConnect:
 class TestCTraderMarketData:
     """OHLC data must be returned as a normalized DataFrame."""
 
-    def test_fetch_ohlc_returns_none_when_not_connected(self):
-        connector = _make_connector()
+    def test_fetch_ohlc_returns_none_when_no_rest_credentials(self):
+        """Without an access_token the REST call cannot proceed."""
+        connector = _make_connector(enabled=False)
         result = connector.fetch_ohlc("EURUSD", "M5", 100)
         assert result is None
 
+    def test_fetch_ohlc_works_without_persistent_websocket_connection(self):
+        """OHLC fetch opens a transient WebSocket per-call — _connected not required."""
+        connector = _make_connector()
+        assert connector._connected is False  # no persistent WS state
+
+        fake_bars = [
+            {
+                "open": 1.0850, "high": 1.0860, "low": 1.0840,
+                "close": 1.0855, "volume": 1200,
+                "time": datetime(2024, 1, 1, 10, 0, tzinfo=timezone.utc),
+            }
+        ]
+        with patch.object(
+            connector, "_fetch_bars_via_websocket", new=AsyncMock(return_value=fake_bars)
+        ):
+            df = connector.fetch_ohlc("EURUSD", "M5", 1)
+
+        assert df is not None
+        assert isinstance(df, pd.DataFrame)
+
     def test_fetch_ohlc_returns_dataframe_with_required_columns(self):
         connector = _make_connector()
-        connector._connected = True
 
         fake_bars = [
             {
@@ -202,7 +216,9 @@ class TestCTraderMarketData:
                 "time": datetime(2024, 1, 1, 10, 5, tzinfo=timezone.utc),
             },
         ]
-        with patch.object(connector, "_fetch_bars_via_rest", return_value=fake_bars):
+        with patch.object(
+            connector, "_fetch_bars_via_websocket", new=AsyncMock(return_value=fake_bars)
+        ):
             df = connector.fetch_ohlc("EURUSD", "M5", 2)
 
         assert df is not None
@@ -212,7 +228,6 @@ class TestCTraderMarketData:
 
     def test_get_market_data_delegates_to_fetch_ohlc(self):
         connector = _make_connector()
-        connector._connected = True
         fake_df = pd.DataFrame(
             {"time": [], "open": [], "high": [], "low": [], "close": [], "volume": []}
         )
@@ -220,10 +235,11 @@ class TestCTraderMarketData:
             connector.get_market_data("EURUSD", "M5", 100)
             mock_fetch.assert_called_once_with("EURUSD", "M5", 100)
 
-    def test_fetch_ohlc_returns_none_on_rest_error(self):
+    def test_fetch_ohlc_returns_none_on_websocket_error(self):
         connector = _make_connector()
-        connector._connected = True
-        with patch.object(connector, "_fetch_bars_via_rest", side_effect=Exception("timeout")):
+        with patch.object(
+            connector, "_fetch_bars_via_websocket", new=AsyncMock(side_effect=Exception("timeout"))
+        ):
             result = connector.fetch_ohlc("EURUSD", "M5", 100)
         assert result is None
 
@@ -231,6 +247,28 @@ class TestCTraderMarketData:
 # ---------------------------------------------------------------------------
 # execute_order
 # ---------------------------------------------------------------------------
+
+class TestCTraderRestReady:
+    """_is_rest_ready reflects credential availability, independent of WebSocket."""
+
+    def test_rest_ready_true_when_token_and_account_number_present(self):
+        connector = _make_connector()
+        assert connector._is_rest_ready() is True
+
+    def test_rest_ready_false_when_no_token(self):
+        connector = _make_connector()
+        connector.config["access_token"] = ""
+        assert connector._is_rest_ready() is False
+
+    def test_rest_ready_false_when_no_account_number(self):
+        connector = _make_connector()
+        connector.config["account_number"] = ""
+        assert connector._is_rest_ready() is False
+
+    def test_rest_ready_false_when_disabled(self):
+        connector = _make_connector(enabled=False)
+        assert connector._is_rest_ready() is False
+
 
 class TestCTraderExecuteOrder:
     """Orders must be submitted to the REST endpoint, not DLL calls."""
@@ -292,14 +330,13 @@ class TestCTraderExecuteOrder:
 class TestCTraderPositions:
     """Positions must be fetched via REST (not DLL)."""
 
-    def test_get_positions_returns_empty_list_when_not_connected(self):
-        connector = _make_connector()
+    def test_get_positions_returns_empty_list_when_no_credentials(self):
+        connector = _make_connector(enabled=False)
         result = connector.get_positions()
         assert result == []
 
     def test_get_positions_returns_list_of_dicts(self):
         connector = _make_connector()
-        connector._connected = True
 
         fake_positions = [
             {
@@ -317,3 +354,60 @@ class TestCTraderPositions:
 
         assert len(result) == 1
         assert result[0]["symbol"] == "EURUSD"
+
+
+# ---------------------------------------------------------------------------
+# WebSocket protobuf protocol helpers
+# ---------------------------------------------------------------------------
+
+class TestCTraderProtobufHelpers:
+    """Protocol builder and parser functions must produce/consume valid protobuf."""
+
+    def test_build_app_auth_req_is_bytes(self):
+        from connectors.ctrader_connector import _build_app_auth_req
+        result = _build_app_auth_req("my_client_id", "my_secret")
+        assert isinstance(result, bytes)
+        assert len(result) > 0
+
+    def test_build_acct_auth_req_is_bytes(self):
+        from connectors.ctrader_connector import _build_acct_auth_req
+        result = _build_acct_auth_req(46662210, "my_token")
+        assert isinstance(result, bytes)
+
+    def test_build_symbols_list_req_is_bytes(self):
+        from connectors.ctrader_connector import _build_symbols_list_req
+        result = _build_symbols_list_req(46662210)
+        assert isinstance(result, bytes)
+
+    def test_build_trendbars_req_is_bytes(self):
+        from connectors.ctrader_connector import _build_trendbars_req
+        result = _build_trendbars_req(46662210, 1, 5, 1700000000000, 1700100000000)
+        assert isinstance(result, bytes)
+
+    def test_parse_proto_response_roundtrip(self):
+        """Wrap and unwrap a message — payloadType must survive the round trip."""
+        from connectors.ctrader_connector import _build_app_auth_req, _parse_proto_response
+        from connectors.ctrader_connector import _PT_APP_AUTH_REQ
+        encoded = _build_app_auth_req("cid", "csec")
+        pt, payload = _parse_proto_response(encoded)
+        assert pt == _PT_APP_AUTH_REQ
+
+    def test_decode_trendbars_response_empty_returns_empty_list(self):
+        from connectors.ctrader_connector import _decode_trendbars_response
+        from ctrader_open_api.messages.OpenApiMessages_pb2 import ProtoOAGetTrendbarsRes
+        from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOATrendbarPeriod
+        # Build empty response
+        res = ProtoOAGetTrendbarsRes(
+            ctidTraderAccountId=46662210,
+            period=ProtoOATrendbarPeriod.Value("M5"),
+            timestamp=1700000000000,
+        )
+        result = _decode_trendbars_response(res.SerializeToString(), digits=5)
+        assert result == []
+
+    def test_compute_from_timestamp_m5(self):
+        from connectors.ctrader_connector import _compute_from_timestamp
+        to_ts = 1_700_000_000_000  # arbitrary epoch ms
+        from_ts = _compute_from_timestamp(to_ts, "M5", 100)
+        expected_delta = 100 * 5 * 60 * 1000
+        assert to_ts - from_ts == expected_delta

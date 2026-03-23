@@ -24,7 +24,7 @@ logger: logging.Logger = logging.getLogger("HEALTH_CORE")
 
 class HealthManager:
     def __init__(self) -> None:
-        self.db_path: Path = DATA_DIR / "aethelgard.db"
+        self.db_path: Path = DATA_DIR / "global" / "aethelgard.db"
     
     def check_config_integrity(self) -> Dict[str, Any]:
         """Checks if critical JSON config files are present and valid."""
@@ -54,7 +54,7 @@ class HealthManager:
         
         if not self.db_path.exists():
             results["status"] = "RED"
-            results["details"].append("CRITICAL: aethelgard.db is missing.")
+            results["details"].append("CRITICAL: data_vault/global/aethelgard.db is missing.")
             return results
             
         try:

@@ -80,12 +80,70 @@ Extension del Sistema de Reporte para SHADOW mode:
 *   **Source Fidelity Guard**: Prohíbe el arbitraje de datos entre proveedores para garantizar la integridad operativa.
 
 ## 🔌 Conectores y Proveedores de Datos
-Aethelgard utiliza un sistema de **fallback automático** para garantizar la disponibilidad de datos de mercado.
+Aethelgard utiliza un sistema de **fallback automático** para garantizar la disponibilidad de datos de mercado. La prioridad es FOREX-first con cTrader como conector primario.
 
-*   **Yahoo Finance**: Principal proveedor gratuito para Forex, Stocks y Commodities.
+### cTrader Open API (Prioridad: 100 — PRIMARIO FOREX)
+Conector WebSocket nativo asyncio sin dependencia de DLL. Habilitado vía `sys_data_providers` (SSOT).
+
+**Credenciales** (`sys_data_providers.additional_config` para `name="ctrader"`):
+
+| Campo | Descripción |
+|---|---|
+| `access_token` | OAuth2 Bearer Token (Spotware Developer Portal) |
+| `account_number` | Número de cuenta visible en el broker (ej. 9920997) |
+| `ctid_trader_account_id` | ID interno Spotware (ej. 46662210) — distinto al account_number |
+| `client_id` | Application client ID del portal openapi.ctrader.com |
+| `client_secret` | Application client secret |
+| `account_type` | `"DEMO"` o `"LIVE"` |
+
+**Protocolo WebSocket — Flujo de autenticación y datos OHLC:**
+```
+websockets → wss://demo.ctraderapi.com:5035/
+  │
+  ├─ PROTO_OA_APPLICATION_AUTH_REQ  (clientId + clientSecret)
+  │    └─ PROTO_OA_APPLICATION_AUTH_RES ✓
+  │
+  ├─ PROTO_OA_ACCOUNT_AUTH_REQ  (accessToken + ctidTraderAccountId)
+  │    └─ PROTO_OA_ACCOUNT_AUTH_RES ✓
+  │
+  ├─ PROTO_OA_SYMBOLS_LIST_REQ  (cache en memoria: "EURUSD" → symbolId)
+  │    └─ PROTO_OA_SYMBOLS_LIST_RES ✓
+  │
+  └─ PROTO_OA_GET_TRENDBARS_REQ  (symbolId + period + count)
+       └─ PROTO_OA_GET_TRENDBARS_RES → pd.DataFrame(time,open,high,low,close,volume)
+```
+
+**Decodificación de precios (formato Spotware):**
+Los precios en `ProtoOATrendbar` están codificados en puntos (×100000). Cada barra usa delta-encoding respecto al mínimo:
+```python
+price_divisor = 10 ** digits  # digits=5 para FOREX
+low   = trendbar.low / price_divisor
+open  = (trendbar.low + trendbar.deltaOpen) / price_divisor
+close = (trendbar.low + trendbar.deltaClose) / price_divisor
+high  = (trendbar.low + trendbar.deltaHigh) / price_divisor
+```
+
+**REST de ejecución** (`api.spotware.com`):
+```
+Base URL: https://api.spotware.com
+Auth:     ?oauth_token={access_token}  (query param, NO header Bearer)
+Account:  ctidTraderAccountId (NO accountNumber)
+
+POST /connect/tradingaccounts/{ctid}/orders     → execute_order
+GET  /connect/tradingaccounts/{ctid}/positions  → get_positions
+GET  /connect/tradingaccounts             → lista cuentas + ctid lookup
+```
+
+**Dependencias**: `websockets` (ya instalado) + `ctrader-open-api` + `protobuf`
+**Implementación**: `connectors/ctrader_connector.py` | **Tests**: `tests/test_ctrader_connector.py`
+**Trace_ID**: `CTRADER-WS-PROTO-2026-03-21`
+
+---
+
+*   **MetaTrader 5 (MT5)**: Conexión nativa de alta fidelidad (prioridad 70). Alternativa FOREX cuando cTrader no está disponible. Requiere instalación local del terminal MT5.
+*   **Yahoo Finance**: Fallback gratuito para Stocks y Commodities. Prioridad 50.
 *   **CCXT**: Puente universal para más de 100 exchanges de Criptomonedas.
 *   **Alpha Vantage / Twelve Data / Polygon**: Proveedores con API Key para alta frecuencia y datos institucionales.
-*   **MetaTrader 5 (MT5)**: Conexión nativa de alta fidelidad. El `ExecutionService` utiliza directamente las primitivas de MT5 para garantizar latencia mínima.
 
 ## � Failure Reason Reporting (HIGH-FIDELITY FEEDBACK)
 Implementación de DOMINIO-10 (INFRA_RESILIENCY) que proporciona razones estructuradas para fallos de ejecución.

@@ -269,10 +269,6 @@ class ConnectivityOrchestrator:
     def get_status_report(self) -> Dict[str, Dict[str, Any]]:
         """Return connectivity status for UI consumption."""
         report = {}
-        # Ensure we have latest info
-        if self.storage:
-            self.load_connectors_from_db()
-
         for pid, connector in self.connectors.items():
             is_manual_enabled = self.manual_states.get(pid, True)
             

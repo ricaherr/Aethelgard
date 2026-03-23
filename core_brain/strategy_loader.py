@@ -3,10 +3,10 @@ Dynamic Strategy Loader - Universal Strategy Engine v2.0
 
 TRACE_ID: LOADER-DYNAMIC-STRATEGIES-2026
 
-Carga dinámicamente estrategias desde tabla strategy_registries en data_vault/aethelgard.db.
+Carga dinámicamente estrategias desde tabla strategy_registries en data_vault/global/aethelgard.db.
 Integra con MainOrchestrator para inyección de dependencias.
 
-SINGLE SOURCE OF TRUTH: data_vault/aethelgard.db (tabla strategy_registries)
+SINGLE SOURCE OF TRUTH: data_vault/global/aethelgard.db (tabla strategy_registries)
 MÁS INFORMACIÓN: scripts/migrate_strategy_registries.py
 """
 
@@ -39,7 +39,7 @@ class StrategySpec:
 class StrategyRegistry:
     """
     SSOT para estrategias operativas.
-    Lee desde tabla strategy_registries en aethelgard.db.
+    Lee desde tabla strategy_registries en data_vault/global/aethelgard.db.
     
     Mantiene compatibilidad hacia atrás con el código existente.
     """
@@ -50,12 +50,12 @@ class StrategyRegistry:
         
         Args:
             registry_path: DEPRECATED (ignorado, para compatibilidad hacia atrás)
-            db_path: Ruta a aethelgard.db (default: data_vault/aethelgard.db - SSOT)
+            db_path: Ruta a aethelgard.db (default: data_vault/global/aethelgard.db - SSOT)
         """
         if db_path is None:
-            # Por defecto, buscar en data_vault (SSOT obligatorio per .ai_rules.md)
+            # Por defecto, buscar en data_vault/global (SSOT obligatorio per .ai_rules.md)
             root = Path(__file__).parent.parent
-            db_path = str(root / "data_vault" / "aethelgard.db")
+            db_path = str(root / "data_vault" / "global" / "aethelgard.db")
         
         self.db_path = db_path
         self.usr_strategies: Dict[str, StrategySpec] = {}

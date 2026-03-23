@@ -427,16 +427,9 @@ async def update_instruments(payload: dict, token: TokenPayload = Depends(get_cu
         current_category_config.update(data)
         instruments_config[market][category] = current_category_config
         
-        # === PERSIST TO BOTH BDs: TENANT + GENERIC (SSOT sync) ===
-        # 1. Write to tenant-isolated DB (primary)
+        # === PERSIST TO DB (SSOT: data_vault/global/aethelgard.db) ===
         storage.update_sys_config({"instruments_config": instruments_config})
-        logger.info(f"✅ Category {market}/{category} persisted to TENANT DB. enabled={data.get('enabled')}, actives={data.get('actives', {})}")
-        
-        # 2. CRITICAL: Also sync to generic DB (data_vault/aethelgard.db) for CLI/start.py consistency
-        from data_vault.storage import StorageManager as GenericStorageManager
-        generic_storage = GenericStorageManager()  # Uses default path: data_vault/aethelgard.db
-        generic_storage.update_sys_config({"instruments_config": instruments_config})
-        logger.info(f"✅ Category {market}/{category} ALSO persisted to GENERIC DB (data_vault/aethelgard.db). SSOT sync complete.")
+        logger.info(f"✅ Category {market}/{category} persisted. enabled={data.get('enabled')}, actives={data.get('actives', {})}")
         
         # === BROADCAST UI UPDATE ===
         await _broadcast_thought(

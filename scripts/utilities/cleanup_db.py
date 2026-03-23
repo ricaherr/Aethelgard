@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 DATA_VAULT = PROJECT_ROOT / "data_vault"
-OFFICIAL_DB = DATA_VAULT / "aethelgard.db"
+OFFICIAL_DB = DATA_VAULT / "global" / "aethelgard.db"
 
 ORPHAN_DBS = [
     DATA_VAULT / "aethelgard_ssot.db",

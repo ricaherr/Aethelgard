@@ -3,8 +3,9 @@
 [AUDIT] DB Uniqueness Audit - Aethelgard (Milestone 6.2)
 =========================================================
 Enforces the Single Source of Truth (SSOT) rule for SQLite databases:
-- The ONLY permitted database is: data_vault/aethelgard.db
-- Any .db file found outside of excluded directories is a violation.
+- Global DB: data_vault/global/aethelgard.db
+- Tenant DBs: data_vault/tenants/{uuid}/aethelgard.db
+- Any .db file outside these locations is a violation.
 
 Excluded directories (legitimate, non-production locations):
   - backups/   -> automated rolling backups (system-managed)
@@ -27,8 +28,8 @@ EXCLUDED_DIRS = {"backups", "venv", ".venv", "__pycache__", ".git", "node_module
 # Directory containing isolated databases
 TENANTS_DIR_RELATIVE = Path("data_vault") / "tenants"
 
-# 1. The primary structural database path (relative to workspace root)
-PERMITTED_PRIMARY_DB = Path("data_vault") / "aethelgard.db"
+# 1. The global structural database path (relative to workspace root)
+PERMITTED_PRIMARY_DB = Path("data_vault") / "global" / "aethelgard.db"
 
 # 2. The global authentication database (HU 1.1)
 PERMITTED_AUTH_DB = Path("data_vault") / "global" / "auth.db"
@@ -89,7 +90,7 @@ def audit_db_uniqueness(workspace: Path) -> int:
         print("=" * 70)
         print("\n  ACTION REQUIRED: These databases violate the SSOT principle.")
         print("  -> If test databases: use :memory: or tmp_path fixtures.")
-        print("  -> If legacy data: migrate to data_vault/aethelgard.db and delete.")
+        print("  -> If legacy data: migrate to data_vault/global/aethelgard.db and delete.")
         return 1
 
     print(f"[OK] DB Uniqueness verified — no unauthorized databases detected.")

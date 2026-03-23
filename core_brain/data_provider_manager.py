@@ -189,11 +189,6 @@ class DataProviderManager:
         self._selected_provider_name: Optional[str] = None
         self._provider_selection_initialized: bool = False
         
-        # PHASE 3: Sync sys_broker_accounts to sys_data_providers FIRST (auto-provisioning)
-        # This enables MT5 automatically if sys_credentials exist in sys_broker_accounts
-        # IMPORTANT: Must execute BEFORE _load_configuration() to sync DB before read
-        self._sync_sys_broker_accounts_to_providers()
-        
         self._load_configuration()
 
     def register_provider_instance(self, name: str, instance: Any) -> None:
@@ -299,88 +294,6 @@ class DataProviderManager:
         
         logger.info("Initialized default provider configurations in database")
     
-    def _sync_sys_broker_accounts_to_providers(self) -> None:
-        """
-        PHASE 3: Auto-sync sys_broker_accounts to sys_data_providers in DB
-        
-        Automatically enables MT5 in sys_data_providers if:
-        1. sys_broker_accounts has an enabled MT5 account with sys_credentials
-        2. sys_data_providers MT5 entry exists
-        
-        Architecture: Maintains separation but syncs sys_credentials for convenience.
-        - sys_broker_accounts: Operational accounts (execute usr_trades)
-        - sys_data_providers: Data sources (fetch market data) [SSOT for providers]
-        
-        NOTE: This runs BEFORE _load_configuration(), so it updates DB only.
-        The in-memory providers dict is updated when _load_configuration() reads the DB.
-        """
-        try:
-            # Get all MT5 broker accounts that are enabled
-            all_accounts = self.storage.get_sys_broker_accounts()
-            mt5_sys_broker_accounts = [
-                acc for acc in all_accounts 
-                if acc.get('platform_id') == 'mt5' and acc.get('enabled', False)
-            ]
-            
-            if not mt5_sys_broker_accounts:
-                logger.debug("No enabled MT5 broker accounts found. MT5 provider sync skipped.")
-                return
-            
-            # Use most recent account (sorted by updated_at DESC)
-            mt5_sys_broker_accounts.sort(key=lambda x: x.get('updated_at', ''), reverse=True)
-            mt5_account = mt5_sys_broker_accounts[0]
-            
-            # Get sys_credentials from storage
-            account_id = mt5_account.get('account_id')
-            if not account_id:
-                logger.warning("MT5 broker account missing account_id. Sync skipped.")
-                return
-            
-            sys_credentials = self.storage.get_credentials(account_id) or {}
-            
-            # Extract MT5 sys_credentials
-            login = mt5_account.get('login') or mt5_account.get('account_number')
-            server = mt5_account.get('server')
-            password = sys_credentials.get('password', '')
-            
-            if not login or not server:
-                logger.warning(f"MT5 account incomplete: login={bool(login)}, server={bool(server)}. Sync skipped.")
-                return
-            
-            # Respect the existing enabled state in sys_data_providers.
-            # This sync only updates credentials — it NEVER re-enables a provider
-            # that the user has explicitly disabled.
-            existing_providers = self.storage.get_sys_data_providers()
-            existing_mt5 = next((p for p in existing_providers if p.get('name') == 'mt5'), None)
-            # If the user explicitly disabled MT5, keep it disabled
-            keep_enabled = existing_mt5['enabled'] if existing_mt5 is not None else True
-
-            # Persist MT5 sys_credentials to sys_data_providers in DB
-            # This updates the DB entry; _load_configuration() will read these values afterward
-            self.storage.save_data_provider(
-                name='mt5',
-                enabled=keep_enabled,
-                priority=70,
-                requires_auth=True,
-                api_key='',
-                api_secret='',
-                additional_config={
-                    'login': str(login),
-                    'server': str(server),
-                    'password': str(password) if password else ""
-                },
-                is_system=True
-            )
-
-            logger.info(
-                f"[SYNC] MT5 credentials synced to sys_data_providers "
-                f"(Account: {mt5_account.get('account_name')}, "
-                f"Login: {login}, Server: {server}, enabled={keep_enabled})"
-            )
-            
-        except Exception as e:
-            logger.error(f"Error syncing sys_broker_accounts to sys_data_providers: {e}", exc_info=True)
-    
     def save_configuration(self) -> None:
         """Save current provider configuration to DB"""
         try:
@@ -458,25 +371,25 @@ class DataProviderManager:
         if name not in self.providers:
             logger.error(f"Provider '{name}' not found")
             return False
-        
+
         self.providers[name].enabled = True
-        self.save_configuration()
+        self.storage.update_provider_enabled(name, True)
         logger.info(f"Enabled provider: {name}")
         return True
-    
+
     def disable_provider(self, name: str) -> bool:
         """Disable a provider"""
         if name not in self.providers:
             logger.error(f"Provider '{name}' not found")
             return False
-        
+
         self.providers[name].enabled = False
-        
+
         # Remove instance if cached
         if name in self.provider_instances:
             del self.provider_instances[name]
-        
-        self.save_configuration()
+
+        self.storage.update_provider_enabled(name, False)
         logger.info(f"Disabled provider: {name}")
         return True
 
@@ -690,9 +603,13 @@ class DataProviderManager:
             # Check if sys_credentials configured if required
             config: ProviderConfig = self.providers[name]
             
-            # Special check for MT5 or other complex providers
+            # Determine whether credentials are configured per-provider storage strategy
             has_creds = bool(config.api_key)
-            if name == "mt5":
+            if name == "ctrader":
+                # cTrader credentials live in sys_data_providers.additional_config.
+                # access_token is the minimum required field.
+                has_creds = bool(config.additional_config.get("access_token"))
+            elif name == "mt5":
                 login = config.additional_config.get("login")
                 server = config.additional_config.get("server")
                 has_creds = bool(login and server)
@@ -704,9 +621,17 @@ class DataProviderManager:
                 logger.debug(f"Skipping {name}: sys_credentials not configured")
                 continue
             
-            # Try to get instance
+            # Try to get instance — only accept it if it reports as available right now
             instance: Any | None = self._get_provider_instance(name)
             if instance:
+                provider_ready = (
+                    not hasattr(instance, "is_available") or instance.is_available()
+                )
+                if not provider_ready:
+                    logger.debug(
+                        f"[STARTUP] Skipping {name}: instance created but is_available()=False"
+                    )
+                    continue
                 # Cache the selection and log it ONCE
                 self._selected_provider = instance
                 self._selected_provider_name = name

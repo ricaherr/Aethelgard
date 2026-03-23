@@ -3,14 +3,16 @@ Pytest configuration file.
 Ensures the project root is in sys.path for imports.
 Provides shared fixtures for all tests.
 """
+
 import sys
 from pathlib import Path
 import pytest
-from data_vault.storage import StorageManager
 
 # Add project root to sys.path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
+
+from data_vault.storage import StorageManager
 
 
 class MockSymbolInfo:
