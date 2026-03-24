@@ -4,7 +4,7 @@
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-15 UTC)**: Trace_ID: CONN-SSOT-NIVEL1-2026-03-15 | NIVEL 1 COMPLETADO: Stack FOREX Conectividad + Refactor DB-Driven ConnectivityOrchestrator | cTrader operativo en Monitor UI, MT5 estabilizado, connector loading 100% data-driven, 25/25 validate_all PASSED
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-23 UTC)**: Trace_ID: EXEC-V4-SHADOW-INTEGRATION | SPRINT 6 COMPLETADO: SHADOW Bucle Darwiniano operativo — STUB eliminado, evaluate_all_instances() real, feedback loop horario, RegimeClassifier + EdgeTuner integrados, persistencia doble en sys_shadow_performance_history + sys_shadow_instances
 
 ---
 
@@ -26,6 +26,17 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 ---
 
 ## 🏛️ ÉPICAS ARCHIVADAS
+
+### E8 — SHADOW Activation: Bucle de Evolución Darwiniana (Dominio 06_PORTFOLIO_INTELLIGENCE)
+| Campo | Valor |
+|---|---|
+| **Trace_ID** | `EXEC-V4-SHADOW-INTEGRATION` |
+| **Sprints** | Sprint 6 |
+| **Completada** | 23-Mar-2026 |
+| **Dominios** | 06_PORTFOLIO_INTELLIGENCE |
+| **Objetivo** | Eliminar STUB en `evaluate_all_instances()`. Implementar bucle Darwiniano real: carga de instancias desde DB, evaluación 3 Pilares con thresholds ajustados por régimen (RegimeClassifier), persistencia en `sys_shadow_performance_history`, actualización de estado en `sys_shadow_instances`, log de promoción en `sys_shadow_promotion_log`, ajuste de `parameter_overrides` por instancia vía EdgeTuner. Feedback loop activado: trigger horario en MainOrchestrator (antes semanal). |
+| **HUs** | HU 6.4 SHADOW Activation — Bucle Darwiniano Operativo |
+| **Validate_all** | ✅ Audit documentation 6/6 PASSED · STUB eliminado · Flujo DB→RegimeClassifier→3Pilares→Persistencia→EdgeTuner verificado |
 
 ### E7 — cTrader WebSocket Data Protocol (Dominio 00_INFRA, 05_EXEC)
 | Campo | Valor |

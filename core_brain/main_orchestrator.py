@@ -328,15 +328,17 @@ class MainOrchestrator:
         self.dedup_learner = DedupLearner(storage_manager=self.storage)
         self._last_dedup_learning = datetime.now(timezone.utc)
         
-        # 11. WEEK 3: SHADOW Evolution Manager (Weekly Instance Promotion)
+        # 11. WEEK 3: SHADOW Evolution Manager (Hourly Feedback Loop)
         try:
             from core_brain.shadow_manager import ShadowManager
-            # Note: ShadowManager creates its own ShadowStorageManager internally with storage.conn
-            self.shadow_manager = ShadowManager(storage=self.storage)
-            self.last_shadow_evolution = None  # Track last weekly run (datetime)
+            self.shadow_manager = ShadowManager(
+                storage=self.storage,
+                regime_classifier=self.regime_classifier,
+                edge_tuner=EdgeTuner(self.storage),
+            )
+            self.last_shadow_evolution = None  # Track last hourly run (datetime)
         except Exception as e:
             logger.warning(f"[WEEK3] Failed to initialize ShadowManager: {e}")
-            # In testing with mocks, ShadowManager might fail - this is non-critical
             self.shadow_manager = None
             self.last_shadow_evolution = None
         
@@ -1253,40 +1255,35 @@ class MainOrchestrator:
 
     async def _check_and_run_weekly_shadow_evolution(self) -> None:
         """
-        WEEK 3: Check if it's Monday 00:00 UTC and run SHADOW evolution if needed.
-        
-        Executes weekly SHADOW instance evaluation:
-        - Retrieve all INCUBATING instances from DB
-        - Evaluate health using 3-Pilar framework
-        - Classify: HEALTHY (promote to REAL) | QUARANTINED | MONITOR | DEAD
-        - Update instance status and persist results
-        - Generate Trace_ID audit trail for all decisions
-        
-        Schedule: Mondays 00:00-00:59 UTC (once per week)
+        SHADOW Feedback Loop — runs every hour at the close of each session window.
+
+        Executes hourly SHADOW instance evaluation:
+        - Retrieve all active (non-terminal) instances from DB.
+        - Evaluate health using 3-Pilar framework with regime-adjusted thresholds.
+        - Classify: HEALTHY (promote to REAL) | QUARANTINED | MONITOR | DEAD.
+        - Update instance status and persist snapshots to sys_shadow_performance_history.
+        - Apply EdgeTuner parameter_overrides per instance.
+        - Generate Trace_ID audit trail for all decisions.
+
+        Schedule: Every hour (minimum 1 h between runs).
+        Previously weekly (Mondays 00:00 UTC) — upgraded to hourly per EXEC-V4-SHADOW-INTEGRATION.
         """
-        # Skip if ShadowManager not initialized (e.g., in testing with mocks)
         if not self.shadow_manager:
             return
-        
+
         try:
             now_utc = datetime.now(timezone.utc)
-            
-            # Check if it's Monday (weekday() returns 0 for Monday)
-            is_monday = now_utc.weekday() == 0
-            
-            # Check if it's 00:00-00:59 UTC (midnight window)
-            is_evolution_hour = now_utc.hour == 0
-            
-            # Make sure we haven't run in the last 24 hours (to avoid multiple runs)
+
+            # Gate: at least 1 hour must pass between runs
             if self.last_shadow_evolution:
                 hours_since_last = (now_utc - self.last_shadow_evolution).total_seconds() / 3600
-                enough_time_passed = hours_since_last >= 24
+                enough_time_passed = hours_since_last >= 1.0
             else:
                 enough_time_passed = True
-            
-            if is_monday and is_evolution_hour and enough_time_passed:
-                logger.info("[WEEK3-SHADOW] 🔄 Starting weekly SHADOW instance evolution cycle...")
-                trace_base = f"TRACE_EVOLUTION_WEEKLY_{now_utc.strftime('%Y%m%d_%H%M%S')}"
+
+            if enough_time_passed:
+                logger.info("[SHADOW] 🔄 Starting hourly SHADOW feedback loop cycle...")
+                trace_base = f"TRACE_EVOLUTION_HOURLY_{now_utc.strftime('%Y%m%d_%H%M%S')}"
                 
                 try:
                     # Evaluate all SHADOW instances
@@ -1302,7 +1299,7 @@ class MainOrchestrator:
                     total_evaluated = len(promotions) + len(kills) + len(quarantines) + len(monitors)
                     
                     logger.info(
-                        f"[WEEK3-SHADOW] ✅ Evolution cycle complete: "
+                        f"[SHADOW] ✅ Hourly cycle complete: "
                         f"{len(promotions)} promoted to REAL, "
                         f"{len(kills)} marked DEAD, "
                         f"{len(quarantines)} QUARANTINED (retest), "
@@ -1319,7 +1316,7 @@ class MainOrchestrator:
                             instance_id = promo.get('instance_id', 'UNKNOWN')
                             trace_id = promo.get('trace_id', '')
                             logger.info(
-                                f"[WEEK3-SHADOW] ✅ PROMOTED: {instance_id} → REAL account "
+                                f"[SHADOW] ✅ PROMOTED: {instance_id} → REAL account "
                                 f"({trace_id})"
                             )
                             # WEEK 5: Emit WebSocket event for promotion
@@ -1347,7 +1344,7 @@ class MainOrchestrator:
                             reason = kill.get('reason', 'UNKNOWN')
                             trace_id = kill.get('trace_id', '')
                             logger.warning(
-                                f"[WEEK3-SHADOW] ❌ DEAD: {instance_id} → {reason} "
+                                f"[SHADOW] ❌ DEAD: {instance_id} → {reason} "
                                 f"({trace_id})"
                             )
                             # WEEK 5: Emit WebSocket event for death
@@ -1374,7 +1371,7 @@ class MainOrchestrator:
                             instance_id = quar.get('instance_id', 'UNKNOWN')
                             trace_id = quar.get('trace_id', '')
                             logger.warning(
-                                f"[WEEK3-SHADOW] ⚠️ QUARANTINED: {instance_id} "
+                                f"[SHADOW] ⚠️ QUARANTINED: {instance_id} "
                                 f"({trace_id})"
                             )
                             await self.emit_shadow_status_update(
@@ -1400,7 +1397,7 @@ class MainOrchestrator:
                             instance_id = mon.get('instance_id', 'UNKNOWN')
                             trace_id = mon.get('trace_id', '')
                             logger.info(
-                                f"[WEEK3-SHADOW] 👁️ MONITOR: {instance_id} "
+                                f"[SHADOW] 👁️ MONITOR: {instance_id} "
                                 f"({trace_id})"
                             )
                             await self.emit_shadow_status_update(
@@ -1430,10 +1427,10 @@ class MainOrchestrator:
                         await self.thought_callback(message, level="info", module="SHADOW")
                     
                 except Exception as e:
-                    logger.error(f"[WEEK3-SHADOW] Error during evolution: {e}", exc_info=True)
+                    logger.error(f"[SHADOW] Error during evolution: {e}", exc_info=True)
                     
         except Exception as e:
-            logger.error(f"[WEEK3-SHADOW] Error checking schedule: {e}", exc_info=False)
+            logger.error(f"[SHADOW] Error checking schedule: {e}", exc_info=False)
             # Don't re-raise - scheduler errors should not block trading
 
     async def emit_shadow_status_update(
@@ -1507,7 +1504,7 @@ class MainOrchestrator:
             # PHASE 3: Check if we need to run weekly dedup learning (Sundays 23:00 UTC)
             await self._check_and_run_weekly_dedup_learning()
             
-            # PHASE 4: Check if we need to run weekly SHADOW evolution (Mondays 00:00 UTC)
+            # SHADOW Feedback Loop: hourly evaluation of all active instances
             await self._check_and_run_weekly_shadow_evolution()
             
             # Step 0: Initial heartbeat update and feedback

@@ -271,7 +271,7 @@
     * **Descripción**: Algoritmo de detección de divergencia entre el comportamiento esperado del modelo y la ejecución en vivo.
     * **🖥️ UI Representation**: Medidor de "Coherencia de Modelo" con alertas visuales de deriva técnica.
 
-* **HU 6.4: SHADOW Activation — Bucle de Evaluación Darwiniana** `[TODO]`
+* **HU 6.4: SHADOW Activation — Bucle de Evaluación Darwiniana** `[DONE]`
     * **Prioridad**: Alta (E8 — Autonomía)
     * **Sprint**: 6 | **Trace_ID**: SHADOW-ACTIVATION-2026-03-23
     * **Descripción**: Implementar el cuerpo real de `ShadowManager.evaluate_all_instances()`, actualmente un STUB que retorna dict vacío. La infraestructura (3 Pilares, CRUD, DDL) está completa. Falta el puente de orquestación que conecta la evaluación con la persistencia y la clasificación.

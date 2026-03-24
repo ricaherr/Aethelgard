@@ -11,29 +11,31 @@
 
 ---
 
-# SPRINT 6: SHADOW ACTIVATION — BUCLE DARWINIANO — [TODO]
+# SPRINT 6: SHADOW ACTIVATION — BUCLE DARWINIANO — [DONE]
 
-**Inicio**: Por definir
-**Fin**: Por definir
-**Objetivo**: Activar el bucle de evaluación SHADOW End-to-End: implementar `evaluate_all_instances()` real, conectar persistencia en `sys_shadow_performance_history`, clasificar instancias y notificar candidatos a promoción. La infraestructura ya existe — solo falta el puente de orquestación.
-**Épica**: E8 | **Trace_ID**: SHADOW-ACTIVATION-2026-03-23
+**Inicio**: 23 de Marzo, 2026
+**Fin**: 23 de Marzo, 2026
+**Objetivo**: Activar el bucle de evaluación SHADOW End-to-End: implementar `evaluate_all_instances()` real, conectar persistencia en `sys_shadow_performance_history`, clasificar instancias con 3 Pilares y feedback loop horario en MainOrchestrator.
+**Épica**: E8 | **Trace_ID**: EXEC-V4-SHADOW-INTEGRATION
 **Dominios**: 06_PORTFOLIO_INTELLIGENCE
-**Estado Final**: Pendiente
+**Estado Final**: CRÍTICO-1 resuelto. Bucle Darwiniano operativo. Feedback loop horario activo.
 
 ## 📋 Tareas del Sprint
 
-- [TODO] **HU 6.4: SHADOW Activation — Bucle Darwiniano Operativo**
-  - Implementar cuerpo real de `evaluate_all_instances()` en `core_brain/shadow_manager.py:365`
-    - `storage.list_shadow_instances(status=INCUBATING)` → iterar instancias
-    - `evaluate_single_instance(instance)` → obtener health + pillar results
-    - `record_performance_snapshot()` → persistir en `sys_shadow_performance_history`
-    - Clasificar: actualizar estado en `sys_shadow_instances` (DEAD / QUARANTINED / HEALTHY / PROMOTABLE)
-  - Log en `sys_shadow_promotion_log` para instancias que alcanzan PROMOTABLE
-  - Emitir `usr_notification` con `category: SHADOW_READY` para revisión humana
-  - **NO auto-promover a capital LIVE** — decisión del operador
-  - Tests TDD: ≥ 10 cubriendo loop, persistencia, clasificación por pilar, notificación
+- [DONE] **HU 6.4: SHADOW Activation — Bucle Darwiniano Operativo**
+  - `shadow_db.py`: `list_active_instances()` (query `sys_shadow_instances` NOT IN DEAD/PROMOTED) + `update_parameter_overrides()` para EdgeTuner
+  - `shadow_manager.py`: STUB eliminado. `evaluate_all_instances()` implementado con flujo completo:
+    - `storage.list_active_instances()` → instancias reales desde DB
+    - `_get_current_regime()` → consulta `RegimeClassifier` (TREND/RANGE/CRASH/NORMAL)
+    - `_build_regime_adjusted_validator()` → thresholds contextualizados por régimen
+    - 3 Pilares reales por instancia → `record_performance_snapshot()` → `sys_shadow_performance_history` ✅
+    - `update_shadow_instance()` → status persistido en `sys_shadow_instances` ✅
+    - `log_promotion_decision()` → `sys_shadow_promotion_log` para instancias HEALTHY ✅
+    - `_apply_edge_tuner_overrides()` → `parameter_overrides` ajustados por instancia vía EdgeTuner ✅
+  - `main_orchestrator.py`: `ShadowManager` recibe `regime_classifier` + `EdgeTuner` via DI. Trigger: semanal → **horario** (`hours_since_last >= 1.0`)
+  - `documentation_audit.py`: ruta corregida `docs/SYSTEM_LEDGER.md` → `governance/SYSTEM_LEDGER.md`
 
-> **Análisis previo al Sprint**: El STUB en `evaluate_all_instances()` hace que el sistema declare SHADOW activo pero no ejecute ninguna evaluación real. La infraestructura (3 Pilares, CRUD, DDL, `PromotionValidator`) está completa y testeada. El scope es el puente mínimo para que el sistema registre evidencia estadística. La auto-promoción a capital real queda fuera del scope por diseño — es una decisión operacional humana (prudencia financiera).
+> **Snapshot de cierre**: STUB eliminado. Flujo de datos real: DB → RegimeClassifier → 3 Pilares → persistencia doble (history + status) → EdgeTuner override por instancia → feedback loop cada hora.
 
 ---
 

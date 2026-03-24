@@ -183,22 +183,28 @@ class ShadowManager:
       - storage: ShadowStorageManager (NOT self-instantiated)
     """
 
-    def __init__(self, storage: Union[ShadowStorageManager, 'StorageManager']):
+    def __init__(
+        self,
+        storage: Union[ShadowStorageManager, 'StorageManager'],
+        regime_classifier: Optional[Any] = None,
+        edge_tuner: Optional[Any] = None,
+    ):
         """
         Initialize ShadowManager with injected dependencies.
-        
+
         Args:
-            storage: Either ShadowStorageManager instance OR generic StorageManager
-                    If StorageManager, will create ShadowStorageManager internally
-                    (injected, NOT self-created)
+            storage: Either ShadowStorageManager instance OR generic StorageManager.
+                     If StorageManager, extracts .conn to create ShadowStorageManager.
+            regime_classifier: Optional RegimeClassifier for threshold context-adjustment.
+                               When provided, TREND/RANGE/CRASH regimes modulate thresholds.
+            edge_tuner: Optional EdgeTuner for per-instance confidence calibration.
+                        When provided, updates parameter_overrides after each evaluation.
         """
         # Handle both ShadowStorageManager and generic StorageManager
         if isinstance(storage, ShadowStorageManager):
             self.storage = storage
         else:
-            # Assume it's a StorageManager with a .conn attribute (SQLite connection)
             try:
-                # Try to get connection from generic storage manager
                 if hasattr(storage, 'conn'):
                     conn = storage.conn
                 elif hasattr(storage, 'connection'):
@@ -206,7 +212,6 @@ class ShadowManager:
                 elif hasattr(storage, 'get_conn'):
                     conn = storage.get_conn()
                 else:
-                    # If no connection found, raise informative error
                     raise AttributeError(
                         f"Cannot extract SQLite connection from {type(storage).__name__}. "
                         f"Expected .conn or .connection attribute or get_conn() method."
@@ -215,8 +220,10 @@ class ShadowManager:
             except (AttributeError, TypeError) as e:
                 logger.error(f"Failed to create ShadowStorageManager: {e}")
                 raise
-        
+
         self.promotion_validator = PromotionValidator()
+        self.regime_classifier = regime_classifier
+        self.edge_tuner = edge_tuner
         self.logger = logging.getLogger(__name__)
 
     def generate_trace_id(
@@ -362,30 +369,291 @@ class ShadowManager:
 
         return True, f"✅ Promotable to REAL - 3 Pilares confirmed (Trace: {trace_id})"
 
+    def _get_current_regime(self) -> str:
+        """
+        Query RegimeClassifier for the current market regime.
+
+        Returns:
+            Regime string: 'TREND' | 'RANGE' | 'CRASH' | 'NORMAL'.
+            Falls back to 'NORMAL' if classifier is unavailable.
+        """
+        if self.regime_classifier is None:
+            return "NORMAL"
+        try:
+            regime = self.regime_classifier.classify()
+            return regime.value if hasattr(regime, "value") else str(regime)
+        except Exception as e:
+            self.logger.warning(f"[SHADOW] RegimeClassifier error, using NORMAL: {e}")
+            return "NORMAL"
+
+    def _build_regime_adjusted_validator(self, regime: str) -> PromotionValidator:
+        """
+        Build a PromotionValidator with thresholds tuned to the current regime.
+
+        Regime adjustments:
+          TREND  → WR floor drops to 0.55 (trends reward momentum, not mean-reversion).
+                   DD ceiling tightens to 0.10 (trending losses are more dangerous).
+          RANGE  → Standard thresholds (WR 0.60, DD 0.12).
+          CRASH  → Defensive: WR floor rises to 0.65, DD ceiling tightens to 0.08.
+          NORMAL → Standard thresholds.
+
+        Args:
+            regime: Current market regime string.
+
+        Returns:
+            PromotionValidator configured for the given regime.
+        """
+        validator = PromotionValidator()
+
+        if regime == "TREND":
+            validator.PILAR1_MIN_WR = 0.55
+            validator.PILAR2_MAX_DD = 0.10
+        elif regime == "CRASH":
+            validator.PILAR1_MIN_WR = 0.65
+            validator.PILAR2_MAX_DD = 0.08
+
+        return validator
+
+    def _apply_edge_tuner_overrides(
+        self,
+        instance: 'ShadowInstance',
+        health: HealthStatus,
+        p1_pass: bool,
+    ) -> None:
+        """
+        Use EdgeTuner feedback to adjust per-instance parameter_overrides.
+
+        Logic:
+          HEALTHY  → Increase confidence_threshold override by 0.01 (exploit edge).
+          MONITOR  → Decrease confidence_threshold override by 0.01 (be more selective).
+          QUARANTINED → Decrease by 0.02 and raise min_signal_score by 5 pts.
+          DEAD     → No update (terminal state).
+
+        Persists via storage.update_parameter_overrides().
+
+        Args:
+            instance: ShadowInstance being evaluated.
+            health: Health classification result.
+            p1_pass: Whether Pilar 1 (Profitability) passed.
+        """
+        if self.edge_tuner is None:
+            return
+
+        try:
+            current_overrides = dict(instance.parameter_overrides)
+
+            current_ct = float(current_overrides.get("confidence_threshold", 0.75))
+            current_ms = int(current_overrides.get("min_signal_score", 60))
+
+            if health == HealthStatus.HEALTHY:
+                new_ct = min(0.95, current_ct + 0.01)
+                current_overrides["confidence_threshold"] = round(new_ct, 3)
+
+            elif health == HealthStatus.MONITOR:
+                new_ct = max(0.50, current_ct - 0.01)
+                current_overrides["confidence_threshold"] = round(new_ct, 3)
+
+            elif health == HealthStatus.QUARANTINED:
+                new_ct = max(0.50, current_ct - 0.02)
+                current_overrides["confidence_threshold"] = round(new_ct, 3)
+                current_overrides["min_signal_score"] = min(80, current_ms + 5)
+
+            else:
+                return  # DEAD or INCUBATING — no update
+
+            self.storage.update_parameter_overrides(instance.instance_id, current_overrides)
+            self.logger.info(
+                f"[SHADOW-EDGE] EdgeTuner overrides updated for {instance.instance_id[:8]}: "
+                f"confidence_threshold={current_overrides.get('confidence_threshold')} "
+                f"[health={health.value}]"
+            )
+
+        except Exception as e:
+            self.logger.warning(
+                f"[SHADOW-EDGE] Could not apply EdgeTuner overrides for "
+                f"{instance.instance_id[:8]}: {e}"
+            )
+
     def evaluate_all_instances(self) -> Dict[str, List[Dict]]:
         """
-        Batch evaluate all SHADOW instances and classify by health/action.
-        
+        Batch evaluate all active SHADOW instances against the 3 Pilares.
+
+        Execution Flow:
+          1. Load all non-terminal instances from sys_shadow_instances (DB).
+          2. Resolve current market regime via RegimeClassifier (if injected).
+          3. Build a regime-adjusted PromotionValidator.
+          4. For each instance:
+             a. Evaluate health (HEALTHY | MONITOR | QUARANTINED | DEAD).
+             b. Persist snapshot to sys_shadow_performance_history.
+             c. Update instance status in sys_shadow_instances.
+             d. Log promotion decision for HEALTHY instances.
+             e. Apply EdgeTuner parameter overrides (if EdgeTuner injected).
+          5. Return classification report.
+
         Returns:
-            Dict with keys:
-              - promotions: List of (instance_id, trace_id) ready for REAL account
-              - kills: List of (instance_id, trace_id) marked DEAD
-              - quarantines: List of (instance_id, trace_id) marked QUARANTINED
-              - monitors: List of (instance_id, trace_id) marked MONITOR
+            Dict with four classified lists, each entry a Dict containing:
+              - instance_id: UUID of the SHADOW instance.
+              - trace_id: TRACE_HEALTH_... audit identifier.
+              - reason: Human-readable classification reason (kills only).
+              - strategy_id: Associated strategy.
         """
-        # In Week 2, assume we're reading from storage
-        # For now, return empty structure (storage not yet implemented)
-        result = {
+        result: Dict[str, List[Dict]] = {
             "promotions": [],
             "kills": [],
             "quarantines": [],
             "monitors": [],
         }
 
-        # TODO: When storage.list_shadow_instances() is implemented:
-        # instances = self.storage.list_shadow_instances(status=ShadowStatus.INCUBATING)
-        # for instance in instances:
-        #     health = self.evaluate_single_instance(instance)
-        #     ...append to result
+        # 1. Load active instances from DB
+        try:
+            instances = self.storage.list_active_instances()
+        except Exception as e:
+            self.logger.error(f"[SHADOW] Failed to load active instances: {e}")
+            return result
 
+        if not instances:
+            self.logger.info("[SHADOW] evaluate_all_instances: no active instances found.")
+            return result
+
+        # 2. Resolve regime and build adjusted validator
+        regime = self._get_current_regime()
+        validator = self._build_regime_adjusted_validator(regime)
+        self.logger.info(
+            f"[SHADOW] Evaluating {len(instances)} instances | "
+            f"Regime={regime} | "
+            f"Thresholds: WR>={validator.PILAR1_MIN_WR:.0%}, "
+            f"DD<={validator.PILAR2_MAX_DD:.0%}"
+        )
+
+        # 3. Evaluate each instance
+        for instance in instances:
+            try:
+                metrics = instance.metrics
+                trace_id = self.generate_trace_id(instance.instance_id, "HEALTH")
+
+                # --- Run 3 Pilares with regime-adjusted thresholds ---
+                p1_pass, p1_reason = validator.validate_pilar1_profitability(metrics)
+                p2_pass, p2_reason = validator.validate_pilar2_resiliencia(metrics)
+                p3_pass, p3_reason = validator.validate_pilar3_consistency(metrics)
+
+                # --- Classify health (mirrors evaluate_single_instance logic) ---
+                if not p1_pass and metrics.total_trades_executed >= validator.PILAR3_MIN_TRADES:
+                    health = HealthStatus.DEAD
+                elif not p2_pass:
+                    health = HealthStatus.QUARANTINED
+                elif not p3_pass:
+                    health = HealthStatus.MONITOR
+                else:
+                    health = HealthStatus.HEALTHY
+
+                # --- Persist performance snapshot ---
+                try:
+                    self.storage.record_performance_snapshot(
+                        instance_id=instance.instance_id,
+                        pillar1_status="PASS" if p1_pass else "FAIL",
+                        pillar2_status="PASS" if p2_pass else "FAIL",
+                        pillar3_status="PASS" if p3_pass else "FAIL",
+                        overall_health=health.value,
+                        event_trace_id=trace_id,
+                    )
+                except Exception as e:
+                    self.logger.error(
+                        f"[SHADOW] Failed to record snapshot for {instance.instance_id[:8]}: {e}"
+                    )
+
+                # --- Update instance status in DB ---
+                try:
+                    new_status = {
+                        HealthStatus.HEALTHY: ShadowStatus.SHADOW_READY,
+                        HealthStatus.DEAD: ShadowStatus.DEAD,
+                        HealthStatus.QUARANTINED: ShadowStatus.QUARANTINED,
+                        HealthStatus.MONITOR: ShadowStatus.INCUBATING,
+                    }.get(health, ShadowStatus.INCUBATING)
+
+                    instance.status = new_status
+                    self.storage.update_shadow_instance(instance)
+                except Exception as e:
+                    self.logger.error(
+                        f"[SHADOW] Failed to update status for {instance.instance_id[:8]}: {e}"
+                    )
+
+                # --- Persist promotion decision log for HEALTHY instances ---
+                if health == HealthStatus.HEALTHY:
+                    try:
+                        promo_trace = self.generate_trace_id(
+                            instance.instance_id, "PROMOTION_REAL"
+                        )
+                        self.storage.log_promotion_decision(
+                            instance_id=instance.instance_id,
+                            trace_id=promo_trace,
+                            promotion_status="APPROVED",
+                            pillar1_passed=p1_pass,
+                            pillar2_passed=p2_pass,
+                            pillar3_passed=p3_pass,
+                            notes=(
+                                f"Regime={regime} | "
+                                f"PF={metrics.profit_factor:.2f} WR={metrics.win_rate:.1%} "
+                                f"DD={metrics.max_drawdown_pct:.1%} "
+                                f"Trades={metrics.total_trades_executed}"
+                            ),
+                        )
+                    except Exception as e:
+                        self.logger.error(
+                            f"[SHADOW] Failed to log promotion for {instance.instance_id[:8]}: {e}"
+                        )
+
+                # --- Apply EdgeTuner per-instance overrides ---
+                self._apply_edge_tuner_overrides(instance, health, p1_pass)
+
+                # --- Route to result bucket ---
+                entry: Dict = {
+                    "instance_id": instance.instance_id,
+                    "strategy_id": instance.strategy_id,
+                    "trace_id": trace_id,
+                    "regime": regime,
+                }
+
+                if health == HealthStatus.HEALTHY:
+                    result["promotions"].append(entry)
+                    self.logger.info(
+                        f"[SHADOW] ✅ PROMOTE → REAL: {instance.instance_id[:8]} "
+                        f"({instance.strategy_id}) | {p1_reason} | {p2_reason} | {p3_reason}"
+                    )
+                elif health == HealthStatus.DEAD:
+                    entry["reason"] = p1_reason
+                    result["kills"].append(entry)
+                    self.logger.warning(
+                        f"[SHADOW] ❌ DEAD: {instance.instance_id[:8]} ({instance.strategy_id}) "
+                        f"| {p1_reason}"
+                    )
+                elif health == HealthStatus.QUARANTINED:
+                    entry["reason"] = p2_reason
+                    result["quarantines"].append(entry)
+                    self.logger.warning(
+                        f"[SHADOW] ⚠️ QUARANTINE: {instance.instance_id[:8]} "
+                        f"({instance.strategy_id}) | {p2_reason}"
+                    )
+                else:  # MONITOR
+                    entry["reason"] = p3_reason
+                    result["monitors"].append(entry)
+                    self.logger.info(
+                        f"[SHADOW] 👁️ MONITOR: {instance.instance_id[:8]} "
+                        f"({instance.strategy_id}) | {p3_reason}"
+                    )
+
+            except Exception as e:
+                self.logger.error(
+                    f"[SHADOW] Unexpected error evaluating {instance.instance_id[:8]}: {e}",
+                    exc_info=True,
+                )
+
+        total = sum(len(v) for v in result.values())
+        self.logger.info(
+            f"[SHADOW] evaluate_all_instances complete: "
+            f"{len(result['promotions'])} promotions, "
+            f"{len(result['kills'])} kills, "
+            f"{len(result['quarantines'])} quarantines, "
+            f"{len(result['monitors'])} monitors "
+            f"({total}/{len(instances)} processed) | Regime={regime}"
+        )
         return result

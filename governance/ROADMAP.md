@@ -18,16 +18,6 @@
 
 > ℹ️ Solo se muestran Épicas en estado `ACTIVA` o `PENDIENTE`. Las Épicas `COMPLETADA` se archivan en [docs/SYSTEM_LEDGER.md](SYSTEM_LEDGER.md) (sección ÉPICAS ARCHIVADAS) y se eliminan de este documento.
 
-### E8: SHADOW Activation — Bucle de Evolución Darwiniana — PENDIENTE
-**Sprint**: 6 | **Trace_ID**: SHADOW-ACTIVATION-2026-03-23
-**Objetivo**: Activar el bucle de evaluación SHADOW End-to-End. Implementar el cuerpo real de `evaluate_all_instances()` (actualmente STUB), conectar la persistencia en `sys_shadow_performance_history` y clasificar instancias (HEALTHY/QUARANTINED/DEAD). La promoción a LIVE NO es automática — genera notificación para revisión humana.
-
-| HU | Nombre | Dominio | Sprint | Estado |
-|---|---|---|---|---|
-| HU 6.4 | SHADOW Activation: Bucle Darwiniano Operativo | 06_PORTFOLIO | 6 | [TODO] |
-
----
-
 ### E5: Interfaz Fractal & Experiencia Futurista (Dominio 09) — PENDIENTE
 **Sprint**: por definir | **Trace_ID**: UI-V3-FRACTAL-FUTURE-2026
 **Objetivo**: Evolucionar la terminal a una consola de alta densidad de información con navegación fractal y elementos de manipulación directa.

@@ -19,7 +19,7 @@ def check_documentation():
         "governance/SPRINT.md",
         "docs/AETHELGARD_MANIFESTO.md",
         "docs/DEVELOPMENT_GUIDELINES.md",
-        "docs/SYSTEM_LEDGER.md"
+        "governance/SYSTEM_LEDGER.md"
     ]
     
     issues = []

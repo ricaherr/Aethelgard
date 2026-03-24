@@ -362,6 +362,55 @@ class ShadowStorageManager:
         timestamp = now.strftime("%Y%m%d_%H%M%S")
         return f"TRACE_KILL_{timestamp}_{instance_id[:8]}"
 
+    # ────────────────────────────────────────────────────────────────────────
+    # Batch Query Methods (for evaluate_all_instances)
+    # ────────────────────────────────────────────────────────────────────────
+
+    def list_active_instances(self) -> List[ShadowInstance]:
+        """
+        Retrieve all SHADOW instances eligible for evaluation.
+
+        Excludes DEAD and PROMOTED_TO_REAL instances (terminal states).
+        Used by evaluate_all_instances() for batch processing.
+
+        Returns:
+            List of ShadowInstance ordered by creation date (oldest first).
+        """
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT * FROM sys_shadow_instances
+            WHERE status NOT IN (?, ?)
+            ORDER BY created_at ASC
+            """,
+            (ShadowStatus.DEAD.value, ShadowStatus.PROMOTED_TO_REAL.value),
+        )
+        rows = cursor.fetchall()
+        return [ShadowInstance.from_db_dict(dict(row)) for row in rows]
+
+    def update_parameter_overrides(self, instance_id: str, overrides: Dict) -> None:
+        """
+        Persist EdgeTuner-adjusted parameter overrides for a SHADOW instance.
+
+        Called after each EdgeTuner feedback cycle to store per-instance
+        calibrations that diverge from global strategy defaults.
+
+        Args:
+            instance_id: Target SHADOW instance UUID.
+            overrides: Dict of parameter overrides (e.g. {"confidence_threshold": 0.77}).
+        """
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            UPDATE sys_shadow_instances
+            SET parameter_overrides = ?, updated_at = ?
+            WHERE instance_id = ?
+            """,
+            (str(overrides), datetime.now(timezone.utc).isoformat(), instance_id),
+        )
+        self.conn.commit()
+        logger.debug(f"[SHADOW] Updated parameter_overrides for {instance_id}: {overrides}")
+
 
 # Convenience function for backwards compatibility
 def create_shadow_manager(storage_conn: sqlite3.Connection) -> ShadowStorageManager:
