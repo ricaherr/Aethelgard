@@ -396,14 +396,30 @@ class MainOrchestrator:
         
         created_count = 0
         skipped_count = 0
-        
+
+        # Load active instance counts per strategy (idempotency guard)
+        existing_active = self.shadow_manager.storage.list_active_instances()
+        active_per_strategy: dict = {}
+        for inst in existing_active:
+            active_per_strategy[inst.strategy_id] = (
+                active_per_strategy.get(inst.strategy_id, 0) + 1
+            )
+
         for strategy_id, engine in strategy_engines.items():
+            already_active = active_per_strategy.get(strategy_id, 0)
+            if already_active >= variations_per_strategy:
+                logger.debug(
+                    f"[SHADOW] ⏭️ Skipping {strategy_id}: "
+                    f"{already_active} active instances already exist"
+                )
+                skipped_count += variations_per_strategy
+                continue
+
             for variation_idx, params in enumerate(param_variations):
                 try:
                     instance_id = f"SHADOW_{strategy_id}_V{variation_idx}_{uuid.uuid4().hex[:8]}"
-                    
-                    # Create instance
-                    instance = self.shadow_manager.storage.create_shadow_instance(
+
+                    self.shadow_manager.storage.create_shadow_instance(
                         instance_id=instance_id,
                         strategy_id=strategy_id,
                         account_id=account_id,
@@ -411,13 +427,13 @@ class MainOrchestrator:
                         parameter_overrides={"risk_pct": params["risk_pct"]},
                         regime_filters=params.get("regime_filters", [])
                     )
-                    
+
                     logger.info(
                         f"[SHADOW] ✅ Created pool instance {strategy_id} "
                         f"(V{variation_idx}, risk={params['risk_pct']:.2%})"
                     )
                     created_count += 1
-                    
+
                 except Exception as e:
                     logger.error(f"[SHADOW] ✗ Failed to create instance for {strategy_id}: {e}")
                     skipped_count += 1
