@@ -4,7 +4,7 @@
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-23 UTC)**: Trace_ID: EXEC-V4-SHADOW-INTEGRATION | SPRINT 6 COMPLETADO: SHADOW Bucle Darwiniano operativo — STUB eliminado, evaluate_all_instances() real, feedback loop horario, RegimeClassifier + EdgeTuner integrados, persistencia doble en sys_shadow_performance_history + sys_shadow_instances
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-24 UTC)**: Trace_ID: OPS-STABILITY-EDGE-MONITOR-2026-03-24 | SPRINT 7 COMPLETADO: 9 bugs críticos corregidos (ADX=0, backtest ghost, conn_id mismatch, cooldown sync/async, SHADOW bypass, pip_size JPY, MT5 log spam, SSOT rogue DB) + OperationalEdgeMonitor implementado (8 invariantes de negocio, 27/27 tests)
 
 ---
 

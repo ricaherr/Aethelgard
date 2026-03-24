@@ -651,3 +651,78 @@
 | **validate_all.py** | PASSED ✅ en los 25 dominios paralelos |
 | **Resolución Multiusuario** | Completada, acoplamiento global erradicado |
 | **Fecha Cierre** | 17 de Marzo, 2026 |
+
+---
+
+# SPRINT 7: ESTABILIZACIÓN OPERACIONAL & OBSERVABILIDAD — [DONE]
+
+**Inicio**: 24 de Marzo, 2026
+**Fin**: 24 de Marzo, 2026
+**Objetivo**: Corregir 9 bugs críticos detectados en auditoría de sistema real (ADX=0, backtest score fantasma, conn_id mismatch, pip_size incorrecto, cooldown sync/async, SHADOW bypass) e implementar el componente `OperationalEdgeMonitor` como capa de observabilidad de invariantes de negocio.
+**Épica**: E6 (Estabilización Core)
+**Trace_ID**: OPS-STABILITY-EDGE-MONITOR-2026-03-24
+**Dominios**: 00_INFRA · 03_SCANNER · 05_EXEC · 06_PORTFOLIO
+**Estado Final**: 9 bugs críticos resueltos. OperationalEdgeMonitor operativo (27/27 tests). DB SSOT restaurada.
+
+## 📋 Tareas del Sprint
+
+- [DONE] **T1: Scanner ADX siempre cero**
+  - `core_brain/scanner.py`: `classifier.load_ohlc(df)` faltaba antes de `classify()` → ADX=0 en todos los market pulses.
+  - Fix: llamada a `load_ohlc(df)` insertada en el flujo de `_scan_one()`.
+  - TDD: `TestScannerLoadsOHLC` — `load_ohlc` invocado en cada ciclo.
+
+- [DONE] **T2: Backtest score fantasma (0-trades guard + numpy cast)**
+  - `core_brain/scenario_backtester.py`: threshold `0.75` → `0.001` (umbral de entrada numérico); guard para lotes sin trades; cast explícito numpy → Python float en `score_backtest`.
+  - TDD: `TestBacktestScoreNotZero` — verificado score > 0 con datos sintéticos.
+
+- [DONE] **T3: conn_id mismatch en Executor**
+  - `core_brain/executor.py`: `connector_id` de la cuenta de broker no coincidía con el id registrado en `connectivity_orchestrator.py` por doble registro con alias. Corregido propagando id canónico.
+  - `scripts/migrations/migrate_broker_schema.py`: path DB corregido a `__file__`-anchored.
+
+- [DONE] **T4: Cooldown sync/async en SignalSelector**
+  - `core_brain/signal_selector.py`: `await self.storage.get_active_cooldown(signal_id)` lanzaba `TypeError: object NoneType can't be used in 'await'` cuando el storage es síncrono.
+  - Fix: guard `inspect.iscoroutinefunction` + módulo-level `import inspect, asyncio`.
+  - TDD: `TestCooldownSyncStorage` (2 tests) — sync y async path verificados.
+
+- [DONE] **T5: recent_signals dicts + SHADOW bypass Phase 4**
+  - `core_brain/main_orchestrator.py`:
+    - `recent_signals` eran objetos `Signal` → componentes downstream esperaban `List[Dict]`. Fix: bloque de conversión `model_dump()` / `vars()`.
+    - Señales SHADOW entraban al quality gate (Phase 4) → falso veto. Fix: bypass completo cuando `origin_mode == 'SHADOW'`.
+  - TDD: `TestPhase4QualityGateShadowBypass` (4 tests).
+
+- [DONE] **T6: pip_size USDJPY incorrecto → error 10016**
+  - `core_brain/executor.py`: pip_size JPY `0.0001` → `0.01`; pip_size no-JPY `0.00001` → `0.0001`. Ambos valores estaban desplazados un orden de magnitud.
+  - TDD: `TestStopLossDefaultPipSize` (3 tests) — USDJPY, EURUSD y GBPJPY verificados.
+
+- [DONE] **T7: EdgeMonitor warning MT5 spam en log**
+  - `core_brain/edge_monitor.py`: `logger.warning("[EDGE] MT5 connector not injected")` se emitía cada 60s.
+  - Fix: flag `_mt5_unavailable_logged` → INFO en primera llamada, DEBUG en las siguientes.
+  - TDD: `TestEdgeMonitorMT5Warning` (4 tests).
+
+- [DONE] **T8: DB SSOT — `data_vault/aethelgard.db` rogue**
+  - `data_vault/aethelgard.db` (0 bytes) creado por scripts de migración con path relativo a CWD.
+  - Fix: eliminado el archivo; 4 scripts de migración actualizados a path absoluto `__file__`-anchored con `if not db_path.exists(): return/error` preservado.
+  - Scripts afectados: `migrate_broker_schema.py`, `migrate_add_traceability.py`, `migrate_add_timeframe.py`, `migrate_add_price_column.py`.
+
+- [DONE] **FASE 4: OperationalEdgeMonitor — 8 invariantes de negocio**
+  - `core_brain/operational_edge_monitor.py`: componente `threading.Thread(daemon=True)` standalone.
+  - 8 checks: `shadow_sync`, `backtest_quality`, `connector_exec`, `signal_flow`, `adx_sanity`, `lifecycle_coherence`, `rejection_rate`, `score_stale`.
+  - Interfaz pública: `run_checks() → Dict[str, CheckResult]` · `get_health_summary() → {status, checks, failing, warnings}`.
+  - Ciclo daemon: 300s por defecto; persiste violaciones en `save_edge_learning()`.
+  - TDD: `tests/test_operational_edge_monitor.py` — 27/27 PASSED.
+
+---
+
+## 📸 Snapshot Sprint 7 (Final)
+
+| Métrica | Valor |
+|---|---|
+| **Versión Sistema** | v4.5.1-beta |
+| **Tareas Completadas** | 9/9 ✅ |
+| **Suite de Tests** | 1587 passed · 0 failed (producción) |
+| **Nuevos Tests** | +40 (T4×2, T5×4, T6×3, T7×4, FASE4×27) |
+| **Bugs Críticos Resueltos** | 9 (ADX, backtest, conn_id, cooldown, dicts, SHADOW, pip_size, MT5 log, SSOT) |
+| **Nuevo Componente** | `OperationalEdgeMonitor` — observabilidad de invariantes de negocio |
+| **DB SSOT** | Restaurada — cero archivos rogue · migraciones path-safe |
+| **Regresiones** | 0 |
+| **Fecha Cierre** | 24 de Marzo, 2026 |

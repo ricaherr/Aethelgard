@@ -15,10 +15,12 @@ Checks:
   score_stale         — Rankings actualizados en las últimas 72h
 """
 import logging
+import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from enum import Enum
-from typing import Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from data_vault.storage import StorageManager
 
@@ -37,31 +39,64 @@ class CheckResult:
     detail: str
 
 
-class OperationalEdgeMonitor:
+class OperationalEdgeMonitor(threading.Thread):
     """
-    Verificador standalone de invariantes de negocio del sistema Aethelgard.
+    Daemon thread that audits 8 business invariants on every tick.
 
-    Implementa 8 checks independientes. Cada check devuelve un CheckResult
-    con estado OK / WARN / FAIL y un mensaje de detalle legible por humanos.
+    All checks are also callable synchronously via run_checks() and
+    get_health_summary() for use in REST health endpoints or CLI scripts.
 
-    Diseñado para ejecutarse periódicamente (ej. cada 15 min) y exponer
-    su resultado a dashboards, alertas o al OperationalEdgeMonitor legacy.
+    Args:
+        storage:          StorageManager principal del sistema.
+        shadow_storage:   ShadowStorageManager opcional para check shadow_sync.
+        interval_seconds: Frecuencia del loop (default 300 s / 5 min).
     """
 
     SIGNAL_FLOW_WINDOW_MINUTES = 120
     STALE_SCORE_HOURS = 72
     LIFECYCLE_STALE_HOURS = 48
     MAX_REJECTION_RATE = 0.95
-    MIN_ADX_NONZERO_RATIO = 0.10  # Al menos 10% de pulses con ADX > 0
+    MIN_ADX_NONZERO_RATIO = 0.10
 
-    def __init__(self, storage: StorageManager, shadow_storage=None):
-        """
-        Args:
-            storage: StorageManager principal del sistema.
-            shadow_storage: ShadowStorageManager opcional para check shadow_sync.
-        """
+    def __init__(
+        self,
+        storage: StorageManager,
+        shadow_storage: Optional[Any] = None,
+        interval_seconds: int = 300,
+    ) -> None:
+        super().__init__(daemon=True)
         self.storage = storage
         self.shadow_storage = shadow_storage
+        self.interval_seconds = interval_seconds
+        self.name = "OperationalEdgeMonitor"
+        self.running = True
+
+    # ── Thread interface ──────────────────────────────────────────────────────
+
+    def run(self) -> None:
+        logger.info(
+            "[OPS-EDGE] Operational invariant monitor started (interval=%ds)",
+            self.interval_seconds,
+        )
+        while self.running:
+            results = self.run_checks()
+            failing = [k for k, r in results.items() if r.status == CheckStatus.FAIL]
+            if failing:
+                logger.warning("[OPS-EDGE] Invariant violations: %s", ", ".join(failing))
+                try:
+                    self.storage.save_edge_learning(
+                        detection=f"Invariant violations: {', '.join(failing)}",
+                        action_taken="OPS-EDGE periodic audit",
+                        learning=f"{len(failing)} checks FAIL",
+                        details=str({k: results[k].detail for k in failing}),
+                    )
+                except Exception as exc:
+                    logger.error("[OPS-EDGE] Could not persist violation record: %s", exc)
+            time.sleep(self.interval_seconds)
+
+    def stop(self) -> None:
+        self.running = False
+        logger.info("[OPS-EDGE] Operational invariant monitor stopped")
 
     # ─────────────────────────────────────────────────────────────────────────
     # Interfaz pública
