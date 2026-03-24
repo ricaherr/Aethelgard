@@ -23,16 +23,7 @@ from unittest.mock import MagicMock, patch, AsyncMock
 import pandas as pd
 import pytest
 
-from core_brain.backtest_orchestrator import (
-    BARS_FETCH_INITIAL,
-    BARS_PER_WINDOW,
-    COOLDOWN_HOURS,
-    MIN_TRADES_CLUSTER,
-    W_BACKTEST,
-    W_LIVE,
-    W_SHADOW,
-    BacktestOrchestrator,
-)
+from core_brain.backtest_orchestrator import BacktestOrchestrator
 from core_brain.scenario_backtester import AptitudeMatrix, ScenarioBacktester, StressCluster
 
 
@@ -48,6 +39,19 @@ def _make_ohlcv_df(n: int = 200, base: float = 1.1000, step: float = 0.0005) -> 
         "close":  close,
         "volume": [1000.0] * n,
     })
+
+
+import json as _json
+
+_DEFAULT_CFG_ROW = (_json.dumps({
+    "cooldown_hours": 24, "min_trades_per_cluster": 15,
+    "bars_per_window": 120, "bars_fetch_initial": 500,
+    "bars_fetch_max": 1000, "bars_fetch_retry": 250,
+    "promotion_min_score": 0.75, "default_symbol": "EURUSD",
+    "default_timeframe": "H1",
+    "symbols_priority": ["EURUSD"],
+    "score_weights": {"w_live": 0.50, "w_shadow": 0.30, "w_backtest": 0.20},
+}),)
 
 
 def _make_storage_mock(strategies=None):
@@ -76,7 +80,8 @@ def _make_storage_mock(strategies=None):
     cols = list(strategies[0].keys()) if strategies else []
     cursor.description = [(c,) for c in cols]
     cursor.fetchall.return_value = rows
-    cursor.fetchone.return_value = rows[0] if rows else None
+    # fetchone: first call returns sys_config row (for _load_config), rest return strategy row
+    cursor.fetchone.side_effect = [_DEFAULT_CFG_ROW] + [rows[0] if rows else None] * 20
     return storage
 
 
@@ -139,20 +144,24 @@ class TestInit:
         assert orc.shadow_manager is None
 
 
-# ── Constants ─────────────────────────────────────────────────────────────────
+# ── Constants (now read from sys_config via _cfg) ─────────────────────────────
 
 class TestConstants:
+    def setup_method(self):
+        self.orc, *_ = _make_orchestrator()
+
     def test_cooldown_hours(self):
-        assert COOLDOWN_HOURS == 24
+        assert self.orc._cfg["cooldown_hours"] == 24
 
     def test_min_trades_cluster(self):
-        assert MIN_TRADES_CLUSTER == 15
+        assert self.orc._cfg["min_trades_per_cluster"] == 15
 
     def test_score_weights_sum_to_one(self):
-        assert abs(W_LIVE + W_SHADOW + W_BACKTEST - 1.0) < 1e-9
+        w = self.orc._cfg["score_weights"]
+        assert abs(w["w_live"] + w["w_shadow"] + w["w_backtest"] - 1.0) < 1e-9
 
     def test_bars_fetch_initial_geq_window(self):
-        assert BARS_FETCH_INITIAL >= BARS_PER_WINDOW
+        assert self.orc._cfg["bars_fetch_initial"] >= self.orc._cfg["bars_per_window"]
 
 
 # ── _is_on_cooldown ───────────────────────────────────────────────────────────
@@ -244,7 +253,7 @@ class TestSynthesiseClusterWindow:
 
     def test_length_equals_bars_per_window(self):
         df = self.orc._synthesise_cluster_window(self.base_df, StressCluster.INSTITUTIONAL_TREND)
-        assert len(df) == BARS_PER_WINDOW
+        assert len(df) == self.orc._cfg["bars_per_window"]
 
     def test_deterministic_output(self):
         df1 = self.orc._synthesise_cluster_window(self.base_df, StressCluster.HIGH_VOLATILITY)
@@ -291,7 +300,8 @@ class TestUpdateScores:
 
         orc._update_strategy_scores("strat_alpha", score_bt, strategy)
 
-        expected_score = round(0.9 * W_LIVE + 0.8 * W_SHADOW + 0.75 * W_BACKTEST, 4)
+        w = orc._cfg["score_weights"]
+        expected_score = round(0.9 * w["w_live"] + 0.8 * w["w_shadow"] + 0.75 * w["w_backtest"], 4)
         cursor = storage._get_conn().cursor()
         args = cursor.execute.call_args[0][1]
         assert abs(args[0] - score_bt)       < 1e-6   # score_backtest
@@ -335,7 +345,11 @@ class TestRunSingleStrategy:
     @pytest.mark.asyncio
     async def test_returns_none_when_strategy_not_found(self):
         orc, storage, *_ = _make_orchestrator()
-        storage._get_conn().cursor().fetchone.return_value = None
+        # _load_config already consumed side_effect[0] at init.
+        # Clear side_effect so return_value takes over for _load_strategy.
+        cursor = storage._get_conn().cursor()
+        cursor.fetchone.side_effect = None
+        cursor.fetchone.return_value = None
         result = await orc.run_single_strategy("missing_id")
         assert result is None
 

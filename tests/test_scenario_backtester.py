@@ -119,7 +119,8 @@ class TestScenarioBacktesterInit:
         assert bt.storage is storage
 
     def test_min_regime_score_constant(self):
-        assert ScenarioBacktester.MIN_REGIME_SCORE == 0.75
+        bt = ScenarioBacktester(_make_storage_mock())
+        assert bt.MIN_REGIME_SCORE == 0.75
 
 
 # ── StressCluster ─────────────────────────────────────────────────────────────
@@ -283,7 +284,7 @@ class TestRunScenarioBacktest:
 
     def test_passes_threshold_reflects_score(self):
         matrix = self.bt.run_scenario_backtest("strat_001", {}, self.slices)
-        expected_passes = matrix.overall_score >= ScenarioBacktester.MIN_REGIME_SCORE
+        expected_passes = matrix.overall_score >= self.bt.MIN_REGIME_SCORE
         assert matrix.passes_threshold == expected_passes
 
     def test_empty_slices_overall_score_zero(self):

@@ -26,6 +26,7 @@ Trace_ID pattern: TRACE_BKT_RUN_{YYYYMMDD}_{HHMMSS}_{strategy_id[:8].upper()}
 """
 
 import asyncio
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -43,34 +44,19 @@ from data_vault.storage import StorageManager
 logger = logging.getLogger(__name__)
 
 
-# ── Constants ─────────────────────────────────────────────────────────────────
-
-COOLDOWN_HOURS      = 24       # Min hours between re-runs per strategy
-MIN_TRADES_CLUSTER  = 15       # Minimum trades for statistical validity (CLT floor)
-BARS_PER_WINDOW     = 120      # Bars in each regime-detection window (H1 ≈ 5 days)
-BARS_FETCH_INITIAL  = 500      # First fetch: 500 bars (H1 ≈ 20 trading days)
-BARS_FETCH_MAX      = 1_000    # Ceiling: never fetch more than this per symbol/tf
-BARS_FETCH_RETRY    = 250      # Extra bars added on each retry
-
-# Regime → StressCluster mapping (from RegimeClassifier output values)
+# ── Regime → StressCluster mapping (structural, not configurable) ──────────────
+# These map RegimeClassifier output labels to internal StressCluster identifiers.
 REGIME_TO_CLUSTER: Dict[str, str] = {
     "VOLATILE":    StressCluster.HIGH_VOLATILITY,
     "TREND":       StressCluster.INSTITUTIONAL_TREND,
     "RANGE":       StressCluster.STAGNANT_RANGE,
-    # Fallbacks for alternative regime labels
     "TRENDING":    StressCluster.INSTITUTIONAL_TREND,
     "RANGING":     StressCluster.STAGNANT_RANGE,
     "FLASH_MOVE":  StressCluster.HIGH_VOLATILITY,
 }
 
-# Score weights (EXEC-V5-STRATEGY-LIFECYCLE-2026-03-23)
-W_LIVE      = 0.50
-W_SHADOW    = 0.30
-W_BACKTEST  = 0.20
-
-# Default symbol/timeframe when strategy has no market_whitelist
-DEFAULT_SYMBOL    = "EURUSD"
-DEFAULT_TIMEFRAME = "H1"
+# ── Config keys in sys_config (SSOT) ─────────────────────────────────────────
+_CFG_KEY = "config_backtest"
 
 
 # ── BacktestOrchestrator ──────────────────────────────────────────────────────
@@ -99,11 +85,38 @@ class BacktestOrchestrator:
         scenario_backtester: ScenarioBacktester,
         shadow_manager: Optional[Any] = None,
     ) -> None:
-        self.storage            = storage
-        self.dpm                = data_provider_manager
-        self.backtester         = scenario_backtester
-        self.shadow_manager     = shadow_manager
+        self.storage        = storage
+        self.dpm            = data_provider_manager
+        self.backtester     = scenario_backtester
+        self.shadow_manager = shadow_manager
         self.last_run: Optional[datetime] = None
+        self._cfg           = self._load_config()
+
+    def _load_config(self) -> Dict[str, Any]:
+        """Load backtest parameters from sys_config (SSOT). Falls back to safe defaults."""
+        defaults: Dict[str, Any] = {
+            "cooldown_hours":         24,
+            "min_trades_per_cluster": 15,
+            "bars_per_window":        120,
+            "bars_fetch_initial":     500,
+            "bars_fetch_max":         1000,
+            "bars_fetch_retry":       250,
+            "promotion_min_score":    0.75,
+            "default_symbol":         "EURUSD",
+            "default_timeframe":      "H1",
+            "score_weights":          {"w_live": 0.50, "w_shadow": 0.30, "w_backtest": 0.20},
+        }
+        try:
+            conn   = self.storage._get_conn()
+            cursor = conn.cursor()
+            cursor.execute("SELECT value FROM sys_config WHERE key = ?", (_CFG_KEY,))
+            row = cursor.fetchone()
+            self.storage._close_conn(conn)
+            if row:
+                return {**defaults, **json.loads(row[0])}
+        except Exception as exc:
+            logger.warning("[BACKTEST_ORC] Could not load config from DB, using defaults: %s", exc)
+        return defaults
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -232,7 +245,7 @@ class BacktestOrchestrator:
         symbol, timeframe = self._resolve_symbol_timeframe(strategy)
         df = self._fetch_with_retry(symbol, timeframe, params)
 
-        if df is None or len(df) < BARS_PER_WINDOW:
+        if df is None or len(df) < self._cfg["bars_per_window"]:
             logger.warning(
                 "[BACKTEST_ORC] Insufficient data for strategy=%s symbol=%s tf=%s "
                 "— using synthetic fallback.",
@@ -257,7 +270,10 @@ class BacktestOrchestrator:
           - If trades < MIN_TRADES_CLUSTER AND bars < BARS_FETCH_MAX → fetch more.
           - Maximum 2 retries (3 total fetches).
         """
-        bars = BARS_FETCH_INITIAL
+        bars      = self._cfg["bars_fetch_initial"]
+        bars_max  = self._cfg["bars_fetch_max"]
+        bars_step = self._cfg["bars_fetch_retry"]
+        min_tpc   = self._cfg["min_trades_per_cluster"]
         threshold = params.get("confidence_threshold", 0.75)
 
         for attempt in range(3):
@@ -266,25 +282,24 @@ class BacktestOrchestrator:
             if df is None:
                 break
 
-            # Quick signal count estimate using threshold
             simulated = self._estimate_trade_count(df, threshold)
             trades_per_cluster = simulated // 3  # 3 clusters share the data
 
-            if trades_per_cluster >= MIN_TRADES_CLUSTER:
+            if trades_per_cluster >= min_tpc:
                 logger.debug(
                     "[BACKTEST_ORC] symbol=%s tf=%s bars=%d est_trades/cluster=%d OK",
                     symbol, timeframe, bars, trades_per_cluster,
                 )
                 return df
 
-            next_bars = min(bars + BARS_FETCH_RETRY, BARS_FETCH_MAX)
+            next_bars = min(bars + bars_step, bars_max)
             if next_bars == bars:
                 break  # Already at ceiling
 
             logger.info(
                 "[BACKTEST_ORC] Retry %d: est_trades/cluster=%d < %d — "
                 "fetching %d bars for symbol=%s tf=%s",
-                attempt + 1, trades_per_cluster, MIN_TRADES_CLUSTER, next_bars, symbol, timeframe,
+                attempt + 1, trades_per_cluster, min_tpc, next_bars, symbol, timeframe,
             )
             bars = next_bars
 
@@ -327,9 +342,10 @@ class BacktestOrchestrator:
         }
         cluster_scores: Dict[str, float] = {k: 0.0 for k in cluster_candidates}
 
-        step = BARS_PER_WINDOW // 2  # 50 % overlap for better coverage
-        for start in range(0, len(df) - BARS_PER_WINDOW + 1, step):
-            window = df.iloc[start: start + BARS_PER_WINDOW].reset_index(drop=True)
+        bpw  = self._cfg["bars_per_window"]
+        step = bpw // 2  # 50 % overlap for better coverage
+        for start in range(0, len(df) - bpw + 1, step):
+            window = df.iloc[start: start + bpw].reset_index(drop=True)
             regime = self.backtester._detect_regime(window, "RANGE")
             cluster = REGIME_TO_CLUSTER.get(regime, StressCluster.STAGNANT_RANGE)
 
@@ -400,7 +416,7 @@ class BacktestOrchestrator:
         base_close = float(df["close"].mean()) if not df.empty else 1.1000
         atr_mean   = float((df["high"] - df["low"]).mean()) if not df.empty else 0.0010
 
-        n = BARS_PER_WINDOW
+        n = self._cfg["bars_per_window"]
         if cluster == StressCluster.HIGH_VOLATILITY:
             # Large random moves — 3× normal ATR
             steps = rng.normal(0, atr_mean * 3, n)
@@ -485,12 +501,12 @@ class BacktestOrchestrator:
         except Exception:
             whitelist = []
 
-        raw_symbol = whitelist[0] if whitelist else DEFAULT_SYMBOL
+        raw_symbol = whitelist[0] if whitelist else self._cfg["default_symbol"]
         # Normalize: "EUR/USD" → "EURUSD"
         symbol = raw_symbol.replace("/", "").replace("-", "").upper()
 
         # Prefer H1 as default for meaningful backtesting window
-        timeframe = strategy.get("default_timeframe", DEFAULT_TIMEFRAME) or DEFAULT_TIMEFRAME
+        timeframe = strategy.get("default_timeframe", self._cfg["default_timeframe"]) or self._cfg["default_timeframe"]
         return symbol, timeframe
 
     def _extract_parameter_overrides(self, strategy: Dict) -> Dict:
@@ -519,7 +535,7 @@ class BacktestOrchestrator:
             if updated_at.tzinfo is None:
                 updated_at = updated_at.replace(tzinfo=timezone.utc)
             age_hours = (datetime.now(timezone.utc) - updated_at).total_seconds() / 3600
-            return age_hours < COOLDOWN_HOURS
+            return age_hours < self._cfg["cooldown_hours"]
         except Exception:
             return False
 
@@ -532,10 +548,13 @@ class BacktestOrchestrator:
         Persist score_backtest and recalculate the consolidated score.
         Formula: score = score_live×0.50 + score_shadow×0.30 + score_backtest×0.20
         """
+        weights      = self._cfg["score_weights"]
         score_shadow = float(strategy.get("score_shadow") or 0.0)
         score_live   = float(strategy.get("score_live")   or 0.0)
         score = round(
-            score_live * W_LIVE + score_shadow * W_SHADOW + score_backtest * W_BACKTEST,
+            score_live   * weights["w_live"]
+            + score_shadow * weights["w_shadow"]
+            + score_backtest * weights["w_backtest"],
             4,
         )
         try:

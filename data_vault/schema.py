@@ -1190,6 +1190,47 @@ def _seed_sys_config(cursor: sqlite3.Cursor) -> None:
             "min_coherence_threshold": 0.80,
             "max_performance_degradation": 0.15,
             "min_usr_executions_for_analysis": 5
+        },
+        # ── Backtesting pipeline (EXEC-V5-BACKTEST-SCENARIO-ENGINE) ───────────
+        "config_backtest": {
+            "cooldown_hours":           24,
+            "min_trades_per_cluster":   15,
+            "bars_per_window":          120,
+            "bars_fetch_initial":       500,
+            "bars_fetch_max":           1000,
+            "bars_fetch_retry":         250,
+            "promotion_min_score":      0.75,
+            "default_symbol":           "EURUSD",
+            "default_timeframe":        "H1",
+            "symbols_priority":         ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD"],
+            "score_weights": {
+                "w_live":     0.50,
+                "w_shadow":   0.30,
+                "w_backtest": 0.20
+            }
+        },
+        "config_backtest_clusters": {
+            "HIGH_VOLATILITY": {
+                "description": "Eventos de alto impacto (NFP, BCE, Fed). Movimientos rápidos y bruscos.",
+                "detection_criteria": {"volatility_ratio_min": 1.5, "atr_multiplier": 3.0}
+            },
+            "STAGNANT_RANGE": {
+                "description": "Mercado lateralizado, baja liquidez, sin dirección institucional.",
+                "detection_criteria": {"volatility_ratio_max": 0.9, "trend_strength_max": 0.3}
+            },
+            "INSTITUTIONAL_TREND": {
+                "description": "Tendencia institucional fuerte y sostenida. Momentum limpio.",
+                "detection_criteria": {"trend_strength_min": 0.6, "volatility_ratio_max": 1.4}
+            }
+        },
+        "config_backtest_timeframes": {
+            "_doc": "Sizing CLT por timeframe: min 15 trades / tasa_señal_esperada por cluster.",
+            "M1":  {"bars_initial": 2000, "bars_per_window": 400,  "expected_signal_rate_pct": 8},
+            "M5":  {"bars_initial": 1000, "bars_per_window": 200,  "expected_signal_rate_pct": 6},
+            "M15": {"bars_initial": 600,  "bars_per_window": 150,  "expected_signal_rate_pct": 5},
+            "H1":  {"bars_initial": 500,  "bars_per_window": 120,  "expected_signal_rate_pct": 4},
+            "H4":  {"bars_initial": 300,  "bars_per_window": 80,   "expected_signal_rate_pct": 4},
+            "D1":  {"bars_initial": 200,  "bars_per_window": 50,   "expected_signal_rate_pct": 5}
         }
     }
 

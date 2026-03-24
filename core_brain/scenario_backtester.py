@@ -146,14 +146,31 @@ class ScenarioBacktester:
             shadow_manager.create_shadow_instance(...)
     """
 
-    MIN_REGIME_SCORE = 0.75  # Gate: strategy must score above this to enter SHADOW
+    _DEFAULT_MIN_REGIME_SCORE = 0.75  # Safe fallback if sys_config is unavailable
 
     def __init__(self, storage: StorageManager) -> None:
         """
         Args:
             storage: StorageManager for audit persistence (SSOT).
         """
-        self.storage = storage
+        self.storage         = storage
+        self.MIN_REGIME_SCORE = self._load_promotion_gate()
+
+    # ── Config ────────────────────────────────────────────────────────────────
+
+    def _load_promotion_gate(self) -> float:
+        """Read promotion_min_score from sys_config (SSOT). Falls back to 0.75."""
+        try:
+            conn   = self.storage._get_conn()
+            cursor = conn.cursor()
+            cursor.execute("SELECT value FROM sys_config WHERE key = 'config_backtest'")
+            row = cursor.fetchone()
+            self.storage._close_conn(conn)
+            if row:
+                return float(json.loads(row[0]).get("promotion_min_score", self._DEFAULT_MIN_REGIME_SCORE))
+        except Exception:
+            pass
+        return self._DEFAULT_MIN_REGIME_SCORE
 
     # ── Public API ────────────────────────────────────────────────────────────
 
