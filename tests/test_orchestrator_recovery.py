@@ -20,9 +20,21 @@ import json
 import tempfile
 import os
 
+from unittest.mock import AsyncMock, MagicMock
+
 from core_brain.main_orchestrator import MainOrchestrator, SessionStats
 from data_vault.storage import StorageManager
 from models.signal import Signal, SignalType, MarketRegime, ConnectorType
+
+
+def _make_approving_quality_scorer():
+    """Mock quality scorer that approves all signals with grade A+."""
+    scorer = MagicMock()
+    result = MagicMock()
+    result.grade.value = "A+"
+    result.overall_score = 95.0
+    scorer.assess_signal_quality = AsyncMock(return_value=result)
+    return scorer
 
 
 # Mock components for testing
@@ -292,12 +304,13 @@ async def test_orchestrator_persistence_after_execution(storage):
         signal_factory=signal_factory,
         risk_manager=risk_manager,
         executor=executor,
-        storage=storage
+        storage=storage,
+        signal_quality_scorer=_make_approving_quality_scorer(),
     )
-    
+
     # Run one cycle
     await orchestrator.run_single_cycle()
-    
+
     # Verify signal was persisted
     executed_count = storage.count_executed_usr_signals(date.today())
     assert executed_count == 1
@@ -330,9 +343,10 @@ async def test_orchestrator_recovery_after_crash(storage):
         signal_factory=signal_factory,
         risk_manager=risk_manager,
         executor=executor,
-        storage=storage
+        storage=storage,
+        signal_quality_scorer=_make_approving_quality_scorer(),
     )
-    
+
     # Execute 2 cycles
     await orchestrator1.run_single_cycle()
     await orchestrator1.run_single_cycle()
@@ -451,12 +465,13 @@ async def test_stats_persistence_after_each_cycle(storage):
         signal_factory=signal_factory,
         risk_manager=risk_manager,
         executor=executor,
-        storage=storage
+        storage=storage,
+        signal_quality_scorer=_make_approving_quality_scorer(),
     )
-    
+
     # Run cycle
     await orchestrator.run_single_cycle()
-    
+
     # Verify stats were persisted to DB
     sys_config = storage.get_sys_config()
     session_stats = sys_config.get("session_stats", {})

@@ -251,11 +251,13 @@ async def main() -> None:
         orchestrator = ConnectivityOrchestrator()
         orchestrator.set_storage(storage)
         
-        # MT5Connector sigue operando como referencia global por retrocompatibilidad temporal 
-        # para Data Feed y Scanner, las operaciones se delegan al broker account de c/u.
+        # MT5 es opcional — puede estar deshabilitado cuando cTrader es el proveedor primario.
+        # El DataProviderManager selecciona el proveedor activo por prioridad (SSOT).
         mt5_connector = orchestrator.get_connector('mt5')
-        if not mt5_connector:
-            logger.warning("[FAIL] MT5 no está habilitado en BD como proveedor global. El sistema continuará sin MT5 global (Modo Limitado).")
+        if mt5_connector:
+            logger.info("[INIT] MT5 connector disponible (opcional, para ejecución)")
+        else:
+            logger.debug("[INIT] MT5 no activo — cTrader es el proveedor primario de datos")
         
         # B) Inicializar Data Provider Manager
         logger.info("[INIT] Inicializando Data Provider Manager (DI)...")

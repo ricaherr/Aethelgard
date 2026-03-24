@@ -93,7 +93,7 @@ class SessionExtension0001Strategy:
             
             signal = Signal(
                 symbol=symbol,
-                connector_type=ConnectorType.METATRADER5,
+                connector_type=ConnectorType.GENERIC,
                 signal_type=signal_type,
                 entry_price=round(entry_price, 5),
                 stop_loss=round(stop_loss, 5),

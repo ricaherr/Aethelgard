@@ -106,6 +106,151 @@ Cuando el Governor interviene, el ajuste se marca con `[SAFETY_GOVERNOR]` en los
   - 24/24 system modules PASSED
   - Trace_ID: DEDUP-LEARNING-2026-PHASE3
 
+## 🔄 CICLO DE VIDA DE ESTRATEGIAS: Pipeline BACKTEST → SHADOW → LIVE
+
+**Fecha de Implementación**: 23 de Marzo de 2026
+**Trace_ID**: EXEC-V5-STRATEGY-LIFECYCLE-2026-03-23
+
+---
+
+### Visión General
+
+Toda estrategia en Aethelgard traversa obligatoriamente tres modos de vida. No puede avanzar al siguiente modo sin haber superado las métricas del modo anterior.
+
+```
+┌──────────────┐    Filtro 0     ┌──────────────┐   3 Pilares   ┌──────────────┐
+│   BACKTEST   │ ─────────────► │    SHADOW    │ ────────────► │     LIVE     │
+│  (Escenarios │  score ≥ 0.75  │  (Incubación │  PF≥1.5 WR   │  (Real/Demo  │
+│  de Estrés)  │                │   en DEMO)   │  DD≤12%)     │   Trading)   │
+└──────────────┘                └──────────────┘               └──────────────┘
+```
+
+### Scores por Modo
+
+Cada estrategia acumula un score en cada modo de su ciclo de vida:
+
+| Atributo | Fuente | Descripción |
+|---|---|---|
+| `score_backtest` | `ScenarioBacktester.AptitudeMatrix.overall_score` | Promedio de los 3 Stress Clusters (HIGH_VOLATILITY, STAGNANT_RANGE, INSTITUTIONAL_TREND) |
+| `score_shadow` | `ShadowManager` / PromotionValidator (3 Pilares normalizados) | Desempeño en incubación DEMO |
+| `score_live` | `EdgeTuner` / feedback de trades reales | Desempeño acumulado en cuenta REAL |
+| `score` | **Consolidado ponderado** | `score_live×0.50 + score_shadow×0.30 + score_backtest×0.20` |
+
+**Ponderación del score consolidado**: LIVE domina porque la evidencia real supera a la teórica.
+
+### Persistencia
+
+Los 5 atributos (`mode`, `score_backtest`, `score_shadow`, `score_live`, `score`) se almacenan directamente en `sys_strategies`:
+
+```sql
+-- Columnas añadidas en migración EXEC-V5-STRATEGY-LIFECYCLE-2026-03-23
+mode           TEXT NOT NULL DEFAULT 'BACKTEST'   -- 'BACKTEST' | 'SHADOW' | 'LIVE'
+score_backtest REAL DEFAULT 0.0
+score_shadow   REAL DEFAULT 0.0
+score_live     REAL DEFAULT 0.0
+score          REAL DEFAULT 0.0                   -- score_live×0.50 + score_shadow×0.30 + score_backtest×0.20
+```
+
+Las 6 estrategias existentes fueron migradas a `mode = 'BACKTEST'` preservando todos sus datos anteriores.
+
+---
+
+## 🚧 FILTRO 0: Validación Estructural por Escenarios (HU 7.3 — ScenarioBacktester)
+
+**Fecha de Implementación**: 23 de Marzo de 2026
+**Trace_ID**: EXEC-V5-BACKTEST-SCENARIO-ENGINE
+
+---
+
+### Propósito
+
+Ninguna estrategia puede ingresar al pool de incubación SHADOW sin superar primero la validación por escenarios de estrés. El `ScenarioBacktester` actúa como **Filtro 0** (puerta estructural previa a toda incubación).
+
+**Regla de Entrada**: `overall_score >= 0.75` para acceso a SHADOW.
+
+---
+
+### Matriz de Aptitud (AptitudeMatrix)
+
+Cada estrategia es probada en **3 Clusters de Estrés**:
+
+| Cluster | Descripción | Escenario Ejemplo |
+|---|---|---|
+| `HIGH_VOLATILITY` | Eventos de noticias, NFP, flash crashes, decisiones de bancos centrales | Flash Crash Agosto 2025 |
+| `STAGNANT_RANGE` | Baja liquidez, consolidación plana, mercado sin dirección | Consolidación verano 2025 |
+| `INSTITUTIONAL_TREND` | Tendencia institucional fuerte y sostenida | Tendencia EURUSD Junio 2025 |
+
+**Output**: `AptitudeMatrix` JSON con `profit_factor` y `max_drawdown_pct` desglosados por régimen detectado.
+
+---
+
+### Score de Régimen (RegimeScore)
+
+```
+score = (pf_score × 0.60) + (dd_score × 0.40)
+
+pf_score = min(profit_factor / 2.0, 1.0)     # PF = 2.0 → score perfecto
+dd_score = max(1.0 - max_dd / 0.20, 0.0)     # DD ≥ 20% → score = 0
+```
+
+**Score Global** = media aritmética de los 3 cluster scores.
+**Umbral de Aprobación**: `overall_score >= 0.75`.
+
+---
+
+### Arquitectura: Inyector de Slices (no timeline)
+
+El motor **no** es una línea de tiempo clásica. En su lugar:
+
+```
+DataProvider.get_slice("NFP_JUN_2025")  →  ScenarioSlice (OHLCV DataFrame)
+ScenarioSlice × N  →  ScenarioBacktester.run_scenario_backtest()
+                    →  AptitudeMatrix (JSON)
+```
+
+El `DataProvider` entrega segmentos históricos específicos ("Junio 2025" o "Flash Crash de Agosto") identificados por `slice_id`. El motor los evalúa de forma independiente.
+
+---
+
+### Integración con EdgeTuner
+
+Antes de que `ShadowManager` acepte una sugerencia de parámetros de `EdgeTuner`, el flujo es:
+
+1. `EdgeTuner` genera `parameter_overrides` para una estrategia.
+2. `EdgeTuner.validate_suggestion_via_backtest()` llama a `ScenarioBacktester.run_scenario_backtest()`.
+3. Si `passes_threshold = True` (score ≥ 0.75) → `ShadowManager` crea la instancia SHADOW con `backtest_score` guardado.
+4. Si `passes_threshold = False` → sugerencia bloqueada. Se registra `REJECTED` en `sys_shadow_promotion_log`.
+
+---
+
+### Persistencia y Auditoría (RULE DB-1 & ID-1)
+
+- Cada simulación genera un `TRACE_BKT_VALIDATION_{YYYYMMDD}_{HHMMSS}_{strategy_id[:8].upper()}`.
+- El registro se inserta en `sys_shadow_promotion_log` con `promotion_status = 'APPROVED' | 'REJECTED'` y el JSON completo de la `AptitudeMatrix` en el campo `notes`.
+- `sys_shadow_instances` incluye ahora `target_regime TEXT` y `backtest_score REAL` (migración aplicada).
+
+---
+
+### Roadmap del Dominio (actualizado)
+- [x] **Pipeline BACKTEST → SHADOW → LIVE (HU 7.3 — Lifecycle)** — ✅ IMPLEMENTADO (23 Marzo 2026)
+  - 3 modos de vida en `sys_strategies.mode`: `BACKTEST` | `SHADOW` | `LIVE`
+  - 4 scores: `score_backtest`, `score_shadow`, `score_live`, `score` (consolidado)
+  - Fórmula consolidada: `score = score_live×0.50 + score_shadow×0.30 + score_backtest×0.20`
+  - Migración aplicada sobre DB live sin recrear tablas (backup: `aethelgard_BEFORE_STRATEGY_LIFECYCLE_20260323_205949.db`)
+  - 6 estrategias existentes migradas a `mode='BACKTEST'` sin pérdida de datos
+  - Trace_ID: EXEC-V5-STRATEGY-LIFECYCLE-2026-03-23
+- [x] **Filtro 0 — ScenarioBacktester (HU 7.3 — Motor)** — ✅ IMPLEMENTADO (23 Marzo 2026)
+  - `ScenarioBacktester` con 3 Stress Clusters
+  - `AptitudeMatrix` serializable a JSON
+  - `EdgeTuner.validate_suggestion_via_backtest()` integrado
+  - `sys_shadow_instances`: columnas `target_regime` + `backtest_score` añadidas
+  - Trace_ID: EXEC-V5-BACKTEST-SCENARIO-ENGINE
+- [ ] **Generador de Matriz de Aptitud con DataProvider real (HU 7.4)** — Pendiente
+  - Conexión a DataProviderManager para slices históricos reales
+  - UI: Panel "Aptitude Matrix Viewer" por estrategia + semáforo de scores por modo
+
+---
+
 ## 🌑 SHADOW Evolution Integration (Plan A++)
 
 **Fecha de Implementación**: 9 de Marzo de 2026

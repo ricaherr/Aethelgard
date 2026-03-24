@@ -284,7 +284,7 @@ class StructureShift0001Strategy(BaseStrategy):
                 take_profit_secondary=tp2,
                 confidence=confidence,
                 affinity_score=affinity,
-                connector_type=ConnectorType.MT5,
+                connector_type=ConnectorType.GENERIC,
                 market_regime=regime or MarketRegime.UNKNOWN,
                 timestamp=datetime.now(),
                 metadata={

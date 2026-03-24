@@ -486,7 +486,10 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_signal_ranking_profit_factor ON sys_signal_ranking (profit_factor DESC)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_signal_ranking_sharpe ON sys_signal_ranking (sharpe_ratio DESC)")
 
-    # ── 14. Strategies (Strategy Metadata & Affinity Scoring) ──────────────────
+    # ── 14. Strategies (Strategy Metadata, Affinity Scoring & Lifecycle) ────────
+    # Strategy Lifecycle Modes (EXEC-V5-BACKTEST-SCENARIO-ENGINE):
+    #   BACKTEST → SHADOW → LIVE
+    # Score formula: score = score_live×0.50 + score_shadow×0.30 + score_backtest×0.20
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS sys_strategies (
             class_id TEXT PRIMARY KEY,
@@ -495,12 +498,20 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             affinity_scores TEXT DEFAULT '{}',
             market_whitelist TEXT DEFAULT '[]',
             description TEXT,
+            mode TEXT NOT NULL DEFAULT 'BACKTEST'
+                CHECK(mode IN ('BACKTEST', 'SHADOW', 'LIVE')),
+            score_backtest REAL DEFAULT 0.0,
+            score_shadow   REAL DEFAULT 0.0,
+            score_live     REAL DEFAULT 0.0,
+            score          REAL DEFAULT 0.0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_strategies_mnemonic ON sys_strategies (mnemonic)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_strategies_version ON sys_strategies (version)")
+    # NOTE: idx_sys_strategies_mode and idx_sys_strategies_score are created in run_migrations()
+    # AFTER the ALTER TABLE that adds those columns — safe for both new and existing DBs.
 
     # ── 14.1. Strategy Performance Logs (Asset Efficiency Learning) ───────────
     cursor.execute("""
@@ -709,6 +720,8 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             equity_curve_cv REAL DEFAULT 0.0,
             promotion_trace_id TEXT,
             backtest_trace_id TEXT,
+            target_regime TEXT,
+            backtest_score REAL DEFAULT 0.0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -1008,6 +1021,45 @@ def run_migrations(conn: sqlite3.Connection) -> None:
         cursor.execute("ALTER TABLE sys_strategies ADD COLUMN logic TEXT DEFAULT NULL")
         logger.info("Migration applied: sys_strategies.logic added.")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_strategies_readiness ON sys_strategies (readiness)")
+
+    # MIGRATION (EXEC-V5-BACKTEST-SCENARIO-ENGINE): Regime specialisation columns
+    # target_regime: which stress cluster this SHADOW instance targets.
+    # backtest_score: Filtro 0 overall score from ScenarioBacktester.
+    # TRACE_ID: EXEC-V5-BACKTEST-SCENARIO-ENGINE
+    cursor.execute("PRAGMA table_info(sys_shadow_instances)")
+    shadow_inst_cols = [r[1] for r in cursor.fetchall()]
+    if "target_regime" not in shadow_inst_cols:
+        cursor.execute("ALTER TABLE sys_shadow_instances ADD COLUMN target_regime TEXT")
+        logger.info("Migration applied: sys_shadow_instances.target_regime added.")
+    if "backtest_score" not in shadow_inst_cols:
+        cursor.execute(
+            "ALTER TABLE sys_shadow_instances ADD COLUMN backtest_score REAL DEFAULT 0.0"
+        )
+        logger.info("Migration applied: sys_shadow_instances.backtest_score added.")
+
+    # MIGRATION (EXEC-V5-STRATEGY-LIFECYCLE): Strategy mode + per-mode scores
+    # Pipeline: BACKTEST → SHADOW → LIVE
+    # Consolidated: score = score_live×0.50 + score_shadow×0.30 + score_backtest×0.20
+    # TRACE_ID: EXEC-V5-STRATEGY-LIFECYCLE-2026-03-23
+    cursor.execute("PRAGMA table_info(sys_strategies)")
+    strat_lifecycle_cols = [r[1] for r in cursor.fetchall()]
+    lifecycle_migrations = [
+        ("mode",           "TEXT NOT NULL DEFAULT 'BACKTEST'"),
+        ("score_backtest", "REAL DEFAULT 0.0"),
+        ("score_shadow",   "REAL DEFAULT 0.0"),
+        ("score_live",     "REAL DEFAULT 0.0"),
+        ("score",          "REAL DEFAULT 0.0"),
+    ]
+    for col, col_def in lifecycle_migrations:
+        if col not in strat_lifecycle_cols:
+            cursor.execute(f"ALTER TABLE sys_strategies ADD COLUMN {col} {col_def}")
+            logger.info(f"Migration applied: sys_strategies.{col} added.")
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sys_strategies_mode ON sys_strategies (mode)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sys_strategies_score ON sys_strategies (score DESC)"
+    )
 
     # instruments_config: seed only when key is absent (never overwrite existing data)
     cursor.execute("SELECT 1 FROM sys_config WHERE key = ?", ("instruments_config",))

@@ -303,6 +303,59 @@
     * **Prioridad**: Alta (E3 - Dominio Sensorial)
     * **Estado**: Implementado en Sprint 3 (2 Marzo 2026). StrategyGatekeeper operativo. 17/17 tests PASSED.
     * **Descripción**: Sistema de filtrado de eficiencia de activos que valida la performance histórica antes de cada ejecución de estrategia mediante scores en memoria (< 1ms latencia).
+
+* **HU 7.3: Pipeline de Ciclo de Vida BACKTEST → SHADOW → LIVE** `[DONE]`
+    * **Prioridad**: 🔴 CRÍTICA (Bloqueante para el flujo de inversión)
+    * **Trace_IDs**: EXEC-V5-BACKTEST-SCENARIO-ENGINE · EXEC-V5-STRATEGY-LIFECYCLE-2026-03-23
+    * **Descripción**: Define el ciclo de vida completo de las estrategias. Toda estrategia parte en modo `BACKTEST` (Filtro 0), avanza a `SHADOW` si supera score ≥ 0.75 en los 3 Stress Clusters, y finalmente a `LIVE` si pasa los 3 Pilares de incubación SHADOW.
+    * **Qué**:
+        - **3 Modos de Vida**: `BACKTEST` | `SHADOW` | `LIVE` en `sys_strategies.mode`
+        - **4 Scores por estrategia**:
+            - `score_backtest`: AptitudeMatrix.overall_score del ScenarioBacktester
+            - `score_shadow`: Desempeño 3 Pilares en incubación DEMO (normalizado)
+            - `score_live`: Desempeño acumulado en cuenta REAL (EdgeTuner feedback)
+            - `score`: Consolidado → `score_live×0.50 + score_shadow×0.30 + score_backtest×0.20`
+        - **Motor Filtro 0**: `ScenarioBacktester` — inyector de Slices, no línea de tiempo
+            - 3 Stress Clusters: `HIGH_VOLATILITY`, `STAGNANT_RANGE`, `INSTITUTIONAL_TREND`
+            - Output: `AptitudeMatrix` JSON con PF + MaxDD por régimen detectado
+            - Gate rule: `overall_score >= 0.75` para acceso a SHADOW
+        - **EdgeTuner**: método `validate_suggestion_via_backtest()` como guardián del Filtro 0
+        - **Migración DB** aplicada sin recrear tablas (backup: `aethelgard_BEFORE_STRATEGY_LIFECYCLE_20260323_205949.db`)
+        - **6 estrategias existentes** migradas a `mode='BACKTEST'` sin pérdida de datos
+        - Cada simulación genera `TRACE_BKT_VALIDATION_...` en `sys_shadow_promotion_log`
+        - 36/36 tests PASSED
+    * **Para qué**: Garantizar que solo estrategias con aptitud demostrada en condiciones de estrés entren al pool SHADOW, y solo estrategias probadas en SHADOW avancen a LIVE. Scoring por modo permite comparar estrategias objetivamente.
+    * **🖥️ UI Representation**:
+        - Panel "Strategy Lifecycle" con pipeline visual `BACKTEST → SHADOW → LIVE`
+        - "Aptitude Matrix Viewer": tabla de scores por régimen con semáforo (verde ≥ 0.75 / amarillo 0.50–0.74 / rojo < 0.50)
+        - Score consolidado visible por estrategia con desglose de ponderación
+    * **Artefactos**:
+        - `core_brain/scenario_backtester.py` (ScenarioBacktester, AptitudeMatrix, ScenarioSlice, RegimeResult, StressCluster)
+        - `core_brain/edge_tuner.py` (+`validate_suggestion_via_backtest()`)
+        - `data_vault/schema.py` (DDL + 2 migraciones: sys_shadow_instances + sys_strategies)
+        - `docs/07_ADAPTIVE_LEARNING.md` (Secciones "Ciclo de Vida" y "Filtro 0" añadidas)
+        - `tests/test_scenario_backtester.py` (36 tests, 100% PASSED)
+
+* **HU 7.4: BacktestOrchestrator — Pipeline BACKTEST → SHADOW con datos reales** `[DONE]`
+    * **Prioridad**: 🔴 CRÍTICA
+    * **Trace_ID**: EXEC-V5-BACKTEST-ORCHESTRATOR-2026-03-23
+    * **Descripción**: Absorbió el alcance original de HU 7.4. Implementa el orquestador completo de backtesting usando datos reales del DataProviderManager (cTrader/Yahoo). Ningún dato sintético en producción.
+    * **Qué implementado**:
+        - `BacktestOrchestrator` en `core_brain/backtest_orchestrator.py`
+        - Datos reales: `DataProviderManager.fetch_ohlc()` con fallback automático (cTrader → Yahoo)
+        - Barras dinámicas: fetch inicial 500 bars + retry hasta 1000 si `trades/cluster < 15`
+        - Split por régimen: ventanas deslizantes de 120 bars → RegimeClassifier → StressCluster
+        - `_synthesise_cluster_window()`: fallback ATR-anchored si un cluster no aparece en los datos reales
+        - Cooldown 24h por estrategia (bypass con `force=True`)
+        - Promoción automática `BACKTEST → SHADOW` si `score_backtest ≥ 0.75`
+        - Integrado en `MainOrchestrator`: ciclo diario en main loop (mismo patrón que ShadowManager)
+        - `config/stress_scenarios.json`: catálogo de escenarios + tabla de bars por timeframe (CLT-derivado)
+        - Variable sin uso `symbol` corregida en `main_orchestrator.py` línea 1014
+    * **Artefactos**:
+        - `core_brain/backtest_orchestrator.py` (BacktestOrchestrator)
+        - `core_brain/main_orchestrator.py` (+init backtest_orchestrator, +`_check_and_run_daily_backtest()`)
+        - `config/stress_scenarios.json` (catálogo con bars por timeframe derivados de CLT)
+        - `tests/test_backtest_orchestrator.py`
     * **Componentes**:
       - `data_vault/strategies_db.py` (StrategiesMixin - crear, actualizar, calcular affinity scores)
       - `core_brain/strategy_gatekeeper.py` (StrategyGatekeeper - validación ultra-rápida en memoria)

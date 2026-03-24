@@ -19,6 +19,18 @@ from core_brain.main_orchestrator import MainOrchestrator, SessionStats
 from models.signal import MarketRegime, Signal, SignalType, ConnectorType, MembershipTier
 
 
+def _make_approving_quality_scorer():
+    """Mock quality scorer that approves all signals with grade A+."""
+    scorer = MagicMock()
+    result = MagicMock()
+    result.grade.value = "A+"
+    result.overall_score = 95.0
+    result.technical_score = 95.0
+    result.contextual_score = 95.0
+    scorer.assess_signal_quality = AsyncMock(return_value=result)
+    return scorer
+
+
 @pytest.fixture
 def mock_scanner():
     """Mock ScannerEngine that returns predictable regime data"""
@@ -157,12 +169,13 @@ class TestMainOrchestrator:
             risk_manager=mock_risk_manager,
             executor=mock_executor,
             storage=temp_storage,
-            config_path=temp_config
+            config_path=temp_config,
+            signal_quality_scorer=_make_approving_quality_scorer(),
         )
-        
+
         # Execute one cycle
         await orchestrator.run_single_cycle()
-        
+
         # Verify the complete chain was executed (may be called twice if data not ready)
         mock_scanner.get_scan_results_with_data.assert_called()
         mock_signal_factory.generate_usr_signals_batch.assert_called_once()

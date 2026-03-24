@@ -259,7 +259,12 @@ class DataProviderManager:
                         is_system=bool(config_data.get('is_system', 0))
                     )
                 logger.info(f"Loaded {len(self.providers)} providers from database with priority defaults from code")
-                logger.info(f"[PROVIDER PRIORITY] MT5: {self.providers.get('mt5', ProviderConfig('mt5', False, 0, False, None, None, {})).priority} | Yahoo: {self.providers.get('yahoo', ProviderConfig('yahoo', False, 0, False, None, None, {})).priority}")
+                enabled_summary = " | ".join(
+                    f"{n}: {c.priority}{'✓' if c.enabled else '✗'}"
+                    for n, c in sorted(self.providers.items(), key=lambda x: -x[1].priority)
+                    if c.enabled
+                )
+                logger.info(f"[PROVIDER PRIORITY] Active (by priority): {enabled_summary}")
             else:
                 # No DB config - initialize with defaults
                 logger.info("No provider configuration in DB - initializing with defaults")

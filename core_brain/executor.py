@@ -562,31 +562,44 @@ class OrderExecutor:
         """
         Get connector using Factory pattern.
         Agnostic routing based on account_id via ConnectivityOrchestrator, with fallback to ConnectorType.
-        
+
+        ConnectorType.GENERIC signals are resolved dynamically: the first healthy
+        registered connector is returned, so strategies remain broker-agnostic.
+
         Args:
             signal: Signal object with metadata containing the target account_id
-        
+
         Returns:
             Connector instance or None if not found
         """
         from core_brain.connectivity_orchestrator import ConnectivityOrchestrator
+        from models.signal import ConnectorType
         orchestrator = ConnectivityOrchestrator()
-        
+
         account_id = signal.metadata.get('account_id') if hasattr(signal, 'metadata') and hasattr(signal.metadata, 'get') else None
+        is_generic = signal.connector_type == ConnectorType.GENERIC
+
+        # 1. GENERIC: resolve to the first healthy registered connector
+        if is_generic:
+            for pid, conn in orchestrator.connectors.items():
+                if orchestrator.manual_states.get(pid, True) and orchestrator.failure_counts.get(pid, 0) < 3:
+                    return conn
+            return None
+
         platform = signal.connector_type.value if hasattr(signal.connector_type, 'value') else str(signal.connector_type)
-        
-        # 1. Attempt lookup by account_id in orchestrator
+
+        # 2. Attempt lookup by account_id in orchestrator
         if account_id:
             conn_id = f"{platform}_{account_id}"
             conn = orchestrator.get_connector(conn_id)
             if conn:
                 return conn
-                
-        # 2. Check explicitly injected connectors (backward compat / tests)
+
+        # 3. Check explicitly injected connectors (backward compat / tests)
         if signal.connector_type in self.connectors:
             return self.connectors[signal.connector_type]
-            
-        # 3. Fallback to orchestrator by generic platform name
+
+        # 4. Fallback to orchestrator by platform name
         return orchestrator.get_connector(platform)
     
     def _calculate_position_size(self, signal: Signal) -> float:

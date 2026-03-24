@@ -191,7 +191,7 @@ class ExecutionMixin(BaseRepository):
 
     # ── Cooldown Tracker (sys_cooldown_tracker) ───────────────────────────────
 
-    def get_active_cooldown(self, signal_id: str) -> Optional[Dict[str, Any]]:
+    async def get_active_cooldown(self, signal_id: str) -> Optional[Dict[str, Any]]:
         """
         Returns the active cooldown record for a signal_id if it has not expired.
         Returns None if no record exists or the cooldown has already expired.

@@ -571,3 +571,78 @@ class EdgeTuner:
         self._save_config(new_config)
         logger.info("[EDGE_TUNER] Auto-calibration completed successfully.")
         return new_config
+
+    # ── Filtro 0: ScenarioBacktester Integration ──────────────────────────────
+
+    def validate_suggestion_via_backtest(
+        self,
+        strategy_id: str,
+        parameter_overrides: Dict[str, Any],
+        scenario_slices: list,
+        backtester: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        """
+        Validate EdgeTuner parameter suggestions against stress scenarios BEFORE
+        the ShadowManager creates a new SHADOW instance.
+
+        This method acts as Filtro 0 (structural gate):
+          - Calls ScenarioBacktester.run_scenario_backtest()
+          - Returns passes=True only when overall_score >= 0.75 (MIN_REGIME_SCORE)
+          - Includes trace_id and backtest_score in the response for DB persistence
+
+        Args:
+            strategy_id:         Strategy being validated.
+            parameter_overrides: Parameter set proposed by EdgeTuner.
+            scenario_slices:     List[ScenarioSlice] data for stress clusters.
+            backtester:          ScenarioBacktester instance (optional; if None,
+                                 returns passes=False with reason='no_backtester').
+
+        Returns:
+            Dict with keys: passes (bool), backtest_score (float),
+            trace_id (str), reason (str).
+        """
+        if backtester is None:
+            logger.warning(
+                "[EDGE_TUNER] validate_suggestion_via_backtest called without backtester. "
+                "Blocking suggestion for strategy=%s (safety default).",
+                strategy_id,
+            )
+            return {
+                "passes": False,
+                "backtest_score": 0.0,
+                "trace_id": None,
+                "reason": "no_backtester_configured",
+            }
+
+        try:
+            matrix = backtester.run_scenario_backtest(
+                strategy_id=strategy_id,
+                parameter_overrides=parameter_overrides,
+                scenario_slices=scenario_slices,
+            )
+            passes = matrix.passes_threshold
+            logger.info(
+                "[EDGE_TUNER] Backtest validation strategy=%s score=%.4f passes=%s trace=%s",
+                strategy_id,
+                matrix.overall_score,
+                passes,
+                matrix.trace_id,
+            )
+            return {
+                "passes": passes,
+                "backtest_score": matrix.overall_score,
+                "trace_id": matrix.trace_id,
+                "reason": "score_above_threshold" if passes else "score_below_threshold",
+            }
+        except Exception as exc:
+            logger.error(
+                "[EDGE_TUNER] Backtest validation failed for strategy=%s: %s",
+                strategy_id,
+                exc,
+            )
+            return {
+                "passes": False,
+                "backtest_score": 0.0,
+                "trace_id": None,
+                "reason": f"backtest_error: {exc}",
+            }

@@ -341,7 +341,24 @@ class MainOrchestrator:
             logger.warning(f"[WEEK3] Failed to initialize ShadowManager: {e}")
             self.shadow_manager = None
             self.last_shadow_evolution = None
-        
+
+        # 11.5: EXEC-V5 — BacktestOrchestrator (Daily cycle, BACKTEST → SHADOW pipeline)
+        self.backtest_orchestrator = None
+        self._last_backtest_run: Optional[datetime] = None
+        try:
+            from core_brain.backtest_orchestrator import BacktestOrchestrator
+            from core_brain.scenario_backtester import ScenarioBacktester
+            from core_brain.data_provider_manager import DataProviderManager
+            _bkt_dpm = DataProviderManager(storage=self.storage)
+            self.backtest_orchestrator = BacktestOrchestrator(
+                storage=self.storage,
+                data_provider_manager=_bkt_dpm,
+                scenario_backtester=ScenarioBacktester(self.storage),
+                shadow_manager=self.shadow_manager,
+            )
+        except Exception as e:
+            logger.warning(f"[BACKTEST] Failed to initialize BacktestOrchestrator: {e}")
+
         # 12. PHASE 4: Intelligent Signal Quality Scoring (Unified Authority)
         self._init_phase4_intelligence_services(
             signal_quality_scorer=signal_quality_scorer,
@@ -399,7 +416,7 @@ class MainOrchestrator:
 
         # Load active instance counts per strategy (idempotency guard)
         existing_active = self.shadow_manager.storage.list_active_instances()
-        active_per_strategy: dict = {}
+        active_per_strategy: Dict[str, int] = {}
         for inst in existing_active:
             active_per_strategy[inst.strategy_id] = (
                 active_per_strategy.get(inst.strategy_id, 0) + 1
@@ -412,7 +429,7 @@ class MainOrchestrator:
                     f"[SHADOW] ⏭️ Skipping {strategy_id}: "
                     f"{already_active} active instances already exist"
                 )
-                skipped_count += variations_per_strategy
+
                 continue
 
             for variation_idx, params in enumerate(param_variations):
@@ -995,7 +1012,7 @@ class MainOrchestrator:
         new_regime: MarketRegime = MarketRegime.RANGE
         
         # scan_results es un Dict[str, MarketRegime] donde key=symbol, value=MarketRegime
-        for symbol, regime in scan_results.items():
+        for _, regime in scan_results.items():
             priority = regime_priority.get(regime, 1)
             
             if priority > max_priority:
@@ -1449,6 +1466,37 @@ class MainOrchestrator:
             logger.error(f"[SHADOW] Error checking schedule: {e}", exc_info=False)
             # Don't re-raise - scheduler errors should not block trading
 
+    async def _check_and_run_daily_backtest(self) -> None:
+        """
+        EXEC-V5: Run BacktestOrchestrator daily for all strategies in BACKTEST mode.
+
+        Schedule: once every 24 hours (cooldown per-strategy is also enforced internally).
+        On first startup, runs immediately so new deployments are evaluated right away.
+        """
+        if not getattr(self, "backtest_orchestrator", None):
+            return
+
+        try:
+            now_utc = datetime.now(timezone.utc)
+            if self._last_backtest_run:
+                hours_since = (now_utc - self._last_backtest_run).total_seconds() / 3600
+                if hours_since < 24.0:
+                    return
+
+            logger.info("[BACKTEST] 🔄 Starting daily BACKTEST → SHADOW pipeline...")
+            summary = await self.backtest_orchestrator.run_pending_strategies()
+            self._last_backtest_run = now_utc
+            logger.info(
+                "[BACKTEST] ✅ Daily cycle complete — evaluated=%d promoted=%d "
+                "failed=%d skipped=%d",
+                summary.get("evaluated", 0),
+                summary.get("promoted", 0),
+                summary.get("failed", 0),
+                summary.get("skipped", 0),
+            )
+        except Exception as exc:
+            logger.error("[BACKTEST] Error during daily backtest cycle: %s", exc, exc_info=False)
+
     async def emit_shadow_status_update(
         self,
         instance_id: str,
@@ -1522,6 +1570,9 @@ class MainOrchestrator:
             
             # SHADOW Feedback Loop: hourly evaluation of all active instances
             await self._check_and_run_weekly_shadow_evolution()
+
+            # EXEC-V5: BacktestOrchestrator — daily BACKTEST → SHADOW pipeline
+            await self._check_and_run_daily_backtest()
             
             # Step 0: Initial heartbeat update and feedback
             self.storage.update_module_heartbeat("orchestrator")
@@ -2116,8 +2167,9 @@ class MainOrchestrator:
                     quality_result = None
                     if self.signal_quality_scorer:
                         try:
+                            signal_dict = signal.model_dump() if hasattr(signal, "model_dump") else vars(signal)
                             quality_result = await self.signal_quality_scorer.assess_signal_quality(
-                                signal,
+                                signal_dict,
                                 recent_signals,
                                 market_context
                             )

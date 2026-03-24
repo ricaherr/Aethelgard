@@ -55,33 +55,10 @@ class OliverVelezStrategy(BaseStrategy):
     
     def _detect_available_connector(self) -> ConnectorType:
         """
-        Auto-detecta el conector disponible basándose en configuración.
-        Prioridad: MT5 > NT8 > GENERIC
-        
-        Esto mantiene el agnosticismo: la estrategia no depende de un conector específico.
+        Las estrategias no deben hardcodear un broker específico.
+        El executor resuelve dinámicamente el primer connector saludable registrado.
         """
-        # Verificar MT5 vía DB (single source of truth)
-        try:
-            storage = StorageManager()
-            accounts = storage.get_sys_broker_accounts(enabled_only=True)
-            has_mt5_demo = any(
-                acc.get('platform_id') == 'mt5'
-                and str(acc.get('account_type', '')).lower() == 'demo'
-                for acc in accounts
-            )
-            if has_mt5_demo:
-                logger.info(f"[{self.strategy_id}] Usando MT5 connector (DB detectada)")
-                return ConnectorType.METATRADER5
-        except Exception as e:
-            logger.warning(f"[{self.strategy_id}] MT5 detection failed: {e}")
-        
-        # Verificar NT8 (si existe configuración en el futuro)
-        # if Path('config/nt8_config.json').exists():
-        #     return ConnectorType.NINJATRADER8
-        
-        # Fallback a PAPER (si no hay configs específicas)
-        logger.info(f"[{self.strategy_id}] Usando PAPER connector (modo simulación)")
-        return ConnectorType.PAPER
+        return ConnectorType.GENERIC
 
     async def analyze(self, symbol: str, df: pd.DataFrame, regime: MarketRegime) -> Optional[Signal]:
         """
