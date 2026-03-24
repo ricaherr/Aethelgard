@@ -27,6 +27,28 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 
 ## 🏛️ ÉPICAS ARCHIVADAS
 
+### E7 — cTrader WebSocket Data Protocol (Dominio 00_INFRA, 05_EXEC)
+| Campo | Valor |
+|---|---|
+| **Trace_ID** | `CTRADER-WS-PROTO-2026-03-21` |
+| **Sprints** | Sprint 5 |
+| **Completada** | 21-Mar-2026 |
+| **Dominios** | 00_INFRA · 05_EXEC |
+| **Objetivo** | Implementar protocolo WebSocket protobuf Spotware Open API para OHLC bars reales en cTrader. Eliminar dependencia de Yahoo Finance para FOREX. Corregir endpoints REST de ejecución a `api.spotware.com`. |
+| **HUs** | N1-7 cTrader WebSocket Protocol — OHLC via Protobuf |
+| **Validate_all** | ✅ 40/40 tests PASSED · EURUSD M5 fetch real verificado (25 bars) |
+
+### E6 — Purga de DB Legacy & SSOT Enforcement (Dominio 00_INFRA)
+| Campo | Valor |
+|---|---|
+| **Trace_ID** | `DB-LEGACY-PURGE-2026-03-21` |
+| **Sprints** | Sprint 4 |
+| **Completada** | 21-Mar-2026 |
+| **Dominios** | 00_INFRA |
+| **Objetivo** | Eliminar `data_vault/aethelgard.db` legacy y toda referencia hardcodeada. SSOT único en `data_vault/global/aethelgard.db`. |
+| **HUs** | N0-5 Legacy DB Purge & SSOT Enforcement |
+| **Validate_all** | ✅ 7/7 tests PASSED · 0 referencias legacy en producción |
+
 ### E1 — Cimientos SaaS (Dominios 01, 08)
 | Campo | Valor |
 |---|---|

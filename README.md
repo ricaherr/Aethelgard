@@ -24,7 +24,7 @@ El sistema se organiza en dominios especializados para garantizar la escalabilid
 
 ## 📜 Documentación Complementaria
 
-- **[SYSTEM LEDGER](docs/SYSTEM_LEDGER.md)**: Historial completo de implementación y registros técnicos históricos.
+- **[SYSTEM LEDGER](governance/SYSTEM_LEDGER.md)**: Historial completo de implementación y registros técnicos históricos.
 - **[ROADMAP](ROADMAP.md)**: Visión estratégica y hitos futuros del proyecto.
 - **[AETHELGARD MANIFESTO](AETHELGARD_MANIFESTO.md)**: Misión, visión y principios filosóficos del sistema.
 

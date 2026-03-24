@@ -203,23 +203,11 @@
       - ✅ `core_brain/economic_integration.py` (lifecycle manager)
       - ✅ `docs/INTERFACE_CONTRACTS.md` (Contract 2: EconomicVetoInterface)
       - ✅ `docs/AETHELGARD_MANIFESTO.md` (Section VIII: Veto por Calendario)
-    * **Tareas Pendientes**:
-      - [ ] Ejecutar migración DML: `030_economic_calendar.sql` (crear tabla en DB)
-      - [ ] Implementar `get_trading_status()` en `EconomicIntegrationManager` (core_brain/economic_integration.py)
-      - [ ] Agregar tests: `test_economic_veto_interface.py` (buffer timing, symbol mapping, latency, graceful degradation)
-      - [ ] Integrar `EconomicIntegrationManager` en `MainOrchestrator.__init__()` (inyección de dependencias)
-      - [ ] Agregar pre-trade check en `MainOrchestrator.run_single_cycle()` (llamar `get_trading_status()`)
-      - [ ] Agregar position management logic para HIGH impact (Break-Even mover, cierre parcial notificación)
-      - [ ] Validar con `validate_all.py` (sin regressions)
-    * **🖥️ UI Representation**: Indicator de "Economic Risk Status" en el header mostrando próximo evento y restricción activa (🔴HIGH/🟡MEDIUM/🟢NORMAL). Notificaciones toast si evento inminente.
-    * **Artefactos** (Post-Implementación):
-      - `core_brain/economic_integration.py` (+method `get_trading_status()`, caching logic)
-      - `tests/test_economic_veto_interface.py` (target: 20+ tests covering buffers, symbols, latency, degradation)
-      - `core_brain/main_orchestrator.py` (línea ~_: agregar pre-trade check)
-      - `core_brain/position_manager.py` (método `move_sl_to_breakeven()` si no existe)
-      - `docs/INTERFACE_CONTRACTS.md` (Contract 2 - REFERENCE)
-      - `docs/AETHELGARD_MANIFESTO.md` (Section VIII - REFERENCE)
-    * **Trace_ID**: ECON-VETO-FILTER-2026-001
+    * **Estado**: ✅ Completado Sprint N2 (16-Mar-2026). 20/20 tests PASSED. Trace_ID: ECON-VETO-FILTER-2026-001.
+    * **Artefactos**:
+      - `core_brain/economic_integration.py` (`get_trading_status()` implementado, caché 60s TTL)
+      - `core_brain/main_orchestrator.py` (pre-trade check activo en líneas 1788, 1825, 1955)
+      - `tests/test_economic_veto_interface.py` (20/20 tests PASSED)
     * **Gobernanza**: Agnosis obligatoria (no imports de brokers), DI obligatorio, SSOT (DB única fuente), degradación graciosa, <100ms latencia, auditoría vía TRACE_ID.
 
 ## 05_UNIVERSAL_EXECUTION (EMS, Conectores FIX)
@@ -282,6 +270,27 @@
     * **Prioridad**: Media (E3)
     * **Descripción**: Algoritmo de detección de divergencia entre el comportamiento esperado del modelo y la ejecución en vivo.
     * **🖥️ UI Representation**: Medidor de "Coherencia de Modelo" con alertas visuales de deriva técnica.
+
+* **HU 6.4: SHADOW Activation — Bucle de Evaluación Darwiniana** `[TODO]`
+    * **Prioridad**: Alta (E8 — Autonomía)
+    * **Sprint**: 6 | **Trace_ID**: SHADOW-ACTIVATION-2026-03-23
+    * **Descripción**: Implementar el cuerpo real de `ShadowManager.evaluate_all_instances()`, actualmente un STUB que retorna dict vacío. La infraestructura (3 Pilares, CRUD, DDL) está completa. Falta el puente de orquestación que conecta la evaluación con la persistencia y la clasificación.
+    * **Contexto técnico (evidencia del STUB)**:
+        - `core_brain/shadow_manager.py:365-391`: `evaluate_all_instances()` retorna `{"promotions":[], ...}` vacío. Cuerpo real comentado en línea 385 como TODO.
+        - `data_vault/shadow_db.py:188`: `record_performance_snapshot()` con INSERT real — **nunca invocado** (cero llamadas en codebase).
+        - `sys_shadow_performance_history`: DDL e índices creados en `schema.py`. Tabla vacía en producción.
+    * **Análisis financiero**: La promoción automática a LIVE NO es el scope de esta HU por prudencia. El objetivo es registrar evidencia estadística y notificar para revisión humana. Los thresholds de los 3 Pilares son institucionales y correctos (PF≥1.5, WR≥60%, DD≤12%, CL≤3, trades≥15, CV≤0.40).
+    * **Tareas**:
+        - [ ] Implementar cuerpo real de `evaluate_all_instances()`: `storage.list_shadow_instances(INCUBATING)` → iterar → `evaluate_single_instance()` → `record_performance_snapshot()`
+        - [ ] Actualizar estado en `sys_shadow_instances` según resultado (DEAD / QUARANTINED / HEALTHY / PROMOTABLE)
+        - [ ] Log en `sys_shadow_promotion_log` para instancias que alcanzan estado PROMOTABLE
+        - [ ] Emitir `usr_notification` con `category: SHADOW_READY` (revisión humana — no auto-promover a capital real)
+        - [ ] Tests ≥ 10: loop de evaluación, persistencia, clasificación por pilar, notificación
+    * **Artefactos**:
+        - `core_brain/shadow_manager.py` (implement `evaluate_all_instances`)
+        - `data_vault/shadow_db.py` (usar `record_performance_snapshot`, ya implementado)
+        - `tests/test_shadow_activation.py` (nuevo)
+    * **🖥️ UI Representation**: Dashboard "Strategy Darwinism" (HU 6.2) con estados INCUBATING/HEALTHY/QUARANTINED/DEAD/PROMOTABLE actualizados en tiempo real.
 
 ## 07_ADAPTIVE_LEARNING (EdgeTuner, Feedback Loops)
 * **HU 7.1: Confidence Threshold Optimizer** `[DONE]`

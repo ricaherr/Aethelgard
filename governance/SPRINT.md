@@ -11,6 +11,32 @@
 
 ---
 
+# SPRINT 6: SHADOW ACTIVATION — BUCLE DARWINIANO — [TODO]
+
+**Inicio**: Por definir
+**Fin**: Por definir
+**Objetivo**: Activar el bucle de evaluación SHADOW End-to-End: implementar `evaluate_all_instances()` real, conectar persistencia en `sys_shadow_performance_history`, clasificar instancias y notificar candidatos a promoción. La infraestructura ya existe — solo falta el puente de orquestación.
+**Épica**: E8 | **Trace_ID**: SHADOW-ACTIVATION-2026-03-23
+**Dominios**: 06_PORTFOLIO_INTELLIGENCE
+**Estado Final**: Pendiente
+
+## 📋 Tareas del Sprint
+
+- [TODO] **HU 6.4: SHADOW Activation — Bucle Darwiniano Operativo**
+  - Implementar cuerpo real de `evaluate_all_instances()` en `core_brain/shadow_manager.py:365`
+    - `storage.list_shadow_instances(status=INCUBATING)` → iterar instancias
+    - `evaluate_single_instance(instance)` → obtener health + pillar results
+    - `record_performance_snapshot()` → persistir en `sys_shadow_performance_history`
+    - Clasificar: actualizar estado en `sys_shadow_instances` (DEAD / QUARANTINED / HEALTHY / PROMOTABLE)
+  - Log en `sys_shadow_promotion_log` para instancias que alcanzan PROMOTABLE
+  - Emitir `usr_notification` con `category: SHADOW_READY` para revisión humana
+  - **NO auto-promover a capital LIVE** — decisión del operador
+  - Tests TDD: ≥ 10 cubriendo loop, persistencia, clasificación por pilar, notificación
+
+> **Análisis previo al Sprint**: El STUB en `evaluate_all_instances()` hace que el sistema declare SHADOW activo pero no ejecute ninguna evaluación real. La infraestructura (3 Pilares, CRUD, DDL, `PromotionValidator`) está completa y testeada. El scope es el puente mínimo para que el sistema registre evidencia estadística. La auto-promoción a capital real queda fuera del scope por diseño — es una decisión operacional humana (prudencia financiera).
+
+---
+
 # SPRINT 5: CTRADER WEBSOCKET DATA PROTOCOL — [DONE]
 
 **Inicio**: 21 de Marzo, 2026
