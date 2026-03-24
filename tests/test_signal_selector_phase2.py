@@ -382,6 +382,53 @@ class TestSignalSelectorPhase2:
         assert "SEPARATION" in stats["multi_timeframe_logic"]
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# TESTS: TAREA 2.1 — Cooldown con storage síncrono (sin coroutine)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestCooldownSyncStorage:
+    """
+    TAREA 2.1: _check_cooldown debe manejar get_active_cooldown síncrono
+    sin lanzar TypeError ni registrar error en el log.
+    """
+
+    @pytest.mark.asyncio
+    async def test_sync_storage_no_error_logged(self):
+        """Cuando get_active_cooldown es síncrono y devuelve None, no debe logearse error."""
+        from unittest.mock import MagicMock, patch
+
+        storage = MagicMock()
+        storage.get_active_cooldown = MagicMock(return_value=None)  # síncrono
+        selector = SignalSelector(storage_manager=storage)
+        signal = {"signal_id": "SYNC-TEST-001"}
+
+        with patch.object(selector.logger, 'error') as mock_error:
+            result = await selector._check_cooldown(signal)
+
+        mock_error.assert_not_called()
+        assert result["is_active"] is False
+
+    @pytest.mark.asyncio
+    async def test_sync_storage_with_active_cooldown_returns_correct_data(self):
+        """get_active_cooldown síncrono con datos activos debe devolver is_active=True."""
+        from unittest.mock import MagicMock
+        from datetime import timedelta
+
+        future_time = datetime.now(timezone.utc) + timedelta(minutes=10)
+        storage = MagicMock()
+        storage.get_active_cooldown = MagicMock(return_value={
+            "expires_at": future_time,
+            "failure_reason": "INVALID_STOPS",
+            "retry_count": 1,
+        })
+        selector = SignalSelector(storage_manager=storage)
+
+        result = await selector._check_cooldown({"signal_id": "SYNC-TEST-002"})
+
+        assert result["is_active"] is True
+        assert result["failure_reason"] == "INVALID_STOPS"
+
+
 # Run tests
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-s"])

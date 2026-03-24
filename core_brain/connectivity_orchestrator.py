@@ -191,11 +191,16 @@ class ConnectivityOrchestrator:
                         pass # Many connectors have property provider_id, let's leave as is for now, but log it
                         
                     self.register_connector(conn)
-                    self.supports_info[conn.provider_id] = {
+                    # Also register with composite key {platform}_{account_id} so the
+                    # executor can resolve  "mt5_ic_markets_demo_10001" → connector.
+                    self.connectors[conn_id] = conn
+                    supports_entry = {
                         "data": bool(acc.get('supports_data', 0)),
-                        "exec": bool(acc.get('supports_exec', 1)), # Usually broker accounts are for exec
+                        "exec": bool(acc.get('supports_exec', 1)),
                     }
-                    logger.info(f"[ConnOrch] Loaded user/broker connector: {conn.provider_id} for acc {account_id} ({class_name})")
+                    self.supports_info[conn.provider_id] = supports_entry
+                    self.supports_info[conn_id] = supports_entry
+                    logger.info(f"[ConnOrch] Loaded user/broker connector: {conn.provider_id} (alias={conn_id}) for acc {account_id} ({class_name})")
                 except Exception as e:
                     logger.error(f"[ConnOrch] Failed to load broker connector for acc '{account_id}': {e}")
         except Exception as e:

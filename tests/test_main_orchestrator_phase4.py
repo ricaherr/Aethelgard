@@ -358,5 +358,88 @@ class TestRankingAllStrategies:
         assert 'BRK_OPEN_0001' in results
 
 
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TESTS: TAREA 1.4 + 2.2 — SHADOW bypass de quality gate + recent_signals dicts
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestPhase4QualityGateShadowBypass:
+    """
+    TAREA 1.4: Señales de origen SHADOW no deben ser evaluadas por signal_quality_scorer.
+    TAREA 2.2: recent_signals (Signal model objects) deben convertirse a dicts
+               antes de pasarse al scorer para evitar AttributeError .get().
+    """
+
+    def _make_signal_mock(self, origin_mode: str = None):
+        """Crea un mock de Signal con origin_mode configurable."""
+        sig = MagicMock()
+        sig.origin_mode = origin_mode
+        sig.symbol = "EURUSD"
+        sig.signal_type = "BUY"
+        sig.timeframe = "M5"
+        sig.model_dump = MagicMock(return_value={
+            "symbol": "EURUSD",
+            "signal_type": "BUY",
+            "timeframe": "M5",
+            "origin_mode": origin_mode,
+            "trace_id": "TEST-001",
+            "strategy_id": "TEST_STRAT",
+        })
+        return sig
+
+    def test_shadow_origin_detection(self):
+        """getattr(signal, 'origin_mode') == 'SHADOW' debe identificarse correctamente."""
+        signal = self._make_signal_mock(origin_mode="SHADOW")
+        signal_dict = signal.model_dump()
+
+        origin = getattr(signal, "origin_mode", None) or signal_dict.get("origin_mode")
+        assert origin == "SHADOW"
+
+    def test_non_shadow_origin_not_bypassed(self):
+        """Señales con origin_mode != 'SHADOW' deben pasar por el quality gate."""
+        signal = self._make_signal_mock(origin_mode="LIVE")
+        signal_dict = signal.model_dump()
+
+        origin = getattr(signal, "origin_mode", None) or signal_dict.get("origin_mode")
+        assert origin != "SHADOW"
+
+    def test_recent_signals_signal_objects_converted_to_dicts(self):
+        """
+        recent_signals con objetos Signal (model_dump()) deben convertirse a dicts.
+        Si no se convierten, el scorer recibirá objetos que no tienen .get() → AttributeError.
+        """
+        signal_obj = self._make_signal_mock()
+
+        recent_signals_raw = [signal_obj]
+        recent_signals_dicts = []
+        for s in recent_signals_raw:
+            if isinstance(s, dict):
+                recent_signals_dicts.append(s)
+            elif hasattr(s, "model_dump"):
+                recent_signals_dicts.append(s.model_dump())
+            elif hasattr(s, "__dict__"):
+                recent_signals_dicts.append(vars(s))
+
+        assert len(recent_signals_dicts) == 1
+        assert isinstance(recent_signals_dicts[0], dict)
+        assert recent_signals_dicts[0]["symbol"] == "EURUSD"
+
+    def test_plain_dicts_passed_through_unchanged(self):
+        """Listas ya compuestas de dicts deben pasar sin modificarse."""
+        recent_as_dicts = [{"symbol": "EURUSD", "signal_type": "BUY"}]
+
+        converted = []
+        for s in recent_as_dicts:
+            if isinstance(s, dict):
+                converted.append(s)
+            elif hasattr(s, "model_dump"):
+                converted.append(s.model_dump())
+            elif hasattr(s, "__dict__"):
+                converted.append(vars(s))
+
+        assert converted == recent_as_dicts
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

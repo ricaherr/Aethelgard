@@ -80,6 +80,27 @@ def test_scanner_loads_active_timeframes_from_config(tmp_path):
     assert "D1" not in scanner.active_timeframes  # disabled
 
 
+def test_scan_one_passes_ohlc_to_classifier(mock_provider):
+    """_scan_one must call classifier.load_ohlc(df) so ADX is computed from real data."""
+    scanner = ScannerEngine(
+        assets=["EURUSD"],
+        data_provider=mock_provider,
+        config_data={"scanner": {"timeframes": [{"timeframe": "M5", "enabled": True}]}}
+    )
+
+    mock_classifier = Mock()
+    mock_classifier.classify.return_value = MarketRegime.NORMAL
+    mock_classifier.get_metrics.return_value = {"adx": 0.0, "atr_pct": 0.0, "volatility_shock": False, "sma_distance": 0.0, "bias": "NEUTRAL"}
+    scanner.classifiers["EURUSD|M5"] = mock_classifier
+
+    result = scanner._scan_one("EURUSD", "M5")
+
+    assert result is not None, "_scan_one returned None unexpectedly"
+    mock_classifier.load_ohlc.assert_called_once()
+    passed_df = mock_classifier.load_ohlc.call_args[0][0]
+    assert not passed_df.empty, "load_ohlc received an empty dataframe"
+
+
 def test_scanner_creates_classifier_per_symbol_timeframe_combination(mock_provider):
     """Scanner should create one classifier per (symbol, timeframe) combination"""
     import json

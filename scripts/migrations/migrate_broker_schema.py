@@ -17,8 +17,9 @@ logger = logging.getLogger(__name__)
 def migrate_broker_schema():
     """Drop old brokers table and create new schema"""
     
-    db_path = Path("data_vault/aethelgard.db")
-    
+    PROJECT_ROOT = Path(__file__).parent.parent.parent
+    db_path = PROJECT_ROOT / "data_vault" / "global" / "aethelgard.db"
+
     if not db_path.exists():
         logger.error(f"Database not found: {db_path}")
         return False

@@ -16,17 +16,21 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def migrate_add_timeframe_to_signals(db_path: str = "data_vault/aethelgard.db"):
+def migrate_add_timeframe_to_signals(db_path: str = None):
     """
     Add timeframe column to signals table.
-    
+
     Args:
-        db_path: Path to SQLite database
+        db_path: Path to SQLite database. Defaults to data_vault/global/aethelgard.db.
     """
+    if db_path is None:
+        db_path = str(
+            Path(__file__).parent.parent.parent / "data_vault" / "global" / "aethelgard.db"
+        )
     db_file = Path(db_path)
     
     if not db_file.exists():
-        logger.warning(f"Database not found: {db_path}. Will be created on first run.")
+        logger.error(f"Database not found: {db_path}. Check that the global DB exists before running migrations.")
         return
     
     try:

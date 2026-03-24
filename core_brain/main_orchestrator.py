@@ -2113,6 +2113,16 @@ class MainOrchestrator:
                         timeframe=getattr(signal, 'timeframe', 'M5'),
                         minutes=120  # Default lookback window
                     )
+
+                    # Convert any Signal model objects → dicts for downstream components
+                    recent_signals_dicts = []
+                    for s in (recent_signals or []):
+                        if isinstance(s, dict):
+                            recent_signals_dicts.append(s)
+                        elif hasattr(s, 'model_dump'):
+                            recent_signals_dicts.append(s.model_dump())
+                        elif hasattr(s, '__dict__'):
+                            recent_signals_dicts.append(vars(s))
                     
                     market_context = {
                         "volatility_zscore": getattr(self, 'volatility_zscore', 0.0),
@@ -2125,7 +2135,7 @@ class MainOrchestrator:
                     signal_dict['strategy'] = signal_dict.get('strategy_id')
                     dedup_decision, dedup_metadata = await self.signal_selector.should_operate_signal(
                         signal_dict,
-                        recent_signals,
+                        recent_signals_dicts,
                         market_context
                     )
                     
@@ -2164,13 +2174,17 @@ class MainOrchestrator:
                         continue
                     
                     # PHASE 4: Signal Quality Scoring (unified authority before execution)
+                    # SHADOW signals bypass the gate — ShadowManager evaluates them separately.
                     quality_result = None
-                    if self.signal_quality_scorer:
+                    signal_origin = getattr(signal, 'origin_mode', None) or signal_dict.get('origin_mode')
+                    if signal_origin == 'SHADOW':
+                        logger.debug(f"[PHASE4] SHADOW signal {signal.symbol} bypasses quality gate")
+                    elif self.signal_quality_scorer:
                         try:
                             signal_dict = signal.model_dump() if hasattr(signal, "model_dump") else vars(signal)
                             quality_result = await self.signal_quality_scorer.assess_signal_quality(
                                 signal_dict,
-                                recent_signals,
+                                recent_signals_dicts,
                                 market_context
                             )
                             logger.info(
@@ -2178,7 +2192,7 @@ class MainOrchestrator:
                                 f"Score={quality_result.overall_score:.1f}% (Technical={quality_result.technical_score:.1f}% "
                                 f"Contextual={quality_result.contextual_score:.1f}%)"
                             )
-                            
+
                             # Only execute if grade is A+ or A
                             if quality_result.grade.value not in ['A+', 'A']:
                                 logger.warning(

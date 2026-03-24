@@ -245,6 +245,7 @@ class ScannerEngine:
                 if instance:
                     provider_id = getattr(instance, "name", provider_id)
 
+            classifier.load_ohlc(df)
             regime = classifier.classify()
             metrics = classifier.get_metrics()
             

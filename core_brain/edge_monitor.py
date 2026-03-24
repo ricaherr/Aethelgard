@@ -26,6 +26,7 @@ class EdgeMonitor(threading.Thread):
         self.name = "EdgeMonitor"
         self.mt5_connector = mt5_connector  # Injected dependency (reuse existing instance)
         self.trade_listener = trade_listener  # TradeClosureListener for reconciliation
+        self._mt5_unavailable_logged = False  # Suppress repeated log noise when MT5 is disabled
         
     def run(self) -> None:
         """Loop principal del monitor"""
@@ -61,7 +62,11 @@ class EdgeMonitor(threading.Thread):
     def _get_mt5_connector(self) -> Optional[Any]:
         """Get MT5 connector instance (must be injected)"""
         if self.mt5_connector is None:
-            logger.warning("[EDGE] MT5 connector not available (not injected)")
+            if not self._mt5_unavailable_logged:
+                logger.info("[EDGE] MT5 connector not injected — MT5 monitoring disabled")
+                self._mt5_unavailable_logged = True
+            else:
+                logger.debug("[EDGE] MT5 connector not available (not injected)")
             return None
         return self.mt5_connector
     

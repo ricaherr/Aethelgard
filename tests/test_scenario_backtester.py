@@ -256,6 +256,63 @@ class TestTradeSimulation:
         high_t = self.bt._simulate_trades(_make_trending_df(50), {"confidence_threshold": 0.99})
         assert len(high_t) <= len(low_t)
 
+    def test_default_threshold_generates_trades_on_normal_data(self):
+        """Default confidence_threshold (0.001) must produce >0 trades on normal market data.
+
+        The old default of 0.75 required a 75%-in-one-bar move, which never occurs,
+        producing 0 trades and a ghost score of 0.4.
+        """
+        # ~0.09% moves per bar — typical for EURUSD H1
+        close = [1.1000 + i * 0.0001 for i in range(60)]
+        df = pd.DataFrame({"close": close})
+        trades = self.bt._simulate_trades(df, {})  # No overrides → default threshold
+        assert len(trades) > 0, (
+            "Default threshold produced 0 trades. It was likely still 0.75 (too high)."
+        )
+
+
+class TestComputeOverallScore:
+    """TAREA 1.2A: _compute_overall_score must return 0.0 when all regimes have 0 trades."""
+
+    def setup_method(self):
+        self.bt = ScenarioBacktester(_make_storage_mock())
+
+    def test_zero_trades_all_regimes_returns_zero(self):
+        """When every regime executed 0 trades, the overall score must be 0.0 (not 0.4)."""
+        results = [
+            RegimeResult(
+                stress_cluster="HIGH_VOLATILITY",
+                detected_regime="VOLATILE",
+                profit_factor=0.0,
+                max_drawdown_pct=0.0,
+                total_trades=0,
+                win_rate=0.0,
+                regime_score=0.4,  # Old code would average these and return 0.4
+            ),
+            RegimeResult(
+                stress_cluster="STAGNANT_RANGE",
+                detected_regime="RANGE",
+                profit_factor=0.0,
+                max_drawdown_pct=0.0,
+                total_trades=0,
+                win_rate=0.0,
+                regime_score=0.4,
+            ),
+        ]
+        assert self.bt._compute_overall_score(results) == 0.0
+
+    def test_partial_trades_uses_normal_average(self):
+        """When at least one regime has trades, the normal weighted average is used."""
+        results = [
+            RegimeResult("A", "TREND", 2.0, 0.05, 10, 0.6, 0.8),
+            RegimeResult("B", "RANGE", 0.0, 0.0, 0, 0.0, 0.4),
+        ]
+        score = self.bt._compute_overall_score(results)
+        assert score > 0.0, "Score must be > 0 when at least one regime has trades"
+
+    def test_empty_results_returns_zero(self):
+        assert self.bt._compute_overall_score([]) == 0.0
+
 
 # ── run_scenario_backtest (Integration) ──────────────────────────────────────
 

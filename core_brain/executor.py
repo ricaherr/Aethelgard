@@ -552,7 +552,7 @@ class OrderExecutor:
             else:
                 signal_type_str = str(signal.signal_type)
             
-            pip_size = 0.0001 if signal.symbol.endswith("JPY") else 0.00001
+            pip_size = 0.01 if signal.symbol.endswith("JPY") else 0.0001
             signal.stop_loss = (signal.entry_price - 50 * pip_size if signal_type_str == "BUY" 
                               else signal.entry_price + 50 * pip_size)
         
@@ -587,20 +587,22 @@ class OrderExecutor:
             return None
 
         platform = signal.connector_type.value if hasattr(signal.connector_type, 'value') else str(signal.connector_type)
+        platform_lower = platform.lower()
 
         # 2. Attempt lookup by account_id in orchestrator
+        # Try both the enum value ("METATRADER5_acc") and the DB platform_id ("mt5_acc")
         if account_id:
-            conn_id = f"{platform}_{account_id}"
-            conn = orchestrator.get_connector(conn_id)
-            if conn:
-                return conn
+            for pid in (f"{platform}_{account_id}", f"{platform_lower}_{account_id}"):
+                conn = orchestrator.get_connector(pid)
+                if conn:
+                    return conn
 
         # 3. Check explicitly injected connectors (backward compat / tests)
         if signal.connector_type in self.connectors:
             return self.connectors[signal.connector_type]
 
-        # 4. Fallback to orchestrator by platform name
-        return orchestrator.get_connector(platform)
+        # 4. Fallback to orchestrator by platform name (try original then lowercase)
+        return orchestrator.get_connector(platform) or orchestrator.get_connector(platform_lower)
     
     def _calculate_position_size(self, signal: Signal) -> float:
         """

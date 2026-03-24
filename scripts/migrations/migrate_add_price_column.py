@@ -10,7 +10,7 @@ from pathlib import Path
 
 def migrate_add_price_column():
     """Add price column to signals table if it doesn't exist"""
-    db_path = Path("data_vault/aethelgard.db")
+    db_path = Path(__file__).parent.parent.parent / "data_vault" / "global" / "aethelgard.db"
 
     if not db_path.exists():
         print("Database not found, skipping migration")

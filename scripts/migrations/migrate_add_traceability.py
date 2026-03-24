@@ -9,7 +9,7 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-DB_PATH = "data_vault/aethelgard.db"
+DB_PATH = str(Path(__file__).parent.parent.parent / "data_vault" / "global" / "aethelgard.db")
 
 def migrate_database():
     """Add traceability columns to signals and trades tables."""

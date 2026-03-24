@@ -13,6 +13,8 @@ Rule:
   - Dependency injection: storage, config passed from MainOrchestrator
 """
 
+import asyncio
+import inspect
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -103,7 +105,6 @@ class SignalSelector:
             symbol = signal.get("symbol", "")
             timeframe = signal.get("timeframe", "M5")
             try:
-                import inspect
                 fn = self.storage.get_recent_sys_signals
                 if inspect.iscoroutinefunction(fn):
                     recent_signals = await fn(symbol=symbol, timeframe=timeframe) or []
@@ -148,8 +149,13 @@ class SignalSelector:
         signal_id = signal.get("signal_id")
         
         try:
-            # Query sys_cooldown_tracker
-            cooldown = await self.storage.get_active_cooldown(signal_id)
+            # Query sys_cooldown_tracker — supports both async and sync storage
+            fn = self.storage.get_active_cooldown
+            if inspect.iscoroutinefunction(fn):
+                cooldown = await fn(signal_id)
+            else:
+                result = fn(signal_id)
+                cooldown = await result if asyncio.iscoroutine(result) else result
             
             if cooldown:
                 expires_at = cooldown.get("expires_at") or cooldown.get("cooldown_expires")

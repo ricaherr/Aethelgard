@@ -203,8 +203,8 @@ class ScenarioBacktester:
             result = self._evaluate_slice(scenario, parameter_overrides)
             regime_results.append(result)
 
-        overall_score = self._compute_overall_score(regime_results)
-        passes = overall_score >= self.MIN_REGIME_SCORE
+        overall_score = float(self._compute_overall_score(regime_results))
+        passes = bool(overall_score >= self.MIN_REGIME_SCORE)
 
         matrix = AptitudeMatrix(
             strategy_id=strategy_id,
@@ -305,7 +305,7 @@ class ScenarioBacktester:
         if len(data) < 3:
             return []
 
-        confidence_threshold = float(parameter_overrides.get("confidence_threshold", 0.75))
+        confidence_threshold = float(parameter_overrides.get("confidence_threshold", 0.001))
         risk_reward = float(parameter_overrides.get("risk_reward", 1.5))
         trades: List[Dict[str, Any]] = []
 
@@ -379,8 +379,15 @@ class ScenarioBacktester:
         return round(pf_score * 0.60 + dd_score * 0.40, 4)
 
     def _compute_overall_score(self, results: List[RegimeResult]) -> float:
-        """Equal-weight mean of all regime scores."""
+        """Equal-weight mean of all regime scores.
+
+        Returns 0.0 when no regimes were tested OR when every regime produced
+        zero trades — a strategy that never fires cannot be scored meaningfully.
+        Returning the DD-only partial score (0.4) in that case is misleading.
+        """
         if not results:
+            return 0.0
+        if sum(r.total_trades for r in results) == 0:
             return 0.0
         return round(sum(r.regime_score for r in results) / len(results), 4)
 

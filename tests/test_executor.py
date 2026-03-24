@@ -326,6 +326,89 @@ class TestOrderExecutor:
         assert result is False
 
 
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TAREA 2.3 — Stop distance correcta para pares JPY (error 10016)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestStopLossDefaultPipSize:
+    """
+    TAREA 2.3: Cuando stop_loss=0, el cálculo del stop por defecto debe usar
+    el pip_size correcto para cada tipo de par, evitando el error 10016
+    (Invalid Stops) de MT5 por stop demasiado cerca del precio.
+    """
+
+    def _make_executor(self):
+        from unittest.mock import MagicMock
+        risk_mgr = MagicMock()
+        risk_mgr.is_locked.return_value = False
+        risk_mgr.calculate_position_size_master.return_value = 0.01
+        risk_mgr.can_take_new_trade.return_value = (True, "OK")
+        storage = MagicMock()
+        storage.has_open_position.return_value = False
+        return OrderExecutor(risk_manager=risk_mgr, storage=storage, connectors={})
+
+    def test_jpy_default_stop_uses_01_pip_size(self):
+        """Para USDJPY, pip_size debe ser 0.01 → 50 pips = 0.50 de distancia."""
+        executor = self._make_executor()
+        signal = Signal(
+            symbol="USDJPY",
+            signal_type=SignalType.BUY,
+            confidence=0.8,
+            connector_type=ConnectorType.METATRADER5,
+            entry_price=149.500,
+            stop_loss=0.0,
+            volume=0.01,
+        )
+        executor._validate_signal(signal)
+
+        expected_min_distance = 49 * 0.01  # 49 pips at 0.01/pip (50 - rounding tolerance)
+        actual_distance = abs(signal.entry_price - signal.stop_loss)
+        assert actual_distance >= expected_min_distance, (
+            f"USDJPY stop too close: entry={signal.entry_price} sl={signal.stop_loss} "
+            f"distance={actual_distance:.5f} (expected >= {expected_min_distance})"
+        )
+
+    def test_non_jpy_default_stop_uses_0001_pip_size(self):
+        """Para EURUSD, pip_size debe ser 0.0001 → 50 pips = 0.005 de distancia."""
+        executor = self._make_executor()
+        signal = Signal(
+            symbol="EURUSD",
+            signal_type=SignalType.BUY,
+            confidence=0.8,
+            connector_type=ConnectorType.METATRADER5,
+            entry_price=1.1050,
+            stop_loss=0.0,
+            volume=0.01,
+        )
+        executor._validate_signal(signal)
+
+        expected_min_distance = 49 * 0.0001  # 49 pips at 0.0001/pip
+        actual_distance = abs(signal.entry_price - signal.stop_loss)
+        assert actual_distance >= expected_min_distance, (
+            f"EURUSD stop too close: entry={signal.entry_price} sl={signal.stop_loss} "
+            f"distance={actual_distance:.5f} (expected >= {expected_min_distance})"
+        )
+
+    def test_jpy_sell_stop_above_entry(self):
+        """Para USDJPY SELL, el stop loss por defecto debe estar ENCIMA del entry."""
+        executor = self._make_executor()
+        signal = Signal(
+            symbol="USDJPY",
+            signal_type=SignalType.SELL,
+            confidence=0.8,
+            connector_type=ConnectorType.METATRADER5,
+            entry_price=149.500,
+            stop_loss=0.0,
+            volume=0.01,
+        )
+        executor._validate_signal(signal)
+        assert signal.stop_loss > signal.entry_price, (
+            f"SELL stop must be above entry: sl={signal.stop_loss} entry={signal.entry_price}"
+        )
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 
