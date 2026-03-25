@@ -84,10 +84,15 @@ class RiskManager:
             dynamic_params = {}
         if config_path or risk_settings_path:
             logger.warning("Legacy file paths deprecated (SSOT DB-first).")
-        if not risk_settings or not dynamic_params:
+        missing_keys = []
+        if not risk_settings:
+            missing_keys.append('risk_settings')
+        if not dynamic_params:
+            missing_keys.append('dynamic_params')
+        if missing_keys:
             logger.warning(
-                "[SSOT] Risk/dynamic config not in DB. "
-                "Initialize from UI/API or ensure seed data loaded. Using safe defaults."
+                f"[SSOT] Configuración faltante en DB: {missing_keys}. "
+                "Inicialice desde UI/API o ejecute el seed de riesgo. Usando defaults seguros."
             )
             risk_settings = risk_settings or {}
             dynamic_params = dynamic_params or {}

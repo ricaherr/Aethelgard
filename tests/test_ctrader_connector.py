@@ -428,10 +428,11 @@ class TestCTraderSessionPersistence:
 
     @pytest.mark.asyncio
     async def test_session_initialized_to_none(self):
-        """New connector starts with no session."""
+        """New connector starts with no WebSocket session, but with a live event loop."""
         connector = _make_connector()
         assert connector._session_ws is None
-        assert connector._session_loop is None
+        assert connector._event_loop is not None
+        assert connector._event_loop.is_running()
 
     @pytest.mark.asyncio
     async def test_first_call_authenticates_and_stores_session(self):
@@ -457,11 +458,9 @@ class TestCTraderSessionPersistence:
         connector = _make_connector()
         mock_ws = AsyncMock()
         mock_ws.close = AsyncMock()
-        loop = asyncio.get_event_loop()
 
         # Pre-seed an active session
         connector._session_ws = mock_ws
-        connector._session_loop = loop
         connector._authenticate_session = AsyncMock(return_value=True)
         connector._fetch_bars_on_session = AsyncMock(return_value=[{"open": 1.1}])
 
@@ -484,10 +483,8 @@ class TestCTraderSessionPersistence:
         dead_ws.close = AsyncMock()
         fresh_ws = AsyncMock()
         fresh_ws.close = AsyncMock()
-        loop = asyncio.get_event_loop()
 
         connector._session_ws = dead_ws
-        connector._session_loop = loop
 
         call_count = {"n": 0}
 
@@ -531,18 +528,16 @@ class TestCTraderSessionPersistence:
 
     @pytest.mark.asyncio
     async def test_invalidate_session_clears_state(self):
-        """_invalidate_session() closes WebSocket and clears both attributes."""
+        """_invalidate_session() closes WebSocket and clears _session_ws."""
         connector = _make_connector()
         mock_ws = AsyncMock()
         mock_ws.close = AsyncMock()
         connector._session_ws = mock_ws
-        connector._session_loop = asyncio.get_event_loop()
 
         await connector._invalidate_session()
 
         mock_ws.close.assert_called_once()
         assert connector._session_ws is None
-        assert connector._session_loop is None
 
     @pytest.mark.asyncio
     async def test_invalidate_session_handles_close_error(self):
@@ -551,7 +546,6 @@ class TestCTraderSessionPersistence:
         bad_ws = AsyncMock()
         bad_ws.close = AsyncMock(side_effect=Exception("already closed"))
         connector._session_ws = bad_ws
-        connector._session_loop = asyncio.get_event_loop()
 
         await connector._invalidate_session()  # must not raise
 

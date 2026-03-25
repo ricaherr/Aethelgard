@@ -123,16 +123,21 @@ class CTraderConnector(BaseConnector):
         self._symbol_digits_cache: Dict[int, int] = {}  # symbolId → digits
         self._latency: float = 0.0
         # Serialise fetch_ohlc calls: only one WebSocket operation at a time.
-        # Combined with session persistence (below) this reduces App Auth calls
-        # from O(N_symbols × N_cycles) to O(1_per_session), avoiding the
-        # Spotware rate-limit (2142 ERROR_RES) that fires after ~45 auths/window.
         self._ws_lock = threading.Lock()
 
         # Persistent WebSocket session (N1-8 — CTRADER-SESSION-PERSIST-2026-03-25).
         # Authenticated once per process lifetime; reused across all fetch_ohlc()
-        # calls. Invalidated on ConnectionClosed or event-loop change.
+        # calls. The session lives on _event_loop (a dedicated background thread).
+        # Using asyncio.run() or run_until_complete() would close the loop after
+        # each call, destroying the WebSocket — hence the dedicated loop pattern.
         self._session_ws: Optional[Any] = None
-        self._session_loop: Optional[asyncio.AbstractEventLoop] = None
+        self._event_loop: asyncio.AbstractEventLoop = asyncio.new_event_loop()
+        self._loop_thread = threading.Thread(
+            target=self._event_loop.run_forever,
+            daemon=True,
+            name="CTrader-EventLoop",
+        )
+        self._loop_thread.start()
 
         logger.info(
             f"[CTrader] Connector initialized. enabled={self.config.get('enabled')}, "
@@ -299,7 +304,6 @@ class CTraderConnector(BaseConnector):
         self._symbol_id_cache.clear()
         self._symbol_digits_cache.clear()
         self._session_ws = None
-        self._session_loop = None
         logger.info("[CTrader] Disconnected.")
         return True
 
@@ -329,26 +333,15 @@ class CTraderConnector(BaseConnector):
         if not self._is_rest_ready():
             return None
 
-        # Acquire the lock to serialise concurrent WebSocket auth requests.
-        # Without this, parallel scanner calls open multiple simultaneous
-        # WebSocket connections and flood the Spotware API with App Auth frames,
-        # causing 2142 (ERROR_RES) rate-limit rejections on all but the first.
+        # Serialise calls and dispatch to the dedicated persistent event loop.
+        # _event_loop never closes → session WebSocket survives across calls.
         with self._ws_lock:
             try:
-                try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        import concurrent.futures
-                        fut = asyncio.run_coroutine_threadsafe(
-                            self._fetch_bars_via_websocket(symbol, timeframe, count), loop
-                        )
-                        bars = fut.result(timeout=_WS_CONNECT_TIMEOUT)
-                    else:
-                        bars = loop.run_until_complete(
-                            self._fetch_bars_via_websocket(symbol, timeframe, count)
-                        )
-                except RuntimeError:
-                    bars = asyncio.run(self._fetch_bars_via_websocket(symbol, timeframe, count))
+                fut = asyncio.run_coroutine_threadsafe(
+                    self._fetch_bars_via_websocket(symbol, timeframe, count),
+                    self._event_loop,
+                )
+                bars = fut.result(timeout=_WS_CONNECT_TIMEOUT)
             except Exception as exc:
                 logger.error(f"[CTrader] fetch_ohlc error for {symbol}/{timeframe}: {exc}")
                 return None
@@ -385,14 +378,14 @@ class CTraderConnector(BaseConnector):
             logger.error("[CTrader] 'websockets' not installed.")
             return []
 
-        current_loop = asyncio.get_running_loop()
-
         # Reuse existing authenticated session when possible.
-        if self._session_ws is not None and self._session_loop is current_loop:
+        # All calls arrive on self._event_loop (dedicated thread), so no loop
+        # identity check is needed — the loop is always the same.
+        if self._session_ws is not None:
             try:
                 return await self._fetch_bars_on_session(self._session_ws, symbol, timeframe, count)
             except Exception as exc:
-                logger.debug("[CTrader] Session reuse failed (%s) — reconnecting.", exc)
+                logger.warning(f"[CTrader] Reutilización de sesión fallida: {exc}. Intentando reconexión.")
                 await self._invalidate_session()
 
         # (Re)connect and authenticate.
@@ -412,7 +405,6 @@ class CTraderConnector(BaseConnector):
             return []
 
         self._session_ws = ws
-        self._session_loop = current_loop
         logger.debug("[CTrader] New authenticated session established.")
 
         try:
@@ -430,7 +422,7 @@ class CTraderConnector(BaseConnector):
         ctid_raw = self.config.get("ctid_trader_account_id", "")
 
         if not ctid_raw:
-            logger.error("[CTrader] ctid_trader_account_id not configured — cannot authenticate.")
+            logger.error("[CTrader] ctid_trader_account_id no configurado — autenticación imposible.")
             return False
 
         ctid = int(ctid_raw)
@@ -439,20 +431,26 @@ class CTraderConnector(BaseConnector):
             await ws.send(_build_app_auth_req(client_id, client_secret))
             resp = await asyncio.wait_for(ws.recv(), timeout=_WS_MSG_TIMEOUT)
             pt, _ = _parse_proto_response(resp)
-            if pt != _PT_APP_AUTH_RES:
-                logger.error(f"[CTrader] App auth failed: payloadType={pt}")
+            if pt == _PT_ERROR_RES:
+                logger.error(f"[CTrader] App auth falló: RATE-LIMIT o credenciales inválidas (payloadType=2142)")
                 return False
-            logger.debug("[CTrader] App auth OK")
+            if pt != _PT_APP_AUTH_RES:
+                logger.error(f"[CTrader] App auth falló: payloadType inesperado {pt}")
+                return False
+            logger.info("[CTrader] App auth OK")
 
             await ws.send(_build_acct_auth_req(ctid, access_token))
             resp = await asyncio.wait_for(ws.recv(), timeout=_WS_MSG_TIMEOUT)
             pt, _ = _parse_proto_response(resp)
-            if pt != _PT_ACCT_AUTH_RES:
-                logger.error(f"[CTrader] Account auth failed: payloadType={pt}")
+            if pt == _PT_ERROR_RES:
+                logger.error(f"[CTrader] Account auth falló: RATE-LIMIT o credenciales inválidas (payloadType=2142)")
                 return False
-            logger.debug("[CTrader] Account auth OK")
+            if pt != _PT_ACCT_AUTH_RES:
+                logger.error(f"[CTrader] Account auth falló: payloadType inesperado {pt}")
+                return False
+            logger.info("[CTrader] Account auth OK")
         except Exception as exc:
-            logger.error(f"[CTrader] Auth error: {exc}")
+            logger.error(f"[CTrader] Error de autenticación: {exc}")
             return False
 
         return True
@@ -493,7 +491,6 @@ class CTraderConnector(BaseConnector):
         """Close and discard the persistent session."""
         ws = self._session_ws
         self._session_ws = None
-        self._session_loop = None
         if ws is not None:
             try:
                 await ws.close()
