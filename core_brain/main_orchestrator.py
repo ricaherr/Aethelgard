@@ -331,10 +331,13 @@ class MainOrchestrator:
         # 11. WEEK 3: SHADOW Evolution Manager (Hourly Feedback Loop)
         try:
             from core_brain.shadow_manager import ShadowManager
+            _dyn_pilar3 = self.storage.get_dynamic_params() or {}
+            _pilar3_min = int(_dyn_pilar3.get("pilar3_min_trades", 5))
             self.shadow_manager = ShadowManager(
                 storage=self.storage,
                 regime_classifier=self.regime_classifier,
                 edge_tuner=EdgeTuner(self.storage),
+                pilar3_min_trades=_pilar3_min,
             )
             self.last_shadow_evolution = None  # Track last hourly run (datetime)
         except Exception as e:

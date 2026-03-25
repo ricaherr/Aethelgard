@@ -114,10 +114,10 @@ class TestStructureShift0001Strategy(unittest.TestCase):
     
     def test_strategy_affinity_scores_loaded(self):
         """✓ Test: Cargar scores de afinidad de activos."""
-        self.assertIn("EUR/USD", self.strategy.AFFINITY_SCORES)
-        self.assertIn("USD/CAD", self.strategy.AFFINITY_SCORES)
-        # EUR/USD debe tener score >= 0.89
-        self.assertGreaterEqual(self.strategy.AFFINITY_SCORES["EUR/USD"], 0.89)
+        self.assertIn("EURUSD", self.strategy.AFFINITY_SCORES)
+        self.assertIn("USDCAD", self.strategy.AFFINITY_SCORES)
+        # EURUSD debe tener score >= 0.89
+        self.assertGreaterEqual(self.strategy.AFFINITY_SCORES["EURUSD"], 0.89)
     
     
     def test_market_structure_analyzer_available(self):
@@ -135,7 +135,7 @@ class TestStructureShift0001Strategy(unittest.TestCase):
         candles.set_index('datetime', inplace=True)
         
         signal = asyncio.run(self.strategy.analyze(
-            symbol="EUR/USD",
+            symbol="EURUSD",
             df=candles
         ))
         
@@ -144,7 +144,7 @@ class TestStructureShift0001Strategy(unittest.TestCase):
         # Si hay estructura válida, la señal debe estar presente
         if signal is not None:
             self.assertIsInstance(signal, Signal)
-            self.assertEqual(signal.symbol, "EUR/USD")
+            self.assertEqual(signal.symbol, "EURUSD")
     
     
     def test_detect_structure_in_candles(self):
@@ -199,11 +199,11 @@ class TestStructureShift0001Strategy(unittest.TestCase):
     def test_asset_affinity_filtering(self):
         """✓ Test: Filtrado de activos por afinidad."""
         # EUR/USD tiene alta afinidad (0.89)
-        eur_usd_affinity = self.strategy.AFFINITY_SCORES.get("EUR/USD", 0)
+        eur_usd_affinity = self.strategy.AFFINITY_SCORES.get("EURUSD", 0)
         self.assertGreaterEqual(eur_usd_affinity, 0.85)
         
         # AUD/NZD está vetado (0.40)
-        aud_nzd_affinity = self.strategy.AFFINITY_SCORES.get("AUD/NZD", 0)
+        aud_nzd_affinity = self.strategy.AFFINITY_SCORES.get("AUDNZD", 0)
         self.assertLessEqual(aud_nzd_affinity, 0.45)
     
     
@@ -215,11 +215,11 @@ class TestStructureShift0001Strategy(unittest.TestCase):
         candles = self.uptrend_candles.copy()
         candles.set_index('datetime', inplace=True)
         
-        signal = asyncio.run(self.strategy.analyze(symbol="EUR/USD", df=candles))
+        signal = asyncio.run(self.strategy.analyze(symbol="EURUSD", df=candles))
         
         if signal is not None:
             # Verificar campos obligatorios
-            self.assertEqual(signal.symbol, "EUR/USD")
+            self.assertEqual(signal.symbol, "EURUSD")
             self.assertIsNotNone(signal.entry_price)
             self.assertIsNotNone(signal.stop_loss)
             self.assertIsNotNone(signal.take_profit_primary)

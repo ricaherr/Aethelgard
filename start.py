@@ -165,12 +165,44 @@ def _seed_risk_config(storage: "StorageManager") -> None:
             updates["dynamic_params"] = {
                 "risk_per_trade": 0.005,
                 "max_consecutive_losses": 3,
+                "pilar3_min_trades": 5,
+            }
+        elif "pilar3_min_trades" not in existing.get("dynamic_params", {}):
+            # Sub-key patch: dynamic_params exists but pre-dates HU 3.13
+            updates["dynamic_params"] = {
+                **existing["dynamic_params"],
+                "pilar3_min_trades": 5,
             }
         if updates:
             storage.update_sys_config(updates)
             logger.info("[CONFIG] Risk config sembrada en sys_config: %s", list(updates.keys()))
     except Exception as exc:
         logger.warning("[CONFIG] No se pudo sembrar risk_config: %s", exc)
+
+
+def _seed_backtest_config(storage: "StorageManager") -> None:
+    """Seed backtest_config in sys_config if absent (idempotent).
+
+    Sets cooldown_hours=1 so backtests run hourly instead of the hardcoded 24h
+    default, unblocking the BACKTEST→SHADOW pipeline in development/staging.
+    Only writes if the key is not already in the DB — user config is preserved.
+    Trace_ID: FIX-BACKTEST-COOLDOWN-SEED-2026-03-25
+    """
+    try:
+        existing = storage.get_sys_config()
+        if not existing.get("backtest_config"):
+            storage.update_sys_config({
+                "backtest_config": {
+                    "cooldown_hours": 1,
+                    "min_trades_per_cluster": 15,
+                    "bars_per_window": 120,
+                    "bars_fetch_initial": 500,
+                    "promotion_min_score": 0.75,
+                }
+            })
+            logger.info("[CONFIG] backtest_config sembrado: cooldown_hours=1")
+    except Exception as exc:
+        logger.warning("[CONFIG] No se pudo sembrar backtest_config: %s", exc)
 
 
 # launch_dashboard eliminada - UI unificada en puerto 8000
@@ -311,6 +343,7 @@ async def main() -> None:
             raise RuntimeError("No enabled symbols found in database. Cannot start trading.")
         
         _seed_risk_config(storage)
+        _seed_backtest_config(storage)
         initial_capital = _read_initial_capital(storage)
         risk_manager = RiskManager(
             storage=storage,

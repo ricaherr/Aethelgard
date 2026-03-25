@@ -50,15 +50,15 @@ class StructureShift0001Strategy(BaseStrategy):
     
     # Afinidad de activos (SSOT en DB)
     AFFINITY_SCORES = {
-        "EUR/USD": 0.89,      # PRIME - Muy técnico, quiebres limpios
-        "USD/CAD": 0.82,      # ACTIVE - Tendencias marcadas
-        "AUD/NZD": 0.40,      # VETO - Choppiness inválida estructura
-        "GBP/USD": 0.75,      # Monitor - Posible tercero
-        "USD/JPY": 0.70,      # Monitor
+        "EURUSD": 0.89,      # PRIME - Muy técnico, quiebres limpios
+        "USDCAD": 0.82,      # ACTIVE - Tendencias marcadas
+        "AUDNZD": 0.40,      # VETO - Choppiness inválida estructura
+        "GBPUSD": 0.75,      # Monitor - Posible tercero
+        "USDJPY": 0.70,      # Monitor
     }
-    
+
     # Market Whitelist (solo estos operan, resto es monitor)
-    MARKET_WHITELIST = ["EUR/USD", "USD/CAD"]
+    MARKET_WHITELIST = ["EURUSD", "USDCAD"]
     
     def __init__(
         self,

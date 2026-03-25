@@ -343,11 +343,42 @@ class TestPromotionValidator:
             max_drawdown_pct=0.10, consecutive_losses_max=2,
             total_trades_executed=20, equity_curve_cv=0.35,
         )
-        
+
         approved, reason = self.validator.validate_all_pillars(metrics)
-        
+
         assert approved is True
         assert "3 Pilares" in reason or "HEALTHY" in reason.upper()
+
+    # ── HU 3.13: Pilar 3 adaptativo ──────────────────────────────────────────
+
+    def test_pilar3_accepts_custom_min_trades(self):
+        """PromotionValidator(min_trades=5) must use 5, not the hardcoded 15."""
+        validator = PromotionValidator(min_trades=5)
+        assert validator.PILAR3_MIN_TRADES == 5
+
+    def test_pilar3_custom_threshold_passes_with_fewer_trades(self):
+        """With min_trades=5, 6 executed trades must PASS Pilar 3."""
+        validator = PromotionValidator(min_trades=5)
+        metrics = ShadowMetrics(
+            profit_factor=1.75, win_rate=0.65,
+            max_drawdown_pct=0.10, consecutive_losses_max=2,
+            total_trades_executed=6,   # < 15 but >= 5
+            equity_curve_cv=0.30,
+        )
+        p3_pass, reason = validator.validate_pilar3_consistency(metrics)
+        assert p3_pass is True
+
+    def test_pilar3_default_stays_at_15(self):
+        """PromotionValidator() without args must keep threshold at 15."""
+        validator = PromotionValidator()
+        assert validator.PILAR3_MIN_TRADES == 15
+
+    def test_shadow_manager_accepts_pilar3_min_trades_param(self):
+        """ShadowManager(pilar3_min_trades=5) must propagate value to PromotionValidator."""
+        conn = sqlite3.connect(":memory:")
+        storage = ShadowStorageManager(conn)
+        manager = ShadowManager(storage=storage, pilar3_min_trades=5)
+        assert manager.promotion_validator.PILAR3_MIN_TRADES == 5
 
 
 class TestEvaluateAllInstances:

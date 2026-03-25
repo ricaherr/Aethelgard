@@ -51,8 +51,17 @@ class PromotionValidator:
     PILAR1_MIN_WR = 0.60
     PILAR2_MAX_DD = 0.12
     PILAR2_MAX_CL = 3
-    PILAR3_MIN_TRADES = 15
     PILAR3_MAX_CV = 0.40
+
+    def __init__(self, min_trades: int = 15) -> None:
+        """Initialize with configurable Pilar 3 threshold.
+
+        Args:
+            min_trades: Minimum shadow trades required for Pilar 3. Default 15.
+                        Set lower (e.g. 5) for low-frequency strategies.
+                        HU 3.13 — Trace_ID: ADAPTIVE-PILAR3-2026-03-25
+        """
+        self.PILAR3_MIN_TRADES = min_trades
 
     def validate_pilar1_profitability(
         self, metrics: ShadowMetrics
@@ -188,6 +197,7 @@ class ShadowManager:
         storage: Union[ShadowStorageManager, 'StorageManager'],
         regime_classifier: Optional[Any] = None,
         edge_tuner: Optional[Any] = None,
+        pilar3_min_trades: int = 15,
     ):
         """
         Initialize ShadowManager with injected dependencies.
@@ -199,6 +209,9 @@ class ShadowManager:
                                When provided, TREND/RANGE/CRASH regimes modulate thresholds.
             edge_tuner: Optional EdgeTuner for per-instance confidence calibration.
                         When provided, updates parameter_overrides after each evaluation.
+            pilar3_min_trades: Pilar 3 minimum trades threshold. Reads from
+                               dynamic_params.pilar3_min_trades at startup (default 5).
+                               HU 3.13 — Trace_ID: ADAPTIVE-PILAR3-2026-03-25
         """
         # Handle both ShadowStorageManager and generic StorageManager
         if isinstance(storage, ShadowStorageManager):
@@ -221,7 +234,7 @@ class ShadowManager:
                 logger.error(f"Failed to create ShadowStorageManager: {e}")
                 raise
 
-        self.promotion_validator = PromotionValidator()
+        self.promotion_validator = PromotionValidator(min_trades=pilar3_min_trades)
         self.regime_classifier = regime_classifier
         self.edge_tuner = edge_tuner
         self.logger = logging.getLogger(__name__)

@@ -46,11 +46,11 @@ class LiquiditySweep0001Strategy(BaseStrategy):
     
     # Afinidad de activos (SSOT en DB)
     AFFINITY_SCORES = {
-        "EUR/USD": 0.92,
-        "GBP/USD": 0.88,
-        "USD/JPY": 0.60,
-        "GBP/JPY": 0.70,
-        "USD/CAD": 0.65,
+        "EURUSD": 0.92,
+        "GBPUSD": 0.88,
+        "USDJPY": 0.60,
+        "GBPJPY": 0.70,
+        "USDCAD": 0.65,
     }
     
     def __init__(

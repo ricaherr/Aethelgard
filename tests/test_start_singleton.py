@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch, call
 
 import pytest
 
-from start import _acquire_singleton_lock, _release_singleton_lock, _read_initial_capital, _seed_risk_config
+from start import _acquire_singleton_lock, _release_singleton_lock, _read_initial_capital, _seed_risk_config, _seed_backtest_config
 
 
 # ── _acquire_singleton_lock ───────────────────────────────────────────────────
@@ -107,11 +107,11 @@ class TestSeedRiskConfig:
         assert "dynamic_params" in written
 
     def test_is_idempotent_when_both_present(self):
-        """When both keys exist, update_sys_config must NOT be called."""
+        """When both keys exist (including pilar3_min_trades), update_sys_config must NOT be called."""
         storage = MagicMock()
         storage.get_sys_config.return_value = {
             "risk_settings": {"max_consecutive_losses": 3},
-            "dynamic_params": {"risk_per_trade": 0.005},
+            "dynamic_params": {"risk_per_trade": 0.005, "pilar3_min_trades": 5},
         }
         _seed_risk_config(storage)
         storage.update_sys_config.assert_not_called()
@@ -121,3 +121,42 @@ class TestSeedRiskConfig:
         storage = MagicMock()
         storage.get_sys_config.side_effect = Exception("DB error")
         _seed_risk_config(storage)  # must not raise
+
+
+# ── _seed_backtest_config ─────────────────────────────────────────────────────
+
+class TestSeedBacktestConfig:
+    def test_seeds_when_absent(self):
+        """When backtest_config is absent, it must be written with cooldown_hours=1."""
+        storage = MagicMock()
+        storage.get_sys_config.return_value = {}
+        _seed_backtest_config(storage)
+        storage.update_sys_config.assert_called_once()
+        written = storage.update_sys_config.call_args[0][0]
+        assert "backtest_config" in written
+        assert written["backtest_config"]["cooldown_hours"] == 1
+
+    def test_is_idempotent_when_present(self):
+        """When backtest_config already exists, update_sys_config must NOT be called."""
+        storage = MagicMock()
+        storage.get_sys_config.return_value = {
+            "backtest_config": {"cooldown_hours": 1}
+        }
+        _seed_backtest_config(storage)
+        storage.update_sys_config.assert_not_called()
+
+    def test_seeds_required_keys(self):
+        """Seeded config must contain all required backtest keys."""
+        storage = MagicMock()
+        storage.get_sys_config.return_value = {}
+        _seed_backtest_config(storage)
+        written = storage.update_sys_config.call_args[0][0]["backtest_config"]
+        for key in ("cooldown_hours", "min_trades_per_cluster", "bars_per_window",
+                    "bars_fetch_initial", "promotion_min_score"):
+            assert key in written, f"Missing key: {key}"
+
+    def test_survives_storage_exception(self):
+        """Storage errors must be caught — no exception propagated."""
+        storage = MagicMock()
+        storage.get_sys_config.side_effect = Exception("DB error")
+        _seed_backtest_config(storage)  # must not raise

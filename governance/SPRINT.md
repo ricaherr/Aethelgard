@@ -11,6 +11,44 @@
 
 ---
 
+# SPRINT 11: PRODUCTION UNBLOCK — SYMBOL FORMAT, BACKTEST SEED & ADAPTIVE PILAR 3 — [DONE]
+
+**Inicio**: 25 de Marzo, 2026
+**Fin**: 25 de Marzo, 2026
+**Objetivo**: Eliminar los 3 bloqueantes que impedían la generación de señales reales: formato de símbolo incorrecto en 3 estrategias, cooldown de backtest sin sembrar, y Pilar 3 con umbral fijo de 15 trades imposible de alcanzar en el corto plazo.
+**Épica**: E10 (HUs de soporte) | **Trace_ID**: PROD-UNBLOCK-SIGNAL-FLOW-2026-03-25
+**Dominios**: 03_ALPHA_GENERATION · 07_ADAPTIVE_LEARNING
+
+## 📋 Tareas del Sprint
+
+- [DONE] **N2-2: Symbol format normalization — AFFINITY_SCORES slash→no-slash en 3 estrategias**
+  - `liq_sweep_0001.py`, `mom_bias_0001.py`, `struc_shift_0001.py`: claves `"EUR/USD"` → `"EURUSD"` (y similares)
+  - Root cause: scanner produce `"EURUSD"`, estrategias buscaban `"EUR/USD"` → 0 señales
+  - TDD: 10 tests en `tests/test_symbol_format_strategies.py` — 10/10 PASSED (confirmado RED antes del fix)
+  - Tests actualizados: `tests/test_struc_shift_0001.py` — 14/14 PASSED
+
+- [DONE] **HU 10.8: Backtest config seed — cooldown_hours=1 en sys_config**
+  - `_seed_backtest_config(storage)` en `start.py` — idempotente, INSERT OR IGNORE semántico
+  - Seeds `backtest_config` con `cooldown_hours=1` (antes: hardcoded 24h sin seed → bloqueaba ciclo backtest)
+  - TDD: 4 tests en `tests/test_start_singleton.py::TestSeedBacktestConfig` — 4/4 PASSED
+
+- [DONE] **HU 3.13: Pilar 3 adaptativo — umbral configurable via dynamic_params**
+  - `PromotionValidator(min_trades=15)` — constructor acepta umbral configurable (antes: constante de clase)
+  - `ShadowManager(pilar3_min_trades=5)` — lee `dynamic_params.pilar3_min_trades` en arranque
+  - `_seed_risk_config()` actualizado: siembra `pilar3_min_trades=5` en `dynamic_params` (patch idempotente para instalaciones existentes)
+  - `main_orchestrator.py`: `ShadowManager` recibe valor leído de DB en construcción
+  - TDD: 4 tests nuevos en `tests/test_shadow_manager.py::TestPromotionValidator` — 22/22 PASSED total
+
+## 📊 Snapshot de Cierre
+
+- **Tests añadidos**: 18 (10 N2-2 + 4 HU10.8 + 4 HU3.13)
+- **Tests totales ejecutados**: 22/22 `test_shadow_manager.py` · 41/41 `test_symbol_format + test_struc_shift + test_start_singleton`
+- **Archivos modificados**: `core_brain/strategies/liq_sweep_0001.py`, `core_brain/strategies/mom_bias_0001.py`, `core_brain/strategies/struc_shift_0001.py`, `start.py`, `core_brain/shadow_manager.py`, `core_brain/main_orchestrator.py`, `tests/test_struc_shift_0001.py`, `tests/test_shadow_manager.py`, `tests/test_start_singleton.py`
+- **Archivos nuevos**: `tests/test_symbol_format_strategies.py`
+- **Deuda eliminada**: 0 señales de 3/6 estrategias por formato; cooldown 24h sin seed; Pilar 3 bloqueando shadow con < 15 trades
+
+---
+
 # SPRINT 10: PIPELINE FIXES — SSOT RISK SEED, INSTRUMENT-AWARE SL/TP & CTRADER SESSION — [DONE]
 
 **Inicio**: 25 de Marzo, 2026

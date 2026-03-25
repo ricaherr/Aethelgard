@@ -45,10 +45,10 @@ class MomentumBias0001Strategy(BaseStrategy):
     
     STRATEGY_ID = "MOM_BIAS_0001"
     AFFINITY_SCORES = {
-        "GBP/JPY": 0.85,
-        "EUR/USD": 0.65,
-        "GBP/USD": 0.72,
-        "USD/JPY": 0.60,
+        "GBPJPY": 0.85,
+        "EURUSD": 0.65,
+        "GBPUSD": 0.72,
+        "USDJPY": 0.60,
     }
     
     def __init__(
