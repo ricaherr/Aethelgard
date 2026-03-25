@@ -10,7 +10,7 @@
 > - **Framework completo**: `.ai_orchestration_protocol.md` Sección 4.
 
 **Versión Log**: v4.6.0-beta
-**Última Actualización**: 23 de Marzo, 2026
+**Última Actualización**: 24 de Marzo, 2026
 
 ---
 
@@ -18,32 +18,19 @@
 
 > ℹ️ Solo se muestran Épicas en estado `ACTIVA` o `PENDIENTE`. Las Épicas `COMPLETADA` se archivan en [docs/SYSTEM_LEDGER.md](SYSTEM_LEDGER.md) (sección ÉPICAS ARCHIVADAS) y se eliminan de este documento.
 
-### E9: Desbloqueo Operacional del Pipeline — ACTIVA
-**Sprint**: 8 | **Trace_ID**: PIPELINE-UNBLOCK-EDGE-2026-03-24
-**Objetivo**: Resolver 5 bloqueos operacionales críticos que impiden el flujo BACKTEST→SHADOW→LIVE y elevar la resiliencia del sistema: filtro de activos incorrecto en SignalFactory, cooldown de backtest mal implementado (last_backtest_at), EdgeMonitor hardcodeado a MT5, capital hardcodeado, y ausencia de protección contra instancias duplicadas. Documentar el diseño del AutonomousSystemOrchestrator (FASE4) en governance.
-
-| HU | Nombre | Dominio | Sprint | Estado |
-|---|---|---|---|---|
-| HU 10.3 | Proceso Singleton — PID Lockfile | 10 | 8 | [TODO] |
-| HU 10.4 | Capital Dinámico desde sys_config | 10 | 8 | [TODO] |
-| HU 7.5 | Backtest Cooldown — last_backtest_at | 07 | 8 | [TODO] |
-| HU 3.9 | Signal Factory — InstrumentManager Filter | 03 | 8 | [TODO] |
-| HU 10.5 | EdgeMonitor Connector-Agnóstico | 10 | 8 | [TODO] |
-| HU 10.6 | AutonomousSystemOrchestrator — Diseño FASE4 | 10 | 8 | [TODO] |
-
 ### E10: Motor de Backtesting Inteligente — EDGE Evaluation Framework — ACTIVA
 **Sprint**: 9 | **Trace_ID**: EDGE-BACKTEST-EVAL-FRAMEWORK-2026-03-24
 **Objetivo**: Refundar el motor de backtesting desde sus fundamentos: reemplazar la simulación momentum genérica por ejecución real de la lógica de cada estrategia; introducir evaluación multi-par y multi-timeframe con descubrimiento empírico (sin suposiciones a priori); eliminar datos sintéticos del path de producción mediante cadena de fallback multi-proveedor; implementar scoring con confianza estadística continua `n/(n+k)`; y desplegar un gestor adaptativo de recursos que suspende componentes ociosos, dinamiza el cooldown según contexto operacional y protege la integridad del servidor.
 
 | HU | Nombre | Dominio | Sprint | Estado |
 |---|---|---|---|---|
-| HU 7.6  | Interfaz estándar de evaluación histórica en estrategias | 07 | 9 | [TODO] |
-| HU 7.7  | Simulación real por estrategia — despacho a lógica propia | 07 | 9 | [TODO] |
-| HU 7.8  | Contexto estructural declarado en sys_strategies | 07 | 9 | [TODO] |
+| HU 7.6  | Interfaz estándar de evaluación histórica en estrategias | 07 | 9 | [DONE] |
+| HU 7.7  | Simulación real por estrategia — despacho a lógica propia | 07 | 9 | [DONE] |
+| HU 7.8  | Contexto estructural declarado en sys_strategies | 07 | 9 | [DONE] |
 | HU 7.9  | Evaluación multi-timeframe con round-robin y pre-filtro | 07 | — | |
 | HU 7.10 | RegimeClassifier real en pipeline de backtesting | 07 | — | |
-| HU 7.11 | Cadena de fallback multi-proveedor — eliminar síntesis | 07 | 9 | [TODO] |
-| HU 10.7 | Adaptive Operational Mode Manager | 10 | 9 | [TODO] |
+| HU 7.11 | Cadena de fallback multi-proveedor — eliminar síntesis | 07 | 9 | [DONE] |
+| HU 10.7 | Adaptive Operational Mode Manager | 10 | 9 | [DONE] |
 | HU 7.12 | Adaptive Backtest Scheduler — cooldown dinámico y queue de prioridad | 07 | — | |
 | HU 7.13 | Rediseño semántico de affinity_scores | 07 | — | |
 | HU 7.14 | Backtesting multi-par secuencial | 07 | — | |

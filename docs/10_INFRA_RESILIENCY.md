@@ -118,7 +118,7 @@ Toda transición de salud se comunica a la UI inmediatamente:
   - HU 10.3: PID Lockfile — singleton guard
   - HU 10.4: Capital dinámico desde `sys_config`
   - HU 10.5: EdgeMonitor connector-agnóstico
-- [ ] HU 10.6: AutonomousSystemOrchestrator — Diseño e implementación (FASE4).
+- [x] **HU 10.6: AutonomousSystemOrchestrator — Diseño FASE4** ✅ (24-Mar-2026) — 5 sub-componentes documentados, contratos Python, HealingPlaybook, plan incremental 3 fases.
 - [ ] Implementación de orquestación de servicios en contenedores aislados.
 - [ ] Integración de meta-aprendizaje sobre recursos técnicos.
 
@@ -282,4 +282,324 @@ CREATE TABLE IF NOT EXISTS sys_agent_events (
     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 ```
+
+---
+
+### Detalle de Sub-componentes
+
+#### 1. DiagnosticsEngine
+
+Correlaciona síntomas observables con causas raíz mediante un **grafo de dependencias estático** declarado en código. El grafo modela las relaciones causales entre los 13 componentes EDGE.
+
+**Grafo de dependencias (dirección: afecta → afectado)**:
+```
+OperationalModeManager ──→ BacktestOrchestrator
+                       ──→ MainOrchestrator (frecuencias)
+
+RegimeClassifier ──→ ScenarioBacktester (_split_into_cluster_slices)
+                ──→ CoherenceMonitor (drift SHADOW vs LIVE)
+                ──→ HealthManager (umbral de anomalías)
+
+EdgeMonitor ──→ HealthManager (transiciones NORMAL/CAUTION/DEGRADED/STRESSED)
+            ──→ CircuitBreaker (degradación LIVE → QUARANTINE)
+
+OperationalEdgeMonitor ──→ DrawdownMonitor (umbrales Soft/Hard)
+                       ──→ PositionSizeMonitor (validación de capital)
+                       ──→ BacktestOrchestrator (presupuesto)
+
+ExecutionFeedbackCollector ──→ EdgeTuner (calibración de parámetros)
+                           ──→ CircuitBreaker (fallos acumulados)
+
+DedupLearner ──→ SignalSelector (ventana de dedup)
+             ──→ CooldownManager (cooldown por señal)
+```
+
+**Algoritmo de diagnóstico**:
+1. Recibe un `symptom` con `component` afectado.
+2. Navega el grafo hacia arriba (causas) y hacia abajo (efectos secundarios).
+3. Consulta `sys_agent_events` para detectar síntomas recurrentes en las últimas N horas.
+4. Emite un `root_cause` con nivel de confianza (`HIGH` / `MEDIUM` / `LOW`).
+
+**Reglas de correlación pre-definidas**:
+
+| Síntoma | Causa raíz inferida | Confianza |
+|---|---|---|
+| `BacktestOrchestrator: 0 slices evaluados` | `RegimeClassifier: ADX siempre 0` | HIGH |
+| `CircuitBreaker: LIVE → QUARANTINE` | `ExecutionFeedbackCollector: >3 fallos/hora` | HIGH |
+| `CoherenceMonitor: drift > umbral` | `RegimeClassifier: cambio de régimen no propagado` | MEDIUM |
+| `SignalSelector: 0 señales seleccionadas` | `DedupLearner: ventana demasiado amplia` o `CooldownManager: cooldown excesivo` | MEDIUM |
+| `HealthManager: NORMAL → CAUTION repetitivo` | `BaselineTracker: umbral Z-Score mal calibrado para esta sesión` | LOW |
+
+---
+
+#### 2. BaselineTracker
+
+Aprende qué es "normal" para cada componente segmentando por **sesión de mercado** (Tokyo / London / New York / Off-hours) y **hora local del servidor**.
+
+**Métricas rastreadas por componente**:
+
+| Componente | Métrica baseline |
+|---|---|
+| `BacktestOrchestrator` | Slices evaluados/hora, budget medio |
+| `SignalSelector` | Señales seleccionadas/hora |
+| `EdgeMonitor` | Latencia media de checks |
+| `OperationalEdgeMonitor` | Nº invariantes en WARNING/hora |
+| `HealthManager` | Frecuencia de transiciones de estado |
+
+**Persistencia**: tabla `sys_baseline_stats` (lógica compartida con `sys_audit_logs`). No requiere DDL nuevo en el Sprint — puede usar `sys_audit_logs` con `user_id='BASELINE_TRACKER'` hasta que se justifique una tabla dedicada.
+
+**Ventana de aprendizaje**: 7 días de historia. El baseline se recalcula cada 24h durante off-hours.
+
+---
+
+#### 3. HealingPlaybook
+
+Catálogo de acciones correctivas seguras, indexado por `(component, root_cause)`. Cada entrada define la acción, su nivel mínimo de autonomía requerido y si es reversible.
+
+| Problema | Componente | Acción | Autonomía mín. | Reversible |
+|---|---|---|---|---|
+| ADX siempre 0 | `RegimeClassifier` | Llamar `classifier.load_ohlc(df)` con últimos 200 bars desde DB | `HEAL` | Sí |
+| Budget `DEFERRED` persistente | `OperationalModeManager` | Log + esperar 5 min → re-evaluar psutil | `OBSERVE` | N/A |
+| CircuitBreaker en QUARANTINE | `CircuitBreaker` | Notificar operador con diagnóstico completo | `SUGGEST` | No (manual) |
+| DedupLearner: ventana > 120 min | `DedupLearner` | Resetear `learned_window` a 30 min (default seguro) | `HEAL` | Sí |
+| CooldownManager: cooldown > 4h | `CooldownManager` | Reducir a 60 min para el instrumento afectado, log | `HEAL` | Sí |
+| HealthManager: CAUTION en off-hours | `HealthManager` | Ajustar umbral Z-Score +0.5 para sesión off-hours | `SUGGEST` | Sí |
+| `sys_agent_events` > 50k filas | `ObservabilityLedger` | Purgar eventos > 30 días | `HEAL` | No (datos históricos) |
+
+**Acciones explícitamente prohibidas en el Playbook** (fuera del alcance de autonomía):
+- Modificar `sys_strategies.mode` (BACKTEST/SHADOW/LIVE) — requiere intervención humana
+- Cancelar trades activos — dominio exclusivo del `ClosingMonitor` bajo órdenes del `HealthManager`
+- Modificar thresholds de riesgo en `sys_config` — requiere confirmación del operador
+
+---
+
+#### 4. ObservabilityLedger
+
+Wrapper sobre `sys_agent_events` que garantiza trazabilidad completa de cada decisión autónoma. Cada escritura incluye un `trace_id` enlazado al evento disparador.
+
+**Formato de entrada estándar**:
+```python
+ledger.record(
+    event_type="HEALING_ATTEMPT",
+    component="DedupLearner",
+    symptom="learned_window=180min (> 120min umbral)",
+    root_cause="Aprendizaje en sesión de baja liquididad — ventana sesgada",
+    action_taken="Reset learned_window → 30min",
+    result="SUCCESS",
+    autonomy_level="HEAL",
+    trace_id="ASO-HEAL-20260324-001"
+)
+```
+
+**Política de retención**: 30 días. Purga automática por el Playbook (entrada: `sys_agent_events > 50k filas`).
+
+---
+
+#### 5. EscalationRouter
+
+Se activa cuando el `HealingPlaybook` no tiene acción para un problema, o cuando una acción `HEAL` falla. Emite una notificación estructurada con el diagnóstico completo del `DiagnosticsEngine`.
+
+**Canales de escalación** (configurables en `sys_config`):
+- `WEBSOCKET`: broadcast a la UI — disponible hoy (usa infraestructura de `broadcast_shadow_update`)
+- `LOG_CRITICAL`: always-on fallback
+
+**Payload de escalación**:
+```json
+{
+  "event_type": "ESCALATION",
+  "component": "CircuitBreaker",
+  "symptom": "LIVE → QUARANTINE (3er disparo en 2h)",
+  "root_cause": "ExecutionFeedbackCollector: 7 fallos ORDER_REJECTED en 60min",
+  "dependency_chain": ["ExecutionFeedbackCollector", "CircuitBreaker", "HealthManager"],
+  "healing_attempted": "N/A — acción prohibida en Playbook",
+  "recommended_action": "Revisar conectividad con broker y validar account_balance",
+  "autonomy_level": "SUGGEST",
+  "trace_id": "ASO-ESC-20260324-001",
+  "timestamp": "2026-03-24T14:32:00Z"
+}
+```
+
+---
+
+### Flujos de Secuencia por Nivel de Autonomía
+
+#### OBSERVE — Solo diagnóstico y log
+```
+Síntoma detectado
+      │
+      ▼
+DiagnosticsEngine.correlate(symptom, component)
+      │
+      ▼
+ObservabilityLedger.record(event_type="DIAGNOSIS", action_taken=None)
+      │
+      ▼
+[FIN — sin acciones externas]
+```
+
+#### SUGGEST — Diagnóstico + recomendación en UI
+```
+Síntoma detectado
+      │
+      ▼
+DiagnosticsEngine.correlate(symptom, component)
+      │
+      ▼
+HealingPlaybook.lookup(component, root_cause)
+      │
+      ├─ acción encontrada ──→ EscalationRouter.suggest(action, diagnosis)
+      │                              │
+      │                              ▼
+      │                        WebSocket broadcast "SUGGESTION"
+      │
+      └─ sin acción ──────────→ EscalationRouter.escalate(diagnosis)
+      │
+      ▼
+ObservabilityLedger.record(event_type="DIAGNOSIS", result="SUGGESTED")
+```
+
+#### HEAL — Diagnóstico + ejecución automática
+```
+Síntoma detectado
+      │
+      ▼
+DiagnosticsEngine.correlate(symptom, component)
+      │
+      ▼
+HealingPlaybook.lookup(component, root_cause)
+      │
+      ├─ acción encontrada + permitida ──→ HealingPlaybook.execute(action)
+      │                                           │
+      │                               ┌───────────┴───────────┐
+      │                           SUCCESS                   FAILED
+      │                               │                       │
+      │                        Ledger.record              EscalationRouter.escalate
+      │                        result="SUCCESS"           result="FAILED"
+      │
+      └─ sin acción / prohibida ──────→ EscalationRouter.escalate(diagnosis)
+```
+
+---
+
+### Contrato de Interfaces Python
+
+```python
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from enum import Enum
+from typing import Optional
+
+
+class AutonomyLevel(str, Enum):
+    OBSERVE  = "OBSERVE"
+    SUGGEST  = "SUGGEST"
+    HEAL     = "HEAL"
+
+
+@dataclass
+class Diagnosis:
+    component: str
+    symptom: str
+    root_cause: Optional[str]
+    confidence: str          # HIGH | MEDIUM | LOW
+    dependency_chain: list[str]
+    trace_id: str
+
+
+@dataclass
+class HealingAction:
+    description: str
+    min_autonomy: AutonomyLevel
+    reversible: bool
+    # callable que ejecuta la acción; None si solo notificación
+    executor: Optional[callable] = None
+
+
+class DiagnosticsEngine:
+    def correlate(self, symptom: str, component: str) -> Diagnosis: ...
+
+
+class BaselineTracker:
+    def is_abnormal(self, component: str, metric: str, value: float) -> bool: ...
+    def update(self, component: str, metric: str, value: float) -> None: ...
+
+
+class HealingPlaybook:
+    def lookup(self, component: str, root_cause: str) -> Optional[HealingAction]: ...
+    def execute(self, action: HealingAction) -> str: ...   # SUCCESS | FAILED | SKIPPED
+
+
+class ObservabilityLedger:
+    def record(self, event_type: str, component: str, symptom: str,
+               root_cause: Optional[str], action_taken: Optional[str],
+               result: Optional[str], autonomy_level: str, trace_id: str) -> None: ...
+
+
+class EscalationRouter:
+    def suggest(self, action: HealingAction, diagnosis: Diagnosis) -> None: ...
+    def escalate(self, diagnosis: Diagnosis, healing_failed: bool = False) -> None: ...
+
+
+class AutonomousSystemOrchestrator:
+    """
+    Punto de entrada único. Recibe síntomas de los 13 componentes EDGE
+    y coordina el pipeline Diagnóstico → Playbook → Healing → Escalación.
+
+    Wiring en MainOrchestrator:
+        aso = AutonomousSystemOrchestrator(
+            storage=storage,
+            autonomy_level=AutonomyLevel(sys_config.get("aso_autonomy_level", "OBSERVE")),
+            ws_broadcast=broadcast_shadow_update,
+        )
+        # Llamado desde cada componente EDGE al detectar anomalía:
+        await aso.handle_symptom(symptom="...", component="RegimeClassifier")
+    """
+    def __init__(
+        self,
+        storage: "StorageManager",
+        autonomy_level: AutonomyLevel,
+        ws_broadcast: Optional[callable] = None,
+    ) -> None: ...
+
+    async def handle_symptom(self, symptom: str, component: str) -> None: ...
+```
+
+---
+
+### Plan de Implementación Incremental (3 fases)
+
+| Fase | Alcance | Sprint sugerido | Prerequisito |
+|---|---|---|---|
+| **FASE 4A** | `ObservabilityLedger` + DDL `sys_agent_events` + wiring básico en `MainOrchestrator` (OBSERVE hardcodeado) | Sprint 11 | E10 Sprint MV completo |
+| **FASE 4B** | `DiagnosticsEngine` con grafo estático + `BaselineTracker` (7 días) + `EscalationRouter` WebSocket | Sprint 12 | FASE 4A |
+| **FASE 4C** | `HealingPlaybook` completo + nivel `HEAL` con acciones ejecutables + tests de integración end-to-end | Sprint 13 | FASE 4B |
+
+**Criterio de entrada a FASE 4A**: al menos 2 estrategias promovidas a SHADOW con datos reales del broker (scores > 0.75). Sin ese baseline, el `BaselineTracker` no tiene datos suficientes para aprender "normal".
+
+---
+
+### Integración con Componentes Existentes
+
+```
+MainOrchestrator
+    │
+    ├── OperationalModeManager ──────────────────────────────┐
+    │       │                                                │
+    │       └── detecta contexto → AutonomousSystemOrchestrator
+    │                                       │
+    │   ┌───────────────────────────────────┤
+    │   │  Componentes EDGE emiten síntomas │
+    │   │  via aso.handle_symptom(...)      │
+    │   │                                   │
+    │   ├── OperationalEdgeMonitor ─────────┤
+    │   ├── EdgeMonitor ────────────────────┤
+    │   ├── CircuitBreaker ─────────────────┤
+    │   ├── DedupLearner ──────────────────┤
+    │   ├── HealthManager ─────────────────┤
+    │   └── BacktestOrchestrator ──────────┘
+    │
+    └── [ASO resuelve internamente: Diagnostics → Playbook → Ledger → Escalation]
+```
+
+**Nota de implementación**: el `AutonomousSystemOrchestrator` es **observador pasivo** hasta FASE 4C. Los componentes EDGE mantienen su lógica propia; el ASO solo recibe notificaciones vía callbacks, sin acoplar su lógica interna.
 

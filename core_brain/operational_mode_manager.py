@@ -231,19 +231,35 @@ class OperationalModeManager:
         from_ctx: Optional[OperationalContext],
         to_ctx: OperationalContext,
     ) -> None:
-        """Insert a MODE_TRANSITION event into sys_audit_logs."""
-        payload = json.dumps({
-            "from": from_ctx.value if from_ctx else None,
-            "to":   to_ctx.value,
-            "ts":   datetime.now(timezone.utc).isoformat(),
-        })
+        """Insert a MODE_TRANSITION event into sys_audit_logs.
+
+        Adapts to the production schema (action/old_value/new_value/resource)
+        and falls back gracefully if the table structure differs.
+        """
+        from_val = from_ctx.value if from_ctx else None
+        ts = datetime.now(timezone.utc).isoformat()
         try:
             conn   = self.storage._get_conn()
             cursor = conn.cursor()
-            cursor.execute(
-                "INSERT INTO sys_audit_logs (event_type, payload) VALUES (?, ?)",
-                ("MODE_TRANSITION", payload),
-            )
+            # Detect schema: prefer event_type/payload (test DBs),
+            # fall back to action/old_value/new_value (production schema).
+            cols = [r[1] for r in cursor.execute(
+                "PRAGMA table_info(sys_audit_logs)"
+            ).fetchall()]
+            if "event_type" in cols:
+                payload = json.dumps({"from": from_val, "to": to_ctx.value, "ts": ts})
+                cursor.execute(
+                    "INSERT INTO sys_audit_logs (event_type, payload) VALUES (?, ?)",
+                    ("MODE_TRANSITION", payload),
+                )
+            elif "action" in cols:
+                cursor.execute(
+                    """INSERT INTO sys_audit_logs
+                       (user_id, action, resource, old_value, new_value, status, timestamp)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    ("SYSTEM", "MODE_TRANSITION", "OperationalModeManager",
+                     from_val or "", to_ctx.value, "OK", ts),
+                )
             conn.commit()
         except Exception as exc:
             logger.warning("[MODE_MGR] Could not persist mode transition: %s", exc)

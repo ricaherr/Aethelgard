@@ -1,13 +1,13 @@
-# Aethelgard Database Schema v3.0 (ARCH-SSOT-2026-008)
+# Aethelgard Database Schema v3.1 (ARCH-SSOT-2026-009)
 
 ## Overview
 
-**Database Engine**: SQLite 3 (Idempotent, Multi-Tenant Capable)  
-**Architecture**: Unified Global DB + Tenant Templates  
-**Current Status**: Single Admin in Global DB (No Active Tenants)  
-**Initialization**: Pure DDL via `data_vault/schema.py` + Migrations  
-**Source of Truth**: This document + Global DB (`data_vault/global/aethelgard.db`)  
-**Last Updated**: 2026-03-09 (ARCH-SSOT-2026-008 - Schema Verification)
+**Database Engine**: SQLite 3 (Idempotent, Multi-Tenant Capable)
+**Architecture**: Unified Global DB + Tenant Templates
+**Current Status**: Single Admin in Global DB (No Active Tenants)
+**Initialization**: Pure DDL via `data_vault/schema.py` + Migrations
+**Source of Truth**: This document + Global DB (`data_vault/global/aethelgard.db`)
+**Last Updated**: 2026-03-24 (Sprint 9 — E10 Motor de Backtesting Inteligente)
 
 ⚠️ **CONTRATO ARQUITECTÓNICO FINAL**: Esta estructura es vinculante. La DB global es la ÚNICA FUENTE DE VERDAD en operación.
 
@@ -27,26 +27,36 @@
 
 ## ✅ CAPA GLOBAL: ADMIN DATABASE (`data_vault/global/aethelgard.db`)
 
-### Contenido Actual (Real - 9 Marzo 2026):
+### Contenido Actual (Real - 24 Marzo 2026):
 
-**TABLAS SYS_* (Compartidas - Global)**: 16 tablas
+**TABLAS SYS_* (Compartidas - Global)**: 26 tablas
 ```
-sys_broker_accounts       - Configuración de cuentas de broker
-sys_brokers              - Metadatos de brokers
-sys_config               - Configuración del sistema (SSOT)
-sys_credentials          - Credenciales encriptadas
-sys_data_providers       - Proveedores de datos
-sys_economic_calendar    - Calendario económico
-sys_execution_feedback   - Feedback de ejecución (rejection logger — NIVEL0 SSOT)
-sys_market_pulse         - Estado del mercado (global scanner)
-sys_platforms            - Plataformas de trading
-sys_regime_configs       - Configuración de regímenes de mercado
-sys_signal_pipeline      - Auditoría de señales
-sys_signal_ranking       - Ranking global de estrategias (formerly usr_performance)
-sys_signals              - Señales generadas globales
-sys_strategies           - Registro de estrategias disponibles
-sys_strategy_logs        - Logs de ejecución de estrategias
-sys_symbol_mappings      - Mapeo de símbolos (SSOT)
+sys_audit_logs                   - Auditoría de acciones y transiciones de modo (SYSTEM user)
+sys_broker_accounts              - Configuración de cuentas de broker
+sys_brokers                      - Metadatos de brokers
+sys_config                       - Configuración del sistema (SSOT)
+sys_consensus_events             - Eventos de consenso multi-estrategia
+sys_cooldown_tracker             - Control de cooldown de señales por estrategia/par
+sys_credentials                  - Credenciales encriptadas
+sys_data_providers               - Proveedores de datos (DB-driven, incluye connector_module/class)
+sys_dedup_events                 - Eventos de deduplicación de señales
+sys_dedup_rules                  - Reglas de deduplicación configurables
+sys_economic_calendar            - Calendario económico
+sys_execution_feedback           - Feedback de ejecución (rejection logger — NIVEL0 SSOT)
+sys_market_pulse                 - Estado del mercado (global scanner)
+sys_platforms                    - Plataformas de trading
+sys_regime_configs               - Configuración de regímenes de mercado
+sys_shadow_instances             - Instancias activas en modo SHADOW (lifecycle HU 7.3)
+sys_shadow_performance_history   - Historial de evaluación de instancias SHADOW (3 Pilares)
+sys_shadow_promotion_log         - Log de promociones SHADOW → LIVE
+sys_signal_pipeline              - Auditoría de señales
+sys_signal_quality_assessments   - Evaluaciones de calidad de señales (SignalQualityScorer)
+sys_signal_ranking               - Ranking global de estrategias (formerly usr_performance)
+sys_signals                      - Señales generadas globales
+sys_strategies                   - Registro de estrategias disponibles (ver detalle abajo)
+sys_strategy_logs                - Logs de ejecución de estrategias
+sys_symbol_mappings              - Mapeo de símbolos (SSOT)
+sys_users                        - Usuarios del sistema
 ```
 
 **TABLAS USR_* (Personales del ADMIN)**: 12 tablas
@@ -123,6 +133,81 @@ sqlite_sequence         - Secuencia de SQLite
 | created_at | TIMESTAMP | Record creation |
 
 **Indexes**: `idx_sys_calendar_country` on country, `idx_sys_calendar_event_time` on event_time_utc
+
+---
+
+### `sys_strategies` (Strategy Registry — Lifecycle + Backtesting)
+
+**Scope**: Global registry of all trading strategies. Controls the lifecycle pipeline BACKTEST → SHADOW → LIVE.
+**Governance**: Admin/System writes; all components read.
+**Migration**: Idempotent — `run_migrations()` in `data_vault/schema.py` adds columns safely.
+
+| Column | Type | Default | Purpose |
+|--------|------|---------|---------|
+| class_id | TEXT PK | — | Unique strategy identifier (e.g. `MOM_BIAS_0001`) |
+| mnemonic | TEXT | — | Short human-readable name |
+| version | TEXT | — | Semantic version |
+| description | TEXT | — | Strategy description |
+| type | TEXT | — | Strategy type (PYTHON_CLASS, etc.) |
+| class_file | TEXT | — | Python module path |
+| class_name | TEXT | — | Python class name |
+| required_sensors | TEXT | `[]` | JSON array of required sensor IDs |
+| logic | TEXT | — | Logic description |
+| affinity_scores | TEXT | `{}` | JSON: empirical performance evidence (darwin ranking) |
+| market_whitelist | TEXT | `[]` | JSON array of allowed assets |
+| readiness | TEXT | — | Readiness level |
+| readiness_notes | TEXT | — | Notes on readiness |
+| mode | TEXT | `BACKTEST` | Lifecycle mode: `BACKTEST` \| `SHADOW` \| `LIVE` \| `DISABLED` |
+| score_backtest | REAL | `0.0` | Score from ScenarioBacktester (AptitudeMatrix.overall_score) |
+| score_shadow | REAL | `0.0` | Score from SHADOW evaluation (3 Pilares) |
+| score_live | REAL | `0.0` | Score from live trading |
+| score | REAL | `0.0` | Consolidated score: `live×0.50 + shadow×0.30 + backtest×0.20` |
+| last_backtest_at | TIMESTAMP | NULL | Timestamp of last completed backtest (cooldown reference) |
+| created_at | TIMESTAMP | NOW | Registration timestamp |
+| updated_at | TIMESTAMP | NOW | Last modification |
+| **required_regime** | TEXT | `'ANY'` | ⭐ **HU 7.8** — Regime filter: `TREND` \| `RANGE` \| `VOLATILE` \| `ANY` |
+| **required_timeframes** | TEXT | `'[]'` | ⭐ **HU 7.8** — JSON array of required timeframes (e.g. `["M5","M15"]`). Empty = discover empirically |
+| **execution_params** | TEXT | `'{}'` | ⭐ **HU 7.8** — JSON with `confidence_threshold`, `risk_reward`. Frees `affinity_scores` for pure empirical use |
+
+> ⭐ **Sprint 9 (HU 7.8)** — Columnas `required_regime`, `required_timeframes`, `execution_params` agregadas 2026-03-24 vía migración idempotente. Migration: `PRAGMA table_info` check + `ALTER TABLE ... ADD COLUMN` en `run_migrations()`.
+
+**Score Formula** (EXEC-V5-STRATEGY-LIFECYCLE-2026-03-23):
+```
+score = score_live × 0.50 + score_shadow × 0.30 + score_backtest × 0.20
+```
+
+**Lifecycle Pipeline**:
+```
+BACKTEST ──(score_backtest ≥ 0.75)──→ SHADOW ──(3 Pilares pass)──→ LIVE
+```
+
+**Backtesting (Sprint 9 — E10)**:
+- `BacktestOrchestrator._build_strategy_for_backtest(class_id)` instancia la clase Python con `_NullDep` (sin dependencias externas)
+- `ScenarioBacktester._evaluate_slice()` despacha a `strategy.evaluate_on_history(df, params)` si `strategy_instance` está disponible
+- Clusters sin datos reales se marcan `is_real_data=False` → `regime_score=0.0` (sin síntesis gaussiana en producción, HU 7.11)
+
+---
+
+### `sys_audit_logs` (Operational Audit Trail)
+
+**Scope**: Auditoría de acciones de sistema y transiciones de modo operacional.
+**Governance**: System writes; admin reads.
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| id | INTEGER PK | Auto-increment |
+| user_id | TEXT NOT NULL | `SYSTEM` para eventos de sistema, UUID para acciones de usuario |
+| action | TEXT | Tipo de evento (e.g. `MODE_TRANSITION`, `STRATEGY_PROMOTED`) |
+| resource | TEXT | Componente origen (e.g. `OperationalModeManager`) |
+| resource_id | TEXT | ID del recurso afectado (opcional) |
+| old_value | TEXT | Estado anterior |
+| new_value | TEXT | Estado nuevo |
+| status | TEXT | `OK` \| `ERROR` |
+| reason | TEXT | Razón del evento (opcional) |
+| timestamp | TEXT | ISO8601 UTC timestamp |
+| trace_id | TEXT | ID de trazabilidad (opcional) |
+
+> ⭐ **Sprint 9 (HU 10.7)** — `OperationalModeManager` escribe `MODE_TRANSITION` en esta tabla cuando cambia el contexto operacional (`BACKTEST_ONLY` / `SHADOW_ACTIVE` / `LIVE_ACTIVE`). `user_id='SYSTEM'` para eventos autónomos.
 
 ---
 
@@ -338,6 +423,16 @@ storage = StorageManager(user_id="new_user_uuid")
 
 ---
 
-**Last Validated**: 2026-03-07  
-**Architecture Version**: ARCH-SSOT-2026-006 (Global Intelligence + Local Execution)
+---
+
+## 📋 Changelog de Schema
+
+| Versión | Fecha | Sprint | Cambios |
+|---------|-------|--------|---------|
+| v3.1 | 2026-03-24 | Sprint 9 (E10) | `sys_strategies`: +`required_regime`, +`required_timeframes`, +`execution_params` (HU 7.8). Lista de tablas actualizada a 26 sys_*. Secciones detalladas: `sys_strategies`, `sys_audit_logs`. |
+| v3.0 | 2026-03-09 | Sprint Arquitectónico | Schema verification ARCH-SSOT-2026-008. Consolidación DDL. |
+| v2.x | 2026-03-07 | — | NIVEL0: `sys_signal_ranking`, `session_tokens`, `position_metadata` movidas a `schema.py`. |
+
+**Last Validated**: 2026-03-24
+**Architecture Version**: ARCH-SSOT-2026-009 (Global Intelligence + Backtesting Framework)
 

@@ -4,7 +4,7 @@
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-24 UTC)**: Trace_ID: PIPELINE-UNBLOCK-EDGE-2026-03-24 | SPRINT 8 (parcial): 5 bloqueos operacionales resueltos — filtro activos SignalFactory (18 símbolos SSOT), cooldown backtest `last_backtest_at`, EdgeMonitor connector-agnóstico, capital desde DB, PID lockfile. 1601/1601 tests · 0 regresiones.
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-24 UTC)**: Trace_ID: PIPELINE-UNBLOCK-EDGE-2026-03-24 | E9 COMPLETADA: HU 10.6 (AutonomousSystemOrchestrator FASE4) diseño finalizado en `docs/10_INFRA_RESILIENCY.md`. E9 archivada. Sistema listo para Sprint 10 (E10: HU 7.10 → HU 7.9 → HU 7.12). 1749/1749 tests · 0 regresiones.
 
 ---
 
@@ -27,6 +27,24 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 
 ## 🏛️ ÉPICAS ARCHIVADAS
 
+### Sprint 9 — Motor de Backtesting Inteligente — EDGE Evaluation Framework (24-Mar-2026)
+**Trace_ID**: `EDGE-BACKTEST-EVAL-FRAMEWORK-2026-03-24` | **Épica**: E10 (Sprint MV — continúa) | **Estado**: Sprint cerrado · E10 ACTIVA (10 HUs pendientes)
+
+| HU | Descripción | Artefactos clave | Tests |
+|---|---|---|---|
+| **HU 7.8** | DDL: `required_regime`, `required_timeframes`, `execution_params` en `sys_strategies` — migración idempotente | `data_vault/schema.py` | 9/9 |
+| **HU 7.11** | Síntesis gaussiana eliminada del path de producción — slices sin datos → `UNTESTED_CLUSTER` (score=0.0) | `backtest_orchestrator.py` | 11/11 |
+| **HU 7.6** | `TradeResult` dataclass + contrato `evaluate_on_history()` abstracto en `BaseStrategy` + impl. en 6 estrategias | `models/trade_result.py` · `base_strategy.py` · 6 estrategias | 58/58 |
+| **HU 7.7** | `ScenarioBacktester._evaluate_slice()` despacha a `strategy.evaluate_on_history()` — `_build_strategy_for_backtest()` patrón _NullDep | `scenario_backtester.py` · `backtest_orchestrator.py` | 7/7 |
+| **HU 10.7** | `OperationalModeManager`: 3 contextos operacionales, budget psutil, tabla frecuencias por componente, wiring en `MainOrchestrator` | `core_brain/operational_mode_manager.py` | 23/23 |
+
+**Suite total**: 1749/1749 PASSED · 0 regresiones · +108 tests nuevos
+**Impacto medido en producción**: `MOM_BIAS 0.5543→0.0` · `LIQ_SWEEP 0.0→0.4667` · `SESS_EXT 0.5543→0.3612` · `STRUC_SHIFT 0.0→0.2962` — scores ahora reflejan lógica real de cada estrategia.
+**DB actualizada**: columnas HU 7.8 presentes en `data_vault/global/aethelgard.db` · `sys_audit_logs` recibe `MODE_TRANSITION` con `user_id='SYSTEM'`.
+**Documentación**: `docs/DATABASE_SCHEMA.md` → v3.1 con secciones `sys_strategies` y `sys_audit_logs`.
+
+---
+
 ### E8 — SHADOW Activation: Bucle de Evolución Darwiniana (Dominio 06_PORTFOLIO_INTELLIGENCE)
 | Campo | Valor |
 |---|---|
@@ -38,19 +56,21 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 | **HUs** | HU 6.4 SHADOW Activation — Bucle Darwiniano Operativo |
 | **Validate_all** | ✅ Audit documentation 6/6 PASSED · STUB eliminado · Flujo DB→RegimeClassifier→3Pilares→Persistencia→EdgeTuner verificado |
 
-### Sprint 8 — Desbloqueo Operacional del Pipeline (24-Mar-2026)
-**Trace_ID**: `PIPELINE-UNBLOCK-EDGE-2026-03-24` | **Estado**: Parcial (P2–P6–P9 DONE · FASE4 pendiente)
+### E9 — Desbloqueo Operacional del Pipeline (24-Mar-2026) — COMPLETADA
+**Trace_ID**: `PIPELINE-UNBLOCK-EDGE-2026-03-24` | **Épica**: E9 | **Estado**: COMPLETADA
 
-| Fix | Archivo(s) clave | HU | Tests |
+| HU | Descripción | Artefactos clave | Tests |
 |---|---|---|---|
-| **P9** PID Lockfile | `start.py` (`_acquire_singleton_lock`, `_release_singleton_lock`) | HU 10.3 | 9/9 |
-| **P6** Capital desde DB | `start.py` (`_read_initial_capital`) | HU 10.4 | incluido en P9 |
-| **P3** Backtest cooldown | `backtest_orchestrator.py` (`last_backtest_at`) · `schema.py` (migration) | HU 7.5 | 43/43 |
-| **P2** Signal Factory SSOT | `signal_factory.py` (InstrumentManager) · `start.py` | HU 3.9 | 10/10 |
-| **P5** EdgeMonitor agnóstico | `edge_monitor.py` (connectors dict) · `start.py` | HU 10.5 | 10/10 |
+| **HU 10.3** | PID Lockfile — singleton guard | `start.py` (`_acquire_singleton_lock`, `_release_singleton_lock`) | 9/9 |
+| **HU 10.4** | Capital dinámico desde DB | `start.py` (`_read_initial_capital`) | incluido en HU 10.3 |
+| **HU 7.5** | Backtest cooldown por `last_backtest_at` | `backtest_orchestrator.py` · `schema.py` (migration) | 43/43 |
+| **HU 3.9** | Signal Factory — filtro via InstrumentManager | `signal_factory.py` · `start.py` | 10/10 |
+| **HU 10.5** | EdgeMonitor connector-agnóstico | `edge_monitor.py` (connectors dict) · `start.py` | 10/10 |
+| **HU 10.6** | AutonomousSystemOrchestrator — Diseño FASE4 | `docs/10_INFRA_RESILIENCY.md` (sección HU 10.6) | — (doc) |
 
-**Suite total**: 1601/1601 PASSED · 0 regresiones · +22 tests nuevos
-**Causa raíz resuelta**: cadena `usr_assets_cfg stale (5) → 15 símbolos skipped → 0 señales → SHADOW 0 trades → Pilar 3 FAIL → 0 promociones` — cortada en origen (P2). Backtest desbloqueado por P3.
+**Suite total**: 1601/1601 PASSED · 0 regresiones · +22 tests nuevos (HU 10.3–10.5 · 7.5 · 3.9)
+**Causa raíz resuelta**: cadena `usr_assets_cfg stale (5) → 15 símbolos skipped → 0 señales → SHADOW 0 trades → Pilar 3 FAIL → 0 promociones` — cortada en origen (HU 3.9). Backtest desbloqueado por HU 7.5.
+**HU 10.6**: Diseño FASE4 completo documentado — 5 sub-componentes (DiagnosticsEngine, BaselineTracker, HealingPlaybook, ObservabilityLedger, EscalationRouter), contratos Python, 3 flujos de secuencia, plan incremental 3 fases (FASE 4A→4C), HealingPlaybook con 7 entradas + acciones prohibidas explícitas.
 
 ---
 
