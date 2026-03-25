@@ -11,11 +11,11 @@
 
 ---
 
-# SPRINT 10: PIPELINE FIXES — SSOT RISK SEED & INSTRUMENT-AWARE SL/TP — [DONE]
+# SPRINT 10: PIPELINE FIXES — SSOT RISK SEED, INSTRUMENT-AWARE SL/TP & CTRADER SESSION — [DONE]
 
 **Inicio**: 25 de Marzo, 2026
 **Fin**: 25 de Marzo, 2026
-**Objetivo**: Eliminar warnings operacionales persistentes y corregir cálculo de SL/TP para instrumentos no-forex detectados durante monitoreo de producción.
+**Objetivo**: Eliminar warnings operacionales persistentes, corregir cálculo de SL/TP para instrumentos no-forex, y resolver degradación recurrente de CTrader por rate-limiting de autenticaciones.
 **Épica**: E10 (HUs de soporte) | **Trace_ID**: PIPELINE-OPS-FIXES-2026-03-25
 **Dominios**: 03_ALPHA_GENERATION · 10_INFRASTRUCTURE_RESILIENCY
 
@@ -30,16 +30,26 @@
 
 - [DONE] **HU 3.11: Buffers SL/TP dinámicos por tipo de instrumento en estrategias**
   - `SessionExtension0001Strategy._sl_buffer(symbol, price)` — método estático
-  - Classifica instrumento por patrón de nombre: FOREX=0.0005, JPY=0.05, METALS=0.50, INDEXES=5.0
+  - Clasifica instrumento por patrón de nombre: FOREX=0.0005, JPY=0.05, METALS=0.50, INDEXES=5.0
   - `analyze()` consume el buffer dinámico — sin regresión en `evaluate_on_history()`
   - TDD: 13 tests en `tests/test_sess_ext_sl_buffer.py` — 13/13 PASSED
 
+- [DONE] **N1-8: CTrader Session Persistence — WebSocket persistente entre fetches**
+  - `_session_ws` + `_session_loop` en `__init__` para tracking de sesión activa
+  - `_fetch_bars_via_websocket()` reusa sesión existente (solo pasos 3-4) o conecta+autentica si está muerta
+  - `_authenticate_session(ws)` → pasos 1-2 (APP_AUTH + ACCOUNT_AUTH)
+  - `_fetch_bars_on_session(ws, symbol, tf, count)` → pasos 3-4 (symbol resolve + trendbars)
+  - `_invalidate_session()` → cierra y limpia la sesión ante errores
+  - Auth reducida de O(N_símbolos × N_ciclos) a O(1_por_sesión) → elimina rate-limit 2142
+  - TDD: 7 tests en `tests/test_ctrader_connector.py::TestCTraderSessionPersistence` — 47/47 PASSED (total)
+
 ## 📊 Snapshot de Cierre
 
-- **Tests añadidos**: 17 (4 HU3.10 + 13 HU3.11) — 26/26 PASSED en suite completa del sprint
-- **Archivos modificados**: `start.py`, `core_brain/strategies/session_extension_0001.py`, `governance/BACKLOG.md`
+- **Tests añadidos**: 24 (4 HU3.10 + 13 HU3.11 + 7 N1-8)
+- **Tests totales ejecutados**: 47/47 `test_ctrader_connector.py` + 26/26 `test_start_singleton.py` + `test_sess_ext_sl_buffer.py`
+- **Archivos modificados**: `start.py`, `core_brain/strategies/session_extension_0001.py`, `connectors/ctrader_connector.py`, `tests/test_ctrader_connector.py`, `governance/BACKLOG.md`
 - **Archivos nuevos**: `tests/test_sess_ext_sl_buffer.py`
-- **Deuda eliminada**: warning SSOT en cada arranque; buffer forex inválido para índices en backtests
+- **Deuda eliminada**: warning SSOT en cada arranque; buffer forex inválido para índices; auth storm recurrente de CTrader
 
 ---
 

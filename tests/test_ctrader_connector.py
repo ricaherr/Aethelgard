@@ -411,3 +411,148 @@ class TestCTraderProtobufHelpers:
         from_ts = _compute_from_timestamp(to_ts, "M5", 100)
         expected_delta = 100 * 5 * 60 * 1000
         assert to_ts - from_ts == expected_delta
+
+
+# ---------------------------------------------------------------------------
+# Session Persistence — N1-8 (CTRADER-SESSION-PERSIST-2026-03-25)
+# ---------------------------------------------------------------------------
+
+class TestCTraderSessionPersistence:
+    """
+    Validates that _fetch_bars_via_websocket reuses authenticated sessions
+    to avoid hitting Spotware's App Auth rate-limit (payloadType=2142).
+
+    Tests operate at the sub-method boundary (_authenticate_session,
+    _fetch_bars_on_session) to avoid requiring real protobuf frames.
+    """
+
+    @pytest.mark.asyncio
+    async def test_session_initialized_to_none(self):
+        """New connector starts with no session."""
+        connector = _make_connector()
+        assert connector._session_ws is None
+        assert connector._session_loop is None
+
+    @pytest.mark.asyncio
+    async def test_first_call_authenticates_and_stores_session(self):
+        """First fetch_ohlc: connect → auth → store session."""
+        connector = _make_connector()
+        mock_ws = AsyncMock()
+        mock_ws.close = AsyncMock()
+
+        connector._authenticate_session = AsyncMock(return_value=True)
+        connector._fetch_bars_on_session = AsyncMock(return_value=[{"open": 1.0}])
+
+        with patch("websockets.connect", new_callable=AsyncMock, return_value=mock_ws):
+            result = await connector._fetch_bars_via_websocket("EURUSD", "M5", 100)
+
+        connector._authenticate_session.assert_called_once_with(mock_ws)
+        connector._fetch_bars_on_session.assert_called_once()
+        assert connector._session_ws is mock_ws
+        assert result == [{"open": 1.0}]
+
+    @pytest.mark.asyncio
+    async def test_second_call_reuses_session_skips_auth(self):
+        """Second fetch must NOT call auth if session is alive."""
+        connector = _make_connector()
+        mock_ws = AsyncMock()
+        mock_ws.close = AsyncMock()
+        loop = asyncio.get_event_loop()
+
+        # Pre-seed an active session
+        connector._session_ws = mock_ws
+        connector._session_loop = loop
+        connector._authenticate_session = AsyncMock(return_value=True)
+        connector._fetch_bars_on_session = AsyncMock(return_value=[{"open": 1.1}])
+
+        with patch("websockets.connect", new_callable=AsyncMock) as mock_connect:
+            result = await connector._fetch_bars_via_websocket("EURUSD", "M5", 100)
+
+        # No new connection opened
+        mock_connect.assert_not_called()
+        # No auth performed
+        connector._authenticate_session.assert_not_called()
+        # Bars fetched on existing session
+        connector._fetch_bars_on_session.assert_called_once_with(mock_ws, "EURUSD", "M5", 100)
+        assert result == [{"open": 1.1}]
+
+    @pytest.mark.asyncio
+    async def test_reconnects_on_dead_session(self):
+        """When session reuse raises, invalidate and reconnect with fresh auth."""
+        connector = _make_connector()
+        dead_ws = AsyncMock()
+        dead_ws.close = AsyncMock()
+        fresh_ws = AsyncMock()
+        fresh_ws.close = AsyncMock()
+        loop = asyncio.get_event_loop()
+
+        connector._session_ws = dead_ws
+        connector._session_loop = loop
+
+        call_count = {"n": 0}
+
+        async def _fetch_side_effect(ws, symbol, tf, count):
+            call_count["n"] += 1
+            if ws is dead_ws:
+                raise Exception("Connection closed")
+            return [{"open": 1.2}]
+
+        connector._authenticate_session = AsyncMock(return_value=True)
+        connector._fetch_bars_on_session = AsyncMock(side_effect=_fetch_side_effect)
+
+        with patch("websockets.connect", new_callable=AsyncMock, return_value=fresh_ws):
+            result = await connector._fetch_bars_via_websocket("EURUSD", "M5", 100)
+
+        # Dead session was closed
+        dead_ws.close.assert_called_once()
+        # Fresh session authenticated
+        connector._authenticate_session.assert_called_once_with(fresh_ws)
+        # Result from fresh session
+        assert result == [{"open": 1.2}]
+        assert connector._session_ws is fresh_ws
+
+    @pytest.mark.asyncio
+    async def test_auth_failure_closes_ws_returns_empty(self):
+        """If authentication fails, WebSocket is closed and empty list returned."""
+        connector = _make_connector()
+        mock_ws = AsyncMock()
+        mock_ws.close = AsyncMock()
+
+        connector._authenticate_session = AsyncMock(return_value=False)
+        connector._fetch_bars_on_session = AsyncMock(return_value=[])
+
+        with patch("websockets.connect", new_callable=AsyncMock, return_value=mock_ws):
+            result = await connector._fetch_bars_via_websocket("EURUSD", "M5", 100)
+
+        mock_ws.close.assert_called_once()
+        connector._fetch_bars_on_session.assert_not_called()
+        assert result == []
+        assert connector._session_ws is None
+
+    @pytest.mark.asyncio
+    async def test_invalidate_session_clears_state(self):
+        """_invalidate_session() closes WebSocket and clears both attributes."""
+        connector = _make_connector()
+        mock_ws = AsyncMock()
+        mock_ws.close = AsyncMock()
+        connector._session_ws = mock_ws
+        connector._session_loop = asyncio.get_event_loop()
+
+        await connector._invalidate_session()
+
+        mock_ws.close.assert_called_once()
+        assert connector._session_ws is None
+        assert connector._session_loop is None
+
+    @pytest.mark.asyncio
+    async def test_invalidate_session_handles_close_error(self):
+        """_invalidate_session() must not raise even if ws.close() fails."""
+        connector = _make_connector()
+        bad_ws = AsyncMock()
+        bad_ws.close = AsyncMock(side_effect=Exception("already closed"))
+        connector._session_ws = bad_ws
+        connector._session_loop = asyncio.get_event_loop()
+
+        await connector._invalidate_session()  # must not raise
+
+        assert connector._session_ws is None

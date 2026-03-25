@@ -80,7 +80,18 @@
     * **Archivos**: `connectors/ctrader_connector.py`, `tests/test_ctrader_connector.py`, `docs/05_UNIVERSAL_EXECUTION.md`
     * **Trace_ID**: CTRADER-WS-PROTO-2026-03-21
 
-**Orden de ejecución**: N1-1 → N1-2 → N1-3 → N1-4 → N1-5 → N1-6 → N1-7
+* **N1-8: CTrader Session Persistence — WebSocket persistente entre fetches** `[DONE]`
+    * **Prioridad**: 🔴 CRÍTICA (Bloqueante recurrente — 10/18 símbolos sin cobertura tras ciclo 3)
+    * **Contexto**: N1-7 implementó el protocolo correcto pero conecta y autentica una vez por símbolo. Con 18 símbolos × ciclos de 5s = ~120 `APP_AUTH_REQ` por minuto. Spotware tiene un rate-limit de ~45-50 auths por ventana (observado: 3 ciclos completos sin error, luego 2142 en cadena). El lock del sprint anterior serializa las conexiones pero no reduce la frecuencia total de autenticaciones.
+    * **Fix**: Mantener una sesión WebSocket autenticada en `self._session_ws` (per-instance). `fetch_ohlc()` reutiliza la sesión existente para los pasos 3-4 (symbol resolve + trendbars) sin re-autenticar. Solo autentica si la sesión está muerta (ConnectionClosed, None, o loop distinto). Auth se convierte de O(N_símbolos) a O(1_sesión).
+    * **Criterios de aceptación**:
+        - Un único `APP_AUTH_REQ` por sesión del proceso (no por símbolo)
+        - Si el servidor cierra la conexión → reconectar + re-autenticar transparentemente
+        - 18/18 símbolos sin errores 2142 en ciclos 2, 3, N (no solo ciclo 2)
+        - Tests: `test_reuses_existing_session`, `test_reconnects_on_closed_session`, `test_auth_called_once_for_multiple_fetches`
+    * **Trace_ID**: CTRADER-SESSION-PERSIST-2026-03-25
+
+**Orden de ejecución**: N1-1 → N1-2 → N1-3 → N1-4 → N1-5 → N1-6 → N1-7 → N1-8
 
 ### Nivel 2 — Inteligencia (📋 BACKLOG)
 * **N2-1: JSON_SCHEMA Interpreter** `[DONE]`

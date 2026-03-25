@@ -122,11 +122,17 @@ class CTraderConnector(BaseConnector):
         self._symbol_id_cache: Dict[str, int] = {}   # "EURUSD" → symbolId
         self._symbol_digits_cache: Dict[int, int] = {}  # symbolId → digits
         self._latency: float = 0.0
-        # Serialise concurrent WebSocket auth requests.
-        # The Spotware API rate-limits parallel App Auth attempts from the same
-        # client; sending 10-15 simultaneous auth frames causes 2142 (ERROR_RES)
-        # for all but the first.  A single Lock ensures requests are queued.
+        # Serialise fetch_ohlc calls: only one WebSocket operation at a time.
+        # Combined with session persistence (below) this reduces App Auth calls
+        # from O(N_symbols × N_cycles) to O(1_per_session), avoiding the
+        # Spotware rate-limit (2142 ERROR_RES) that fires after ~45 auths/window.
         self._ws_lock = threading.Lock()
+
+        # Persistent WebSocket session (N1-8 — CTRADER-SESSION-PERSIST-2026-03-25).
+        # Authenticated once per process lifetime; reused across all fetch_ohlc()
+        # calls. Invalidated on ConnectionClosed or event-loop change.
+        self._session_ws: Optional[Any] = None
+        self._session_loop: Optional[asyncio.AbstractEventLoop] = None
 
         logger.info(
             f"[CTrader] Connector initialized. enabled={self.config.get('enabled')}, "
@@ -288,9 +294,12 @@ class CTraderConnector(BaseConnector):
             return False
 
     def disconnect(self) -> bool:
-        """Mark connector as disconnected (clears symbol cache)."""
+        """Mark connector as disconnected (clears symbol cache and persistent session)."""
         self._connected = False
         self._symbol_id_cache.clear()
+        self._symbol_digits_cache.clear()
+        self._session_ws = None
+        self._session_loop = None
         logger.info("[CTrader] Disconnected.")
         return True
 
@@ -358,11 +367,17 @@ class CTraderConnector(BaseConnector):
         self, symbol: str, timeframe: str, count: int
     ) -> List[Dict[str, Any]]:
         """
-        Full Spotware Open API WebSocket flow to obtain OHLC trendbars:
-          1. APP_AUTH_REQ → APP_AUTH_RES
-          2. ACCOUNT_AUTH_REQ → ACCOUNT_AUTH_RES
-          3. SYMBOLS_LIST_REQ → cache symbol IDs + digits
-          4. GET_TRENDBARS_REQ → parse delta-encoded bars → return list of dicts
+        Fetch OHLC bars via Spotware Open API with persistent session.
+
+        Session lifecycle (N1-8):
+          - First call: connect + authenticate (steps 1-2) + fetch (steps 3-4).
+            Session stored in self._session_ws for reuse.
+          - Subsequent calls: reuse existing session → only steps 3-4 (no re-auth).
+          - On ConnectionClosed or any send/recv error: invalidate session,
+            reconnect transparently and re-authenticate before fetching.
+
+        This reduces APP_AUTH_REQ from O(N_symbols × N_cycles) to O(1_per_session),
+        staying within Spotware's rate-limit window.
         """
         try:
             import websockets  # type: ignore[import-untyped]
@@ -370,58 +385,84 @@ class CTraderConnector(BaseConnector):
             logger.error("[CTrader] 'websockets' not installed.")
             return []
 
+        current_loop = asyncio.get_running_loop()
+
+        # Reuse existing authenticated session when possible.
+        if self._session_ws is not None and self._session_loop is current_loop:
+            try:
+                return await self._fetch_bars_on_session(self._session_ws, symbol, timeframe, count)
+            except Exception as exc:
+                logger.debug("[CTrader] Session reuse failed (%s) — reconnecting.", exc)
+                await self._invalidate_session()
+
+        # (Re)connect and authenticate.
         host = self.config.get("ws_host", _DEMO_WS_HOST)
         uri = f"wss://{host}:{_WS_PORT}/"
-
         try:
             ws = await websockets.connect(uri, ping_interval=20, ping_timeout=10)
         except Exception as exc:
             logger.error(f"[CTrader] WS connect failed: {exc}")
             return []
 
-        try:
-            bars = await self._execute_trendbar_protocol(ws, symbol, timeframe, count)
-            return bars
-        finally:
+        if not await self._authenticate_session(ws):
             try:
                 await ws.close()
             except Exception:
                 pass
+            return []
 
-    async def _execute_trendbar_protocol(
-        self, ws: Any, symbol: str, timeframe: str, count: int
-    ) -> List[Dict[str, Any]]:
-        """Execute the 4-step Spotware protocol to obtain trendbar data."""
+        self._session_ws = ws
+        self._session_loop = current_loop
+        logger.debug("[CTrader] New authenticated session established.")
+
+        try:
+            return await self._fetch_bars_on_session(ws, symbol, timeframe, count)
+        except Exception as exc:
+            logger.error(f"[CTrader] fetch after fresh auth failed: {exc}")
+            await self._invalidate_session()
+            return []
+
+    async def _authenticate_session(self, ws: Any) -> bool:
+        """Steps 1-2: APP_AUTH_REQ + ACCOUNT_AUTH_REQ. Returns True on success."""
         client_id = self.config.get("client_id", "")
         client_secret = self.config.get("client_secret", "")
         access_token = self.config.get("access_token", "")
         ctid_raw = self.config.get("ctid_trader_account_id", "")
 
         if not ctid_raw:
-            logger.error("[CTrader] ctid_trader_account_id not configured — cannot fetch bars.")
-            return []
+            logger.error("[CTrader] ctid_trader_account_id not configured — cannot authenticate.")
+            return False
 
         ctid = int(ctid_raw)
 
-        # Step 1: Application auth
-        await ws.send(_build_app_auth_req(client_id, client_secret))
-        resp = await asyncio.wait_for(ws.recv(), timeout=_WS_MSG_TIMEOUT)
-        pt, payload_bytes = _parse_proto_response(resp)
-        if pt != _PT_APP_AUTH_RES:
-            logger.error(f"[CTrader] App auth failed: payloadType={pt}")
-            return []
-        logger.debug("[CTrader] App auth OK")
+        try:
+            await ws.send(_build_app_auth_req(client_id, client_secret))
+            resp = await asyncio.wait_for(ws.recv(), timeout=_WS_MSG_TIMEOUT)
+            pt, _ = _parse_proto_response(resp)
+            if pt != _PT_APP_AUTH_RES:
+                logger.error(f"[CTrader] App auth failed: payloadType={pt}")
+                return False
+            logger.debug("[CTrader] App auth OK")
 
-        # Step 2: Account auth
-        await ws.send(_build_acct_auth_req(ctid, access_token))
-        resp = await asyncio.wait_for(ws.recv(), timeout=_WS_MSG_TIMEOUT)
-        pt, payload_bytes = _parse_proto_response(resp)
-        if pt != _PT_ACCT_AUTH_RES:
-            logger.error(f"[CTrader] Account auth failed: payloadType={pt}")
-            return []
-        logger.debug("[CTrader] Account auth OK")
+            await ws.send(_build_acct_auth_req(ctid, access_token))
+            resp = await asyncio.wait_for(ws.recv(), timeout=_WS_MSG_TIMEOUT)
+            pt, _ = _parse_proto_response(resp)
+            if pt != _PT_ACCT_AUTH_RES:
+                logger.error(f"[CTrader] Account auth failed: payloadType={pt}")
+                return False
+            logger.debug("[CTrader] Account auth OK")
+        except Exception as exc:
+            logger.error(f"[CTrader] Auth error: {exc}")
+            return False
 
-        # Step 3: Resolve symbol ID (with cache)
+        return True
+
+    async def _fetch_bars_on_session(
+        self, ws: Any, symbol: str, timeframe: str, count: int
+    ) -> List[Dict[str, Any]]:
+        """Steps 3-4 on an already-authenticated WebSocket: resolve symbol + get trendbars."""
+        ctid = int(self.config.get("ctid_trader_account_id", 0))
+
         symbol_id = self._symbol_id_cache.get(symbol)
         digits = self._symbol_digits_cache.get(symbol_id or -1, 5)
 
@@ -433,8 +474,6 @@ class CTraderConnector(BaseConnector):
             self._symbol_id_cache[symbol] = symbol_id
             self._symbol_digits_cache[symbol_id] = digits
 
-        # Step 4: Get trendbars
-        # Use last Friday close (17:00 UTC) as anchor when market is closed (weekend)
         period_int = _PERIOD_MAP.get(timeframe.upper(), _PERIOD_MAP["M5"])
         to_ts = _get_last_market_close_ts()
         from_ts = _compute_from_timestamp(to_ts, timeframe, count)
@@ -444,11 +483,22 @@ class CTraderConnector(BaseConnector):
         pt, payload_bytes = _parse_proto_response(resp)
         if pt != _PT_TRENDBARS_RES:
             logger.error(f"[CTrader] GetTrendbars failed: payloadType={pt}")
-            return []
+            raise RuntimeError(f"GetTrendbars unexpected payloadType={pt}")
 
         bars = _decode_trendbars_response(payload_bytes, digits)
         logger.info(f"[CTrader] Received {len(bars)} bars for {symbol}/{timeframe}")
         return bars
+
+    async def _invalidate_session(self) -> None:
+        """Close and discard the persistent session."""
+        ws = self._session_ws
+        self._session_ws = None
+        self._session_loop = None
+        if ws is not None:
+            try:
+                await ws.close()
+            except Exception:
+                pass
 
     async def _resolve_symbol_id(
         self, ws: Any, ctid: int, symbol: str
