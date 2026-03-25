@@ -22,9 +22,10 @@ Esta convención es **vinculante** y será validada en `validate_all.py` → `au
 **Tablas del Sistema** (admin-managed, read-only para tenants):
 - `sys_config`: Configuración maestra (trading params, risk limits, system defaults)
 - `sys_market_pulse`: ⭐ Market snapshot ÚNICO, escaneo global centralizado
-- `sys_calendar`: Eventos económicos globales (NewsSanitizer → DB)
-- `sys_auth`: Credenciales y autenticación (Fernet-encrypted)
-- `sys_memberships`: Tiers de usuario y acceso
+- `sys_economic_calendar`: Eventos económicos globales (NewsSanitizer → DB)
+- `sys_users`: Identidad y autenticación de usuarios
+- `sys_strategies`: Estrategias disponibles y su ciclo de vida
+- `sys_signal_ranking`: Ranking global de estrategias (reemplaza `usr_performance` deprecated)
 
 **Garantía**: Un solo `sys_market_pulse` para todos los traders. Global Scanner escribe UNA SOLA VEZ; todos leen.
 
@@ -32,10 +33,10 @@ Esta convención es **vinculante** y será validada en `validate_all.py` → `au
 
 **Tablas del Usuario** (tenant-owned, full CRUD access):
 - `usr_assets_cfg`: Tus activos (filtras `sys_market_pulse` contra esto)
-- `usr_strategies`: Tus estrategias (parámetros personalizados)
-- `usr_signals`: Tus señales generadas
 - `usr_trades`: Tus ejecuciones (Soberanía Total del Tenant)
-- `usr_performance`: Tu ranking de estrategias (basado en TU equity)
+- `usr_execution_logs`: Logs de ejecución con slippage y latencia
+- `usr_position_history`: Historial de modificaciones a posiciones
+- `usr_preferences`: Tu configuración personal de trading y UI
 
 **Garantía**: Cada tenant controla su propia ejecución. Las escrituras en `usr_*` son exclusivas del tenant.
 
@@ -91,14 +92,14 @@ El sistema establece una **jerarquía clara de persistencia** basada en el princ
 
 Esta **base de datos centralizada** contiene **SOLO tablas con prefijo `sys_*`**:
 
-| Tabla | Propósito | Campos | Gobernanza |
+| Tabla | Propósito | Campos clave | Gobernanza |
 |-------|-----------|--------|-----------|
-| **sys_auth** | Identidad y autenticación de usuarios | `user_id (PK)`, `email`, `password_hash`, `role (ENUM: Admin/Trader)`, `mfa_secret`, `created_at` | ✅ SSOT única; encriptación Fernet obligatoria |
-| **sys_memberships** | Niveles de acceso y suscripciones | `id (PK)`, `user_id (FK)`, `tier (ENUM: Basic/Premium/Institutional)`, `status (ENUM: Active/Suspended/Expired)`, `expiration (DATETIME)`, `created_at` | ✅ Determina qué estrategias/funciones puede usar el Trader |
-| **sys_audit_logs** | Registro inmutable de decisiones administrativas y eventos del sistema | `id (PK)`, `user_id`, `action (TEXT)`, `resource (TEXT)`, `severity (ENUM: INFO/WARNING/ERROR)`, `timestamp (DATETIME)`, `trace_id` | ✅ Append-only; auditoría nivel Capa 0 |
-| **sys_state** | Configuración global crítica (hard-stops, límites de riesgo servidor, cierre de mercados) | `key (PK)`, `value (JSON)`, `updated_by (user_id)`, `updated_at`, `_version` | ✅ SSOT para parámetros globales |
-| **sys_economic_calendar** | Eventos económicos globales (NFP, BCE, etc.) — **Sólo lectura para tenants** | `event_id (PK)`, `country`, `event_name`, `impact_score (ENUM: HIGH/MEDIUM/LOW)`, `event_time_utc`, `created_at` | ✅ NewsSanitizer inserta; tenants solo leen |
-| **sys_strategies** | Registro global de estrategias disponibles | `strategy_id (PK)`, `name`, `version`, `readiness (ENUM: READY_FOR_ENGINE/LOGIC_PENDING)`, `affinity_scores (JSON)` | ✅ UniversalEngine consulta para instanciar |
+| **sys_users** | Identidad y autenticación de usuarios | `id (PK)`, `email`, `password_hash`, `role (admin/trader)`, `tier`, `status` | ✅ SSOT única de usuarios; reemplaza `sys_auth` de v1.x |
+| **sys_config** | Configuración global crítica (parámetros de trading, riesgo, system defaults) | `key (PK)`, `value (JSON/TEXT)`, `updated_at` | ✅ SSOT para parámetros globales; reemplaza `sys_state` de v1.x |
+| **sys_audit_logs** | Registro inmutable de decisiones administrativas y eventos del sistema | `id (PK)`, `user_id`, `action`, `resource`, `status`, `timestamp`, `trace_id` | ✅ Append-only; auditoría nivel Capa 0 |
+| **sys_economic_calendar** | Eventos económicos globales (NFP, BCE, etc.) — Sólo lectura para tenants | `event_id (PK)`, `country`, `event_name`, `currency`, `impact_score`, `event_time_utc` | ✅ NewsSanitizer inserta; tenants solo leen |
+| **sys_strategies** | Registro global de estrategias disponibles — lifecycle BACKTEST→SHADOW→LIVE | `class_id (PK)`, `mode`, `score`, `required_regime`, `required_timeframes`, `last_backtest_at` | ✅ Sistema consulta para instanciar y evaluar |
+| **sys_signal_ranking** | Ranking global de rendimiento de estrategias | `strategy_id (PK)`, `profit_factor`, `win_rate`, `execution_mode` | ✅ Reemplaza `usr_performance` (deprecated v3.x) |
 
 **Regla de Acceso**:
 - 🔴 **Admin/DevOps**: Único rol autorizado para escribir en `sys_*`
@@ -114,12 +115,12 @@ Cada tenant tiene su **propia base de datos aislada** que contiene **SOLO tablas
 
 | Tabla | Propósito | Gobernanza | Acceso |
 |-------|-----------|-----------|--------|
-| **usr_assets_cfg** | Símbolos habilitados, activos, affinity scores personalizados del trader | ✅ SSOT única por tenant; cambios via UI o API. **Filtrada contra `sys_strategies`** | Trader RW, System R |
-| **usr_trades** | Historial completo de operaciones del trader | ✅ Inmutable post-cierre; trazabilidad 100% con TRACE_ID | Trader RW, Admin audit R |
-| **usr_signals** | Señales generadas (aprobadas, rechazadas, ejecutadas) para trader | ✅ Registro de decisiones; auditoría de validaciones (4 Pilares) | Trader RW, System W (new signals) |
-| **usr_strategy_params** | Parámetros dinámicos de estrategias **personalizados por trader** | ✅ Evolucionan con el tiempo (auto-calibración). **No sobrescriben `sys_` valores globales** | Trader RW |
-| **usr_credentials** | API keys del broker, encriptadas | ✅ Encriptación Fernet en reposo; nunca se loguean valores. **Admin NO tiene acceso** | Trader RW (own only) |
-| **usr_positions** | Posiciones abiertas y cerradas del trader | ✅ Sincronía con broker via connectors | Trader RW, System W (sync) |
+| **usr_assets_cfg** | Activos habilitados con tick_size, lot_step, contract_size | ✅ SSOT de instrumentos operables; filtrada contra `sys_strategies` | Trader RW, System R |
+| **usr_trades** | Historial completo de trades ejecutados | ✅ Inmutable post-cierre; trazabilidad 100% con trace_id | Trader RW, Admin audit R |
+| **usr_execution_logs** | Logs de ejecución con slippage y latencia real vs teórica | ✅ Evidencia de calidad de ejecución por broker | Trader R, System W |
+| **usr_position_history** | Log de modificaciones a SL/TP de posiciones (EdgeTuner events) | ✅ Auditoría de ajustes automáticos | Trader R, System W |
+| **usr_preferences** | Configuración personal de UI y parámetros de trading | ✅ Soberanía total del usuario | Trader RW |
+| **usr_broker_accounts** | Cuentas de broker con límites de riesgo configurados | ✅ Gestión personal de cuentas | Trader RW |
 
 **Regla de Aislamiento y Delegación**:
 - 🟢 **Trader**: Acceso **total** a su carpeta `/tenants/{uuid}/` (todas tablas `usr_*`)
@@ -344,43 +345,54 @@ storage.execute(
 # A partir de ahora: bootstrap se ejecuta automáticamente si falta template
 ```
 
-### Tablas Copiadas en Template (12 usr_* tables)
+### Tablas Copiadas en Template (16 usr_* tables)
 
-**Schema Exacto**:
+**Schema Real** (validado 2026-03-25 contra `data_vault/global/aethelgard.db`):
 ```
 usuario (Capa 1): data_vault/tenants/{uuid}/aethelgard.db
-├── usr_trades                      (Operaciones del trader - inmutable post-cierre)
-├── usr_preferences                 (Configuración personal)
-├── usr_notification_settings       (Preferencias de alertas)
-├── usr_strategy_execution_log      (Historial de ejecuciones)
-├── usr_edge_applied_history        (Delta feedback del EdgeTuner)
-├── usr_performance_daily           (Métricas diarias)
-├── usr_risk_exposure               (Posiciones abiertas y riesgo)
-├── usr_available_balance_history   (Evolución del capital)
-├── usr_signal_history              (Señales vistas/ejecutadas)
-├── usr_notifications_received      (Log de alertas)
-├── usr_custom_alerts_preferences   (Alertas personalizadas)
-└── usr_credentials                 (API keys encriptadas - NUNCA en global)
+├── usr_anomaly_events              (Anomalías detectadas: Z-Score, Flash Crash)
+├── usr_assets_cfg                  (Activos habilitados para operar)
+├── usr_broker_accounts             (Cuentas de broker del trader)
+├── usr_coherence_events            (Incoherencias detectadas en señales)
+├── usr_connector_settings          (Toggle manual de conectores)
+├── usr_edge_learning               (Aprendizaje EDGE por detección/acción/resultado)
+├── usr_execution_logs              (Logs de ejecución con slippage y latencia)
+├── usr_notification_settings       (Configuración de canales de notificación)
+├── usr_notifications               (Notificaciones del sistema)
+├── usr_performance                 (⚠️ DEPRECATED — usar sys_signal_ranking)
+├── usr_position_history            (Historial de modificaciones a posiciones)
+├── usr_preferences                 (Configuración personal de UI y trading)
+├── usr_signal_pipeline             (Auditoría de etapas de señales)
+├── usr_strategy_logs               (Logs de rendimiento de estrategias por activo)
+├── usr_trades                      (Trades ejecutados — inmutable post-cierre)
+└── usr_tuning_adjustments          (Ajustes aplicados por EdgeTuner)
 ```
 
-**Tablas NUNCA Copiadas** (Siempre en Capa 0):
+**Tablas NUNCA Copiadas** (Siempre en Capa 0 — sys_*):
 ```
 global (Capa 0): data_vault/global/aethelgard.db
-├── sys_auth                    (Autenticación global - admin managed)
-├── sys_memberships             (Suscripciones y tiers)
-├── sys_config                  (Parámetros globales)
-├── sys_signals                 (Señales globales pre-filtradas)
-├── sys_strategies              (Estrategias disponibles)
-├── sys_signal_ranking          (Performance agregado)
-├── sys_economic_calendar       (Eventos macro globales)
-├── sys_brokers                 (Cuentas broker disponibles)
-├── sys_market_hours_cache      (Horarios de mercado globales)
-├── sys_regime_classification   (Estado de mercado global)
-├── sys_edge_learning           (Aprendizaje agregado de EdgeTuner)
-├── sys_drawdown_monitor        (Análisis de drawdown global)
-├── sys_notifications           (Centro de alertas global)
-├── sys_coherence_scores        (Coherencia agregada)
-└── sys_signal_conflicts        (Conflictos entre señales)
+├── sys_audit_logs                  (Auditoría inmutable de sistema)
+├── sys_broker_accounts             (Cuentas broker disponibles globalmente)
+├── sys_brokers / sys_platforms     (Catálogo de brokers y plataformas)
+├── sys_config                      (Parámetros globales — SSOT)
+├── sys_consensus_events            (Consenso multi-estrategia)
+├── sys_cooldown_tracker            (Cooldown de señales)
+├── sys_credentials                 (Credenciales de broker — encriptadas)
+├── sys_data_providers              (Proveedores de datos OHLC)
+├── sys_dedup_rules / sys_dedup_events (Deduplicación de señales)
+├── sys_economic_calendar           (Eventos macro globales)
+├── sys_execution_feedback          (Feedback de ejecución — CircuitBreaker)
+├── sys_market_pulse                (Estado del mercado — scanner global)
+├── sys_regime_configs              (Pesos de métricas por régimen)
+├── sys_shadow_instances            (Lifecycle SHADOW)
+├── sys_shadow_performance_history  (Evaluación 3 Pilares)
+├── sys_shadow_promotion_log        (Promociones SHADOW→LIVE)
+├── sys_signal_quality_assessments  (Calidad de señales)
+├── sys_signal_ranking              (Ranking global de estrategias)
+├── sys_signals                     (Señales globales)
+├── sys_strategies                  (Registro de estrategias — lifecycle)
+├── sys_symbol_mappings             (Traducción de símbolos)
+└── sys_users                       (Autenticación y roles)
 ```
 
 **Integración con StorageManager**:
@@ -527,16 +539,17 @@ Eliminar la ambigüedad conceptual mediante una **convención de nombres estrict
 
 **Propósito**: Contienen información que es **propiedad del sistema**, no del usuario. Gestión centralizada.
 
-**Tablas del Sistema** (actualizado 2026-03-07):
+**Tablas del Sistema** (actualizado 2026-03-25 — estado real DB):
 
 | Tabla | Responsable de Escritura | Trader Lee | Trader Escribe |
 |-------|--------------------------|------------|---------------:|
-| `sys_auth` | Admin (CLI/API Auth) | ❌ NO | ❌ NO |
-| `sys_memberships` | Admin (Billing/Suscripción) | ✅ SÍ (propia) | ❌ NO |
+| `sys_users` | Admin (CLI/API Auth) | ❌ NO | ❌ NO |
+| `sys_config` | Admin / System | ✅ SÍ (lectura) | ❌ NO |
 | `sys_audit_logs` | System + Admin | ✅ SÍ (propios) | ❌ NO |
-| `sys_state` | Admin (servidor) | ✅ SÍ (lectura) | ❌ NO |
 | `sys_economic_calendar` | NewsSanitizer/External Providers | ✅ SÍ (lectura) | ❌ NO |
 | `sys_strategies` | DevOps/Strategy Team | ✅ SÍ (lectura) | ❌ NO |
+| `sys_signal_ranking` | System (post-evaluación) | ✅ SÍ (lectura) | ❌ NO |
+| `sys_market_pulse` | Global Scanner | ✅ SÍ (lectura) | ❌ NO |
 
 **Regla Aislada**:
 - Trader **NUNCA modifica** tablas `sys_*`
@@ -562,16 +575,18 @@ storage.write_sys("UPDATE sys_state SET value=0.05 WHERE key='max_daily_risk_pct
 
 **Propósito**: Contienen información **propiedad del usuario/trader**. Soberanía total. Sin interferencia externa.
 
-**Tablas del Usuario** (actualizado 2026-03-07):
+**Tablas del Usuario** (actualizado 2026-03-25 — estado real DB):
 
 | Tabla | Trader RW | System Read | System Write | Admin Read |
 |-------|-----------|-------------|--------------|------------|
 | `usr_assets_cfg` | ✅ Sí | ✅ Sí | ❌ NO | ✅ Audit |
 | `usr_trades` | ✅ Sí | ✅ Sí | ✅ Sí (close/PnL) | ✅ Audit |
-| `usr_signals` | ✅ Sí (histórico) | ✅ Sí | ✅ Sí (new signals) | ✅ Audit |
-| `usr_strategy_params` | ✅ Sí | ✅ Sí | ❌ NO | ✅ Audit |
-| `usr_credentials` | ✅ Sí (own only) | ❌ NO | ❌ NO | ❌ NO** |
-| `usr_positions` | ✅ Sí | ✅ Sí | ✅ Sí (sync) | ✅ Audit |
+| `usr_execution_logs` | ✅ Sí (histórico) | ✅ Sí | ✅ Sí (ejecuciones) | ✅ Audit |
+| `usr_position_history` | ✅ Sí (histórico) | ✅ Sí | ✅ Sí (EdgeTuner) | ✅ Audit |
+| `usr_preferences` | ✅ Sí | ✅ Sí | ❌ NO | ✅ Audit |
+| `usr_broker_accounts` | ✅ Sí | ✅ Sí | ❌ NO | ✅ Audit |
+| `usr_notifications` | ✅ Sí | ✅ Sí | ✅ Sí (sistema) | ✅ Audit |
+| `usr_anomaly_events` | ✅ Sí (histórico) | ✅ Sí | ✅ Sí (detector) | ✅ Audit |
 
 **Regla Aislada**:
 - Trader es **dueño absoluto** de sus datos `usr_*`
@@ -691,7 +706,13 @@ def audit_db_naming(db_path):
     logger.info("✅ Todas las tablas cumplen convención: sys_* y usr_*")
 ```
 
-**Resultado**: `validate_all.py` rechaza schemas que violen la convención.
+**Excepciones documentadas** — 4 tablas legacy que preexisten a la convención y están exentas del check:
+- `edge_learning` — legacy de aprendizaje EDGE (pre-convención)
+- `notifications` — legacy de notificaciones (pre-convención)
+- `position_metadata` — NIVEL0 SSOT movido desde `trades_db.py` a `schema.py` en v2.x
+- `session_tokens` — NIVEL0 SSOT de autenticación
+
+**Resultado**: `validate_all.py` rechaza schemas que violen la convención (excepto las 4 tablas legacy listadas).
 
 ---
 

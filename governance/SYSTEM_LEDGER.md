@@ -4,7 +4,7 @@
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-24 UTC)**: Trace_ID: PIPELINE-UNBLOCK-EDGE-2026-03-24 | E9 COMPLETADA: HU 10.6 (AutonomousSystemOrchestrator FASE4) diseño finalizado en `docs/10_INFRA_RESILIENCY.md`. E9 archivada. Sistema listo para Sprint 10 (E10: HU 7.10 → HU 7.9 → HU 7.12). 1749/1749 tests · 0 regresiones.
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-25 UTC)**: Trace_ID: DOC-SCHEMA-SYNC-2026-03-25 | Deuda documental resuelta: `DATABASE_SCHEMA.md` sincronizado con DB real (46 tablas, v3.1→v3.2). `08_DATA_SOVEREIGNTY.md` actualizado con nombres de tablas reales. Tablas obsoletas `sys_auth/sys_memberships/sys_state/sys_calendar/usr_signals/usr_strategies` eliminadas de docs.
 
 ---
 
