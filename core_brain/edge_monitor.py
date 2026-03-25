@@ -45,6 +45,7 @@ class EdgeMonitor(threading.Thread):
         # Legacy attribute for backward compat with existing callers
         self.mt5_connector = self.connectors.get("mt5")
         self._mt5_unavailable_logged = False  # keep for compat with existing tests
+        self._mt5_autodiscovery_attempted = False  # prevent repeated auto-connect attempts
         
     def run(self) -> None:
         """Loop principal del monitor"""
@@ -82,15 +83,67 @@ class EdgeMonitor(threading.Thread):
         return self.connectors
 
     def _get_mt5_connector(self) -> Optional[Any]:
-        """Get MT5 connector instance — backward compat wrapper."""
+        """Return an MT5 connector, auto-discovering one from sys_broker_accounts if needed.
+
+        Resolution order:
+        1. Already injected connector (start.py DI path).
+        2. Auto-discovered from the first enabled sys_broker_account with platform_id='mt5'.
+        3. None — logs once and disables MT5 checks.
+        """
         connector = self.connectors.get("mt5")
-        if connector is None:
-            if not self._mt5_unavailable_logged:
-                logger.info("[EDGE] MT5 connector not injected — MT5 monitoring disabled")
-                self._mt5_unavailable_logged = True
-            else:
-                logger.debug("[EDGE] MT5 connector not available (not injected)")
-        return connector
+        if connector is not None:
+            return connector
+
+        # Try auto-discovery once per process lifetime to avoid repeated DB queries.
+        if not self._mt5_autodiscovery_attempted:
+            self._mt5_autodiscovery_attempted = True
+            connector = self._autodiscover_mt5_connector()
+            if connector is not None:
+                self.connectors["mt5"] = connector
+                self.mt5_connector = connector
+                logger.info("[EDGE] MT5 auto-discovered from sys_broker_accounts — monitoring enabled")
+                return connector
+
+        if not self._mt5_unavailable_logged:
+            logger.info("[EDGE] MT5 connector not available — position reconciliation disabled")
+            self._mt5_unavailable_logged = True
+        else:
+            logger.debug("[EDGE] MT5 connector not available (not injected, auto-discovery failed)")
+        return None
+
+    def _autodiscover_mt5_connector(self) -> Optional[Any]:
+        """Create an MT5Connector from the first active sys_broker_account with platform_id='mt5'."""
+        try:
+            from data_vault.accounts_db import AccountsRepository
+            from connectors.mt5_connector import MT5Connector
+
+            accounts_repo = AccountsRepository(self.storage.db_path)
+            accounts = accounts_repo.get_sys_broker_accounts(enabled_only=True)
+
+            mt5_accounts = [a for a in accounts if a.get("platform_id") == "mt5"]
+            if not mt5_accounts:
+                logger.debug("[EDGE] No enabled MT5 accounts found in sys_broker_accounts")
+                return None
+
+            account = mt5_accounts[0]
+            logger.info(
+                "[EDGE] Auto-connecting MT5 account: %s (server=%s)",
+                account.get("account_number"), account.get("server"),
+            )
+            connector = MT5Connector(
+                account_number=account.get("account_number"),
+                server=account.get("server"),
+                account_type=account.get("account_type", "demo"),
+            )
+            connected = connector.connect_blocking()
+            if connected:
+                return connector
+            logger.warning("[EDGE] MT5 auto-discovery: connect_blocking() returned False")
+        except ImportError as exc:
+            logger.debug("[EDGE] MT5 auto-discovery skipped — MT5Connector not importable: %s", exc)
+        except Exception as exc:
+            logger.warning("[EDGE] MT5 auto-discovery failed: %s", exc)
+        return None
     
     def _check_mt5_external_operations(self) -> None:
         """Comparar posiciones MT5 con operaciones activas del bot

@@ -18,9 +18,9 @@ from models.signal import Signal, SignalType, ConnectorType
 
 
 def test_m5_signal_expires_after_5_minutes(storage):
-    """M5 signal should expire after 5 minutes"""
-    # Create M5 signal 10 minutes ago (exceeds 5min window)
-    old_time = datetime.now() - timedelta(minutes=10)
+    """M5 signal should expire after 20 minutes (4-candle rule: 4 × 5 = 20 min)"""
+    # Create M5 signal 25 minutes ago (exceeds 20 min window)
+    old_time = datetime.now() - timedelta(minutes=25)
     signal = Signal(
         symbol='EURUSD',
         signal_type=SignalType.BUY,
@@ -102,9 +102,9 @@ def test_h1_signal_not_expired_within_60_minutes(storage):
 
 
 def test_d1_signal_expires_after_24_hours(storage):
-    """D1 signal should expire after 24 hours"""
-    # Create D1 signal 25 hours ago (exceeds 24h window)
-    old_time = datetime.now() - timedelta(hours=25)
+    """D1 signal should expire after 4 days (4-candle rule: 4 × 1440 = 5760 min)"""
+    # Create D1 signal 5 days ago (exceeds 5760 min = 4 day window)
+    old_time = datetime.now() - timedelta(days=5)
     signal = Signal(
         symbol='USDJPY',
         signal_type=SignalType.BUY,
@@ -142,7 +142,7 @@ def test_multiple_timeframes_expire_correctly(storage):
     """Multiple sys_signals with different timeframes expire according to their windows"""
     base_time = datetime.now()
     
-    # M5 signal (3min ago) - NOT expired (within 5min window)
+    # M5 signal (3min ago) - NOT expired (within 20min window)
     m5_recent = Signal(
         symbol='EURUSD',
         signal_type=SignalType.BUY,
@@ -156,7 +156,7 @@ def test_multiple_timeframes_expire_correctly(storage):
     )
     m5_recent_id = storage.save_signal(m5_recent)
     
-    # M5 signal (10min ago) - EXPIRED (exceeds 5min window)
+    # M5 signal (25min ago) - EXPIRED (exceeds 20min 4-candle window)
     m5_old = Signal(
         symbol='GBPUSD',
         signal_type=SignalType.SELL,
@@ -169,8 +169,8 @@ def test_multiple_timeframes_expire_correctly(storage):
         volume=1.0
     )
     m5_old_id = storage.save_signal(m5_old)
-    
-    # H1 signal (2h ago) - EXPIRED (exceeds 60min window)
+
+    # H1 signal (5h ago) - EXPIRED (exceeds 240min = 4h 4-candle window)
     h1_old = Signal(
         symbol='USDJPY',
         signal_type=SignalType.BUY,
@@ -183,8 +183,8 @@ def test_multiple_timeframes_expire_correctly(storage):
         volume=1.0
     )
     h1_old_id = storage.save_signal(h1_old)
-    
-    # D1 signal (12h ago) - NOT expired (within 24h window)
+
+    # D1 signal (12h ago) - NOT expired (within 5760min = 4-day window)
     d1_recent = Signal(
         symbol='AUDUSD',
         signal_type=SignalType.BUY,
@@ -205,9 +205,9 @@ def test_multiple_timeframes_expire_correctly(storage):
         cursor.execute("UPDATE sys_signals SET timestamp = ? WHERE id = ?",
                       (base_time - timedelta(minutes=3), m5_recent_id))
         cursor.execute("UPDATE sys_signals SET timestamp = ? WHERE id = ?",
-                      (base_time - timedelta(minutes=10), m5_old_id))
+                      (base_time - timedelta(minutes=25), m5_old_id))
         cursor.execute("UPDATE sys_signals SET timestamp = ? WHERE id = ?",
-                      (base_time - timedelta(hours=2), h1_old_id))
+                      (base_time - timedelta(hours=5), h1_old_id))
         cursor.execute("UPDATE sys_signals SET timestamp = ? WHERE id = ?",
                       (base_time - timedelta(hours=12), d1_recent_id))
         conn.commit()
@@ -281,9 +281,9 @@ def test_executed_sys_signals_not_expired(storage):
 
 
 def test_h4_signal_expires_after_4_hours(storage):
-    """H4 signal should expire after 4 hours"""
-    # Create H4 signal 5 hours ago (exceeds 240min window)
-    old_time = datetime.now() - timedelta(hours=5)
+    """H4 signal should expire after 16 hours (4-candle rule: 4 × 240 = 960 min)"""
+    # Create H4 signal 17 hours ago (exceeds 960 min = 16 h window)
+    old_time = datetime.now() - timedelta(hours=17)
     signal = Signal(
         symbol='EURGBP',
         signal_type=SignalType.SELL,
@@ -318,10 +318,10 @@ def test_h4_signal_expires_after_4_hours(storage):
 
 
 def test_expiration_windows_configuration():
-    """Verify EXPIRATION_WINDOWS configuration matches 1-candle rule"""
-    assert EXPIRATION_WINDOWS['M5'] == 5
-    assert EXPIRATION_WINDOWS['M15'] == 15
-    assert EXPIRATION_WINDOWS['M30'] == 30
-    assert EXPIRATION_WINDOWS['H1'] == 60
-    assert EXPIRATION_WINDOWS['H4'] == 240
-    assert EXPIRATION_WINDOWS['D1'] == 1440
+    """Verify EXPIRATION_WINDOWS configuration matches 4-candle rule (4 × timeframe minutes)"""
+    assert EXPIRATION_WINDOWS['M5']  == 20    # 4 × 5 min
+    assert EXPIRATION_WINDOWS['M15'] == 60    # 4 × 15 min
+    assert EXPIRATION_WINDOWS['M30'] == 120   # 4 × 30 min
+    assert EXPIRATION_WINDOWS['H1']  == 240   # 4 × 60 min
+    assert EXPIRATION_WINDOWS['H4']  == 960   # 4 × 240 min
+    assert EXPIRATION_WINDOWS['D1']  == 5760  # 4 × 1440 min

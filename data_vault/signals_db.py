@@ -19,12 +19,23 @@ def calculate_deduplication_window(timeframe: Optional[str]) -> int:
     
     tf: str = timeframe.upper().strip()
     
+    # 4-candle deduplication rule: a new signal for the same symbol/direction
+    # is suppressed while the previous one is still within 4 completed candles.
+    # M5 = 4×5 = 20min, M15 = 4×15 = 60min, H1 = 4×60 = 240min, H4 = 4×240 = 960min …
     timeframe_windows: Dict[str, int] = {
-        "1M": 10, "M1": 10, "3M": 15, "M3": 15, "5M": 20, "M5": 20,
-        "10M": 30, "M10": 30, "15M": 45, "M15": 45, "30M": 90, "M30": 90,
-        "1H": 120, "H1": 120, "2H": 240, "H2": 240, "4H": 480, "H4": 480,
-        "6H": 720, "H6": 720, "8H": 960, "H8": 960,
-        "1D": 1440, "D1": 1440, "1W": 10080, "W1": 10080,
+        "1M": 4,   "M1": 4,
+        "3M": 12,  "M3": 12,
+        "5M": 20,  "M5": 20,
+        "10M": 40, "M10": 40,
+        "15M": 60, "M15": 60,
+        "30M": 120,"M30": 120,
+        "1H": 240, "H1": 240,
+        "2H": 480, "H2": 480,
+        "4H": 960, "H4": 960,
+        "6H": 1440,"H6": 1440,
+        "8H": 1920,"H8": 1920,
+        "1D": 5760,"D1": 5760,
+        "1W": 40320,"W1": 40320,
     }
     
     if tf in timeframe_windows:
@@ -293,15 +304,16 @@ class SignalsMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             
-            # Base query: Only consider PENDING or EXECUTED sys_signals as duplicates
-            # Exclude REJECTED, CLOSED, etc. (only get PENDING and EXECUTED)
+            # Deduplicate only against LIVE signals: PENDING or ACTIVE.
+            # EXPIRED signals have timed out and must NOT block new ones.
+            # EXECUTED signals are already filled, also not a blocker.
             query = """
-                SELECT COUNT(*) FROM sys_signals 
-                WHERE symbol = ? 
-                AND signal_type = ? 
+                SELECT COUNT(*) FROM sys_signals
+                WHERE symbol = ?
+                AND signal_type = ?
                 AND datetime(timestamp) >= datetime('now', '-' || ? || ' minutes')
                 AND (timeframe = ? OR ? IS NULL)
-                AND UPPER(status) IN ('PENDING', 'EXECUTED', 'EXPIRED', 'ACTIVE')
+                AND UPPER(status) IN ('PENDING', 'ACTIVE')
             """
             params = [symbol, signal_type, minutes, timeframe, timeframe]
             

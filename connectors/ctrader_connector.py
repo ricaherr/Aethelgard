@@ -24,6 +24,7 @@ Credentials (sys_data_providers.additional_config for name="ctrader"):
 import asyncio
 import logging
 import struct
+import threading
 import time
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
@@ -121,6 +122,11 @@ class CTraderConnector(BaseConnector):
         self._symbol_id_cache: Dict[str, int] = {}   # "EURUSD" → symbolId
         self._symbol_digits_cache: Dict[int, int] = {}  # symbolId → digits
         self._latency: float = 0.0
+        # Serialise concurrent WebSocket auth requests.
+        # The Spotware API rate-limits parallel App Auth attempts from the same
+        # client; sending 10-15 simultaneous auth frames causes 2142 (ERROR_RES)
+        # for all but the first.  A single Lock ensures requests are queued.
+        self._ws_lock = threading.Lock()
 
         logger.info(
             f"[CTrader] Connector initialized. enabled={self.config.get('enabled')}, "
@@ -314,24 +320,29 @@ class CTraderConnector(BaseConnector):
         if not self._is_rest_ready():
             return None
 
-        try:
+        # Acquire the lock to serialise concurrent WebSocket auth requests.
+        # Without this, parallel scanner calls open multiple simultaneous
+        # WebSocket connections and flood the Spotware API with App Auth frames,
+        # causing 2142 (ERROR_RES) rate-limit rejections on all but the first.
+        with self._ws_lock:
             try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    import concurrent.futures
-                    fut = asyncio.run_coroutine_threadsafe(
-                        self._fetch_bars_via_websocket(symbol, timeframe, count), loop
-                    )
-                    bars = fut.result(timeout=_WS_CONNECT_TIMEOUT)
-                else:
-                    bars = loop.run_until_complete(
-                        self._fetch_bars_via_websocket(symbol, timeframe, count)
-                    )
-            except RuntimeError:
-                bars = asyncio.run(self._fetch_bars_via_websocket(symbol, timeframe, count))
-        except Exception as exc:
-            logger.error(f"[CTrader] fetch_ohlc error for {symbol}/{timeframe}: {exc}")
-            return None
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        import concurrent.futures
+                        fut = asyncio.run_coroutine_threadsafe(
+                            self._fetch_bars_via_websocket(symbol, timeframe, count), loop
+                        )
+                        bars = fut.result(timeout=_WS_CONNECT_TIMEOUT)
+                    else:
+                        bars = loop.run_until_complete(
+                            self._fetch_bars_via_websocket(symbol, timeframe, count)
+                        )
+                except RuntimeError:
+                    bars = asyncio.run(self._fetch_bars_via_websocket(symbol, timeframe, count))
+            except Exception as exc:
+                logger.error(f"[CTrader] fetch_ohlc error for {symbol}/{timeframe}: {exc}")
+                return None
 
         if not bars:
             return None

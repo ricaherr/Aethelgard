@@ -130,9 +130,9 @@ def test_deduplication_window_varies_by_timeframe(storage):
     
     # Higher timeframes should have larger windows
     assert window_m5 < window_h4 < window_d1
-    assert window_m5 == 20  # 20 minutes for M5
-    assert window_h4 == 480  # 8 hours for H4
-    assert window_d1 == 1440  # 24 hours for D1
+    assert window_m5 == 20    # 4 × 5 min for M5
+    assert window_h4 == 960   # 4 × 240 min (16 h) for H4
+    assert window_d1 == 5760  # 4 × 1440 min (4 days) for D1
 
 
 def test_legacy_fallback_without_timeframe(storage):

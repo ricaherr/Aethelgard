@@ -5,7 +5,7 @@ Marca señales PENDING como EXPIRED cuando exceden ventana de validez.
 Diseñado para ejecutarse en MainOrchestrator cada ciclo.
 
 Arquitectura:
-- Regla: Señal expira después de 1 vela completa del timeframe origen
+- Regla: Señal expira después de 4 velas completas del timeframe origen
 - Solo afecta señales PENDING (ejecutadas/rechazadas no se tocan)
 - Ventanas dinámicas por timeframe
 - Metadata incluye razón y timestamp expiración
@@ -21,19 +21,30 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Dynamic expiration windows (in minutes) - 1 candle rule
-# M5  -> 5 minutes (1 candle)
-# M15 -> 15 minutes (1 candle)
-# H1  -> 60 minutes (1 candle)
-# H4  -> 240 minutes (1 candle)
-# D1  -> 1440 minutes (1 candle = 24 hours)
+# Dynamic expiration windows (in minutes) - 4 candle rule.
+# A signal stays PENDING for exactly 4 complete candles of its timeframe,
+# then is marked EXPIRED so it stops blocking new signals.
+# This is intentionally aligned with calculate_deduplication_window() in signals_db.
+#   M5  -> 4 × 5  =   20 min
+#   M15 -> 4 × 15 =   60 min
+#   M30 -> 4 × 30 =  120 min
+#   H1  -> 4 × 60 =  240 min
+#   H4  -> 4 × 240 = 960 min
+#   D1  -> 4 × 1440 = 5760 min (4 trading days)
 EXPIRATION_WINDOWS = {
-    'M5': 5,
-    'M15': 15,
-    'M30': 30,
-    'H1': 60,
-    'H4': 240,
-    'D1': 1440
+    'M1':  4,
+    'M3':  12,
+    'M5':  20,
+    'M10': 40,
+    'M15': 60,
+    'M30': 120,
+    'H1':  240,
+    'H2':  480,
+    'H4':  960,
+    'H6':  1440,
+    'H8':  1920,
+    'D1':  5760,
+    'W1':  40320,
 }
 
 
