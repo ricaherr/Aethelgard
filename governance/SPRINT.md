@@ -11,6 +11,38 @@
 
 ---
 
+# SPRINT 10: PIPELINE FIXES — SSOT RISK SEED & INSTRUMENT-AWARE SL/TP — [DONE]
+
+**Inicio**: 25 de Marzo, 2026
+**Fin**: 25 de Marzo, 2026
+**Objetivo**: Eliminar warnings operacionales persistentes y corregir cálculo de SL/TP para instrumentos no-forex detectados durante monitoreo de producción.
+**Épica**: E10 (HUs de soporte) | **Trace_ID**: PIPELINE-OPS-FIXES-2026-03-25
+**Dominios**: 03_ALPHA_GENERATION · 10_INFRASTRUCTURE_RESILIENCY
+
+## 📋 Tareas del Sprint
+
+- [DONE] **HU 3.10: Risk Manager — Seed de parámetros dinámicos en sys_config**
+  - `_seed_risk_config(storage)` en `start.py` — INSERT OR IGNORE semántico
+  - Seeds `risk_settings` y `dynamic_params` con defaults seguros antes de instanciar `RiskManager`
+  - Idempotente: no sobreescribe valores modificados por usuario
+  - Eliminado: `[SSOT] Risk/dynamic config not in DB` en arranque nominal
+  - TDD: 4 tests en `tests/test_start_singleton.py` — 13/13 PASSED (incluye tests previos)
+
+- [DONE] **HU 3.11: Buffers SL/TP dinámicos por tipo de instrumento en estrategias**
+  - `SessionExtension0001Strategy._sl_buffer(symbol, price)` — método estático
+  - Classifica instrumento por patrón de nombre: FOREX=0.0005, JPY=0.05, METALS=0.50, INDEXES=5.0
+  - `analyze()` consume el buffer dinámico — sin regresión en `evaluate_on_history()`
+  - TDD: 13 tests en `tests/test_sess_ext_sl_buffer.py` — 13/13 PASSED
+
+## 📊 Snapshot de Cierre
+
+- **Tests añadidos**: 17 (4 HU3.10 + 13 HU3.11) — 26/26 PASSED en suite completa del sprint
+- **Archivos modificados**: `start.py`, `core_brain/strategies/session_extension_0001.py`, `governance/BACKLOG.md`
+- **Archivos nuevos**: `tests/test_sess_ext_sl_buffer.py`
+- **Deuda eliminada**: warning SSOT en cada arranque; buffer forex inválido para índices en backtests
+
+---
+
 # SPRINT 9: MOTOR DE BACKTESTING INTELIGENTE — EDGE EVALUATION FRAMEWORK — [DONE]
 
 **Inicio**: 24 de Marzo, 2026

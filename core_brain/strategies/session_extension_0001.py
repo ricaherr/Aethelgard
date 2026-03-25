@@ -46,6 +46,23 @@ class SessionExtension0001Strategy:
         self.trace_id = "STRAT-SESS-EXT-0001"
         logger.info(f"[{self.trace_id}] SessionExtension0001Strategy initialized")
     
+    @staticmethod
+    def _sl_buffer(symbol: str, price: float) -> float:
+        """Return an SL/TP buffer appropriate for the instrument type.
+
+        HU 3.11 — Trace_ID: SESS-EXT-SL-BUFFER-2026-03-25
+        """
+        sym = symbol.upper()
+        indexes = ["US30", "NAS100", "US100", "SPX500", "US500", "GER40", "DAX", "HK50", "UK100", "WS30"]
+        metals  = ["XAU", "XAG", "GOLD", "SILVER", "XPT", "XPD"]
+        if any(idx in sym for idx in indexes):
+            return 5.0
+        if any(m in sym for m in metals):
+            return 0.50
+        if "JPY" in sym:
+            return 0.05
+        return 0.0005
+
     async def analyze(self, symbol: str, df: Any, regime: Optional[str] = None) -> Optional[Signal]:
         """
         Analiza para señales de extensión de sesión.
@@ -85,14 +102,15 @@ class SessionExtension0001Strategy:
             # Determinar dirección y parámetros
             direction = "BUY" if current_session != "ASIA" else "SELL"
             
+            buffer = self._sl_buffer(symbol, current_close)
             if direction == "BUY":
                 entry_price = current_close
-                stop_loss = current_low - 0.0005  # Bajo de la vela - buffer
+                stop_loss = current_low - buffer
                 take_profit = current_close + (2 * (entry_price - stop_loss))  # 2:1 R:R
                 signal_type = SignalType.BUY
             else:  # SELL
                 entry_price = current_close
-                stop_loss = current_high + 0.0005  # Alto de la vela + buffer
+                stop_loss = current_high + buffer
                 take_profit = current_close - (2 * (stop_loss - entry_price))  # 2:1 R:R
                 signal_type = SignalType.SELL
             

@@ -145,6 +145,34 @@ def _read_initial_capital(storage: "StorageManager") -> float:
     return 10000.0
 
 
+def _seed_risk_config(storage: "StorageManager") -> None:
+    """Seed risk_settings and dynamic_params in sys_config if absent (idempotent).
+
+    Only writes keys that do not yet exist, so user-modified values are never
+    overwritten. Eliminates the [SSOT] Risk/dynamic config not in DB warning.
+    HU 3.10 — Trace_ID: RISK-SEED-SSOT-2026-03-25
+    """
+    try:
+        existing = storage.get_sys_config()
+        updates: dict = {}
+        if not existing.get("risk_settings"):
+            updates["risk_settings"] = {
+                "max_consecutive_losses": 3,
+                "max_account_risk_pct": 5.0,
+                "max_r_per_trade": 2.0,
+            }
+        if not existing.get("dynamic_params"):
+            updates["dynamic_params"] = {
+                "risk_per_trade": 0.005,
+                "max_consecutive_losses": 3,
+            }
+        if updates:
+            storage.update_sys_config(updates)
+            logger.info("[CONFIG] Risk config sembrada en sys_config: %s", list(updates.keys()))
+    except Exception as exc:
+        logger.warning("[CONFIG] No se pudo sembrar risk_config: %s", exc)
+
+
 # launch_dashboard eliminada - UI unificada en puerto 8000
 
 def launch_server() -> None:
@@ -282,6 +310,7 @@ async def main() -> None:
             logger.critical("[CRITICAL] No hay símbolos habilitados en la BD. Configura al menos un instrumento en Settings.")
             raise RuntimeError("No enabled symbols found in database. Cannot start trading.")
         
+        _seed_risk_config(storage)
         initial_capital = _read_initial_capital(storage)
         risk_manager = RiskManager(
             storage=storage,

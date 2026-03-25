@@ -1,15 +1,16 @@
 """
-Tests: start.py — Singleton Lock & Capital from DB
+Tests: start.py — Singleton Lock, Capital from DB & Risk Seed
   HU 10.3: PID lockfile prevents duplicate processes
   HU 10.4: initial_capital reads from sys_config.account_balance
+  HU 3.10: _seed_risk_config seeds risk_settings and dynamic_params idempotently
 """
 import os
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, call
 
 import pytest
 
-from start import _acquire_singleton_lock, _release_singleton_lock, _read_initial_capital
+from start import _acquire_singleton_lock, _release_singleton_lock, _read_initial_capital, _seed_risk_config
 
 
 # ── _acquire_singleton_lock ───────────────────────────────────────────────────
@@ -77,3 +78,46 @@ class TestReadInitialCapital:
         storage.get_sys_config.return_value = {"account_balance": 0}
         capital = _read_initial_capital(storage)
         assert capital == pytest.approx(10000.0)
+
+
+# ── _seed_risk_config ─────────────────────────────────────────────────────────
+
+class TestSeedRiskConfig:
+    def test_seeds_default_values_when_absent(self):
+        """When sys_config has neither key, both must be written."""
+        storage = MagicMock()
+        storage.get_sys_config.return_value = {}
+        _seed_risk_config(storage)
+        storage.update_sys_config.assert_called_once()
+        written = storage.update_sys_config.call_args[0][0]
+        assert "risk_settings" in written
+        assert "dynamic_params" in written
+        assert written["risk_settings"]["max_consecutive_losses"] == 3
+        assert written["dynamic_params"]["risk_per_trade"] == pytest.approx(0.005)
+
+    def test_seeds_only_missing_key(self):
+        """If risk_settings already exists, only dynamic_params is written."""
+        storage = MagicMock()
+        storage.get_sys_config.return_value = {
+            "risk_settings": {"max_consecutive_losses": 5}
+        }
+        _seed_risk_config(storage)
+        written = storage.update_sys_config.call_args[0][0]
+        assert "risk_settings" not in written
+        assert "dynamic_params" in written
+
+    def test_is_idempotent_when_both_present(self):
+        """When both keys exist, update_sys_config must NOT be called."""
+        storage = MagicMock()
+        storage.get_sys_config.return_value = {
+            "risk_settings": {"max_consecutive_losses": 3},
+            "dynamic_params": {"risk_per_trade": 0.005},
+        }
+        _seed_risk_config(storage)
+        storage.update_sys_config.assert_not_called()
+
+    def test_survives_storage_exception(self):
+        """Storage errors must be caught — no exception propagated."""
+        storage = MagicMock()
+        storage.get_sys_config.side_effect = Exception("DB error")
+        _seed_risk_config(storage)  # must not raise

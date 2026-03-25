@@ -138,6 +138,27 @@
     * **Descripción**: La SignalFactory usa `get_all_usr_assets_cfg()` (tabla con 5 activos stale) para filtrar símbolos habilitados. Inyectar `InstrumentManager` como dependencia opcional y reemplazar el filtro con `instrument_manager.get_enabled_symbols()` (18 símbolos correctos desde `sys_config`). Sin este fix, 15 de 18 símbolos son descartados silenciosamente y no se generan señales suficientes para que SHADOW acumule trades.
     * **Trace_ID**: PIPELINE-UNBLOCK-SIGNAL-FACTORY-2026-03-24
 
+* **HU 3.10: Risk Manager — Seed de parámetros dinámicos en sys_config** `[DONE]`
+    * **Prioridad**: Alta
+    * **Descripción**: Al arrancar el sistema, `RiskManager.__init__()` llama `get_risk_settings()` y `get_dynamic_params()` desde `sys_config`. Si las claves `risk_settings` y `dynamic_params` no existen en la DB, el manager emite `[SSOT] Risk/dynamic config not in DB` y opera con defaults hardcodeados (violación SSOT). Fix: añadir `_seed_risk_config(storage)` en `start.py` que inserta los valores por defecto con `INSERT OR IGNORE` (idempotente) antes de instanciar `RiskManager`. La función también acepta una bandera `force=True` para sobrescribir desde tests.
+    * **Criterios de aceptación**:
+        - `[SSOT] Risk/dynamic config not in DB` ya no aparece en arranque nominal
+        - Seed es idempotente: segunda ejecución no sobreescribe valores modificados por usuario
+        - `RiskManager` lee `risk_per_trade=0.005`, `max_consecutive_losses=3`, `max_account_risk_pct=5.0`
+        - Tests: `test_seed_risk_config_seeds_default_values`, `test_seed_risk_config_is_idempotent`
+    * **Trace_ID**: RISK-SEED-SSOT-2026-03-25
+
+* **HU 3.11: Buffers SL/TP dinámicos por tipo de instrumento en estrategias** `[DONE]`
+    * **Prioridad**: Alta
+    * **Descripción**: `session_extension_0001.py` usa `±0.0005` como buffer de SL/TP para todos los instrumentos. Para índices como US30 (~40 000 puntos), ese buffer es efectivamente cero, generando SL/TP inválidos que distorsionan backtests y señales en vivo. Fix: añadir método estático `_sl_buffer(symbol, price)` que clasifica el instrumento por patrón de nombre y devuelve un buffer proporcional: FOREX=0.0005, JPY=0.05, METALS=0.50, INDEXES=5.0. La lógica de `analyze()` consume este método. `evaluate_on_history()` calcula SL desde el burst high/low — no usa buffer fijo; sin cambios ahí.
+    * **Criterios de aceptación**:
+        - US30 BUY: `stop_loss = current_low - 5.0` (no `- 0.0005`)
+        - XAUUSD: buffer ≥ 0.5
+        - EURUSD y GBPUSD: buffer = 0.0005 (sin regresión)
+        - USDJPY: buffer = 0.05
+        - Tests: `test_sl_buffer_forex`, `test_sl_buffer_jpy`, `test_sl_buffer_metals`, `test_sl_buffer_index`, `test_sl_buffer_default`
+    * **Trace_ID**: SESS-EXT-SL-BUFFER-2026-03-25
+
 * **HU 3.5: Dynamic Alpha Thresholding**
     * **Prioridad**: Alta (E2)
     * **Descripción**: Lógica de auto-ajuste de barreras de entrada basada en la equidad de la cuenta y el régimen de volatilidad.
