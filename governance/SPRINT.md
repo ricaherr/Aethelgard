@@ -11,6 +11,51 @@
 
 ---
 
+# SPRINT 9: MOTOR DE BACKTESTING INTELIGENTE — EDGE EVALUATION FRAMEWORK — [DONE]
+
+**Inicio**: 24 de Marzo, 2026
+**Fin**: 24 de Marzo, 2026
+**Objetivo**: Refundar el motor de backtesting: reemplazar la simulación momentum genérica con lógica real por estrategia, eliminar la síntesis de datos en producción, agregar contexto estructural (régimen/timeframe) a sys_strategies, e implementar el gestor adaptativo de recursos operacionales.
+**Épica**: E10 | **Trace_ID**: EDGE-BACKTEST-EVAL-FRAMEWORK-2026-03-24
+**Dominios**: 07_ADAPTIVE_LEARNING · 10_INFRASTRUCTURE_RESILIENCY
+**Sprint Mínimo Viable**: HU 7.8 → HU 7.11 → HU 7.6 → HU 7.7 → HU 10.7
+
+## 📋 Tareas del Sprint
+
+- [DONE] **HU 7.8: Contexto estructural declarado en sys_strategies**
+  - DDL: `required_regime TEXT DEFAULT 'ANY'`, `required_timeframes TEXT DEFAULT '[]'`, `execution_params TEXT DEFAULT '{}'` en `sys_strategies`
+  - Migration automática idempotente en `run_migrations()`
+  - Poblar 6 estrategias existentes con valores derivados de su lógica
+
+- [DONE] **HU 7.11: Cadena de fallback multi-proveedor — eliminar síntesis**
+  - Reemplazar `_synthesise_cluster_window()` con fallback: proveedor primario → ventana extendida (3000 bars) → proveedores secundarios → `UNTESTED_CLUSTER` (confidence=0.0)
+  - `_synthesise_cluster_window()` eliminar del path de producción
+
+- [DONE] **HU 7.6: Interfaz estándar de evaluación histórica en estrategias**
+  - `TradeResult` dataclass en `models/trade_result.py`
+  - Contrato `evaluate_on_history(df, params) -> List[TradeResult]` en `BaseStrategy`
+  - Implementación en las 6 estrategias existentes
+
+- [DONE] **HU 7.7: Simulación real por estrategia — despacho a lógica propia**
+  - Reemplazar modelo momentum genérico en `ScenarioBacktester._simulate_trades()`
+  - Despacho a `strategy.evaluate_on_history()` via `StrategyEngineFactory`
+
+- [DONE] **HU 10.7: Adaptive Operational Mode Manager**
+  - `OperationalModeManager` — detección de contexto (BACKTEST_ONLY / SHADOW_ACTIVE / LIVE_ACTIVE)
+  - Ajuste de frecuencias / suspensión de componentes por contexto
+  - `get_backtest_budget()` con evaluación de recursos via `psutil`
+  - Wiring en `main_orchestrator.py`
+
+## 📊 Snapshot de Cierre
+
+- **Tests añadidos**: 151 (23 HU10.7 + 7 HU7.7 + 11 HU7.11 + 58 HU7.6 + 9 HU7.8 + 121 backtest_orchestrator + 23 oper. mode; sin regresiones)
+- **Archivos nuevos**: `models/trade_result.py`, `core_brain/operational_mode_manager.py`, `tests/test_schema_strategy_context_columns.py`, `tests/test_backtester_untested_cluster_policy.py`, `tests/test_strategy_evaluate_on_history.py`, `tests/test_backtester_dispatch_to_strategy.py`, `tests/test_operational_mode_manager.py`
+- **Archivos modificados**: `data_vault/schema.py`, `core_brain/scenario_backtester.py`, `core_brain/backtest_orchestrator.py`, `core_brain/strategies/base_strategy.py`, `core_brain/strategies/{mom_bias,liq_sweep,struc_shift,oliver_velez,session_extension_0001,trifecta_logic}.py`, `core_brain/main_orchestrator.py`
+- **Deuda técnica eliminada**: síntesis gaussiana removida del path de producción; modelo momentum genérico reemplazado por despacho real por estrategia
+- **Estado final**: Sprint Mínimo Viable completado — E10 operativa y verificada
+
+---
+
 # SPRINT 6: SHADOW ACTIVATION — BUCLE DARWINIANO — [DONE]
 
 **Inicio**: 23 de Marzo, 2026

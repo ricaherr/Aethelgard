@@ -11,6 +11,8 @@ class DummyStrategy(BaseStrategy):
     strategy_id = "dummy"
     def __init__(self, config=None):
         super().__init__(config or {})
+    def evaluate_on_history(self, df, params):
+        return []
     async def analyze(self, symbol, df, regime):
         from models.signal import Signal, ConnectorType
         return Signal(

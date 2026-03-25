@@ -24,7 +24,9 @@ from datetime import datetime
 import pandas as pd
 import numpy as np
 
+from typing import List
 from models.signal import Signal, SignalType, MarketRegime, ConnectorType
+from models.trade_result import TradeResult
 from data_vault.storage import StorageManager
 from core_brain.strategies.base_strategy import BaseStrategy
 from core_brain.sensors.elephant_candle_detector import ElephantCandleDetector
@@ -291,3 +293,69 @@ class MomentumBias0001Strategy(BaseStrategy):
                 exc_info=True
             )
             return None
+
+    def evaluate_on_history(self, df: pd.DataFrame, params: Dict) -> List[TradeResult]:
+        """
+        Backtesting de MOM_BIAS_0001: ruptura de compresión SMA20/SMA200 con vela elefante.
+
+        Condiciones de entrada:
+        - SMA20 y SMA200 en compresión (|SMA20 - SMA200| < compression_ratio × precio)
+        - Vela elefante: cuerpo >= min_body_ratio del rango total
+        - Cierre alejado de SMA20 (breakout confirmado)
+        - Dirección: LONG si close > SMA200, SHORT si close < SMA200
+        SL = open de la vela, TP = entry ± sl_distance × rr
+        """
+        if df.empty or len(df) < 202:
+            return []
+        try:
+            rr               = float(params.get("risk_reward", 2.0))
+            min_body_ratio   = float(params.get("min_body_ratio", 0.60))
+            compression_pct  = float(params.get("compression_pct", 0.015))
+            away_pct         = float(params.get("away_from_sma20_pct", 0.0015))
+            max_hold         = int(params.get("max_bars_hold", 50))
+
+            close = df["close"].values
+            open_ = df["open"].values
+            high  = df["high"].values
+            low   = df["low"].values
+            sma20  = pd.Series(close).rolling(20).mean().values
+            sma200 = pd.Series(close).rolling(200).mean().values
+
+            trades: List[TradeResult] = []
+            for i in range(200, len(close) - 1):
+                if np.isnan(sma20[i]) or np.isnan(sma200[i]):
+                    continue
+                mid = (sma20[i] + sma200[i]) / 2
+                if mid <= 0:
+                    continue
+                if abs(sma20[i] - sma200[i]) / mid > compression_pct:
+                    continue  # sin compresión
+                candle_range = high[i] - low[i]
+                if candle_range <= 0:
+                    continue
+                if abs(close[i] - open_[i]) / candle_range < min_body_ratio:
+                    continue  # no es vela elefante
+                if abs(close[i] - sma20[i]) / close[i] < away_pct:
+                    continue  # no suficientemente alejado de SMA20
+                direction = 1 if close[i] > sma200[i] else -1
+                sl       = open_[i]
+                sl_dist  = abs(close[i] - sl)
+                if sl_dist <= 0:
+                    continue
+                tp = close[i] + direction * sl_dist * rr
+                exit_px, bars = self._exit_by_sl_tp(df, i, sl, tp, direction, max_hold)
+                regime = "TREND" if direction == 1 else "RANGE"
+                trades.append(TradeResult(
+                    entry_price=float(close[i]),
+                    exit_price=float(exit_px),
+                    pnl=float(direction * (exit_px - close[i])),
+                    direction=direction,
+                    bars_held=bars,
+                    regime_at_entry=regime,
+                    sl_distance=float(sl_dist),
+                    tp_distance=float(abs(tp - close[i])),
+                ))
+            return trades
+        except Exception as exc:
+            logger.warning("[MOM_BIAS_0001] evaluate_on_history error: %s", exc)
+            return []

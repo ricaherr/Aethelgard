@@ -21,7 +21,9 @@ from datetime import datetime
 
 import pandas as pd
 
+from typing import List
 from models.signal import Signal, SignalType, MarketRegime, ConnectorType
+from models.trade_result import TradeResult
 from core_brain.strategies.base_strategy import BaseStrategy
 from core_brain.sensors.session_liquidity_sensor import SessionLiquiditySensor
 from core_brain.sensors.liquidity_sweep_detector import LiquiditySweepDetector
@@ -347,3 +349,71 @@ class LiquiditySweep0001Strategy(BaseStrategy):
                 exc_info=True
             )
             return None
+
+    def evaluate_on_history(self, df: pd.DataFrame, params: Dict) -> List[TradeResult]:
+        """
+        Backtesting de LIQ_SWEEP_0001: detecta barridos de liquidez (false breakouts).
+
+        Condiciones de entrada:
+        - Sweep alcista: high[i] > max(high[i-N:i]) Y close[i] < ese máximo → SHORT (reversión)
+        - Sweep bajista: low[i] < min(low[i-N:i])  Y close[i] > ese mínimo → LONG  (reversión)
+        SL = extremo del barrido + buffer, TP = 50% del rango de la ventana de sesión
+        """
+        if df.empty or len(df) < 22:
+            return []
+        try:
+            session_lookback = int(params.get("session_lookback", 20))
+            buffer_pct       = float(params.get("sl_buffer_pct", 0.0005))
+            max_hold         = int(params.get("max_bars_hold", 30))
+
+            close = df["close"].values
+            high  = df["high"].values
+            low   = df["low"].values
+            trades: List[TradeResult] = []
+
+            for i in range(session_lookback + 1, len(close) - 1):
+                window_h = high[i - session_lookback: i]
+                window_l = low[i - session_lookback: i]
+                sess_high = float(window_h.max())
+                sess_low  = float(window_l.min())
+                sess_range = sess_high - sess_low
+                if sess_range <= 0:
+                    continue
+
+                # Sweep alcista → SHORT (precio superó máximo y cerró abajo = trampa)
+                if high[i] > sess_high and close[i] < sess_high:
+                    direction = -1
+                    sl  = high[i] + high[i] * buffer_pct
+                    tp  = close[i] - sess_range * 0.50
+                    sl_dist = abs(sl - close[i])
+                    tp_dist = abs(tp - close[i])
+                    if sl_dist <= 0 or tp_dist <= 0:
+                        continue
+                    exit_px, bars = self._exit_by_sl_tp(df, i, sl, tp, direction, max_hold)
+                    trades.append(TradeResult(
+                        entry_price=float(close[i]), exit_price=float(exit_px),
+                        pnl=float(direction * (exit_px - close[i])), direction=direction,
+                        bars_held=bars, regime_at_entry="VOLATILE",
+                        sl_distance=float(sl_dist), tp_distance=float(tp_dist),
+                    ))
+
+                # Sweep bajista → LONG (precio rompió mínimo y cerró arriba = trampa)
+                elif low[i] < sess_low and close[i] > sess_low:
+                    direction = 1
+                    sl  = low[i] - low[i] * buffer_pct
+                    tp  = close[i] + sess_range * 0.50
+                    sl_dist = abs(close[i] - sl)
+                    tp_dist = abs(tp - close[i])
+                    if sl_dist <= 0 or tp_dist <= 0:
+                        continue
+                    exit_px, bars = self._exit_by_sl_tp(df, i, sl, tp, direction, max_hold)
+                    trades.append(TradeResult(
+                        entry_price=float(close[i]), exit_price=float(exit_px),
+                        pnl=float(direction * (exit_px - close[i])), direction=direction,
+                        bars_held=bars, regime_at_entry="VOLATILE",
+                        sl_distance=float(sl_dist), tp_distance=float(tp_dist),
+                    ))
+            return trades
+        except Exception as exc:
+            logger.warning("[LIQ_SWEEP_0001] evaluate_on_history error: %s", exc)
+            return []

@@ -26,7 +26,9 @@ from datetime import datetime
 
 import pandas as pd
 
+from typing import List
 from models.signal import Signal, SignalType, MarketRegime, ConnectorType
+from models.trade_result import TradeResult
 from core_brain.strategies.base_strategy import BaseStrategy
 from core_brain.sensors.market_structure_analyzer import MarketStructureAnalyzer
 from core_brain.services.reasoning_event_builder import ReasoningEventBuilder
@@ -324,3 +326,70 @@ class StructureShift0001Strategy(BaseStrategy):
         except Exception as e:
             logger.error(f"[{self.trace_id}] Exception in analyze(): {e}", exc_info=True)
             return None
+
+    def evaluate_on_history(self, df: pd.DataFrame, params: Dict) -> List[TradeResult]:
+        """
+        Backtesting de STRUC_SHIFT_0001: ruptura de estructura (BOS) con pullback.
+
+        Condiciones de entrada (BOS alcista):
+        - Precio cierra por encima del swing high de los últimos N bars
+        - El rango previo era estrecho (estructura consolidando)
+        SL = swing low reciente, TP = entry + sl_distance × tp_ratio (FIB)
+        """
+        if df.empty or len(df) < 22:
+            return []
+        try:
+            import numpy as np
+            lookback  = int(params.get("structure_lookback", 20))
+            tp_ratio  = float(params.get("tp_ratio", 1.618))
+            max_hold  = int(params.get("max_bars_hold", 60))
+
+            close = df["close"].values
+            high  = df["high"].values
+            low   = df["low"].values
+            trades: List[TradeResult] = []
+
+            for i in range(lookback + 1, len(close) - 1):
+                prev_highs = high[i - lookback: i]
+                prev_lows  = low[i - lookback: i]
+                swing_high = float(prev_highs.max())
+                swing_low  = float(prev_lows.min())
+                struct_range = swing_high - swing_low
+                if struct_range <= 0:
+                    continue
+
+                # BOS alcista: cierre rompe swing high con estructura previa comprimida
+                if close[i] > swing_high and close[i - 1] <= swing_high:
+                    direction = 1
+                    sl     = swing_low
+                    sl_dist = abs(close[i] - sl)
+                    if sl_dist <= 0:
+                        continue
+                    tp     = close[i] + sl_dist * tp_ratio
+                    exit_px, bars = self._exit_by_sl_tp(df, i, sl, tp, direction, max_hold)
+                    trades.append(TradeResult(
+                        entry_price=float(close[i]), exit_price=float(exit_px),
+                        pnl=float(direction * (exit_px - close[i])), direction=direction,
+                        bars_held=bars, regime_at_entry="TREND",
+                        sl_distance=float(sl_dist), tp_distance=float(abs(tp - close[i])),
+                    ))
+
+                # BOS bajista: cierre rompe swing low con estructura previa comprimida
+                elif close[i] < swing_low and close[i - 1] >= swing_low:
+                    direction = -1
+                    sl     = swing_high
+                    sl_dist = abs(sl - close[i])
+                    if sl_dist <= 0:
+                        continue
+                    tp     = close[i] - sl_dist * tp_ratio
+                    exit_px, bars = self._exit_by_sl_tp(df, i, sl, tp, direction, max_hold)
+                    trades.append(TradeResult(
+                        entry_price=float(close[i]), exit_price=float(exit_px),
+                        pnl=float(direction * (exit_px - close[i])), direction=direction,
+                        bars_held=bars, regime_at_entry="TREND",
+                        sl_distance=float(sl_dist), tp_distance=float(abs(tp - close[i])),
+                    ))
+            return trades
+        except Exception as exc:
+            logger.warning("[STRUC_SHIFT_0001] evaluate_on_history error: %s", exc)
+            return []

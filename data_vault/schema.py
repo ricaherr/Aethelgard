@@ -1072,6 +1072,28 @@ def run_migrations(conn: sqlite3.Connection) -> None:
         )
         logger.info("Migration applied: sys_strategies.last_backtest_at added.")
 
+    # HU 7.8: Structural context columns (required_regime, required_timeframes, execution_params)
+    # Allows ScenarioBacktester to know the strategy's operational context without hard-coding
+    # assumptions. execution_params replaces the misuse of affinity_scores for threshold storage.
+    # TRACE_ID: EDGE-BKT-78-STRUCTURAL-CONTEXT-2026-03-24
+    cursor.execute("PRAGMA table_info(sys_strategies)")
+    strat_ctx_cols = [r[1] for r in cursor.fetchall()]
+    if "required_regime" not in strat_ctx_cols:
+        cursor.execute(
+            "ALTER TABLE sys_strategies ADD COLUMN required_regime TEXT DEFAULT 'ANY'"
+        )
+        logger.info("Migration applied: sys_strategies.required_regime added.")
+    if "required_timeframes" not in strat_ctx_cols:
+        cursor.execute(
+            "ALTER TABLE sys_strategies ADD COLUMN required_timeframes TEXT DEFAULT '[]'"
+        )
+        logger.info("Migration applied: sys_strategies.required_timeframes added.")
+    if "execution_params" not in strat_ctx_cols:
+        cursor.execute(
+            "ALTER TABLE sys_strategies ADD COLUMN execution_params TEXT DEFAULT '{}'"
+        )
+        logger.info("Migration applied: sys_strategies.execution_params added.")
+
     # instruments_config: seed only when key is absent (never overwrite existing data)
     cursor.execute("SELECT 1 FROM sys_config WHERE key = ?", ("instruments_config",))
     if cursor.fetchone() is None:

@@ -394,6 +394,291 @@
     * **Descripción**: `_is_on_cooldown()` usa `updated_at` (campo de escritura general) en lugar de un campo dedicado `last_backtest_at`. Como `updated_at` fue seteado por migración/seed a '2026-03-24 04:50:50' para las 6 estrategias, el cooldown de 24h bloquea indefinidamente cualquier backtest. Fix: agregar columna `last_backtest_at TIMESTAMP DEFAULT NULL` a `sys_strategies` vía migración; actualizar `_is_on_cooldown()`, `_update_strategy_scores()` y `_load_backtest_strategies()` para usar este campo.
     * **Trace_ID**: PIPELINE-UNBLOCK-BACKTEST-COOLDOWN-2026-03-24
 
+---
+### ÉPICA E10 — Motor de Backtesting Inteligente (EDGE Evaluation Framework)
+*Trace_ID épica: EDGE-BACKTEST-EVAL-FRAMEWORK-2026-03-24*
+
+---
+
+* **HU 7.6: Interfaz estándar de evaluación histórica en estrategias** `[DONE]`
+    * **Prioridad**: 🔴 CRÍTICA (prerequisito bloqueante para HU 7.7)
+    * **Épica**: E10 | **Dominio**: 07_ADAPTIVE_LEARNING
+    * **Trace_ID**: EDGE-BKT-76-STRATEGY-INTERFACE-2026-03-24
+    * **Contexto**: `ScenarioBacktester._simulate_trades()` usa un modelo momentum genérico idéntico para todas las estrategias. Los scores actuales no reflejan la lógica real de ninguna estrategia — son el rendimiento de momentum sobre los datos de esa estrategia.
+    * **Descripción**: Definir e implementar el contrato `evaluate_on_history(df: DataFrame, params: Dict) -> List[TradeResult]` en la clase base de estrategias. Adaptar las 6 estrategias existentes. Definir el modelo `TradeResult` con: `entry_price`, `exit_price`, `pnl`, `direction`, `bars_held`, `regime_at_entry`, `sl_distance`, `tp_distance`.
+    * **Criterios de aceptación**:
+        - Clase base `BaseStrategy` expone `evaluate_on_history()` con firma estándar
+        - Las 6 estrategias implementan el método usando su lógica real de señales
+        - `TradeResult` es un dataclass tipado con todos los campos requeridos
+        - Tests unitarios por estrategia verifican que `evaluate_on_history()` produce trades distintos entre estrategias sobre los mismos datos
+    * **Artefactos**: `core_brain/strategies/base_strategy.py`, `core_brain/strategies/*.py` (×6), `models/trade_result.py`
+
+* **HU 7.7: Simulación real por estrategia — despacho a lógica propia** `[DONE]`
+    * **Prioridad**: 🔴 CRÍTICA
+    * **Épica**: E10 | **Dominio**: 07_ADAPTIVE_LEARNING
+    * **Trace_ID**: EDGE-BKT-77-REAL-SIMULATION-2026-03-24
+    * **Dependencia**: HU 7.6
+    * **Contexto**: El motor momentum genérico en `_simulate_trades()` hace que todos los scores sean iguales independientemente de la estrategia. Los scores actuales (0.5543 para MOM_BIAS y SESS_EXT) son deterministas sobre datos parcialmente sintéticos, no evidencia real de aptitud.
+    * **Descripción**: Reemplazar `ScenarioBacktester._simulate_trades()` por despacho a `strategy.evaluate_on_history()`. El backtester recibe `strategy_id`, resuelve la clase correspondiente via `StrategyEngineFactory`, y delega la simulación a la lógica real. Los `parameter_overrides` se pasan como `params` al método.
+    * **Criterios de aceptación**:
+        - `_simulate_trades()` elimina el modelo momentum hardcodeado
+        - Cada estrategia produce un conjunto de trades distinto sobre los mismos datos
+        - Los scores de las 6 estrategias difieren entre sí después del cambio
+        - Tests verifican despacho correcto por `strategy_id`
+    * **Artefactos**: `core_brain/scenario_backtester.py`
+
+* **HU 7.8: Contexto estructural declarado en sys_strategies** `[DONE]`
+    * **Prioridad**: Alta
+    * **Épica**: E10 | **Dominio**: 07_ADAPTIVE_LEARNING
+    * **Trace_ID**: EDGE-BKT-78-STRUCTURAL-CONTEXT-2026-03-24
+    * **Contexto**: `sys_strategies` no tiene campos para declarar el régimen de mercado requerido ni los timeframes válidos. El backtester asume H1 siempre (columna `default_timeframe` no existe) y no tiene forma de saber si una estrategia requiere TREND o funciona en cualquier régimen.
+    * **Descripción**: DDL — agregar a `sys_strategies`:
+        - `required_regime TEXT DEFAULT 'ANY'` — valores: `'TREND'`, `'RANGE'`, `'VOLATILE'`, `'ANY'`
+        - `required_timeframes TEXT DEFAULT '[]'` — JSON array, ej: `["M5","M15"]`; vacío = descubrir empíricamente
+        - `execution_params TEXT DEFAULT '{}'` — JSON con `confidence_threshold`, `risk_reward` (libera `affinity_scores` de ese rol)
+        Migration automática idempotente. Poblar los 6 registros existentes con valores derivados de la lectura del código de cada estrategia (conocimiento estructural, no empírico).
+    * **Criterios de aceptación**:
+        - Migration aplicada sin recrear tablas ni perder datos existentes
+        - 6 estrategias tienen `required_regime` y `required_timeframes` poblados
+        - `execution_params` contiene `confidence_threshold` y `risk_reward` por estrategia
+        - `affinity_scores` queda libre para uso exclusivo de evidencia empírica (HU 7.13)
+        - Tests de migration verifican idempotencia
+    * **Artefactos**: `data_vault/schema.py`
+
+* **HU 7.9: Evaluación multi-timeframe con round-robin y pre-filtro**
+    * **Prioridad**: Alta
+    * **Épica**: E10 | **Dominio**: 07_ADAPTIVE_LEARNING
+    * **Trace_ID**: EDGE-BKT-79-MULTI-TF-ROUNDROBIN-2026-03-24
+    * **Dependencia**: HU 7.8
+    * **Contexto**: `_resolve_symbol_timeframe()` siempre usa H1 (columna inexistente → fallback). Las estrategias M5 se evalúan en H1 — incompatibilidad de contexto temporal. Evaluar todos los timeframes en un ciclo dispararía el costo x4.
+    * **Descripción**: Implementar evaluación multi-timeframe con dos mecanismos de control de costo:
+        1. **Si `required_timeframes` declarado** → evaluar solo esos timeframes (saber estructural)
+        2. **Si `required_timeframes` vacío** → rotar un timeframe por ciclo en orden configurable desde `sys_config` (`["M5","M15","H1","H4"]` default). El estado del ciclo actual se persiste en `sys_strategy_pair_coverage` (HU 7.17).
+        Pre-filtro antes de cualquier fetch: si `required_regime != 'ANY'` y el régimen actual del par no coincide → skip este ciclo, programar para el próximo.
+    * **Criterios de aceptación**:
+        - Estrategias con `required_timeframes` poblado se evalúan solo en esos timeframes
+        - Round-robin avanza correctamente entre ciclos (estado persistido)
+        - Pre-filtro de régimen elimina fetches innecesarios antes del I/O
+        - Tests verifican que el round-robin no repite timeframe hasta completar el ciclo
+    * **Artefactos**: `core_brain/backtest_orchestrator.py`, `data_vault/schema.py`
+
+* **HU 7.10: RegimeClassifier real en pipeline de backtesting**
+    * **Prioridad**: Media
+    * **Épica**: E10 | **Dominio**: 07_ADAPTIVE_LEARNING
+    * **Trace_ID**: EDGE-BKT-710-REGIME-CLASSIFIER-2026-03-24
+    * **Contexto**: `_split_into_cluster_slices()` usa `backtester._detect_regime()` — método simple basado en ATR ratio + slope. El sistema tiene `RegimeClassifier` (ADX + SMA200 + hysteresis + 4 regímenes) en `core_brain/regime.py` que NO se usa en backtesting. Dos clasificadores paralelos con calidad distinta.
+    * **Descripción**: Reemplazar `backtester._detect_regime()` en `_split_into_cluster_slices()` por `RegimeClassifier` de `regime.py`. Instanciar el clasificador, llamar `load_ohlc(window)` y `classify()` por cada ventana deslizante. Mantener el mapeo `REGIME_TO_CLUSTER` existente. Un único clasificador de régimen en todo el sistema.
+    * **Criterios de aceptación**:
+        - `_split_into_cluster_slices()` usa `RegimeClassifier` con ADX real
+        - `ScenarioBacktester._detect_regime()` queda solo para tests legacy o se elimina
+        - La clasificación NORMAL/TREND/RANGE/CRASH mapea correctamente a `StressCluster`
+        - Tests verifican que ventanas con ADX > 25 clasifican como INSTITUTIONAL_TREND
+    * **Artefactos**: `core_brain/backtest_orchestrator.py`
+
+* **HU 7.11: Cadena de fallback multi-proveedor — eliminar síntesis en producción** `[DONE]`
+    * **Prioridad**: Alta
+    * **Épica**: E10 | **Dominio**: 07_ADAPTIVE_LEARNING
+    * **Trace_ID**: EDGE-BKT-711-MULTI-PROVIDER-NOSYNTHESIS-2026-03-24
+    * **Contexto**: Cuando un cluster no aparece en los datos del proveedor primario, `_synthesise_cluster_window()` genera barras con ruido gaussiano (seed=42). El header del archivo declara "Real data only — no synthetic data in production", pero el código lo viola silenciosamente. Backtest sobre datos sintéticos produce scores no reproducibles en mercado real.
+    * **Descripción**: Reemplazar la síntesis por una cadena de fallback con datos reales:
+        1. Proveedor primario — ventana inicial (500 barras)
+        2. Proveedor primario — ventana extendida hasta máximo configurable desde `sys_config` (default: 3000 barras)
+        3. Proveedores secundarios — iterar `DataProviderManager` en orden de prioridad
+        4. Si ningún proveedor tiene el cluster → marcar como `UNTESTED_CLUSTER` con `confidence_weight=0.0`
+        Un cluster `UNTESTED` no bloquea la evaluación ni la promoción. Se registra en `AptitudeMatrix` como `untested_clusters: List[str]`. La síntesis (`_synthesise_cluster_window`) se elimina del path de producción; se mantiene únicamente en tests unitarios con flag explícito.
+    * **Criterios de aceptación**:
+        - `_synthesise_cluster_window()` no se llama en el path de producción
+        - `AptitudeMatrix` incluye `untested_clusters: List[str]`
+        - El score de un cluster `UNTESTED` no penaliza artificialmente el `overall_score`
+        - Tests verifican el orden correcto de la cadena de fallback
+        - Log emite WARNING cuando un cluster queda como UNTESTED
+    * **Artefactos**: `core_brain/backtest_orchestrator.py`, `core_brain/scenario_backtester.py`
+
+* **HU 7.12: Adaptive Backtest Scheduler — cooldown dinámico y queue de prioridad**
+    * **Prioridad**: Alta
+    * **Épica**: E10 | **Dominio**: 07_ADAPTIVE_LEARNING
+    * **Trace_ID**: EDGE-BKT-712-ADAPTIVE-SCHEDULER-2026-03-24
+    * **Dependencia**: HU 10.7 (requiere `OperationalModeManager` para leer el contexto)
+    * **Contexto**: El cooldown de 24h es rígido. En contexto `BACKTEST_ONLY` con recursos libres, el sistema desperdicia capacidad de cómputo esperando el siguiente ciclo. En contexto `LIVE_ACTIVE`, 24h puede ser demasiado frecuente.
+    * **Descripción**: Reemplazar el cooldown fijo por un scheduler adaptativo:
+        - **Cooldown dinámico por contexto operacional**:
+            - `BACKTEST_ONLY` + recursos > 70% libres → 0h (ejecutar al siguiente slot disponible)
+            - `BACKTEST_ONLY` + recursos 40–70% libres → 2h
+            - `SHADOW_ACTIVE` → 12h
+            - `LIVE_ACTIVE` → 24h (comportamiento original)
+            - Floor absoluto: nunca re-evaluar el mismo par+tf en menos de 1h (protección rate limit del data provider)
+        - **Queue de prioridad** para selección del siguiente backtest:
+            - P1: Estrategias con `last_backtest_at = NULL`
+            - P2: Combinaciones `PENDING` con régimen compatible actualmente
+            - P3: Combinaciones con `UNTESTED_CLUSTER`
+            - P4: Alta varianza entre ciclos (score inestable)
+            - P5: `confidence` baja (pocos trades acumulados)
+            - P6: Re-evaluación de rutina (detección de drift)
+        - **Fetch incremental**: guardar `last_evaluated_at` por `(strategy_id, symbol, timeframe)`. En ciclos subsiguientes, solo fetchear barras nuevas desde esa fecha. Reduce I/O en >70% en steady state.
+        - **Cooldown adaptativo por estabilidad**: si `effective_score` varió < 3% en últimos 3 ciclos → extender cooldown automáticamente a 7 días.
+        - **Rate limiter por proveedor**: gap mínimo configurable entre requests al mismo proveedor (default: 30s).
+    * **Criterios de aceptación**:
+        - En contexto `BACKTEST_ONLY` con CPU < 30%, el scheduler ejecuta backtests consecutivos sin esperar 24h
+        - El floor de 1h por par+tf se respeta en todos los contextos
+        - El queue de prioridad selecciona correctamente P1 sobre P6
+        - Fetch incremental solo trae barras nuevas en el segundo ciclo
+        - Tests verifican cada nivel de prioridad del queue
+    * **Artefactos**: `core_brain/backtest_orchestrator.py`, `data_vault/schema.py`
+
+* **HU 7.13: Rediseño semántico de affinity_scores**
+    * **Prioridad**: Alta
+    * **Épica**: E10 | **Dominio**: 07_ADAPTIVE_LEARNING
+    * **Trace_ID**: EDGE-BKT-713-AFFINITY-REDESIGN-2026-03-24
+    * **Dependencia**: HU 7.8 (libera el campo de `confidence_threshold`/`risk_reward`)
+    * **Contexto**: `affinity_scores` almacena opiniones del desarrollador (`{"EUR/USD": 0.92}`) que el código nunca usa como scores — busca `confidence_threshold` y `risk_reward` que no existen, siempre cae a defaults. El campo está semánticamente roto: fue diseñado para un propósito y usado para otro.
+    * **Descripción**: Redefinir `affinity_scores` como OUTPUT exclusivo del proceso de evaluación empírica. Estructura por par:
+        ```json
+        {
+          "EURUSD": {
+            "effective_score": 0.71,
+            "raw_score": 0.84,
+            "confidence": 0.83,
+            "n_trades": 52,
+            "profit_factor": 1.74,
+            "max_drawdown": 0.11,
+            "win_rate": 0.57,
+            "optimal_timeframe": "M15",
+            "regime_evaluated": "TREND",
+            "status": "QUALIFIED",
+            "cycles": 3,
+            "last_updated": "2026-03-24T18:46:08Z"
+          }
+        }
+        ```
+        Los valores actuales hardcodeados (`{"EUR/USD": 0.92}`) se eliminan. El campo inicia vacío `{}` para todas las estrategias y se pobla únicamente por el proceso de backtesting.
+    * **Criterios de aceptación**:
+        - Migration limpia el contenido actual de `affinity_scores` en las 6 estrategias
+        - `_extract_parameter_overrides()` lee `execution_params` (no `affinity_scores`)
+        - `_update_strategy_scores()` escribe la estructura completa por par
+        - Tests verifican que el score por par incluye todos los campos requeridos
+    * **Artefactos**: `core_brain/backtest_orchestrator.py`, `data_vault/schema.py`
+
+* **HU 7.14: Backtesting multi-par secuencial**
+    * **Prioridad**: Alta
+    * **Épica**: E10 | **Dominio**: 07_ADAPTIVE_LEARNING
+    * **Trace_ID**: EDGE-BKT-714-MULTI-PAIR-2026-03-24
+    * **Dependencia**: HU 7.13
+    * **Contexto**: `_resolve_symbol_timeframe()` toma `whitelist[0]` — solo el primer par. Una estrategia con 4 pares en el whitelist evalúa únicamente EURUSD. Toda la evaluación actual es single-pair.
+    * **Descripción**: `_execute_backtest()` itera sobre todos los símbolos habilitados en `InstrumentManager`. Para cada par:
+        - Aplica pre-filtro de régimen (HU 7.9)
+        - Ejecuta `ScenarioBacktester` con la lógica real de la estrategia (HU 7.7)
+        - Calcula `effective_score` con confianza estadística (HU 7.15)
+        - Persiste resultado en `affinity_scores` por par (HU 7.13)
+        Ejecución **secuencial** (no paralela) dentro del ciclo de la estrategia activa. El `AdaptiveBacktestScheduler` (HU 7.12) controla cuántos pares se procesan por ciclo según el budget de recursos disponible.
+    * **Criterios de aceptación**:
+        - `affinity_scores` contiene resultados para múltiples pares tras el primer ciclo completo
+        - El `asyncio.gather()` actual se reemplaza por ejecución secuencial de estrategias
+        - El Resource Guard (HU 10.7) se consulta entre cada par evaluado
+        - Tests verifican que pares con régimen incompatible son skipped correctamente
+    * **Artefactos**: `core_brain/backtest_orchestrator.py`
+
+* **HU 7.15: Score con confianza estadística n/(n+k)**
+    * **Prioridad**: Alta
+    * **Épica**: E10 | **Dominio**: 07_ADAPTIVE_LEARNING
+    * **Trace_ID**: EDGE-BKT-715-CONFIDENCE-SCORING-2026-03-24
+    * **Contexto**: El criterio actual de "mínimo 30 trades" es binario y arbitrario. Penaliza estrategias de baja frecuencia legítimas y trata igual a 29 trades (rechazado) y 31 (aceptado).
+    * **Descripción**: Implementar función de confianza estadística continua:
+        ```
+        confidence(n, k) = n / (n + k)
+        effective_score  = raw_score × confidence(n_trades, k)
+        ```
+        Donde `k` (prior de trades equivalentes) es configurable por tipo de estrategia desde `sys_config` (default: 20). Interpretación de `k`: número de trades para alcanzar 50% de confianza.
+        Estados del par determinados por `effective_score`:
+        - `effective_score >= 0.55` → `QUALIFIED` → incluir en whitelist
+        - `effective_score < 0.20` AND `confidence >= 0.50` → `REJECTED` → excluir con evidencia
+        - Otherwise → `PENDING` → continuar recolectando ciclos
+        El `k` se puede configurar por estrategia en `execution_params` para estrategias de distinta frecuencia.
+    * **Criterios de aceptación**:
+        - `confidence(0, k) = 0.0` para cualquier `k`
+        - `confidence(k, k) = 0.5` exacto
+        - `confidence(200, 20) ≈ 0.91`
+        - Estrategia con PF=2.5 y 5 trades recibe status `PENDING`, no `QUALIFIED`
+        - `k` se lee de `execution_params` con fallback a `sys_config`
+        - Tests parametrizados verifican la función para n=0,5,10,20,30,50,100
+    * **Artefactos**: `core_brain/scenario_backtester.py`, `core_brain/backtest_orchestrator.py`
+
+* **HU 7.16: Filtro de compatibilidad de régimen pre-evaluación**
+    * **Prioridad**: Media
+    * **Épica**: E10 | **Dominio**: 07_ADAPTIVE_LEARNING
+    * **Trace_ID**: EDGE-BKT-716-REGIME-FILTER-2026-03-24
+    * **Dependencia**: HU 7.8, HU 7.10
+    * **Descripción**: Antes de fetchear datos para un par, verificar si el régimen actual de ese par (via `RegimeClassifier` en tiempo real) es compatible con `strategy.required_regime`. Si `required_regime = 'ANY'` → siempre evaluar. Si no coincide → estado `REGIME_INCOMPATIBLE` para este ciclo, programar para el próximo. No es un rechazo permanente del par — es aplazar la evaluación hasta que exista el contexto correcto. El sistema prioriza estos pares aplazados cuando el régimen compatibiliza (ver HU 7.18).
+    * **Criterios de aceptación**:
+        - Estrategia con `required_regime='TREND'` no fetchea datos de un par en RANGE
+        - El par en RANGE queda marcado `REGIME_INCOMPATIBLE` con timestamp
+        - El scheduler (HU 7.18) eleva prioridad del par cuando el régimen cambia a TREND
+        - Estrategias con `required_regime='ANY'` no aplican el filtro
+    * **Artefactos**: `core_brain/backtest_orchestrator.py`
+
+* **HU 7.17: Tabla sys_strategy_pair_coverage**
+    * **Prioridad**: Media
+    * **Épica**: E10 | **Dominio**: 07_ADAPTIVE_LEARNING
+    * **Trace_ID**: EDGE-BKT-717-COVERAGE-TABLE-2026-03-24
+    * **Descripción**: Nueva tabla DDL en `schema.py`:
+        ```sql
+        CREATE TABLE IF NOT EXISTS sys_strategy_pair_coverage (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            strategy_id     TEXT NOT NULL,
+            symbol          TEXT NOT NULL,
+            timeframe       TEXT NOT NULL,
+            regime          TEXT NOT NULL,
+            n_cycles        INTEGER DEFAULT 0,
+            n_trades_total  INTEGER DEFAULT 0,
+            effective_score REAL    DEFAULT 0.0,
+            status          TEXT    DEFAULT 'PENDING',
+            last_evaluated_at TIMESTAMP,
+            created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(strategy_id, symbol, timeframe, regime)
+        );
+        ```
+        Esta tabla es la fuente de verdad para el scheduler inteligente (HU 7.18) y el fetch incremental (HU 7.12). Registra el estado de cobertura de cada combinación `(estrategia, par, timeframe, régimen)`.
+    * **Criterios de aceptación**:
+        - Migration idempotente crea la tabla sin afectar datos existentes
+        - `UNIQUE(strategy_id, symbol, timeframe, regime)` previene duplicados
+        - `BacktestOrchestrator` escribe en esta tabla al completar cada evaluación de par
+        - Tests de migration verifican idempotencia
+    * **Artefactos**: `data_vault/schema.py`
+
+* **HU 7.18: Scheduler inteligente de backtests — prioritized queue**
+    * **Prioridad**: Media
+    * **Épica**: E10 | **Dominio**: 07_ADAPTIVE_LEARNING
+    * **Trace_ID**: EDGE-BKT-718-SMART-SCHEDULER-2026-03-24
+    * **Dependencia**: HU 7.17, HU 10.7
+    * **Descripción**: Componente `BacktestPriorityQueue` que determina qué combinación `(strategy_id, symbol, timeframe)` evaluar en cada slot disponible. Prioridad descendente:
+        - P1: `last_backtest_at = NULL` (nunca evaluada)
+        - P2: `status = PENDING` + régimen actualmente compatible
+        - P3: `untested_clusters` pendientes
+        - P4: Varianza alta entre ciclos (`effective_score` inestable)
+        - P5: `confidence` baja + muchos ciclos sin mejora
+        - P6: Re-evaluación rutinaria (detección de drift temporal)
+        Integrado con `OperationalModeManager` (HU 10.7): si el modo cambia a `SHADOW_ACTIVE` o `LIVE_ACTIVE` durante la ejecución del queue, el scheduler reduce la agresividad inmediatamente.
+    * **Criterios de aceptación**:
+        - Combinaciones P1 se evalúan antes que P6 en todos los escenarios
+        - Cambio de contexto a `LIVE_ACTIVE` reduce el budget del scheduler en el siguiente ciclo
+        - Tests verifican ordenamiento correcto del queue con datos sintéticos de cobertura
+    * **Artefactos**: `core_brain/backtest_orchestrator.py`
+
+* **HU 7.19: Detector de overfitting por par**
+    * **Prioridad**: Baja
+    * **Épica**: E10 | **Dominio**: 07_ADAPTIVE_LEARNING
+    * **Trace_ID**: EDGE-BKT-719-OVERFITTING-DETECTOR-2026-03-24
+    * **Dependencia**: HU 7.14, HU 7.15
+    * **Descripción**: Si una estrategia alcanza `effective_score >= 0.90` en más del 80% de los pares evaluados con `confidence >= 0.70`, es estadísticamente sospechoso — sugiere que la simulación está sobreajustada a los datos históricos disponibles. En ese caso, el sistema:
+        1. Flag `overfitting_risk: true` en el `AptitudeMatrix`
+        2. Requiere validación adicional: un periodo out-of-sample no incluido en los ciclos de evaluación anteriores
+        3. No bloquea la promoción automáticamente, pero emite alerta en `sys_audit_logs` y en el broadcast WebSocket a la UI
+    * **Criterios de aceptación**:
+        - Flag se activa correctamente con >80% pares en score >= 0.90
+        - Flag NO se activa si solo 3 de 18 pares tienen score >= 0.90
+        - Alert registrado en `sys_audit_logs` con `trace_id`
+        - Tests verifican el umbral de activación
+    * **Artefactos**: `core_brain/scenario_backtester.py`, `core_brain/backtest_orchestrator.py`
+
 ## 08_DATA_SOVEREIGNTY (SSOT, Persistence)
 * **HU 8.1: usr_broker_accounts — Separación Arquitectónica de Cuentas** `[DONE]`
     * **Descripción**: Implementar tabla `usr_broker_accounts` en `schema.py` y `usr_template.db` para separar cuentas de usuario de cuentas del sistema. `sys_broker_accounts` queda exclusivamente para cuentas DEMO del sistema (data feeds, SHADOW mode sin usuario). `usr_broker_accounts` almacena cuentas REAL/DEMO por trader, aisladas por `user_id`. Crear `BrokerAccountsMixin` con métodos CRUD y script de migración idempotente.
@@ -416,6 +701,46 @@
     * **Prioridad**: Media
     * **Descripción**: `EdgeMonitor.__init__` acepta `mt5_connector: Optional[Any]` hardcodeado. Refactor a `connectors: Dict[str, Any]` (mismo patrón que `OrderExecutor`). El monitor debe iterar todos los conectores disponibles sin conocer su tipo. La disponibilidad de un conector se detecta desde DB (`sys_data_providers.enabled`), no via flags hardcodeados. Métodos `_check_mt5_external_operations()` se refactorizan a `_check_connector_external_operations(connector_id, connector)` genérico.
     * **Trace_ID**: PIPELINE-UNBLOCK-EDGE-AGNOSTIC-2026-03-24
+
+* **HU 10.7: Adaptive Operational Mode Manager** `[DONE]`
+    * **Prioridad**: 🔴 CRÍTICA (prerequisito para HU 7.12 y HU 7.18)
+    * **Épica**: E10 | **Dominio**: 10_INFRASTRUCTURE_RESILIENCY
+    * **Trace_ID**: EDGE-BKT-107-OPERATIONAL-MODE-MANAGER-2026-03-24
+    * **Contexto**: El sistema ejecuta el Scanner, SignalFactory y ClosingMonitor con frecuencia máxima incluso cuando no hay estrategias en SHADOW ni LIVE — producen output que nadie consume. Ese cómputo podría redirigirse al backtesting. Adicionalmente, el `BacktestOrchestrator` usa cooldown fijo de 24h independientemente de los recursos disponibles, desperdiciando capacidad en contextos `BACKTEST_ONLY`.
+    * **Descripción**: Implementar `OperationalModeManager` que:
+        1. **Detecta el contexto operacional** cada ciclo:
+            - `BACKTEST_ONLY`: todas las estrategias en BACKTEST (sin SHADOW ni LIVE)
+            - `SHADOW_ACTIVE`: al menos 1 estrategia en SHADOW
+            - `LIVE_ACTIVE`: al menos 1 estrategia en LIVE
+        2. **Ajusta la frecuencia o suspende componentes** según contexto:
+
+            | Componente | BACKTEST_ONLY | SHADOW_ACTIVE | LIVE_ACTIVE |
+            |---|---|---|---|
+            | Scanner | Frecuencia mínima (1/5min) | Normal | Normal |
+            | SignalFactory | **Suspendido** | Normal | Normal |
+            | ClosingMonitor | **Suspendido** | Normal | Normal |
+            | EdgeMonitor | Frecuencia reducida | Normal | Normal |
+            | OperationalEdgeMonitor | Frecuencia reducida | Normal | Normal |
+            | BacktestOrchestrator | **Agresivo** (cooldown dinámico) | Moderado | Conservador |
+            | ConnectivityOrchestrator | Normal (siempre) | Normal | Normal |
+            | AutonomousHealthService | Normal (siempre) | Normal | Normal |
+
+        3. **Resume componentes en < 2s** ante cambio de contexto (ej: estrategia promovida a SHADOW → restaurar Scanner y SignalFactory antes de que la instancia SHADOW opere)
+        4. **Evalúa recursos del servidor** (psutil) antes de autorizar cada backtest:
+            - CPU, RAM, disco desde `psutil`
+            - Thresholds configurables desde `sys_config`
+            - Si recursos insuficientes → `DEFER` (no cancelar) con timestamp de reintento
+        5. **Expone `get_backtest_budget()`** al `AdaptiveBacktestScheduler` (HU 7.12): retorna el nivel de agresividad autorizado (`AGGRESSIVE` / `MODERATE` / `CONSERVATIVE` / `DEFERRED`)
+        6. **Persiste transiciones de modo** en `sys_audit_logs` para auditoría completa
+        **Nota de diseño**: Esta HU es el primer componente real del `AutonomousSystemOrchestrator` (HU 10.6). Implementa los principios de autonomía declarados en ese diseño sobre un caso concreto y de alto valor inmediato.
+    * **Criterios de aceptación**:
+        - Transición de contexto detectada correctamente en < 1 ciclo tras cambio de modo de estrategia
+        - SignalFactory suspendida en `BACKTEST_ONLY` y restaurada en < 2s al detectar `SHADOW_ACTIVE`
+        - `get_backtest_budget()` retorna `DEFERRED` cuando CPU > 80% independientemente del contexto
+        - Todas las transiciones de modo registradas en `sys_audit_logs`
+        - Tests verifican detección de los 3 contextos operacionales
+        - Tests verifican resume correcto al cambiar de `BACKTEST_ONLY` a `SHADOW_ACTIVE`
+    * **Artefactos**: `core_brain/operational_mode_manager.py` (nuevo), `core_brain/main_orchestrator.py` (wiring), `data_vault/schema.py` (si requiere tabla adicional)
 
 * **HU 10.6: AutonomousSystemOrchestrator — Diseño FASE4** `[TODO]`
     * **Prioridad**: Media (diseño y documentación, no implementación de código aún)

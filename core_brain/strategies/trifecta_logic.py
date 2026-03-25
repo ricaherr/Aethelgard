@@ -15,7 +15,10 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 from datetime import datetime, time
-from typing import Dict, Optional, Any
+from typing import Dict, List, Optional, Any
+
+from models.trade_result import TradeResult
+from core_brain.strategies.base_strategy import BaseStrategy
 
 from data_vault.storage import StorageManager
 
@@ -293,3 +296,68 @@ class TrifectaAnalyzer:
         
         except Exception as e:
             logger.error(f"TrifectaAnalyzer: Failed to auto-enable timeframes: {e}")
+
+    def evaluate_on_history(self, df: pd.DataFrame, params: Dict) -> List[TradeResult]:
+        """
+        Backtesting de TRIFECTA: alineación SMA20/SMA200 + estado estrecho + expansión.
+
+        Condiciones de entrada (proxy de un único timeframe):
+        - Narrow state: |SMA20 - SMA200| / close < narrow_pct (estructura comprimida)
+        - Alineación: close > SMA20 > SMA200 (LONG) o close < SMA20 < SMA200 (SHORT)
+        - Pendiente SMA20 positiva (tendencia incipiente)
+        SL = SMA20 al momento de entrada, TP = entry ± sl_distance × rr
+        """
+        if df.empty or len(df) < 202:
+            return []
+        try:
+            rr           = float(params.get("risk_reward", 2.0))
+            narrow_pct   = float(params.get("narrow_state_pct", 0.015))
+            slope_min    = float(params.get("sma20_slope_pct_min", 0.0003))
+            max_hold     = int(params.get("max_bars_hold", 50))
+
+            close  = df["close"].values
+            sma20  = pd.Series(close).rolling(20).mean().values
+            sma200 = pd.Series(close).rolling(200).mean().values
+
+            trades: List[TradeResult] = []
+            for i in range(201, len(close) - 1):
+                if np.isnan(sma20[i]) or np.isnan(sma200[i]) or np.isnan(sma20[i - 1]):
+                    continue
+                if close[i] <= 0 or sma20[i] <= 0:
+                    continue
+
+                # Narrow state: compresión de SMA
+                separation_pct = abs(sma20[i] - sma200[i]) / close[i]
+                if separation_pct > narrow_pct:
+                    continue
+
+                # Jerarquía completa
+                bullish = close[i] > sma20[i] > sma200[i]
+                bearish = close[i] < sma20[i] < sma200[i]
+                if not (bullish or bearish):
+                    continue
+
+                # Pendiente SMA20 (confirmación de dirección)
+                slope = (sma20[i] - sma20[i - 1]) / sma20[i - 1] if sma20[i - 1] > 0 else 0.0
+                expected_slope_sign = slope > slope_min if bullish else slope < -slope_min
+                if not expected_slope_sign:
+                    continue
+
+                direction = 1 if bullish else -1
+                sl        = float(sma20[i])
+                sl_dist   = abs(close[i] - sl)
+                if sl_dist <= 0:
+                    continue
+                tp = close[i] + direction * sl_dist * rr
+                exit_px, bars = BaseStrategy._exit_by_sl_tp(df, i, sl, tp, direction, max_hold)
+                regime = "TREND"
+                trades.append(TradeResult(
+                    entry_price=float(close[i]), exit_price=float(exit_px),
+                    pnl=float(direction * (exit_px - close[i])), direction=direction,
+                    bars_held=bars, regime_at_entry=regime,
+                    sl_distance=float(sl_dist), tp_distance=float(abs(tp - close[i])),
+                ))
+            return trades
+        except Exception as exc:
+            logger.warning("[TRIFECTA] evaluate_on_history error: %s", exc)
+            return []

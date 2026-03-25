@@ -3,9 +3,11 @@ from datetime import datetime
 from typing import Optional, Dict
 import pandas as pd
 
+from typing import List
 from models.signal import (
     Signal, SignalType, MarketRegime, MembershipTier, ConnectorType
 )
+from models.trade_result import TradeResult
 from core_brain.strategies.base_strategy import BaseStrategy
 from core_brain.instrument_manager import InstrumentManager
 from data_vault.storage import StorageManager
@@ -285,3 +287,76 @@ class OliverVelezStrategy(BaseStrategy):
         elif score >= self.premium_threshold:
             return MembershipTier.PREMIUM
         return MembershipTier.FREE
+
+    def evaluate_on_history(self, df: pd.DataFrame, params: Dict) -> List[TradeResult]:
+        """
+        Backtesting de OliverVelez: alineación SMA200 + proximidad a SMA20 + vela ignición.
+
+        Condiciones de entrada:
+        - Jerarquía SMA: close > SMA20 > SMA200 (LONG) o close < SMA20 < SMA200 (SHORT)
+        - Proximidad: close dentro de 0.5 ATR de la SMA20 (zona de valor)
+        - Vela ignición: cuerpo con z-score > umbral (vela estadísticamente grande)
+        SL = open de la vela, TP = entry ± sl_distance × rr
+        """
+        if df.empty or len(df) < 202:
+            return []
+        try:
+            import numpy as np
+            rr              = float(params.get("risk_reward", 2.5))
+            zscore_thresh   = float(params.get("zscore_threshold", 1.5))
+            proximity_atr   = float(params.get("proximity_atr_mult", 0.5))
+            max_hold        = int(params.get("max_bars_hold", 50))
+
+            close  = df["close"].values
+            open_  = df["open"].values
+            high   = df["high"].values
+            low    = df["low"].values
+            sma20  = pd.Series(close).rolling(20).mean().values
+            sma200 = pd.Series(close).rolling(200).mean().values
+            atr    = pd.Series(high - low).rolling(14).mean().values
+
+            # z-score del cuerpo de la vela (usando ventana de 20 barras)
+            body   = pd.Series(abs(close - open_))
+            b_mean = body.rolling(20).mean().values
+            b_std  = body.rolling(20).std().values
+
+            trades: List[TradeResult] = []
+            for i in range(200, len(close) - 1):
+                if any(np.isnan(v) for v in [sma20[i], sma200[i], atr[i], b_mean[i], b_std[i]]):
+                    continue
+                if b_std[i] <= 0 or atr[i] <= 0:
+                    continue
+
+                # Jerarquía SMA
+                bullish = close[i] > sma20[i] > sma200[i]
+                bearish = close[i] < sma20[i] < sma200[i]
+                if not (bullish or bearish):
+                    continue
+
+                # Proximidad a SMA20 (zona de valor)
+                if abs(close[i] - sma20[i]) > proximity_atr * atr[i]:
+                    continue
+
+                # Vela ignición: z-score del cuerpo > umbral
+                body_zscore = (abs(close[i] - open_[i]) - b_mean[i]) / b_std[i]
+                if body_zscore < zscore_thresh:
+                    continue
+
+                direction = 1 if bullish else -1
+                sl        = open_[i]
+                sl_dist   = abs(close[i] - sl)
+                if sl_dist <= 0:
+                    continue
+                tp = close[i] + direction * sl_dist * rr
+                exit_px, bars = self._exit_by_sl_tp(df, i, sl, tp, direction, max_hold)
+                regime = "TREND" if direction == 1 else "RANGE"
+                trades.append(TradeResult(
+                    entry_price=float(close[i]), exit_price=float(exit_px),
+                    pnl=float(direction * (exit_px - close[i])), direction=direction,
+                    bars_held=bars, regime_at_entry=regime,
+                    sl_distance=float(sl_dist), tp_distance=float(abs(tp - close[i])),
+                ))
+            return trades
+        except Exception as exc:
+            logger.warning("[OLIVER_VELEZ] evaluate_on_history error: %s", exc)
+            return []

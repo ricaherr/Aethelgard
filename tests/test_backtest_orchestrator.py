@@ -313,10 +313,14 @@ class TestSplitIntoClusters:
         clusters = {s.stress_cluster for s in slices}
         assert clusters == set(StressCluster.ALL)
 
-    def test_slices_have_data(self):
+    def test_real_slices_have_data_untested_slices_are_empty(self):
+        """HU 7.11: real slices have data; UNTESTED slices have empty DataFrame (no synthesis)."""
         df = _make_ohlcv_df(500)
         for s in self.orc._split_into_cluster_slices(df, "EURUSD", "H1"):
-            assert len(s.data) > 0
+            if s.is_real_data:
+                assert len(s.data) > 0
+            else:
+                assert s.data.empty
 
     def test_symbol_propagated(self):
         df = _make_ohlcv_df(500)

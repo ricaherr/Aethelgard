@@ -359,6 +359,14 @@ class MainOrchestrator:
         except Exception as e:
             logger.warning(f"[BACKTEST] Failed to initialize BacktestOrchestrator: {e}")
 
+        # 11.6: HU 10.7 — OperationalModeManager (adaptive context + backtest budget)
+        self.operational_mode_manager = None
+        try:
+            from core_brain.operational_mode_manager import OperationalModeManager
+            self.operational_mode_manager = OperationalModeManager(storage=self.storage)
+        except Exception as e:
+            logger.warning(f"[MODE_MGR] Failed to initialize OperationalModeManager: {e}")
+
         # 12. PHASE 4: Intelligent Signal Quality Scoring (Unified Authority)
         self._init_phase4_intelligence_services(
             signal_quality_scorer=signal_quality_scorer,
@@ -1478,9 +1486,24 @@ class MainOrchestrator:
 
         try:
             now_utc = datetime.now(timezone.utc)
+
+            # HU 10.7: Check operational context and resource budget before running
+            if getattr(self, "operational_mode_manager", None):
+                from core_brain.operational_mode_manager import BacktestBudget
+                budget = self.operational_mode_manager.get_backtest_budget()
+                if budget == BacktestBudget.DEFERRED:
+                    logger.info("[BACKTEST] Skipped — resources constrained (DEFERRED budget).")
+                    return
+                # Adaptive cooldown: AGGRESSIVE=1h, MODERATE=12h, CONSERVATIVE=24h
+                ctx = self.operational_mode_manager.current_context
+                freqs = self.operational_mode_manager.get_component_frequencies(ctx)
+                cooldown_h = freqs.get("backtest_cooldown_h", 24.0)
+            else:
+                cooldown_h = 24.0
+
             if self._last_backtest_run:
                 hours_since = (now_utc - self._last_backtest_run).total_seconds() / 3600
-                if hours_since < 24.0:
+                if hours_since < cooldown_h:
                     return
 
             logger.info("[BACKTEST] 🔄 Starting daily BACKTEST → SHADOW pipeline...")

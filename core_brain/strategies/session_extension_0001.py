@@ -13,9 +13,14 @@ Responsabilidades:
 TRACE_ID: STRAT-SESS-EXT-0001
 """
 import logging
-from typing import Optional, Dict, Any
+from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
+
+import pandas as pd
+
 from models.signal import Signal, SignalType, ConnectorType
+from models.trade_result import TradeResult
+from core_brain.strategies.base_strategy import BaseStrategy
 
 logger = logging.getLogger(__name__)
 
@@ -133,3 +138,61 @@ class SessionExtension0001Strategy:
             "timeframes": ["M5", "M15", "H1"],
             "trace_id": self.trace_id,
         }
+
+    def evaluate_on_history(self, df: "pd.DataFrame", params: Dict) -> List[TradeResult]:
+        """
+        Backtesting de SESS_EXT_0001: continuación de momentum de sesión.
+
+        Condiciones de entrada:
+        - Proxy de sesión: las últimas N barras tienen cuerpos en la misma dirección
+          (todas bullish o todas bearish → momentum de sesión confirmado)
+        - Dirección: LONG si todas bullish, SHORT si todas bearish
+        - SL = mínimo del burst (LONG) o máximo (SHORT), TP = 2:1
+        """
+        if df is None or (hasattr(df, 'empty') and df.empty) or len(df) < 6:
+            return []
+        try:
+            burst_n  = int(params.get("burst_candles", 3))
+            rr       = float(params.get("risk_reward", 2.0))
+            max_hold = int(params.get("max_bars_hold", 20))
+
+            close = df["close"].values
+            open_ = df["open"].values
+            high  = df["high"].values
+            low   = df["low"].values
+            trades: List[TradeResult] = []
+            in_trade = False
+
+            for i in range(burst_n, len(close) - 1):
+                if in_trade:
+                    in_trade = False
+                    continue
+                burst_close = close[i - burst_n: i]
+                burst_open  = open_[i - burst_n: i]
+                all_bull = all(c > o for c, o in zip(burst_close, burst_open))
+                all_bear = all(c < o for c, o in zip(burst_close, burst_open))
+                if not (all_bull or all_bear):
+                    continue
+                direction = 1 if all_bull else -1
+                if direction == 1:
+                    sl      = float(low[i - burst_n: i].min())
+                    sl_dist = abs(close[i] - sl)
+                else:
+                    sl      = float(high[i - burst_n: i].max())
+                    sl_dist = abs(sl - close[i])
+                if sl_dist <= 0:
+                    continue
+                tp = close[i] + direction * sl_dist * rr
+                exit_px, bars = BaseStrategy._exit_by_sl_tp(df, i, sl, tp, direction, max_hold)
+                trades.append(TradeResult(
+                    entry_price=float(close[i]), exit_price=float(exit_px),
+                    pnl=float(direction * (exit_px - close[i])), direction=direction,
+                    bars_held=bars, regime_at_entry="TREND",
+                    sl_distance=float(sl_dist), tp_distance=float(abs(tp - close[i])),
+                ))
+                in_trade = True
+            return trades
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("[SESS_EXT_0001] evaluate_on_history error: %s", exc)
+            return []

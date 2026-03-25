@@ -208,11 +208,13 @@ class BacktestOrchestrator:
             params,
         )
 
-        # Run ScenarioBacktester
+        # Run ScenarioBacktester with strategy-specific evaluate_on_history()
+        strategy_instance = self._build_strategy_for_backtest(strategy_id)
         matrix = self.backtester.run_scenario_backtest(
             strategy_id=strategy_id,
             parameter_overrides=params,
             scenario_slices=slices,
+            strategy_instance=strategy_instance,
         )
 
         # Persist score + recalculate consolidated score
@@ -248,10 +250,10 @@ class BacktestOrchestrator:
         if df is None or len(df) < self._cfg["bars_per_window"]:
             logger.warning(
                 "[BACKTEST_ORC] Insufficient data for strategy=%s symbol=%s tf=%s "
-                "— using synthetic fallback.",
+                "— marking all clusters as UNTESTED (no synthesis in production).",
                 strategy["class_id"], symbol, timeframe,
             )
-            return self._synthetic_fallback_slices(symbol, timeframe)
+            return self._untested_fallback_slices(symbol, timeframe)
 
         return self._split_into_cluster_slices(df, symbol, timeframe)
 
@@ -355,22 +357,40 @@ class BacktestOrchestrator:
                 cluster_scores[cluster] = representativeness
                 cluster_candidates[cluster] = window
 
-        # Build SliceList — synthesise missing clusters from the full df
+        # Build SliceList — missing clusters become UNTESTED (no synthesis in production)
         slices: List[ScenarioSlice] = []
         for cluster, window_df in cluster_candidates.items():
             if window_df is None:
-                window_df = self._synthesise_cluster_window(df, cluster)
-            slices.append(
-                ScenarioSlice(
-                    slice_id=f"{cluster}_{symbol}_{timeframe}",
-                    stress_cluster=cluster,
-                    symbol=symbol,
-                    timeframe=timeframe,
-                    data=window_df,
-                    start_date=str(window_df.index[0]) if not window_df.empty else "",
-                    end_date=str(window_df.index[-1]) if not window_df.empty else "",
+                logger.debug(
+                    "[BACKTEST_ORC] No real window found for cluster=%s symbol=%s tf=%s "
+                    "— marking as UNTESTED.",
+                    cluster, symbol, timeframe,
                 )
-            )
+                slices.append(
+                    ScenarioSlice(
+                        slice_id=f"UNTESTED_{cluster}_{symbol}_{timeframe}",
+                        stress_cluster=cluster,
+                        symbol=symbol,
+                        timeframe=timeframe,
+                        data=pd.DataFrame(),
+                        start_date="",
+                        end_date="",
+                        is_real_data=False,
+                    )
+                )
+            else:
+                slices.append(
+                    ScenarioSlice(
+                        slice_id=f"{cluster}_{symbol}_{timeframe}",
+                        stress_cluster=cluster,
+                        symbol=symbol,
+                        timeframe=timeframe,
+                        data=window_df,
+                        start_date=str(window_df.index[0]) if not window_df.empty else "",
+                        end_date=str(window_df.index[-1]) if not window_df.empty else "",
+                        is_real_data=True,
+                    )
+                )
 
         return slices
 
@@ -437,10 +457,36 @@ class BacktestOrchestrator:
             "volume": rng.integers(500, 2000, n).astype(float),
         })
 
+    def _untested_fallback_slices(
+        self, symbol: str, timeframe: str
+    ) -> List[ScenarioSlice]:
+        """UNTESTED slices used when DataProvider is unavailable or data insufficient.
+
+        HU 7.11: No synthetic data in the production path. Missing data → UNTESTED
+        (confidence=0.0) instead of Gaussian noise that would yield arbitrary scores.
+        TRACE_ID: EDGE-BKT-711-MULTI-PROVIDER-NOSYNTHESIS-2026-03-24
+        """
+        return [
+            ScenarioSlice(
+                slice_id=f"UNTESTED_{cluster}_{symbol}_{timeframe}",
+                stress_cluster=cluster,
+                symbol=symbol,
+                timeframe=timeframe,
+                data=pd.DataFrame(),
+                start_date="",
+                end_date="",
+                is_real_data=False,
+            )
+            for cluster in StressCluster.ALL
+        ]
+
     def _synthetic_fallback_slices(
         self, symbol: str, timeframe: str
     ) -> List[ScenarioSlice]:
-        """All-synthetic slices used only when DataProvider is unavailable."""
+        """DEPRECATED — replaced by _untested_fallback_slices() (HU 7.11).
+        Retained for backward compatibility with tests that verify its removal.
+        Must NOT be called in the production path.
+        """
         import numpy as np
         rng = np.random.default_rng(seed=0)
         slices = []
@@ -626,6 +672,48 @@ class BacktestOrchestrator:
                 "[BACKTEST_ORC] Promotion failed for strategy=%s: %s",
                 strategy_id, exc,
             )
+
+    # ── Strategy Factory ──────────────────────────────────────────────────────
+
+    def _build_strategy_for_backtest(self, strategy_id: str) -> Optional[Any]:
+        """
+        _NullDep pattern: instantiate a strategy with no live dependencies so
+        evaluate_on_history() can run purely on OHLCV data.
+
+        Uses __new__ + minimal attribute injection to bypass __init__ and avoid
+        importing sensors / detectors that require a running broker connection.
+
+        Returns None for unknown IDs (backtester falls back to momentum model).
+        """
+        _REGISTRY: Dict[str, str] = {
+            "MOM_BIAS_0001":    "core_brain.strategies.mom_bias_0001.MomentumBias0001Strategy",
+            "LIQ_SWEEP_0001":   "core_brain.strategies.liq_sweep_0001.LiquiditySweep0001Strategy",
+            "STRUC_SHIFT_0001": "core_brain.strategies.struc_shift_0001.StructureShift0001Strategy",
+            "OLIVER_VELEZ_0001": "core_brain.strategies.oliver_velez.OliverVelezStrategy",
+            "SESS_EXT_0001":    "core_brain.strategies.session_extension_0001.SessionExtension0001Strategy",
+            "TRIFECTA_0001":    "core_brain.strategies.trifecta_logic.TrifectaAnalyzer",
+        }
+        class_path = _REGISTRY.get(strategy_id)
+        if not class_path:
+            logger.debug(
+                "[BACKTEST_ORC] No registry entry for strategy_id=%s — using momentum fallback.",
+                strategy_id,
+            )
+            return None
+        try:
+            module_path, class_name = class_path.rsplit(".", 1)
+            import importlib
+            mod = importlib.import_module(module_path)
+            cls = getattr(mod, class_name)
+            instance = cls.__new__(cls)
+            instance.config = {}           # BaseStrategy minimum requirement
+            return instance
+        except Exception as exc:
+            logger.warning(
+                "[BACKTEST_ORC] Could not instantiate %s for backtest: %s — using fallback.",
+                strategy_id, exc,
+            )
+            return None
 
     # ── DB Queries ────────────────────────────────────────────────────────────
 

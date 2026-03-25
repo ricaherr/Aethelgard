@@ -32,6 +32,7 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 
 from data_vault.storage import StorageManager
+from models.trade_result import TradeResult
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,8 @@ class ScenarioSlice:
         data:           OHLCV DataFrame — columns: open, high, low, close, volume.
         start_date:     ISO8601 start of the slice.
         end_date:       ISO8601 end of the slice.
+        is_real_data:   False when no real data was found for this cluster.
+                        UNTESTED slices produce regime_score=0.0 without synthesis.
     """
     slice_id: str
     stress_cluster: str
@@ -70,6 +73,7 @@ class ScenarioSlice:
     data: pd.DataFrame
     start_date: str
     end_date: str
+    is_real_data: bool = True
 
 
 @dataclass
@@ -179,6 +183,7 @@ class ScenarioBacktester:
         strategy_id: str,
         parameter_overrides: Dict[str, Any],
         scenario_slices: List[ScenarioSlice],
+        strategy_instance: Optional[Any] = None,
     ) -> AptitudeMatrix:
         """
         Execute scenario validation across all provided stress slices.
@@ -200,7 +205,7 @@ class ScenarioBacktester:
 
         regime_results: List[RegimeResult] = []
         for scenario in scenario_slices:
-            result = self._evaluate_slice(scenario, parameter_overrides)
+            result = self._evaluate_slice(scenario, parameter_overrides, strategy_instance)
             regime_results.append(result)
 
         overall_score = float(self._compute_overall_score(regime_results))
@@ -236,20 +241,52 @@ class ScenarioBacktester:
         self,
         scenario: ScenarioSlice,
         parameter_overrides: Dict[str, Any],
+        strategy_instance: Optional[Any] = None,
     ) -> RegimeResult:
         """
         Simulate trades on a single data slice and compute regime-level metrics.
 
+        Dispatch priority:
+        1. UNTESTED slices (is_real_data=False) → 0.0 score, no simulation.
+        2. strategy_instance provided with evaluate_on_history() → real strategy logic.
+        3. Fallback → generic momentum model (_simulate_trades).
+
         Regime is detected from the slice OHLCV data (ATR + trend slope).
         When data is insufficient for detection, falls back to stress_cluster label.
         """
+        if not scenario.is_real_data:
+            return RegimeResult(
+                stress_cluster=scenario.stress_cluster,
+                detected_regime="UNTESTED",
+                profit_factor=0.0,
+                max_drawdown_pct=0.0,
+                total_trades=0,
+                win_rate=0.0,
+                regime_score=0.0,
+            )
+
         detected_regime = self._detect_regime(scenario.data, scenario.stress_cluster)
-        trades = self._simulate_trades(scenario.data, parameter_overrides)
+
+        # HU 7.7: dispatch to real strategy logic when instance is available
+        if strategy_instance is not None and hasattr(strategy_instance, "evaluate_on_history"):
+            raw: List[TradeResult] = strategy_instance.evaluate_on_history(
+                scenario.data, parameter_overrides
+            )
+            trades = [
+                {"entry": t.entry_price, "exit": t.exit_price, "pnl": t.pnl, "is_win": t.pnl > 0}
+                for t in raw
+            ]
+        else:
+            trades = self._simulate_trades(scenario.data, parameter_overrides)
 
         profit_factor = self._calculate_profit_factor(trades)
         max_dd = self._calculate_max_drawdown(trades)
         win_rate = self._calculate_win_rate(trades)
-        regime_score = self._score_regime_performance(profit_factor, max_dd)
+        regime_score = (
+            0.0
+            if not trades
+            else self._score_regime_performance(profit_factor, max_dd)
+        )
 
         return RegimeResult(
             stress_cluster=scenario.stress_cluster,
