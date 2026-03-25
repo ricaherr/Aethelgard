@@ -100,6 +100,50 @@ logger = logging.getLogger(__name__)
 # server_process global
 server_process = None
 
+_LOCK_PATH = Path("data_vault/aethelgard.lock")
+
+
+def _acquire_singleton_lock(lock_path: Path = _LOCK_PATH) -> bool:
+    """Create PID lockfile. Returns False if another live instance is running."""
+    if lock_path.exists():
+        try:
+            existing_pid = int(lock_path.read_text().strip())
+            # Check if that PID is still alive (cross-platform)
+            import psutil
+            if psutil.pid_exists(existing_pid) and existing_pid != os.getpid():
+                logger.error(
+                    "[SINGLETON] Otra instancia de Aethelgard ya está corriendo (PID %d). Abortando.",
+                    existing_pid,
+                )
+                return False
+        except (ValueError, ImportError):
+            # Malformed lockfile or psutil unavailable — overwrite it
+            pass
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path.write_text(str(os.getpid()))
+    return True
+
+
+def _release_singleton_lock(lock_path: Path = _LOCK_PATH) -> None:
+    """Remove PID lockfile on clean shutdown."""
+    try:
+        lock_path.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
+def _read_initial_capital(storage: "StorageManager") -> float:
+    """Read account_balance from sys_config. Falls back to 10 000.0 with WARNING."""
+    try:
+        cfg = storage.get_sys_config()
+        balance = cfg.get("account_balance", 0)
+        if balance and float(balance) > 0:
+            return float(balance)
+    except Exception as exc:
+        logger.warning("[CONFIG] No se pudo leer account_balance de sys_config: %s", exc)
+    logger.warning("[CONFIG] account_balance no disponible — usando capital por defecto $10,000.00")
+    return 10000.0
+
 
 # launch_dashboard eliminada - UI unificada en puerto 8000
 
@@ -143,11 +187,16 @@ async def main() -> None:
     logger.info("=" * 70)
     logger.info("[START] AETHELGARD TRADING SYSTEM - UNIFIED LAUNCHER")
     logger.info("=" * 70)
-    
+
     # Crear directorios necesarios
     Path("logs").mkdir(exist_ok=True)
     Path("data_vault").mkdir(exist_ok=True)
-    
+
+    # P9 — Singleton guard: abortar si ya hay una instancia corriendo
+    if not _acquire_singleton_lock():
+        logger.error("[ABORT] Ya existe una instancia activa. Terminar la instancia anterior primero.")
+        return
+
     try:
         # 1. Storage Manager (SSOT - Regla 14)
         logger.info("[INIT] Inicializando Storage Manager...")
@@ -233,9 +282,10 @@ async def main() -> None:
             logger.critical("[CRITICAL] No hay símbolos habilitados en la BD. Configura al menos un instrumento en Settings.")
             raise RuntimeError("No enabled symbols found in database. Cannot start trading.")
         
+        initial_capital = _read_initial_capital(storage)
         risk_manager = RiskManager(
             storage=storage,
-            initial_capital=10000.0, # TODO: Leer de la DB o inyectar
+            initial_capital=initial_capital,
             instrument_manager=instrument_manager,
             monitor=risk_monitor
         )
@@ -407,7 +457,8 @@ async def main() -> None:
             confluence_analyzer=confluence_analyzer,
             trifecta_analyzer=trifecta_analyzer,
             notification_service=notification_service,
-            mt5_connector=mt5_connector
+            mt5_connector=mt5_connector,
+            instrument_manager=instrument_manager,
         )
         
         # STEP 4: Inject SignalFactory into orchestrator (explicit DI)
@@ -480,11 +531,11 @@ async def main() -> None:
         monitor_task = asyncio.create_task(closing_monitor.start())
         logger.info("[OK] Closing Monitor activo (Feedback Loop)")
         
-        # Iniciar EDGE Monitor (inject MT5 connector & trade listener for reconciliation)
+        # Iniciar EDGE Monitor (inject connectors dict — conector-agnóstico, HU 10.5)
         logger.info("[INFO] Iniciando EDGE Monitor...")
         edge_monitor = EdgeMonitor(
             storage=storage,
-            mt5_connector=mt5_connector,
+            connectors=active_connectors,
             trade_listener=trade_closure_listener
         )
         edge_monitor.start()
@@ -518,6 +569,7 @@ async def main() -> None:
             backup_manager.stop()
         if server_process and server_process.poll() is None:
             server_process.terminate()
+        _release_singleton_lock()
         logger.info("[STOP] Sistema detenido completamente.")
 
 

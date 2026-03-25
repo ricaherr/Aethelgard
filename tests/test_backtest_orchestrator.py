@@ -174,6 +174,14 @@ class TestCooldown:
         updated = datetime.now(timezone.utc) - timedelta(hours=hours_ago)
         return {"updated_at": updated.isoformat(), "mode": mode}
 
+    def _strategy_with_backtest_at(self, hours_ago: float, mode: str = "BACKTEST") -> dict:
+        backtested = datetime.now(timezone.utc) - timedelta(hours=hours_ago)
+        return {
+            "updated_at": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+            "last_backtest_at": backtested.isoformat(),
+            "mode": mode,
+        }
+
     def test_not_on_cooldown_when_old_enough(self):
         assert not self.orc._is_on_cooldown(self._strategy(25))
 
@@ -186,6 +194,33 @@ class TestCooldown:
     def test_skips_non_backtest_mode(self):
         # Already promoted → always cooldown (skip)
         assert self.orc._is_on_cooldown(self._strategy(48, mode="SHADOW"))
+
+    def test_cooldown_false_when_never_backtested(self):
+        """last_backtest_at=None means never ran → not on cooldown."""
+        strategy = {
+            "updated_at": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+            "last_backtest_at": None,
+            "mode": "BACKTEST",
+        }
+        assert not self.orc._is_on_cooldown(strategy)
+
+    def test_cooldown_uses_last_backtest_at_not_updated_at(self):
+        """updated_at is recent but last_backtest_at is old → should NOT be on cooldown."""
+        strategy = {
+            "updated_at": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),  # recent
+            "last_backtest_at": (datetime.now(timezone.utc) - timedelta(hours=25)).isoformat(),  # old
+            "mode": "BACKTEST",
+        }
+        assert not self.orc._is_on_cooldown(strategy)
+
+    def test_cooldown_true_when_last_backtest_at_recent(self):
+        """last_backtest_at is recent → on cooldown regardless of updated_at."""
+        strategy = {
+            "updated_at": (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat(),  # old
+            "last_backtest_at": (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(),  # recent
+            "mode": "BACKTEST",
+        }
+        assert self.orc._is_on_cooldown(strategy)
 
 
 # ── _to_dataframe ─────────────────────────────────────────────────────────────

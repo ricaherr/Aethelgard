@@ -1,10 +1,10 @@
 """
 Test Signal Factory Asset Filtering (FASE 4)
 
-Verifies that SignalFactory only generates signals for assets in usr_assets_cfg.
+Verifies that SignalFactory only generates signals for assets enabled in InstrumentManager (SSOT).
 Test data:
 - Scanner produces: EURUSD|M5, GBPUSD|M5, GOLD|M5
-- Enabled assets: EURUSD, GOLD (GBPUSD disabled)
+- Enabled assets: EURUSD, GOLD (GBPUSD not in InstrumentManager enabled list)
 - Expected: Signals only for EURUSD and GOLD
 """
 import pytest
@@ -22,23 +22,21 @@ class TestSignalFactoryAssetFiltering:
     
     @pytest.fixture
     def mock_storage(self):
-        """Mock StorageManager that returns limited enabled assets."""
+        """Mock StorageManager."""
         storage = Mock()
-        
-        # Simular usr_assets_cfg: solo EURUSD y GOLD habilitados
-        storage.get_all_usr_assets_cfg.return_value = [
-            {'symbol': 'EURUSD', 'enabled': True, 'asset_class': 'FOREX'},
-            {'symbol': 'GOLD', 'enabled': True, 'asset_class': 'METAL'},
-            {'symbol': 'GBPUSD', 'enabled': False, 'asset_class': 'FOREX'},  # Disabled
-        ]
-        
         storage.get_dynamic_params.return_value = {}
         storage.save_signal = Mock(return_value="signal_123")
         storage.has_open_position = Mock(return_value=False)
         storage.has_recent_signal = Mock(return_value=False)
         storage.get_signal_ranking = Mock(return_value={'execution_mode': 'LIVE'})
-        
         return storage
+
+    @pytest.fixture
+    def mock_instrument_manager(self):
+        """Mock InstrumentManager: only EURUSD and GOLD enabled."""
+        im = Mock()
+        im.get_enabled_symbols.return_value = ["EURUSD", "GOLD"]
+        return im
     
     @pytest.fixture
     def mock_strategy_engine(self):
@@ -66,15 +64,16 @@ class TestSignalFactoryAssetFiltering:
         })
     
     @pytest.fixture
-    def signal_factory(self, mock_storage, mock_strategy_engine):
-        """Initialize SignalFactory with mocks."""
+    def signal_factory(self, mock_storage, mock_strategy_engine, mock_instrument_manager):
+        """Initialize SignalFactory with mocks (InstrumentManager as SSOT for enabled symbols)."""
         factory = SignalFactory(
             storage_manager=mock_storage,
             strategy_engines={"TEST_STRATEGY": mock_strategy_engine},
             confluence_analyzer=Mock(enabled=False),
             trifecta_analyzer=Mock(),
             notification_service=Mock(),
-            fundamental_guard=Mock()
+            fundamental_guard=Mock(),
+            instrument_manager=mock_instrument_manager,
         )
         return factory
     
@@ -130,16 +129,15 @@ class TestSignalFactoryAssetFiltering:
         print(f"✅ [FASE4] Only enabled assets generated signals: {generated_symbols}")
     
     @pytest.mark.asyncio
-    async def test_no_signals_all_disabled(self, signal_factory, sample_df, mock_storage):
+    async def test_no_signals_all_disabled(
+        self, signal_factory, sample_df, mock_instrument_manager
+    ):
         """
-        FASE 4 Test: If all assets are disabled, no signals should be generated.
+        FASE 4 Test: If InstrumentManager returns no enabled symbols, no signals generated.
         """
-        # Arrange: Disable all assets
-        mock_storage.get_all_usr_assets_cfg.return_value = [
-            {'symbol': 'EURUSD', 'enabled': False, 'asset_class': 'FOREX'},
-            {'symbol': 'GOLD', 'enabled': False, 'asset_class': 'METAL'},
-        ]
-        
+        # Arrange: InstrumentManager returns empty list (no symbols enabled)
+        mock_instrument_manager.get_enabled_symbols.return_value = []
+
         scan_results = {
             "EURUSD|M5": {
                 "symbol": "EURUSD",
@@ -149,22 +147,24 @@ class TestSignalFactoryAssetFiltering:
                 "provider_source": "TEST"
             }
         }
-        
+
         # Act
         signals = await signal_factory.generate_usr_signals_batch(scan_results, trace_id="TEST-002")
-        
+
         # Assert
         assert signals == [], "No signals should be generated when all assets disabled"
         print("✅ [FASE4] No signals generated when all assets disabled")
     
     @pytest.mark.asyncio
-    async def test_config_fetch_failure_fallback(self, signal_factory, sample_df, mock_storage):
+    async def test_config_fetch_failure_fallback(
+        self, signal_factory, sample_df, mock_instrument_manager
+    ):
         """
-        FASE 4 Test: If asset config fetch fails, should generate signals for all symbols (fallback).
+        FASE 4 Test: If InstrumentManager.get_enabled_symbols() raises, fall back to no filter.
         """
-        # Arrange: Simulate config fetch failure
-        mock_storage.get_all_usr_assets_cfg.side_effect = Exception("DB connection failed")
-        
+        # Arrange: Simulate InstrumentManager failure
+        mock_instrument_manager.get_enabled_symbols.side_effect = Exception("IM failure")
+
         scan_results = {
             "EURUSD|M5": {
                 "symbol": "EURUSD",
@@ -181,15 +181,15 @@ class TestSignalFactoryAssetFiltering:
                 "provider_source": "TEST"
             }
         }
-        
+
         # Act
         signals = await signal_factory.generate_usr_signals_batch(scan_results, trace_id="TEST-003")
-        
+
         # Assert: Should fall back to generating for all symbols
         generated_symbols = [s.symbol for s in signals]
         assert "EURUSD" in generated_symbols
         assert "GBPUSD" in generated_symbols
-        print("✅ [FASE4] Fallback: generated signals for all when config fetch failed")
+        print("✅ [FASE4] Fallback: generated signals for all when InstrumentManager failed")
 
 
 @pytest.mark.asyncio

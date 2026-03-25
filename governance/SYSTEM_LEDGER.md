@@ -1,10 +1,10 @@
 # AETHELGARD: SYSTEM LEDGER
 
-**Version**: 4.3.2-beta
+**Version**: 4.6.0-beta
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-24 UTC)**: Trace_ID: OPS-STABILITY-EDGE-MONITOR-2026-03-24 | SPRINT 7 COMPLETADO: 9 bugs críticos corregidos (ADX=0, backtest ghost, conn_id mismatch, cooldown sync/async, SHADOW bypass, pip_size JPY, MT5 log spam, SSOT rogue DB) + OperationalEdgeMonitor implementado (8 invariantes de negocio, 27/27 tests)
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-24 UTC)**: Trace_ID: PIPELINE-UNBLOCK-EDGE-2026-03-24 | SPRINT 8 (parcial): 5 bloqueos operacionales resueltos — filtro activos SignalFactory (18 símbolos SSOT), cooldown backtest `last_backtest_at`, EdgeMonitor connector-agnóstico, capital desde DB, PID lockfile. 1601/1601 tests · 0 regresiones.
 
 ---
 
@@ -37,6 +37,22 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 | **Objetivo** | Eliminar STUB en `evaluate_all_instances()`. Implementar bucle Darwiniano real: carga de instancias desde DB, evaluación 3 Pilares con thresholds ajustados por régimen (RegimeClassifier), persistencia en `sys_shadow_performance_history`, actualización de estado en `sys_shadow_instances`, log de promoción en `sys_shadow_promotion_log`, ajuste de `parameter_overrides` por instancia vía EdgeTuner. Feedback loop activado: trigger horario en MainOrchestrator (antes semanal). |
 | **HUs** | HU 6.4 SHADOW Activation — Bucle Darwiniano Operativo |
 | **Validate_all** | ✅ Audit documentation 6/6 PASSED · STUB eliminado · Flujo DB→RegimeClassifier→3Pilares→Persistencia→EdgeTuner verificado |
+
+### Sprint 8 — Desbloqueo Operacional del Pipeline (24-Mar-2026)
+**Trace_ID**: `PIPELINE-UNBLOCK-EDGE-2026-03-24` | **Estado**: Parcial (P2–P6–P9 DONE · FASE4 pendiente)
+
+| Fix | Archivo(s) clave | HU | Tests |
+|---|---|---|---|
+| **P9** PID Lockfile | `start.py` (`_acquire_singleton_lock`, `_release_singleton_lock`) | HU 10.3 | 9/9 |
+| **P6** Capital desde DB | `start.py` (`_read_initial_capital`) | HU 10.4 | incluido en P9 |
+| **P3** Backtest cooldown | `backtest_orchestrator.py` (`last_backtest_at`) · `schema.py` (migration) | HU 7.5 | 43/43 |
+| **P2** Signal Factory SSOT | `signal_factory.py` (InstrumentManager) · `start.py` | HU 3.9 | 10/10 |
+| **P5** EdgeMonitor agnóstico | `edge_monitor.py` (connectors dict) · `start.py` | HU 10.5 | 10/10 |
+
+**Suite total**: 1601/1601 PASSED · 0 regresiones · +22 tests nuevos
+**Causa raíz resuelta**: cadena `usr_assets_cfg stale (5) → 15 símbolos skipped → 0 señales → SHADOW 0 trades → Pilar 3 FAIL → 0 promociones` — cortada en origen (P2). Backtest desbloqueado por P3.
+
+---
 
 ### E7 — cTrader WebSocket Data Protocol (Dominio 00_INFRA, 05_EXEC)
 | Campo | Valor |

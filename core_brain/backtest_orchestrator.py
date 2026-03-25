@@ -523,18 +523,28 @@ class BacktestOrchestrator:
         }
 
     def _is_on_cooldown(self, strategy: Dict) -> bool:
-        """Return True if strategy was backtested less than COOLDOWN_HOURS ago."""
-        updated_at_raw = strategy.get("updated_at")
-        if not updated_at_raw:
-            return False
+        """Return True if strategy was backtested less than COOLDOWN_HOURS ago.
+
+        Uses ``last_backtest_at`` (dedicated field) when available; falls back
+        to ``updated_at`` only when the dedicated field is absent from the row
+        (backward-compat until migration runs on all envs).
+        """
         # Only apply cooldown if mode is still BACKTEST (hasn't been promoted yet)
         if strategy.get("mode", "BACKTEST") != "BACKTEST":
             return True  # Already promoted — skip
+
+        # Prefer the dedicated field; fall back to updated_at for old rows
+        raw = strategy.get("last_backtest_at") or strategy.get("updated_at")
+        if not raw:
+            return False  # Never backtested → run immediately
+        # If last_backtest_at key is present but None, never backtested → not on cooldown
+        if "last_backtest_at" in strategy and strategy["last_backtest_at"] is None:
+            return False
         try:
-            updated_at = datetime.fromisoformat(str(updated_at_raw).replace("Z", "+00:00"))
-            if updated_at.tzinfo is None:
-                updated_at = updated_at.replace(tzinfo=timezone.utc)
-            age_hours = (datetime.now(timezone.utc) - updated_at).total_seconds() / 3600
+            ts = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            age_hours = (datetime.now(timezone.utc) - ts).total_seconds() / 3600
             return age_hours < self._cfg["cooldown_hours"]
         except Exception:
             return False
@@ -563,9 +573,10 @@ class BacktestOrchestrator:
             cursor.execute(
                 """
                 UPDATE sys_strategies
-                SET score_backtest = ?,
-                    score          = ?,
-                    updated_at     = CURRENT_TIMESTAMP
+                SET score_backtest   = ?,
+                    score            = ?,
+                    last_backtest_at = CURRENT_TIMESTAMP,
+                    updated_at       = CURRENT_TIMESTAMP
                 WHERE class_id = ?
                 """,
                 (round(score_backtest, 4), score, strategy_id),
@@ -627,7 +638,7 @@ class BacktestOrchestrator:
                 """
                 SELECT class_id, mnemonic, market_whitelist, affinity_scores,
                        mode, score_backtest, score_shadow, score_live, score,
-                       updated_at
+                       updated_at, last_backtest_at
                 FROM sys_strategies
                 WHERE mode = 'BACKTEST'
                 """,
@@ -647,7 +658,7 @@ class BacktestOrchestrator:
                 """
                 SELECT class_id, mnemonic, market_whitelist, affinity_scores,
                        mode, score_backtest, score_shadow, score_live, score,
-                       updated_at
+                       updated_at, last_backtest_at
                 FROM sys_strategies
                 WHERE class_id = ?
                 """,

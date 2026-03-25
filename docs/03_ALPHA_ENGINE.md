@@ -388,3 +388,49 @@ Cada candidato debe cumplir los **4 Pilares del Protocolo Quanter** (definidos e
 - **data_vault/strategies_db.py**: Registro central de todas las Alphas institucionalizadas
 - **core_brain/signal_factory.py**: Inyección de Strategy Class ID y Instance ID en señales
 
+---
+
+## ⚙️ HU 3.9 — Signal Factory: Filtro SSOT vía InstrumentManager (24-Mar-2026)
+
+**Trace_ID**: `PIPELINE-UNBLOCK-SIGNAL-FACTORY-2026-03-24`
+
+### Problema detectado
+La `SignalFactory` filtraba símbolos usando `storage.get_all_usr_assets_cfg()` (tabla `usr_assets_cfg`), que contenía solo 5 activos stale (`EURUSD, GBPUSD, USDJPY, GOLD, BTCUSD`). De los 18 instrumentos habilitados en `sys_config.instruments_config`, **15 eran descartados silenciosamente** en cada ciclo. Síntoma visible: `[FASE4] Skipped 15 symbols not in asset configuration` — 924 veces en un día de producción. Efecto en cascada: 0 señales → SHADOW sin trades → Pilar 3 siempre FAIL → sin promoción.
+
+### Solución implementada
+Inyección de `InstrumentManager` como dependencia opcional en `SignalFactory.__init__()`:
+
+```python
+# core_brain/signal_factory.py
+def __init__(self, ..., instrument_manager: Optional[Any] = None):
+    self.instrument_manager = instrument_manager
+```
+
+El bloque FASE4 ahora usa `instrument_manager.get_enabled_symbols()` cuando está disponible:
+
+```python
+if self.instrument_manager is not None:
+    enabled_symbols = self.instrument_manager.get_enabled_symbols()  # SSOT — 18 símbolos
+else:
+    enabled_symbols = None  # Sin filtro: genera para todos
+```
+
+`InstrumentManager` lee desde `sys_config.instruments_config` — la única fuente de verdad del sistema.
+
+### Wiring en start.py
+```python
+signal_factory = SignalFactory(
+    ...,
+    instrument_manager=instrument_manager,  # inyectado antes de la factory
+)
+```
+
+### Impacto
+| Métrica | Antes | Después |
+|---|---|---|
+| Símbolos procesados por ciclo | 3–5 (stale) | 18 (SSOT) |
+| `[FASE4] Skipped` en log | 15/ciclo | 0/ciclo |
+| Pipeline SHADOW alimentado | No | Sí |
+
+**Tests**: `TestInstrumentManagerFilter` (3 tests) + `TestSignalFactoryAssetFiltering` (4 tests) — 7/7 PASSED.
+

@@ -1374,3 +1374,52 @@ $ python scripts/validate_all.py
 
 **Lección**: Modular design + parallelization (tests en paralelo) aceleró 40% vs estimado.
 
+---
+
+## ⚙️ HU 7.5 — BacktestOrchestrator: Cooldown por `last_backtest_at` (24-Mar-2026)
+
+**Trace_ID**: `PIPELINE-UNBLOCK-BACKTEST-COOLDOWN-2026-03-24`
+
+### Problema detectado
+`_is_on_cooldown()` usaba `updated_at` para calcular si una estrategia estaba en período de espera. El campo `updated_at` es un timestamp de escritura general — se actualiza con cualquier modificación (incluso la migración inicial). Las 6 estrategias del sistema tenían `updated_at = '2026-03-24 04:50:50'` (fecha del seed), lo que causaba un cooldown permanente de 24h sin que se hubiera ejecutado ni un solo backtest. Síntoma: `Batch complete — {'evaluated': 0, 'promoted': 0, 'failed': 0, 'skipped': 6}` en cada ciclo diario.
+
+### Solución implementada
+
+**1. Nueva columna en `sys_strategies`** (`data_vault/schema.py`):
+```sql
+last_backtest_at TIMESTAMP DEFAULT NULL
+-- NULL = nunca se ha ejecutado backtest → no aplica cooldown
+```
+Migración inline en `run_migrations()` — idempotente, se aplica automáticamente en el próximo arranque.
+
+**2. `_is_on_cooldown()` refactorizado** (`core_brain/backtest_orchestrator.py`):
+```python
+# Prioridad: last_backtest_at (campo dedicado)
+# Fallback: updated_at (compatibilidad con rows sin la nueva columna)
+# NULL en last_backtest_at → nunca backtested → NOT on cooldown
+raw = strategy.get("last_backtest_at") or strategy.get("updated_at")
+if "last_backtest_at" in strategy and strategy["last_backtest_at"] is None:
+    return False  # Nunca ejecutado → correr inmediatamente
+```
+
+**3. `_update_strategy_scores()` ahora escribe `last_backtest_at`**:
+```sql
+UPDATE sys_strategies
+SET score_backtest = ?, score = ?,
+    last_backtest_at = CURRENT_TIMESTAMP,  -- marca el momento real del backtest
+    updated_at = CURRENT_TIMESTAMP
+WHERE class_id = ?
+```
+
+**4. SELECTs de carga** (`_load_backtest_strategies`, `_load_strategy`) incluyen `last_backtest_at`.
+
+### Lógica de cooldown resultante
+| Estado `last_backtest_at` | Resultado |
+|---|---|
+| `NULL` (nunca backtested) | NOT on cooldown → ejecutar |
+| `< 24h` ago | On cooldown → skip |
+| `> 24h` ago | NOT on cooldown → ejecutar |
+| Campo ausente (row legacy) | Fallback a `updated_at` |
+
+**Tests**: 3 nuevos tests en `TestCooldown` — 43/43 total PASSED.
+

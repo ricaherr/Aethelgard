@@ -63,6 +63,7 @@ class SignalFactory:
         mt5_connector: Optional[Any] = None,
         fundamental_guard: Optional[FundamentalGuardService] = None,
         execution_feedback_collector: Optional[Any] = None,
+        instrument_manager: Optional[Any] = None,
     ):
         """
         Inicializa la SignalFactory con inyección de dependencias estricta.
@@ -82,6 +83,7 @@ class SignalFactory:
         self.internal_notifier = notification_service
         self.mt5_connector = mt5_connector
         self.execution_feedback_collector = execution_feedback_collector  # For signal suppression
+        self.instrument_manager = instrument_manager  # SSOT for enabled symbols (HU 3.9)
         
         # Inyectar FundamentalGuardService o crear uno si no está disponible
         if fundamental_guard is None:
@@ -368,14 +370,16 @@ class SignalFactory:
                 return []
             logger.info(f"DEBUG: Engines available: {list(self.strategy_engines.keys())}")
 
-            # FASE 4: Get enabled assets from usr_assets_cfg (global list)
-            try:
-                enabled_assets = self.storage_manager.get_all_usr_assets_cfg()
-                enabled_symbols = [asset['symbol'] for asset in enabled_assets if asset.get('enabled', True)]
-                logger.info(f"[FASE4] Enabled assets for signal generation: {enabled_symbols}")
-            except Exception as e:
-                logger.warning(f"[FASE4] Could not load usr_assets_cfg, generating for all scanned symbols: {e}")
-                enabled_symbols = None  # Fallback: generate for all
+            # FASE 4: Enabled symbol filter — SSOT via InstrumentManager (HU 3.9)
+            if self.instrument_manager is not None:
+                try:
+                    enabled_symbols = self.instrument_manager.get_enabled_symbols()
+                    logger.info(f"[FASE4] Enabled symbols (InstrumentManager): {len(enabled_symbols)}")
+                except Exception as e:
+                    logger.warning(f"[FASE4] InstrumentManager.get_enabled_symbols() failed: {e} — no filter")
+                    enabled_symbols = None
+            else:
+                enabled_symbols = None  # No filter — generate for all scanned symbols
             
             skipped_count = 0
             

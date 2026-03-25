@@ -268,3 +268,115 @@ async def test_low_score_signal_does_not_trigger_notification(signal_factory, mo
     
     # La aserción CRÍTICA: el notificador no debe ser llamado para señales 'FREE'
     mock_notifier.notify_oliver_velez_signal.assert_not_called()
+
+
+# ── InstrumentManager filter (HU 3.9) ────────────────────────────────────────
+
+class TestInstrumentManagerFilter:
+    """Validates that generate_usr_signals_batch uses InstrumentManager.get_enabled_symbols()
+    instead of the stale usr_assets_cfg table."""
+
+    def _make_factory(self, enabled_symbols):
+        from core_brain.instrument_manager import InstrumentManager
+        from core_brain.signal_factory import SignalFactory
+        from core_brain.confluence import MultiTimeframeConfluenceAnalyzer
+        from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
+
+        storage = MagicMock(spec=StorageManager)
+        storage.get_dynamic_params.return_value = {}
+        storage.get_sys_config.return_value = {}
+        storage.save_signal.return_value = "sig_001"
+
+        instrument_manager = MagicMock(spec=InstrumentManager)
+        instrument_manager.get_enabled_symbols.return_value = enabled_symbols
+
+        confluence = MagicMock()
+        confluence.enabled = False
+        trifecta = MagicMock()
+
+        with patch('core_brain.signal_factory.get_notifier', return_value=MagicMock()):
+            factory = SignalFactory(
+                storage_manager=storage,
+                strategy_engines={"dummy": MagicMock()},
+                confluence_analyzer=confluence,
+                trifecta_analyzer=trifecta,
+                instrument_manager=instrument_manager,
+            )
+        return factory, instrument_manager
+
+    @pytest.mark.asyncio
+    async def test_filter_uses_instrument_manager_not_assets_cfg(self):
+        """When instrument_manager is injected, get_enabled_symbols() drives the filter."""
+        enabled = ["EURUSD", "GBPUSD", "USDJPY"]
+        factory, im = self._make_factory(enabled)
+
+        scan_results = {
+            "EURUSD_H1": {"symbol": "EURUSD", "regime": MagicMock(), "df": MagicMock(), "timeframe": "H1"},
+            "AUDUSD_H1": {"symbol": "AUDUSD", "regime": MagicMock(), "df": MagicMock(), "timeframe": "H1"},
+        }
+        # Patch generate_signal to avoid deep execution
+        factory.generate_signal = AsyncMock(return_value=[])
+
+        await factory.generate_usr_signals_batch(scan_results, trace_id="TEST")
+
+        # Only EURUSD should have triggered generate_signal; AUDUSD not in enabled list
+        calls = [call.args[0] for call in factory.generate_signal.call_args_list]
+        assert "EURUSD" in calls
+        assert "AUDUSD" not in calls
+
+    @pytest.mark.asyncio
+    async def test_all_18_enabled_symbols_pass_filter(self):
+        """All 18 symbols from InstrumentManager must reach the signal pipeline."""
+        enabled_18 = [
+            "AUDJPY", "AUDNZD", "AUDUSD", "EURAUD", "EURGBP",
+            "EURUSD", "GBPAUD", "GBPCAD", "GBPJPY", "GBPUSD",
+            "NZDUSD", "USDCAD", "USDCHF", "USDJPY", "XAGUSD",
+            "XAUUSD", "BTCUSD", "ETHUSD",
+        ]
+        factory, im = self._make_factory(enabled_18)
+        factory.generate_signal = AsyncMock(return_value=[])
+
+        scan_results = {
+            f"{sym}_H1": {"symbol": sym, "regime": MagicMock(), "df": MagicMock(), "timeframe": "H1"}
+            for sym in enabled_18
+        }
+        await factory.generate_usr_signals_batch(scan_results, trace_id="TEST")
+
+        calls = [call.args[0] for call in factory.generate_signal.call_args_list]
+        for sym in enabled_18:
+            assert sym in calls, f"{sym} was filtered out but should be enabled"
+
+    @pytest.mark.asyncio
+    async def test_fallback_to_all_symbols_when_no_instrument_manager(self):
+        """When instrument_manager is None, no symbol is filtered out."""
+        from core_brain.signal_factory import SignalFactory
+        from core_brain.confluence import MultiTimeframeConfluenceAnalyzer
+        from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
+
+        storage = MagicMock(spec=StorageManager)
+        storage.get_dynamic_params.return_value = {}
+        storage.get_sys_config.return_value = {}
+
+        confluence = MagicMock()
+        confluence.enabled = False
+        trifecta = MagicMock()
+
+        with patch('core_brain.signal_factory.get_notifier', return_value=MagicMock()):
+            factory = SignalFactory(
+                storage_manager=storage,
+                strategy_engines={"dummy": MagicMock()},
+                confluence_analyzer=confluence,
+                trifecta_analyzer=trifecta,
+                # instrument_manager NOT passed
+            )
+        factory.generate_signal = AsyncMock(return_value=[])
+
+        scan_results = {
+            "EURUSD_H1": {"symbol": "EURUSD", "regime": MagicMock(), "df": MagicMock(), "timeframe": "H1"},
+            "BTCUSD_H1": {"symbol": "BTCUSD", "regime": MagicMock(), "df": MagicMock(), "timeframe": "H1"},
+        }
+        await factory.generate_usr_signals_batch(scan_results, trace_id="TEST")
+
+        calls = [call.args[0] for call in factory.generate_signal.call_args_list]
+        assert "EURUSD" in calls
+        assert "BTCUSD" in calls

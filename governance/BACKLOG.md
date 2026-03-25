@@ -133,6 +133,11 @@
     * **Prioridad**: Media (E2)
     * **Descripción**: Motor de auditoría post-trade que vincula resultados con datos de micro-estructura para alimentar el Meta-Aprendizaje.
     * **🖥️ UI Representation**: Vista "Post-Mortem" con visualización de velas de tick y marcadores de anomalías detectadas.
+* **HU 3.9: Signal Factory — Filtro de Activos via InstrumentManager** `[DONE]`
+    * **Prioridad**: 🔴 CRÍTICA (Bloqueante — 924 señales/día descartadas)
+    * **Descripción**: La SignalFactory usa `get_all_usr_assets_cfg()` (tabla con 5 activos stale) para filtrar símbolos habilitados. Inyectar `InstrumentManager` como dependencia opcional y reemplazar el filtro con `instrument_manager.get_enabled_symbols()` (18 símbolos correctos desde `sys_config`). Sin este fix, 15 de 18 símbolos son descartados silenciosamente y no se generan señales suficientes para que SHADOW acumule trades.
+    * **Trace_ID**: PIPELINE-UNBLOCK-SIGNAL-FACTORY-2026-03-24
+
 * **HU 3.5: Dynamic Alpha Thresholding**
     * **Prioridad**: Alta (E2)
     * **Descripción**: Lógica de auto-ajuste de barreras de entrada basada en la equidad de la cuenta y el régimen de volatilidad.
@@ -384,6 +389,11 @@
     * **Gobernanza**: Inyección de dependencias (StorageManager), SSOT en DB, immutabilidad de thresholds
     * **Trace_ID**: EXEC-EFFICIENCY-SCORE-001
 
+* **HU 7.5: BacktestOrchestrator — Cooldown por last_backtest_at** `[DONE]`
+    * **Prioridad**: 🔴 CRÍTICA (Bloqueante — backtesting permanentemente bloqueado)
+    * **Descripción**: `_is_on_cooldown()` usa `updated_at` (campo de escritura general) en lugar de un campo dedicado `last_backtest_at`. Como `updated_at` fue seteado por migración/seed a '2026-03-24 04:50:50' para las 6 estrategias, el cooldown de 24h bloquea indefinidamente cualquier backtest. Fix: agregar columna `last_backtest_at TIMESTAMP DEFAULT NULL` a `sys_strategies` vía migración; actualizar `_is_on_cooldown()`, `_update_strategy_scores()` y `_load_backtest_strategies()` para usar este campo.
+    * **Trace_ID**: PIPELINE-UNBLOCK-BACKTEST-COOLDOWN-2026-03-24
+
 ## 08_DATA_SOVEREIGNTY (SSOT, Persistence)
 * **HU 8.1: usr_broker_accounts — Separación Arquitectónica de Cuentas** `[DONE]`
     * **Descripción**: Implementar tabla `usr_broker_accounts` en `schema.py` y `usr_template.db` para separar cuentas de usuario de cuentas del sistema. `sys_broker_accounts` queda exclusivamente para cuentas DEMO del sistema (data feeds, SHADOW mode sin usuario). `usr_broker_accounts` almacena cuentas REAL/DEMO por trader, aisladas por `user_id`. Crear `BrokerAccountsMixin` con métodos CRUD y script de migración idempotente.
@@ -392,6 +402,26 @@
 ## 09_INSTITUTIONAL_INTERFACE (UI/UX, Terminal)
 
 ## 10_INFRASTRUCTURE_RESILIENCY (Health, Self-Healing)
+* **HU 10.3: Proceso Singleton — PID Lockfile en start.py** `[DONE]`
+    * **Prioridad**: Alta
+    * **Descripción**: `start.py` no previene múltiples instancias. Se detectaron 2×start.py + 2×uvicorn corriendo simultáneamente (PIDs 31680, 32856). Fix: crear lockfile `data_vault/aethelgard.lock` con el PID del proceso al arrancar; verificar si el archivo existe y si el PID registrado está vivo (via `/proc/{pid}/status` o `psutil`); si está vivo, abortar con mensaje claro; si está muerto (stale), sobreescribir.
+    * **Trace_ID**: PIPELINE-UNBLOCK-SINGLETON-2026-03-24
+
+* **HU 10.4: Capital Dinámico desde sys_config (account_balance)** `[DONE]`
+    * **Prioridad**: Alta
+    * **Descripción**: `start.py` tiene `initial_capital=10000.0` hardcodeado. La DB tiene `account_balance: 8386.09` en `sys_config`. Fix: leer `account_balance` de `sys_config` antes de instanciar componentes; fallback a 10000.0 con WARNING si no existe.
+    * **Trace_ID**: PIPELINE-UNBLOCK-CAPITAL-DB-2026-03-24
+
+* **HU 10.5: EdgeMonitor Connector-Agnóstico** `[DONE]`
+    * **Prioridad**: Media
+    * **Descripción**: `EdgeMonitor.__init__` acepta `mt5_connector: Optional[Any]` hardcodeado. Refactor a `connectors: Dict[str, Any]` (mismo patrón que `OrderExecutor`). El monitor debe iterar todos los conectores disponibles sin conocer su tipo. La disponibilidad de un conector se detecta desde DB (`sys_data_providers.enabled`), no via flags hardcodeados. Métodos `_check_mt5_external_operations()` se refactorizan a `_check_connector_external_operations(connector_id, connector)` genérico.
+    * **Trace_ID**: PIPELINE-UNBLOCK-EDGE-AGNOSTIC-2026-03-24
+
+* **HU 10.6: AutonomousSystemOrchestrator — Diseño FASE4** `[TODO]`
+    * **Prioridad**: Media (diseño y documentación, no implementación de código aún)
+    * **Descripción**: Diseñar e documentar en `docs/` el `AutonomousSystemOrchestrator` que coordina los 13 componentes EDGE existentes (OperationalEdgeMonitor, EdgeTuner, DedupLearner, CoherenceMonitor, DrawdownMonitor, ExecutionFeedbackCollector, CircuitBreaker, PositionSizeMonitor, RegimeClassifier, ClosingMonitor, AutonomousHealthService, HealthManager, CoherenceService) como un sistema coherente de auto-diagnóstico y healing. Niveles de autonomía: OBSERVE | SUGGEST | HEAL. Sub-componentes: DiagnosticsEngine (correlación síntoma→causa), BaselineTracker (aprende "normal" por sesión), HealingPlaybook (acciones correctivas seguras), ObservabilityLedger (tabla `sys_agent_events`), EscalationRouter (notificación con diagnóstico completo).
+    * **Trace_ID**: FASE4-AUTONOMOUS-ORCHESTRATOR-DESIGN-2026-03-24
+
 * **HU 10.1: Autonomous Heartbeat & Self-Healing**
     * **Prioridad**: Media (E3)
     * **Descripción**: Sistema de monitoreo de signos vitales y auto-recuperación de servicios.

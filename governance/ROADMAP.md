@@ -18,6 +18,19 @@
 
 > ℹ️ Solo se muestran Épicas en estado `ACTIVA` o `PENDIENTE`. Las Épicas `COMPLETADA` se archivan en [docs/SYSTEM_LEDGER.md](SYSTEM_LEDGER.md) (sección ÉPICAS ARCHIVADAS) y se eliminan de este documento.
 
+### E9: Desbloqueo Operacional del Pipeline — ACTIVA
+**Sprint**: 8 | **Trace_ID**: PIPELINE-UNBLOCK-EDGE-2026-03-24
+**Objetivo**: Resolver 5 bloqueos operacionales críticos que impiden el flujo BACKTEST→SHADOW→LIVE y elevar la resiliencia del sistema: filtro de activos incorrecto en SignalFactory, cooldown de backtest mal implementado (last_backtest_at), EdgeMonitor hardcodeado a MT5, capital hardcodeado, y ausencia de protección contra instancias duplicadas. Documentar el diseño del AutonomousSystemOrchestrator (FASE4) en governance.
+
+| HU | Nombre | Dominio | Sprint | Estado |
+|---|---|---|---|---|
+| HU 10.3 | Proceso Singleton — PID Lockfile | 10 | 8 | [TODO] |
+| HU 10.4 | Capital Dinámico desde sys_config | 10 | 8 | [TODO] |
+| HU 7.5 | Backtest Cooldown — last_backtest_at | 07 | 8 | [TODO] |
+| HU 3.9 | Signal Factory — InstrumentManager Filter | 03 | 8 | [TODO] |
+| HU 10.5 | EdgeMonitor Connector-Agnóstico | 10 | 8 | [TODO] |
+| HU 10.6 | AutonomousSystemOrchestrator — Diseño FASE4 | 10 | 8 | [TODO] |
+
 ### E5: Interfaz Fractal & Experiencia Futurista (Dominio 09) — PENDIENTE
 **Sprint**: por definir | **Trace_ID**: UI-V3-FRACTAL-FUTURE-2026
 **Objetivo**: Evolucionar la terminal a una consola de alta densidad de información con navegación fractal y elementos de manipulación directa.

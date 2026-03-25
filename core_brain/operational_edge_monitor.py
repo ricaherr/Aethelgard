@@ -294,7 +294,7 @@ class OperationalEdgeMonitor(threading.Thread):
 # Funciones auxiliares privadas (módulo-nivel)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _parse_ts(ts) -> Optional[datetime]:
+def _parse_ts(ts: "str | datetime | None") -> Optional[datetime]:
     """Convierte string ISO o datetime a datetime timezone-aware. Retorna None si falla."""
     if ts is None:
         return None

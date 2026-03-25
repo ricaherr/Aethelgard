@@ -18,15 +18,33 @@ class EdgeMonitor(threading.Thread):
     Incluye detección de operaciones externas de MT5 y auditoría de señales.
     """
     
-    def __init__(self, storage: StorageManager, mt5_connector: Optional[Any] = None, trade_listener: Optional[Any] = None, interval_seconds: int = 60):
+    def __init__(
+        self,
+        storage: StorageManager,
+        mt5_connector: Optional[Any] = None,
+        trade_listener: Optional[Any] = None,
+        interval_seconds: int = 60,
+        connectors: Optional[Dict[str, Any]] = None,
+    ):
         super().__init__(daemon=True)
         self.storage = storage
         self.interval_seconds = interval_seconds
         self.running = True
         self.name = "EdgeMonitor"
-        self.mt5_connector = mt5_connector  # Injected dependency (reuse existing instance)
         self.trade_listener = trade_listener  # TradeClosureListener for reconciliation
-        self._mt5_unavailable_logged = False  # Suppress repeated log noise when MT5 is disabled
+
+        # Generic connectors dict (HU 10.5 — connector-agnostic monitoring)
+        # Backward compat: if legacy mt5_connector kwarg is passed, wrap it.
+        if connectors is not None:
+            self.connectors: Dict[str, Any] = connectors
+        elif mt5_connector is not None:
+            self.connectors = {"mt5": mt5_connector}
+        else:
+            self.connectors = {}
+
+        # Legacy attribute for backward compat with existing callers
+        self.mt5_connector = self.connectors.get("mt5")
+        self._mt5_unavailable_logged = False  # keep for compat with existing tests
         
     def run(self) -> None:
         """Loop principal del monitor"""
@@ -59,16 +77,20 @@ class EdgeMonitor(threading.Thread):
         self.running = False
         logger.info("[EDGE] Monitor stopped")
     
+    def _get_active_connectors(self) -> Dict[str, Any]:
+        """Return the full dict of available connectors (connector_id → instance)."""
+        return self.connectors
+
     def _get_mt5_connector(self) -> Optional[Any]:
-        """Get MT5 connector instance (must be injected)"""
-        if self.mt5_connector is None:
+        """Get MT5 connector instance — backward compat wrapper."""
+        connector = self.connectors.get("mt5")
+        if connector is None:
             if not self._mt5_unavailable_logged:
                 logger.info("[EDGE] MT5 connector not injected — MT5 monitoring disabled")
                 self._mt5_unavailable_logged = True
             else:
                 logger.debug("[EDGE] MT5 connector not available (not injected)")
-            return None
-        return self.mt5_connector
+        return connector
     
     def _check_mt5_external_operations(self) -> None:
         """Comparar posiciones MT5 con operaciones activas del bot

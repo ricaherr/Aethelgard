@@ -726,3 +726,59 @@
 | **DB SSOT** | Restaurada — cero archivos rogue · migraciones path-safe |
 | **Regresiones** | 0 |
 | **Fecha Cierre** | 24 de Marzo, 2026 |
+
+---
+
+# SPRINT 8: DESBLOQUEO OPERACIONAL DEL PIPELINE — [DEV]
+
+**Inicio**: 24 de Marzo, 2026
+**Fin**: —
+**Objetivo**: Resolver 5 bloqueos operacionales que impiden el flujo BACKTEST→SHADOW→LIVE: filtro de activos en SignalFactory (15/18 símbolos descartados), cooldown de backtest bloqueado por campo incorrecto, EdgeMonitor hardcodeado a MT5, capital hardcodeado, y ausencia de PID lock. Documentar diseño FASE4 AutonomousSystemOrchestrator.
+**Épica**: E9 | **Trace_ID**: PIPELINE-UNBLOCK-EDGE-2026-03-24
+**Dominios**: 03_ALPHA_GENERATION · 07_LIFECYCLE · 10_INFRA_RESILIENCY
+**Estado**: P9+P6+P3+P2+P5 DONE — FASE4 (diseño) pendiente
+
+## 📋 Tareas del Sprint
+
+- [DONE] **P9 — HU 10.3: Proceso Singleton — PID Lockfile**
+  - `start.py`: `_acquire_singleton_lock(lock_path)` + `_release_singleton_lock(lock_path)`. Lockfile en `data_vault/aethelgard.lock`. Aborta si PID activo, sobreescribe PID muerto. Limpia en `finally`.
+  - TDD: `tests/test_start_singleton.py` — 9/9 PASSED
+
+- [DONE] **P6 — HU 10.4: Capital desde sys_config**
+  - `start.py`: `_read_initial_capital(storage)` — lee `account_balance` de `sys_config`; fallback 10000.0 con WARNING. Inyectado en `RiskManager`.
+  - TDD: 4 tests en `tests/test_start_singleton.py` (incluidos en los 9/9 arriba)
+
+- [DONE] **P3 — HU 7.5: Backtest Cooldown — last_backtest_at**
+  - `data_vault/schema.py`: columna `last_backtest_at TIMESTAMP DEFAULT NULL` en DDL `sys_strategies` + migration inline en `run_migrations()`. Trace_ID: PIPELINE-UNBLOCK-BACKTEST-COOLDOWN-2026-03-24.
+  - `core_brain/backtest_orchestrator.py`: `_is_on_cooldown()` usa `last_backtest_at` (fallback `updated_at` para rows sin el campo); `_update_strategy_scores()` setea `last_backtest_at=CURRENT_TIMESTAMP`; SELECTs incluyen `last_backtest_at`.
+  - TDD: +3 tests en `tests/test_backtest_orchestrator.py` — 43/43 PASSED
+
+- [DONE] **P2 — HU 3.9: Signal Factory — InstrumentManager Filter**
+  - `core_brain/signal_factory.py`: param `instrument_manager: Optional[Any] = None`; bloque FASE4 reemplazado con `instrument_manager.get_enabled_symbols()`. Fallback a sin-filtro cuando no inyectado.
+  - `start.py`: `instrument_manager` inyectado en `SignalFactory`.
+  - TDD: `TestInstrumentManagerFilter` — 3 tests en `tests/test_signal_factory.py` (6/6 total PASSED)
+
+- [DONE] **P5 — HU 10.5: EdgeMonitor Connector-Agnóstico**
+  - `core_brain/edge_monitor.py`: param `connectors: Dict[str, Any]`. Backward compat: `mt5_connector=` wrapeado como `{"mt5": connector}`. Nuevo método `_get_active_connectors()`. `_get_mt5_connector()` conservado como wrapper para compatibilidad.
+  - `start.py`: `EdgeMonitor` recibe `connectors=active_connectors`.
+  - TDD: `TestEdgeMonitorConnectorAgnostic` — 6 tests (10/10 total PASSED)
+
+- [TODO] **FASE4 — HU 10.6: AutonomousSystemOrchestrator — Diseño**
+  - Documentar diseño completo en `docs/10_AUTONOMOUS_ORCHESTRATOR.md`.
+  - Inventario de 13 componentes EDGE existentes + mapa de coordinación.
+  - Especificar: DiagnosticsEngine, BaselineTracker, HealingPlaybook, ObservabilityLedger, EscalationRouter.
+  - DDL propuesto para `sys_agent_events`.
+
+---
+
+## 📸 Snapshot Sprint 8 (Parcial — P2/P3/P5/P6/P9)
+
+| Métrica | Valor |
+|---|---|
+| **Versión Sistema** | v4.6.0-beta |
+| **Tareas Completadas** | 5/6 ✅ (FASE4 diseño pendiente) |
+| **Suite de Tests** | 1601 passed · 0 failed |
+| **Nuevos Tests** | +22 (P9×9, P3×3, P2×3, P5×6 + actualización test_signal_factory_asset_filtering) |
+| **Bugs Críticos Resueltos** | 5 (filtro activos, cooldown backtest, EdgeMonitor MT5, capital hardcoded, proceso duplicado) |
+| **Regresiones** | 0 |
+| **Fecha Snapshot** | 24 de Marzo, 2026 |

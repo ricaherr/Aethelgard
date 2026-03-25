@@ -500,10 +500,11 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             description TEXT,
             mode TEXT NOT NULL DEFAULT 'BACKTEST'
                 CHECK(mode IN ('BACKTEST', 'SHADOW', 'LIVE')),
-            score_backtest REAL DEFAULT 0.0,
-            score_shadow   REAL DEFAULT 0.0,
-            score_live     REAL DEFAULT 0.0,
-            score          REAL DEFAULT 0.0,
+            score_backtest   REAL DEFAULT 0.0,
+            score_shadow     REAL DEFAULT 0.0,
+            score_live       REAL DEFAULT 0.0,
+            score            REAL DEFAULT 0.0,
+            last_backtest_at TIMESTAMP DEFAULT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -1060,6 +1061,16 @@ def run_migrations(conn: sqlite3.Connection) -> None:
     cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_sys_strategies_score ON sys_strategies (score DESC)"
     )
+    # MIGRATION (PIPELINE-UNBLOCK-BACKTEST-COOLDOWN): Dedicated last_backtest_at field
+    # Prevents cooldown using general updated_at (which gets set by any DB write).
+    # TRACE_ID: PIPELINE-UNBLOCK-BACKTEST-COOLDOWN-2026-03-24
+    cursor.execute("PRAGMA table_info(sys_strategies)")
+    strat_backtest_cols = [r[1] for r in cursor.fetchall()]
+    if "last_backtest_at" not in strat_backtest_cols:
+        cursor.execute(
+            "ALTER TABLE sys_strategies ADD COLUMN last_backtest_at TIMESTAMP DEFAULT NULL"
+        )
+        logger.info("Migration applied: sys_strategies.last_backtest_at added.")
 
     # instruments_config: seed only when key is absent (never overwrite existing data)
     cursor.execute("SELECT 1 FROM sys_config WHERE key = ?", ("instruments_config",))
