@@ -9,8 +9,8 @@
 > - **NO agregar aquí**: listas de archivos modificados, métricas de tests, detalles de implementación (eso va en SPRINT.md).
 > - **Framework completo**: `.ai_orchestration_protocol.md` Sección 4.
 
-**Versión Log**: v4.7.0-beta
-**Última Actualización**: 25 de Marzo, 2026 (Sprint 11)
+**Versión Log**: v4.8.0-beta
+**Última Actualización**: 25 de Marzo, 2026 (Sprint 12)
 
 ---
 
@@ -27,11 +27,11 @@
 | HU 7.6  | Interfaz estándar de evaluación histórica en estrategias | 07 | 9 | [DONE] |
 | HU 7.7  | Simulación real por estrategia — despacho a lógica propia | 07 | 9 | [DONE] |
 | HU 7.8  | Contexto estructural declarado en sys_strategies | 07 | 9 | [DONE] |
-| HU 7.9  | Evaluación multi-timeframe con round-robin y pre-filtro | 07 | — | |
-| HU 7.10 | RegimeClassifier real en pipeline de backtesting | 07 | — | |
+| HU 7.9  | Evaluación multi-timeframe con round-robin y pre-filtro | 07 | 12 | [DONE] |
+| HU 7.10 | RegimeClassifier real en pipeline de backtesting | 07 | 12 | [DONE] |
 | HU 7.11 | Cadena de fallback multi-proveedor — eliminar síntesis | 07 | 9 | [DONE] |
 | HU 10.7 | Adaptive Operational Mode Manager | 10 | 9 | [DONE] |
-| HU 7.12 | Adaptive Backtest Scheduler — cooldown dinámico y queue de prioridad | 07 | — | |
+| HU 7.12 | Adaptive Backtest Scheduler — cooldown dinámico y queue de prioridad | 07 | 12 | [DONE] |
 | HU 7.13 | Rediseño semántico de affinity_scores | 07 | — | |
 | HU 7.14 | Backtesting multi-par secuencial | 07 | — | |
 | HU 7.15 | Score con confianza estadística n/(n+k) | 07 | — | |

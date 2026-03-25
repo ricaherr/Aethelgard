@@ -75,6 +75,15 @@ def _make_orchestrator(gatekeeper=None):
 
 class TestStrategyGatekeeperWiring(unittest.TestCase):
 
+    def setUp(self):
+        # Patch CPU so the CPU-veto gate in run_single_cycle() never fires
+        # regardless of host load during the test run.
+        self._cpu_patch = patch("psutil.cpu_percent", return_value=10.0)
+        self._cpu_patch.start()
+
+    def tearDown(self):
+        self._cpu_patch.stop()
+
     # ------------------------------------------------------------------
     # 1. DI acceptance in __init__
     # ------------------------------------------------------------------

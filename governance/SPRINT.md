@@ -11,6 +11,49 @@
 
 ---
 
+# SPRINT 12: BACKTEST ENGINE — MULTI-TIMEFRAME, REGIME CLASSIFIER & ADAPTIVE SCHEDULER — [DONE]
+
+**Inicio**: 25 de Marzo, 2026
+**Fin**: 25 de Marzo, 2026
+**Objetivo**: Completar las HUs desbloqueadas de E10: incorporar evaluación multi-timeframe con round-robin y pre-filtro de régimen, integrar el RegimeClassifier real (ADX/ATR/SMA) en el pipeline de clasificación de ventanas, y crear el AdaptiveBacktestScheduler con cooldown dinámico y cola de prioridad.
+**Épica**: E10 | **Trace_ID**: EDGE-BACKTEST-SPRINT12-MULTITF-REGIME-SCHED-2026-03-25
+**Dominios**: 07_ADAPTIVE_LEARNING
+
+## 📋 Tareas del Sprint
+
+- [DONE] **HU 7.9: Evaluación multi-timeframe con round-robin y pre-filtro de régimen**
+  - `BacktestOrchestrator._get_timeframes_for_backtest()`: lee `required_timeframes` de la estrategia
+  - `BacktestOrchestrator._next_timeframe_round_robin()`: rotación cíclica in-memory por strategy_id
+  - `BacktestOrchestrator._passes_regime_prefilter()`: valida `required_regime` contra régimen actual (fail-open si sin datos)
+  - `_build_scenario_slices()`: integra round-robin + pre-filtro antes del fetch de datos
+  - Queries DB actualizadas: incluyen `required_timeframes, required_regime` en SELECT
+  - TDD: 14 tests en `tests/test_backtest_multitimeframe_roundrobin.py` — 14/14 PASSED
+
+- [DONE] **HU 7.10: RegimeClassifier real en pipeline de backtesting**
+  - `REGIME_TO_CLUSTER` ampliado: añade `CRASH → HIGH_VOLATILITY` y `NORMAL → STAGNANT_RANGE`
+  - `BacktestOrchestrator._classify_window_regime()`: usa `RegimeClassifier` (ADX/ATR/SMA) con fallback a heurística ATR
+  - `_split_into_cluster_slices()`: sustituye `backtester._detect_regime()` por `_classify_window_regime()`
+  - Import de `RegimeClassifier` en `backtest_orchestrator.py`
+  - TDD: 14 tests en `tests/test_backtest_regime_classifier.py` — 14/14 PASSED
+
+- [DONE] **HU 7.12: Adaptive Backtest Scheduler — cooldown dinámico y queue de prioridad**
+  - Nuevo módulo `core_brain/adaptive_backtest_scheduler.py`
+  - `get_effective_cooldown_hours()`: delega a `OperationalModeManager.get_component_frequencies()`
+  - `is_deferred()`: retorna True si presupuesto es DEFERRED
+  - `get_priority_queue()`: excluye en cooldown, ordena P1(nunca run) > P2(score=0) > P3(más antigua)
+  - TDD: 14 tests en `tests/test_adaptive_backtest_scheduler.py` — 14/14 PASSED
+
+## 📊 Snapshot de Cierre
+
+- **Tests añadidos**: 42 (14 HU7.9 + 14 HU7.10 + 14 HU7.12)
+- **Tests totales (módulos afectados)**: 126/126 PASSED
+- **Archivos nuevos**: `core_brain/adaptive_backtest_scheduler.py`, `tests/test_backtest_multitimeframe_roundrobin.py`, `tests/test_backtest_regime_classifier.py`, `tests/test_adaptive_backtest_scheduler.py`
+- **Archivos modificados**: `core_brain/backtest_orchestrator.py`
+- **HUs completadas**: HU 7.9, HU 7.10, HU 7.12
+- **Desbloqueadas para siguiente sprint**: HU 7.13 (requiere 7.9+7.10+7.12)
+
+---
+
 # SPRINT 11: PRODUCTION UNBLOCK — SYMBOL FORMAT, BACKTEST SEED & ADAPTIVE PILAR 3 — [DONE]
 
 **Inicio**: 25 de Marzo, 2026

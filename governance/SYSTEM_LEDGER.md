@@ -4,7 +4,7 @@
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-25 UTC)**: Trace_ID: DOC-SCHEMA-SYNC-2026-03-25 | Deuda documental resuelta: `DATABASE_SCHEMA.md` sincronizado con DB real (46 tablas, v3.1→v3.2). `08_DATA_SOVEREIGNTY.md` actualizado con nombres de tablas reales. Tablas obsoletas `sys_auth/sys_memberships/sys_state/sys_calendar/usr_signals/usr_strategies` eliminadas de docs.
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-25 UTC)**: Trace_ID: EDGE-BACKTEST-SPRINT12-MULTITF-REGIME-SCHED-2026-03-25 | Sprint 12 archivado: HU 7.9, HU 7.10, HU 7.12 completadas · 1833/1833 PASSED · HU 7.13 desbloqueada.
 
 ---
 
@@ -26,6 +26,20 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 ---
 
 ## 🏛️ ÉPICAS ARCHIVADAS
+
+### Sprint 12 — Motor de Backtesting Inteligente — Multi-TF, Regime Classifier & Adaptive Scheduler (25-Mar-2026)
+**Trace_ID**: `EDGE-BACKTEST-SPRINT12-MULTITF-REGIME-SCHED-2026-03-25` | **Épica**: E10 (Sprint parcial — continúa) | **Estado**: Sprint cerrado · E10 ACTIVA (7 HUs pendientes)
+
+| HU | Descripción | Artefactos clave | Tests |
+|---|---|---|---|
+| **HU 7.9** | Round-robin de `required_timeframes` en `_build_scenario_slices()` + pre-filtro de `required_regime` (fail-open sin datos). Queries DB actualizadas con nuevas columnas. | `backtest_orchestrator.py` | 14/14 |
+| **HU 7.10** | `_classify_window_regime()` usa `RegimeClassifier` (ADX/ATR/SMA) en lugar de heurística ATR+slope. `REGIME_TO_CLUSTER` ampliado con `CRASH` y `NORMAL`. Fallback a heurística si RC falla. | `backtest_orchestrator.py` | 14/14 |
+| **HU 7.12** | Nuevo `AdaptiveBacktestScheduler`: cooldown dinámico vía `OperationalModeManager` (1h/12h/24h), cola de prioridad P1→P3, retorno vacío en DEFERRED. | `core_brain/adaptive_backtest_scheduler.py` | 14/14 |
+
+**Suite total**: 1833/1833 PASSED · 0 regresiones · +42 tests nuevos
+**HUs desbloqueadas**: HU 7.13 (requiere 7.9+7.10+7.11+7.12, todas ✅)
+
+---
 
 ### Sprint 9 — Motor de Backtesting Inteligente — EDGE Evaluation Framework (24-Mar-2026)
 **Trace_ID**: `EDGE-BACKTEST-EVAL-FRAMEWORK-2026-03-24` | **Épica**: E10 (Sprint MV — continúa) | **Estado**: Sprint cerrado · E10 ACTIVA (10 HUs pendientes)

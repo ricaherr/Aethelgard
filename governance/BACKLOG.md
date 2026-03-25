@@ -101,57 +101,6 @@
 ### ÉPICA E10 — Motor de Backtesting Inteligente (EDGE Evaluation Framework)
 *Trace_ID: EDGE-BACKTEST-EVAL-FRAMEWORK-2026-03-24 | Sprint activo: 9+*
 
-* **HU 7.9: Evaluación multi-timeframe con round-robin y pre-filtro**
-    * **Prioridad**: Alta
-    * **Épica**: E10 | **Dominio**: 07_ADAPTIVE_LEARNING
-    * **Trace_ID**: EDGE-BKT-79-MULTI-TF-ROUNDROBIN-2026-03-24
-    * **Dependencia**: HU 7.8 ✅
-    * **Contexto**: `_resolve_symbol_timeframe()` siempre usa H1 (columna inexistente → fallback). Las estrategias M5 se evalúan en H1 — incompatibilidad de contexto temporal.
-    * **Descripción**: Implementar evaluación multi-timeframe con dos mecanismos de control de costo:
-        1. **Si `required_timeframes` declarado** → evaluar solo esos timeframes (saber estructural)
-        2. **Si `required_timeframes` vacío** → rotar un timeframe por ciclo en orden configurable desde `sys_config` (`["M5","M15","H1","H4"]` default). El estado del ciclo actual se persiste en `sys_strategy_pair_coverage` (HU 7.17).
-        Pre-filtro antes de cualquier fetch: si `required_regime != 'ANY'` y el régimen actual del par no coincide → skip este ciclo.
-    * **Criterios de aceptación**:
-        - Estrategias con `required_timeframes` poblado se evalúan solo en esos timeframes
-        - Round-robin avanza correctamente entre ciclos (estado persistido)
-        - Pre-filtro de régimen elimina fetches innecesarios antes del I/O
-        - Tests verifican que el round-robin no repite timeframe hasta completar el ciclo
-    * **Artefactos**: `core_brain/backtest_orchestrator.py`, `data_vault/schema.py`
-
-* **HU 7.10: RegimeClassifier real en pipeline de backtesting**
-    * **Prioridad**: Media
-    * **Épica**: E10 | **Dominio**: 07_ADAPTIVE_LEARNING
-    * **Trace_ID**: EDGE-BKT-710-REGIME-CLASSIFIER-2026-03-24
-    * **Contexto**: `_split_into_cluster_slices()` usa `backtester._detect_regime()` — método simple ATR+slope. El sistema tiene `RegimeClassifier` (ADX + SMA200 + hysteresis + 4 regímenes) en `core_brain/regime.py` que NO se usa en backtesting.
-    * **Descripción**: Reemplazar `backtester._detect_regime()` por `RegimeClassifier` de `regime.py`. Instanciar el clasificador, llamar `load_ohlc(window)` y `classify()` por cada ventana deslizante. Un único clasificador de régimen en todo el sistema.
-    * **Criterios de aceptación**:
-        - `_split_into_cluster_slices()` usa `RegimeClassifier` con ADX real
-        - `ScenarioBacktester._detect_regime()` queda solo para tests legacy o se elimina
-        - Tests verifican que ventanas con ADX > 25 clasifican como INSTITUTIONAL_TREND
-    * **Artefactos**: `core_brain/backtest_orchestrator.py`
-
-* **HU 7.12: Adaptive Backtest Scheduler — cooldown dinámico y queue de prioridad**
-    * **Prioridad**: Alta
-    * **Épica**: E10 | **Dominio**: 07_ADAPTIVE_LEARNING
-    * **Trace_ID**: EDGE-BKT-712-ADAPTIVE-SCHEDULER-2026-03-24
-    * **Dependencia**: HU 10.7 ✅
-    * **Descripción**: Reemplazar el cooldown fijo por un scheduler adaptativo:
-        - **Cooldown dinámico por contexto operacional**:
-            - `BACKTEST_ONLY` + recursos > 70% libres → 0h
-            - `BACKTEST_ONLY` + recursos 40–70% libres → 2h
-            - `SHADOW_ACTIVE` → 12h
-            - `LIVE_ACTIVE` → 24h
-            - Floor absoluto: nunca re-evaluar el mismo par+tf en menos de 1h
-        - **Queue de prioridad**: P1 (null backtest) → P2 (PENDING + régimen compatible) → P3 (UNTESTED_CLUSTER) → P4 (score inestable) → P5 (confidence baja) → P6 (rutina)
-        - **Fetch incremental**: guardar `last_evaluated_at` por `(strategy_id, symbol, timeframe)`. Solo fetchear barras nuevas.
-        - **Cooldown adaptativo por estabilidad**: si `effective_score` varió < 3% en 3 ciclos → extender a 7 días.
-    * **Criterios de aceptación**:
-        - En contexto `BACKTEST_ONLY` con CPU < 30%, ejecuta backtests consecutivos sin esperar 24h
-        - El floor de 1h por par+tf se respeta en todos los contextos
-        - El queue selecciona correctamente P1 sobre P6
-        - Tests verifican cada nivel de prioridad del queue
-    * **Artefactos**: `core_brain/backtest_orchestrator.py`, `data_vault/schema.py`
-
 * **HU 7.13: Rediseño semántico de affinity_scores**
     * **Prioridad**: Alta
     * **Épica**: E10 | **Dominio**: 07_ADAPTIVE_LEARNING

@@ -53,6 +53,7 @@ Logging: EDGE intelligence visible (learning, predictions, adaptations)
 Persistence: Métricas guardadas para evolución cross-session
 """
 
+import inspect
 import logging
 import asyncio
 import time
@@ -447,10 +448,14 @@ class EconomicDataScheduler:
         
         return True
     
-    async def _job_wrapper(self) -> None:
+    def _job_wrapper(self) -> None:
         """
         Wrapper around fetch_and_persist with EDGE intelligence.
-        
+
+        Synchronous entry-point required by BackgroundScheduler (ThreadPoolExecutor).
+        Async fetch_and_persist_func is executed via asyncio.run() so each scheduled
+        invocation gets its own event loop — safe from a background thread.
+
         Features:
         - Self-learning: Measures overhead, improves estimates
         - Predictive: Analyzes trends, adapts proactively
@@ -494,12 +499,11 @@ class EconomicDataScheduler:
             start_time = time.time()
             
             # Execute fetch_and_persist
-            if asyncio.iscoroutinefunction(self.fetch_and_persist_func):
-                await self.fetch_and_persist_func()
+            # BackgroundScheduler runs in a thread — use asyncio.run() for async funcs
+            if inspect.iscoroutinefunction(self.fetch_and_persist_func):
+                asyncio.run(self.fetch_and_persist_func())
             else:
-                # Sync function - run in executor
-                loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, self.fetch_and_persist_func)
+                self.fetch_and_persist_func()
             
             job_duration = time.time() - start_time
             

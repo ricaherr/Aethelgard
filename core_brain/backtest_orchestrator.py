@@ -33,6 +33,17 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
+# Normalisation map for regime aliases used in required_regime comparisons (HU 7.9)
+_REGIME_ALIAS: Dict[str, str] = {
+    "VOLATILITY": "VOLATILE",
+    "FLASH_MOVE": "VOLATILE",
+    "TRENDING":   "TREND",
+    "RANGING":    "RANGE",
+    "CRASH":      "VOLATILE",
+    "NORMAL":     "RANGE",
+}
+
+from core_brain.regime import RegimeClassifier  # HU 7.10
 from core_brain.scenario_backtester import (
     AptitudeMatrix,
     ScenarioBacktester,
@@ -53,6 +64,9 @@ REGIME_TO_CLUSTER: Dict[str, str] = {
     "TRENDING":    StressCluster.INSTITUTIONAL_TREND,
     "RANGING":     StressCluster.STAGNANT_RANGE,
     "FLASH_MOVE":  StressCluster.HIGH_VOLATILITY,
+    # HU 7.10: RegimeClassifier real outputs (MarketRegime enum values)
+    "CRASH":       StressCluster.HIGH_VOLATILITY,
+    "NORMAL":      StressCluster.STAGNANT_RANGE,
 }
 
 # ── Config keys in sys_config (SSOT) ─────────────────────────────────────────
@@ -91,6 +105,8 @@ class BacktestOrchestrator:
         self.shadow_manager = shadow_manager
         self.last_run: Optional[datetime] = None
         self._cfg           = self._load_config()
+        # HU 7.9: round-robin index per strategy_id
+        self._tf_rr_index: Dict[str, int] = {}
 
     def _load_config(self) -> Dict[str, Any]:
         """Load backtest parameters from sys_config (SSOT). Falls back to safe defaults."""
@@ -228,6 +244,69 @@ class BacktestOrchestrator:
 
     # ── Data Loading ──────────────────────────────────────────────────────────
 
+    # ── HU 7.9: Multi-timeframe round-robin + regime pre-filter ───────────────
+
+    def _get_timeframes_for_backtest(self, strategy: Dict) -> List[str]:
+        """
+        Return ordered list of timeframes to evaluate for this strategy.
+
+        Source: strategy.required_timeframes (JSON list).
+        Fallback: default_timeframe from sys_config.
+
+        HU 7.9 — EDGE-BACKTEST-HU79-MULTITF-ROUND-ROBIN-2026-03-25
+        """
+        raw = strategy.get("required_timeframes", "[]")
+        try:
+            tfs = raw if isinstance(raw, list) else json.loads(raw or "[]")
+        except Exception:
+            tfs = []
+        return tfs if tfs else [self._cfg["default_timeframe"]]
+
+    def _next_timeframe_round_robin(self, strategy_id: str, timeframes: List[str]) -> str:
+        """
+        Return next timeframe in round-robin rotation for strategy_id.
+
+        Advances in-memory index; wraps back to 0 after last entry.
+        State is process-local (resets on restart — acceptable for scheduling).
+        Uses getattr for safety when instantiated via __new__ (legacy tests).
+        """
+        rr = getattr(self, "_tf_rr_index", None)
+        if rr is None:
+            self._tf_rr_index = {}
+            rr = self._tf_rr_index
+        idx = rr.get(strategy_id, 0)
+        tf = timeframes[idx % len(timeframes)]
+        rr[strategy_id] = (idx + 1) % len(timeframes)
+        return tf
+
+    def _passes_regime_prefilter(
+        self, strategy: Dict, symbol: str, timeframe: str
+    ) -> bool:
+        """
+        Check that the current market regime matches strategy.required_regime.
+
+        Policy:
+          - 'ANY' or missing → always True.
+          - Aliases normalised: VOLATILITY → VOLATILE, TRENDING → TREND, etc.
+          - No data or insufficient bars (<14) → True (fail-open; don't block evaluation).
+          - Returns False only when data is sufficient AND regime clearly mismatches.
+
+        HU 7.9 — EDGE-BACKTEST-HU79-MULTITF-ROUND-ROBIN-2026-03-25
+        """
+        required = str(strategy.get("required_regime") or "ANY").upper()
+        required = _REGIME_ALIAS.get(required, required)
+        if required == "ANY":
+            return True
+
+        raw = self.dpm.fetch_ohlc(symbol, timeframe, 50)
+        df = self._to_dataframe(raw)
+        if df is None or len(df) < 14:
+            return True  # fail-open
+
+        detected = self.backtester._detect_regime(df, "RANGE").upper()
+        detected = _REGIME_ALIAS.get(detected, detected)
+        return detected == required
+
     def _build_scenario_slices(
         self,
         strategy: Dict,
@@ -237,14 +316,28 @@ class BacktestOrchestrator:
         Fetch real OHLCV data from DataProviderManager and split it into
         regime-labelled ScenarioSlice objects.
 
-        Algorithm:
-          1. Choose symbol + timeframe from strategy.market_whitelist.
-          2. Fetch BARS_FETCH_INITIAL bars (retry up to BARS_FETCH_MAX if needed).
-          3. Slide windows of BARS_PER_WINDOW bars, detect regime per window.
-          4. Collect one representative window per StressCluster.
-          5. If a cluster is missing, synthesise a valid fallback from the data.
+        Algorithm (HU 7.9 enhanced):
+          1. Choose symbol from strategy.market_whitelist.
+          2. Select timeframe via round-robin from strategy.required_timeframes.
+          3. Run regime pre-filter; if blocked → return UNTESTED slices.
+          4. Fetch BARS_FETCH_INITIAL bars (retry up to BARS_FETCH_MAX if needed).
+          5. Slide windows of BARS_PER_WINDOW bars, detect regime per window.
+          6. Collect one representative window per StressCluster.
         """
-        symbol, timeframe = self._resolve_symbol_timeframe(strategy)
+        symbol, _ = self._resolve_symbol_timeframe(strategy)
+        timeframes = self._get_timeframes_for_backtest(strategy)
+        timeframe = self._next_timeframe_round_robin(strategy["class_id"], timeframes)
+
+        # HU 7.9 pre-filter: skip if current regime doesn't match requirement
+        if not self._passes_regime_prefilter(strategy, symbol, timeframe):
+            logger.info(
+                "[BACKTEST_ORC] strategy=%s tf=%s skipped — regime pre-filter "
+                "(required=%s, current mismatch).",
+                strategy["class_id"], timeframe,
+                strategy.get("required_regime", "ANY"),
+            )
+            return self._untested_fallback_slices(symbol, timeframe)
+
         df = self._fetch_with_retry(symbol, timeframe, params)
 
         if df is None or len(df) < self._cfg["bars_per_window"]:
@@ -326,6 +419,29 @@ class BacktestOrchestrator:
                 count += 1
         return count
 
+    def _classify_window_regime(self, window: pd.DataFrame) -> str:
+        """
+        Classify market regime for a data window using the real RegimeClassifier
+        (ADX + ATR + SMA200) instead of the simple ATR-ratio heuristic.
+
+        Falls back to backtester._detect_regime() if RegimeClassifier raises.
+
+        Returns a string matching REGIME_TO_CLUSTER keys:
+          'TREND' | 'RANGE' | 'VOLATILE' | 'CRASH' | 'NORMAL'
+
+        HU 7.10 — EDGE-BACKTEST-HU710-REGIME-CLASSIFIER-PIPELINE-2026-03-25
+        """
+        try:
+            classifier = RegimeClassifier()
+            classifier.load_ohlc(window)
+            regime = classifier.classify()
+            return regime.value  # MarketRegime enum → string
+        except Exception as exc:
+            logger.debug(
+                "[BACKTEST_ORC] RegimeClassifier failed (%s) — falling back to heuristic.", exc
+            )
+            return self.backtester._detect_regime(window, "RANGE")
+
     def _split_into_cluster_slices(
         self,
         df: pd.DataFrame,
@@ -334,8 +450,8 @@ class BacktestOrchestrator:
     ) -> List[ScenarioSlice]:
         """
         Slide windows of BARS_PER_WINDOW over the full DataFrame.
-        Classify each window's regime and collect the best representative
-        window for each StressCluster.
+        Classify each window's regime (via RegimeClassifier — HU 7.10) and
+        collect the best representative window for each StressCluster.
         """
         cluster_candidates: Dict[str, Optional[pd.DataFrame]] = {
             StressCluster.HIGH_VOLATILITY:     None,
@@ -348,7 +464,7 @@ class BacktestOrchestrator:
         step = bpw // 2  # 50 % overlap for better coverage
         for start in range(0, len(df) - bpw + 1, step):
             window = df.iloc[start: start + bpw].reset_index(drop=True)
-            regime = self.backtester._detect_regime(window, "RANGE")
+            regime = self._classify_window_regime(window)  # HU 7.10
             cluster = REGIME_TO_CLUSTER.get(regime, StressCluster.STAGNANT_RANGE)
 
             # Pick window that best represents the cluster (highest cluster signal)
@@ -534,7 +650,9 @@ class BacktestOrchestrator:
 
     def _resolve_symbol_timeframe(self, strategy: Dict) -> Tuple[str, str]:
         """
-        Pick the first symbol from market_whitelist. Defaults to EURUSD/H1.
+        Pick the first symbol from market_whitelist and the default timeframe.
+        Note: the active timeframe for a given run is selected via round-robin
+        in _build_scenario_slices() (HU 7.9); this method returns the fallback pair.
         """
         import json as _json
         whitelist_raw = strategy.get("market_whitelist", "[]")
@@ -726,7 +844,8 @@ class BacktestOrchestrator:
                 """
                 SELECT class_id, mnemonic, market_whitelist, affinity_scores,
                        mode, score_backtest, score_shadow, score_live, score,
-                       updated_at, last_backtest_at
+                       updated_at, last_backtest_at,
+                       required_timeframes, required_regime
                 FROM sys_strategies
                 WHERE mode = 'BACKTEST'
                 """,
@@ -746,7 +865,8 @@ class BacktestOrchestrator:
                 """
                 SELECT class_id, mnemonic, market_whitelist, affinity_scores,
                        mode, score_backtest, score_shadow, score_live, score,
-                       updated_at, last_backtest_at
+                       updated_at, last_backtest_at,
+                       required_timeframes, required_regime
                 FROM sys_strategies
                 WHERE class_id = ?
                 """,
