@@ -131,6 +131,11 @@ class CTraderConnector(BaseConnector):
         # Using asyncio.run() or run_until_complete() would close the loop after
         # each call, destroying the WebSocket — hence the dedicated loop pattern.
         self._session_ws: Optional[Any] = None
+        # Proactive session management: invalidate before CTrader server expires (~120s idle).
+        # This eliminates the reactive payloadType=2142 error on stale sessions.
+        self._session_last_used_at: float = 0.0
+        _SESSION_MAX_IDLE_SECS = 90  # preemptive reconnect at 90s (server expires at ~120s)
+        self._SESSION_MAX_IDLE_SECS = _SESSION_MAX_IDLE_SECS
         self._event_loop: asyncio.AbstractEventLoop = asyncio.new_event_loop()
         self._loop_thread = threading.Thread(
             target=self._event_loop.run_forever,
@@ -382,11 +387,21 @@ class CTraderConnector(BaseConnector):
         # All calls arrive on self._event_loop (dedicated thread), so no loop
         # identity check is needed — the loop is always the same.
         if self._session_ws is not None:
-            try:
-                return await self._fetch_bars_on_session(self._session_ws, symbol, timeframe, count)
-            except Exception as exc:
-                logger.warning(f"[CTrader] Reutilización de sesión fallida: {exc}. Intentando reconexión.")
+            idle_secs = time.monotonic() - self._session_last_used_at
+            if idle_secs > self._SESSION_MAX_IDLE_SECS:
+                logger.info(
+                    f"[CTrader] Sesión inactiva {idle_secs:.0f}s — reconexión preventiva "
+                    f"(límite={self._SESSION_MAX_IDLE_SECS}s)."
+                )
                 await self._invalidate_session()
+            else:
+                try:
+                    bars = await self._fetch_bars_on_session(self._session_ws, symbol, timeframe, count)
+                    self._session_last_used_at = time.monotonic()
+                    return bars
+                except Exception as exc:
+                    logger.warning(f"[CTrader] Reutilización de sesión fallida: {exc}. Intentando reconexión.")
+                    await self._invalidate_session()
 
         # (Re)connect and authenticate.
         host = self.config.get("ws_host", _DEMO_WS_HOST)
@@ -405,10 +420,13 @@ class CTraderConnector(BaseConnector):
             return []
 
         self._session_ws = ws
+        self._session_last_used_at = time.monotonic()
         logger.debug("[CTrader] New authenticated session established.")
 
         try:
-            return await self._fetch_bars_on_session(ws, symbol, timeframe, count)
+            bars = await self._fetch_bars_on_session(ws, symbol, timeframe, count)
+            self._session_last_used_at = time.monotonic()
+            return bars
         except Exception as exc:
             logger.error(f"[CTrader] fetch after fresh auth failed: {exc}")
             await self._invalidate_session()

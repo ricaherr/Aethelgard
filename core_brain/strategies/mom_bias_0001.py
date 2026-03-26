@@ -150,16 +150,14 @@ class MomentumBias0001Strategy(BaseStrategy):
             
             # Step 2: Calcular SMA20 y SMA200
             try:
-                sma20 = self.moving_average_sensor.get_sma(
-                    df, period=20, source='close', trace_id=self.trace_id
-                )
-                sma200 = self.moving_average_sensor.get_sma(
-                    df, period=200, source='close', trace_id=self.trace_id
-                )
+                sma20_series = self.moving_average_sensor.calculate_sma(df, 20, 'close')
+                sma200_series = self.moving_average_sensor.calculate_sma(df, 200, 'close')
+                sma20 = float(sma20_series.iloc[-1]) if not pd.isna(sma20_series.iloc[-1]) else None
+                sma200 = float(sma200_series.iloc[-1]) if not pd.isna(sma200_series.iloc[-1]) else None
             except Exception as sma_err:
                 logger.warning(f"[{self.trace_id}] {symbol}: Error calculando SMAs: {sma_err}")
                 return None
-            
+
             if sma20 is None or sma200 is None:
                 logger.debug(f"[{self.trace_id}] {symbol}: SMAs no disponibles")
                 return None

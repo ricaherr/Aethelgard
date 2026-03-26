@@ -80,8 +80,18 @@ class SessionLiquiditySensor:
         
         # Filtrar velas dentro de horario Londres
         try:
-            # Asegurar que el índice tiene timezone
-            if not hasattr(df.index, 'tz') or df.index.tz is None:
+            # Asegurar que el índice es DatetimeIndex timezone-aware
+            if not isinstance(df.index, pd.DatetimeIndex):
+                if 'time' in df.columns:
+                    df = df.copy()
+                    df.index = pd.to_datetime(df['time'])
+                elif 'timestamp' in df.columns:
+                    df = df.copy()
+                    df.index = pd.to_datetime(df['timestamp'])
+                else:
+                    logger.warning(f"[{self.trace_id}] RangeIndex sin columna 'time' — sesión no calculable")
+                    return None, None
+            if df.index.tz is None:
                 logger.warning(f"[{self.trace_id}] DataFrame index is not timezone-aware, assuming UTC")
                 df.index = df.index.tz_localize('UTC')
             
@@ -131,10 +141,20 @@ class SessionLiquiditySensor:
             current_date = datetime.now(timezone.utc)
         
         try:
-            # Asegurar timezone
-            if not hasattr(df.index, 'tz') or df.index.tz is None:
+            # Asegurar que el índice es DatetimeIndex timezone-aware
+            if not isinstance(df.index, pd.DatetimeIndex):
+                if 'time' in df.columns:
+                    df = df.copy()
+                    df.index = pd.to_datetime(df['time'])
+                elif 'timestamp' in df.columns:
+                    df = df.copy()
+                    df.index = pd.to_datetime(df['timestamp'])
+                else:
+                    logger.warning(f"[{self.trace_id}] RangeIndex sin columna 'time' — día anterior no calculable")
+                    return None, None
+            if df.index.tz is None:
                 df.index = df.index.tz_localize('UTC')
-            
+
             # Filtrar por día anterior
             prev_date = pd.Timestamp(current_date.date()) - pd.Timedelta(days=1)
             prev_date_mask = df.index.date == prev_date.date()
