@@ -103,6 +103,7 @@ def _make_backtester_mock(passes: bool = True, score: float = 0.85):
         timestamp=datetime.now(timezone.utc).isoformat(),
     )
     bt.run_scenario_backtest.return_value = matrix
+    bt.MIN_REGIME_SCORE = 0.75  # HU 7.14: accessed in _execute_backtest aggregate logic
     # expose internal method for cluster detection tests
     bt._detect_regime = ScenarioBacktester(_make_storage_mock())._detect_regime
     return bt

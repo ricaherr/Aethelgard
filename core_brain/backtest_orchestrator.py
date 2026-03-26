@@ -155,15 +155,19 @@ class BacktestOrchestrator:
             len(strategies),
         )
 
-        tasks = [self._run_strategy_task(s) for s in strategies]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
+        # HU 7.14: Sequential execution — each strategy now does multi-pair work
+        # internally (DB writes per pair), so concurrent strategies would risk
+        # write collisions.  Sequential is safer and matches the spec.
         summary = {"evaluated": 0, "promoted": 0, "failed": 0, "skipped": 0}
-        for s, result in zip(strategies, results):
-            if isinstance(result, Exception):
-                logger.error("[BACKTEST_ORC] strategy=%s raised: %s", s["class_id"], result)
+        for s in strategies:
+            try:
+                result = await self._run_strategy_task(s)
+            except Exception as exc:
+                logger.error("[BACKTEST_ORC] strategy=%s raised: %s", s["class_id"], exc)
                 summary["failed"] += 1
-            elif result is None:
+                continue
+
+            if result is None:
                 summary["skipped"] += 1
             else:
                 summary["evaluated"] += 1
@@ -207,41 +211,98 @@ class BacktestOrchestrator:
             return None
         return await self._execute_backtest(strategy)
 
-    async def _execute_backtest(self, strategy: Dict) -> AptitudeMatrix:
+    async def _execute_backtest(self, strategy: Dict) -> Optional[AptitudeMatrix]:
         """
-        Core execution: load slices → run backtester → persist results → maybe promote.
+        Core execution: sequential multi-pair loop → persist per-pair affinity → promote.
+
+        HU 7.14 — EDGE-BKT-714-MULTI-PAIR-2026-03-24
+        For each symbol in market_whitelist:
+          1. Regime pre-filter: if incompatible → write REGIME_INCOMPATIBLE, skip.
+          2. Build scenario slices for this specific symbol.
+          3. Run ScenarioBacktester.
+          4. Write per-pair affinity entry.
+        After all pairs: aggregate score = mean of evaluated pairs.
+        Update strategy score + maybe promote.
+        Returns None if no pairs could be evaluated.
         """
         strategy_id = strategy["class_id"]
-        params = self._extract_parameter_overrides(strategy)
-
-        logger.info("[BACKTEST_ORC] Running backtest for strategy=%s", strategy_id)
-
-        # Fetch real scenario slices from DataProviderManager
-        slices = await asyncio.get_event_loop().run_in_executor(
-            None,
-            self._build_scenario_slices,
-            strategy,
-            params,
-        )
-
-        # Run ScenarioBacktester with strategy-specific evaluate_on_history()
+        params      = self._extract_parameter_overrides(strategy)
+        symbols     = self._get_symbols_for_backtest(strategy)
         strategy_instance = self._build_strategy_for_backtest(strategy_id)
-        matrix = self.backtester.run_scenario_backtest(
-            strategy_id=strategy_id,
-            parameter_overrides=params,
-            scenario_slices=slices,
-            strategy_instance=strategy_instance,
+
+        logger.info(
+            "[BACKTEST_ORC] Running multi-pair backtest strategy=%s symbols=%s",
+            strategy_id, symbols,
         )
 
-        # Persist score + recalculate consolidated score + per-pair affinity
-        symbol, _ = self._resolve_symbol_timeframe(strategy)
-        self._update_strategy_scores(strategy_id, matrix.overall_score, strategy, symbol=symbol, matrix=matrix)
+        matrices: List[AptitudeMatrix] = []
+        conn   = self.storage._get_conn()
+        cursor = conn.cursor()
 
-        # Promote if passed
-        if matrix.passes_threshold:
-            self._promote_to_shadow(strategy_id, matrix.overall_score)
+        for symbol in symbols:
+            # Step 1: Regime pre-filter (per symbol)
+            timeframes = self._get_timeframes_for_backtest(strategy)
+            timeframe  = self._next_timeframe_round_robin(f"{strategy_id}:{symbol}", timeframes)
 
-        return matrix
+            if not self._passes_regime_prefilter(strategy, symbol, timeframe):
+                logger.info(
+                    "[BACKTEST_ORC] strategy=%s symbol=%s REGIME_INCOMPATIBLE — skipping.",
+                    strategy_id, symbol,
+                )
+                self._write_regime_incompatible(cursor, strategy_id, symbol, strategy)
+                conn.commit()
+                continue
+
+            # Step 2: Build scenario slices for this symbol
+            slices = await asyncio.get_event_loop().run_in_executor(
+                None,
+                self._build_scenario_slices,
+                strategy,
+                params,
+                symbol,
+            )
+
+            # Step 3: Run ScenarioBacktester
+            matrix = self.backtester.run_scenario_backtest(
+                strategy_id=strategy_id,
+                parameter_overrides=params,
+                scenario_slices=slices,
+                strategy_instance=strategy_instance,
+            )
+
+            # Step 4: Persist per-pair affinity entry
+            self._write_pair_affinity(cursor, strategy_id, symbol, matrix.overall_score, matrix, strategy)
+            conn.commit()
+
+            matrices.append(matrix)
+            logger.debug(
+                "[BACKTEST_ORC] strategy=%s symbol=%s score=%.4f",
+                strategy_id, symbol, matrix.overall_score,
+            )
+
+        if not matrices:
+            logger.info(
+                "[BACKTEST_ORC] strategy=%s — all pairs skipped, no score update.",
+                strategy_id,
+            )
+            return None
+
+        # Aggregate score across evaluated pairs (equal weight)
+        aggregate_score = round(sum(m.overall_score for m in matrices) / len(matrices), 4)
+
+        # Persist aggregate score (no per-pair affinity write at this level)
+        self._update_strategy_scores(strategy_id, aggregate_score, strategy)
+
+        # Promote if aggregate passes threshold
+        passes = aggregate_score >= self.backtester.MIN_REGIME_SCORE
+        if passes:
+            self._promote_to_shadow(strategy_id, aggregate_score)
+
+        # Return a representative matrix (first evaluated pair) with updated aggregate score
+        rep = matrices[0]
+        rep.overall_score    = aggregate_score
+        rep.passes_threshold = passes
+        return rep
 
     # ── Data Loading ──────────────────────────────────────────────────────────
 
@@ -312,22 +373,28 @@ class BacktestOrchestrator:
         self,
         strategy: Dict,
         params: Dict,
+        symbol: str = "",
     ) -> List[ScenarioSlice]:
         """
         Fetch real OHLCV data from DataProviderManager and split it into
         regime-labelled ScenarioSlice objects.
 
-        Algorithm (HU 7.9 enhanced):
-          1. Choose symbol from strategy.market_whitelist.
-          2. Select timeframe via round-robin from strategy.required_timeframes.
+        Algorithm (HU 7.9 + HU 7.14 enhanced):
+          1. Use provided symbol; fallback to first entry in market_whitelist.
+          2. Select timeframe via round-robin keyed by strategy_id:symbol.
           3. Run regime pre-filter; if blocked → return UNTESTED slices.
           4. Fetch BARS_FETCH_INITIAL bars (retry up to BARS_FETCH_MAX if needed).
           5. Slide windows of BARS_PER_WINDOW bars, detect regime per window.
           6. Collect one representative window per StressCluster.
+
+        HU 7.14 — symbol param enables per-pair slice building in multi-pair loop.
         """
-        symbol, _ = self._resolve_symbol_timeframe(strategy)
+        if not symbol:
+            symbol, _ = self._resolve_symbol_timeframe(strategy)
         timeframes = self._get_timeframes_for_backtest(strategy)
-        timeframe = self._next_timeframe_round_robin(strategy["class_id"], timeframes)
+        # Round-robin key is strategy_id:symbol for independent per-pair rotation
+        rr_key = f"{strategy['class_id']}:{symbol}"
+        timeframe = self._next_timeframe_round_robin(rr_key, timeframes)
 
         # HU 7.9 pre-filter: skip if current regime doesn't match requirement
         if not self._passes_regime_prefilter(strategy, symbol, timeframe):
@@ -649,6 +716,29 @@ class BacktestOrchestrator:
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
+    def _get_symbols_for_backtest(self, strategy: Dict) -> List[str]:
+        """
+        Return all symbols to evaluate for this strategy.
+
+        Source: strategy.market_whitelist (JSON list).
+        Symbols normalized to 'EURUSD' format (no slashes/dashes).
+        Fallback: [default_symbol from config] when whitelist is empty.
+
+        HU 7.14 — EDGE-BKT-714-MULTI-PAIR-2026-03-24
+        """
+        import json as _json
+        raw = strategy.get("market_whitelist", "[]")
+        try:
+            whitelist = raw if isinstance(raw, list) else _json.loads(raw or "[]")
+        except Exception:
+            whitelist = []
+        symbols = [
+            s.replace("/", "").replace("-", "").upper()
+            for s in whitelist
+            if s
+        ]
+        return symbols if symbols else [self._cfg["default_symbol"]]
+
     def _resolve_symbol_timeframe(self, strategy: Dict) -> Tuple[str, str]:
         """
         Pick the first symbol from market_whitelist and the default timeframe.
@@ -691,6 +781,43 @@ class BacktestOrchestrator:
             "confidence_threshold": params.get("confidence_threshold", 0.75),
             "risk_reward": params.get("risk_reward", 1.5),
         }
+
+    def _write_regime_incompatible(
+        self,
+        cursor: Any,
+        strategy_id: str,
+        symbol: str,
+        strategy: Dict,
+    ) -> None:
+        """
+        Write a REGIME_INCOMPATIBLE status entry in affinity_scores for `symbol`.
+
+        This is a non-permanent skip: the entry records the incompatibility
+        timestamp but does NOT update score or cycles. On the next backtest
+        cycle, if the regime changes, a full evaluation will overwrite this entry.
+
+        HU 7.14 — EDGE-BKT-714-MULTI-PAIR-2026-03-24
+        """
+        cursor.execute(
+            "SELECT affinity_scores FROM sys_strategies WHERE class_id = ?",
+            (strategy_id,),
+        )
+        row = cursor.fetchone()
+        try:
+            current = json.loads((row[0] if row else None) or "{}") if row else {}
+        except Exception:
+            current = {}
+
+        existing = current.get(symbol, {})
+        current[symbol] = {
+            **existing,  # preserve any historical data
+            "status":       "REGIME_INCOMPATIBLE",
+            "last_updated": datetime.now(timezone.utc).isoformat(),
+        }
+        cursor.execute(
+            "UPDATE sys_strategies SET affinity_scores = ? WHERE class_id = ?",
+            (json.dumps(current), strategy_id),
+        )
 
     def _is_on_cooldown(self, strategy: Dict) -> bool:
         """Return True if strategy was backtested less than COOLDOWN_HOURS ago.

@@ -4,7 +4,7 @@
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-25 UTC)**: Trace_ID: EDGE-BKT-713-AFFINITY-REDESIGN-2026-03-24 | Sprint 13 archivado: HU 7.13 completada · 15/15 PASSED · HU 7.14, 7.15, 7.16 desbloqueadas.
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-25 UTC)**: Trace_ID: EDGE-BKT-714-MULTI-PAIR-2026-03-24 | Sprint 14 archivado: HU 7.14 completada · 11/11 PASSED · validate_all 27/27 · HU 7.15 desbloqueada.
 
 ---
 
@@ -26,6 +26,18 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 ---
 
 ## 🏛️ ÉPICAS ARCHIVADAS
+
+### Sprint 14 — Motor de Backtesting Inteligente — Multi-Pair Sequential Evaluation (25-Mar-2026)
+**Trace_ID**: `EDGE-BKT-714-MULTI-PAIR-2026-03-24` | **Épica**: E10 (Sprint parcial — continúa) | **Estado**: Sprint cerrado · E10 ACTIVA (5 HUs pendientes)
+
+| HU | Descripción | Artefactos clave | Tests |
+|---|---|---|---|
+| **HU 7.14** | `_execute_backtest()` rediseñado para loop secuencial multi-par. `_get_symbols_for_backtest()` normaliza whitelist completa. `_write_regime_incompatible()` registra pares vetados por régimen. `asyncio.gather()` removido de `run_pending_strategies()`. Score agregado = media de pares evaluados. | `core_brain/backtest_orchestrator.py` | 11/11 |
+
+**Suite total**: 122/122 PASSED módulos backtest · validate_all 27/27 · 0 regresiones · +11 tests nuevos
+**HUs desbloqueadas**: HU 7.15 (confianza estadística n/(n+k))
+
+---
 
 ### Sprint 13 — Motor de Backtesting Inteligente — Affinity Scores Semantic Redesign (25-Mar-2026)
 **Trace_ID**: `EDGE-BKT-713-AFFINITY-REDESIGN-2026-03-24` | **Épica**: E10 (Sprint parcial — continúa) | **Estado**: Sprint cerrado · E10 ACTIVA (6 HUs pendientes)

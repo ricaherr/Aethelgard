@@ -11,6 +11,37 @@
 
 ---
 
+# SPRINT 14: BACKTEST ENGINE — MULTI-PAIR SEQUENTIAL EVALUATION — [DONE]
+
+**Inicio**: 25 de Marzo, 2026
+**Fin**: 25 de Marzo, 2026
+**Objetivo**: Extender `_execute_backtest()` para evaluar todos los símbolos del `market_whitelist` de forma secuencial, escribiendo una entrada en `affinity_scores` por par evaluado y registrando `REGIME_INCOMPATIBLE` para pares vetados por el pre-filtro de régimen.
+**Épica**: E10 | **Trace_ID**: EDGE-BKT-714-MULTI-PAIR-2026-03-24
+**Dominios**: 07_ADAPTIVE_LEARNING
+
+## 📋 Tareas del Sprint
+
+- [DONE] **HU 7.14: Backtesting multi-par secuencial**
+  - Nuevo `BacktestOrchestrator._get_symbols_for_backtest(strategy)`: lee `market_whitelist`, normaliza "EUR/USD"→"EURUSD", fallback a `default_symbol`
+  - `BacktestOrchestrator._build_scenario_slices()`: parámetro `symbol` opcional para iterar pares sin depender de `_resolve_symbol_timeframe()`
+  - Round-robin key cambiado a `strategy_id:symbol` para rotación independiente por par
+  - `_execute_backtest()` rediseñado: loop secuencial sobre símbolos → pre-filtro régimen por par → backtester → `_write_pair_affinity()` por par → score agregado (media)
+  - Nuevo `_write_regime_incompatible(cursor, strategy_id, symbol, strategy)`: escribe `{status: REGIME_INCOMPATIBLE, last_updated}` preservando datos históricos del par
+  - `run_pending_strategies()`: `asyncio.gather()` reemplazado por loop secuencial (seguridad DB — evita write collisions)
+  - `tests/test_backtest_orchestrator.py`: `mock_backtester.MIN_REGIME_SCORE = 0.75` añadido al helper
+  - TDD: 11 tests en `tests/test_backtest_multipair_sequential.py` — 11/11 PASSED
+
+## 📊 Snapshot de Cierre
+
+- **Tests añadidos**: 11
+- **Tests totales (módulos afectados)**: 122/122 PASSED · validate_all 27/27
+- **Archivos nuevos**: `tests/test_backtest_multipair_sequential.py`
+- **Archivos modificados**: `core_brain/backtest_orchestrator.py`, `tests/test_backtest_orchestrator.py`
+- **HUs completadas**: HU 7.14
+- **Desbloqueadas para siguiente sprint**: HU 7.15 (confianza n/(n+k))
+
+---
+
 # SPRINT 13: BACKTEST ENGINE — AFFINITY SCORES SEMANTIC REDESIGN — [DONE]
 
 **Inicio**: 25 de Marzo, 2026

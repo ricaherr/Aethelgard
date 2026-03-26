@@ -9,8 +9,8 @@
 > - **NO agregar aquí**: listas de archivos modificados, métricas de tests, detalles de implementación (eso va en SPRINT.md).
 > - **Framework completo**: `.ai_orchestration_protocol.md` Sección 4.
 
-**Versión Log**: v4.9.0-beta
-**Última Actualización**: 25 de Marzo, 2026 (Sprint 13)
+**Versión Log**: v4.10.0-beta
+**Última Actualización**: 25 de Marzo, 2026 (Sprint 14)
 
 ---
 
@@ -33,7 +33,7 @@
 | HU 10.7 | Adaptive Operational Mode Manager | 10 | 9 | [DONE] |
 | HU 7.12 | Adaptive Backtest Scheduler — cooldown dinámico y queue de prioridad | 07 | 12 | [DONE] |
 | HU 7.13 | Rediseño semántico de affinity_scores | 07 | 13 | [DONE] |
-| HU 7.14 | Backtesting multi-par secuencial | 07 | — | |
+| HU 7.14 | Backtesting multi-par secuencial | 07 | 14 | [DONE] |
 | HU 7.15 | Score con confianza estadística n/(n+k) | 07 | — | |
 | HU 7.16 | Filtro de compatibilidad de régimen pre-evaluación | 07 | — | |
 | HU 7.17 | Tabla sys_strategy_pair_coverage | 07 | — | |

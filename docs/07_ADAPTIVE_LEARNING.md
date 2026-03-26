@@ -1550,3 +1550,42 @@ Nuevo módulo `core_brain/adaptive_backtest_scheduler.py`:
 
 **Tests**: 15 tests en `tests/test_backtest_affinity_redesign.py` — 15/15 PASSED.
 
+---
+
+## ⚙️ HU 7.14 — Backtesting multi-par secuencial (25-Mar-2026)
+
+**Trace_ID**: `EDGE-BKT-714-MULTI-PAIR-2026-03-24`
+
+### Problema detectado
+`_execute_backtest()` evaluaba únicamente `whitelist[0]` (primer símbolo). El resto del `market_whitelist` era ignorado, haciendo que `affinity_scores` solo tuviera una entrada por estrategia independientemente de cuántos pares estuviera diseñada para operar.
+
+### Solución implementada
+
+**1. `_get_symbols_for_backtest(strategy)`** — lee `market_whitelist` completo, normaliza "EUR/USD"→"EURUSD", fallback a `default_symbol` si lista vacía.
+
+**2. `_build_scenario_slices(strategy, params, symbol="")`** — parámetro `symbol` opcional para construir slices de un par específico. Round-robin key cambiado a `strategy_id:symbol` para rotación independiente por par.
+
+**3. `_execute_backtest()` rediseñado (loop secuencial)**:
+```
+para cada symbol en _get_symbols_for_backtest():
+  → _passes_regime_prefilter() por símbolo
+  → si vetado: _write_regime_incompatible() → continuar
+  → _build_scenario_slices(strategy, params, symbol)
+  → backtester.run_scenario_backtest()
+  → _write_pair_affinity() para este par
+score_backtest = mean(all evaluated pairs)
+```
+
+**4. `_write_regime_incompatible(cursor, strategy_id, symbol, strategy)`** — escribe `{status: REGIME_INCOMPATIBLE, last_updated}` en `affinity_scores[symbol]`, preservando datos históricos. No bloqueo permanente — el próximo ciclo re-evalúa.
+
+**5. `run_pending_strategies()`** — `asyncio.gather()` reemplazado por loop `for s in strategies: result = await _run_strategy_task(s)`. Motivo: cada estrategia ahora hace escrituras DB por par — concurrent execution causaría write collisions.
+
+**Comportamiento por caso**:
+| Caso | Resultado |
+|---|---|
+| Par evaluado con éxito | Entrada en `affinity_scores` con status QUALIFIED/REJECTED/PENDING |
+| Par con régimen incompatible | Entrada con `status=REGIME_INCOMPATIBLE`, backtester no invocado |
+| Todos los pares vetados | `_execute_backtest()` retorna `None`, `score_backtest` no se actualiza |
+
+**Tests**: 11 tests en `tests/test_backtest_multipair_sequential.py` — 11/11 PASSED.
+

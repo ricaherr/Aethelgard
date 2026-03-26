@@ -101,19 +101,6 @@
 ### ÉPICA E10 — Motor de Backtesting Inteligente (EDGE Evaluation Framework)
 *Trace_ID: EDGE-BACKTEST-EVAL-FRAMEWORK-2026-03-24 | Sprint activo: 9+*
 
-* **HU 7.14: Backtesting multi-par secuencial**
-    * **Prioridad**: Alta
-    * **Épica**: E10 | **Dominio**: 07_ADAPTIVE_LEARNING
-    * **Trace_ID**: EDGE-BKT-714-MULTI-PAIR-2026-03-24
-    * **Dependencia**: HU 7.13
-    * **Contexto**: `_resolve_symbol_timeframe()` toma `whitelist[0]` — solo el primer par. Toda la evaluación actual es single-pair.
-    * **Descripción**: `_execute_backtest()` itera sobre todos los símbolos habilitados en `InstrumentManager`. Para cada par: aplica pre-filtro de régimen (HU 7.9), ejecuta `ScenarioBacktester` con lógica real (HU 7.7), calcula `effective_score` con confianza estadística (HU 7.15), persiste en `affinity_scores` por par (HU 7.13). Ejecución **secuencial** dentro del ciclo de la estrategia activa.
-    * **Criterios de aceptación**:
-        - `affinity_scores` contiene resultados para múltiples pares tras el primer ciclo completo
-        - El `asyncio.gather()` actual se reemplaza por ejecución secuencial
-        - Tests verifican que pares con régimen incompatible son skipped correctamente
-    * **Artefactos**: `core_brain/backtest_orchestrator.py`
-
 * **HU 7.15: Score con confianza estadística n/(n+k)**
     * **Prioridad**: Alta
     * **Épica**: E10 | **Dominio**: 07_ADAPTIVE_LEARNING
