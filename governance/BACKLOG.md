@@ -101,23 +101,6 @@
 ### ÉPICA E10 — Motor de Backtesting Inteligente (EDGE Evaluation Framework)
 *Trace_ID: EDGE-BACKTEST-EVAL-FRAMEWORK-2026-03-24 | Sprint activo: 9+*
 
-* **HU 7.15: Score con confianza estadística n/(n+k)**
-    * **Prioridad**: Alta
-    * **Épica**: E10 | **Dominio**: 07_ADAPTIVE_LEARNING
-    * **Trace_ID**: EDGE-BKT-715-CONFIDENCE-SCORING-2026-03-24
-    * **Descripción**: Implementar función de confianza estadística continua:
-        ```
-        confidence(n, k) = n / (n + k)
-        effective_score  = raw_score × confidence(n_trades, k)
-        ```
-        `k` configurable por estrategia en `execution_params` (default desde `sys_config`: 20).
-        Estados: `effective_score >= 0.55` → `QUALIFIED` · `< 0.20` AND `confidence >= 0.50` → `REJECTED` · otherwise → `PENDING`
-    * **Criterios de aceptación**:
-        - `confidence(0, k) = 0.0`, `confidence(k, k) = 0.5`, `confidence(200, 20) ≈ 0.91`
-        - Estrategia con PF=2.5 y 5 trades recibe status `PENDING`, no `QUALIFIED`
-        - Tests parametrizados para n=0,5,10,20,30,50,100
-    * **Artefactos**: `core_brain/scenario_backtester.py`, `core_brain/backtest_orchestrator.py`
-
 * **HU 7.16: Filtro de compatibilidad de régimen pre-evaluación**
     * **Prioridad**: Media
     * **Épica**: E10 | **Dominio**: 07_ADAPTIVE_LEARNING

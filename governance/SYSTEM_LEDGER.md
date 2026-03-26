@@ -4,7 +4,7 @@
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-25 UTC)**: Trace_ID: EDGE-BKT-714-MULTI-PAIR-2026-03-24 | Sprint 14 archivado: HU 7.14 completada · 11/11 PASSED · validate_all 27/27 · HU 7.15 desbloqueada.
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-25 UTC)**: Trace_ID: EDGE-BKT-715-CONFIDENCE-SCORING-2026-03-24 | Sprint 15 archivado: HU 7.15 completada · 17/17 PASSED · validate_all 27/27 · HU 7.16, 7.17 desbloqueadas.
 
 ---
 
@@ -26,6 +26,18 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 ---
 
 ## 🏛️ ÉPICAS ARCHIVADAS
+
+### Sprint 15 — Motor de Backtesting Inteligente — Statistical Confidence Scoring (25-Mar-2026)
+**Trace_ID**: `EDGE-BKT-715-CONFIDENCE-SCORING-2026-03-24` | **Épica**: E10 (Sprint parcial — continúa) | **Estado**: Sprint cerrado · E10 ACTIVA (4 HUs pendientes)
+
+| HU | Descripción | Artefactos clave | Tests |
+|---|---|---|---|
+| **HU 7.15** | `compute_confidence(n, k) = n/(n+k)` implementado como función pública. `_write_pair_affinity()` aplica la fórmula con `k` leído de `execution_params` (fallback 20). Status REJECTED protegido por `confidence >= 0.50`. Placeholder `confidence=1.0` eliminado. | `core_brain/backtest_orchestrator.py` | 17/17 |
+
+**Suite total**: 86/86 PASSED módulos backtest · validate_all 27/27 · 0 regresiones · +17 tests nuevos
+**HUs desbloqueadas**: HU 7.16 (filtro régimen), HU 7.17 (tabla coverage)
+
+---
 
 ### Sprint 14 — Motor de Backtesting Inteligente — Multi-Pair Sequential Evaluation (25-Mar-2026)
 **Trace_ID**: `EDGE-BKT-714-MULTI-PAIR-2026-03-24` | **Épica**: E10 (Sprint parcial — continúa) | **Estado**: Sprint cerrado · E10 ACTIVA (5 HUs pendientes)

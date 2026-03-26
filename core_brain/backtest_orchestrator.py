@@ -72,6 +72,28 @@ REGIME_TO_CLUSTER: Dict[str, str] = {
 # ── Config keys in sys_config (SSOT) ─────────────────────────────────────────
 _CFG_KEY = "config_backtest"
 
+# ── HU 7.15: Statistical confidence function ─────────────────────────────────
+
+def compute_confidence(n_trades: int, k: float = 20.0) -> float:
+    """
+    Continuous statistical confidence: confidence(n, k) = n / (n + k)
+
+    Properties:
+      - confidence(0, k)   = 0.0  — no data, no confidence
+      - confidence(k, k)   = 0.5  — inflection point
+      - confidence(∞, k)  → 1.0  — asymptotic max
+
+    Args:
+        n_trades: Number of trades evaluated.
+        k:        Confidence damping factor. Higher k → more trades needed
+                  to reach the same confidence level. Default: 20.
+
+    HU 7.15 — EDGE-BKT-715-CONFIDENCE-SCORING-2026-03-24
+    """
+    if n_trades <= 0 or k <= 0:
+        return 0.0
+    return float(n_trades / (n_trades + k))
+
 
 # ── BacktestOrchestrator ──────────────────────────────────────────────────────
 
@@ -120,6 +142,7 @@ class BacktestOrchestrator:
             "promotion_min_score":    0.75,
             "default_symbol":         "EURUSD",
             "default_timeframe":      "H1",
+            "confidence_k":           20,        # HU 7.15: damping factor for n/(n+k)
             "score_weights":          {"w_live": 0.50, "w_shadow": 0.30, "w_backtest": 0.20},
         }
         try:
@@ -918,14 +941,28 @@ class BacktestOrchestrator:
         """
         Build and persist the per-pair affinity entry for `symbol`.
 
-        confidence = 1.0 (placeholder; HU 7.15 will implement n/(n+k) formula).
-        effective_score = raw_score * confidence.
+        confidence     = compute_confidence(n_trades, k).
+        effective_score = raw_score × confidence.
 
-        Status thresholds (HU 7.13 / HU 7.15):
-          effective_score >= 0.55  → QUALIFIED
-          effective_score <  0.20  → REJECTED
-          otherwise                → PENDING
+        Status thresholds (HU 7.15):
+          effective_score >= 0.55                         → QUALIFIED
+          effective_score <  0.20 AND confidence >= 0.50  → REJECTED
+          otherwise                                        → PENDING
+
+        The confidence guard on REJECTED prevents premature rejection of
+        strategies that simply haven't accumulated enough trades yet.
+
+        HU 7.15 — EDGE-BKT-715-CONFIDENCE-SCORING-2026-03-24
         """
+        # Read k from execution_params; fall back to config default (20)
+        import json as _json
+        try:
+            ep = strategy.get("execution_params", "{}")
+            ep_dict = ep if isinstance(ep, dict) else _json.loads(ep or "{}")
+        except Exception:
+            ep_dict = {}
+        k = float(ep_dict.get("confidence_k", self._cfg.get("confidence_k", 20)))
+
         # Aggregate per-regime metrics
         results = getattr(matrix, "results_by_regime", [])
         n_trades     = sum(r.total_trades for r in results)
@@ -943,12 +980,13 @@ class BacktestOrchestrator:
         )
         regimes = list({r.detected_regime for r in results if r.detected_regime != "UNTESTED"})
 
-        confidence     = 1.0          # HU 7.15: n/(n+k)
+        # HU 7.15: statistical confidence + effective score
+        confidence      = round(compute_confidence(n_trades, k), 4)
         effective_score = round(raw_score * confidence, 4)
 
         if effective_score >= 0.55:
             status = "QUALIFIED"
-        elif effective_score < 0.20:
+        elif effective_score < 0.20 and confidence >= 0.50:
             status = "REJECTED"
         else:
             status = "PENDING"

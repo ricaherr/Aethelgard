@@ -1589,3 +1589,50 @@ score_backtest = mean(all evaluated pairs)
 
 **Tests**: 11 tests en `tests/test_backtest_multipair_sequential.py` — 11/11 PASSED.
 
+---
+
+## ⚙️ HU 7.15 — Score con confianza estadística n/(n+k) (25-Mar-2026)
+
+**Trace_ID**: `EDGE-BKT-715-CONFIDENCE-SCORING-2026-03-24`
+
+### Problema detectado
+`_write_pair_affinity()` usaba `confidence = 1.0` como placeholder. Esto significaba que una estrategia con 3 trades y PF=3.0 podía recibir `QUALIFIED`, cuando estadísticamente no hay suficiente evidencia para confiar en ese score.
+
+### Solución implementada
+
+**1. `compute_confidence(n_trades, k)` — función pública en `backtest_orchestrator.py`**:
+```python
+def compute_confidence(n_trades, k=20.0) -> float:
+    if n_trades <= 0 or k <= 0:
+        return 0.0
+    return float(n_trades / (n_trades + k))
+```
+
+Propiedades:
+| n | k=20 | resultado |
+|---|---|---|
+| 0 | 20 | 0.000 |
+| 5 | 20 | 0.200 |
+| 20 | 20 | 0.500 |
+| 50 | 20 | 0.714 |
+| 100 | 20 | 0.833 |
+| 200 | 20 | 0.909 |
+
+**2. `_write_pair_affinity()` actualizado**:
+- Lee `k` de `strategy.execution_params["confidence_k"]` (fallback a `sys_config.confidence_k`, default `20`)
+- Calcula `confidence = compute_confidence(n_trades, k)`
+- Calcula `effective_score = raw_score × confidence`
+
+**3. Lógica de status revisada (guard contra rechazo prematuro)**:
+| Condición | Status |
+|---|---|
+| `effective_score >= 0.55` | QUALIFIED |
+| `effective_score < 0.20` AND `confidence >= 0.50` | REJECTED |
+| cualquier otro caso | PENDING |
+
+El guard `confidence >= 0.50` en REJECTED evita marcar permanentemente como fracasadas estrategias con pocos trades (que simplemente no tienen suficiente evidencia).
+
+**4. `_load_config()` — nuevo default `"confidence_k": 20`**.
+
+**Tests**: 17 tests en `tests/test_backtest_confidence_scoring.py` — 17/17 PASSED.
+

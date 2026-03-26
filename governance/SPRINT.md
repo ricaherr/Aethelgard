@@ -11,6 +11,37 @@
 
 ---
 
+# SPRINT 15: BACKTEST ENGINE — STATISTICAL CONFIDENCE SCORING — [DONE]
+
+**Inicio**: 25 de Marzo, 2026
+**Fin**: 25 de Marzo, 2026
+**Objetivo**: Implementar la fórmula de confianza estadística continua `n/(n+k)` para penalizar scores de estrategias con pocos trades, eliminando el placeholder `confidence=1.0` de HU 7.13.
+**Épica**: E10 | **Trace_ID**: EDGE-BKT-715-CONFIDENCE-SCORING-2026-03-24
+**Dominios**: 07_ADAPTIVE_LEARNING
+
+## 📋 Tareas del Sprint
+
+- [DONE] **HU 7.15: Score con confianza estadística n/(n+k)**
+  - Nueva función pública `compute_confidence(n_trades, k)` en `backtest_orchestrator.py`
+  - `_write_pair_affinity()` actualizado: lee `confidence_k` de `execution_params` (fallback a `sys_config`, default 20), calcula `confidence = n/(n+k)`, `effective_score = raw_score × confidence`
+  - Lógica de status revisada:
+    - `effective_score >= 0.55` → QUALIFIED
+    - `effective_score < 0.20 AND confidence >= 0.50` → REJECTED (guard prevents premature rejection)
+    - otherwise → PENDING
+  - `_load_config()`: añade `"confidence_k": 20` a defaults
+  - TDD: 17 tests en `tests/test_backtest_confidence_scoring.py` — 17/17 PASSED
+
+## 📊 Snapshot de Cierre
+
+- **Tests añadidos**: 17
+- **Tests totales (módulos afectados)**: 86/86 PASSED · validate_all 27/27
+- **Archivos nuevos**: `tests/test_backtest_confidence_scoring.py`
+- **Archivos modificados**: `core_brain/backtest_orchestrator.py`
+- **HUs completadas**: HU 7.15
+- **Desbloqueadas para siguiente sprint**: HU 7.16, HU 7.17
+
+---
+
 # SPRINT 14: BACKTEST ENGINE — MULTI-PAIR SEQUENTIAL EVALUATION — [DONE]
 
 **Inicio**: 25 de Marzo, 2026
