@@ -101,30 +101,6 @@
 ### ÉPICA E10 — Motor de Backtesting Inteligente (EDGE Evaluation Framework)
 *Trace_ID: EDGE-BACKTEST-EVAL-FRAMEWORK-2026-03-24 | Sprint activo: 9+*
 
-* **HU 7.18: Scheduler inteligente de backtests — prioritized queue**
-    * **Prioridad**: Media
-    * **Épica**: E10 | **Dominio**: 07_ADAPTIVE_LEARNING
-    * **Trace_ID**: EDGE-BKT-718-SMART-SCHEDULER-2026-03-24
-    * **Dependencia**: HU 7.17, HU 10.7 ✅
-    * **Descripción**: Componente `BacktestPriorityQueue` que determina qué combinación `(strategy_id, symbol, timeframe)` evaluar en cada slot. Cola de prioridad descendente: P1 (nunca evaluada) → P2 (PENDING + régimen compatible) → P3 (UNTESTED_CLUSTER) → P4 (score inestable) → P5 (confidence baja) → P6 (drift rutinario). Integrado con `OperationalModeManager`.
-    * **Criterios de aceptación**:
-        - P1 se evalúa antes que P6 en todos los escenarios
-        - Cambio de contexto a `LIVE_ACTIVE` reduce el budget en el siguiente ciclo
-        - Tests verifican ordenamiento correcto del queue
-    * **Artefactos**: `core_brain/backtest_orchestrator.py`
-
-* **HU 7.19: Detector de overfitting por par**
-    * **Prioridad**: Baja
-    * **Épica**: E10 | **Dominio**: 07_ADAPTIVE_LEARNING
-    * **Trace_ID**: EDGE-BKT-719-OVERFITTING-DETECTOR-2026-03-24
-    * **Dependencia**: HU 7.14, HU 7.15
-    * **Descripción**: Si una estrategia alcanza `effective_score >= 0.90` en más del 80% de los pares con `confidence >= 0.70` → flag `overfitting_risk: true` en `AptitudeMatrix` + alerta en `sys_audit_logs` + broadcast WebSocket a UI. No bloquea la promoción automáticamente.
-    * **Criterios de aceptación**:
-        - Flag se activa correctamente con >80% pares en score >= 0.90
-        - Flag NO se activa si solo 3 de 18 pares tienen score >= 0.90
-        - Tests verifican el umbral de activación
-    * **Artefactos**: `core_brain/scenario_backtester.py`, `core_brain/backtest_orchestrator.py`
-
 ---
 
 ## 08_DATA_SOVEREIGNTY (SSOT, Persistence)

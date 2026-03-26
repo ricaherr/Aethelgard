@@ -4,7 +4,7 @@
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-25 UTC)**: Trace_ID: EDGE-BKT-717-COVERAGE-TABLE-2026-03-24 | Sprint 17 archivado: HU 7.17 completada · 11/11 PASSED · validate_all 27/27 · HU 7.18 desbloqueada.
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-25 UTC)**: Trace_ID: EDGE-BKT-719-OVERFITTING-DETECTOR-2026-03-24 | Sprint 19 archivado: HU 7.19 completada · 13/13 PASSED · validate_all 27/27 · **ÉPICA E10 COMPLETADA** (15 HUs · 14 sprints).
 
 ---
 
@@ -26,6 +26,48 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 ---
 
 ## 🏛️ ÉPICAS ARCHIVADAS
+
+### Sprint 19 — Motor de Backtesting Inteligente — Overfitting Detector (25-Mar-2026)
+**Trace_ID**: `EDGE-BKT-719-OVERFITTING-DETECTOR-2026-03-24` | **Épica**: E10 ✅ COMPLETADA | **Estado**: Sprint cerrado · E10 ARCHIVADA
+
+| HU | Descripción | Artefactos clave | Tests |
+|---|---|---|---|
+| **HU 7.19** | `AptitudeMatrix.overfitting_risk: bool = False` añadido al dataclass y serializado en `to_json()`. `_detect_overfitting_risk()`: cuenta pares con `eff >= 0.90` AND `confidence = n/(n+k) >= 0.70`; flag activa si `>80%` con ≥2 pares. `_write_overfitting_alert()`: INSERT en `sys_audit_logs` con payload JSON. `_execute_backtest()` integra detección post-loop. No bloquea promoción. | `core_brain/scenario_backtester.py`, `core_brain/backtest_orchestrator.py` | 13/13 |
+
+**Suite total**: 143/143 PASSED módulos backtest · validate_all 27/27 · 0 regresiones · +13 tests nuevos
+
+---
+
+### ════════════════════════════════════════════════════════════════
+### ÉPICA E10 COMPLETADA — Motor de Backtesting Inteligente (25-Mar-2026)
+**Trace_ID**: `EDGE-BACKTEST-EVAL-FRAMEWORK-2026-03-24` | **Sprints**: 9–19 | **Dominios**: 07, 10
+
+| Campo | Valor |
+|---|---|
+| **Épica** | E10 — Motor de Backtesting Inteligente — EDGE Evaluation Framework |
+| **Trace_ID** | `EDGE-BACKTEST-EVAL-FRAMEWORK-2026-03-24` |
+| **Sprints** | 9, 12, 13, 14, 15, 16, 17, 18, 19 |
+| **Completada** | 25 de Marzo, 2026 |
+| **Dominios** | 07_ADAPTIVE_LEARNING, 10_INFRASTRUCTURE_RESILIENCY |
+| **HUs** | 15 (HU 7.6–7.19 + HU 10.7) |
+| **validate_all** | ✅ 27/27 PASSED |
+
+**Objetivo cumplido**: Motor refundado con lógica real de estrategias, evaluación multi-par/multi-TF, scoring estadístico `n/(n+k)`, tabla de cobertura por par, cola de prioridad inteligente 6-tier, filtro de régimen, y detector de overfitting. Datos sintéticos eliminados del path de producción.
+### ════════════════════════════════════════════════════════════════
+
+---
+
+### Sprint 18 — Motor de Backtesting Inteligente — Backtest Priority Queue (25-Mar-2026)
+**Trace_ID**: `EDGE-BKT-718-SMART-SCHEDULER-2026-03-24` | **Épica**: E10 (Sprint parcial — continúa) | **Estado**: Sprint cerrado · E10 ACTIVA (1 HU pendiente)
+
+| HU | Descripción | Artefactos clave | Tests |
+|---|---|---|---|
+| **HU 7.18** | `BacktestPriorityQueue` en `backtest_orchestrator.py`. 6 tiers de prioridad basados en `sys_strategy_pair_coverage` (P1=sin cobertura → P7=REJECTED). `get_max_slots()` escala con `OperationalModeManager`: AGGRESSIVE=10, MODERATE=5, CONSERVATIVE=2, DEFERRED=0. LIVE_ACTIVE → CONSERVATIVE → 2 slots (protege CPU de ejecución real). `get_queue()` devuelve lista capped con `{strategy_id, symbol, timeframe}`. | `core_brain/backtest_orchestrator.py` | 19/19 |
+
+**Suite total**: 130/130 PASSED módulos backtest · validate_all 27/27 · 0 regresiones · +19 tests nuevos
+**HUs desbloqueadas**: HU 7.19 (Detector de overfitting por par)
+
+---
 
 ### Sprint 17 — Motor de Backtesting Inteligente — Strategy Pair Coverage Table (25-Mar-2026)
 **Trace_ID**: `EDGE-BKT-717-COVERAGE-TABLE-2026-03-24` | **Épica**: E10 (Sprint parcial — continúa) | **Estado**: Sprint cerrado · E10 ACTIVA (2 HUs pendientes)

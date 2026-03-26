@@ -1724,3 +1724,95 @@ Step 5 (tras `_write_pair_affinity()`): calcula `effective_score`, `status` y `d
 
 **Tests**: 11 tests en `tests/test_strategy_pair_coverage_table.py` — 11/11 PASSED.
 
+---
+
+## ⚙️ HU 7.18 — Scheduler inteligente de backtests — prioritized queue (25-Mar-2026)
+
+**Trace_ID**: `EDGE-BKT-718-SMART-SCHEDULER-2026-03-24`
+
+### Componente: `BacktestPriorityQueue`
+
+Determina qué combinación `(strategy_id, symbol, timeframe)` evaluar en cada ciclo, usando datos de `sys_strategy_pair_coverage` y el presupuesto otorgado por `OperationalModeManager`.
+
+### Tiers de prioridad
+
+| Tier | Condición | Significado |
+|------|-----------|-------------|
+| P1 | Sin fila en coverage | Nunca evaluado — máxima urgencia |
+| P2 | PENDING, n_cycles ≤ 1 | Primer intento, necesita datos |
+| P3 | PENDING, n_cycles > 1 | Re-intento PENDING estancado |
+| P4 | QUALIFIED, n_cycles < 3 | Score posiblemente inestable |
+| P5 | Otros (eff_score < 0.30, n≥2) | Baja confianza |
+| P6 | QUALIFIED, n_cycles ≥ 3, eff ≥ 0.55 | Verificación rutinaria de drift |
+| P7 | REJECTED | Re-check periódico, menor prioridad |
+
+### Presupuesto por contexto operacional
+
+| BacktestBudget | Max slots/ciclo | Contexto |
+|---|---|---|
+| AGGRESSIVE | 10 | BACKTEST_ONLY |
+| MODERATE | 5 | SHADOW_ACTIVE |
+| CONSERVATIVE | 2 | LIVE_ACTIVE — protege CPU de ejecución real |
+| DEFERRED | 0 | Sistema sobrecargado — no backtesting |
+
+### API pública
+
+- `get_max_slots() → int`: slots disponibles según budget
+- `get_queue() → List[Dict]`: lista de `{strategy_id, symbol, timeframe}` ordenados por tier, longitud ≤ `max_slots`
+- `_priority_tier(coverage_row, ...) → int`: clasifica una fila de cobertura en tier 1-7
+
+**Tests**: 19 tests en `tests/test_backtest_priority_queue.py` — 19/19 PASSED.
+
+---
+
+## ⚙️ HU 7.19 — Detector de overfitting por par (25-Mar-2026)
+
+**Trace_ID**: `EDGE-BKT-719-OVERFITTING-DETECTOR-2026-03-24`
+
+### Problema
+
+Una estrategia sobreoptimizada puede obtener scores muy altos en todos los pares evaluados, lo que indicaría que ha sido calibrada para ajustarse al histórico específico en lugar de capturar un edge estructural real.
+
+### Regla de detección
+
+```
+Si (n_flagged / n_total) > 0.80 con n_total >= 2:
+    overfitting_risk = True
+
+Donde n_flagged = pares con:
+    effective_score >= 0.90
+    AND confidence = n_trades / (n_trades + k) >= 0.70
+```
+
+Con `k=20`, `confidence >= 0.70` requiere ≥ 47 trades — garantiza que el score no es espurio por pocos datos.
+
+### `AptitudeMatrix.overfitting_risk: bool = False`
+
+Nuevo campo en el dataclass (default `False`). Incluido en `to_json()`. Lo asigna `_execute_backtest()` tras evaluar todos los pares.
+
+### `_detect_overfitting_risk(strategy_id, cursor, k=20.0) → bool`
+
+Consulta `sys_strategy_pair_coverage` para la estrategia, aplica la regla y retorna `True/False`. No modifica estado.
+
+### `_write_overfitting_alert(cursor, strategy_id, n_pairs, n_flagged)`
+
+Inserta en `sys_audit_logs`:
+- `action = 'OVERFITTING_RISK_DETECTED'`
+- `resource = 'sys_strategies'`, `resource_id = strategy_id`
+- `new_value` = JSON con `{strategy_id, n_pairs, n_flagged, timestamp}`
+- `status = 'warning'`
+
+### Comportamiento importante
+
+**No bloquea la promoción** — el flag es informativo. El operador puede revisar la estrategia antes de permitir su paso a LIVE.
+
+**Tests**: 13 tests en `tests/test_backtest_overfitting_detector.py` — 13/13 PASSED.
+
+---
+
+## ✅ Épica E10 completada (25 de Marzo, 2026)
+
+**Trace_ID**: `EDGE-BACKTEST-EVAL-FRAMEWORK-2026-03-24` | **15 HUs** | **Sprints 9–19** | **validate_all 27/27**
+
+El motor de backtesting fue completamente refundado durante esta épica. Ver `governance/SYSTEM_LEDGER.md` para el archivo completo.
+

@@ -95,6 +95,10 @@ class AptitudeMatrix:
 
     overall_score >= 0.75  →  passes_threshold = True  →  SHADOW entry allowed.
     Serialisable to JSON for storage in sys_shadow_promotion_log.notes.
+
+    overfitting_risk (HU 7.19): set to True by BacktestOrchestrator when >80% of
+    evaluated pairs show effective_score >= 0.90 with confidence >= 0.70.
+    Does NOT block promotion — only flags for human review.
     """
     strategy_id: str
     parameter_overrides: Dict[str, Any]
@@ -103,6 +107,7 @@ class AptitudeMatrix:
     results_by_regime: List[RegimeResult]
     trace_id: str
     timestamp: str
+    overfitting_risk: bool = False
 
     def to_json(self) -> str:
         """Serialise to compact JSON for DB storage."""
@@ -111,6 +116,7 @@ class AptitudeMatrix:
             "parameter_overrides": self.parameter_overrides,
             "overall_score": round(self.overall_score, 4),
             "passes_threshold": self.passes_threshold,
+            "overfitting_risk": self.overfitting_risk,
             "trace_id": self.trace_id,
             "timestamp": self.timestamp,
             "results_by_regime": [

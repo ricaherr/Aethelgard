@@ -43,6 +43,7 @@ _REGIME_ALIAS: Dict[str, str] = {
     "NORMAL":     "RANGE",
 }
 
+from core_brain.operational_mode_manager import BacktestBudget, OperationalModeManager  # HU 7.18
 from core_brain.regime import RegimeClassifier  # HU 7.10
 from core_brain.scenario_backtester import (
     AptitudeMatrix,
@@ -333,6 +334,23 @@ class BacktestOrchestrator:
         # Persist aggregate score (no per-pair affinity write at this level)
         self._update_strategy_scores(strategy_id, aggregate_score, strategy)
 
+        # HU 7.19: Overfitting detection — check AFTER all pair coverage written
+        k_val = float(self._cfg.get("confidence_k", 20))
+        overfitting = self._detect_overfitting_risk(strategy_id, cursor, k=k_val)
+        if overfitting:
+            n_rows = conn.execute(
+                "SELECT COUNT(*) FROM sys_strategy_pair_coverage WHERE strategy_id=?",
+                (strategy_id,),
+            ).fetchone()[0]
+            n_flagged = conn.execute(
+                "SELECT COUNT(*) FROM sys_strategy_pair_coverage "
+                "WHERE strategy_id=? AND effective_score >= 0.90",
+                (strategy_id,),
+            ).fetchone()[0]
+            self._write_overfitting_alert(cursor, strategy_id,
+                                          n_pairs=n_rows, n_flagged=n_flagged)
+            conn.commit()
+
         # Promote if aggregate passes threshold
         passes = aggregate_score >= self.backtester.MIN_REGIME_SCORE
         if passes:
@@ -342,6 +360,7 @@ class BacktestOrchestrator:
         rep = matrices[0]
         rep.overall_score    = aggregate_score
         rep.passes_threshold = passes
+        rep.overfitting_risk = overfitting
         return rep
 
     # ── Data Loading ──────────────────────────────────────────────────────────
@@ -822,6 +841,94 @@ class BacktestOrchestrator:
             "risk_reward": params.get("risk_reward", 1.5),
         }
 
+    def _detect_overfitting_risk(
+        self,
+        strategy_id: str,
+        cursor: Any,
+        k: float = 20.0,
+        score_threshold: float = 0.90,
+        confidence_threshold: float = 0.70,
+        ratio_threshold: float = 0.80,
+        min_pairs: int = 2,
+    ) -> bool:
+        """
+        Check whether a strategy's coverage data suggests overfitting.
+
+        Rule: if more than `ratio_threshold` (default 80%) of the evaluated pairs
+        have `effective_score >= score_threshold` (default 0.90) AND computed
+        `confidence = n_trades_total / (n_trades_total + k) >= confidence_threshold`
+        (default 0.70, requires ~47 trades with k=20), set overfitting_risk = True.
+
+        Requires at least `min_pairs` qualifying pairs to make a meaningful judgement.
+        A single pair at 100% is not meaningful evidence of overfitting.
+
+        HU 7.19 — EDGE-BKT-719-OVERFITTING-DETECTOR-2026-03-24
+        """
+        try:
+            cursor.execute(
+                """
+                SELECT effective_score, n_trades_total
+                FROM sys_strategy_pair_coverage
+                WHERE strategy_id = ?
+                """,
+                (strategy_id,),
+            )
+            rows = cursor.fetchall()
+        except Exception as exc:
+            logger.debug("[BACKTEST_ORC] overfitting_risk check failed for %s: %s",
+                         strategy_id, exc)
+            return False
+
+        if not rows or len(rows) < min_pairs:
+            return False
+
+        n_total   = len(rows)
+        n_flagged = 0
+        for row in rows:
+            eff     = float(row[0] if isinstance(row, (list, tuple)) else row["effective_score"])
+            n_tr    = int(row[1] if isinstance(row, (list, tuple)) else row["n_trades_total"])
+            conf    = n_tr / (n_tr + k) if n_tr > 0 else 0.0
+            if eff >= score_threshold and conf >= confidence_threshold:
+                n_flagged += 1
+
+        return (n_flagged / n_total) > ratio_threshold
+
+    def _write_overfitting_alert(
+        self,
+        cursor: Any,
+        strategy_id: str,
+        n_pairs: int,
+        n_flagged: int,
+    ) -> None:
+        """
+        Insert an OVERFITTING_RISK_DETECTED record in sys_audit_logs.
+
+        HU 7.19 — EDGE-BKT-719-OVERFITTING-DETECTOR-2026-03-24
+        """
+        now     = datetime.now(timezone.utc).isoformat()
+        payload = json.dumps({
+            "strategy_id": strategy_id,
+            "n_pairs":     n_pairs,
+            "n_flagged":   n_flagged,
+            "timestamp":   now,
+        })
+        try:
+            cursor.execute(
+                """
+                INSERT INTO sys_audit_logs
+                    (user_id, action, resource, resource_id, new_value, status, timestamp)
+                VALUES ('SYSTEM', 'OVERFITTING_RISK_DETECTED', 'sys_strategies', ?, ?, 'warning', ?)
+                """,
+                (strategy_id, payload, now),
+            )
+            logger.warning(
+                "[BACKTEST_ORC] OVERFITTING RISK DETECTED strategy=%s "
+                "flagged_pairs=%d/%d",
+                strategy_id, n_flagged, n_pairs,
+            )
+        except Exception as exc:
+            logger.error("[BACKTEST_ORC] Failed to write overfitting alert: %s", exc)
+
     def _get_current_regime_label(self, strategy: Dict, symbol: str, timeframe: str) -> str:
         """
         Return the current detected regime for (symbol, timeframe).
@@ -1233,3 +1340,195 @@ class BacktestOrchestrator:
         except Exception as exc:
             logger.error("[BACKTEST_ORC] Failed to load strategy %s: %s", strategy_id, exc)
             return None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# BacktestPriorityQueue — HU 7.18
+# ══════════════════════════════════════════════════════════════════════════════
+
+class BacktestPriorityQueue:
+    """
+    Determines which (strategy_id, symbol, timeframe) combination to evaluate
+    next, ordered by 6-tier priority using sys_strategy_pair_coverage data.
+
+    Priority tiers (ascending = lower priority):
+      P1 — No coverage entry (never evaluated).
+      P2 — status=PENDING, n_cycles <= 1   (first attempt, needs data).
+      P3 — status=PENDING, n_cycles >  1   (re-attempt stale PENDING).
+      P4 — status=QUALIFIED, n_cycles < 3  (score might be unstable).
+      P5 — status=PENDING/score low, n_cycles >= 2 (low confidence).
+      P6 — status=QUALIFIED, n_cycles >= 3, effective_score >= 0.55 (routine drift).
+      P7 — status=REJECTED (re-check periodically, lowest priority).
+
+    Budget gating (integrates OperationalModeManager — HU 10.7):
+      AGGRESSIVE   → 10 slots per cycle
+      MODERATE     →  5 slots per cycle
+      CONSERVATIVE →  2 slots per cycle (LIVE_ACTIVE reduces backtest CPU)
+      DEFERRED     →  0 slots (system overloaded — no backtesting)
+
+    Trace_ID: EDGE-BKT-718-SMART-SCHEDULER-2026-03-24
+    """
+
+    # Budget → max evaluation slots per cycle
+    _BUDGET_SLOTS: Dict[str, int] = {
+        BacktestBudget.AGGRESSIVE:   10,
+        BacktestBudget.MODERATE:      5,
+        BacktestBudget.CONSERVATIVE:  2,
+        BacktestBudget.DEFERRED:      0,
+    }
+
+    def __init__(
+        self,
+        storage: Any,
+        mode_manager: OperationalModeManager,
+    ) -> None:
+        self.storage      = storage
+        self.mode_manager = mode_manager
+
+    # ── Public API ─────────────────────────────────────────────────────────────
+
+    def get_max_slots(self) -> int:
+        """Return the maximum number of (strategy, symbol, timeframe) items to queue."""
+        budget = self.mode_manager.get_backtest_budget()
+        # BacktestBudget is a str subclass; key lookup works directly.
+        # str(budget) in Python 3.12+ returns "BacktestBudget.X", so use .value.
+        return self._BUDGET_SLOTS.get(budget.value if hasattr(budget, "value") else budget, 0)
+
+    def get_queue(self) -> List[Dict[str, Any]]:
+        """
+        Return an ordered list of dicts with keys (strategy_id, symbol, timeframe),
+        sorted by priority tier (P1 first). Length capped at get_max_slots().
+
+        Returns [] immediately if budget is DEFERRED.
+        """
+        if self.get_max_slots() == 0:
+            logger.info("[BKT_PQ] Budget DEFERRED — skipping priority queue build.")
+            return []
+
+        strategies = self._load_strategies()
+        if not strategies:
+            return []
+
+        items: List[Tuple[int, str, str, str]] = []  # (tier, strategy_id, symbol, timeframe)
+
+        for strategy in strategies:
+            strategy_id = strategy["class_id"]
+            symbols     = self._get_symbols(strategy)
+            timeframes  = self._get_timeframes(strategy)
+            timeframe   = timeframes[0] if timeframes else "M15"
+
+            if not symbols:
+                # No whitelist: treat strategy-level as a single entry
+                coverage = self._load_coverage(strategy_id, "", timeframe)
+                tier = self._priority_tier(coverage, strategy_id, "", timeframe)
+                items.append((tier, strategy_id, "", timeframe))
+                continue
+
+            for symbol in symbols:
+                coverage = self._load_coverage(strategy_id, symbol, timeframe)
+                tier = self._priority_tier(coverage, strategy_id, symbol, timeframe)
+                items.append((tier, strategy_id, symbol, timeframe))
+
+        items.sort(key=lambda x: x[0])
+        max_s = self.get_max_slots()
+        return [
+            {"strategy_id": sid, "symbol": sym, "timeframe": tf}
+            for _, sid, sym, tf in items[:max_s]
+        ]
+
+    def _priority_tier(
+        self,
+        coverage_row: Optional[Dict],
+        strategy_id: str,
+        symbol: str,
+        timeframe: str,
+    ) -> int:
+        """
+        Map a coverage row to a priority tier (1 = highest, 7 = lowest).
+
+        Tier definitions:
+          1 — No row at all (never evaluated)
+          2 — PENDING, n_cycles <= 1
+          3 — PENDING, n_cycles >  1
+          4 — QUALIFIED, n_cycles < 3  (score possibly unstable)
+          5 — PENDING/other, effective_score < 0.30 with n_cycles >= 2 (low confidence)
+          6 — QUALIFIED, n_cycles >= 3, effective_score >= 0.55
+          7 — REJECTED
+        """
+        if coverage_row is None:
+            return 1
+
+        status  = str(coverage_row.get("status", "PENDING")).upper()
+        n_cyc   = int(coverage_row.get("n_cycles", 0))
+        eff     = float(coverage_row.get("effective_score", 0.0))
+
+        if status == "REJECTED":
+            return 7
+        if status == "QUALIFIED" and n_cyc >= 3 and eff >= 0.55:
+            return 6
+        if status == "QUALIFIED" and n_cyc < 3:
+            return 4
+        if status == "PENDING" and n_cyc <= 1:
+            return 2
+        if status == "PENDING" and n_cyc > 1:
+            return 3
+        return 5  # catch-all for low-confidence or intermediate states
+
+    # ── Internal helpers ────────────────────────────────────────────────────────
+
+    def _load_strategies(self) -> List[Dict]:
+        """Load all BACKTEST strategies from sys_strategies."""
+        try:
+            conn   = self.storage._get_conn()
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT class_id, market_whitelist, required_timeframes AS timeframes, "
+                "required_regime "
+                "FROM sys_strategies WHERE mode = 'BACKTEST'"
+            )
+            cols = [d[0] for d in cursor.description]
+            return [dict(zip(cols, row)) for row in cursor.fetchall()]
+        except Exception as exc:
+            logger.error("[BKT_PQ] Failed to load strategies: %s", exc)
+            return []
+
+    def _load_coverage(
+        self, strategy_id: str, symbol: str, timeframe: str
+    ) -> Optional[Dict]:
+        """Load the coverage row for (strategy_id, symbol, timeframe), any regime."""
+        try:
+            conn   = self.storage._get_conn()
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT strategy_id, symbol, timeframe, regime, n_cycles,
+                       n_trades_total, effective_score, status
+                FROM sys_strategy_pair_coverage
+                WHERE strategy_id = ? AND symbol = ? AND timeframe = ?
+                ORDER BY n_cycles DESC
+                LIMIT 1
+                """,
+                (strategy_id, symbol, timeframe),
+            )
+            cols = [d[0] for d in cursor.description]
+            row  = cursor.fetchone()
+            return dict(zip(cols, row)) if row else None
+        except Exception as exc:
+            logger.debug("[BKT_PQ] Coverage lookup failed for %s/%s: %s", strategy_id, symbol, exc)
+            return None
+
+    def _get_symbols(self, strategy: Dict) -> List[str]:
+        try:
+            raw = strategy.get("market_whitelist") or "[]"
+            items = json.loads(raw)
+            return [str(s).replace("/", "").upper() for s in items if s]
+        except Exception:
+            return []
+
+    def _get_timeframes(self, strategy: Dict) -> List[str]:
+        try:
+            raw = strategy.get("timeframes") or '["M15"]'
+            return json.loads(raw) or ["M15"]
+        except Exception:
+            return ["M15"]
+

@@ -54,6 +54,7 @@ venv.bak/
 data_vault/*.db
 data_vault/*.sqlite
 data_vault/*.sqlite3
+data_vault/aethelgard.lock
 
 # Credentials (now stored encrypted in DB)
 config/demo_accounts/*.json

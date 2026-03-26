@@ -11,6 +11,64 @@
 
 ---
 
+# SPRINT 19: BACKTEST ENGINE — OVERFITTING DETECTOR — [DONE]
+
+**Inicio**: 25 de Marzo, 2026
+**Fin**: 25 de Marzo, 2026
+**Objetivo**: Detectar riesgo de overfitting cuando >80% de los pares evaluados superan `effective_score >= 0.90` con `confidence >= 0.70`, marcando el flag en `AptitudeMatrix`, registrando alerta en `sys_audit_logs` y propagando `overfitting_risk` al resultado de `_execute_backtest()`.
+**Épica**: E10 | **Trace_ID**: EDGE-BKT-719-OVERFITTING-DETECTOR-2026-03-24
+**Dominios**: 07_ADAPTIVE_LEARNING
+
+## 📋 Tareas del Sprint
+
+- [DONE] **HU 7.19: Detector de overfitting por par**
+  - `AptitudeMatrix.overfitting_risk: bool = False` añadido al dataclass + serializado en `to_json()`
+  - `BacktestOrchestrator._detect_overfitting_risk()`: cuenta pares con `eff >= 0.90` AND `confidence = n/(n+k) >= 0.70`; activa si `n_flagged/n_total > 0.80` con al menos 2 pares
+  - `BacktestOrchestrator._write_overfitting_alert()`: INSERT en `sys_audit_logs` con `action='OVERFITTING_RISK_DETECTED'` y payload JSON con n_pairs/n_flagged
+  - `_execute_backtest()`: llama `_detect_overfitting_risk()` tras loop multi-par; si True → `_write_overfitting_alert()` + propaga flag en matriz representativa
+  - No bloquea promoción automática
+
+## 📊 Snapshot de Cierre
+
+- **Tests añadidos**: 13
+- **Tests totales (módulos afectados)**: 143/143 PASSED · validate_all 27/27
+- **Archivos nuevos**: `tests/test_backtest_overfitting_detector.py`
+- **Archivos modificados**: `core_brain/scenario_backtester.py`, `core_brain/backtest_orchestrator.py`
+- **HUs completadas**: HU 7.19
+- **Épica E10**: ✅ COMPLETADA — todas las HUs archivadas
+
+---
+
+# SPRINT 18: BACKTEST ENGINE — BACKTEST PRIORITY QUEUE — [DONE]
+
+**Inicio**: 25 de Marzo, 2026
+**Fin**: 25 de Marzo, 2026
+**Objetivo**: Implementar `BacktestPriorityQueue` — componente que determina qué combinación `(strategy_id, symbol, timeframe)` evaluar en cada slot, ordenada por 6 tiers de prioridad usando `sys_strategy_pair_coverage` e integrada con `OperationalModeManager` para escalar el presupuesto según contexto operacional.
+**Épica**: E10 | **Trace_ID**: EDGE-BKT-718-SMART-SCHEDULER-2026-03-24
+**Dominios**: 07_ADAPTIVE_LEARNING
+
+## 📋 Tareas del Sprint
+
+- [DONE] **HU 7.18: Scheduler inteligente de backtests — prioritized queue**
+  - `BacktestPriorityQueue` en `core_brain/backtest_orchestrator.py`
+  - `get_max_slots()`: AGGRESSIVE=10 · MODERATE=5 · CONSERVATIVE=2 · DEFERRED=0 (integra `OperationalModeManager`)
+  - `get_queue()`: retorna lista de `{strategy_id, symbol, timeframe}` ordenados por tier, capped a `max_slots`
+  - `_priority_tier(coverage_row, ...)`: tiers 1-7 según status/n_cycles/effective_score del coverage
+  - Tiers: P1(sin cobertura) → P2(PENDING n≤1) → P3(PENDING n>1) → P4(QUALIFIED n<3) → P5(baja confianza) → P6(QUALIFIED estable) → P7(REJECTED)
+  - `_load_coverage()`: lookup en `sys_strategy_pair_coverage` por (strategy_id, symbol, timeframe)
+  - LIVE_ACTIVE → BacktestBudget.CONSERVATIVE → 2 slots (reduce presupuesto CPU)
+
+## 📊 Snapshot de Cierre
+
+- **Tests añadidos**: 19
+- **Tests totales (módulos afectados)**: 130/130 PASSED · validate_all 27/27
+- **Archivos nuevos**: `tests/test_backtest_priority_queue.py`
+- **Archivos modificados**: `core_brain/backtest_orchestrator.py`
+- **HUs completadas**: HU 7.18
+- **Desbloqueadas para siguiente sprint**: HU 7.19 (Detector de overfitting)
+
+---
+
 # SPRINT 17: BACKTEST ENGINE — STRATEGY PAIR COVERAGE TABLE — [DONE]
 
 **Inicio**: 25 de Marzo, 2026
