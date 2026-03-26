@@ -20,11 +20,28 @@ import json
 import tempfile
 import os
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from core_brain.main_orchestrator import MainOrchestrator, SessionStats
 from data_vault.storage import StorageManager
 from models.signal import Signal, SignalType, MarketRegime, ConnectorType
+
+
+@pytest.fixture(autouse=True)
+def _patch_daily_backtest():
+    """
+    Parcha _check_and_run_daily_backtest para todos los tests del módulo.
+    En el primer ciclo esta corrutina siempre se ejecuta y llama a
+    BacktestOrchestrator.run_pending_strategies() → DataProviderManager.fetch_ohlc()
+    que hace requests de red reales. En el entorno de test no hay conectividad,
+    por lo que la suite queda bloqueada indefinidamente.
+    """
+    with patch.object(
+        MainOrchestrator,
+        "_check_and_run_daily_backtest",
+        new_callable=AsyncMock,
+    ):
+        yield
 
 
 def _make_approving_quality_scorer():

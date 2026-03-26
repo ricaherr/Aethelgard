@@ -11,7 +11,20 @@ from core_brain.data_provider_manager import DataProviderManager
 
 class TestProviderCache:
     """Tests for provider instance caching"""
-    
+
+    @pytest.fixture(autouse=True)
+    def _patch_provider_fetch(self):
+        """
+        Parcha GenericDataProvider.fetch_ohlc para evitar llamadas reales a yfinance.
+        El test solo verifica el comportamiento de caching (número de queries a DB),
+        no el contenido de los datos devueltos.
+        """
+        with patch(
+            "connectors.generic_data_provider.GenericDataProvider.fetch_ohlc",
+            return_value=None,
+        ):
+            yield
+
     def test_providers_loaded_once_on_initialization(self, tmp_path):
         """
         CRITICAL: Providers should load ONCE during __init__

@@ -76,7 +76,10 @@ class SignalTrifectaOptimizer:
             # Solo aplicar trifecta a estrategia "oliver"
             strategy_id = signal.metadata.get('strategy_id', 'unknown')
             
-            if strategy_id != 'oliver':
+            # Activar trifecta si strategy_id=='oliver' O si el metadata lo solicita explícitamente
+            # (HU 3.4: flag asimétrico — solo estrategias Oliver Velez / Institutional Flow)
+            requires_trifecta = signal.metadata.get('requires_trifecta', strategy_id == 'oliver')
+            if not requires_trifecta:
                 optimized_usr_signals.append(signal)
                 continue
             

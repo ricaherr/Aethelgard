@@ -11,6 +11,80 @@
 
 ---
 
+# SPRINT 21: DYNAMIC AGGRESSION ENGINE — S-9 — [DONE]
+
+**Inicio**: 26 de Marzo, 2026
+**Fin**: 26 de Marzo, 2026
+**Objetivo**: Liberar agresividad del motor de señales de forma controlada: escalar el bonus de confluencia de forma proporcional a la confianza, desacoplar el filtro Trifecta mediante bandera por estrategia, e implementar el DynamicThresholdController para ajuste automático del umbral mínimo de confianza según sequía de señales y drawdown.
+**Épica**: E12 | **Trace_ID**: EXEC-V7-DYNAMIC-AGGRESSION-ENGINE
+**Dominios**: 03_ALPHA_ENGINE · 07_ADAPTIVE_LEARNING
+
+## 📋 Tareas del Sprint
+
+- [DONE] **HU 3.4: Confluencia Proporcional y Trifecta Asimétrica**
+  - `core_brain/confluence.py`: `_scale_bonus_by_confidence()` — tres tiers: `<0.40→0.0x`, `[0.40,0.50]→0.5x`, `>0.50→1.0x`; metadata enriquecida con `confluence_bonus`, `confluence_scale_factor`, `confluence_bonus_raw`
+  - `core_brain/signal_trifecta_optimizer.py`: reemplaza hardcode `strategy_id == 'oliver'` por flag `requires_trifecta` en `signal.metadata` (retro-compatible con estrategias Oliver)
+  - `tests/test_confluence_proportional.py`: 9 tests (límites de tier, metadata, fluency test S-9, asymmetry test)
+  - `docs/03_ALPHA_ENGINE.md`: sección HU 3.4/3.6 con tabla de tiers y comportamiento asimétrico
+
+- [DONE] **HU 7.5: DynamicThresholdController — Motor de Exploración Activa**
+  - `core_brain/adaptive/__init__.py` + `core_brain/adaptive/threshold_controller.py`: clase `DynamicThresholdController` con DI de `storage_conn`
+  - Detección de sequía: ventana de 24h sobre `sys_signals` (modos SHADOW/BACKTEST); reduce `dynamic_min_confidence` −5% si sin señales (floor 0.40)
+  - Feedback de drawdown: si `drawdown > 10%` → recupera umbral hacia base
+  - Persiste en `sys_shadow_instances.parameter_overrides['dynamic_min_confidence']` como JSON
+  - Solo actúa sobre instancias `INCUBATING` / `SHADOW_READY`
+  - Trace_ID: `TRACE_DTC_{YYYYMMDD}_{HHMMSS}_{instance_id[:8].upper()}`
+  - `tests/test_dynamic_threshold_controller.py`: 12 tests (sequía, drawdown, floor, casos especiales)
+  - `docs/07_ADAPTIVE_LEARNING.md`: sección DTC con flujo, tabla de feedback y límites de gobernanza
+  - `governance/BACKLOG.md`: HU 7.5 y HU 3.4 añadidas como `[DONE]`
+
+- [DONE] **Bugfixes pre-existentes (sin HU asignada)**
+  - `tests/test_backtest_multipair_sequential.py`: `_make_conn()` faltaba tabla `sys_strategy_pair_coverage` → 3 tests FAILED corregidos
+  - `tests/test_ctrader_connector.py`: `_session_last_used_at` no inicializado en test → idle-timeout falso positivo corregido
+  - `tests/test_orchestrator.py` + `test_module_toggles.py` + `test_orchestrator_recovery.py` + `test_strategy_gatekeeper_wiring.py`: `_check_and_run_daily_backtest` sin parchear → llamadas HTTP reales colgaban ~250s/test → fixture `autouse=True` con `AsyncMock`
+  - `tests/test_provider_cache.py`: `GenericDataProvider.fetch_ohlc` sin parchear → 18s/test → fixture `autouse=True`
+
+## 📊 Snapshot de Cierre
+
+- **Tests añadidos**: 21 (9 confluencia + 12 DTC)
+- **Tests totales suite completa**: 1973/1973 PASSED
+- **Tiempo de ejecución suite**: 96s (antes: 880s+ / colgaba indefinidamente)
+- **Archivos nuevos**: `core_brain/adaptive/__init__.py`, `core_brain/adaptive/threshold_controller.py`, `tests/test_confluence_proportional.py`, `tests/test_dynamic_threshold_controller.py`
+- **Archivos modificados**: `core_brain/confluence.py`, `core_brain/signal_trifecta_optimizer.py`, `docs/03_ALPHA_ENGINE.md`, `docs/07_ADAPTIVE_LEARNING.md`, `governance/BACKLOG.md`, + 5 test files (bugfixes)
+- **HUs completadas**: HU 3.4, HU 7.5
+- **Bugs corregidos (pre-existentes)**: 4
+
+---
+
+# SPRINT 20: ALPHA HUNTER — MOTOR AUTÓNOMO DE MUTACIÓN — [DONE]
+
+**Inicio**: 26 de Marzo, 2026
+**Fin**: 26 de Marzo, 2026
+**Objetivo**: Implementar `AlphaHunter` como motor autónomo de generación de variantes: clonar estrategias, variar `parameter_overrides` con distribución normal, y promover automáticamente al pool SHADOW las variantes que superen `overall_score > 0.85`, con límite de 20 instancias activas.
+**Épica**: E11 | **Trace_ID**: EXEC-V6-ALPHA-HUNTER-GEN-2026-03-26
+**Dominios**: 07_ADAPTIVE_LEARNING
+
+## 📋 Tareas del Sprint
+
+- [DONE] **HU 7.20: AlphaHunter — Motor de Mutación y Auto-Promoción**
+  - `core_brain/alpha_hunter.py`: clase `AlphaHunter` con DI de `storage_conn`
+  - `mutate_parameters()`: aplica `N(μ=valor, σ=|valor|×0.05)` a parámetros numéricos; no-numéricos copiados sin modificar; bounds: `max(0.0, noisy)`
+  - `try_promote_mutant()`: evalúa `overall_score > 0.85` (estricto) + `count_active < 20`; si pasan → INSERT en `sys_shadow_instances` con `status='INCUBATING'`, `account_type='DEMO'`, `backtest_score`, `backtest_trace_id`
+  - `count_active_shadow_instances()`: excluye `DEAD` y `PROMOTED_TO_REAL`
+  - `generate_mutation_trace_id()`: patrón `TRACE_ALPHAHUNTER_{YYYYMMDD}_{HHMMSS}_{strategy_id[:8].upper()}`
+  - `docs/07_ADAPTIVE_LEARNING.md`: nueva sección "Generación Autónoma de Alfas"
+
+## 📊 Snapshot de Cierre
+
+- **Tests añadidos**: 19
+- **Tests totales (módulo)**: 19/19 PASSED
+- **Archivos nuevos**: `core_brain/alpha_hunter.py`, `tests/test_alpha_hunter.py`
+- **Archivos modificados**: `docs/07_ADAPTIVE_LEARNING.md`
+- **HUs completadas**: HU 7.20
+- **Épica E11**: ✅ COMPLETADA — archivada en SYSTEM_LEDGER
+
+---
+
 # SPRINT 19: BACKTEST ENGINE — OVERFITTING DETECTOR — [DONE]
 
 **Inicio**: 25 de Marzo, 2026

@@ -190,7 +190,22 @@ class TestModuleTogglesPriority:
 
 class TestModuleTogglesOrchestrator:
     """Test integration with MainOrchestrator"""
-    
+
+    @pytest.fixture(autouse=True)
+    def _patch_daily_backtest(self):
+        """
+        Parcha _check_and_run_daily_backtest para evitar llamadas de red reales.
+        Sin este parche, run_single_cycle() dispara DataProviderManager.fetch_ohlc()
+        en el primer ciclo, bloqueando la suite ~250s por test hasta el timeout HTTP.
+        """
+        from core_brain.main_orchestrator import MainOrchestrator
+        with patch.object(
+            MainOrchestrator,
+            "_check_and_run_daily_backtest",
+            new_callable=AsyncMock,
+        ):
+            yield
+
     @pytest.mark.asyncio
     async def test_scanner_disabled_skips_scan(self):
         """When scanner globally disabled, scan should be skipped"""

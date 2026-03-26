@@ -459,8 +459,10 @@ class TestCTraderSessionPersistence:
         mock_ws = AsyncMock()
         mock_ws.close = AsyncMock()
 
-        # Pre-seed an active session
+        # Pre-seed an active session (con timestamp reciente para evitar idle-timeout)
+        import time as _time
         connector._session_ws = mock_ws
+        connector._session_last_used_at = _time.monotonic()
         connector._authenticate_session = AsyncMock(return_value=True)
         connector._fetch_bars_on_session = AsyncMock(return_value=[{"open": 1.1}])
 

@@ -22,6 +22,7 @@ El sistema utiliza un **Shadow Engine** que decide si una señal merece riesgo r
 - [x] Implementación de detección de huella institucional (Footprint).
 - [x] Despliegue del motor de puntuación Alpha dinámico (Confluence Integration).
 - [x] Optimización del Darwinismo Algorítmico para autogestión de estrategias.
+- [x] Dynamic Aggression Engine (S-9) — Escala proporcional de bonus de confluencia y filtros asimétricos Trifecta.
 
 ---
 
@@ -433,4 +434,32 @@ signal_factory = SignalFactory(
 | Pipeline SHADOW alimentado | No | Sí |
 
 **Tests**: `TestInstrumentManagerFilter` (3 tests) + `TestSignalFactoryAssetFiltering` (4 tests) — 7/7 PASSED.
+
+---
+
+## ⚙️ HU 3.4 / HU 3.6 — Dynamic Aggression Engine (S-9, 26-Mar-2026)
+
+**Trace_ID**: `EXEC-V7-DYNAMIC-AGGRESSION-ENGINE`
+
+### Escala Proporcional de Confluencia
+
+El `MultiTimeframeConfluenceAnalyzer` ahora implementa una escala proporcional del bono de confluencia basada en el nivel de confianza base de la señal:
+
+| Tier de Confianza | Factor de Escala | Descripción |
+|---|---|---|
+| `confidence < 0.40` | `0.0×` | Señal muy débil — sin bono (no invertir recursos) |
+| `confidence [0.40, 0.50]` | `0.5×` | Señal prometedora — bono reducido (aprender con cautela) |
+| `confidence > 0.50` | `1.0×` | Señal válida — bono completo (refuerzo total) |
+
+Esto permite que señales en el rango `[0.40-0.50]` se beneficien de la confluencia técnica y alcancen grado de ejecución sin comprometer la seguridad del sistema.
+
+**Metadata enriquecida**: cada señal procesada incluye `confluence_scale_factor`, `confluence_bonus` (escalado) y `confluence_bonus_raw` (bruto) para trazabilidad.
+
+### Trifecta como Módulo Opcional (Asimétrico)
+
+El `SignalTrifectaOptimizer` aplica el análisis trifecta Oliver Velez **únicamente** a:
+- Estrategias con `strategy_id == 'oliver'`
+- Señales que incluyan `requires_trifecta: True` en su metadata
+
+Las estrategias de Ruptura (`BRK_OPEN_*`), Institucional Flow y demás tipos **NO** son evaluadas por la Trifecta (filtros asimétricos por diseño). Esto elimina el veto global que bloqueaba señales válidas de estrategias no-Oliver.
 

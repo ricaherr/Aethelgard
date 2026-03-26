@@ -142,13 +142,19 @@ class MultiTimeframeConfluenceAnalyzer:
         
         # Calculate confluence bonus/penalty
         analysis = self._calculate_confluence(signal, timeframe_regimes)
-        
+
+        # Escalar bono según nivel de confianza base (S-9: Exploración Proporcional)
+        scale_factor = 1.0 if original_score / 100.0 > 0.50 else (0.5 if original_score / 100.0 >= 0.40 else 0.0)
+        scaled_bonus = self._scale_bonus_by_confidence(analysis.bonus, original_score / 100.0)
+
         # Apply bonus to score
-        adjusted_score = min(100.0, max(0.0, original_score + analysis.bonus))
-        
+        adjusted_score = min(100.0, max(0.0, original_score + scaled_bonus))
+
         # Update signal
         signal.confidence = adjusted_score / 100.0
-        signal.metadata["confluence_bonus"] = analysis.bonus
+        signal.metadata["confluence_bonus"] = scaled_bonus
+        signal.metadata["confluence_scale_factor"] = scale_factor
+        signal.metadata["confluence_bonus_raw"] = analysis.bonus
         signal.metadata["adjusted_score"] = adjusted_score
         signal.metadata["confluence_analysis"] = {
             "alignment": analysis.alignment,
@@ -244,6 +250,28 @@ class MultiTimeframeConfluenceAnalyzer:
             # Unknown regime, ignore
             return 0.0
     
+    def _scale_bonus_by_confidence(self, bonus: float, confidence: float) -> float:
+        """
+        Escala el bono de confluencia según el nivel de confianza base de la señal.
+
+        Protocolo "Exploración Activa" (S-9):
+          - confidence < 0.40  → sin bono (señal muy débil, no invertir recursos)
+          - confidence [0.40, 0.50] → bono al 50 % (señal prometedora, aprender con cautela)
+          - confidence > 0.50  → bono completo (señal válida, refuerzo total)
+
+        Args:
+            bonus:      Bono bruto calculado por _calculate_confluence (puntos 0-100).
+            confidence: Confianza original de la señal (escala 0.0-1.0).
+
+        Returns:
+            Bono escalado listo para aplicar al score ajustado.
+        """
+        if confidence > 0.50:
+            return bonus
+        if confidence >= 0.40:
+            return bonus * 0.5
+        return 0.0
+
     def _classify_alignment(self, total_bonus: float, total_weight: float) -> str:
         """
         Classify alignment strength based on total bonus

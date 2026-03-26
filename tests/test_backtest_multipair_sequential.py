@@ -29,9 +29,9 @@ from datetime import datetime, timezone
 # ---------------------------------------------------------------------------
 
 def _make_conn():
-    """In-memory SQLite with minimal sys_strategies table."""
+    """In-memory SQLite with minimal tables for BacktestOrchestrator."""
     conn = sqlite3.connect(":memory:")
-    conn.execute("""
+    conn.executescript("""
         CREATE TABLE sys_strategies (
             class_id TEXT PRIMARY KEY,
             mnemonic TEXT,
@@ -47,7 +47,22 @@ def _make_conn():
             last_backtest_at TEXT,
             required_timeframes TEXT DEFAULT '[]',
             required_regime TEXT DEFAULT 'ANY'
-        )
+        );
+
+        CREATE TABLE IF NOT EXISTS sys_strategy_pair_coverage (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            strategy_id       TEXT NOT NULL,
+            symbol            TEXT NOT NULL,
+            timeframe         TEXT NOT NULL,
+            regime            TEXT NOT NULL,
+            n_cycles          INTEGER   DEFAULT 0,
+            n_trades_total    INTEGER   DEFAULT 0,
+            effective_score   REAL      DEFAULT 0.0,
+            status            TEXT      DEFAULT 'PENDING',
+            last_evaluated_at TIMESTAMP,
+            created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(strategy_id, symbol, timeframe, regime)
+        );
     """)
     return conn
 

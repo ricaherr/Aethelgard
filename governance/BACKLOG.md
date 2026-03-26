@@ -67,6 +67,13 @@
     * **Descripción**: Lógica de auto-ajuste de barreras de entrada basada en la equidad de la cuenta y el régimen de volatilidad.
     * **🖥️ UI Representation**: Dial de "Exigencia Algorítmica" en el header, mostrando el umbral de entrada activo.
 
+* **HU 3.4: Refactorización SignalFactory — Filtros Asimétricos Trifecta** `[DEV]`
+    * **Trace_ID**: `EXEC-V7-DYNAMIC-AGGRESSION-ENGINE`
+    * **Qué**: Desacoplar la Trifecta como requisito universal. Implementar flag `requires_trifecta` en metadata de señal para aplicar el análisis Oliver Velez solo a estrategias que lo requieran (Oliver Velez, Institutional Flow). Las estrategias de Ruptura y genéricas quedan exentas.
+    * **Para qué**: Eliminar el veto global que bloqueaba señales válidas de estrategias no-Oliver en el pipeline de generación.
+    * **Criterios**: Señal con `requires_trifecta=False` pasa el optimizador sin análisis. Señal con `strategy_id='oliver'` mantiene comportamiento original. Tests: `test_confluence_proportional.py::TestConfluenciaValidacionS9::test_confluence_asymmetry_non_oliver_bypasses_trifecta`.
+    * **🖥️ UI**: Badge "Trifecta: N/A" en el feed de señales para estrategias de Ruptura.
+
 ---
 
 ## 04_RISK_GOVERNANCE (Unidades R, Safety Governor, Veto)
@@ -100,6 +107,13 @@
 ## 07_ADAPTIVE_LEARNING (EdgeTuner, Feedback Loops)
 ### ÉPICA E10 — Motor de Backtesting Inteligente (EDGE Evaluation Framework)
 *Trace_ID: EDGE-BACKTEST-EVAL-FRAMEWORK-2026-03-24 | Sprint activo: 9+*
+
+* **HU 7.5: DynamicThresholdController (DTC) — Motor de Exploración Activa** `[DEV]`
+    * **Trace_ID**: `EXEC-V7-DYNAMIC-AGGRESSION-ENGINE`
+    * **Qué**: Implementar `core_brain/adaptive/threshold_controller.py`. En modo SHADOW/BACKTEST, si una instancia no genera señales en 24h, el DTC reduce automáticamente el `dynamic_min_confidence` en 5% (piso 0.40). Feedback loop: si drawdown > 10% → recupera umbral conservador.
+    * **Para qué**: Asegurar que el pool SHADOW nunca se "congele" por umbrales inalcanzables, forzando exploración activa y recolección de datos de mercado.
+    * **Criterios**: Test sequía detecta correctamente 0 señales en 24h. Floor de 0.40 se respeta. Recuperación por drawdown funciona. Tests: `tests/test_dynamic_threshold_controller.py` (8 casos).
+    * **🖥️ UI**: Widget "Umbral Dinámico" en dashboard Shadow mostrando el `dynamic_min_confidence` actual por instancia.
 
 ---
 

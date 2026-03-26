@@ -4,7 +4,7 @@
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-25 UTC)**: Trace_ID: EDGE-BKT-719-OVERFITTING-DETECTOR-2026-03-24 | Sprint 19 archivado: HU 7.19 completada · 13/13 PASSED · validate_all 27/27 · **ÉPICA E10 COMPLETADA** (15 HUs · 14 sprints).
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-26 UTC)**: Trace_ID: EXEC-V7-DYNAMIC-AGGRESSION-ENGINE | Sprint 21 archivado: HU 3.4 + HU 7.5 completadas · 1973/1973 PASSED · **ÉPICA E12 COMPLETADA** (2 HUs · 1 sprint) · suite optimizada 880s→96s.
 
 ---
 
@@ -26,6 +26,68 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 ---
 
 ## 🏛️ ÉPICAS ARCHIVADAS
+
+### Sprint 21 — Dynamic Aggression Engine — S-9 (26-Mar-2026)
+**Trace_ID**: `EXEC-V7-DYNAMIC-AGGRESSION-ENGINE` | **Épica**: E12 ✅ COMPLETADA | **Estado**: Sprint cerrado · E12 ARCHIVADA
+
+| HU | Descripción | Artefactos clave | Tests |
+|---|---|---|---|
+| **HU 3.4** | Confluencia Proporcional (3 tiers: 0x/0.5x/1.0x) + Trifecta Asimétrica (`requires_trifecta` flag). Scaling aplicado en `MultiTimeframeConfluenceAnalyzer.analyze_confluence()`. Trifecta desacoplada de hardcode Oliver → flag por señal retro-compatible. | `core_brain/confluence.py`, `core_brain/signal_trifecta_optimizer.py`, `tests/test_confluence_proportional.py`, `docs/03_ALPHA_ENGINE.md` | 9/9 |
+| **HU 7.5** | `DynamicThresholdController`: ajuste automático de `dynamic_min_confidence` por sequía de señales (−5% cada 24h, floor 0.40) y recuperación ante drawdown >10%. Persistido en `sys_shadow_instances.parameter_overrides`. Trace_ID `TRACE_DTC_{date}_{time}_{id8}`. | `core_brain/adaptive/threshold_controller.py`, `core_brain/adaptive/__init__.py`, `tests/test_dynamic_threshold_controller.py`, `docs/07_ADAPTIVE_LEARNING.md` | 12/12 |
+
+**Suite total**: 1973/1973 PASSED · 0 regresiones · +21 tests nuevos · tiempo reducido 880s → 96s (9x)
+**Bugfixes colaterales**: 4 bugs pre-existentes resueltos (`sys_strategy_pair_coverage` en tests, idle-timeout CTrader, HTTP blocking en orchestrator tests, yfinance blocking en provider cache)
+
+---
+
+### ════════════════════════════════════════════════════════════════
+### ÉPICA E12 COMPLETADA — Dynamic Aggression Engine — Liberar Agresividad Controlada (26-Mar-2026)
+**Trace_ID**: `EXEC-V7-DYNAMIC-AGGRESSION-ENGINE` | **Sprints**: 21 | **Dominios**: 03 · 07
+
+| Campo | Valor |
+|---|---|
+| **Épica** | E12 — Dynamic Aggression Engine — Confluencia Proporcional + Trifecta Asimétrica + DTC |
+| **Trace_ID** | `EXEC-V7-DYNAMIC-AGGRESSION-ENGINE` |
+| **Sprints** | 21 |
+| **Completada** | 26 de Marzo, 2026 |
+| **Dominios** | 03_ALPHA_ENGINE · 07_ADAPTIVE_LEARNING |
+| **HUs** | 2 (HU 3.4, HU 7.5) |
+| **validate_all** | ✅ 1973/1973 PASSED |
+
+**Objetivo cumplido**: Motor de señales liberado de restricciones binarias. El bonus de confluencia ahora escala proporcionalmente (0x/0.5x/1.0x según confianza), el filtro Trifecta se activa solo cuando la estrategia lo requiere, y el DynamicThresholdController ajusta automáticamente el umbral mínimo de confianza para evitar sequías de señales sin sacrificar calidad. Suite de tests estabilizada y optimizada de 880s a 96s.
+### ════════════════════════════════════════════════════════════════
+
+---
+
+### Sprint 20 — AlphaHunter — Motor Autónomo de Mutación (26-Mar-2026)
+**Trace_ID**: `EXEC-V6-ALPHA-HUNTER-GEN-2026-03-26` | **Épica**: E11 ✅ COMPLETADA | **Estado**: Sprint cerrado · E11 ARCHIVADA
+
+| HU | Descripción | Artefactos clave | Tests |
+|---|---|---|---|
+| **HU 7.20** | `AlphaHunter`: motor de mutación por distribución normal (`σ=5%`) + pipeline de auto-promoción SHADOW. `mutate_parameters()` aplica ruido gaussiano a parámetros numéricos con bound `≥0`. `try_promote_mutant()` valida `overall_score > 0.85` (estricto) y `active_count < 20` antes de insertar en `sys_shadow_instances` como `INCUBATING/DEMO`. `count_active_shadow_instances()` excluye terminales. Trace_ID: `TRACE_ALPHAHUNTER_{date}_{time}_{id8}`. | `core_brain/alpha_hunter.py`, `tests/test_alpha_hunter.py`, `docs/07_ADAPTIVE_LEARNING.md` | 19/19 |
+
+**Suite total**: 19/19 PASSED · 0 regresiones · +19 tests nuevos
+
+---
+
+### ════════════════════════════════════════════════════════════════
+### ÉPICA E11 COMPLETADA — AlphaHunter — Generación Autónoma de Alfas (26-Mar-2026)
+**Trace_ID**: `EXEC-V6-ALPHA-HUNTER-GEN-2026-03-26` | **Sprints**: 20 | **Dominios**: 07
+
+| Campo | Valor |
+|---|---|
+| **Épica** | E11 — AlphaHunter — Motor Autónomo de Mutación y Auto-Promoción |
+| **Trace_ID** | `EXEC-V6-ALPHA-HUNTER-GEN-2026-03-26` |
+| **Sprints** | 20 |
+| **Completada** | 26 de Marzo, 2026 |
+| **Dominios** | 07_ADAPTIVE_LEARNING |
+| **HUs** | 1 (HU 7.20) |
+| **validate_all** | ✅ 19/19 PASSED |
+
+**Objetivo cumplido**: Sistema autónomo de evolución de estrategias. Clona parámetros de estrategias existentes, aplica mutación gaussiana (σ=5%), y promueve variantes con `overall_score > 0.85` directamente al pool SHADOW (máx. 20 instancias activas), cerrando el ciclo de aprendizaje autónomo sin intervención manual.
+### ════════════════════════════════════════════════════════════════
+
+---
 
 ### Sprint 19 — Motor de Backtesting Inteligente — Overfitting Detector (25-Mar-2026)
 **Trace_ID**: `EDGE-BKT-719-OVERFITTING-DETECTOR-2026-03-24` | **Épica**: E10 ✅ COMPLETADA | **Estado**: Sprint cerrado · E10 ARCHIVADA

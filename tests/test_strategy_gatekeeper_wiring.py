@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch, call
 from datetime import datetime, timezone
 
 from models.signal import Signal, SignalType, ConnectorType
+from core_brain.main_orchestrator import MainOrchestrator
 
 
 # ---------------------------------------------------------------------------
@@ -80,9 +81,18 @@ class TestStrategyGatekeeperWiring(unittest.TestCase):
         # regardless of host load during the test run.
         self._cpu_patch = patch("psutil.cpu_percent", return_value=10.0)
         self._cpu_patch.start()
+        # Patch _check_and_run_daily_backtest to avoid real HTTP requests via
+        # BacktestOrchestrator.run_pending_strategies() → DataProviderManager.fetch_ohlc()
+        self._daily_backtest_patch = patch.object(
+            MainOrchestrator,
+            "_check_and_run_daily_backtest",
+            new_callable=AsyncMock,
+        )
+        self._daily_backtest_patch.start()
 
     def tearDown(self):
         self._cpu_patch.stop()
+        self._daily_backtest_patch.stop()
 
     # ------------------------------------------------------------------
     # 1. DI acceptance in __init__

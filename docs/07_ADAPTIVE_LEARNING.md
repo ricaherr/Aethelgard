@@ -70,6 +70,56 @@ if signal.confidence < current_threshold:
 
 Cuando el Governor interviene, el ajuste se marca con `[SAFETY_GOVERNOR]` en los logs de DB.
 
+## ⚙️ Funcionamiento Técnico (DynamicThresholdController - S-9)
+**Archivo**: `core_brain/adaptive/threshold_controller.py`
+**Trace_ID pattern**: `TRACE_DTC_{YYYYMMDD}_{HHMMSS}_{instance_id[:8].upper()}`
+
+### Protocolo "Exploración Activa en Simulación"
+
+El DTC implementa el principio de **"Miedo Zero" en entornos de simulación**: en modo SHADOW/BACKTEST, la exigencia algorítmica se adapta dinámicamente para que el sistema *explore activamente* en lugar de permanecer bloqueado por umbrales conservadores.
+
+**Filosofía**: sacrificar "perfección" por "aprendizaje de datos". Un sistema que no genera señales en SHADOW no aprende nada — y no aprender es el peor resultado posible en simulación.
+
+### Flujo de Activación
+
+```
+1. TradeClosureListener o ciclo periódico → llama DTC.evaluate_and_adjust(instance_id)
+2. DTC consulta sys_shadow_instances → verifica status (solo INCUBATING/SHADOW_READY)
+3. DTC consulta sys_signals → detecta sequía (0 señales en ventana de 24h)
+4. Si sequía detectada → reduce dynamic_min_confidence en 5% (piso 0.40)
+5. Si drawdown > 10% → recupera umbral hacia base (seguridad primero)
+6. Persiste en parameter_overrides.dynamic_min_confidence (SSOT vía sys_shadow_instances)
+7. Retorna Dict con trace_id, reason, old/new_threshold
+```
+
+### Lógica de Feedback Loop
+
+| Condición | Acción | Razón |
+|---|---|---|
+| 0 señales en 24h | Reducir umbral -5% | El sistema no explora — liberar restricciones |
+| `profit_factor` mejora | Mantener umbral bajo | El umbral bajo está generando aprendizaje positivo |
+| `max_drawdown_pct > 10%` | Recuperar umbral +5% | Pérdidas crecientes — restaurar conservadurismo |
+| Status PROMOTED_TO_REAL / DEAD | Sin acción | Solo actúa en simulación activa |
+
+### Límites de Gobernanza (DTC)
+
+| Parámetro | Valor Default | Descripción |
+|---|---|---|
+| `floor_confidence` | `0.40` | Piso mínimo absoluto — nunca por debajo de aquí |
+| `step_down` | `0.05` | Reducción máxima por ciclo (5%) |
+| `window_hours` | `24` | Ventana de detección de sequía |
+| `drawdown_alert_threshold` | `0.10` | Umbral de drawdown para activar recuperación (10%) |
+| `base_confidence` | `0.60` | Umbral de referencia para recuperación |
+
+### Relación con ThresholdOptimizer (HU 7.1)
+
+| Componente | Propósito | Activación |
+|---|---|---|
+| `ThresholdOptimizer` | Sube el umbral ante rachas de pérdidas (conservadurismo) | Post-trade, reactivo |
+| `DynamicThresholdController` | Baja el umbral ante sequía de señales (exploración) | Periódico, proactivo |
+
+Son **complementarios**: el ThresholdOptimizer protege el capital real; el DTC asegura que el pool SHADOW nunca se "congele" por umbrales inalcanzables.
+
 ## 🖥️ UI/UX REPRESENTATION
 *   **Curva de Exigencia Algorítmica**: Visualizador dinámico de los umbrales de entrada activos vs recomendados.
 *   **Threshold Evolution Logger**: Widget mostrando histórico de ajustes de threshold con razones y trace_ids.
@@ -1815,4 +1865,110 @@ Inserta en `sys_audit_logs`:
 **Trace_ID**: `EDGE-BACKTEST-EVAL-FRAMEWORK-2026-03-24` | **15 HUs** | **Sprints 9–19** | **validate_all 27/27**
 
 El motor de backtesting fue completamente refundado durante esta épica. Ver `governance/SYSTEM_LEDGER.md` para el archivo completo.
+
+---
+
+## Generación Autónoma de Alfas — AlphaHunter
+
+**Trace_ID**: `EXEC-V6-ALPHA-HUNTER-GEN-2026-03-26`
+**Archivo**: `core_brain/alpha_hunter.py`
+**Tests**: `tests/test_alpha_hunter.py` — 19/19 PASSED
+
+### Propósito
+
+El `AlphaHunter` cierra el ciclo de aprendizaje autónomo: en lugar de esperar configuración manual, el sistema **genera** variantes de estrategias existentes, las valida con el `ScenarioBacktester` y las inserta directamente en el pool SHADOW si superan el umbral de calidad.
+
+```
+Estrategia existente
+        │
+        ▼
+  mutate_parameters()          ← Distribución Normal N(μ=valor_actual, σ=5%)
+        │
+        ▼
+  ScenarioBacktester            ← Filtro 0 (3 stress clusters)
+  .run_scenario_backtest()
+        │
+        ├── overall_score > 0.85 AND pool < 20 ──► sys_shadow_instances (INCUBATING)
+        │
+        └── score ≤ 0.85 OR pool lleno ──────────► REJECTED (sin inserción)
+```
+
+### Motor de Mutación
+
+**Método**: `mutate_parameters(strategy_id, parameter_overrides, *, seed=None)`
+
+Para cada parámetro en `parameter_overrides`:
+- **Numérico** (`int`, `float`): aplica `N(μ=valor, σ=|valor| × sigma_ratio)`. Recorte en `0.0` para evitar negativos.
+- **No numérico** (`str`, `bool`): copiado sin modificar.
+- `sigma_ratio` default = `0.05` (5% de variación alrededor del óptimo actual).
+
+```python
+hunter = AlphaHunter(
+    storage_conn=conn,
+    demo_account_id="MT5_DEMO_001",
+    max_shadow_population=20,
+    promotion_score_threshold=0.85,
+    mutation_sigma_ratio=0.05,
+)
+
+mutant = hunter.mutate_parameters(
+    "strategy_oliver_velez",
+    {"confidence_threshold": 0.75, "risk_reward": 1.5},
+)
+# → {"strategy_id": "strategy_oliver_velez",
+#    "parameter_overrides": {"confidence_threshold": 0.763, "risk_reward": 1.512},
+#    "trace_id": "TRACE_ALPHAHUNTER_20260326_183000_STRATEGY"}
+```
+
+### Pipeline de Auto-Promoción
+
+**Método**: `try_promote_mutant(matrix: AptitudeMatrix, mutated_params: Dict) → Dict`
+
+Reglas de gobernanza (en orden de evaluación):
+
+| Condición | Resultado |
+|-----------|-----------|
+| `overall_score <= 0.85` | REJECTED — score insuficiente |
+| `active_count >= 20` | REJECTED — population_limit alcanzado |
+| Ambas pasan | PROMOTED → INSERT en `sys_shadow_instances` |
+
+La instancia insertada tiene:
+- `status = 'INCUBATING'`
+- `account_type = 'DEMO'`
+- `backtest_score` = `matrix.overall_score`
+- `backtest_trace_id` = `matrix.trace_id`
+- `parameter_overrides` = parámetros mutados
+
+### Límite de Población
+
+`max_shadow_population = 20` (configurable). El conteo excluye instancias terminales (`DEAD`, `PROMOTED_TO_REAL`).
+
+**Método auxiliar**: `count_active_shadow_instances() → int`
+
+### Trace_ID
+
+Patrón: `TRACE_ALPHAHUNTER_{YYYYMMDD}_{HHMMSS}_{strategy_id[:8].upper()}`
+
+Ejemplo: `TRACE_ALPHAHUNTER_20260326_183000_STRATEGY`
+
+### Integración con el flujo existente
+
+```
+BacktestOrchestrator
+        │
+        ▼
+  ScenarioBacktester.run_scenario_backtest()  →  AptitudeMatrix
+        │                                               │
+        │                                               ▼
+        │                                        AlphaHunter
+        │                                        .try_promote_mutant()
+        │                                               │
+        └──────── (score ≥ 0.75, FILTRO 0) ────────────┘
+                                                        │
+                                                        ▼
+                                               sys_shadow_instances
+                                               (INCUBATING, DEMO)
+```
+
+El `AlphaHunter` complementa al `BacktestOrchestrator`: mientras el orquestador evalúa estrategias existentes, el `AlphaHunter` genera y valida variantes autónomamente, ampliando el espacio de búsqueda sin intervención manual.
 

@@ -151,7 +151,25 @@ class TestSessionStats:
 
 class TestMainOrchestrator:
     """Test MainOrchestrator orchestration logic"""
-    
+
+    @pytest.fixture(autouse=True)
+    def _patch_daily_backtest(self):
+        """
+        Parcha _check_and_run_daily_backtest para todos los tests del orquestador.
+
+        En el primer ciclo esta corrutina siempre se ejecuta y llama a
+        BacktestOrchestrator.run_pending_strategies() → DataProviderManager.fetch_ohlc()
+        que hace requests de red reales. En el entorno de test no hay conectividad,
+        por lo que la suite queda bloqueada indefinidamente.
+        """
+        with patch.object(
+            MainOrchestrator,
+            "_check_and_run_daily_backtest",
+            new_callable=AsyncMock,
+        ):
+            yield
+
+
     @pytest.mark.asyncio
     async def test_single_cycle_execution(
         self, 
