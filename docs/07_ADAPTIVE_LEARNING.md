@@ -1423,3 +1423,130 @@ WHERE class_id = ?
 
 **Tests**: 3 nuevos tests en `TestCooldown` — 43/43 total PASSED.
 
+---
+
+## ⚙️ HU 7.9 — Evaluación multi-timeframe con round-robin y pre-filtro de régimen (25-Mar-2026)
+
+**Trace_ID**: `EDGE-BACKTEST-HU79-MULTITF-ROUND-ROBIN-2026-03-25`
+
+### Problema detectado
+`_resolve_symbol_timeframe()` siempre devolvía el mismo timeframe por defecto (`H1`). `_build_scenario_slices()` ignoraba completamente `required_timeframes` y `required_regime`, que habían sido añadidos en HU 7.8 pero no consumidos.
+
+### Solución implementada
+
+**1. `_get_timeframes_for_backtest(strategy)`** — lee `required_timeframes` (JSON list) con fallback a `default_timeframe` del config.
+
+**2. `_next_timeframe_round_robin(strategy_id, timeframes)`** — rotación cíclica in-memory por `strategy_id`. Estado local al proceso (se reinicia con el servidor — aceptable para scheduling).
+
+**3. `_passes_regime_prefilter(strategy, symbol, timeframe)`** — valida `required_regime` contra el régimen actual:
+- `'ANY'` o ausente → siempre `True`
+- Sin datos o `< 14` bars → `True` (fail-open, no bloquear evaluación)
+- Mismatch confirmado → `False`
+- Normalización de aliases: `VOLATILITY→VOLATILE`, `TRENDING→TREND`, etc. (dict `_REGIME_ALIAS`)
+
+**4. `_build_scenario_slices()`** integra round-robin + pre-filtro antes del fetch de datos. Si el pre-filtro veta, retorna slices `UNTESTED_CLUSTER` (política HU 7.11 — sin síntesis).
+
+**5. SELECTs** actualizados con `required_timeframes, required_regime`.
+
+**Tests**: 14 tests en `tests/test_backtest_multitimeframe_roundrobin.py` — 14/14 PASSED.
+
+---
+
+## ⚙️ HU 7.10 — RegimeClassifier real en pipeline de backtesting (25-Mar-2026)
+
+**Trace_ID**: `EDGE-BACKTEST-HU710-REGIME-CLASSIFIER-PIPELINE-2026-03-25`
+
+### Problema detectado
+`_split_into_cluster_slices()` clasificaba ventanas de datos con `backtester._detect_regime()` — una heurística ATR+slope que no usa ADX ni SMA200. El `RegimeClassifier` real (HU existente en dominio) quedaba inutilizado en el pipeline de backtesting.
+
+### Solución implementada
+
+**1. `_classify_window_regime(window)`** — reemplaza la llamada directa a heurística:
+- Instancia `RegimeClassifier(storage=self.storage)` y clasifica con ADX/ATR/SMA200.
+- Fallback a `backtester._detect_regime()` si `RegimeClassifier` lanza excepción (robustez).
+- Retorna string compatible con `REGIME_TO_CLUSTER`: `'TREND' | 'RANGE' | 'VOLATILE' | 'CRASH' | 'NORMAL'`.
+
+**2. `REGIME_TO_CLUSTER` ampliado**:
+```python
+"CRASH":  StressCluster.HIGH_VOLATILITY    # MarketRegime.CRASH
+"NORMAL": StressCluster.STAGNANT_RANGE     # MarketRegime.NORMAL
+```
+
+**3. `_split_into_cluster_slices()`** sustituye `backtester._detect_regime()` por `_classify_window_regime()`.
+
+**Tests**: 14 tests en `tests/test_backtest_regime_classifier.py` — 14/14 PASSED.
+
+---
+
+## ⚙️ HU 7.12 — Adaptive Backtest Scheduler — cooldown dinámico y cola de prioridad (25-Mar-2026)
+
+**Trace_ID**: `EDGE-BACKTEST-HU712-ADAPTIVE-SCHEDULER-2026-03-25`
+
+### Problema detectado
+El cooldown del backtester era fijo (24h en config). No había integración con `OperationalModeManager` para adaptar la frecuencia según carga del sistema. Sin cola de prioridad, todas las estrategias competían en igualdad aunque algunas nunca hubieran corrido.
+
+### Solución implementada
+
+Nuevo módulo `core_brain/adaptive_backtest_scheduler.py`:
+
+| Método | Responsabilidad |
+|---|---|
+| `get_effective_cooldown_hours()` | Delega a `OperationalModeManager.get_component_frequencies()["backtest_cooldown_h"]` |
+| `is_deferred()` | True si `BacktestBudget == DEFERRED` — sistema sobrecargado |
+| `get_priority_queue()` | Filtra cooldown + ordena P1→P3 |
+| `_sort_by_priority()` | P1: nunca run · P2: score=0, fue run · P3: tiene score (oldest first) |
+
+**Cooldown dinámico**:
+| Budget | Cooldown |
+|---|---|
+| AGGRESSIVE | 1 h |
+| MODERATE | 12 h |
+| CONSERVATIVE | 24 h |
+| DEFERRED | cola vacía |
+
+**Tests**: 14 tests en `tests/test_adaptive_backtest_scheduler.py` — 14/14 PASSED.
+
+---
+
+## ⚙️ HU 7.13 — Rediseño semántico de affinity_scores (25-Mar-2026)
+
+**Trace_ID**: `EDGE-BKT-713-AFFINITY-REDESIGN-2026-03-24`
+
+### Problema detectado
+`affinity_scores` contenía opiniones del desarrollador (`{"EUR/USD": 0.92}`) y `_extract_parameter_overrides()` buscaba `confidence_threshold` / `risk_reward` dentro de ese campo — que nunca existían ahí. El campo `execution_params` (añadido en HU 7.8 precisamente para esto) estaba siendo ignorado. Resultado: todos los backtests usaban los defaults hardcodeados (0.75 / 1.5) sin importar la configuración de la estrategia.
+
+### Solución implementada
+
+**1. `_extract_parameter_overrides(strategy)`** — lee `execution_params` (SSOT). `affinity_scores` nunca es input.
+
+**2. SELECTs** de `_load_backtest_strategies()` y `_load_strategy()` incluyen `execution_params`.
+
+**3. `_update_strategy_scores()`** — firma ampliada con `symbol` y `matrix` opcionales. Delega escritura de affinity a nuevo método.
+
+**4. Nuevo `_write_pair_affinity(cursor, strategy_id, symbol, raw_score, matrix, strategy)`** — persiste estructura empírica por par:
+```json
+{
+  "EURUSD": {
+    "effective_score": 0.70, "raw_score": 0.70, "confidence": 1.0,
+    "n_trades": 52, "profit_factor": 1.74, "max_drawdown": 0.11,
+    "win_rate": 0.62, "optimal_timeframe": "H1",
+    "regime_evaluated": ["TREND"],
+    "status": "QUALIFIED", "cycles": 1,
+    "last_updated": "2026-03-25T..."
+  }
+}
+```
+
+**Lógica de status**:
+| effective_score | status |
+|---|---|
+| ≥ 0.55 | QUALIFIED |
+| < 0.20 | REJECTED |
+| 0.20 – 0.54 | PENDING |
+
+> `confidence = 1.0` hasta HU 7.15 (implementará fórmula `n/(n+k)`).
+
+**5. Migración en `run_migrations()`** — resetea `affinity_scores = '{}'` para estrategias con valores numéricos top-level (contenido legacy).
+
+**Tests**: 15 tests en `tests/test_backtest_affinity_redesign.py` — 15/15 PASSED.
+

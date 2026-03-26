@@ -233,8 +233,9 @@ class BacktestOrchestrator:
             strategy_instance=strategy_instance,
         )
 
-        # Persist score + recalculate consolidated score
-        self._update_strategy_scores(strategy_id, matrix.overall_score, strategy)
+        # Persist score + recalculate consolidated score + per-pair affinity
+        symbol, _ = self._resolve_symbol_timeframe(strategy)
+        self._update_strategy_scores(strategy_id, matrix.overall_score, strategy, symbol=symbol, matrix=matrix)
 
         # Promote if passed
         if matrix.passes_threshold:
@@ -432,7 +433,7 @@ class BacktestOrchestrator:
         HU 7.10 — EDGE-BACKTEST-HU710-REGIME-CLASSIFIER-PIPELINE-2026-03-25
         """
         try:
-            classifier = RegimeClassifier()
+            classifier = RegimeClassifier(storage=self.storage)
             classifier.load_ohlc(window)
             regime = classifier.classify()
             return regime.value  # MarketRegime enum → string
@@ -674,16 +675,21 @@ class BacktestOrchestrator:
         return symbol, timeframe
 
     def _extract_parameter_overrides(self, strategy: Dict) -> Dict:
-        """Extract relevant backtest parameters from strategy affinity_scores."""
+        """Extract relevant backtest parameters from strategy execution_params (SSOT).
+
+        HU 7.13 — EDGE-BKT-713-AFFINITY-REDESIGN-2026-03-24
+        execution_params is the authoritative source for confidence_threshold and
+        risk_reward.  affinity_scores is strictly an empirical output — never input.
+        """
         import json as _json
         try:
-            affinity = strategy.get("affinity_scores", "{}")
-            scores = affinity if isinstance(affinity, dict) else _json.loads(affinity or "{}")
+            raw = strategy.get("execution_params", "{}")
+            params = raw if isinstance(raw, dict) else _json.loads(raw or "{}")
         except Exception:
-            scores = {}
+            params = {}
         return {
-            "confidence_threshold": scores.get("confidence_threshold", 0.75),
-            "risk_reward": scores.get("risk_reward", 1.5),
+            "confidence_threshold": params.get("confidence_threshold", 0.75),
+            "risk_reward": params.get("risk_reward", 1.5),
         }
 
     def _is_on_cooldown(self, strategy: Dict) -> bool:
@@ -716,11 +722,24 @@ class BacktestOrchestrator:
     # ── Score Persistence ─────────────────────────────────────────────────────
 
     def _update_strategy_scores(
-        self, strategy_id: str, score_backtest: float, strategy: Dict
+        self,
+        strategy_id: str,
+        score_backtest: float,
+        strategy: Dict,
+        symbol: str = "",
+        matrix: Optional[Any] = None,
     ) -> None:
         """
-        Persist score_backtest and recalculate the consolidated score.
+        Persist score_backtest, recalculate consolidated score, and write
+        per-pair affinity entry to affinity_scores.
+
         Formula: score = score_live×0.50 + score_shadow×0.30 + score_backtest×0.20
+
+        HU 7.13 — EDGE-BKT-713-AFFINITY-REDESIGN-2026-03-24
+        affinity_scores is an empirical OUTPUT only.  Structure per pair:
+          {symbol: {effective_score, raw_score, confidence, n_trades,
+                    profit_factor, max_drawdown, win_rate, optimal_timeframe,
+                    regime_evaluated, status, cycles, last_updated}}
         """
         weights      = self._cfg["score_weights"]
         score_shadow = float(strategy.get("score_shadow") or 0.0)
@@ -745,6 +764,9 @@ class BacktestOrchestrator:
                 """,
                 (round(score_backtest, 4), score, strategy_id),
             )
+            # Write per-pair affinity entry when matrix is provided
+            if symbol and matrix is not None:
+                self._write_pair_affinity(cursor, strategy_id, symbol, score_backtest, matrix, strategy)
             conn.commit()
             logger.info(
                 "[BACKTEST_ORC] Scores updated strategy=%s "
@@ -756,6 +778,90 @@ class BacktestOrchestrator:
                 "[BACKTEST_ORC] Failed to persist scores for strategy=%s: %s",
                 strategy_id, exc,
             )
+
+    def _write_pair_affinity(
+        self,
+        cursor: Any,
+        strategy_id: str,
+        symbol: str,
+        raw_score: float,
+        matrix: Any,
+        strategy: Dict,
+    ) -> None:
+        """
+        Build and persist the per-pair affinity entry for `symbol`.
+
+        confidence = 1.0 (placeholder; HU 7.15 will implement n/(n+k) formula).
+        effective_score = raw_score * confidence.
+
+        Status thresholds (HU 7.13 / HU 7.15):
+          effective_score >= 0.55  → QUALIFIED
+          effective_score <  0.20  → REJECTED
+          otherwise                → PENDING
+        """
+        # Aggregate per-regime metrics
+        results = getattr(matrix, "results_by_regime", [])
+        n_trades     = sum(r.total_trades for r in results)
+        profit_factor = (
+            round(sum(r.profit_factor for r in results) / len(results), 4)
+            if results else 0.0
+        )
+        max_drawdown = (
+            round(max(r.max_drawdown_pct for r in results), 4)
+            if results else 0.0
+        )
+        win_rate = (
+            round(sum(r.win_rate for r in results) / len(results), 4)
+            if results else 0.0
+        )
+        regimes = list({r.detected_regime for r in results if r.detected_regime != "UNTESTED"})
+
+        confidence     = 1.0          # HU 7.15: n/(n+k)
+        effective_score = round(raw_score * confidence, 4)
+
+        if effective_score >= 0.55:
+            status = "QUALIFIED"
+        elif effective_score < 0.20:
+            status = "REJECTED"
+        else:
+            status = "PENDING"
+
+        # Determine optimal_timeframe from strategy context
+        tfs = self._get_timeframes_for_backtest(strategy)
+        optimal_tf = tfs[0] if tfs else self._cfg.get("default_timeframe", "H1")
+
+        # Load current affinity to increment cycles
+        cursor.execute(
+            "SELECT affinity_scores FROM sys_strategies WHERE class_id = ?",
+            (strategy_id,),
+        )
+        row = cursor.fetchone()
+        try:
+            current = json.loads((row[0] if row else None) or "{}") if row else {}
+        except Exception:
+            current = {}
+
+        existing = current.get(symbol, {})
+        cycles = int(existing.get("cycles", 0)) + 1
+
+        current[symbol] = {
+            "effective_score":  effective_score,
+            "raw_score":        round(raw_score, 4),
+            "confidence":       confidence,
+            "n_trades":         n_trades,
+            "profit_factor":    profit_factor,
+            "max_drawdown":     max_drawdown,
+            "win_rate":         win_rate,
+            "optimal_timeframe": optimal_tf,
+            "regime_evaluated": regimes,
+            "status":           status,
+            "cycles":           cycles,
+            "last_updated":     datetime.now(timezone.utc).isoformat(),
+        }
+        cursor.execute(
+            "UPDATE sys_strategies SET affinity_scores = ? WHERE class_id = ?",
+            (json.dumps(current), strategy_id),
+        )
 
     def _promote_to_shadow(self, strategy_id: str, score_backtest: float) -> None:
         """
@@ -843,6 +949,7 @@ class BacktestOrchestrator:
             cursor.execute(
                 """
                 SELECT class_id, mnemonic, market_whitelist, affinity_scores,
+                       execution_params,
                        mode, score_backtest, score_shadow, score_live, score,
                        updated_at, last_backtest_at,
                        required_timeframes, required_regime
@@ -864,6 +971,7 @@ class BacktestOrchestrator:
             cursor.execute(
                 """
                 SELECT class_id, mnemonic, market_whitelist, affinity_scores,
+                       execution_params,
                        mode, score_backtest, score_shadow, score_live, score,
                        updated_at, last_backtest_at,
                        required_timeframes, required_regime

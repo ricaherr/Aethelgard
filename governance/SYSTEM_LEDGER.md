@@ -4,7 +4,7 @@
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-25 UTC)**: Trace_ID: EDGE-BACKTEST-SPRINT12-MULTITF-REGIME-SCHED-2026-03-25 | Sprint 12 archivado: HU 7.9, HU 7.10, HU 7.12 completadas · 1833/1833 PASSED · HU 7.13 desbloqueada.
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-25 UTC)**: Trace_ID: EDGE-BKT-713-AFFINITY-REDESIGN-2026-03-24 | Sprint 13 archivado: HU 7.13 completada · 15/15 PASSED · HU 7.14, 7.15, 7.16 desbloqueadas.
 
 ---
 
@@ -26,6 +26,18 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 ---
 
 ## 🏛️ ÉPICAS ARCHIVADAS
+
+### Sprint 13 — Motor de Backtesting Inteligente — Affinity Scores Semantic Redesign (25-Mar-2026)
+**Trace_ID**: `EDGE-BKT-713-AFFINITY-REDESIGN-2026-03-24` | **Épica**: E10 (Sprint parcial — continúa) | **Estado**: Sprint cerrado · E10 ACTIVA (6 HUs pendientes)
+
+| HU | Descripción | Artefactos clave | Tests |
+|---|---|---|---|
+| **HU 7.13** | `_extract_parameter_overrides()` corregido para leer `execution_params` (no `affinity_scores`). Nuevo `_write_pair_affinity()` escribe estructura semántica por par (12 campos: effective_score, raw_score, confidence, n_trades, profit_factor, max_drawdown, win_rate, optimal_timeframe, regime_evaluated, status, cycles, last_updated). Migración en `run_migrations()` limpia valores legacy numéricos en `affinity_scores`. | `core_brain/backtest_orchestrator.py` · `data_vault/schema.py` | 15/15 |
+
+**Suite total**: 1848/1848 PASSED · 0 regresiones · +15 tests nuevos
+**HUs desbloqueadas**: HU 7.14 (multi-par secuencial) · HU 7.15 (confianza n/(n+k)) · HU 7.16 (filtro compatibilidad régimen, paralelo a 7.14)
+
+---
 
 ### Sprint 12 — Motor de Backtesting Inteligente — Multi-TF, Regime Classifier & Adaptive Scheduler (25-Mar-2026)
 **Trace_ID**: `EDGE-BACKTEST-SPRINT12-MULTITF-REGIME-SCHED-2026-03-25` | **Épica**: E10 (Sprint parcial — continúa) | **Estado**: Sprint cerrado · E10 ACTIVA (7 HUs pendientes)

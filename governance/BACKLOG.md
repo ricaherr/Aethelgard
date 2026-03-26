@@ -101,31 +101,6 @@
 ### ÉPICA E10 — Motor de Backtesting Inteligente (EDGE Evaluation Framework)
 *Trace_ID: EDGE-BACKTEST-EVAL-FRAMEWORK-2026-03-24 | Sprint activo: 9+*
 
-* **HU 7.13: Rediseño semántico de affinity_scores**
-    * **Prioridad**: Alta
-    * **Épica**: E10 | **Dominio**: 07_ADAPTIVE_LEARNING
-    * **Trace_ID**: EDGE-BKT-713-AFFINITY-REDESIGN-2026-03-24
-    * **Dependencia**: HU 7.8 ✅
-    * **Contexto**: `affinity_scores` almacena opiniones del desarrollador (`{"EUR/USD": 0.92}`) que el código nunca usa como scores — busca `confidence_threshold` y `risk_reward` que no existen. El campo está semánticamente roto.
-    * **Descripción**: Redefinir `affinity_scores` como OUTPUT exclusivo del proceso de evaluación empírica:
-        ```json
-        {
-          "EURUSD": {
-            "effective_score": 0.71, "raw_score": 0.84, "confidence": 0.83,
-            "n_trades": 52, "profit_factor": 1.74, "max_drawdown": 0.11,
-            "win_rate": 0.57, "optimal_timeframe": "M15",
-            "regime_evaluated": "TREND", "status": "QUALIFIED",
-            "cycles": 3, "last_updated": "2026-03-24T18:46:08Z"
-          }
-        }
-        ```
-    * **Criterios de aceptación**:
-        - Migration limpia el contenido actual en las 6 estrategias
-        - `_extract_parameter_overrides()` lee `execution_params` (no `affinity_scores`)
-        - `_update_strategy_scores()` escribe la estructura completa por par
-        - Tests verifican que el score por par incluye todos los campos requeridos
-    * **Artefactos**: `core_brain/backtest_orchestrator.py`, `data_vault/schema.py`
-
 * **HU 7.14: Backtesting multi-par secuencial**
     * **Prioridad**: Alta
     * **Épica**: E10 | **Dominio**: 07_ADAPTIVE_LEARNING

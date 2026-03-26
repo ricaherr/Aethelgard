@@ -26,7 +26,7 @@ Trace_ID: EDGE-BACKTEST-HU712-ADAPTIVE-SCHEDULER-2026-03-25
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 from core_brain.operational_mode_manager import BacktestBudget, OperationalModeManager
 from data_vault.storage import StorageManager
@@ -129,7 +129,7 @@ class AdaptiveBacktestScheduler:
           tier 1 — score=0, has been run  (P2)
           tier 2 — has score              (P3, oldest first)
         """
-        def _key(s: Dict):
+        def _key(s: Dict) -> Tuple[int, str]:
             score     = float(s.get("score_backtest") or 0.0)
             last_run  = s.get("last_backtest_at")
             never_run = last_run is None

@@ -1094,6 +1094,34 @@ def run_migrations(conn: sqlite3.Connection) -> None:
         )
         logger.info("Migration applied: sys_strategies.execution_params added.")
 
+    # HU 7.13: Reset affinity_scores to {} for strategies with legacy developer-opinion
+    # content.  affinity_scores is now exclusively an empirical output written by
+    # BacktestOrchestrator._write_pair_affinity(); old values are meaningless.
+    # TRACE_ID: EDGE-BKT-713-AFFINITY-REDESIGN-2026-03-24
+    cursor.execute(
+        """
+        UPDATE sys_strategies
+        SET affinity_scores = '{}'
+        WHERE affinity_scores != '{}'
+          AND affinity_scores IS NOT NULL
+          AND json_valid(affinity_scores) = 1
+          AND (
+              -- Legacy format: top-level keys look like "EUR/USD" or plain symbols with float values
+              -- Detect by checking if ANY value is a plain number (not an object)
+              EXISTS (
+                  SELECT 1 FROM json_each(affinity_scores)
+                  WHERE json_type(value) IN ('real', 'integer')
+              )
+          )
+        """
+    )
+    if cursor.rowcount:
+        logger.info(
+            "Migration applied: affinity_scores reset to {} for %d strategies "
+            "(HU 7.13 — legacy developer-opinion content removed).",
+            cursor.rowcount,
+        )
+
     # instruments_config: seed only when key is absent (never overwrite existing data)
     cursor.execute("SELECT 1 FROM sys_config WHERE key = ?", ("instruments_config",))
     if cursor.fetchone() is None:

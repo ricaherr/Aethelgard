@@ -11,6 +11,37 @@
 
 ---
 
+# SPRINT 13: BACKTEST ENGINE — AFFINITY SCORES SEMANTIC REDESIGN — [DONE]
+
+**Inicio**: 25 de Marzo, 2026
+**Fin**: 25 de Marzo, 2026
+**Objetivo**: Corregir el bug semántico de `affinity_scores` (usaba opiniones del desarrollador como parámetros operativos) y redefinirlo como output exclusivo del proceso de evaluación empírica por par.
+**Épica**: E10 | **Trace_ID**: EDGE-BKT-713-AFFINITY-REDESIGN-2026-03-24
+**Dominios**: 07_ADAPTIVE_LEARNING
+
+## 📋 Tareas del Sprint
+
+- [DONE] **HU 7.13: Rediseño semántico de affinity_scores**
+  - `BacktestOrchestrator._extract_parameter_overrides()`: corregido para leer `execution_params` (no `affinity_scores`)
+  - SELECT queries en `_load_backtest_strategies()` y `_load_strategy()`: añaden `execution_params`
+  - `BacktestOrchestrator._update_strategy_scores()`: firma ampliada con `symbol` y `matrix` opcionales
+  - Nuevo método `BacktestOrchestrator._write_pair_affinity()`: escribe estructura semántica por par con 12 campos: `effective_score, raw_score, confidence, n_trades, profit_factor, max_drawdown, win_rate, optimal_timeframe, regime_evaluated, status, cycles, last_updated`
+  - Lógica de status: `QUALIFIED` (≥0.55) · `REJECTED` (<0.20) · `PENDING` (0.20–0.54)
+  - `_execute_backtest()`: extrae `symbol` y pasa `matrix` a `_update_strategy_scores()`
+  - `data_vault/schema.py`: migración `run_migrations()` resetea `affinity_scores = '{}'` para estrategias con contenido legacy (valores numéricos top-level)
+  - TDD: 15 tests en `tests/test_backtest_affinity_redesign.py` — 15/15 PASSED
+
+## 📊 Snapshot de Cierre
+
+- **Tests añadidos**: 15
+- **Tests totales (módulos afectados)**: 15/15 PASSED
+- **Archivos nuevos**: `tests/test_backtest_affinity_redesign.py`
+- **Archivos modificados**: `core_brain/backtest_orchestrator.py`, `data_vault/schema.py`
+- **HUs completadas**: HU 7.13
+- **Desbloqueadas para siguiente sprint**: HU 7.14, HU 7.15, HU 7.16 (paralelo a 7.14)
+
+---
+
 # SPRINT 12: BACKTEST ENGINE — MULTI-TIMEFRAME, REGIME CLASSIFIER & ADAPTIVE SCHEDULER — [DONE]
 
 **Inicio**: 25 de Marzo, 2026
