@@ -295,6 +295,23 @@ class BacktestOrchestrator:
 
             # Step 4: Persist per-pair affinity entry
             self._write_pair_affinity(cursor, strategy_id, symbol, matrix.overall_score, matrix, strategy)
+
+            # Step 5: Update sys_strategy_pair_coverage (HU 7.17)
+            ep_dict = json.loads((strategy.get("execution_params") or "{}") or "{}")
+            k = float(ep_dict.get("confidence_k", self._cfg.get("confidence_k", 20)))
+            n_t = int(getattr(matrix, "total_trades", 0))
+            eff = round(matrix.overall_score * float(n_t / (n_t + k)) if n_t > 0 else 0.0, 4)
+            if eff >= 0.55:
+                cov_status = "QUALIFIED"
+            elif eff < 0.20 and n_t > 0 and (n_t / (n_t + k)) >= 0.50:
+                cov_status = "REJECTED"
+            else:
+                cov_status = "PENDING"
+            detected_regime = self._get_current_regime_label(strategy, symbol, timeframe)
+            self._write_pair_coverage(
+                cursor, strategy_id, symbol, timeframe, detected_regime,
+                n_trades=n_t, effective_score=eff, status=cov_status,
+            )
             conn.commit()
 
             matrices.append(matrix)
@@ -804,6 +821,71 @@ class BacktestOrchestrator:
             "confidence_threshold": params.get("confidence_threshold", 0.75),
             "risk_reward": params.get("risk_reward", 1.5),
         }
+
+    def _get_current_regime_label(self, strategy: Dict, symbol: str, timeframe: str) -> str:
+        """
+        Return the current detected regime for (symbol, timeframe).
+
+        Uses the same detection path as _passes_regime_prefilter so the result is
+        consistent with what was checked at filter time.  Falls back to
+        required_regime (or 'MIXED' when required='ANY') when data is insufficient.
+
+        HU 7.17 — used to label sys_strategy_pair_coverage rows.
+        """
+        required = str(strategy.get("required_regime") or "ANY").upper()
+        required = _REGIME_ALIAS.get(required, required)
+        if required != "ANY":
+            # Prefilter already validated this regime → reuse it directly to avoid
+            # a second OHLC fetch.
+            return required
+        # For ANY strategies, detect the actual current regime.
+        try:
+            raw = self.dpm.fetch_ohlc(symbol, timeframe, 50)
+            df = self._to_dataframe(raw)
+            if df is not None and len(df) >= 14:
+                detected = self.backtester._detect_regime(df, "RANGE").upper()
+                return _REGIME_ALIAS.get(detected, detected)
+        except Exception:
+            pass
+        return "MIXED"
+
+    def _write_pair_coverage(
+        self,
+        cursor: Any,
+        strategy_id: str,
+        symbol: str,
+        timeframe: str,
+        regime: str,
+        n_trades: int,
+        effective_score: float,
+        status: str,
+    ) -> None:
+        """
+        Upsert one row in sys_strategy_pair_coverage for the evaluated (strategy, symbol,
+        timeframe, regime) combination.
+
+        On conflict (same unique key), increment n_cycles by 1 and update the
+        score, trade count, status, and last_evaluated_at timestamp.
+
+        HU 7.17 — EDGE-BKT-717-COVERAGE-TABLE-2026-03-24
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        cursor.execute(
+            """
+            INSERT INTO sys_strategy_pair_coverage
+                (strategy_id, symbol, timeframe, regime, n_cycles, n_trades_total,
+                 effective_score, status, last_evaluated_at)
+            VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)
+            ON CONFLICT(strategy_id, symbol, timeframe, regime) DO UPDATE SET
+                n_cycles        = n_cycles + 1,
+                n_trades_total  = excluded.n_trades_total,
+                effective_score = excluded.effective_score,
+                status          = excluded.status,
+                last_evaluated_at = excluded.last_evaluated_at
+            """,
+            (strategy_id, symbol, timeframe, regime, n_trades,
+             round(effective_score, 4), status, now),
+        )
 
     def _write_regime_incompatible(
         self,

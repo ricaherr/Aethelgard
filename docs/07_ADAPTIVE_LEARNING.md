@@ -1636,3 +1636,91 @@ El guard `confidence >= 0.50` en REJECTED evita marcar permanentemente como frac
 
 **Tests**: 17 tests en `tests/test_backtest_confidence_scoring.py` — 17/17 PASSED.
 
+---
+
+## ⚙️ HU 7.16 — Filtro de compatibilidad de régimen pre-evaluación (25-Mar-2026)
+
+**Trace_ID**: `EDGE-BKT-716-REGIME-FILTER-2026-03-24`
+
+### Comportamiento
+
+Antes de procesar un par en el loop multi-par de `_execute_backtest()`, se verifica que el régimen actual del mercado sea compatible con `strategy.required_regime`. Si hay incompatibilidad, el par se registra como `REGIME_INCOMPATIBLE` para el ciclo actual (no es un rechazo permanente) y se omite sin fetchear barras adicionales.
+
+### `_passes_regime_prefilter(strategy, symbol, timeframe) → bool`
+
+**Política de evaluación**:
+| Caso | Resultado |
+|---|---|
+| `required_regime = 'ANY'` (o `None` / ausente) | `True` — filtro no aplica |
+| Datos insuficientes (`< 14` bars) o sin datos | `True` — fail-open (no bloquea evaluación) |
+| `detected_regime == required_regime` | `True` — compatible |
+| `detected_regime != required_regime` | `False` — incompatible |
+
+**Aliases normalizados**: `VOLATILITY → VOLATILE`, `TRENDING → TREND`. Fail-open garantiza que problemas de datos no bloqueen estrategias legítimas.
+
+### `_write_regime_incompatible(cursor, strategy_id, symbol, strategy)`
+
+Escribe en `affinity_scores[symbol]`:
+- `"status": "REGIME_INCOMPATIBLE"`
+- `"last_updated": <ISO 8601 timestamp UTC>`
+- Datos históricos del par (score, cycles, n_trades) se **preservan** usando `{**existing, ...}`.
+
+El par puede ser evaluado normalmente en el siguiente ciclo si el régimen cambia.
+
+### Criterios de aceptación verificados
+
+- **AC1**: Estrategia `required_regime='TREND'` con detected=RANGE → `_passes_regime_prefilter()` retorna `False` → par omitido en `_execute_backtest()`
+- **AC2**: `_write_regime_incompatible()` persiste `status=REGIME_INCOMPATIBLE` + timestamp ISO 8601 + datos históricos intactos
+- **AC3**: `required_regime='ANY'` → `True` en todos los casos (incluyendo `None` y campo ausente)
+
+**Tests**: 14 tests en `tests/test_backtest_regime_compatibility_filter.py` — 14/14 PASSED.
+
+---
+
+## ⚙️ HU 7.17 — Tabla sys_strategy_pair_coverage (25-Mar-2026)
+
+**Trace_ID**: `EDGE-BKT-717-COVERAGE-TABLE-2026-03-24`
+
+### Propósito
+
+Registra la cobertura empírica del sistema de backtesting por combinación `(strategy_id, symbol, timeframe, regime)`. Permite saber qué pares han sido evaluados, cuántos ciclos acumulan, y cuál es su score efectivo y estatus actual.
+
+### DDL (`data_vault/schema.py` → `initialize_schema()`)
+
+```sql
+CREATE TABLE IF NOT EXISTS sys_strategy_pair_coverage (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    strategy_id       TEXT NOT NULL,
+    symbol            TEXT NOT NULL,
+    timeframe         TEXT NOT NULL,
+    regime            TEXT NOT NULL,
+    n_cycles          INTEGER   DEFAULT 0,
+    n_trades_total    INTEGER   DEFAULT 0,
+    effective_score   REAL      DEFAULT 0.0,
+    status            TEXT      DEFAULT 'PENDING',
+    last_evaluated_at TIMESTAMP,
+    created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(strategy_id, symbol, timeframe, regime)
+);
+```
+
+Índices: `idx_coverage_strategy_id`, `idx_coverage_status`.
+
+### `_write_pair_coverage(cursor, strategy_id, symbol, timeframe, regime, n_trades, effective_score, status)`
+
+UPSERT en `sys_strategy_pair_coverage`:
+- **Primera inserción**: `n_cycles = 1`
+- **Conflicto (misma clave única)**: `n_cycles += 1`, actualiza `n_trades_total`, `effective_score`, `status`, `last_evaluated_at`
+
+### `_get_current_regime_label(strategy, symbol, timeframe) → str`
+
+Helper para determinar el régimen a registrar en la fila de cobertura:
+- Si `required_regime != ANY`: retorna `required_regime` directamente (el prefilter ya lo validó)
+- Si `required_regime == ANY`: detecta el régimen real del mercado vía `_detect_regime()`; fallback a `"MIXED"` si los datos son insuficientes
+
+### Integración en `_execute_backtest()`
+
+Step 5 (tras `_write_pair_affinity()`): calcula `effective_score`, `status` y `detected_regime` para el par evaluado y llama `_write_pair_coverage()`.
+
+**Tests**: 11 tests en `tests/test_strategy_pair_coverage_table.py` — 11/11 PASSED.
+

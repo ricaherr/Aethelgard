@@ -11,6 +11,63 @@
 
 ---
 
+# SPRINT 17: BACKTEST ENGINE — STRATEGY PAIR COVERAGE TABLE — [DONE]
+
+**Inicio**: 25 de Marzo, 2026
+**Fin**: 25 de Marzo, 2026
+**Objetivo**: Crear la tabla `sys_strategy_pair_coverage` para rastrear cobertura empírica por (estrategia, símbolo, timeframe, régimen) e integrar su escritura en `BacktestOrchestrator` al completar cada evaluación de par.
+**Épica**: E10 | **Trace_ID**: EDGE-BKT-717-COVERAGE-TABLE-2026-03-24
+**Dominios**: 07_ADAPTIVE_LEARNING, 08_DATA_SOVEREIGNTY
+
+## 📋 Tareas del Sprint
+
+- [DONE] **HU 7.17: Tabla sys_strategy_pair_coverage**
+  - DDL en `initialize_schema()`: tabla con 11 columnas, UNIQUE(strategy_id, symbol, timeframe, regime), índices en strategy_id y status
+  - `BacktestOrchestrator._write_pair_coverage()`: UPSERT que incrementa `n_cycles` en conflicto y actualiza score/status/timestamp
+  - `BacktestOrchestrator._get_current_regime_label()`: helper que retorna el régimen detectado (reusa required_regime para estrategias no-ANY; detecta régimen real para ANY)
+  - `_execute_backtest()` llama a `_write_pair_coverage()` al finalizar cada par (Step 5, tras `_write_pair_affinity`)
+  - Migration idempotente: `CREATE TABLE IF NOT EXISTS` + idxs `IF NOT EXISTS`
+
+## 📊 Snapshot de Cierre
+
+- **Tests añadidos**: 11
+- **Tests totales (módulos afectados)**: 111/111 PASSED · validate_all 27/27
+- **Archivos nuevos**: `tests/test_strategy_pair_coverage_table.py`
+- **Archivos modificados**: `data_vault/schema.py`, `core_brain/backtest_orchestrator.py`
+- **HUs completadas**: HU 7.17
+- **Desbloqueadas para siguiente sprint**: HU 7.18 (Scheduler inteligente)
+
+---
+
+# SPRINT 16: BACKTEST ENGINE — REGIME COMPATIBILITY FILTER — [DONE]
+
+**Inicio**: 25 de Marzo, 2026
+**Fin**: 25 de Marzo, 2026
+**Objetivo**: Formalizar y cubrir con tests explícitos el filtro de compatibilidad de régimen pre-evaluación: estrategias con `required_regime='TREND'` no procesan pares en RANGE; pares incompatibles quedan marcados `REGIME_INCOMPATIBLE` con timestamp; estrategias con `required_regime='ANY'` no aplican el filtro.
+**Épica**: E10 | **Trace_ID**: EDGE-BKT-716-REGIME-FILTER-2026-03-24
+**Dominios**: 07_ADAPTIVE_LEARNING
+
+## 📋 Tareas del Sprint
+
+- [DONE] **HU 7.16: Filtro de compatibilidad de régimen pre-evaluación**
+  - Comportamiento ya implementado en HU 7.9 (`_passes_regime_prefilter()`) y HU 7.14 (`_write_regime_incompatible()`, loop multi-par)
+  - 14 tests explícitos en `tests/test_backtest_regime_compatibility_filter.py` cubriendo los 3 AC de la HU
+  - AC1: `required_regime='TREND'` → False cuando detected=RANGE
+  - AC2: `_write_regime_incompatible()` persiste `REGIME_INCOMPATIBLE` + `last_updated` timestamp + preserva datos históricos
+  - AC3: `required_regime='ANY'` siempre retorna True (y `None` / campo ausente tratado como ANY)
+  - Casos adicionales: alias `TRENDING→TREND`, fail-open con <14 bars o sin datos, sin efectos en otros símbolos
+
+## 📊 Snapshot de Cierre
+
+- **Tests añadidos**: 14
+- **Tests totales (módulos afectados)**: 100/100 PASSED · validate_all 27/27
+- **Archivos nuevos**: `tests/test_backtest_regime_compatibility_filter.py`
+- **Archivos modificados**: ninguno (implementación pre-existente)
+- **HUs completadas**: HU 7.16
+- **Desbloqueadas para siguiente sprint**: HU 7.17, HU 7.18
+
+---
+
 # SPRINT 15: BACKTEST ENGINE — STATISTICAL CONFIDENCE SCORING — [DONE]
 
 **Inicio**: 25 de Marzo, 2026

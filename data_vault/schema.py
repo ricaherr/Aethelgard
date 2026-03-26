@@ -781,6 +781,33 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
     # Seed usr_notification_settings
     _seed_usr_notification_settings(cursor)
 
+    # ── HU 7.17 — EDGE Evaluation Framework: Per-pair coverage tracking ────────
+    # TRACE_ID: EDGE-BKT-717-COVERAGE-TABLE-2026-03-24
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sys_strategy_pair_coverage (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            strategy_id       TEXT NOT NULL,
+            symbol            TEXT NOT NULL,
+            timeframe         TEXT NOT NULL,
+            regime            TEXT NOT NULL,
+            n_cycles          INTEGER   DEFAULT 0,
+            n_trades_total    INTEGER   DEFAULT 0,
+            effective_score   REAL      DEFAULT 0.0,
+            status            TEXT      DEFAULT 'PENDING',
+            last_evaluated_at TIMESTAMP,
+            created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(strategy_id, symbol, timeframe, regime)
+        )
+    """)
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_coverage_strategy_id "
+        "ON sys_strategy_pair_coverage (strategy_id)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_coverage_status "
+        "ON sys_strategy_pair_coverage (status)"
+    )
+
     conn.commit()
     logger.info("Schema initialized (all tables & indexes present).")
 

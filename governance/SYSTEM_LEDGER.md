@@ -4,7 +4,7 @@
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-25 UTC)**: Trace_ID: EDGE-BKT-715-CONFIDENCE-SCORING-2026-03-24 | Sprint 15 archivado: HU 7.15 completada · 17/17 PASSED · validate_all 27/27 · HU 7.16, 7.17 desbloqueadas.
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-25 UTC)**: Trace_ID: EDGE-BKT-717-COVERAGE-TABLE-2026-03-24 | Sprint 17 archivado: HU 7.17 completada · 11/11 PASSED · validate_all 27/27 · HU 7.18 desbloqueada.
 
 ---
 
@@ -26,6 +26,30 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 ---
 
 ## 🏛️ ÉPICAS ARCHIVADAS
+
+### Sprint 17 — Motor de Backtesting Inteligente — Strategy Pair Coverage Table (25-Mar-2026)
+**Trace_ID**: `EDGE-BKT-717-COVERAGE-TABLE-2026-03-24` | **Épica**: E10 (Sprint parcial — continúa) | **Estado**: Sprint cerrado · E10 ACTIVA (2 HUs pendientes)
+
+| HU | Descripción | Artefactos clave | Tests |
+|---|---|---|---|
+| **HU 7.17** | Tabla `sys_strategy_pair_coverage` con DDL en `initialize_schema()`. UNIQUE(strategy_id, symbol, timeframe, regime). `BacktestOrchestrator._write_pair_coverage()`: UPSERT idempotente que incrementa `n_cycles` y actualiza score/status/timestamp. `_get_current_regime_label()`: helper para etiquetar la fila con el régimen detectado. Integrado en `_execute_backtest()` como Step 5 tras `_write_pair_affinity()`. | `data_vault/schema.py`, `core_brain/backtest_orchestrator.py` | 11/11 |
+
+**Suite total**: 111/111 PASSED módulos backtest · validate_all 27/27 · 0 regresiones · +11 tests nuevos
+**HUs desbloqueadas**: HU 7.18 (Scheduler inteligente — prioritized queue)
+
+---
+
+### Sprint 16 — Motor de Backtesting Inteligente — Regime Compatibility Filter (25-Mar-2026)
+**Trace_ID**: `EDGE-BKT-716-REGIME-FILTER-2026-03-24` | **Épica**: E10 (Sprint parcial — continúa) | **Estado**: Sprint cerrado · E10 ACTIVA (3 HUs pendientes)
+
+| HU | Descripción | Artefactos clave | Tests |
+|---|---|---|---|
+| **HU 7.16** | Filtro de compatibilidad de régimen pre-evaluación formalizado con 14 tests explícitos. `_passes_regime_prefilter()` verifica `required_regime` vs régimen detectado; retorna False si hay mismatch con datos suficientes, True si `ANY`/datos insuficientes (fail-open). `_write_regime_incompatible()` persiste `REGIME_INCOMPATIBLE` + timestamp sin destruir datos históricos del par. Alias `TRENDING→TREND` y `None/missing→ANY` soportados. | `core_brain/backtest_orchestrator.py` (preexistente) | 14/14 |
+
+**Suite total**: 100/100 PASSED módulos backtest · validate_all 27/27 · 0 regresiones · +14 tests nuevos
+**HUs desbloqueadas**: HU 7.17 (tabla coverage), HU 7.18 (scheduler inteligente)
+
+---
 
 ### Sprint 15 — Motor de Backtesting Inteligente — Statistical Confidence Scoring (25-Mar-2026)
 **Trace_ID**: `EDGE-BKT-715-CONFIDENCE-SCORING-2026-03-24` | **Épica**: E10 (Sprint parcial — continúa) | **Estado**: Sprint cerrado · E10 ACTIVA (4 HUs pendientes)

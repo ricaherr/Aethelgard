@@ -101,45 +101,6 @@
 ### ÉPICA E10 — Motor de Backtesting Inteligente (EDGE Evaluation Framework)
 *Trace_ID: EDGE-BACKTEST-EVAL-FRAMEWORK-2026-03-24 | Sprint activo: 9+*
 
-* **HU 7.16: Filtro de compatibilidad de régimen pre-evaluación**
-    * **Prioridad**: Media
-    * **Épica**: E10 | **Dominio**: 07_ADAPTIVE_LEARNING
-    * **Trace_ID**: EDGE-BKT-716-REGIME-FILTER-2026-03-24
-    * **Dependencia**: HU 7.8 ✅, HU 7.10
-    * **Descripción**: Antes de fetchear datos para un par, verificar si el régimen actual es compatible con `strategy.required_regime`. Si no coincide → estado `REGIME_INCOMPATIBLE` para este ciclo (no rechazo permanente). El scheduler prioriza estos pares cuando el régimen compatibiliza.
-    * **Criterios de aceptación**:
-        - Estrategia con `required_regime='TREND'` no fetchea datos de un par en RANGE
-        - El par queda marcado `REGIME_INCOMPATIBLE` con timestamp
-        - Estrategias con `required_regime='ANY'` no aplican el filtro
-    * **Artefactos**: `core_brain/backtest_orchestrator.py`
-
-* **HU 7.17: Tabla sys_strategy_pair_coverage**
-    * **Prioridad**: Media
-    * **Épica**: E10 | **Dominio**: 07_ADAPTIVE_LEARNING
-    * **Trace_ID**: EDGE-BKT-717-COVERAGE-TABLE-2026-03-24
-    * **Descripción**: Nueva tabla DDL en `schema.py`:
-        ```sql
-        CREATE TABLE IF NOT EXISTS sys_strategy_pair_coverage (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            strategy_id     TEXT NOT NULL,
-            symbol          TEXT NOT NULL,
-            timeframe       TEXT NOT NULL,
-            regime          TEXT NOT NULL,
-            n_cycles        INTEGER DEFAULT 0,
-            n_trades_total  INTEGER DEFAULT 0,
-            effective_score REAL    DEFAULT 0.0,
-            status          TEXT    DEFAULT 'PENDING',
-            last_evaluated_at TIMESTAMP,
-            created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(strategy_id, symbol, timeframe, regime)
-        );
-        ```
-    * **Criterios de aceptación**:
-        - Migration idempotente
-        - `BacktestOrchestrator` escribe en esta tabla al completar cada evaluación de par
-        - Tests de migration verifican idempotencia
-    * **Artefactos**: `data_vault/schema.py`
-
 * **HU 7.18: Scheduler inteligente de backtests — prioritized queue**
     * **Prioridad**: Media
     * **Épica**: E10 | **Dominio**: 07_ADAPTIVE_LEARNING
