@@ -11,6 +11,43 @@
 
 ---
 
+# SPRINT 23: EDGE RELIABILITY — CERTEZA DE COMPONENTES & AUTO-AUDITORÍA — [DEV]
+
+**Inicio**: 27 de Marzo, 2026
+**Fin**: por definir
+**Objetivo**: Garantizar que el sistema se auto-audita en tiempo real mediante la activación del `OperationalEdgeMonitor` en producción, añadir guards de timeout en el loop principal para convertir bloqueos silenciosos en eventos observables, y establecer tests de contrato que conviertan cada bug conocido en una red de seguridad permanente contra regresiones.
+**Épica**: E13 (EDGE Reliability) | **Trace_ID**: EDGE-RELIABILITY-SELF-AUDIT-2026
+**Dominios**: 10_INFRASTRUCTURE_RESILIENCY
+
+## 📋 Tareas del Sprint
+
+- [TODO] **HU 10.10: OEM Production Integration**
+  - `start.py`: instanciar `OperationalEdgeMonitor` con `shadow_storage` inyectado, arrancar thread daemon después de `ShadowManager`
+  - Verificar que el check `shadow_sync` evalúa instancias reales (no WARN por shadow_storage ausente)
+  - `tests/test_oem_production_integration.py`: test de integración — OEM inicia con `shadow_storage != None` y primer ciclo de checks se ejecuta
+
+- [TODO] **HU 10.11: OEM Loop Heartbeat Check**
+  - `core_brain/operational_edge_monitor.py`: añadir `_check_orchestrator_heartbeat()` como noveno check
+  - Umbrales: `OK` < 10 min, `WARN` 10-20 min, `FAIL` > 20 min — configurables desde `sys_config`
+  - Ajustar `get_health_summary()`: CRITICAL si >= 2 checks fallidos (antes 3)
+  - `tests/test_oem_heartbeat_check.py`: casos OK/WARN/FAIL + integración con health_summary
+
+- [TODO] **HU 10.12: Timeout Guards en run_single_cycle**
+  - `core_brain/main_orchestrator.py`: `asyncio.wait_for()` en `_request_scan()` (120s), `_check_and_run_daily_backtest()` (300s), `position_manager.monitor_usr_positions()` (60s)
+  - `shadow_manager.evaluate_all_instances()`: mover a `asyncio.to_thread()` con timeout 60s (elimina bloqueo síncrono del event loop)
+  - Timeouts configurables: `sys_config` claves `phase_timeout_scan_s`, `phase_timeout_backtest_s`
+  - `tests/test_orchestrator_timeout_guards.py`: mock que no retorna → verificar ciclo continúa y logea `[TIMEOUT]`
+
+- [TODO] **HU 10.13: Contract Tests — Bugs Conocidos**
+  - `tests/test_contracts_known_bugs.py`: 4 tests de contrato (ver HU 10.13 en BACKLOG)
+    1. `pilar3_min_trades` dinámico: instancia con 8 trades → HEALTHY si DB dice min_trades=5
+    2. `_degrade_strategy()` huérfano: verificar comportamiento real y alinear docstring con código
+    3. Métricas SHADOW en WebSocket: `broadcast_shadow_update` contiene profit_factor/win_rate reales
+    4. `calculate_weighted_score`: integrar en flujo o eliminar dead code
+  - Cada test debe estar RED antes del fix correspondiente, GREEN después
+
+---
+
 # SPRINT 22: SYS_TRADES — SEPARACIÓN EJECUCIÓN SISTEMA vs TENANT — [DONE]
 
 **Inicio**: 26 de Marzo, 2026
