@@ -189,19 +189,19 @@ class TestOemApiEndpoint:
         # Cleanup
         set_oem_instance(None)
 
-    def test_endpoint_retorna_unavailable_si_oem_no_inicializado(self):
-        """Sin OEM registrado, el endpoint debe retornar status UNAVAILABLE."""
-        from core_brain.server import set_oem_instance
-
-        set_oem_instance(None)
-
+    def test_endpoint_retorna_unavailable_si_no_hay_snapshot_en_db(self):
+        """Sin snapshot OEM en DB, el endpoint debe retornar status UNAVAILABLE."""
+        from unittest.mock import patch, MagicMock
         from fastapi.testclient import TestClient
         from core_brain.server import create_app
 
-        app = create_app()
-        client = TestClient(app, raise_server_exceptions=False)
+        mock_storage = MagicMock()
+        mock_storage.get_sys_config.return_value = {}  # no oem_health_snapshot key
 
-        response = client.get("/api/system/health/edge")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status"] == "UNAVAILABLE"
+        with patch("data_vault.storage.StorageManager", return_value=mock_storage):
+            app = create_app()
+            client = TestClient(app, raise_server_exceptions=False)
+            response = client.get("/api/system/health/edge")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "UNAVAILABLE"

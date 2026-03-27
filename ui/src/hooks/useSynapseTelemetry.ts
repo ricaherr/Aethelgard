@@ -140,8 +140,18 @@ export const useSynapseTelemetry = (token?: string): UseSynapseTelemetryHook => 
 
       ws.current.onmessage = (event) => {
         try {
-          const data = JSON.parse(event.data) as SynapseTelemetry;
-          
+          const raw = JSON.parse(event.data);
+
+          // Discard server-side error/ping messages that lack telemetry shape
+          if (!raw || typeof raw !== 'object' || raw.type === 'error' || raw.type === 'pong' || !raw.system_heartbeat) {
+            if (raw?.type === 'error') {
+              console.warn("[SYNAPSE] Server error message:", raw.message);
+            }
+            return;
+          }
+
+          const data = raw as SynapseTelemetry;
+
           // Performance optimization: throttle updates to target FPS
           const now = performance.now();
           const timeSinceLastFrame = now - lastFrameTime.current;

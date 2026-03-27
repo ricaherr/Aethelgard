@@ -37,7 +37,7 @@ export const MonitorPage = ({ status, thoughts, runAudit, runRepair }: MonitorPa
         <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="flex flex-col gap-6 h-full p-2"
+            className="flex flex-col gap-6 p-2 pb-8"
         >
             {/* Header / Global Status */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -105,7 +105,7 @@ export const MonitorPage = ({ status, thoughts, runAudit, runRepair }: MonitorPa
             </div>
 
             {/* Main Diagnostics Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1 min-h-0">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 min-h-[420px]">
                 {/* Satellite Network */}
                 <GlassPanel className="p-6 flex flex-col border-white/5 group overflow-hidden">
                     <div className="flex items-center justify-between mb-6">
@@ -312,24 +312,24 @@ export const MonitorPage = ({ status, thoughts, runAudit, runRepair }: MonitorPa
                     <div className="flex flex-col gap-1">
                         <span className="text-[9px] text-white/30 uppercase tracking-widest">CPU</span>
                         <span className="text-sm font-mono font-bold text-white/80">
-                            {liveData ? `${liveData.system_heartbeat.cpu_percent.toFixed(1)}%` : '—'}
+                            {liveData?.system_heartbeat ? `${liveData.system_heartbeat.cpu_percent.toFixed(1)}%` : '—'}
                         </span>
                     </div>
                     <div className="flex flex-col gap-1">
                         <span className="text-[9px] text-white/30 uppercase tracking-widest">Memory</span>
                         <span className="text-sm font-mono font-bold text-white/80">
-                            {liveData ? `${liveData.system_heartbeat.memory_mb.toFixed(0)} MB` : '—'}
+                            {liveData?.system_heartbeat ? `${liveData.system_heartbeat.memory_mb.toFixed(0)} MB` : '—'}
                         </span>
                     </div>
                     <div className="flex flex-col gap-1">
                         <span className="text-[9px] text-white/30 uppercase tracking-widest">Risk Mode</span>
                         <span className={cn(
                             "text-sm font-mono font-bold",
-                            liveData?.risk_buffer.risk_mode === 'DEFENSIVE' ? 'text-orange-400' :
-                            liveData?.risk_buffer.risk_mode === 'AGGRESSIVE' ? 'text-red-400' :
+                            liveData?.risk_buffer?.risk_mode === 'DEFENSIVE' ? 'text-orange-400' :
+                            liveData?.risk_buffer?.risk_mode === 'AGGRESSIVE' ? 'text-red-400' :
                             'text-aethelgard-green'
                         )}>
-                            {liveData?.risk_buffer.risk_mode ?? '—'}
+                            {liveData?.risk_buffer?.risk_mode ?? '—'}
                         </span>
                     </div>
                     <div className="flex flex-col gap-1">
@@ -338,7 +338,7 @@ export const MonitorPage = ({ status, thoughts, runAudit, runRepair }: MonitorPa
                             "text-sm font-mono font-bold",
                             (liveData?.anomalies.count_last_5m ?? 0) > 0 ? 'text-red-400' : 'text-white/50'
                         )}>
-                            {liveData ? liveData.anomalies.count_last_5m : '—'}
+                            {liveData?.anomalies ? liveData.anomalies.count_last_5m : '—'}
                         </span>
                     </div>
                 </div>

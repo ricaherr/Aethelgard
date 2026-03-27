@@ -439,25 +439,29 @@ async def get_edge_health() -> Dict[str, Any]:
     """
     Retorna el estado de salud operacional del sistema según el OperationalEdgeMonitor.
 
-    Incluye los 9 checks de invariantes de negocio con su estado (OK/WARN/FAIL),
-    el estado global (OK/DEGRADED/CRITICAL) y el timestamp del último ciclo.
-
-    No requiere autenticación — es un endpoint de observabilidad pública del sistema.
+    Lee desde la DB (sys_config.oem_health_snapshot) para funcionar correctamente
+    cuando el OEM corre en un proceso separado al del servidor API.
     """
-    from core_brain.server import get_oem_instance
-    oem = get_oem_instance()
-    if oem is None:
-        return {
-            "status": "UNAVAILABLE",
-            "message": "OperationalEdgeMonitor no inicializado — el sistema puede estar arrancando",
-            "checks": {},
-            "failing": [],
-            "warnings": [],
-            "last_checked_at": None,
-        }
-    summary = oem.get_health_summary()
-    summary["last_checked_at"] = oem.last_checked_at
-    return summary
+    import json as _json
+    from data_vault.storage import StorageManager
+    try:
+        storage = StorageManager()
+        sys_config = storage.get_sys_config()
+        raw = sys_config.get("oem_health_snapshot")
+        if raw:
+            snapshot = _json.loads(raw) if isinstance(raw, str) else raw
+            return snapshot
+    except Exception as exc:
+        logger.warning("[OEM] Error reading health snapshot from DB: %s", exc)
+
+    return {
+        "status": "UNAVAILABLE",
+        "message": "OperationalEdgeMonitor no inicializado — el sistema puede estar arrancando",
+        "checks": {},
+        "failing": [],
+        "warnings": [],
+        "last_checked_at": None,
+    }
 
 
 @router.get("/scanner/status")

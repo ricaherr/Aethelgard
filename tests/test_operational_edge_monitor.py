@@ -105,20 +105,20 @@ class TestCheckShadowSync:
 
 class TestCheckBacktestQuality:
     def test_fail_when_all_scores_are_zero(self):
-        """Todas las estrategias con score_backtest=0 → FAIL."""
+        """Estrategias en BACKTEST con score_backtest=0 → FAIL."""
         rankings = [
-            {"strategy_id": "S1", "score_backtest": 0},
-            {"strategy_id": "S2", "score_backtest": 0},
+            {"strategy_id": "S1", "score_backtest": 0, "execution_mode": "BACKTEST"},
+            {"strategy_id": "S2", "score_backtest": 0, "execution_mode": "BACKTEST"},
         ]
         monitor = OperationalEdgeMonitor(storage=_make_storage(rankings=rankings))
         result = monitor._check_backtest_quality()
         assert result.status == CheckStatus.FAIL
 
     def test_ok_when_at_least_one_score_positive(self):
-        """Al menos una estrategia con backtest_score > 0 → OK."""
+        """Al menos una estrategia BACKTEST con backtest_score > 0 → OK."""
         rankings = [
-            {"strategy_id": "S1", "score_backtest": 0.75},
-            {"strategy_id": "S2", "score_backtest": 0},
+            {"strategy_id": "S1", "score_backtest": 0.75, "execution_mode": "BACKTEST"},
+            {"strategy_id": "S2", "score_backtest": 0, "execution_mode": "BACKTEST"},
         ]
         monitor = OperationalEdgeMonitor(storage=_make_storage(rankings=rankings))
         result = monitor._check_backtest_quality()
@@ -129,6 +129,26 @@ class TestCheckBacktestQuality:
         monitor = OperationalEdgeMonitor(storage=_make_storage(rankings=[]))
         result = monitor._check_backtest_quality()
         assert result.status == CheckStatus.WARN
+
+    def test_warn_when_no_backtest_mode_strategies(self):
+        """Rankings existen pero ninguno en BACKTEST (ej. todos SHADOW/LIVE) → WARN."""
+        rankings = [
+            {"strategy_id": "S1", "score_backtest": 0.5, "execution_mode": "SHADOW"},
+            {"strategy_id": "S2", "score_backtest": 0.8, "execution_mode": "LIVE"},
+        ]
+        monitor = OperationalEdgeMonitor(storage=_make_storage(rankings=rankings))
+        result = monitor._check_backtest_quality()
+        assert result.status == CheckStatus.WARN
+
+    def test_shadow_strategies_not_counted_in_fail(self):
+        """Estrategia en SHADOW no debe inflar el contador de FAIL aunque tenga score=0."""
+        rankings = [
+            {"strategy_id": "S1", "score_backtest": 0.6, "execution_mode": "BACKTEST"},
+            {"strategy_id": "S2", "score_backtest": 0, "execution_mode": "SHADOW"},
+        ]
+        monitor = OperationalEdgeMonitor(storage=_make_storage(rankings=rankings))
+        result = monitor._check_backtest_quality()
+        assert result.status == CheckStatus.OK
 
 
 # ─────────────────────────────────────────────────────────────────────────────

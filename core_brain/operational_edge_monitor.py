@@ -15,6 +15,7 @@ Checks:
   score_stale              — Rankings actualizados en las últimas 72h
   orchestrator_heartbeat   — Loop principal sin bloqueos (heartbeat < 20 min)
 """
+import json
 import logging
 import threading
 import time
@@ -90,6 +91,29 @@ class OperationalEdgeMonitor(threading.Thread):
 
             failing = [k for k, r in results.items() if r.status == CheckStatus.FAIL]
             warnings = [k for k, r in results.items() if r.status == CheckStatus.WARN]
+
+            # Persist snapshot to DB so the API (separate process) can read it
+            try:
+                orchestrator_down = "orchestrator_heartbeat" in failing
+                if len(failing) >= 2 or orchestrator_down:
+                    overall = "CRITICAL"
+                elif failing:
+                    overall = "DEGRADED"
+                elif warnings:
+                    overall = "DEGRADED"
+                else:
+                    overall = "OK"
+
+                snapshot = {
+                    "status": overall,
+                    "checks": {n: {"status": r.status.value, "detail": r.detail} for n, r in results.items()},
+                    "failing": failing,
+                    "warnings": warnings,
+                    "last_checked_at": self.last_checked_at,
+                }
+                self.storage.update_sys_config({"oem_health_snapshot": json.dumps(snapshot)})
+            except Exception as _exc:
+                logger.warning("[OEM] Could not persist health snapshot: %s", _exc)
 
             if failing:
                 logger.warning("[OPS-EDGE] Invariant violations: %s", ", ".join(failing))
@@ -203,18 +227,22 @@ class OperationalEdgeMonitor(threading.Thread):
         return CheckResult(CheckStatus.OK, f"{len(mature)} instancias maduras con trades activos")
 
     def _check_backtest_quality(self) -> CheckResult:
-        """Al menos una estrategia debe tener score_backtest > 0."""
+        """Estrategias en modo BACKTEST deben tener al menos una con score_backtest > 0."""
         rankings = self.storage.get_all_signal_rankings()
         if not rankings:
             return CheckResult(CheckStatus.WARN, "Sin rankings de estrategias encontrados")
 
-        with_score = [r for r in rankings if (r.get("score_backtest") or 0) > 0]
+        backtest_rankings = [r for r in rankings if r.get("execution_mode") == "BACKTEST"]
+        if not backtest_rankings:
+            return CheckResult(CheckStatus.WARN, "Sin estrategias en modo BACKTEST — check omitido")
+
+        with_score = [r for r in backtest_rankings if (r.get("score_backtest") or 0) > 0]
         if not with_score:
             return CheckResult(
                 CheckStatus.FAIL,
-                f"Todas las {len(rankings)} estrategias tienen score_backtest=0",
+                f"Las {len(backtest_rankings)} estrategia(s) en BACKTEST tienen score_backtest=0",
             )
-        return CheckResult(CheckStatus.OK, f"{len(with_score)}/{len(rankings)} estrategias con backtest > 0")
+        return CheckResult(CheckStatus.OK, f"{len(with_score)}/{len(backtest_rankings)} estrategias BACKTEST con score > 0")
 
     def _check_connector_exec(self) -> CheckResult:
         """Al menos una cuenta de broker habilitada debe tener supports_exec=1."""
