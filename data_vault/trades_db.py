@@ -19,11 +19,24 @@ class TradesMixin(BaseRepository):
     """
 
     def save_trade_result(self, trade_data: Dict) -> None:
-        """Save trade result to database with execution_mode and provider metadata.
-        
+        """Save trade result to the appropriate table based on execution_mode.
+
+        Routing (SPRINT 22 — sys_trades migration):
+        - LIVE             → usr_trades  (Capa 1, trader-owned performance)
+        - SHADOW/BACKTEST  → sys_trades  (Capa 0, system-managed paper trades)
+
+        This transparent routing maintains backward compatibility for callers
+        that pass execution_mode='SHADOW' via this method.
+
         Args:
             trade_data: Dict with trade details including execution_mode, provider, account_type
         """
+        mode = trade_data.get('execution_mode', ExecutionMode.default())
+        if mode in (ExecutionMode.SHADOW.value, 'BACKTEST'):
+            # Route paper trades to sys_trades (Capa 0) to keep usr_trades LIVE-only.
+            self.save_sys_trade(trade_data)
+            return
+
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
@@ -33,7 +46,7 @@ class TradesMixin(BaseRepository):
             trade_id = trade_data.get('id') or str(uuid.uuid4())
             cursor.execute("""
                 INSERT INTO usr_trades (
-                    id, signal_id, symbol, entry_price, exit_price, 
+                    id, signal_id, symbol, entry_price, exit_price,
                     profit, exit_reason, close_time, execution_mode, provider, account_type
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
@@ -45,7 +58,7 @@ class TradesMixin(BaseRepository):
                 profit,
                 trade_data.get('exit_reason'),
                 trade_data.get('close_time'),
-                trade_data.get('execution_mode', ExecutionMode.default()),
+                mode,
                 trade_data.get('provider', Provider.default()),
                 trade_data.get('account_type', AccountType.default())
             ))
@@ -185,19 +198,25 @@ class TradesMixin(BaseRepository):
 
     def get_total_profit(self, days: int = 30, execution_mode: Optional[str] = None) -> float:
         """Get total profit for the last N days, optionally filtered by execution_mode (default: LIVE).
-        
+
+        Routing (SPRINT 22): SHADOW/BACKTEST queries transparently read from sys_trades.
+
         Args:
             days: Number of days lookback (default: 30)
             execution_mode: Optional filter ('LIVE', 'SHADOW'). If None, defaults to 'LIVE'.
         """
+        if execution_mode is None:
+            execution_mode = ExecutionMode.LIVE.value
+        # SHADOW/BACKTEST trades live in sys_trades (Capa 0), not usr_trades
+        if execution_mode in (ExecutionMode.SHADOW.value, 'BACKTEST'):
+            trades = self.get_sys_trades(execution_mode=execution_mode)
+            return float(sum(t['profit'] or 0.0 for t in trades if t.get('profit') is not None))
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            if execution_mode is None:
-                execution_mode = ExecutionMode.LIVE.value
             cursor.execute("""
-                SELECT COALESCE(SUM(profit), 0) 
-                FROM usr_trades 
+                SELECT COALESCE(SUM(profit), 0)
+                FROM usr_trades
                 WHERE created_at >= datetime('now', '-{} days', 'utc')
                 AND execution_mode = ?
             """.format(days), (execution_mode,))
@@ -208,25 +227,34 @@ class TradesMixin(BaseRepository):
 
     def get_win_rate(self, days: int = 30, execution_mode: Optional[str] = None) -> float:
         """Get win rate for the last N days, optionally filtered by execution_mode (default: LIVE).
-        
+
+        Routing (SPRINT 22): SHADOW/BACKTEST queries transparently read from sys_trades.
+
         Args:
             days: Number of days lookback (default: 30)
             execution_mode: Optional filter ('LIVE', 'SHADOW'). If None, defaults to 'LIVE'.
         """
+        if execution_mode is None:
+            execution_mode = ExecutionMode.LIVE.value
+        # SHADOW/BACKTEST trades live in sys_trades (Capa 0), not usr_trades
+        if execution_mode in (ExecutionMode.SHADOW.value, 'BACKTEST'):
+            trades = self.get_sys_trades(execution_mode=execution_mode)
+            profits = [t['profit'] for t in trades if t.get('profit') is not None]
+            total = len(profits)
+            wins = sum(1 for p in profits if p > 0)
+            return wins / total if total > 0 else 0.0
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            if execution_mode is None:
-                execution_mode = ExecutionMode.LIVE.value
             cursor.execute("""
-                SELECT 
+                SELECT
                     COUNT(CASE WHEN profit > 0 THEN 1 END) as wins,
                     COUNT(CASE WHEN profit < 0 THEN 1 END) as losses
-                FROM usr_trades 
+                FROM usr_trades
                 WHERE created_at >= datetime('now', '-{} days', 'utc')
                 AND execution_mode = ?
             """.format(days), (execution_mode,))
-            row = row = cursor.fetchone()
+            row = cursor.fetchone()
             wins = row[0] if row[0] else 0
             losses = row[1] if row[1] else 0
             total_usr_trades = wins + losses
@@ -282,30 +310,194 @@ class TradesMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    # ── Unified Trades Query API ─────────────────────────────────────────────
+    # ── sys_trades (Capa 0) — SHADOW and BACKTEST only ───────────────────────
 
-    def get_usr_trades(self, execution_mode: Optional[str] = None, limit: int = 1000) -> List[Dict]:
-        """Unified method to query usr_trades with optional execution_mode filter.
-        
-        CRITICAL: StrategyRanker MUST call this with execution_mode='SHADOW' for paper trading analysis.
-        Default (None) returns only LIVE usr_trades to maintain backward compatibility.
-        
+    def save_sys_trade(self, trade_data: Dict) -> None:
+        """Save a SHADOW or BACKTEST trade to sys_trades (Capa 0 — system-managed).
+
+        NEVER call this for LIVE trades — use save_trade_result() instead.
+        sys_trades is the source of truth for 3 Pilares evaluation and backtest auditing.
+
         Args:
-            execution_mode: Optional filter ('LIVE', 'SHADOW', or None for 'LIVE'). 
-            limit: Maximum number of usr_trades to retrieve.
-            
+            trade_data: Dict with execution_mode ('SHADOW' or 'BACKTEST'), instance_id,
+                        account_id, symbol, entry_price, exit_price, profit, etc.
+        Raises:
+            ValueError: if execution_mode is 'LIVE' (application-layer protection).
+        """
+        mode = trade_data.get('execution_mode', '')
+        if mode == ExecutionMode.LIVE.value:
+            raise ValueError(
+                "LIVE trades must use save_trade_result() → usr_trades, not save_sys_trade()"
+            )
+        trade_id = trade_data.get('id') or str(uuid.uuid4())
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO sys_trades (
+                    id, signal_id, instance_id, account_id, symbol, direction,
+                    entry_price, exit_price, profit, exit_reason,
+                    open_time, close_time, execution_mode, strategy_id, order_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    trade_id,
+                    trade_data.get('signal_id'),
+                    trade_data.get('instance_id'),
+                    trade_data.get('account_id'),
+                    trade_data.get('symbol'),
+                    trade_data.get('direction'),
+                    trade_data.get('entry_price'),
+                    trade_data.get('exit_price'),
+                    trade_data.get('profit') or trade_data.get('profit_loss'),
+                    trade_data.get('exit_reason'),
+                    trade_data.get('open_time'),
+                    trade_data.get('close_time'),
+                    mode,
+                    trade_data.get('strategy_id'),
+                    trade_data.get('order_id'),
+                ),
+            )
+            conn.commit()
+        finally:
+            self._close_conn(conn)
+
+    def get_sys_trades(
+        self,
+        execution_mode: Optional[str] = None,
+        instance_id: Optional[str] = None,
+        strategy_id: Optional[str] = None,
+        limit: int = 1000,
+    ) -> List[Dict]:
+        """Query sys_trades with optional filters.
+
+        Used by ShadowManager for 3 Pilares evaluation and by backtest auditing.
+
+        Args:
+            execution_mode: Optional filter ('SHADOW' or 'BACKTEST').
+            instance_id: Optional filter by shadow instance ID.
+            strategy_id: Optional filter by strategy ID.
+            limit: Maximum number of records to return (default: 1000).
+
         Returns:
-            List of trade records as dicts.
+            List of trade records as dicts, ordered newest first.
         """
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            if execution_mode is None:
-                execution_mode = ExecutionMode.LIVE.value
+            query = "SELECT * FROM sys_trades WHERE 1=1"
+            params: list = []
+            if execution_mode is not None:
+                query += " AND execution_mode = ?"
+                params.append(execution_mode)
+            if instance_id is not None:
+                query += " AND instance_id = ?"
+                params.append(instance_id)
+            if strategy_id is not None:
+                query += " AND strategy_id = ?"
+                params.append(strategy_id)
+            query += " ORDER BY created_at DESC LIMIT ?"
+            params.append(limit)
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+        finally:
+            self._close_conn(conn)
+
+    def calculate_sys_trades_metrics(self, instance_id: str) -> Dict:
+        """Calculate 3 Pilares metrics for a SHADOW instance from sys_trades.
+
+        Returns dict with: total_trades, win_rate, profit_factor, max_drawdown_pct,
+        consecutive_losses_max, equity_curve_cv.
+
+        Args:
+            instance_id: Shadow instance identifier to evaluate.
+        """
+        import statistics as _stats
+
+        trades = self.get_sys_trades(
+            execution_mode=ExecutionMode.SHADOW.value,
+            instance_id=instance_id,
+        )
+        if not trades:
+            return {
+                'total_trades': 0,
+                'win_rate': 0.0,
+                'profit_factor': 0.0,
+                'consecutive_losses_max': 0,
+                'equity_curve_cv': 0.0,
+            }
+
+        profits = [t['profit'] for t in trades if t.get('profit') is not None]
+        total = len(profits)
+        wins = [p for p in profits if p > 0]
+        losses = [abs(p) for p in profits if p < 0]
+
+        win_rate = len(wins) / total if total > 0 else 0.0
+        profit_factor = (
+            sum(wins) / sum(losses) if losses else (1.5 if wins else 0.0)
+        )
+
+        cumulative = []
+        running = 0.0
+        for p in profits:
+            running += p
+            cumulative.append(running)
+        mean_equity = _stats.mean(cumulative) if cumulative else 0.0
+        equity_cv = (
+            (_stats.stdev(cumulative) / abs(mean_equity))
+            if len(cumulative) > 1 and mean_equity != 0
+            else 0.0
+        )
+
+        max_consec = 0
+        current_consec = 0
+        for p in profits:
+            if p < 0:
+                current_consec += 1
+                max_consec = max(max_consec, current_consec)
+            else:
+                current_consec = 0
+
+        return {
+            'total_trades': total,
+            'win_rate': win_rate,
+            'profit_factor': profit_factor,
+            'consecutive_losses_max': max_consec,
+            'equity_curve_cv': equity_cv,
+        }
+
+    # ── Unified Trades Query API ─────────────────────────────────────────────
+
+    def get_usr_trades(self, execution_mode: Optional[str] = None, limit: int = 1000) -> List[Dict]:
+        """Unified method to query trades with optional execution_mode filter.
+
+        Routing (SPRINT 22):
+        - LIVE (default) → queries usr_trades (Capa 1, trader-owned)
+        - SHADOW/BACKTEST → transparently queries sys_trades (Capa 0, system-managed)
+
+        This maintains backward compatibility for callers that use SHADOW mode.
+
+        Args:
+            execution_mode: Optional filter ('LIVE', 'SHADOW', or None for 'LIVE').
+            limit: Maximum number of trades to retrieve.
+
+        Returns:
+            List of trade records as dicts.
+        """
+        if execution_mode is None:
+            execution_mode = ExecutionMode.LIVE.value
+        # SHADOW/BACKTEST trades live in sys_trades (Capa 0), not usr_trades
+        if execution_mode in (ExecutionMode.SHADOW.value, 'BACKTEST'):
+            return self.get_sys_trades(execution_mode=execution_mode, limit=limit)
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
             cursor.execute("""
-                SELECT * FROM usr_trades 
+                SELECT * FROM usr_trades
                 WHERE execution_mode = ?
-                ORDER BY created_at DESC 
+                ORDER BY created_at DESC
                 LIMIT ?
             """, (execution_mode, limit))
             rows = cursor.fetchall()

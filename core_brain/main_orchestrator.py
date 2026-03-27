@@ -2436,12 +2436,14 @@ class MainOrchestrator:
             if execution_mode == 'LIVE':
                 return True
             elif execution_mode == 'SHADOW':
-                # Log but don't execute - metrics will be tracked separately
+                # Route to DEMO account for paper execution so metrics can accumulate.
+                # Without paper trades, 3 Pilares can never be evaluated and no strategy
+                # can ever be promoted. The executor handles routing to DEMO account.
                 logger.info(
-                    f"Strategy {strategy_id} in SHADOW mode - signal generated but not executed "
-                    f"(waiting for promotion criteria)"
+                    f"Strategy {strategy_id} in SHADOW mode - routing to DEMO account "
+                    f"for paper execution"
                 )
-                return False
+                return True
             elif execution_mode == 'QUARANTINE':
                 logger.warning(
                     f"Strategy {strategy_id} in QUARANTINE - signal blocked until risk metrics improve"

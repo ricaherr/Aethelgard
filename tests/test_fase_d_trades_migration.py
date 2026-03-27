@@ -152,19 +152,22 @@ class TestTradeResultPersistence:
             'account_type': AccountType.DEMO.value
         }
         
-        # Save trade
+        # Save trade — SHADOW routes to sys_trades (Capa 0), NOT usr_trades (Sprint 22)
         storage.save_trade_result(trade_data)
-        
-        # Retrieve and verify all fields
+
+        # Verify in sys_trades, not usr_trades
         conn = storage._get_conn()
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM usr_trades WHERE id=?", (test_trade_id,))
-            row = dict(cursor.fetchone())
-            
+            # sys_trades must have the SHADOW record
+            cursor.execute("SELECT * FROM sys_trades WHERE id=?", (test_trade_id,))
+            row = cursor.fetchone()
+            assert row is not None, "SHADOW trade must be in sys_trades (Capa 0)"
+            row = dict(row)
             assert row['execution_mode'] == ExecutionMode.SHADOW.value, "execution_mode not persisted"
-            assert row['provider'] == Provider.INTERNAL.value, "provider not persisted"
-            assert row['account_type'] == AccountType.DEMO.value, "account_type not persisted"
+            # usr_trades must NOT have the SHADOW record (trigger blocks it)
+            cursor.execute("SELECT * FROM usr_trades WHERE id=?", (test_trade_id,))
+            assert cursor.fetchone() is None, "SHADOW trade must NOT be in usr_trades"
         finally:
             storage._close_conn(conn)
     

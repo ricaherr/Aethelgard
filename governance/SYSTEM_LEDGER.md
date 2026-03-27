@@ -4,7 +4,7 @@
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-26 UTC)**: Trace_ID: EXEC-V7-DYNAMIC-AGGRESSION-ENGINE | Sprint 21 archivado: HU 3.4 + HU 7.5 completadas · 1973/1973 PASSED · **ÉPICA E12 COMPLETADA** (2 HUs · 1 sprint) · suite optimizada 880s→96s.
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-26 UTC)**: Trace_ID: EXEC-V8-SYS-TRADES-SEPARATION | Sprint 22 cerrado: `sys_trades` implementada (Capa 0) con enforcement doble (ValueError app + TRIGGER SQLite) · `usr_trades` blindada LIVE-only · ShadowManager conectado a `sys_trades` para 3 Pilares · 1988/1988 PASSED · Motor Darwiniano desbloqueado.
 
 ---
 
@@ -26,6 +26,18 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 ---
 
 ## 🏛️ ÉPICAS ARCHIVADAS
+
+### Sprint 22 — sys_trades: Separación Ejecución Sistema vs Tenant (26-Mar-2026)
+**Trace_ID**: `EXEC-V8-SYS-TRADES-SEPARATION` | **Épica**: E8 (parcial — HU 8.1) | **Estado**: Sprint cerrado
+
+| HU | Descripción | Artefactos clave | Tests |
+|---|---|---|---|
+| **HU 8.1** | `sys_trades` (Capa 0): tabla exclusiva para SHADOW y BACKTEST con `CHECK(execution_mode IN ('SHADOW','BACKTEST'))`. `usr_trades` blindada con TRIGGER `trg_usr_trades_live_only`. `save_trade_result()` rutea SHADOW/BACKTEST → `sys_trades`. `ShadowStorageManager.calculate_instance_metrics_from_sys_trades()` conecta trades reales con evaluación 3 Pilares. Regla ARCH-SSOT-2026-007 documentada. | `data_vault/schema.py`, `data_vault/trades_db.py`, `data_vault/shadow_db.py`, `tests/test_sys_trades_db.py`, `docs/08_DATA_SOVEREIGNTY.md` | 19/19 |
+
+**Suite total**: 1988/1988 PASSED · +19 tests nuevos · 2 tests regresivos corregidos (comportamiento anterior de SHADOW en `usr_trades`)
+**Motor Darwiniano desbloqueado**: SHADOW → cuenta DEMO real → `sys_trades` → 3 Pilares → promote/kill · Ciclo de aprendizaje completo
+
+---
 
 ### Sprint 21 — Dynamic Aggression Engine — S-9 (26-Mar-2026)
 **Trace_ID**: `EXEC-V7-DYNAMIC-AGGRESSION-ENGINE` | **Épica**: E12 ✅ COMPLETADA | **Estado**: Sprint cerrado · E12 ARCHIVADA

@@ -268,24 +268,24 @@ class TestShadowSignalPersistence:
         }
         storage.save_trade_result(trade_data)
         
-        # Verify signal-trade relationship
+        # Verify signal-trade relationship — SHADOW trades live in sys_trades (Sprint 22)
         conn = storage._get_conn()
         try:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT s.origin_mode, t.execution_mode 
+                SELECT s.origin_mode, t.execution_mode
                 FROM sys_signals s
-                LEFT JOIN usr_trades t ON s.id = t.signal_id
+                LEFT JOIN sys_trades t ON s.id = t.signal_id
                 WHERE s.id = ?
                 """,
                 (signal_id,)
             )
             row = cursor.fetchone()
-            
+
             assert row is not None
             assert row[0] == 'SHADOW', f"Signal origin_mode should be SHADOW, got {row[0]}"
-            assert row[1] == 'SHADOW', f"Trade execution_mode should be SHADOW, got {row[1]}"
+            assert row[1] == 'SHADOW', f"Trade execution_mode should be SHADOW in sys_trades, got {row[1]}"
         finally:
             storage._close_conn(conn)
 
@@ -337,5 +337,74 @@ class TestSignalFactoryOriginModeIntegration:
             
             assert row['origin_mode'] == 'SHADOW'
             assert row['symbol'] == 'NZDUSD'
+        finally:
+            storage._close_conn(conn)
+
+
+class TestSignalTimestampPersistence:
+    """Test that created_at and timestamp are never NULL after save_signal()."""
+
+    def test_signal_with_none_timestamp_still_saves_created_at_not_null(self, storage):
+        """BUG-1: When signal.timestamp is None, created_at must NOT be NULL in DB."""
+        signal = Signal(
+            symbol="EURUSD",
+            signal_type=SignalType.BUY,
+            confidence=0.80,
+            connector_type=ConnectorType.METATRADER5,
+            metadata={"strategy_id": "TEST_NULL_TIMESTAMP"},
+            entry_price=1.0950,
+        )
+        # Explicitly ensure timestamp is None
+        signal.timestamp = None
+
+        signal_id = storage.save_signal(signal, origin_mode='SHADOW')
+
+        # Read back from DB and assert neither created_at nor timestamp is NULL
+        conn = storage._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT timestamp, created_at FROM sys_signals WHERE id = ?",
+                (signal_id,)
+            )
+            row = cursor.fetchone()
+
+            assert row is not None, "Signal not saved to DB"
+            assert row[0] is not None, (
+                "BUG-1: timestamp column is NULL when signal.timestamp=None "
+                "— must default to current UTC time"
+            )
+            assert row[1] is not None, (
+                "BUG-1: created_at column is NULL — must always be set explicitly on INSERT"
+            )
+        finally:
+            storage._close_conn(conn)
+
+    def test_signal_with_explicit_timestamp_saves_both_columns_not_null(self, storage):
+        """When signal.timestamp is set, both timestamp and created_at must be NOT NULL."""
+        signal = Signal(
+            symbol="GBPUSD",
+            signal_type=SignalType.SELL,
+            confidence=0.75,
+            connector_type=ConnectorType.METATRADER5,
+            metadata={"strategy_id": "TEST_EXPLICIT_TIMESTAMP"},
+            entry_price=1.2750,
+        )
+        signal.timestamp = datetime(2026, 3, 26, 10, 0, 0, tzinfo=timezone.utc)
+
+        signal_id = storage.save_signal(signal, origin_mode='LIVE')
+
+        conn = storage._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT timestamp, created_at FROM sys_signals WHERE id = ?",
+                (signal_id,)
+            )
+            row = cursor.fetchone()
+
+            assert row is not None, "Signal not saved to DB"
+            assert row[0] is not None, "timestamp column must not be NULL when explicitly set"
+            assert row[1] is not None, "created_at column must not be NULL"
         finally:
             storage._close_conn(conn)

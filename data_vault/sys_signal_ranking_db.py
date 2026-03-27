@@ -64,6 +64,27 @@ class StrategyRankingMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
+    def _get_mode_from_sys_strategies(self, strategy_id: str) -> str:
+        """
+        Consulta sys_strategies para obtener el mode configurado (SSOT).
+        Retorna 'BACKTEST' si la estrategia no existe — safe default conservador
+        que evita que estrategias no registradas lleguen a producción.
+        """
+        conn = self._get_conn()
+        try:
+            row = conn.execute(
+                "SELECT mode FROM sys_strategies WHERE class_id = ?",
+                (strategy_id,),
+            ).fetchone()
+            if row and row[0]:
+                return row[0]
+            return 'BACKTEST'
+        except Exception as e:
+            logger.error(f"[LAZY-INIT] Error reading sys_strategies for {strategy_id}: {e}")
+            return 'BACKTEST'
+        finally:
+            self._close_conn(conn)
+
     def ensure_signal_ranking_for_strategy(self, strategy_id: str) -> Dict:
         """
         Lazy initialization: Obtener o crear entrada en sys_signal_ranking para una estrategia.
@@ -89,15 +110,17 @@ class StrategyRankingMixin(BaseRepository):
             logger.debug(f"[LAZY-INIT] {strategy_id}: Already exists in sys_signal_ranking")
             return existing
         
-        # No existe → Crear automáticamente con defaults
+        # No existe → Determinar modo desde sys_strategies (SSOT)
+        initial_mode = self._get_mode_from_sys_strategies(strategy_id)
         logger.warning(
-            f"[LAZY-INIT] {strategy_id}: Creating automatic entry in sys_signal_ranking (SHADOW mode)"
+            f"[LAZY-INIT] {strategy_id}: Creating automatic entry in sys_signal_ranking "
+            f"(mode={initial_mode} from sys_strategies)"
         )
-        
+
         self.save_signal_ranking(
             strategy_id=strategy_id,
             ranking_data={
-                'execution_mode': 'SHADOW',  # Safe default: no live trading
+                'execution_mode': initial_mode,
                 'profit_factor': 0.0,
                 'win_rate': 0.0,
                 'drawdown_max': 0.0,

@@ -118,14 +118,13 @@ class SignalsMixin(BaseRepository):
         
         def _save(conn: sqlite3.Connection, signal_id: str) -> None:
             cursor = conn.cursor()
+            now_utc = datetime.now(timezone.utc).replace(microsecond=0).strftime('%Y-%m-%d %H:%M:%S')
+
             timestamp = getattr(signal, 'timestamp', None)
-            timestamp_value = None
             if timestamp:
                 # Normaliza a UTC ISO 8601
                 dt_utc = to_utc(timestamp)
                 if isinstance(dt_utc, str):
-                    # Si to_utc retorna string, parsear a datetime
-                    from datetime import datetime
                     try:
                         dt_utc_obj = datetime.strptime(dt_utc, '%Y-%m-%d %H:%M:%S.%f')
                     except Exception:
@@ -133,7 +132,10 @@ class SignalsMixin(BaseRepository):
                 else:
                     dt_utc_obj = dt_utc
                 timestamp_value = dt_utc_obj.replace(microsecond=0).strftime('%Y-%m-%d %H:%M:%S')
-            
+            else:
+                # When signal has no timestamp, use current UTC time instead of leaving NULL
+                timestamp_value = now_utc
+
             base_columns = ['id', 'symbol', 'signal_type', 'confidence', 'metadata', 'connector_type', 'timeframe', 'price', 'direction', 'origin_mode', 'strategy_id', 'score', 'source']
             base_values = [
                 signal_id,
@@ -150,24 +152,21 @@ class SignalsMixin(BaseRepository):
                 metadata.get('score', 0.0),   # Extract score from metadata
                 metadata.get('source')        # Extract source from metadata
             ]
-            
+
             entry_price = getattr(signal, 'entry_price', None)
             stop_loss = getattr(signal, 'stop_loss', None)
             take_profit = getattr(signal, 'take_profit', None)
             # Respect status from Signal object, default to PENDING if not set or None
             # Executor will update to 'EXECUTED' after confirmation
             status = getattr(signal, 'status', None) or 'PENDING'
-            
-            if timestamp_value is not None:
-                columns = ['timestamp', 'status'] + base_columns
-                values = [timestamp_value, status] + base_values
-            else:
-                columns = ['status'] + base_columns
-                values = [status] + base_values
-            
+
+            # Always include timestamp and created_at explicitly — never rely on SQLite DEFAULT
+            columns = ['timestamp', 'created_at', 'status'] + base_columns
+            values = [timestamp_value, now_utc, status] + base_values
+
             placeholders = ','.join('?' for _ in values)
             columns_str = ','.join(columns)
-            
+
             cursor.execute(f"""
                 INSERT INTO sys_signals ({columns_str})
                 VALUES ({placeholders})

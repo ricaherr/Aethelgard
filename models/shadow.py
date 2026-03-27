@@ -8,6 +8,7 @@ Trace_ID Base: TRACE_HEALTH_{YYYYMMDD_HHMMSS}_{instance_id[:8]}
               TRACE_PROMOTION_REAL_{YYYYMMDD_HHMMSS}_{instance_id[:8]}
 """
 
+import json
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 from datetime import datetime
@@ -76,6 +77,25 @@ class ShadowMetrics:
         return cls(**{k: v for k, v in data.items() if hasattr(cls, k)})
 
 
+def _parse_parameter_overrides(raw: str) -> Dict:
+    """
+    Safely deserialize parameter_overrides from DB storage.
+
+    Handles both valid JSON (new format) and Python dict repr (legacy format)
+    without using eval() to avoid security vulnerabilities.
+    """
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        import ast
+        try:
+            return ast.literal_eval(raw)
+        except Exception:
+            return {}
+
+
 @dataclass
 class ShadowInstance:
     """
@@ -121,7 +141,7 @@ class ShadowInstance:
             "strategy_id": self.strategy_id,
             "account_id": self.account_id,
             "account_type": self.account_type,
-            "parameter_overrides": str(self.parameter_overrides),  # JSON string
+            "parameter_overrides": json.dumps(self.parameter_overrides),  # JSON string
             "regime_filters": ",".join(self.regime_filters),
             "birth_timestamp": self.birth_timestamp.isoformat(),
             "status": self.status.value,
@@ -154,7 +174,7 @@ class ShadowInstance:
             strategy_id=data["strategy_id"],
             account_id=data.get("account_id", ""),
             account_type=data["account_type"],
-            parameter_overrides=eval(data.get("parameter_overrides", "{}")),
+            parameter_overrides=_parse_parameter_overrides(data.get("parameter_overrides", "{}")),
             regime_filters=data.get("regime_filters", "").split(",") if data.get("regime_filters") else [],
             birth_timestamp=datetime.fromisoformat(data.get("birth_timestamp", datetime.now().isoformat())),
             status=ShadowStatus(data.get("status", "INCUBATING")),

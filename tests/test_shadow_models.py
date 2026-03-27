@@ -138,7 +138,8 @@ class TestShadowInstance:
             )
 
     def test_shadow_instance_to_db_dict(self):
-        """Verify instance can be converted to DB dict."""
+        """Verify instance can be converted to DB dict with valid JSON for parameter_overrides."""
+        import json
         instance = ShadowInstance(
             instance_id="test_001",
             strategy_id="BRK_OPEN_0001",
@@ -147,23 +148,25 @@ class TestShadowInstance:
             parameter_overrides={"risk_pct": 0.02},
             regime_filters=["TREND_UP", "EXPANSION"],
         )
-        
+
         db_dict = instance.to_db_dict()
-        
+
         assert db_dict["instance_id"] == "test_001"
         assert db_dict["strategy_id"] == "BRK_OPEN_0001"
         assert db_dict["account_type"] == "DEMO"
-        assert "risk_pct" in db_dict["parameter_overrides"]
+        # parameter_overrides must be valid JSON (not Python repr with single quotes)
+        parsed = json.loads(db_dict["parameter_overrides"])
+        assert parsed["risk_pct"] == 0.02
         assert "TREND_UP" in db_dict["regime_filters"]
 
     def test_shadow_instance_from_db_dict(self):
-        """Verify instance can be created from DB dict."""
+        """Verify instance can be created from DB dict using valid JSON parameter_overrides."""
         db_dict = {
             "instance_id": "test_002",
             "strategy_id": "OliverVelez",
             "account_id": "acc_002",
             "account_type": "REAL",
-            "parameter_overrides": "{'aggressive': True}",
+            "parameter_overrides": '{"aggressive": true}',  # valid JSON, not Python repr
             "regime_filters": "TRENDING,EXPANSION",
             "birth_timestamp": "2026-03-12T10:00:00",
             "status": "SHADOW_READY",
@@ -176,13 +179,36 @@ class TestShadowInstance:
             "created_at": "2026-03-12T10:00:00",
             "updated_at": "2026-03-12T10:00:00",
         }
-        
+
         instance = ShadowInstance.from_db_dict(db_dict)
-        
+
         assert instance.instance_id == "test_002"
         assert instance.strategy_id == "OliverVelez"
         assert instance.account_type == "REAL"
         assert instance.status == ShadowStatus.SHADOW_READY
+        # parameter_overrides must be correctly deserialized (no eval needed)
+        assert instance.parameter_overrides == {"aggressive": True}
+
+    def test_parameter_overrides_json_roundtrip(self):
+        """Verify parameter_overrides survives a full DB round-trip as valid JSON (no eval)."""
+        import json
+        overrides = {"confidence_threshold": 0.55, "risk_pct": 0.015}
+        instance = ShadowInstance(
+            instance_id="roundtrip_001",
+            strategy_id="TEST_STRAT",
+            account_id="acc_001",
+            account_type="DEMO",
+            parameter_overrides=overrides,
+        )
+
+        db_dict = instance.to_db_dict()
+
+        # Must be parseable as valid JSON (not Python single-quote repr)
+        assert json.loads(db_dict["parameter_overrides"]) == overrides
+
+        # Reconstruct from db_dict and verify round-trip fidelity
+        restored = ShadowInstance.from_db_dict(db_dict)
+        assert restored.parameter_overrides == overrides
 
 
 class TestShadowInstanceHealthEvaluation:

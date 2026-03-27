@@ -11,6 +11,7 @@ Trace_ID Patterns:
 - TRACE_KILL_{YYYYMMDD}_{HHMMSS}_{instance_id[:8]}
 """
 
+import json
 import logging
 import sqlite3
 from datetime import datetime, timezone
@@ -388,6 +389,77 @@ class ShadowStorageManager:
         rows = cursor.fetchall()
         return [ShadowInstance.from_db_dict(dict(row)) for row in rows]
 
+    def calculate_instance_metrics_from_sys_trades(self, instance_id: str) -> ShadowMetrics:
+        """Calculate 3 Pilares metrics for a SHADOW instance by reading sys_trades.
+
+        This is the LIVE feedback loop: real DEMO trades → metrics → Darwinian selection.
+        Called by ShadowManager.evaluate_all_instances() weekly.
+
+        Args:
+            instance_id: The SHADOW instance to evaluate.
+        Returns:
+            ShadowMetrics populated from sys_trades data.
+        """
+        import statistics as _stats
+
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT profit, close_time FROM sys_trades
+            WHERE instance_id = ? AND execution_mode = 'SHADOW'
+            ORDER BY close_time ASC
+            """,
+            (instance_id,),
+        )
+        rows = cursor.fetchall()
+
+        if not rows:
+            return ShadowMetrics()
+
+        profits = [r["profit"] for r in rows if r["profit"] is not None]
+        if not profits:
+            return ShadowMetrics()
+
+        total = len(profits)
+        wins = [p for p in profits if p > 0]
+        losses = [abs(p) for p in profits if p < 0]
+
+        win_rate = len(wins) / total if total > 0 else 0.0
+        profit_factor = (
+            sum(wins) / sum(losses) if losses else (1.5 if wins else 0.0)
+        )
+
+        # Equity curve CV (consistency metric)
+        cumulative = []
+        running = 0.0
+        for p in profits:
+            running += p
+            cumulative.append(running)
+        mean_equity = _stats.mean(cumulative) if cumulative else 0.0
+        equity_cv = (
+            (_stats.stdev(cumulative) / abs(mean_equity))
+            if len(cumulative) > 1 and mean_equity != 0
+            else 0.0
+        )
+
+        # Consecutive losses
+        max_consec = 0
+        current_consec = 0
+        for p in profits:
+            if p < 0:
+                current_consec += 1
+                max_consec = max(max_consec, current_consec)
+            else:
+                current_consec = 0
+
+        return ShadowMetrics(
+            total_trades_executed=total,
+            win_rate=win_rate,
+            profit_factor=profit_factor,
+            equity_curve_cv=equity_cv,
+            consecutive_losses_max=max_consec,
+        )
+
     def update_parameter_overrides(self, instance_id: str, overrides: Dict) -> None:
         """
         Persist EdgeTuner-adjusted parameter overrides for a SHADOW instance.
@@ -406,7 +478,7 @@ class ShadowStorageManager:
             SET parameter_overrides = ?, updated_at = ?
             WHERE instance_id = ?
             """,
-            (str(overrides), datetime.now(timezone.utc).isoformat(), instance_id),
+            (json.dumps(overrides), datetime.now(timezone.utc).isoformat(), instance_id),
         )
         self.conn.commit()
         logger.debug(f"[SHADOW] Updated parameter_overrides for {instance_id}: {overrides}")

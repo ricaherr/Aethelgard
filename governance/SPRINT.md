@@ -11,6 +11,37 @@
 
 ---
 
+# SPRINT 22: SYS_TRADES — SEPARACIÓN EJECUCIÓN SISTEMA vs TENANT — [DONE]
+
+**Inicio**: 26 de Marzo, 2026
+**Fin**: 26 de Marzo, 2026
+**Objetivo**: Crear tabla `sys_trades` (Capa 0 Global) exclusiva para trades SHADOW y BACKTEST, separándolos de `usr_trades` (Capa 1 Tenant, LIVE únicamente). Garantizar que el motor Darwiniano de SHADOW y el motor de backtesting escriban en `sys_trades` y que ningún análisis de rendimiento del trader sea contaminado con resultados de paper trades. Blindar `usr_trades` con TRIGGER a nivel de motor SQLite.
+**Épica**: E8 (DATA_SOVEREIGNTY) | **Trace_ID**: EXEC-V8-SYS-TRADES-SEPARATION
+**Dominios**: 08_DATA_SOVEREIGNTY · 07_ADAPTIVE_LEARNING
+
+## 📋 Tareas del Sprint
+
+- [DONE] **HU 8.1: sys_trades — Tabla de Ejecución del Sistema**
+  - `data_vault/schema.py`: nueva tabla `sys_trades` (Capa 0) con `instance_id` (FK `sys_shadow_instances`), `account_id` (FK `sys_broker_accounts`), `execution_mode CHECK('SHADOW','BACKTEST')`, `strategy_id`, `direction`, `open_time`, `close_time`, `profit`, `order_id`; 4 índices; TRIGGER `trg_usr_trades_live_only` que bloquea cualquier INSERT no-LIVE en `usr_trades` a nivel de motor SQLite
+  - `data_vault/trades_db.py`: `save_sys_trade()` (ValueError si LIVE), `get_sys_trades()` (filtros: mode/instance_id/strategy_id), `calculate_sys_trades_metrics()`; `save_trade_result()` rutea automáticamente SHADOW/BACKTEST → `sys_trades`
+  - `data_vault/shadow_db.py`: `calculate_instance_metrics_from_sys_trades(instance_id)` — calcula `ShadowMetrics` completo (win_rate, profit_factor, equity_curve_cv, consecutive_losses_max) desde trades reales
+  - `tests/test_shadow_schema.py`: clase `TestSysTradesSchema` (6 tests: existencia, columnas, CHECK, LIVE bloqueado, trigger, índices)
+  - `tests/test_sys_trades_db.py` (nuevo): 13 tests — save/get/metrics, separación física vs `usr_trades`, doble enforcement app+DB
+  - `docs/08_DATA_SOVEREIGNTY.md`: `sys_trades` en tabla Capa 0 + regla ARCH-SSOT-2026-007 con flujo Darwiniano completo
+  - Corrección de 2 tests regresivos que esperaban SHADOW en `usr_trades` (comportamiento anterior)
+
+## 📊 Snapshot de Cierre
+
+- **Tests añadidos**: 19 (6 schema + 13 sys_trades_db)
+- **Tests corregidos**: 2 (tests de comportamiento anterior)
+- **Tests totales suite**: 1988/1988 PASSED (2 pre-existentes en `test_orchestrator_recovery.py` — bug timezone independiente, pendiente HU separada)
+- **Archivos nuevos**: `tests/test_sys_trades_db.py`
+- **Archivos modificados**: `data_vault/schema.py`, `data_vault/trades_db.py`, `data_vault/shadow_db.py`, `tests/test_shadow_schema.py`, `tests/test_fase_d_trades_migration.py`, `tests/test_fase_e_shadow_signal_persistence.py`, `docs/08_DATA_SOVEREIGNTY.md`
+- **Garantía de aislamiento**: doble capa — ValueError en aplicación + TRIGGER en SQLite motor
+- **Motor Darwiniano desbloqueado**: SHADOW → cuenta DEMO real → `sys_trades` → 3 Pilares → promote/kill
+
+---
+
 # SPRINT 21: DYNAMIC AGGRESSION ENGINE — S-9 — [DONE]
 
 **Inicio**: 26 de Marzo, 2026

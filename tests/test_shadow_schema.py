@@ -272,5 +272,130 @@ class TestShadowSchema:
         # prevented at the application layer (ShadowStorageManager doesn't expose these).
 
 
+class TestSysTradesSchema:
+    """Verify sys_trades table: Capa 0 — SHADOW and BACKTEST only, never LIVE."""
+
+    def test_sys_trades_table_exists(self, test_db):
+        """sys_trades table must exist in Capa 0 schema."""
+        cursor = test_db.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='sys_trades'")
+        assert cursor.fetchone() is not None, "sys_trades table not found in schema"
+
+    def test_sys_trades_columns(self, test_db):
+        """All required columns present with correct types."""
+        cursor = test_db.cursor()
+        cursor.execute("PRAGMA table_info(sys_trades)")
+        columns = {row[1]: row[2] for row in cursor.fetchall()}  # name -> type
+
+        required_columns = {
+            "id": "TEXT",
+            "signal_id": "TEXT",
+            "instance_id": "TEXT",
+            "account_id": "TEXT",
+            "symbol": "TEXT",
+            "direction": "TEXT",
+            "entry_price": "REAL",
+            "exit_price": "REAL",
+            "profit": "REAL",
+            "exit_reason": "TEXT",
+            "open_time": "TIMESTAMP",
+            "close_time": "TIMESTAMP",
+            "execution_mode": "TEXT",
+            "strategy_id": "TEXT",
+            "order_id": "TEXT",
+            "created_at": "TIMESTAMP",
+        }
+
+        for col_name, col_type in required_columns.items():
+            assert col_name in columns, f"Column '{col_name}' not found in sys_trades"
+            assert columns[col_name] == col_type, (
+                f"Column '{col_name}' has wrong type: expected {col_type}, got {columns[col_name]}"
+            )
+
+    def test_sys_trades_execution_mode_constraint(self, test_db):
+        """execution_mode CHECK constraint: only SHADOW and BACKTEST allowed, LIVE must FAIL."""
+        cursor = test_db.cursor()
+
+        # Insert with SHADOW → success
+        cursor.execute(
+            """INSERT INTO sys_trades (id, symbol, execution_mode)
+               VALUES (?, ?, ?)""",
+            ("trade-shadow-001", "EURUSD", "SHADOW"),
+        )
+        test_db.commit()
+
+        # Insert with BACKTEST → success
+        cursor.execute(
+            """INSERT INTO sys_trades (id, symbol, execution_mode)
+               VALUES (?, ?, ?)""",
+            ("trade-backtest-001", "EURUSD", "BACKTEST"),
+        )
+        test_db.commit()
+
+        # Insert with LIVE → must raise IntegrityError (CHECK constraint violation)
+        with pytest.raises(sqlite3.IntegrityError):
+            cursor.execute(
+                """INSERT INTO sys_trades (id, symbol, execution_mode)
+                   VALUES (?, ?, ?)""",
+                ("trade-live-fail", "EURUSD", "LIVE"),
+            )
+
+    def test_sys_trades_live_cannot_be_inserted(self, test_db):
+        """Verify LIVE trades are physically blocked from sys_trades."""
+        cursor = test_db.cursor()
+        with pytest.raises(sqlite3.IntegrityError):
+            cursor.execute(
+                """INSERT INTO sys_trades (id, symbol, execution_mode)
+                   VALUES (?, ?, ?)""",
+                ("trade-live-direct", "GBPUSD", "LIVE"),
+            )
+
+    def test_usr_trades_live_only(self, test_db):
+        """usr_trades must only accept LIVE execution_mode after trigger migration."""
+        cursor = test_db.cursor()
+
+        # Insert with LIVE → success
+        cursor.execute(
+            """INSERT INTO usr_trades (id, symbol, execution_mode)
+               VALUES (?, ?, ?)""",
+            ("live-trade-001", "EURUSD", "LIVE"),
+        )
+        test_db.commit()
+
+        # Insert with SHADOW → trigger must raise IntegrityError
+        with pytest.raises(sqlite3.IntegrityError):
+            cursor.execute(
+                """INSERT INTO usr_trades (id, symbol, execution_mode)
+                   VALUES (?, ?, ?)""",
+                ("shadow-trade-fail", "EURUSD", "SHADOW"),
+            )
+
+        # Insert with BACKTEST → trigger must raise IntegrityError
+        with pytest.raises(sqlite3.IntegrityError):
+            cursor.execute(
+                """INSERT INTO usr_trades (id, symbol, execution_mode)
+                   VALUES (?, ?, ?)""",
+                ("backtest-trade-fail", "EURUSD", "BACKTEST"),
+            )
+
+    def test_sys_trades_indexes_created(self, test_db):
+        """Verify performance indexes exist on sys_trades."""
+        cursor = test_db.cursor()
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='sys_trades'"
+        )
+        indexes = {row[0] for row in cursor.fetchall()}
+
+        expected_indexes = {
+            "idx_sys_trades_instance_id",
+            "idx_sys_trades_execution_mode",
+            "idx_sys_trades_strategy_id",
+            "idx_sys_trades_close_time",
+        }
+        assert expected_indexes.issubset(indexes), (
+            f"Missing indexes on sys_trades: {expected_indexes - indexes}"
+        )
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

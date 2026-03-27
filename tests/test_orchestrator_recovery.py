@@ -14,7 +14,7 @@ Based on Gemini's audit recommendation for resilience testing.
 """
 import asyncio
 import pytest
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 import json
 import tempfile
@@ -107,7 +107,7 @@ class MockSignalFactory:
             entry_price=1.1000,
             stop_loss=1.0950,
             take_profit=1.1100,
-            timestamp=datetime.now(),
+            timestamp=datetime.now(timezone.utc),
             metadata={"regime": MarketRegime.TREND.value}
         )
         
@@ -132,7 +132,7 @@ class MockSignalFactory:
                 entry_price=1.1000,
                 stop_loss=1.0950,
                 take_profit=1.1100,
-                timestamp=datetime.now(),
+                timestamp=datetime.now(timezone.utc),
                 metadata={"regime": MarketRegime.TREND.value}
             )
         ]

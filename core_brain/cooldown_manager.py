@@ -269,7 +269,9 @@ class CooldownManager:
             expires = cooldown.get("cooldown_expires")
             if isinstance(expires, str):
                 expires = datetime.fromisoformat(expires)
-            
+            if expires is not None and expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+
             is_active = datetime.now(timezone.utc) < expires
             
             if is_active:

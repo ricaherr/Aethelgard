@@ -5,13 +5,64 @@ Garantizar que la información sea el activo más fiable y protegido del sistema
 
 ## 🔷 REGLA DE ORO: Convención Obligatoria de Nombres de Tablas (ARCH-SSOT-2026-006)
 
-✅ **Todo activo financiero se denomina `asset` (NUNCA `symbol`, `instrument`, o variaciones).**  
-✅ **Tablas de sistema usan prefijo `sys_*` (Capa 0: Global).**  
-✅ **Tablas de usuario usan prefijo `usr_*` (Capa 1: Tenant-isolated).**  
-✅ **Datos en `sys_*` NUNCA se duplican en `usr_*`; tenants filtran en runtime.**  
+✅ **Todo activo financiero se denomina `asset` (NUNCA `symbol`, `instrument`, o variaciones).**
+✅ **Tablas de sistema usan prefijo `sys_*` (Capa 0: Global).**
+✅ **Tablas de usuario usan prefijo `usr_*` (Capa 1: Tenant-isolated).**
+✅ **Datos en `sys_*` NUNCA se duplican en `usr_*`; tenants filtran en runtime.**
 ✅ **Tenant ID se infiere de la ruta del archivo DB (`data_vault/tenants/{id}/...`), NO se almacena en columnas `usr_*`.**
+✅ **`sys_trades` es el SSOT de trades del sistema (SHADOW + BACKTEST). `usr_trades` es el SSOT de trades del trader (LIVE únicamente). Esta separación es ABSOLUTA e irreversible — ver ARCH-SSOT-2026-007.**
 
 Esta convención es **vinculante** y será validada en `validate_all.py` → `audit_table_naming.py`.
+
+---
+
+## 🔷 REGLA ARCH-SSOT-2026-007: Separación de Trades por Origen (Sprint 22)
+
+### El problema que resuelve
+
+Antes de Sprint 22, `usr_trades` almacenaba trades de todos los modos (`LIVE`, `SHADOW`, `BACKTEST`). Esto contaminaba:
+- Los **KPIs del trader real** (win rate, P&L) con resultados de paper trades
+- El análisis de **edge tuner** y **risk manager** con datos ficticios
+- La **auditoría** (era imposible distinguir qué era real vs simulado sin filtros explícitos)
+
+### Arquitectura post-Sprint 22
+
+```
+Ejecución LIVE  → usr_trades   (Capa 1, tenant)   — trades reales del usuario
+Ejecución SHADOW → sys_trades  (Capa 0, global)   — paper trades en cuenta DEMO del broker
+Ejecución BACKTEST → sys_trades (Capa 0, global)  — simulaciones históricas
+```
+
+### Mecanismos de enforcement (doble capa de seguridad)
+
+1. **Aplicación** (`data_vault/trades_db.py`):
+   - `save_trade_result(execution_mode='LIVE')` → `usr_trades`
+   - `save_trade_result(execution_mode='SHADOW')` → rutea automáticamente a `save_sys_trade()`
+   - `save_sys_trade(execution_mode='LIVE')` → lanza `ValueError` en la capa de aplicación
+
+2. **Base de datos** (SQLite TRIGGER):
+   - `TRIGGER trg_usr_trades_live_only` en `usr_trades`: cualquier INSERT con `execution_mode != 'LIVE'` → `RAISE(ABORT)` — rechazado a nivel de motor
+   - `CHECK(execution_mode IN ('SHADOW','BACKTEST'))` en `sys_trades`: impide físicamente insertar `LIVE`
+
+### Flujo del motor Darwiniano con sys_trades
+
+```
+Signal SHADOW generada
+       ↓
+Executor → cuenta DEMO real (ic_markets_demo_10001)
+       ↓
+Orden ejecutada en MT5 DEMO → resultado real
+       ↓
+save_sys_trade(instance_id, account_id, execution_mode='SHADOW')
+       ↓
+sys_trades ← ShadowDB.calculate_instance_metrics_from_sys_trades(instance_id)
+       ↓
+ShadowMetrics (win_rate, profit_factor, equity_cv, consecutive_losses)
+       ↓
+evaluate_health() → 3 Pilares → INCUBATING | HEALTHY | DEAD | QUARANTINED
+       ↓
+Lunes 00:00 UTC → promote_to_real() si HEALTHY
+```
 
 ---
 
@@ -100,6 +151,7 @@ Esta **base de datos centralizada** contiene **SOLO tablas con prefijo `sys_*`**
 | **sys_economic_calendar** | Eventos económicos globales (NFP, BCE, etc.) — Sólo lectura para tenants | `event_id (PK)`, `country`, `event_name`, `currency`, `impact_score`, `event_time_utc` | ✅ NewsSanitizer inserta; tenants solo leen |
 | **sys_strategies** | Registro global de estrategias disponibles — lifecycle BACKTEST→SHADOW→LIVE | `class_id (PK)`, `mode`, `score`, `required_regime`, `required_timeframes`, `last_backtest_at` | ✅ Sistema consulta para instanciar y evaluar |
 | **sys_signal_ranking** | Ranking global de rendimiento de estrategias | `strategy_id (PK)`, `profit_factor`, `win_rate`, `execution_mode` | ✅ Reemplaza `usr_performance` (deprecated v3.x) |
+| **sys_trades** | Trades del sistema: ejecuciones SHADOW (cuenta DEMO real) y BACKTEST — **NUNCA LIVE** | `id (PK)`, `instance_id` → `sys_shadow_instances`, `account_id` → `sys_broker_accounts`, `execution_mode CHECK('SHADOW','BACKTEST')`, `strategy_id`, `profit`, `open_time`, `close_time` | ✅ SSOT de paper trades; alimenta 3 Pilares del motor Darwiniano; blindado con TRIGGER contra `execution_mode='LIVE'` |
 
 **Regla de Acceso**:
 - 🔴 **Admin/DevOps**: Único rol autorizado para escribir en `sys_*`
@@ -116,7 +168,7 @@ Cada tenant tiene su **propia base de datos aislada** que contiene **SOLO tablas
 | Tabla | Propósito | Gobernanza | Acceso |
 |-------|-----------|-----------|--------|
 | **usr_assets_cfg** | Activos habilitados con tick_size, lot_step, contract_size | ✅ SSOT de instrumentos operables; filtrada contra `sys_strategies` | Trader RW, System R |
-| **usr_trades** | Historial completo de trades ejecutados | ✅ Inmutable post-cierre; trazabilidad 100% con trace_id | Trader RW, Admin audit R |
+| **usr_trades** | Trades **LIVE únicamente** — historial real del trader (NUNCA SHADOW ni BACKTEST) | ✅ Blindado con TRIGGER `trg_usr_trades_live_only`: rechaza cualquier INSERT con `execution_mode != 'LIVE'` | Trader RW, Admin audit R |
 | **usr_execution_logs** | Logs de ejecución con slippage y latencia real vs teórica | ✅ Evidencia de calidad de ejecución por broker | Trader R, System W |
 | **usr_position_history** | Log de modificaciones a SL/TP de posiciones (EdgeTuner events) | ✅ Auditoría de ajustes automáticos | Trader R, System W |
 | **usr_preferences** | Configuración personal de UI y parámetros de trading | ✅ Soberanía total del usuario | Trader RW |

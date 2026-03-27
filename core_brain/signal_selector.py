@@ -18,6 +18,15 @@ import inspect
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+
+
+def _as_utc(dt: datetime) -> datetime:
+    """Return dt as UTC-aware. Naive datetimes are assumed to be UTC."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
 from typing import Dict, List, Optional, Tuple
 from enum import Enum
 
@@ -216,15 +225,16 @@ class SignalSelector:
             recent_time = recent.get("created_at")
             if isinstance(recent_time, str):
                 recent_time = datetime.fromisoformat(recent_time)
-            
+            recent_time = _as_utc(recent_time)
+
             if recent_time is None or recent_time < window_expires:
                 continue  # Outside window or no timestamp
-            
+
             # Symbol + type + timeframe match = potential duplicate
             if (recent.get("symbol") == symbol and
                 recent.get("signal_type") == signal_type and
                 recent.get("timeframe") == timeframe):
-                
+
                 matching.append({
                     "signal_id": recent.get("signal_id"),
                     "strategy": recent.get("strategy"),
@@ -247,6 +257,7 @@ class SignalSelector:
                 recent_time = recent.get("created_at")
                 if isinstance(recent_time, str):
                     recent_time = datetime.fromisoformat(recent_time)
+                recent_time = _as_utc(recent_time)
                 if recent_time is None or recent_time < window_expires:
                     continue
                 if (recent.get("symbol") == symbol and
@@ -635,9 +646,10 @@ class SignalSelector:
             
             if isinstance(m_time, str):
                 m_time = datetime.fromisoformat(m_time)
-            
+            m_time = _as_utc(m_time)
+
             price_diff = abs(signal_price - m_price)
-            time_diff = (signal_time - m_time).total_seconds() / 60
+            time_diff = (signal_time - m_time).total_seconds() / 60 if m_time else 999
             
             # Conflict if: same price (< 1 pip) AND recent (< 5 min)
             if price_diff < 1.0 and time_diff < 5:

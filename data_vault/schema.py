@@ -148,6 +148,63 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
         )
     """)
 
+    # ── 2.1 sys_trades: Capa 0 — SHADOW and BACKTEST trades ONLY (SPRINT 22) ─
+    # NEVER stores LIVE trades. LIVE trades go to usr_trades (Capa 1).
+    # Used by ShadowManager for 3 Pilares evaluation and backtest auditing.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sys_trades (
+            id          TEXT PRIMARY KEY,
+            signal_id   TEXT,
+            instance_id TEXT,
+            account_id  TEXT,
+            symbol      TEXT,
+            direction   TEXT,
+            entry_price REAL,
+            exit_price  REAL,
+            profit      REAL,
+            exit_reason TEXT,
+            open_time   TIMESTAMP,
+            close_time  TIMESTAMP,
+            execution_mode TEXT NOT NULL
+                CHECK(execution_mode IN ('SHADOW', 'BACKTEST')),
+            strategy_id TEXT,
+            order_id    TEXT,
+            created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (signal_id)  REFERENCES sys_signals(id),
+            FOREIGN KEY (account_id) REFERENCES sys_broker_accounts(account_id)
+        )
+    """)
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sys_trades_instance_id "
+        "ON sys_trades (instance_id)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sys_trades_execution_mode "
+        "ON sys_trades (execution_mode)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sys_trades_strategy_id "
+        "ON sys_trades (strategy_id)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sys_trades_close_time "
+        "ON sys_trades (close_time)"
+    )
+
+    # MIGRATION (SPRINT 22): Enforce LIVE-only constraint on usr_trades via TRIGGER
+    # SQLite doesn't support ADD CONSTRAINT, so we use a BEFORE INSERT trigger.
+    # This physically prevents SHADOW/BACKTEST trades from contaminating trader metrics.
+    cursor.execute("""
+        CREATE TRIGGER IF NOT EXISTS trg_usr_trades_live_only
+        BEFORE INSERT ON usr_trades
+        BEGIN
+            SELECT CASE
+                WHEN NEW.execution_mode IS NOT NULL AND NEW.execution_mode != 'LIVE'
+                THEN RAISE(ABORT, 'usr_trades only accepts execution_mode=LIVE')
+            END;
+        END
+    """)
+
     # ── 3. Symbol Normalization (SSOT) ───────────────────────────────────────
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS sys_symbol_mappings (

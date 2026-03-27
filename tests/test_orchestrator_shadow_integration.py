@@ -364,3 +364,87 @@ class TestEndToEndIntegration:
         assert len([i for i in instances if i.instance_id.startswith("shadow_healthy")]) == 3
         assert len([i for i in instances if i.instance_id.startswith("shadow_dead")]) == 2
         assert len([i for i in instances if i.instance_id.startswith("shadow_monitor")]) == 5
+
+
+class TestShadowExecutionAuthorization:
+    """
+    BUG-3: SHADOW strategies must return True from _is_strategy_authorized_for_execution()
+    so that paper trades are routed to DEMO account and metrics can accumulate.
+
+    Without paper trades, sys_signal_quality_assessments stays empty, win_rate stays 0,
+    and the 3 Pilares system can never evaluate or promote any strategy.
+    """
+
+    def test_shadow_strategy_is_authorized_for_paper_execution(self):
+        """
+        BUG-3 FIX: SHADOW execution_mode must return True (not False).
+
+        SHADOW signals must paper-trade on DEMO account to accumulate metrics
+        for 3 Pilares evaluation. Returning False blocks all metric accumulation
+        and makes the promotion system permanently stuck.
+        """
+        from unittest.mock import MagicMock
+        from models.signal import Signal, SignalType, ConnectorType
+
+        # Build a minimal MainOrchestrator with mocked dependencies
+        orchestrator = MainOrchestrator.__new__(MainOrchestrator)
+        orchestrator.storage = MagicMock()
+        orchestrator.logger = MagicMock()
+
+        # Strategy ranking says execution_mode = 'SHADOW'
+        orchestrator.storage.get_signal_ranking.return_value = {
+            "strategy_id": "BRK_OPEN_0001",
+            "execution_mode": "SHADOW",
+        }
+
+        signal = MagicMock(spec=Signal)
+        signal.strategy = "BRK_OPEN_0001"
+
+        result = orchestrator._is_strategy_authorized_for_execution(signal)
+
+        # SHADOW must be authorized (True) so the executor routes to DEMO for paper trade
+        assert result is True, (
+            "BUG-3: SHADOW strategy returned False — this blocks ALL paper trades, "
+            "prevents metric accumulation, and makes 3 Pilares permanently stuck. "
+            "SHADOW must route to DEMO account for paper execution."
+        )
+
+    def test_live_strategy_remains_authorized(self):
+        """LIVE execution_mode must still return True (regression guard)."""
+        from unittest.mock import MagicMock
+        from models.signal import Signal, SignalType, ConnectorType
+
+        orchestrator = MainOrchestrator.__new__(MainOrchestrator)
+        orchestrator.storage = MagicMock()
+        orchestrator.logger = MagicMock()
+
+        orchestrator.storage.get_signal_ranking.return_value = {
+            "strategy_id": "LIVE_STRAT_001",
+            "execution_mode": "LIVE",
+        }
+
+        signal = MagicMock(spec=Signal)
+        signal.strategy = "LIVE_STRAT_001"
+
+        result = orchestrator._is_strategy_authorized_for_execution(signal)
+        assert result is True, "LIVE strategies must still be authorized after BUG-3 fix"
+
+    def test_quarantine_strategy_remains_blocked(self):
+        """QUARANTINE execution_mode must still return False (regression guard)."""
+        from unittest.mock import MagicMock
+        from models.signal import Signal, SignalType, ConnectorType
+
+        orchestrator = MainOrchestrator.__new__(MainOrchestrator)
+        orchestrator.storage = MagicMock()
+        orchestrator.logger = MagicMock()
+
+        orchestrator.storage.get_signal_ranking.return_value = {
+            "strategy_id": "QUARANTINE_STRAT_001",
+            "execution_mode": "QUARANTINE",
+        }
+
+        signal = MagicMock(spec=Signal)
+        signal.strategy = "QUARANTINE_STRAT_001"
+
+        result = orchestrator._is_strategy_authorized_for_execution(signal)
+        assert result is False, "QUARANTINE strategies must remain blocked after BUG-3 fix"
