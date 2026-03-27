@@ -1,18 +1,19 @@
 """
 operational_edge_monitor.py — Verificación de Invariantes de Negocio
 
-Componente standalone que ejecuta 8 checks contra la capa de almacenamiento
+Componente standalone que ejecuta 9 checks contra la capa de almacenamiento
 y reporta el estado de salud operacional del sistema.
 
 Checks:
-  shadow_sync         — Instancias SHADOW maduras acumulando trades
-  backtest_quality    — Al menos una estrategia con backtest_score > 0
-  connector_exec      — Al menos un conector de ejecución habilitado
-  signal_flow         — Señales generadas en las últimas 2h
-  adx_sanity          — ADX no atascado en 0 en los market pulses
-  lifecycle_coherence — Sin estrategias con rankings vencidos >48h
-  rejection_rate      — Tasa de rechazo de señales < 95%
-  score_stale         — Rankings actualizados en las últimas 72h
+  shadow_sync              — Instancias SHADOW maduras acumulando trades
+  backtest_quality         — Al menos una estrategia con backtest_score > 0
+  connector_exec           — Al menos un conector de ejecución habilitado
+  signal_flow              — Señales generadas en las últimas 2h
+  adx_sanity               — ADX no atascado en 0 en los market pulses
+  lifecycle_coherence      — Sin estrategias con rankings vencidos >48h
+  rejection_rate           — Tasa de rechazo de señales < 95%
+  score_stale              — Rankings actualizados en las últimas 72h
+  orchestrator_heartbeat   — Loop principal sin bloqueos (heartbeat < 20 min)
 """
 import logging
 import threading
@@ -57,6 +58,8 @@ class OperationalEdgeMonitor(threading.Thread):
     LIFECYCLE_STALE_HOURS = 48
     MAX_REJECTION_RATE = 0.95
     MIN_ADX_NONZERO_RATIO = 0.10
+    MAX_HEARTBEAT_GAP_WARN_MINUTES = 10
+    MAX_HEARTBEAT_GAP_FAIL_MINUTES = 20
 
     def __init__(
         self,
@@ -70,28 +73,41 @@ class OperationalEdgeMonitor(threading.Thread):
         self.interval_seconds = interval_seconds
         self.name = "OperationalEdgeMonitor"
         self.running = True
+        self.last_results: Dict[str, CheckResult] = {}
+        self.last_checked_at: Optional[str] = None
 
     # ── Thread interface ──────────────────────────────────────────────────────
 
     def run(self) -> None:
         logger.info(
-            "[OPS-EDGE] Operational invariant monitor started (interval=%ds)",
+            "[OPS-EDGE] Operational invariant monitor started (interval=%ds, checks=9)",
             self.interval_seconds,
         )
         while self.running:
             results = self.run_checks()
+            self.last_results = results
+            self.last_checked_at = datetime.now(timezone.utc).isoformat()
+
             failing = [k for k, r in results.items() if r.status == CheckStatus.FAIL]
+            warnings = [k for k, r in results.items() if r.status == CheckStatus.WARN]
+
             if failing:
                 logger.warning("[OPS-EDGE] Invariant violations: %s", ", ".join(failing))
                 try:
                     self.storage.save_edge_learning(
                         detection=f"Invariant violations: {', '.join(failing)}",
                         action_taken="OPS-EDGE periodic audit",
-                        learning=f"{len(failing)} checks FAIL",
+                        learning=f"{len(failing)} checks FAIL, {len(warnings)} WARN",
                         details=str({k: results[k].detail for k in failing}),
                     )
                 except Exception as exc:
                     logger.error("[OPS-EDGE] Could not persist violation record: %s", exc)
+            else:
+                logger.info(
+                    "[OPS-EDGE] All checks passed (warnings=%d): %s",
+                    len(warnings),
+                    ", ".join(warnings) if warnings else "none",
+                )
             time.sleep(self.interval_seconds)
 
     def stop(self) -> None:
@@ -103,7 +119,7 @@ class OperationalEdgeMonitor(threading.Thread):
     # ─────────────────────────────────────────────────────────────────────────
 
     def run_checks(self) -> Dict[str, CheckResult]:
-        """Ejecuta los 8 checks. Errores individuales no detienen el resto."""
+        """Ejecuta los 9 checks. Errores individuales no detienen el resto."""
         checks = {
             "shadow_sync": self._check_shadow_sync,
             "backtest_quality": self._check_backtest_quality,
@@ -113,6 +129,7 @@ class OperationalEdgeMonitor(threading.Thread):
             "lifecycle_coherence": self._check_lifecycle_coherence,
             "rejection_rate": self._check_rejection_rate,
             "score_stale": self._check_score_stale,
+            "orchestrator_heartbeat": self._check_orchestrator_heartbeat,
         }
         results = {}
         for name, fn in checks.items():
@@ -139,7 +156,9 @@ class OperationalEdgeMonitor(threading.Thread):
         failing = [n for n, r in results.items() if r.status == CheckStatus.FAIL]
         warnings = [n for n, r in results.items() if r.status == CheckStatus.WARN]
 
-        if len(failing) >= 3:
+        # CRITICAL si >= 2 checks fallan — heartbeat es siempre crítico solo
+        orchestrator_down = "orchestrator_heartbeat" in failing
+        if len(failing) >= 2 or orchestrator_down:
             overall = "CRITICAL"
         elif failing:
             overall = "DEGRADED"
@@ -288,6 +307,36 @@ class OperationalEdgeMonitor(threading.Thread):
                 f"{len(stale)} estrategia(s) sin puntaje en >{self.STALE_SCORE_HOURS}h: {stale[:5]}",
             )
         return CheckResult(CheckStatus.OK, f"Todos los {len(rankings)} rankings actualizados en <{self.STALE_SCORE_HOURS}h")
+
+    def _check_orchestrator_heartbeat(self) -> CheckResult:
+        """El loop principal debe actualizar su heartbeat en menos de MAX_HEARTBEAT_GAP_FAIL_MINUTES."""
+        heartbeats = self.storage.get_module_heartbeats()
+        orchestrator_ts = heartbeats.get("orchestrator")
+
+        if orchestrator_ts is None:
+            return CheckResult(
+                CheckStatus.WARN,
+                "Sin heartbeat registrado — orchestrator puede no haber iniciado aún",
+            )
+
+        last_beat = _parse_ts(orchestrator_ts)
+        if last_beat is None:
+            return CheckResult(CheckStatus.WARN, f"Heartbeat con formato inválido: {orchestrator_ts}")
+
+        gap_minutes = (datetime.now(timezone.utc) - last_beat).total_seconds() / 60
+
+        if gap_minutes > self.MAX_HEARTBEAT_GAP_FAIL_MINUTES:
+            return CheckResult(
+                CheckStatus.FAIL,
+                f"Loop principal sin heartbeat hace {gap_minutes:.1f} min "
+                f"(umbral: {self.MAX_HEARTBEAT_GAP_FAIL_MINUTES} min) — posible bloqueo",
+            )
+        if gap_minutes > self.MAX_HEARTBEAT_GAP_WARN_MINUTES:
+            return CheckResult(
+                CheckStatus.WARN,
+                f"Heartbeat tardío: {gap_minutes:.1f} min (umbral warn: {self.MAX_HEARTBEAT_GAP_WARN_MINUTES} min)",
+            )
+        return CheckResult(CheckStatus.OK, f"Loop principal activo (heartbeat hace {gap_minutes:.1f} min)")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

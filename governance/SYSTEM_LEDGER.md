@@ -4,7 +4,7 @@
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-26 UTC)**: Trace_ID: EXEC-V8-SYS-TRADES-SEPARATION | Sprint 22 cerrado: `sys_trades` implementada (Capa 0) con enforcement doble (ValueError app + TRIGGER SQLite) · `usr_trades` blindada LIVE-only · ShadowManager conectado a `sys_trades` para 3 Pilares · 1988/1988 PASSED · Motor Darwiniano desbloqueado.
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-27 UTC)**: Trace_ID: EDGE-RELIABILITY-SELF-AUDIT-2026 | Sprint 23 en curso (E13 — HU 10.10 + HU 10.11): OEM integrado en producción (`start.py` bloque 8.6) con `shadow_storage` inyectado · 9° check `orchestrator_heartbeat` · endpoint `GET /api/system/health/edge` · `SystemHealthPanel` UI · 21 tests nuevos · **validate_all 27/27 PASSED** · Suite base 1988 intacta.
 
 ---
 

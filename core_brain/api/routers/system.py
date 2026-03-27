@@ -434,6 +434,32 @@ async def update_usr_preferences(request: Request, token: TokenPayload = Depends
 
 # ============ Scanner Status Endpoint ============
 
+@router.get("/system/health/edge")
+async def get_edge_health() -> Dict[str, Any]:
+    """
+    Retorna el estado de salud operacional del sistema según el OperationalEdgeMonitor.
+
+    Incluye los 9 checks de invariantes de negocio con su estado (OK/WARN/FAIL),
+    el estado global (OK/DEGRADED/CRITICAL) y el timestamp del último ciclo.
+
+    No requiere autenticación — es un endpoint de observabilidad pública del sistema.
+    """
+    from core_brain.server import get_oem_instance
+    oem = get_oem_instance()
+    if oem is None:
+        return {
+            "status": "UNAVAILABLE",
+            "message": "OperationalEdgeMonitor no inicializado — el sistema puede estar arrancando",
+            "checks": {},
+            "failing": [],
+            "warnings": [],
+            "last_checked_at": None,
+        }
+    summary = oem.get_health_summary()
+    summary["last_checked_at"] = oem.last_checked_at
+    return summary
+
+
 @router.get("/scanner/status")
 async def get_scanner_status() -> Dict[str, Any]:
     """Returns the current scanner status.

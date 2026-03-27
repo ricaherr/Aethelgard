@@ -540,6 +540,33 @@ async def main() -> None:
         else:
             logger.warning("[INIT] ⚠️  No strategies loaded, skipping SHADOW pool initialization")
         
+        # 8.6 Operational Edge Monitor (auto-auditoría de invariantes de negocio)
+        logger.info("[INIT] Inicializando Operational Edge Monitor (auto-auditoría)...")
+        from core_brain.operational_edge_monitor import OperationalEdgeMonitor
+        from data_vault.shadow_db import ShadowStorageManager as _ShadowStorageManager
+
+        _shadow_storage_for_oem = None
+        try:
+            _conn = getattr(storage, 'conn', None) or getattr(storage, 'connection', None)
+            if _conn is not None:
+                _shadow_storage_for_oem = _ShadowStorageManager(_conn)
+                logger.info("[OEM] shadow_storage inyectado correctamente")
+            else:
+                logger.warning("[OEM] No se pudo obtener conexión SQLite — check shadow_sync omitido")
+        except Exception as _exc:
+            logger.warning("[OEM] Error creando shadow_storage: %s — check shadow_sync omitido", _exc)
+
+        oem = OperationalEdgeMonitor(
+            storage=storage,
+            shadow_storage=_shadow_storage_for_oem,
+            interval_seconds=300,
+        )
+        oem.start()
+
+        from core_brain.server import set_oem_instance
+        set_oem_instance(oem)
+        logger.info("[OK] Operational Edge Monitor activo (9 invariantes de negocio, cada 5 min)")
+
         # 9. Autonomous Health Service (EDGE Autonomy)
         logger.info("[INIT] Inicializando Servicio de Salud Autónomo...")
         from core_brain.health_service import AutonomousHealthService

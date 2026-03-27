@@ -14,23 +14,26 @@
 # SPRINT 23: EDGE RELIABILITY — CERTEZA DE COMPONENTES & AUTO-AUDITORÍA — [DEV]
 
 **Inicio**: 27 de Marzo, 2026
-**Fin**: por definir
+**Fin**: en curso
 **Objetivo**: Garantizar que el sistema se auto-audita en tiempo real mediante la activación del `OperationalEdgeMonitor` en producción, añadir guards de timeout en el loop principal para convertir bloqueos silenciosos en eventos observables, y establecer tests de contrato que conviertan cada bug conocido en una red de seguridad permanente contra regresiones.
 **Épica**: E13 (EDGE Reliability) | **Trace_ID**: EDGE-RELIABILITY-SELF-AUDIT-2026
 **Dominios**: 10_INFRASTRUCTURE_RESILIENCY
 
 ## 📋 Tareas del Sprint
 
-- [TODO] **HU 10.10: OEM Production Integration**
-  - `start.py`: instanciar `OperationalEdgeMonitor` con `shadow_storage` inyectado, arrancar thread daemon después de `ShadowManager`
-  - Verificar que el check `shadow_sync` evalúa instancias reales (no WARN por shadow_storage ausente)
-  - `tests/test_oem_production_integration.py`: test de integración — OEM inicia con `shadow_storage != None` y primer ciclo de checks se ejecuta
+- [DEV] **HU 10.10: OEM Production Integration**
+  - `start.py`: `OperationalEdgeMonitor` instanciado con `shadow_storage` inyectado (línea ~543), thread daemon arranca después del SHADOW pool
+  - `core_brain/server.py`: singleton `_oem_instance` + `set_oem_instance()` / `get_oem_instance()`
+  - `core_brain/api/routers/system.py`: endpoint `GET /system/health/edge`
+  - `ui/src/hooks/useOemHealth.ts`: hook HTTP polling cada 15 s
+  - `ui/src/components/diagnostic/SystemHealthPanel.tsx`: panel UI con 9 check cards (componente + status + detalle)
+  - `ui/src/components/diagnostic/MonitorPage.tsx`: `<SystemHealthPanel />` integrado al final de la página
+  - `tests/test_oem_production_integration.py`: 9 tests — integración, singleton, endpoint UNAVAILABLE
 
-- [TODO] **HU 10.11: OEM Loop Heartbeat Check**
-  - `core_brain/operational_edge_monitor.py`: añadir `_check_orchestrator_heartbeat()` como noveno check
-  - Umbrales: `OK` < 10 min, `WARN` 10-20 min, `FAIL` > 20 min — configurables desde `sys_config`
-  - Ajustar `get_health_summary()`: CRITICAL si >= 2 checks fallidos (antes 3)
-  - `tests/test_oem_heartbeat_check.py`: casos OK/WARN/FAIL + integración con health_summary
+- [DEV] **HU 10.11: OEM Loop Heartbeat Check**
+  - `core_brain/operational_edge_monitor.py`: `_check_orchestrator_heartbeat()` como 9° check; `last_results` + `last_checked_at` en instancia; log de OK con warnings count; `CRITICAL` si heartbeat FAIL o >= 2 FAIL
+  - Umbrales: `OK` < 10 min, `WARN` 10-20 min, `FAIL` > 20 min
+  - `tests/test_oem_heartbeat_check.py`: 10 tests — OK/WARN/FAIL, umbrales exactos, integración con health_summary
 
 - [TODO] **HU 10.12: Timeout Guards en run_single_cycle**
   - `core_brain/main_orchestrator.py`: `asyncio.wait_for()` en `_request_scan()` (120s), `_check_and_run_daily_backtest()` (300s), `position_manager.monitor_usr_positions()` (60s)

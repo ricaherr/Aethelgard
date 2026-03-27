@@ -6,6 +6,7 @@ import { cn } from '../../utils/cn';
 import { useState } from 'react';
 import { CerebroThought } from '../../types/aethelgard';
 import { AuditLiveMonitor } from './AuditLiveMonitor';
+import { SystemHealthPanel } from './SystemHealthPanel';
 import { useSynapseTelemetry } from '../../hooks/useSynapseTelemetry';
 
 interface MonitorPageProps {
@@ -349,6 +350,9 @@ export const MonitorPage = ({ status, thoughts, runAudit, runRepair }: MonitorPa
                 thoughts={thoughts}
                 runRepair={runRepair}
             />
+
+            {/* EDGE Self-Audit — 9 invariant checks from OperationalEdgeMonitor */}
+            <SystemHealthPanel />
         </motion.div>
     );
 }

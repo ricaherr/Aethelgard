@@ -119,6 +119,12 @@ Toda transición de salud se comunica a la UI inmediatamente:
   - HU 10.4: Capital dinámico desde `sys_config`
   - HU 10.5: EdgeMonitor connector-agnóstico
 - [x] **HU 10.6: AutonomousSystemOrchestrator — Diseño FASE4** ✅ (24-Mar-2026) — 5 sub-componentes documentados, contratos Python, HealingPlaybook, plan incremental 3 fases.
+- [x] **Sprint 23: EDGE Reliability — HU 10.10 + HU 10.11** ✅ (27-Mar-2026)
+  - HU 10.10: OEM integrado en producción con `shadow_storage` inyectado
+  - HU 10.11: 9° check `orchestrator_heartbeat` + `last_results` expuesto vía API
+  - Endpoint `GET /api/system/health/edge` + UI `SystemHealthPanel`
+- [ ] HU 10.12: Timeout guards en `run_single_cycle()` (Sprint 23 pendiente)
+- [ ] HU 10.13: Contract tests para bugs conocidos (Sprint 23 pendiente)
 - [ ] Implementación de orquestación de servicios en contenedores aislados.
 - [ ] Integración de meta-aprendizaje sobre recursos técnicos.
 
@@ -237,7 +243,7 @@ El sistema cuenta con **13 componentes EDGE** operativos que actúan de forma de
 
 | Componente | Ubicación | Función |
 |---|---|---|
-| `OperationalEdgeMonitor` | `core_brain/operational_edge_monitor.py` | 8 invariantes de negocio |
+| `OperationalEdgeMonitor` | `core_brain/operational_edge_monitor.py` | 9 invariantes de negocio (incluye heartbeat del loop) |
 | `EdgeTuner` | `core_brain/edge_tuner.py` | Calibración automática de parámetros |
 | `DedupLearner` | `core_brain/signal_deduplicator.py` | Aprendizaje de ventanas de dedup |
 | `CoherenceMonitor` | `core_brain/coherence_monitor.py` | Detección de drift SHADOW vs LIVE |
@@ -602,4 +608,105 @@ MainOrchestrator
 ```
 
 **Nota de implementación**: el `AutonomousSystemOrchestrator` es **observador pasivo** hasta FASE 4C. Los componentes EDGE mantienen su lógica propia; el ASO solo recibe notificaciones vía callbacks, sin acoplar su lógica interna.
+
+---
+
+## ⚙️ HU 10.10 — OEM Production Integration (27-Mar-2026)
+
+**Trace_ID**: `EDGE-RELIABILITY-OEM-INTEGRATION-2026`
+**Épica**: E13 | **Sprint**: 23
+
+### Problema
+El `OperationalEdgeMonitor` existía con 8 checks implementados y 27 tests pasando, pero **nunca fue instanciado en `start.py`**. Sus invariantes de negocio nunca se ejecutaban en producción. Adicionalmente, el check `shadow_sync` retornaba siempre `WARN: shadow_storage no inyectado` porque el constructor no recibía el parámetro.
+
+### Solución implementada
+
+**`start.py`** — bloque `8.6` (después del SHADOW pool, antes de `AutonomousHealthService`):
+```python
+from core_brain.operational_edge_monitor import OperationalEdgeMonitor
+from data_vault.shadow_db import ShadowStorageManager
+
+_conn = getattr(storage, 'conn', None) or getattr(storage, 'connection', None)
+_shadow_storage_for_oem = ShadowStorageManager(_conn) if _conn else None
+
+oem = OperationalEdgeMonitor(
+    storage=storage,
+    shadow_storage=_shadow_storage_for_oem,
+    interval_seconds=300,
+)
+oem.start()
+
+from core_brain.server import set_oem_instance
+set_oem_instance(oem)
+```
+
+**`core_brain/server.py`** — singleton accesible por la API:
+```python
+_oem_instance = None
+
+def set_oem_instance(oem) -> None: ...
+def get_oem_instance():            ...
+```
+
+**`core_brain/api/routers/system.py`** — endpoint REST:
+```
+GET /api/system/health/edge
+→ { status, checks: {name: {status, detail}}, failing, warnings, last_checked_at }
+```
+
+**UI**: `ui/src/hooks/useOemHealth.ts` (polling HTTP 15 s) + `ui/src/components/diagnostic/SystemHealthPanel.tsx` (grid de 9 cards integrado en `MonitorPage`).
+
+### Artefactos
+- `start.py` (bloque 8.6)
+- `core_brain/server.py` (`set_oem_instance`, `get_oem_instance`)
+- `core_brain/api/routers/system.py` (`GET /api/system/health/edge`)
+- `ui/src/hooks/useOemHealth.ts`
+- `ui/src/components/diagnostic/SystemHealthPanel.tsx`
+- `ui/src/components/diagnostic/MonitorPage.tsx` (integración)
+- `tests/test_oem_production_integration.py` (9 tests)
+
+---
+
+## ⚙️ HU 10.11 — OEM Loop Heartbeat Check (27-Mar-2026)
+
+**Trace_ID**: `EDGE-RELIABILITY-OEM-HEARTBEAT-2026`
+**Épica**: E13 | **Sprint**: 23
+
+### Problema
+El loop principal (`run_single_cycle()`) podía bloquearse indefinidamente por un `await` sin timeout (ej. `fetch_ohlc()` con red caída). El OEM no tenía ningún check que detectara este estado — el sistema simplemente dejaba de avanzar sin generar ninguna alerta.
+
+### Solución implementada
+
+**`core_brain/operational_edge_monitor.py`**:
+
+Nuevo 9° check `_check_orchestrator_heartbeat()`:
+```python
+MAX_HEARTBEAT_GAP_WARN_MINUTES = 10
+MAX_HEARTBEAT_GAP_FAIL_MINUTES = 20
+
+def _check_orchestrator_heartbeat(self) -> CheckResult:
+    heartbeats = self.storage.get_module_heartbeats()
+    orchestrator_ts = heartbeats.get("orchestrator")
+    # Sin heartbeat → WARN (primer arranque)
+    # gap < 10 min → OK
+    # gap 10-20 min → WARN
+    # gap > 20 min → FAIL (posible bloqueo del loop)
+```
+
+**Regla CRITICAL actualizada**: el estado global es `CRITICAL` si `orchestrator_heartbeat` falla (solo), o si >= 2 checks fallan. Antes: >= 3 checks.
+
+**`last_results` y `last_checked_at`** añadidos como atributos de instancia actualizados en cada ciclo del thread — consumidos por el endpoint REST.
+
+### Diagrama de estados del check
+
+```
+heartbeat inexistente → WARN  (sistema puede estar arrancando)
+gap < 10 min          → OK    (loop activo y saludable)
+gap 10–20 min         → WARN  (loop lento — posible carga alta)
+gap > 20 min          → FAIL  (CRITICAL — loop posiblemente bloqueado)
+```
+
+### Artefactos
+- `core_brain/operational_edge_monitor.py` (check, constantes, last_results, CRITICAL rule)
+- `tests/test_oem_heartbeat_check.py` (10 tests: OK/WARN/FAIL, umbrales exactos, integración health_summary)
 

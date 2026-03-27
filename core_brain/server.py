@@ -40,6 +40,18 @@ _system_service_instance = None
 _storage_instance = None  # Lazy-loaded storage
 _regime_classifier_instance = None  # Lazy-loaded regime classifier
 _trading_service_instance = None  # Lazy-loaded trading service
+_oem_instance = None  # OperationalEdgeMonitor — set by start.py after boot
+
+
+def set_oem_instance(oem: "Optional[Any]") -> None:
+    """Register the running OperationalEdgeMonitor instance for API access."""
+    global _oem_instance
+    _oem_instance = oem
+
+
+def get_oem_instance() -> "Optional[Any]":
+    """Return the running OperationalEdgeMonitor instance, or None if not started."""
+    return _oem_instance
 
 def _get_socket_service() -> SocketService:
     """Lazy-load SocketService singleton."""
