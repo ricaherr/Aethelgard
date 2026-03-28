@@ -30,16 +30,20 @@ from models.signal import Signal, SignalType, MarketRegime, ConnectorType
 @pytest.fixture(autouse=True)
 def _patch_daily_backtest():
     """
-    Parcha _check_and_run_daily_backtest para todos los tests del módulo.
-    En el primer ciclo esta corrutina siempre se ejecuta y llama a
-    BacktestOrchestrator.run_pending_strategies() → DataProviderManager.fetch_ohlc()
-    que hace requests de red reales. En el entorno de test no hay conectividad,
-    por lo que la suite queda bloqueada indefinidamente.
+    Parcha _check_and_run_daily_backtest y _is_market_closed para todos los tests.
+
+    - _check_and_run_daily_backtest: hace fetch_ohlc real que bloquea sin red.
+    - _is_market_closed: devuelve False para que el MARKET-GUARD no corte el ciclo
+      cuando los tests corren en fin de semana.
     """
     with patch.object(
         MainOrchestrator,
         "_check_and_run_daily_backtest",
         new_callable=AsyncMock,
+    ), patch.object(
+        MainOrchestrator,
+        "_is_market_closed",
+        return_value=False,
     ):
         yield
 

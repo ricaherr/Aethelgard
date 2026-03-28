@@ -89,10 +89,18 @@ class TestStrategyGatekeeperWiring(unittest.TestCase):
             new_callable=AsyncMock,
         )
         self._daily_backtest_patch.start()
+        # Patch _is_market_closed so MARKET-GUARD never skips cycles on weekends
+        self._market_patch = patch.object(
+            MainOrchestrator,
+            "_is_market_closed",
+            return_value=False,
+        )
+        self._market_patch.start()
 
     def tearDown(self):
         self._cpu_patch.stop()
         self._daily_backtest_patch.stop()
+        self._market_patch.stop()
 
     # ------------------------------------------------------------------
     # 1. DI acceptance in __init__

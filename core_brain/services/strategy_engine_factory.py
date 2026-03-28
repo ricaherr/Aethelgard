@@ -160,7 +160,7 @@ class StrategyEngineFactory:
         
         # Validación 3: ¿Execution_mode es válido? (Lee de usr_performance)
         execution_mode = self._get_execution_mode(strategy_id)
-        if execution_mode not in ["SHADOW", "LIVE", "QUARANTINE"]:
+        if execution_mode not in ["SHADOW", "LIVE", "QUARANTINE", "BACKTEST"]:
             logger.warning(
                 f"[FACTORY] ⊘ {strategy_id}: execution_mode={execution_mode} inválido"
             )
@@ -207,6 +207,12 @@ class StrategyEngineFactory:
                 engine.no_send_usr_orders = True
             engine.execution_mode = "SHADOW"
             logger.info(f"[FACTORY] 👁️  {strategy_id}: SHADOW mode (testing, no live usr_orders)")
+        elif execution_mode == "BACKTEST":
+            # Modo BACKTEST = estrategia en evaluación, sin órdenes live (igual que SHADOW)
+            if hasattr(engine, 'no_send_usr_orders'):
+                engine.no_send_usr_orders = True
+            engine.execution_mode = "BACKTEST"
+            logger.info(f"[FACTORY] 🔬 {strategy_id}: BACKTEST mode (bajo evaluación, no live usr_orders)")
         
         # Guardar en Dict
         self.active_engines[strategy_id] = engine

@@ -30,7 +30,7 @@ class TestCooldownManagerPhase2:
         """Mock StorageManager with required methods."""
         storage = AsyncMock()
         storage.get_active_cooldown = AsyncMock(return_value=None)
-        storage.register_cooldown = AsyncMock()
+        storage.register_cooldown = MagicMock()  # sync method (no await)
         storage.log_cooldown_event = AsyncMock()
         return storage
 

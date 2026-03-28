@@ -272,28 +272,20 @@ class SignalQualityScorer:
         Persist high-quality assessments for audit and learning.
 
         Only persists A+ and A grades (execution-ready signals).
+        Delegates to StorageManager.persist_quality_assessment() (sync, SSOT pattern).
         """
         try:
-            await self.storage.execute(
-                """
-                INSERT OR REPLACE INTO sys_signal_quality_assessments 
-                (signal_id, symbol, timeframe, grade, overall_score, technical_score, 
-                 contextual_score, consensus_bonus, failure_penalty, trace_id, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    result.signal_id,
-                    result.symbol,
-                    result.timeframe,
-                    result.grade.value,
-                    result.overall_score,
-                    result.technical_score,
-                    result.contextual_score,
-                    result.consensus_bonus,
-                    result.failure_penalty,
-                    result.trace_id,
-                    datetime.now(timezone.utc).isoformat(),
-                ),
+            self.storage.persist_quality_assessment(
+                signal_id=result.signal_id,
+                symbol=result.symbol,
+                timeframe=result.timeframe,
+                grade=result.grade.value,
+                overall_score=result.overall_score,
+                technical_score=result.technical_score,
+                contextual_score=result.contextual_score,
+                consensus_bonus=result.consensus_bonus,
+                failure_penalty=result.failure_penalty,
+                trace_id=result.trace_id,
             )
         except Exception as e:
             self.logger.warning(f"Failed to persist quality assessment: {e}")

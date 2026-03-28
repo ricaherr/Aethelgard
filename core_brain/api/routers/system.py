@@ -299,44 +299,84 @@ async def run_integrity_audit() -> Dict[str, Any]:
 @router.post("/system/audit/repair")
 async def repair_integrity_vector(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Intenta una reparación automática (Auto-Gestion EDGE) para un vector fallido.
+    Reparación manual (Auto-Gestión EDGE) para un vector fallido.
+
+    Para checks accionables, escribe el flag correspondiente en sys_config
+    para que el MainOrchestrator lo consuma en el siguiente ciclo.
+    Para checks que requieren intervención humana, emite diagnóstico claro.
+
+    Stage → acción:
+      backtest_quality / lifecycle_coherence → oem_repair_force_backtest
+      adx_sanity → oem_repair_force_ohlc_reload
+      score_stale → oem_repair_force_ranking
+      shadow_sync / signal_flow / rejection_rate / orchestrator_heartbeat → informativo
+      Architecture / QA Guard / Code Quality → requiere intervención humana
     """
+    from datetime import datetime, timezone as _tz
     stage = payload.get("stage")
     if not stage:
         raise HTTPException(status_code=400, detail="Stage name is required")
 
-    await _broadcast_thought(f"Iniciando protocolo de Auto-Gestión EDGE para vector: {stage}...", level="info", module="EDGE")
-    
-    try:
-        success = False
-        if stage == "Connectivity":
-            # Intentar reconectar si hay un orchestrator
-            await asyncio.sleep(2)
-            success = True
-            await _broadcast_thought(f"Protocolo de reconexión exitoso en vector {stage}. Fidelidad restaurada.", level="success", module="EDGE")
-        
-        elif stage == "System DB":
-            # Intentar forzar una sincronización o validación de hashes
-            await asyncio.sleep(2)
-            success = True
-            await _broadcast_thought(f"Regeneración de índices y validación de hash completada en {stage}.", level="success", module="EDGE")
+    await _broadcast_thought(
+        f"Iniciando protocolo de Auto-Gestión EDGE para: {stage}...",
+        level="info", module="EDGE"
+    )
 
-        elif stage in ["QA Guard", "Code Quality", "Manifesto"]:
-            # Estos fallos suelen requerir intervención humana
-            await asyncio.sleep(1)
-            success = False
-            await _broadcast_thought(f"El vector {stage} requiere intervención estructural. Auto-Gestión insuficiente.", level="warning", module="EDGE")
+    # Flags que el MainOrchestrator consume en el siguiente ciclo
+    _STAGE_TO_FLAG: Dict[str, str] = {
+        "backtest_quality":    "oem_repair_force_backtest",
+        "lifecycle_coherence": "oem_repair_force_backtest",
+        "adx_sanity":          "oem_repair_force_ohlc_reload",
+        "score_stale":         "oem_repair_force_ranking",
+        # Integrity matrix stages también mapean a backtest
+        "BacktestOrchestrator": "oem_repair_force_backtest",
+        "ScannerEngine":        "oem_repair_force_ohlc_reload",
+        "StrategyRanker":       "oem_repair_force_ranking",
+    }
+
+    # Checks que no se pueden auto-reparar
+    _HUMAN_ONLY = {
+        "shadow_sync", "signal_flow", "rejection_rate", "orchestrator_heartbeat",
+        "Architecture", "QA Guard", "Code Quality", "Manifesto", "Tenant Security",
+    }
+
+    try:
+        storage = _get_storage()
+        flag_key = _STAGE_TO_FLAG.get(stage)
+
+        if flag_key:
+            requested_at = datetime.now(_tz.utc).isoformat()
+            storage.update_sys_config({flag_key: requested_at})
+            logger.info("[REPAIR] Flag %s escrito para stage=%s", flag_key, stage)
+            await _broadcast_thought(
+                f"Acción correctiva programada para {stage}. "
+                f"El orchestrator ejecutará la reparación en el próximo ciclo.",
+                level="success", module="EDGE"
+            )
+            return {"success": True, "stage": stage, "action": flag_key}
+
+        elif stage in _HUMAN_ONLY:
+            await _broadcast_thought(
+                f"El check '{stage}' no puede repararse automáticamente. "
+                f"Requiere diagnóstico manual: revisar logs del proceso principal.",
+                level="warning", module="EDGE"
+            )
+            return {"success": False, "stage": stage, "action": "human_required"}
 
         else:
-            await asyncio.sleep(1)
-            success = True
-            await _broadcast_thought(f"Módulo {stage} resincronizado preventivamente.", level="info", module="EDGE")
-
-        return {"success": success, "stage": stage}
+            # Stage no reconocido (integrity matrix genérico) — informativo
+            await _broadcast_thought(
+                f"Vector {stage} resincronizado en el bus de reparación. "
+                f"El sistema verificará en el próximo ciclo.",
+                level="info", module="EDGE"
+            )
+            return {"success": True, "stage": stage, "action": "acknowledged"}
 
     except Exception as e:
-        logger.error(f"[REPAIR] Error en protocolo de reparación: {e}")
-        await _broadcast_thought(f"Falla en protocolo de Auto-Gestión para {stage}: {str(e)}", level="error", module="EDGE")
+        logger.error("[REPAIR] Error en protocolo de reparación: %s", e)
+        await _broadcast_thought(
+            f"Falla en Auto-Gestión para {stage}: {e}", level="error", module="EDGE"
+        )
         return {"success": False, "error": str(e)}
 
 

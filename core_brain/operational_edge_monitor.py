@@ -112,6 +112,7 @@ class OperationalEdgeMonitor(threading.Thread):
                     "last_checked_at": self.last_checked_at,
                 }
                 self.storage.update_sys_config({"oem_health_snapshot": json.dumps(snapshot)})
+                self._write_repair_flags(failing, warnings)
             except Exception as _exc:
                 logger.warning("[OEM] Could not persist health snapshot: %s", _exc)
 
@@ -202,8 +203,60 @@ class OperationalEdgeMonitor(threading.Thread):
         }
 
     # ─────────────────────────────────────────────────────────────────────────
+    # Repair flags — bus de comandos vía sys_config
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # Mapa: check → flag de reparación automática segura
+    _REPAIR_FLAG_MAP: Dict[str, str] = {
+        "backtest_quality":    "oem_repair_force_backtest",
+        "lifecycle_coherence": "oem_repair_force_backtest",
+        "adx_sanity":          "oem_repair_force_ohlc_reload",
+        "score_stale":         "oem_repair_force_ranking",
+    }
+
+    def _write_repair_flags(self, failing: List[str], warnings: List[str]) -> None:
+        """
+        Escribe flags de reparación en sys_config para checks accionables.
+        El MainOrchestrator los consume al inicio del siguiente ciclo.
+        Checks no accionables (shadow_sync, signal_flow, rejection_rate,
+        orchestrator_heartbeat) no generan flag — requieren diagnóstico humano.
+        """
+        flags: Dict[str, str] = {}
+        requested_at = self.last_checked_at or datetime.now(timezone.utc).isoformat()
+
+        for check in failing + warnings:
+            flag_key = self._REPAIR_FLAG_MAP.get(check)
+            if flag_key and flag_key not in flags:
+                flags[flag_key] = requested_at
+                logger.info(
+                    "[OEM] Repair flag set: %s (triggered by check=%s)", flag_key, check
+                )
+
+        if flags:
+            self.storage.update_sys_config(flags)
+
+    # ─────────────────────────────────────────────────────────────────────────
     # Checks individuales
     # ─────────────────────────────────────────────────────────────────────────
+
+    def _any_session_active(self) -> bool:
+        """
+        Retorna True si al menos una sesión de mercado principal está activa ahora.
+        Forex cerrado: sábado completo + domingo antes de las 22:00 UTC (apertura Sydney).
+        """
+        try:
+            utc_now = datetime.now(timezone.utc)
+            weekday = utc_now.weekday()  # 5=sábado, 6=domingo
+            if weekday == 5:
+                return False  # Sábado: mercado siempre cerrado
+            if weekday == 6 and utc_now.hour < 22:
+                return False  # Domingo antes de la apertura de Sydney (22:00 UTC)
+            from core_brain.services.market_session_service import MarketSessionService
+            svc = MarketSessionService(self.storage)
+            return any(svc.is_session_active(s, utc_now) for s in ("sydney", "tokyo", "london", "ny"))
+        except Exception as exc:
+            logger.debug("[OEM] No se pudo verificar sesión de mercado: %s", exc)
+            return True  # Asumir mercado abierto ante duda (fail-open para no suprimir checks)
 
     def _check_shadow_sync(self) -> CheckResult:
         """Instancias SHADOW con >2h de vida deben tener total_trades_executed > 0."""
@@ -220,6 +273,11 @@ class OperationalEdgeMonitor(threading.Thread):
         stuck = [i for i in mature if (getattr(i, "total_trades_executed", 0) or 0) == 0]
         if stuck:
             ids = [getattr(i, "instance_id", "?") for i in stuck[:5]]
+            if not self._any_session_active():
+                return CheckResult(
+                    CheckStatus.WARN,
+                    f"{len(stuck)}/{len(mature)} instancias con 0 trades (mercado cerrado — esperado): {ids}",
+                )
             return CheckResult(
                 CheckStatus.FAIL,
                 f"{len(stuck)}/{len(mature)} instancias con 0 trades: {ids}",
@@ -227,22 +285,35 @@ class OperationalEdgeMonitor(threading.Thread):
         return CheckResult(CheckStatus.OK, f"{len(mature)} instancias maduras con trades activos")
 
     def _check_backtest_quality(self) -> CheckResult:
-        """Estrategias en modo BACKTEST deben tener al menos una con score_backtest > 0."""
-        rankings = self.storage.get_all_signal_rankings()
-        if not rankings:
-            return CheckResult(CheckStatus.WARN, "Sin rankings de estrategias encontrados")
+        """
+        Estrategias en modo BACKTEST deben tener al menos una con score_backtest > 0.
+        Fuente: sys_strategies (tiene score_backtest real del BacktestOrchestrator).
+        sys_signal_ranking NO tiene este campo.
+        """
+        strategies = self.storage.get_all_sys_strategies()
+        if not strategies:
+            return CheckResult(CheckStatus.WARN, "Sin estrategias registradas en sys_strategies")
 
-        backtest_rankings = [r for r in rankings if r.get("execution_mode") == "BACKTEST"]
-        if not backtest_rankings:
+        backtest_strategies = [s for s in strategies if s.get("mode") == "BACKTEST"]
+        if not backtest_strategies:
             return CheckResult(CheckStatus.WARN, "Sin estrategias en modo BACKTEST — check omitido")
 
-        with_score = [r for r in backtest_rankings if (r.get("score_backtest") or 0) > 0]
+        with_score = [s for s in backtest_strategies if (s.get("score_backtest") or 0) > 0]
         if not with_score:
+            if not self._any_session_active():
+                return CheckResult(
+                    CheckStatus.WARN,
+                    f"Las {len(backtest_strategies)} estrategia(s) en BACKTEST tienen score_backtest=0 "
+                    f"(mercado cerrado — backtest sin datos MT5 es esperado)",
+                )
             return CheckResult(
                 CheckStatus.FAIL,
-                f"Las {len(backtest_rankings)} estrategia(s) en BACKTEST tienen score_backtest=0",
+                f"Las {len(backtest_strategies)} estrategia(s) en BACKTEST tienen score_backtest=0",
             )
-        return CheckResult(CheckStatus.OK, f"{len(with_score)}/{len(backtest_rankings)} estrategias BACKTEST con score > 0")
+        return CheckResult(
+            CheckStatus.OK,
+            f"{len(with_score)}/{len(backtest_strategies)} estrategias BACKTEST con score_backtest > 0",
+        )
 
     def _check_connector_exec(self) -> CheckResult:
         """Al menos una cuenta de broker habilitada debe tener supports_exec=1."""
@@ -273,6 +344,11 @@ class OperationalEdgeMonitor(threading.Thread):
         ratio = nonzero / total
 
         if ratio < self.MIN_ADX_NONZERO_RATIO:
+            if not self._any_session_active():
+                return CheckResult(
+                    CheckStatus.WARN,
+                    f"ADX=0 en {total - nonzero}/{total} pulses (mercado cerrado — datos OHLC sin actualizar es esperado)",
+                )
             return CheckResult(
                 CheckStatus.FAIL,
                 f"ADX=0 en {total - nonzero}/{total} pulses — scanner puede no estar llamando load_ohlc()",
@@ -294,6 +370,12 @@ class OperationalEdgeMonitor(threading.Thread):
         ]
 
         if stale:
+            if not self._any_session_active():
+                return CheckResult(
+                    CheckStatus.WARN,
+                    f"{len(stale)} estrategia(s) en BACKTEST sin actualizar >{self.LIFECYCLE_STALE_HOURS}h "
+                    f"(mercado cerrado — actualización en pausa es esperado): {stale[:5]}",
+                )
             return CheckResult(
                 CheckStatus.FAIL,
                 f"{len(stale)} estrategia(s) en BACKTEST sin actualizar >{self.LIFECYCLE_STALE_HOURS}h: {stale[:5]}",
@@ -310,6 +392,11 @@ class OperationalEdgeMonitor(threading.Thread):
         rate = rejected / len(signals)
 
         if rate >= self.MAX_REJECTION_RATE:
+            if not self._any_session_active():
+                return CheckResult(
+                    CheckStatus.WARN,
+                    f"Tasa de rechazo {rate:.0%} ({rejected}/{len(signals)}) — mercado cerrado, rechazo total es esperado",
+                )
             return CheckResult(
                 CheckStatus.FAIL,
                 f"Tasa de rechazo {rate:.0%} ({rejected}/{len(signals)}) — pipeline puede estar bloqueado",

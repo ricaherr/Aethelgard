@@ -104,11 +104,22 @@ _LOCK_PATH = Path("data_vault/aethelgard.lock")
 
 
 def _acquire_singleton_lock(lock_path: Path = _LOCK_PATH) -> bool:
-    """Create PID lockfile. Returns False if another live instance is running."""
-    if lock_path.exists():
+    """
+    Create PID lockfile atomically. Returns False if another live instance is running.
+
+    Uses open(path, 'x') — O_CREAT|O_EXCL at OS level — to eliminate the
+    read→check→write race condition of the previous implementation.
+    """
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        # Atomic exclusive creation: fails instantly if file already exists
+        with open(lock_path, 'x') as f:
+            f.write(str(os.getpid()))
+        return True
+    except FileExistsError:
+        # Lockfile exists — check whether the recorded PID is still alive
         try:
             existing_pid = int(lock_path.read_text().strip())
-            # Check if that PID is still alive (cross-platform)
             import psutil
             if psutil.pid_exists(existing_pid) and existing_pid != os.getpid():
                 logger.error(
@@ -116,12 +127,19 @@ def _acquire_singleton_lock(lock_path: Path = _LOCK_PATH) -> bool:
                     existing_pid,
                 )
                 return False
-        except (ValueError, ImportError):
-            # Malformed lockfile or psutil unavailable — overwrite it
-            pass
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    lock_path.write_text(str(os.getpid()))
-    return True
+            # Stale lock (PID dead) — remove and claim it
+            lock_path.unlink(missing_ok=True)
+            with open(lock_path, 'x') as f:
+                f.write(str(os.getpid()))
+            return True
+        except FileExistsError:
+            # Another process won the race in the narrow window after unlink
+            logger.error("[SINGLETON] Race condition: otra instancia ganó el lock. Abortando.")
+            return False
+        except (ValueError, ImportError, OSError):
+            # Malformed lockfile or psutil unavailable — overwrite safely
+            lock_path.write_text(str(os.getpid()))
+            return True
 
 
 def _release_singleton_lock(lock_path: Path = _LOCK_PATH) -> None:
@@ -542,6 +560,14 @@ async def main() -> None:
         
         # 8.6 Operational Edge Monitor (auto-auditoría de invariantes de negocio)
         logger.info("[INIT] Inicializando Operational Edge Monitor (auto-auditoría)...")
+
+        # Escribir heartbeat del orchestrator ANTES de iniciar OEM.
+        # Sin esto, el primer ciclo del OEM ve el timestamp del arranque anterior
+        # (potencialmente horas atrás si el sistema estuvo inactivo) y emite FAIL
+        # aunque el orchestrator esté a punto de arrancar.
+        storage.update_module_heartbeat("orchestrator")
+        logger.info("[INIT] Heartbeat inicial del orchestrator escrito (previene falso FAIL en OEM)")
+
         from core_brain.operational_edge_monitor import OperationalEdgeMonitor
         from data_vault.shadow_db import ShadowStorageManager as _ShadowStorageManager
 

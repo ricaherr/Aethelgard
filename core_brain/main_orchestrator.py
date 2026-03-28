@@ -634,6 +634,26 @@ class MainOrchestrator:
         self._signal_factory = signal_factory  # Property setter handles backward compatibility
         logger.info("[DI] ✓ SignalFactory injected successfully")
 
+    def _is_market_closed(self) -> bool:
+        """
+        Returns True when forex market is closed (weekend / no active session).
+
+        Forex cerrado: sábado completo + domingo antes de 22:00 UTC (apertura Sydney).
+        Fail-open: any exception → False (assume market open to avoid blocking trades).
+        Extracted as a method to allow deterministic patching in tests.
+        """
+        try:
+            _utc_now = datetime.now(timezone.utc)
+            _weekday = _utc_now.weekday()  # 5=sábado, 6=domingo
+            if _weekday == 5 or (_weekday == 6 and _utc_now.hour < 22):
+                return True
+            from core_brain.services.market_session_service import MarketSessionService
+            _active_sessions = [s for s in ("sydney", "tokyo", "london", "ny")
+                                 if MarketSessionService(self.storage).is_session_active(s, _utc_now)]
+            return not _active_sessions
+        except Exception:
+            return False  # fail-open
+
     def _init_position_management(self) -> None:
         """Initializes PositionManager with configuration mapping and connector resolution."""
         pm_cfg_raw = self.config.get("position_management", {}) if isinstance(self.config, dict) else {}
@@ -1523,6 +1543,44 @@ class MainOrchestrator:
         except Exception as exc:
             logger.error("[BACKTEST] Error during daily backtest cycle: %s", exc, exc_info=False)
 
+    async def _consume_oem_repair_flags(self) -> None:
+        """
+        Lee y ejecuta los flags de reparación escritos por el OperationalEdgeMonitor.
+
+        Flags reconocidos (escritos en sys_config por OEM._write_repair_flags):
+          oem_repair_force_backtest    → fuerza ciclo de backtest en este ciclo
+          oem_repair_force_ohlc_reload → fuerza recarga de OHLC en el scanner
+          oem_repair_force_ranking     → fuerza ciclo de ranking inmediato
+
+        Cada flag se consume una sola vez: se limpia en sys_config después de actuar.
+        Errors son no-fatales — el ciclo continúa aunque el repair falle.
+        """
+        try:
+            sys_config = self.storage.get_sys_config()
+            consumed: Dict[str, Any] = {}
+
+            if sys_config.get("oem_repair_force_backtest"):
+                logger.info("[OEM-REPAIR] Flag force_backtest detectado — reseteando cooldown de backtest")
+                self._last_backtest_run = None  # Fuerza ejecución en _check_and_run_daily_backtest
+                consumed["oem_repair_force_backtest"] = None
+
+            if sys_config.get("oem_repair_force_ohlc_reload") and self.scanner:
+                logger.info("[OEM-REPAIR] Flag force_ohlc_reload detectado — reseteando tiempos de scan")
+                self.scanner.last_scan_time.clear()  # Fuerza recarga completa de OHLC en siguiente scan
+                consumed["oem_repair_force_ohlc_reload"] = None
+
+            if sys_config.get("oem_repair_force_ranking"):
+                logger.info("[OEM-REPAIR] Flag force_ranking detectado — forzando ciclo de ranking inmediato")
+                self._last_ranking_cycle = datetime.now(timezone.utc) - timedelta(seconds=self._ranking_interval + 10)
+                consumed["oem_repair_force_ranking"] = None
+
+            if consumed:
+                self.storage.update_sys_config(consumed)
+                logger.info("[OEM-REPAIR] %d flag(s) consumido(s): %s", len(consumed), list(consumed.keys()))
+
+        except Exception as exc:
+            logger.warning("[OEM-REPAIR] Error consumiendo repair flags (no bloquea ciclo): %s", exc)
+
     async def emit_shadow_status_update(
         self,
         instance_id: str,
@@ -1602,6 +1660,10 @@ class MainOrchestrator:
             
             # Step 0: Initial heartbeat update and feedback
             self.storage.update_module_heartbeat("orchestrator")
+
+            # OEM Repair Flags — consume acciones correctivas solicitadas por el monitor
+            await self._consume_oem_repair_flags()
+
             if self.thought_callback:
                 await self.thought_callback("Iniciando ciclo de monitoreo autónomo...", module="CORE")
             
@@ -1683,6 +1745,12 @@ class MainOrchestrator:
                     "details": {"cpu_percent": _cpu_now, "threshold": _cpu_threshold},
                     "read": False,
                 })
+                self.stats.cycles_completed += 1
+                return
+
+            # Step 0.6: Market session guard — skip scan/execution when all sessions closed
+            if self._is_market_closed():
+                logger.info("[MARKET-GUARD] Mercado cerrado (fin de semana / fuera de sesión) — ciclo de scan/ejecución omitido")
                 self.stats.cycles_completed += 1
                 return
 
@@ -2270,7 +2338,7 @@ class MainOrchestrator:
                         
                         # PHASE 1: Apply cooldown for failed execution
                         cooldown_result = await self.cooldown_manager.apply_cooldown(
-                            getattr(signal, 'id', None),
+                            getattr(signal, 'signal_id', None) or getattr(signal, 'id', None),
                             signal.symbol,
                             getattr(signal, 'strategy', 'unknown'),
                             failure_reason.value if isinstance(failure_reason, ExecutionFailureReason) else str(failure_reason),

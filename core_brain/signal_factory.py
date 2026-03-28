@@ -171,7 +171,7 @@ class SignalFactory:
             try:
                 # Logging: Resumen del DataFrame antes de analizar
                 if df is not None:
-                    logger.info(f"[DEBUG][DF][{strategy_id}] {symbol}: df.shape={df.shape}, head=\n{df.head(2) if hasattr(df, 'head') else 'N/A'}")
+                    logger.info(f"[DEBUG][DF][{strategy_id}] {symbol}: df.shape={getattr(df, 'shape', 'N/A')}, head=\n{df.head(2) if hasattr(df, 'head') else 'N/A'}")
                 else:
                     logger.info(f"[DEBUG][DF][{strategy_id}] {symbol}: df=None")
 
@@ -398,7 +398,7 @@ class SignalFactory:
 
                 # Logging: Resumen del DataFrame
                 if df is not None:
-                    logger.info(f"[DEBUG][DF] {symbol}|{timeframe}: df.shape={df.shape}, columns={list(df.columns) if hasattr(df, 'columns') else 'N/A'}")
+                    logger.info(f"[DEBUG][DF] {symbol}|{timeframe}: df.shape={getattr(df, 'shape', 'N/A')}, columns={list(df.columns) if hasattr(df, 'columns') else 'N/A'}")
                 else:
                     logger.info(f"[DEBUG][DF] {symbol}|{timeframe}: df=None")
 

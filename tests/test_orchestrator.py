@@ -155,17 +155,20 @@ class TestMainOrchestrator:
     @pytest.fixture(autouse=True)
     def _patch_daily_backtest(self):
         """
-        Parcha _check_and_run_daily_backtest para todos los tests del orquestador.
+        Parcha _check_and_run_daily_backtest y _is_market_closed para todos los tests.
 
-        En el primer ciclo esta corrutina siempre se ejecuta y llama a
-        BacktestOrchestrator.run_pending_strategies() → DataProviderManager.fetch_ohlc()
-        que hace requests de red reales. En el entorno de test no hay conectividad,
-        por lo que la suite queda bloqueada indefinidamente.
+        - _check_and_run_daily_backtest: hace fetch_ohlc real que bloquea sin red.
+        - _is_market_closed: devuelve False para que los tests corran en fin de semana
+          sin que el MARKET-GUARD corte el ciclo antes de llegar al scanner.
         """
         with patch.object(
             MainOrchestrator,
             "_check_and_run_daily_backtest",
             new_callable=AsyncMock,
+        ), patch.object(
+            MainOrchestrator,
+            "_is_market_closed",
+            return_value=False,
         ):
             yield
 

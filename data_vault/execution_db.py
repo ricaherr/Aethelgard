@@ -221,25 +221,43 @@ class ExecutionMixin(BaseRepository):
         failure_reason: str,
         retry_count: int,
         cooldown_expires: datetime,
+        symbol: Optional[str] = None,
+        strategy: Optional[str] = None,
+        cooldown_minutes: Optional[int] = None,
+        volatility_zscore: float = 0.0,
+        regime: Optional[str] = None,
+        trace_id: Optional[str] = None,
     ) -> None:
         """
         Inserts or replaces a cooldown record for a signal.
         Called by CooldownManager after a signal execution failure.
+        Persists all context columns defined in sys_cooldown_tracker schema.
         """
+        now = datetime.now(timezone.utc).isoformat()
+
         def _write(conn: sqlite3.Connection) -> None:
             cursor = conn.cursor()
             cursor.execute(
                 """
                 INSERT OR REPLACE INTO sys_cooldown_tracker
-                    (signal_id, failure_reason, retry_count, cooldown_expires, updated_at)
-                VALUES (?, ?, ?, ?, ?)
+                    (signal_id, symbol, strategy, failure_reason, failure_time,
+                     retry_count, cooldown_minutes, cooldown_expires,
+                     volatility_zscore, regime, trace_id, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     signal_id,
+                    symbol,
+                    strategy,
                     failure_reason,
+                    now,
                     retry_count,
+                    cooldown_minutes,
                     cooldown_expires.isoformat() if isinstance(cooldown_expires, datetime) else str(cooldown_expires),
-                    datetime.now(timezone.utc).isoformat(),
+                    volatility_zscore,
+                    regime,
+                    trace_id,
+                    now,
                 ),
             )
             conn.commit()
@@ -247,11 +265,65 @@ class ExecutionMixin(BaseRepository):
         try:
             self._execute_serialized(_write)
             logger.debug(
-                "[ExecutionMixin] Cooldown registered: signal=%s reason=%s expires=%s",
-                signal_id, failure_reason, cooldown_expires,
+                "[ExecutionMixin] Cooldown registered: signal=%s symbol=%s strategy=%s reason=%s expires=%s",
+                signal_id, symbol, strategy, failure_reason, cooldown_expires,
             )
         except Exception as exc:
             logger.error("[ExecutionMixin] register_cooldown error for %s: %s", signal_id, exc)
+
+    def persist_quality_assessment(
+        self,
+        signal_id: str,
+        symbol: str,
+        timeframe: str,
+        grade: str,
+        overall_score: float,
+        technical_score: float,
+        contextual_score: float,
+        consensus_bonus: float,
+        failure_penalty: float,
+        trace_id: str,
+    ) -> None:
+        """
+        Persiste una evaluación de calidad de señal en sys_signal_quality_assessments.
+        Llamado por SignalQualityScorer._persist_assessment() tras evaluar señales A/A+.
+        Sigue el patrón _execute_serialized del proyecto (sync, no async).
+        """
+        created_at = datetime.now(timezone.utc).isoformat()
+
+        def _write(conn: sqlite3.Connection) -> None:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT OR REPLACE INTO sys_signal_quality_assessments
+                    (signal_id, symbol, timeframe, grade, overall_score, technical_score,
+                     contextual_score, consensus_bonus, failure_penalty, trace_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    signal_id,
+                    symbol,
+                    timeframe,
+                    grade,
+                    overall_score,
+                    technical_score,
+                    contextual_score,
+                    consensus_bonus,
+                    failure_penalty,
+                    trace_id,
+                    created_at,
+                ),
+            )
+            conn.commit()
+
+        try:
+            self._execute_serialized(_write)
+            logger.debug(
+                "[ExecutionMixin] Quality assessment persisted: signal=%s symbol=%s grade=%s",
+                signal_id, symbol, grade,
+            )
+        except Exception as exc:
+            logger.error("[ExecutionMixin] persist_quality_assessment error for %s: %s", signal_id, exc)
 
     def clear_cooldown(self, signal_id: str) -> None:
         """

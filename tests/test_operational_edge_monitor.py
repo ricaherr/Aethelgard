@@ -9,7 +9,7 @@ de implementar el componente.
 """
 import pytest
 from datetime import datetime, timezone, timedelta
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, PropertyMock
 
 
 # Import the module under test (will fail until implemented)
@@ -32,6 +32,7 @@ def _ts(hours_ago: float = 0) -> str:
 def _make_storage(**kwargs):
     s = MagicMock()
     s.get_all_signal_rankings.return_value = kwargs.get("rankings", [])
+    s.get_all_sys_strategies.return_value = kwargs.get("strategies", [])
     s.get_sys_broker_accounts.return_value = kwargs.get("accounts", [])
     s.get_recent_sys_signals.return_value = kwargs.get("signals", [])
     s.get_all_sys_market_pulses.return_value = kwargs.get("pulses", {})
@@ -50,7 +51,7 @@ def _make_shadow_storage(instances):
 
 class TestCheckShadowSync:
     def test_fail_when_mature_instances_have_zero_trades(self):
-        """Instancias SHADOW con >2h de vida y 0 trades → FAIL."""
+        """Instancias SHADOW con >2h de vida y 0 trades → FAIL (mercado abierto)."""
         inst = MagicMock()
         inst.created_at = _ts(hours_ago=3)
         inst.total_trades_executed = 0
@@ -60,7 +61,8 @@ class TestCheckShadowSync:
             storage=_make_storage(),
             shadow_storage=_make_shadow_storage([inst]),
         )
-        result = monitor._check_shadow_sync()
+        with patch.object(monitor, "_any_session_active", return_value=True):
+            result = monitor._check_shadow_sync()
         assert result.status == CheckStatus.FAIL
         assert "0 trades" in result.detail
 
@@ -98,6 +100,23 @@ class TestCheckShadowSync:
         result = monitor._check_shadow_sync()
         assert result.status == CheckStatus.OK
 
+    def test_warn_not_fail_when_zero_trades_and_market_closed(self):
+        """Con 0 trades pero mercado cerrado → WARN (no FAIL)."""
+        inst = MagicMock()
+        inst.created_at = _ts(hours_ago=3)
+        inst.total_trades_executed = 0
+        inst.instance_id = "INST-001"
+
+        monitor = OperationalEdgeMonitor(
+            storage=_make_storage(),
+            shadow_storage=_make_shadow_storage([inst]),
+        )
+        with patch.object(monitor, "_any_session_active", return_value=False):
+            result = monitor._check_shadow_sync()
+
+        assert result.status == CheckStatus.WARN
+        assert "mercado cerrado" in result.detail.lower()
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 2. backtest_quality
@@ -105,48 +124,60 @@ class TestCheckShadowSync:
 
 class TestCheckBacktestQuality:
     def test_fail_when_all_scores_are_zero(self):
-        """Estrategias en BACKTEST con score_backtest=0 → FAIL."""
-        rankings = [
-            {"strategy_id": "S1", "score_backtest": 0, "execution_mode": "BACKTEST"},
-            {"strategy_id": "S2", "score_backtest": 0, "execution_mode": "BACKTEST"},
+        """Estrategias en BACKTEST con score_backtest=0 → FAIL (mercado abierto)."""
+        strategies = [
+            {"class_id": "S1", "score_backtest": 0, "mode": "BACKTEST"},
+            {"class_id": "S2", "score_backtest": 0, "mode": "BACKTEST"},
         ]
-        monitor = OperationalEdgeMonitor(storage=_make_storage(rankings=rankings))
-        result = monitor._check_backtest_quality()
+        monitor = OperationalEdgeMonitor(storage=_make_storage(strategies=strategies))
+        with patch.object(monitor, "_any_session_active", return_value=True):
+            result = monitor._check_backtest_quality()
         assert result.status == CheckStatus.FAIL
+
+    def test_warn_not_fail_when_scores_zero_and_market_closed(self):
+        """Con score=0 pero mercado cerrado → WARN (sin datos MT5 es esperado)."""
+        strategies = [
+            {"class_id": "S1", "score_backtest": 0, "mode": "BACKTEST"},
+        ]
+        monitor = OperationalEdgeMonitor(storage=_make_storage(strategies=strategies))
+        with patch.object(monitor, "_any_session_active", return_value=False):
+            result = monitor._check_backtest_quality()
+        assert result.status == CheckStatus.WARN
+        assert "mercado cerrado" in result.detail.lower()
 
     def test_ok_when_at_least_one_score_positive(self):
         """Al menos una estrategia BACKTEST con backtest_score > 0 → OK."""
-        rankings = [
-            {"strategy_id": "S1", "score_backtest": 0.75, "execution_mode": "BACKTEST"},
-            {"strategy_id": "S2", "score_backtest": 0, "execution_mode": "BACKTEST"},
+        strategies = [
+            {"class_id": "S1", "score_backtest": 0.75, "mode": "BACKTEST"},
+            {"class_id": "S2", "score_backtest": 0, "mode": "BACKTEST"},
         ]
-        monitor = OperationalEdgeMonitor(storage=_make_storage(rankings=rankings))
+        monitor = OperationalEdgeMonitor(storage=_make_storage(strategies=strategies))
         result = monitor._check_backtest_quality()
         assert result.status == CheckStatus.OK
 
-    def test_warn_when_no_rankings(self):
-        """Sin rankings → WARN."""
-        monitor = OperationalEdgeMonitor(storage=_make_storage(rankings=[]))
+    def test_warn_when_no_strategies(self):
+        """Sin estrategias registradas → WARN."""
+        monitor = OperationalEdgeMonitor(storage=_make_storage(strategies=[]))
         result = monitor._check_backtest_quality()
         assert result.status == CheckStatus.WARN
 
     def test_warn_when_no_backtest_mode_strategies(self):
-        """Rankings existen pero ninguno en BACKTEST (ej. todos SHADOW/LIVE) → WARN."""
-        rankings = [
-            {"strategy_id": "S1", "score_backtest": 0.5, "execution_mode": "SHADOW"},
-            {"strategy_id": "S2", "score_backtest": 0.8, "execution_mode": "LIVE"},
+        """Estrategias existen pero ninguna en modo BACKTEST (ej. todas SHADOW) → WARN."""
+        strategies = [
+            {"class_id": "S1", "score_backtest": 0.5, "mode": "SHADOW"},
+            {"class_id": "S2", "score_backtest": 0.8, "mode": "SHADOW"},
         ]
-        monitor = OperationalEdgeMonitor(storage=_make_storage(rankings=rankings))
+        monitor = OperationalEdgeMonitor(storage=_make_storage(strategies=strategies))
         result = monitor._check_backtest_quality()
         assert result.status == CheckStatus.WARN
 
     def test_shadow_strategies_not_counted_in_fail(self):
         """Estrategia en SHADOW no debe inflar el contador de FAIL aunque tenga score=0."""
-        rankings = [
-            {"strategy_id": "S1", "score_backtest": 0.6, "execution_mode": "BACKTEST"},
-            {"strategy_id": "S2", "score_backtest": 0, "execution_mode": "SHADOW"},
+        strategies = [
+            {"class_id": "S1", "score_backtest": 0.6, "mode": "BACKTEST"},
+            {"class_id": "S2", "score_backtest": 0, "mode": "SHADOW"},
         ]
-        monitor = OperationalEdgeMonitor(storage=_make_storage(rankings=rankings))
+        monitor = OperationalEdgeMonitor(storage=_make_storage(strategies=strategies))
         result = monitor._check_backtest_quality()
         assert result.status == CheckStatus.OK
 
@@ -202,13 +233,14 @@ class TestCheckSignalFlow:
 
 class TestCheckAdxSanity:
     def test_fail_when_all_adx_are_zero(self):
-        """ADX=0 en todos los pulses → FAIL (scanner no llama load_ohlc)."""
+        """ADX=0 en todos los pulses → FAIL (scanner no llama load_ohlc), mercado abierto."""
         pulses = {
             "EURUSD": {"data": {"adx": 0.0, "regime": "NORMAL"}},
             "USDJPY": {"data": {"adx": 0.0, "regime": "NORMAL"}},
         }
         monitor = OperationalEdgeMonitor(storage=_make_storage(pulses=pulses))
-        result = monitor._check_adx_sanity()
+        with patch.object(monitor, "_any_session_active", return_value=True):
+            result = monitor._check_adx_sanity()
         assert result.status == CheckStatus.FAIL
 
     def test_ok_when_majority_adx_nonzero(self):
@@ -227,6 +259,19 @@ class TestCheckAdxSanity:
         result = monitor._check_adx_sanity()
         assert result.status == CheckStatus.WARN
 
+    def test_warn_not_fail_when_adx_zero_and_market_closed(self):
+        """ADX=0 en todos los pulses pero mercado cerrado → WARN (no FAIL)."""
+        pulses = {
+            "EURUSD": {"data": {"adx": 0.0}},
+            "USDJPY": {"data": {"adx": 0.0}},
+        }
+        monitor = OperationalEdgeMonitor(storage=_make_storage(pulses=pulses))
+        with patch.object(monitor, "_any_session_active", return_value=False):
+            result = monitor._check_adx_sanity()
+
+        assert result.status == CheckStatus.WARN
+        assert "mercado cerrado" in result.detail.lower()
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 6. lifecycle_coherence
@@ -234,13 +279,25 @@ class TestCheckAdxSanity:
 
 class TestCheckLifecycleCoherence:
     def test_fail_when_ranking_stale_over_48h(self):
-        """Ranking sin actualizar en >48h → FAIL."""
+        """Ranking sin actualizar en >48h → FAIL (mercado abierto)."""
         rankings = [
             {"strategy_id": "S1", "execution_mode": "BACKTEST", "updated_at": _ts(hours_ago=60)},
         ]
         monitor = OperationalEdgeMonitor(storage=_make_storage(rankings=rankings))
-        result = monitor._check_lifecycle_coherence()
+        with patch.object(monitor, "_any_session_active", return_value=True):
+            result = monitor._check_lifecycle_coherence()
         assert result.status == CheckStatus.FAIL
+
+    def test_warn_not_fail_when_stale_and_market_closed(self):
+        """Ranking desactualizado pero mercado cerrado → WARN (pausa esperada en fin de semana)."""
+        rankings = [
+            {"strategy_id": "S1", "execution_mode": "BACKTEST", "updated_at": _ts(hours_ago=60)},
+        ]
+        monitor = OperationalEdgeMonitor(storage=_make_storage(rankings=rankings))
+        with patch.object(monitor, "_any_session_active", return_value=False):
+            result = monitor._check_lifecycle_coherence()
+        assert result.status == CheckStatus.WARN
+        assert "mercado cerrado" in result.detail.lower()
 
     def test_ok_when_all_rankings_fresh(self):
         """Todos los rankings actualizados en <48h → OK."""
@@ -264,10 +321,11 @@ class TestCheckLifecycleCoherence:
 
 class TestCheckRejectionRate:
     def test_fail_when_all_signals_rejected(self):
-        """100% de rechazo en 4h → FAIL."""
+        """100% de rechazo en 4h → FAIL (mercado abierto)."""
         signals = [{"signal_id": f"S{i}", "status": "VETOED"} for i in range(10)]
         monitor = OperationalEdgeMonitor(storage=_make_storage(signals=signals))
-        result = monitor._check_rejection_rate()
+        with patch.object(monitor, "_any_session_active", return_value=True):
+            result = monitor._check_rejection_rate()
         assert result.status == CheckStatus.FAIL
 
     def test_ok_when_some_signals_executed(self):
@@ -285,6 +343,57 @@ class TestCheckRejectionRate:
         monitor = OperationalEdgeMonitor(storage=_make_storage(signals=[]))
         result = monitor._check_rejection_rate()
         assert result.status == CheckStatus.OK
+
+    def test_warn_not_fail_when_100_percent_rejection_and_market_closed(self):
+        """100% rechazo pero mercado cerrado → WARN (no FAIL)."""
+        signals = [{"signal_id": f"S{i}", "status": "VETOED"} for i in range(10)]
+        monitor = OperationalEdgeMonitor(storage=_make_storage(signals=signals))
+        with patch.object(monitor, "_any_session_active", return_value=False):
+            result = monitor._check_rejection_rate()
+
+        assert result.status == CheckStatus.WARN
+        assert "mercado cerrado" in result.detail.lower()
+
+
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _any_session_active — weekend awareness
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestAnySessionActive:
+    def test_saturday_always_returns_false(self):
+        """Sábado (weekday=5) → mercado cerrado sin importar la hora."""
+        from unittest.mock import patch as _patch
+        monitor = OperationalEdgeMonitor(storage=_make_storage())
+        saturday_noon = datetime(2026, 3, 28, 12, 0, tzinfo=timezone.utc)  # sábado
+        with _patch("core_brain.operational_edge_monitor.datetime") as mock_dt:
+            mock_dt.now.return_value = saturday_noon
+            mock_dt.min = datetime.min
+            result = monitor._any_session_active()
+        assert result is False
+
+    def test_sunday_before_22_returns_false(self):
+        """Domingo antes de 22:00 UTC → mercado cerrado."""
+        from unittest.mock import patch as _patch
+        monitor = OperationalEdgeMonitor(storage=_make_storage())
+        sunday_morning = datetime(2026, 3, 29, 10, 0, tzinfo=timezone.utc)  # domingo
+        with _patch("core_brain.operational_edge_monitor.datetime") as mock_dt:
+            mock_dt.now.return_value = sunday_morning
+            mock_dt.min = datetime.min
+            result = monitor._any_session_active()
+        assert result is False
+
+    def test_sunday_at_22_or_later_checks_sessions(self):
+        """Domingo ≥22:00 UTC → Sydney ya abrió, no forzar False."""
+        monitor = OperationalEdgeMonitor(storage=_make_storage())
+        sunday_late = datetime(2026, 3, 29, 22, 30, tzinfo=timezone.utc)
+        with patch("core_brain.operational_edge_monitor.datetime") as mock_dt:
+            mock_dt.now.return_value = sunday_late
+            mock_dt.min = datetime.min
+            # Resultado depende de las sesiones — solo verificamos que no lanza excepción
+            result = monitor._any_session_active()
+        assert isinstance(result, bool)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -330,7 +439,7 @@ class TestRunChecksAndSummary:
     def test_run_checks_error_in_one_check_does_not_crash(self):
         """Si un check lanza excepción, el resto debe continuar."""
         storage = _make_storage()
-        storage.get_all_signal_rankings.side_effect = RuntimeError("DB error")
+        storage.get_all_sys_strategies.side_effect = RuntimeError("DB error")
         monitor = OperationalEdgeMonitor(storage=storage)
         results = monitor.run_checks()
         assert "backtest_quality" in results

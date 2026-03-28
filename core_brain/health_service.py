@@ -37,7 +37,7 @@ class AutonomousHealthService:
     async def _perform_health_check(self) -> None:
         """Ejecuta validaciones y genera pensamientos/propuestas"""
         now = time.time()
-        
+
         # 1. Validación Global Periódica (PESADA)
         if now - self._last_validation_time > self.validation_interval:
             await self._run_global_validation()
@@ -48,6 +48,9 @@ class AutonomousHealthService:
 
         # 3. Verificación de Integridad de Datos
         await self._check_db_integrity()
+
+        # 4. Despachar diagnósticos del OperationalEdgeMonitor a la UI
+        await self._dispatch_oem_diagnostics()
 
     async def _run_global_validation(self) -> None:
         """Corre el script de validación global"""
@@ -96,6 +99,68 @@ class AutonomousHealthService:
             from core_brain.server import broadcast_thought
             await broadcast_thought("¡CRÍTICO! Error de acceso a Base de Datos detectado.", level="error", module="DB")
             logger.error(f"[HEALTH] DB Integrity Check Failed: {e}")
+
+    async def _dispatch_oem_diagnostics(self) -> None:
+        """
+        Lee el snapshot del OperationalEdgeMonitor desde DB y emite diagnósticos
+        a la UI via broadcast_thought. Solo actúa sobre checks no accionables
+        automáticamente (shadow_sync, signal_flow, rejection_rate,
+        orchestrator_heartbeat) — los accionables ya tienen flags en sys_config
+        que el MainOrchestrator consume.
+        """
+        import json as _json
+        from core_brain.server import broadcast_thought
+
+        # Mensajes de diagnóstico para checks no auto-reparables
+        _HUMAN_CHECKS: dict = {
+            "shadow_sync": (
+                "warning",
+                "SHADOW SYNC FAIL: hay instancias maduras con 0 trades. "
+                "Posible causa: mercado fuera de sesión o símbolo no habilitado. "
+                "Revisar ventanas de activación de estrategias SHADOW."
+            ),
+            "signal_flow": (
+                "warning",
+                "SIGNAL FLOW WARN: sin señales en los últimos 120 min. "
+                "El scanner está activo pero no detecta oportunidades — puede ser correcto fuera de sesión."
+            ),
+            "rejection_rate": (
+                "error",
+                "REJECTION RATE FAIL: tasa de rechazo >95%. "
+                "Pipeline bloqueado o umbrales demasiado restrictivos. Requiere revisión manual."
+            ),
+            "orchestrator_heartbeat": (
+                "error",
+                "ORCHESTRATOR HEARTBEAT FAIL: el loop principal no responde. "
+                "Posible bloqueo en fase de scan o backtest. Revisar logs del proceso start.py."
+            ),
+        }
+
+        try:
+            sys_config = self.storage.get_sys_config()
+            raw = sys_config.get("oem_health_snapshot")
+            if not raw:
+                return
+
+            snapshot = _json.loads(raw) if isinstance(raw, str) else raw
+            status = snapshot.get("status", "OK")
+            failing = snapshot.get("failing", [])
+            warnings = snapshot.get("warnings", [])
+
+            if status == "CRITICAL":
+                await broadcast_thought(
+                    f"⚠ EDGE SELF-AUDIT CRITICAL: {len(failing)} invariante(s) violada(s): "
+                    f"{', '.join(failing)}. Acciones correctivas en curso.",
+                    level="error", module="OEM"
+                )
+
+            for check in failing + warnings:
+                if check in _HUMAN_CHECKS:
+                    level, message = _HUMAN_CHECKS[check]
+                    await broadcast_thought(message, level=level, module="OEM")
+
+        except Exception as exc:
+            logger.warning("[HEALTH] Error dispatching OEM diagnostics: %s", exc)
 
     def stop(self) -> None:
         self.running = False

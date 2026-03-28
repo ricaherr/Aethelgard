@@ -133,7 +133,7 @@ class CooldownManager:
         trace_id = f"COOLDOWN-{signal_id}-{datetime.now(timezone.utc).isoformat()}"
         
         try:
-            await self.storage.register_cooldown(
+            self.storage.register_cooldown(
                 signal_id=signal_id,
                 symbol=symbol,
                 strategy=strategy,
