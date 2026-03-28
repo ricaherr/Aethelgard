@@ -79,6 +79,96 @@ return result
 
 ---
 
+## 🟠 HALLAZGO NUEVO: Pipeline de Señales SHADOW y Filtros de Estrategia
+
+### HALLAZGO-2026-03-27-1: Solo GBPUSD genera señales en LIQ_SWEEP_0001
+
+**Archivos implicados:**
+- `core_brain/strategies/liq_sweep_0001.py` (líneas 48-68, 104-112, 148-180)
+- `core_brain/signal_factory.py` (líneas 170-241)
+- `core_brain/sensors/session_liquidity_sensor.py` (líneas 1-327)
+- `core_brain/sensors/liquidity_sweep_detector.py` (líneas 1-327)
+- `logs/main.log` (rango 149390-157327)
+
+**Condiciones y lógica detectada:**
+- El filtro `AFFINITY_SCORES` (línea 48) y `min_affinity=0.75` (línea 104) restringen la generación de señales a EURUSD (0.92) y GBPUSD (0.88). El resto de símbolos no pasan el filtro y nunca llegan a la lógica de señal.
+- Solo GBPUSD genera señales porque, en los datos recientes, cumple la lógica de breakout falso + reversal (PIN BAR o ENGULFING) definida en `analyze()` (líneas 148-180).
+- EURUSD, aunque pasa affinity, no cumple la lógica de señal en los datos actuales (no hay breakout falso + reversal en la sesión Londres).
+- El pipeline de datos, sensores y lógica de reversión funcionan correctamente para GBPUSD. El resto de activos no cumplen condiciones o son filtrados por affinity.
+
+**Evidencia en logs:**
+- `[DEBUG][LIQ_SWEEP_0001] ... analyze() no generó señal (raw_signal=None)` para la mayoría de símbolos.
+- `SEÑAL GENERADA ... GBPUSD ... Origin: SHADOW` en múltiples ciclos (logs 149390-157327).
+
+**Estado documental vs código:**
+- El sistema SÍ genera señales en SHADOW, pero solo para activos que cumplen affinity y lógica de reversión.
+- No hay errores de gating, deduplicación ni configuración. El pipeline es funcional pero altamente restrictivo.
+
+**Acción sugerida:**
+- Revisar si los filtros de affinity y lógica de reversión son demasiado estrictos para el universo de activos objetivo.
+- Considerar logging más granular para EURUSD y otros activos que pasan affinity pero no cumplen lógica de señal.
+
+---
+
+## 🟠 HALLAZGO NUEVO: Pipeline de Entrega de Señales SHADOW
+
+### HALLAZGO-2026-03-27-2: Auditoría de entrega y persistencia de señales SHADOW
+
+**Archivos implicados:**
+- `core_brain/signal_factory.py` (líneas 211-305)
+- `logs/main.log` (rango 149390-157327)
+
+**Condiciones y lógica detectada:**
+- Las señales generadas por GBPUSD en modo SHADOW son persistidas correctamente (`save_signal`), asignando `origin_mode=SHADOW` y generando un `signal_id` único.
+- No se detectan bloqueos por deduplicación ni errores en la entrega a módulos posteriores (persistencia, tagging de volatilidad, enriquecimiento FVG).
+- El pipeline de notificación y ejecución no muestra errores en los logs para señales SHADOW generadas.
+
+**Evidencia en logs:**
+- `SEÑAL GENERADA ... GBPUSD ... Origin: SHADOW` seguido de logs de tagging y enriquecimiento.
+- Ausencia de errores o warnings en la entrega de señales SHADOW.
+
+**Estado documental vs código:**
+- El pipeline de entrega y persistencia de señales SHADOW es funcional para los activos que cumplen condiciones.
+- No se detectan cuellos de botella ni pérdidas de señal en la etapa de persistencia o notificación.
+
+**Acción sugerida:**
+- Mantener auditoría continua sobre la entrega de señales, especialmente si se amplía el universo de activos o se relajan los filtros de affinity/lógica.
+- Documentar explícitamente en la gobernanza los criterios de filtrado y condiciones de generación de señales para trazabilidad futura.
+
+---
+
+## 🟠 HALLAZGO NUEVO: Entrega a Ejecución y Notificación (SHADOW)
+
+### HALLAZGO-2026-03-27-3: Pipeline de entrega a Executor y NotificationService
+
+**Archivos implicados:**
+- `core_brain/executor.py` (líneas 181-214, 421-493)
+- `core_brain/notification_service.py`, `core_brain/notificator.py`
+- `logs/main.log` (inicio, bloques de inicialización y ciclo SHADOW)
+
+**Condiciones y lógica detectada:**
+- El Executor recibe señales SHADOW, fuerza cuenta DEMO y valida los 4 Pilares antes de autorizar cualquier acción (líneas 181-214).
+- No hay errores ni bloqueos en la ejecución de señales SHADOW (GBPUSD) en los logs.
+- NotificationService y Notificator están inicializados, pero todos los canales (telegram, whatsapp, email) aparecen como Enabled: False.
+- No se detectan logs de envío real de notificaciones para señales SHADOW, lo que indica que la notificación está deshabilitada por configuración.
+- No hay pérdidas de señal ni cuellos de botella en la persistencia o entrega a módulos posteriores.
+
+**Evidencia en logs:**
+- Inicialización de NotificationService y Notificator con canales deshabilitados.
+- Ausencia de logs de send_alert, create_notification o errores de notificación.
+- Persistencia exitosa de señales SHADOW (ver hallazgos previos).
+
+**Estado documental vs código:**
+- El pipeline de entrega a ejecución y notificación es funcional, pero la notificación está deshabilitada por configuración.
+- El sistema está listo para notificar y ejecutar en modo SHADOW si se habilitan los canales correspondientes.
+
+**Acción sugerida:**
+- Habilitar al menos un canal de notificación (telegram, email) en entorno de pruebas para validar end-to-end.
+- Realizar un test de ejecución real en modo SHADOW para confirmar la entrega completa (persistencia → ejecución → notificación).
+- Documentar en la gobernanza la configuración actual de notificación y los pasos para habilitarla.
+
+---
+
 ## ✅ ESTADO DEL CÓDIGO VIVO (Verificado)
 
 ### Módulos integrados en el flujo principal

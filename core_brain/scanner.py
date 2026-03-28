@@ -321,6 +321,12 @@ class ScannerEngine:
                         symbol, timeframe, regime, metrics, df, provider_id = res
                         key = f"{symbol}|{timeframe}"
                         
+                        # Logging: Resumen del DataFrame generado
+                        if df is not None:
+                            logger.info(f"[DEBUG][SCAN][DF] {symbol}|{timeframe}: df.shape={df.shape}, columns={list(df.columns) if hasattr(df, 'columns') else 'N/A'}")
+                        else:
+                            logger.info(f"[DEBUG][SCAN][DF] {symbol}|{timeframe}: df=None")
+
                         # Store in result dict
                         results[key] = {
                             "regime": regime,
@@ -330,7 +336,7 @@ class ScannerEngine:
                             "symbol": symbol,
                             "timeframe": timeframe
                         }
-                        
+
                         # Also persist using _process_scan_result() for compatibility
                         self._process_scan_result(res)
                 except Exception as e:

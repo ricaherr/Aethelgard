@@ -2433,6 +2433,7 @@ class MainOrchestrator:
             
             execution_mode = ranking.get('execution_mode', 'SHADOW')
             
+
             if execution_mode == 'LIVE':
                 return True
             elif execution_mode == 'SHADOW':
@@ -2447,6 +2448,11 @@ class MainOrchestrator:
             elif execution_mode == 'QUARANTINE':
                 logger.warning(
                     f"Strategy {strategy_id} in QUARANTINE - signal blocked until risk metrics improve"
+                )
+                return False
+            elif execution_mode == 'BACKTEST':
+                logger.info(
+                    f"Strategy {strategy_id} in BACKTEST mode - ignored for direct execution (batch-only mode)"
                 )
                 return False
             else:

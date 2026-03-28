@@ -169,20 +169,27 @@ class SignalFactory:
         
         for strategy_id, engine in self.strategy_engines.items():
             try:
+                # Logging: Resumen del DataFrame antes de analizar
+                if df is not None:
+                    logger.info(f"[DEBUG][DF][{strategy_id}] {symbol}: df.shape={df.shape}, head=\n{df.head(2) if hasattr(df, 'head') else 'N/A'}")
+                else:
+                    logger.info(f"[DEBUG][DF][{strategy_id}] {symbol}: df=None")
+
                 # Delegar análisis al motor compilado
                 # Hay dos tipos: PYTHON_CLASS usr_strategies (con .analyze) y JSON_SCHEMA (con .execute_from_registry)
                 # Chequear primero por execute_from_registry (específico de JSON_SCHEMA)
                 if hasattr(engine, 'execute_from_registry') and callable(getattr(engine, 'execute_from_registry', None)):
                     # JSON_SCHEMA strategy: use UniversalStrategyEngine.execute_from_registry()
                     result = await engine.execute_from_registry(strategy_id, symbol, df, regime)
-                    # Convertir StrategySignal → Signal usando StrategySignalConverter
                     signal = StrategySignalConverter.convert_from_universal_engine(
                         result, symbol, strategy_id, timeframe, trace_id, provider_source
                     )
                 elif hasattr(engine, 'analyze') and callable(getattr(engine, 'analyze', None)):
                     # PYTHON_CLASS strategy: directly call analyze()
                     raw_signal = await engine.analyze(symbol, df, regime)
-                    # Procesar Signal directo usando StrategySignalConverter
+                    # Logging: Motivo si no hay señal
+                    if raw_signal is None:
+                        logger.info(f"[DEBUG][{strategy_id}] {symbol}: analyze() no generó señal (raw_signal=None)")
                     signal = StrategySignalConverter.convert_from_python_class(
                         raw_signal, symbol, strategy_id, timeframe, trace_id, provider_source
                     )
@@ -388,15 +395,20 @@ class SignalFactory:
                 df = data.get("df")
                 symbol = data.get("symbol")  # Extraer symbol del dict
                 timeframe = data.get("timeframe")  # Extraer timeframe del dict
-                
+
+                # Logging: Resumen del DataFrame
+                if df is not None:
+                    logger.info(f"[DEBUG][DF] {symbol}|{timeframe}: df.shape={df.shape}, columns={list(df.columns) if hasattr(df, 'columns') else 'N/A'}")
+                else:
+                    logger.info(f"[DEBUG][DF] {symbol}|{timeframe}: df=None")
+
                 # FASE 4: Filter by enabled assets
                 if enabled_symbols is not None and symbol not in enabled_symbols:
                     logger.debug(f"[FASE4] Skipping {symbol}: not in enabled asset config")
                     skipped_count += 1
                     continue
-                
+
                 if regime and df is not None and symbol:
-                    # Pass symbol, df, regime, timeframe, trace_id, AND provider_source
                     provider_source = data.get("provider_source", "UNKNOWN")
                     tasks.append(self.generate_signal(
                         symbol, df, regime, timeframe, trace_id, provider_source
