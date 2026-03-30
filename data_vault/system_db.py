@@ -1078,3 +1078,99 @@ class SystemMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
+    # ── Backtest lifecycle helpers ─────────────────────────────────────────────
+
+    def reset_backtest_cooldown_for_pending(self) -> None:
+        """Reset per-strategy tier-2 cooldown for all strategies in BACKTEST mode.
+
+        Sets last_backtest_at = NULL so that BacktestOrchestrator._is_on_cooldown()
+        returns False on the next evaluation cycle. Called by MainOrchestrator when
+        the OperationalEdgeMonitor fires an oem_repair_force_backtest flag.
+
+        Only affects strategies whose mode is 'BACKTEST'. SHADOW and LIVE strategies
+        are not touched.
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE sys_strategies SET last_backtest_at = NULL WHERE mode = 'BACKTEST'"
+            )
+            conn.commit()
+            logger.info(
+                "[DB] reset_backtest_cooldown_for_pending: %d strategy(ies) reset.",
+                cursor.rowcount,
+            )
+        except Exception as exc:
+            logger.error("[DB] reset_backtest_cooldown_for_pending failed: %s", exc)
+        finally:
+            self._close_conn(conn)
+
+    def mark_orphan_shadow_instances_dead(self) -> int:
+        """Mark INCUBATING shadow instances as DEAD when their parent strategy is
+        still in BACKTEST mode (orphan instances created before the strategy graduated).
+
+        Preserves all rows for audit trail — only the status column is updated.
+
+        Returns:
+            Number of instances marked DEAD.
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE sys_shadow_instances
+                SET    status = 'DEAD', updated_at = CURRENT_TIMESTAMP
+                WHERE  status = 'INCUBATING'
+                AND    strategy_id IN (
+                           SELECT class_id FROM sys_strategies WHERE mode = 'BACKTEST'
+                       )
+                """
+            )
+            conn.commit()
+            count = cursor.rowcount
+            if count:
+                logger.warning(
+                    "[DB] mark_orphan_shadow_instances_dead: %d orphan instance(s) marked DEAD. "
+                    "These were created before their parent strategy graduated from BACKTEST.",
+                    count,
+                )
+            else:
+                logger.info("[DB] mark_orphan_shadow_instances_dead: no orphan instances found.")
+            return count
+        except Exception as exc:
+            logger.error("[DB] mark_orphan_shadow_instances_dead failed: %s", exc)
+            return 0
+        finally:
+            self._close_conn(conn)
+
+    def update_strategy_execution_params(self, strategy_id: str, params_json: str) -> None:
+        """Persist execution_params JSON for a strategy (adaptive threshold, failure counters)."""
+        conn = self._get_conn()
+        try:
+            conn.execute(
+                "UPDATE sys_strategies SET execution_params = ?, updated_at = CURRENT_TIMESTAMP "
+                "WHERE class_id = ?",
+                (params_json, strategy_id),
+            )
+            conn.commit()
+        except Exception as exc:
+            logger.error("[DB] update_strategy_execution_params failed for %s: %s", strategy_id, exc)
+        finally:
+            self._close_conn(conn)
+
+    def get_shadow_mode_strategy_ids(self) -> set:
+        """Return set of class_ids for strategies currently in SHADOW mode."""
+        conn = self._get_conn()
+        try:
+            rows = conn.execute(
+                "SELECT class_id FROM sys_strategies WHERE mode = 'SHADOW'"
+            ).fetchall()
+            return {row[0] for row in rows}
+        except Exception as exc:
+            logger.error("[DB] get_shadow_mode_strategy_ids failed: %s", exc)
+            return set()
+        finally:
+            self._close_conn(conn)
+

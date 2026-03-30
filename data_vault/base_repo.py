@@ -35,8 +35,9 @@ class BaseRepository:
         """Get database connection with row factory"""
         if self._persistent_conn is not None:
             return self._persistent_conn
-        conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=5)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout=5000")
         return conn
 
     def _close_conn(self, conn: sqlite3.Connection) -> None:
@@ -58,6 +59,7 @@ class BaseRepository:
     def _execute_serialized(self, func: Callable, *args, retries: int = 5, backoff: float = 0.2, **kwargs) -> Any:
         """
         Ejecuta una función crítica de DB serializadamente, con retry/backoff si la DB está locked.
+        El sleep de backoff se ejecuta FUERA del lock para no bloquear otros hilos.
         """
         last_exc = None
         for attempt in range(retries):
@@ -70,13 +72,15 @@ class BaseRepository:
                     last_exc = e
                     if 'locked' in str(e).lower():
                         logger.warning(f"DB locked, retrying ({attempt+1}/{retries})...")
-                        time.sleep(backoff * (attempt+1))
-                        continue
-                    logger.error(f"DB error: {e}")
-                    raise
+                    else:
+                        logger.error(f"DB error: {e}")
+                        raise
                 finally:
                     self._close_conn(conn)
-        
+            # Sleep FUERA del lock — otros hilos pueden continuar durante el backoff
+            if last_exc and 'locked' in str(last_exc).lower():
+                time.sleep(backoff * (attempt + 1))
+
         logger.error(f"DB error after retries: {last_exc}")
         if last_exc:
             raise last_exc

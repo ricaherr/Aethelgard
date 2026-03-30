@@ -121,11 +121,13 @@ class BacktestOrchestrator:
         data_provider_manager: Any,
         scenario_backtester: ScenarioBacktester,
         shadow_manager: Optional[Any] = None,
+        mode_manager: Optional[Any] = None,
     ) -> None:
         self.storage        = storage
         self.dpm            = data_provider_manager
         self.backtester     = scenario_backtester
         self.shadow_manager = shadow_manager
+        self.mode_manager   = mode_manager  # OperationalModeManager — adaptive cooldown
         self.last_run: Optional[datetime] = None
         self._cfg           = self._load_config()
         # HU 7.9: round-robin index per strategy_id
@@ -237,131 +239,166 @@ class BacktestOrchestrator:
 
     async def _execute_backtest(self, strategy: Dict) -> Optional[AptitudeMatrix]:
         """
-        Core execution: sequential multi-pair loop → persist per-pair affinity → promote.
+        Core execution: exhaustive multi-TF × multi-pair loop → persist per-pair affinity → promote.
 
-        HU 7.14 — EDGE-BKT-714-MULTI-PAIR-2026-03-24
-        For each symbol in market_whitelist:
+        HU 7.14 — EDGE-BKT-714-MULTI-PAIR-2026-03-24 (exhaustive multi-TF upgrade)
+        For each symbol × each required_timeframe:
           1. Regime pre-filter: if incompatible → write REGIME_INCOMPATIBLE, skip.
           2. Build scenario slices for this specific symbol.
           3. Run ScenarioBacktester.
-          4. Write per-pair affinity entry.
-        After all pairs: aggregate score = mean of evaluated pairs.
-        Update strategy score + maybe promote.
-        Returns None if no pairs could be evaluated.
+          4. Keep best matrix per symbol (highest overall_score).
+          5. Write per-pair affinity entry for the best TF result.
+        After all pairs: aggregate score = mean of best-per-symbol scores.
+        Promotion uses per-strategy adaptive threshold from execution_params.
         """
         strategy_id = strategy["class_id"]
         params      = self._extract_parameter_overrides(strategy)
         symbols     = self._get_symbols_for_backtest(strategy)
+        timeframes  = self._get_timeframes_for_backtest(strategy)
         strategy_instance = self._build_strategy_for_backtest(strategy_id)
 
         logger.info(
-            "[BACKTEST_ORC] Running multi-pair backtest strategy=%s symbols=%s",
-            strategy_id, symbols,
+            "[BACKTEST_ORC] Running exhaustive multi-TF backtest strategy=%s "
+            "symbols=%s timeframes=%s",
+            strategy_id, symbols, timeframes,
         )
 
-        matrices: List[AptitudeMatrix] = []
+        best_matrices: List[AptitudeMatrix] = []
         conn   = self.storage._get_conn()
         cursor = conn.cursor()
+        try:
+            for symbol in symbols:
+                symbol_best: Optional[AptitudeMatrix] = None
+                symbol_best_tf: str = timeframes[0]
 
-        for symbol in symbols:
-            # Step 1: Regime pre-filter (per symbol)
-            timeframes = self._get_timeframes_for_backtest(strategy)
-            timeframe  = self._next_timeframe_round_robin(f"{strategy_id}:{symbol}", timeframes)
+                for timeframe in timeframes:
+                    # Step 1: Regime pre-filter (per symbol × TF)
+                    if not self._passes_regime_prefilter(strategy, symbol, timeframe):
+                        logger.info(
+                            "[BACKTEST_ORC] strategy=%s symbol=%s tf=%s REGIME_INCOMPATIBLE — skipping.",
+                            strategy_id, symbol, timeframe,
+                        )
+                        self._write_regime_incompatible(cursor, strategy_id, symbol, strategy)
+                        conn.commit()
+                        continue
 
-            if not self._passes_regime_prefilter(strategy, symbol, timeframe):
-                logger.info(
-                    "[BACKTEST_ORC] strategy=%s symbol=%s REGIME_INCOMPATIBLE — skipping.",
-                    strategy_id, symbol,
+                    # Step 2: Build scenario slices for this symbol
+                    slices = await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        self._build_scenario_slices,
+                        strategy,
+                        params,
+                        symbol,
+                    )
+
+                    # Step 3: Run ScenarioBacktester
+                    matrix = self.backtester.run_scenario_backtest(
+                        strategy_id=strategy_id,
+                        parameter_overrides=params,
+                        scenario_slices=slices,
+                        strategy_instance=strategy_instance,
+                    )
+
+                    logger.debug(
+                        "[BACKTEST_ORC] strategy=%s symbol=%s tf=%s score=%.4f",
+                        strategy_id, symbol, timeframe, matrix.overall_score,
+                    )
+
+                    # Keep the best-scoring TF result for this symbol
+                    if symbol_best is None or matrix.overall_score > symbol_best.overall_score:
+                        symbol_best = matrix
+                        symbol_best_tf = timeframe
+
+                if symbol_best is None:
+                    continue
+
+                # Step 4: Persist per-pair affinity for best TF
+                self._write_pair_affinity(
+                    cursor, strategy_id, symbol, symbol_best.overall_score, symbol_best, strategy
                 )
-                self._write_regime_incompatible(cursor, strategy_id, symbol, strategy)
+
+                # Step 5: Update sys_strategy_pair_coverage (HU 7.17)
+                ep_dict = json.loads((strategy.get("execution_params") or "{}") or "{}")
+                k = float(ep_dict.get("confidence_k", self._cfg.get("confidence_k", 20)))
+                n_t = int(getattr(symbol_best, "total_trades", 0))
+                eff = round(symbol_best.overall_score * float(n_t / (n_t + k)) if n_t > 0 else 0.0, 4)
+                if eff >= 0.55:
+                    cov_status = "QUALIFIED"
+                elif eff < 0.20 and n_t > 0 and (n_t / (n_t + k)) >= 0.50:
+                    cov_status = "REJECTED"
+                else:
+                    cov_status = "PENDING"
+                detected_regime = self._get_current_regime_label(strategy, symbol, symbol_best_tf)
+                self._write_pair_coverage(
+                    cursor, strategy_id, symbol, symbol_best_tf, detected_regime,
+                    n_trades=n_t, effective_score=eff, status=cov_status,
+                )
                 conn.commit()
-                continue
 
-            # Step 2: Build scenario slices for this symbol
-            slices = await asyncio.get_event_loop().run_in_executor(
-                None,
-                self._build_scenario_slices,
-                strategy,
-                params,
-                symbol,
-            )
+                best_matrices.append(symbol_best)
+                logger.info(
+                    "[BACKTEST_ORC] strategy=%s symbol=%s best_tf=%s score=%.4f",
+                    strategy_id, symbol, symbol_best_tf, symbol_best.overall_score,
+                )
 
-            # Step 3: Run ScenarioBacktester
-            matrix = self.backtester.run_scenario_backtest(
-                strategy_id=strategy_id,
-                parameter_overrides=params,
-                scenario_slices=slices,
-                strategy_instance=strategy_instance,
-            )
+            if not best_matrices:
+                logger.info(
+                    "[BACKTEST_ORC] strategy=%s — all pairs/TFs skipped, no score update.",
+                    strategy_id,
+                )
+                return None
 
-            # Step 4: Persist per-pair affinity entry
-            self._write_pair_affinity(cursor, strategy_id, symbol, matrix.overall_score, matrix, strategy)
+            # Aggregate score across evaluated pairs (equal weight, best TF per symbol)
+            aggregate_score = round(sum(m.overall_score for m in best_matrices) / len(best_matrices), 4)
 
-            # Step 5: Update sys_strategy_pair_coverage (HU 7.17)
+            # Persist aggregate score
+            self._update_strategy_scores(strategy_id, aggregate_score, strategy)
+
+            # HU 7.19: Overfitting detection — check AFTER all pair coverage written
+            k_val = float(self._cfg.get("confidence_k", 20))
+            overfitting = self._detect_overfitting_risk(strategy_id, cursor, k=k_val)
+            if overfitting:
+                n_rows = conn.execute(
+                    "SELECT COUNT(*) FROM sys_strategy_pair_coverage WHERE strategy_id=?",
+                    (strategy_id,),
+                ).fetchone()[0]
+                n_flagged = conn.execute(
+                    "SELECT COUNT(*) FROM sys_strategy_pair_coverage "
+                    "WHERE strategy_id=? AND effective_score >= 0.90",
+                    (strategy_id,),
+                ).fetchone()[0]
+                self._write_overfitting_alert(cursor, strategy_id,
+                                              n_pairs=n_rows, n_flagged=n_flagged)
+                conn.commit()
+
+            # Adaptive promotion threshold — per-strategy via execution_params
             ep_dict = json.loads((strategy.get("execution_params") or "{}") or "{}")
-            k = float(ep_dict.get("confidence_k", self._cfg.get("confidence_k", 20)))
-            n_t = int(getattr(matrix, "total_trades", 0))
-            eff = round(matrix.overall_score * float(n_t / (n_t + k)) if n_t > 0 else 0.0, 4)
-            if eff >= 0.55:
-                cov_status = "QUALIFIED"
-            elif eff < 0.20 and n_t > 0 and (n_t / (n_t + k)) >= 0.50:
-                cov_status = "REJECTED"
+            consecutive_failures = int(ep_dict.get("consecutive_failures", 0))
+            base_threshold = float(ep_dict.get("promotion_threshold", self.backtester.MIN_REGIME_SCORE))
+
+            # Relax threshold 5% per 3-failure block (EDGE: unblock stuck strategies)
+            relax_factor = 0.95 ** (consecutive_failures // 3)
+            effective_threshold = round(base_threshold * relax_factor, 4)
+
+            passes = aggregate_score >= effective_threshold
+            if passes:
+                self._promote_to_shadow(strategy_id, aggregate_score)
+                ep_dict["consecutive_failures"] = 0
             else:
-                cov_status = "PENDING"
-            detected_regime = self._get_current_regime_label(strategy, symbol, timeframe)
-            self._write_pair_coverage(
-                cursor, strategy_id, symbol, timeframe, detected_regime,
-                n_trades=n_t, effective_score=eff, status=cov_status,
-            )
-            conn.commit()
+                ep_dict["consecutive_failures"] = consecutive_failures + 1
 
-            matrices.append(matrix)
-            logger.debug(
-                "[BACKTEST_ORC] strategy=%s symbol=%s score=%.4f",
-                strategy_id, symbol, matrix.overall_score,
-            )
+            # Always persist threshold and failure count so next run uses updated state
+            ep_dict["promotion_threshold"] = effective_threshold
+            self.storage.update_strategy_execution_params(strategy_id, json.dumps(ep_dict))
 
-        if not matrices:
-            logger.info(
-                "[BACKTEST_ORC] strategy=%s — all pairs skipped, no score update.",
-                strategy_id,
-            )
-            return None
-
-        # Aggregate score across evaluated pairs (equal weight)
-        aggregate_score = round(sum(m.overall_score for m in matrices) / len(matrices), 4)
-
-        # Persist aggregate score (no per-pair affinity write at this level)
-        self._update_strategy_scores(strategy_id, aggregate_score, strategy)
-
-        # HU 7.19: Overfitting detection — check AFTER all pair coverage written
-        k_val = float(self._cfg.get("confidence_k", 20))
-        overfitting = self._detect_overfitting_risk(strategy_id, cursor, k=k_val)
-        if overfitting:
-            n_rows = conn.execute(
-                "SELECT COUNT(*) FROM sys_strategy_pair_coverage WHERE strategy_id=?",
-                (strategy_id,),
-            ).fetchone()[0]
-            n_flagged = conn.execute(
-                "SELECT COUNT(*) FROM sys_strategy_pair_coverage "
-                "WHERE strategy_id=? AND effective_score >= 0.90",
-                (strategy_id,),
-            ).fetchone()[0]
-            self._write_overfitting_alert(cursor, strategy_id,
-                                          n_pairs=n_rows, n_flagged=n_flagged)
-            conn.commit()
-
-        # Promote if aggregate passes threshold
-        passes = aggregate_score >= self.backtester.MIN_REGIME_SCORE
-        if passes:
-            self._promote_to_shadow(strategy_id, aggregate_score)
-
-        # Return a representative matrix (first evaluated pair) with updated aggregate score
-        rep = matrices[0]
-        rep.overall_score    = aggregate_score
-        rep.passes_threshold = passes
-        rep.overfitting_risk = overfitting
-        return rep
+            # Return a representative matrix (first evaluated pair) with updated aggregate score
+            rep = best_matrices[0]
+            rep.overall_score    = aggregate_score
+            rep.passes_threshold = passes
+            rep.overfitting_risk = overfitting
+            return rep
+        finally:
+            self.storage._close_conn(conn)
 
     # ── Data Loading ──────────────────────────────────────────────────────────
 
@@ -1032,7 +1069,12 @@ class BacktestOrchestrator:
         )
 
     def _is_on_cooldown(self, strategy: Dict) -> bool:
-        """Return True if strategy was backtested less than COOLDOWN_HOURS ago.
+        """Return True if strategy was backtested less than cooldown_hours ago.
+
+        Cooldown source (priority order):
+          1. mode_manager.get_component_frequencies() → backtest_cooldown_h
+             (adaptive: 1h AGGRESSIVE / 12h MODERATE / 24h CONSERVATIVE)
+          2. self._cfg["cooldown_hours"] from sys_config (static fallback, default 24h)
 
         Uses ``last_backtest_at`` (dedicated field) when available; falls back
         to ``updated_at`` only when the dedicated field is absent from the row
@@ -1049,12 +1091,23 @@ class BacktestOrchestrator:
         # If last_backtest_at key is present but None, never backtested → not on cooldown
         if "last_backtest_at" in strategy and strategy["last_backtest_at"] is None:
             return False
+
+        # Resolve adaptive cooldown: mode_manager takes priority over static config
+        cooldown_hours: float = self._cfg["cooldown_hours"]
+        if self.mode_manager is not None:
+            try:
+                ctx = self.mode_manager.current_context
+                freqs = self.mode_manager.get_component_frequencies(ctx)
+                cooldown_hours = freqs.get("backtest_cooldown_h", cooldown_hours)
+            except Exception:
+                pass  # Degrade gracefully to static config value
+
         try:
             ts = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
             if ts.tzinfo is None:
                 ts = ts.replace(tzinfo=timezone.utc)
             age_hours = (datetime.now(timezone.utc) - ts).total_seconds() / 3600
-            return age_hours < self._cfg["cooldown_hours"]
+            return age_hours < cooldown_hours
         except Exception:
             return False
 
@@ -1089,8 +1142,8 @@ class BacktestOrchestrator:
             + score_backtest * weights["w_backtest"],
             4,
         )
+        conn = self.storage._get_conn()
         try:
-            conn   = self.storage._get_conn()
             cursor = conn.cursor()
             cursor.execute(
                 """
@@ -1113,10 +1166,13 @@ class BacktestOrchestrator:
                 strategy_id, score_backtest, score,
             )
         except Exception as exc:
+            conn.rollback()
             logger.error(
                 "[BACKTEST_ORC] Failed to persist scores for strategy=%s: %s",
                 strategy_id, exc,
             )
+        finally:
+            self.storage._close_conn(conn)
 
     def _write_pair_affinity(
         self,
@@ -1297,8 +1353,8 @@ class BacktestOrchestrator:
 
     def _load_backtest_strategies(self) -> List[Dict]:
         """Load all strategies with mode='BACKTEST' from sys_strategies."""
+        conn = self.storage._get_conn()
         try:
-            conn   = self.storage._get_conn()
             cursor = conn.cursor()
             cursor.execute(
                 """
@@ -1316,11 +1372,13 @@ class BacktestOrchestrator:
         except Exception as exc:
             logger.error("[BACKTEST_ORC] Failed to load BACKTEST strategies: %s", exc)
             return []
+        finally:
+            self.storage._close_conn(conn)
 
     def _load_strategy(self, strategy_id: str) -> Optional[Dict]:
         """Load a single strategy by class_id."""
+        conn = self.storage._get_conn()
         try:
-            conn   = self.storage._get_conn()
             cursor = conn.cursor()
             cursor.execute(
                 """
@@ -1340,6 +1398,8 @@ class BacktestOrchestrator:
         except Exception as exc:
             logger.error("[BACKTEST_ORC] Failed to load strategy %s: %s", strategy_id, exc)
             return None
+        finally:
+            self.storage._close_conn(conn)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

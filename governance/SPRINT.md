@@ -35,6 +35,21 @@
   - Umbrales: `OK` < 10 min, `WARN` 10-20 min, `FAIL` > 20 min
   - `tests/test_oem_heartbeat_check.py`: 10 tests — OK/WARN/FAIL, umbrales exactos, integración con health_summary
 
+- [DONE] **Batch A/B — DB Lock Cascade & trace_id Uniqueness (scenario_backtester.py)** *(fuera de HU formal — bug crítico detectado en auditoría ciclo 1)*
+  - `core_brain/scenario_backtester.py` `_persist_validation`: `conn` movido fuera del `try` + `conn.rollback()` en `except` + `finally: self.storage._close_conn(conn)` → elimina lock indefinido cuando UNIQUE constraint falla
+  - `core_brain/scenario_backtester.py` `run_scenario_backtest`: `trace_id` migrado de `%H%M%S` a `%H%M%S_%f` (microsegundos) → elimina `UNIQUE constraint failed: sys_shadow_promotion_log.trace_id` en lotes rápidos
+  - validate_all: 27/27 PASSED
+
+- [DONE] **Batch C — Connection Leaks en BacktestOrchestrator + Log Engañoso (Trace_ID: EDGE-CONNLEAK-BACKTEST-ORC-2026-03-30)**
+  - `core_brain/backtest_orchestrator.py` `_execute_backtest`: todo el bloque multi-TF envuelto en `try/finally: _close_conn(conn)` (conn línea ~267 nunca se cerraba)
+  - `core_brain/backtest_orchestrator.py` `_update_strategy_scores`: `conn` fuera de `try` + `rollback()` en `except` + `finally: _close_conn(conn)`
+  - `core_brain/backtest_orchestrator.py` `_load_backtest_strategies`: `conn` fuera de `try` + `finally: _close_conn(conn)`
+  - `core_brain/backtest_orchestrator.py` `_load_strategy`: idem
+  - `core_brain/main_orchestrator.py` `initialize_shadow_pool`: `failed_count` separado de `skipped_count` (antes mezclaba filtros de modo con excepciones reales); retorno y log actualizados con las tres claves: `created`, `skipped`, `failed`
+  - `tests/test_backtest_conn_leak.py`: 8 tests — `_close_conn` invocado en path exitoso y en path de excepción para cada método
+  - `tests/test_shadow_pool_log_accuracy.py`: 4 tests — `failed` cuenta solo excepciones, `skipped` solo filtros de modo
+  - validate_all: 27/27 PASSED
+
 - [TODO] **HU 10.12: Timeout Guards en run_single_cycle**
   - `core_brain/main_orchestrator.py`: `asyncio.wait_for()` en `_request_scan()` (120s), `_check_and_run_daily_backtest()` (300s), `position_manager.monitor_usr_positions()` (60s)
   - `shadow_manager.evaluate_all_instances()`: mover a `asyncio.to_thread()` con timeout 60s (elimina bloqueo síncrono del event loop)

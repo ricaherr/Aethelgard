@@ -205,7 +205,7 @@ class ScenarioBacktester:
         now = datetime.now(timezone.utc)
         trace_id = (
             f"TRACE_BKT_VALIDATION"
-            f"_{now.strftime('%Y%m%d_%H%M%S')}"
+            f"_{now.strftime('%Y%m%d_%H%M%S_%f')}"
             f"_{strategy_id[:8].upper()}"
         )
 
@@ -447,8 +447,8 @@ class ScenarioBacktester:
           notes            → AptitudeMatrix JSON
         """
         promotion_status = "APPROVED" if matrix.passes_threshold else "REJECTED"
+        conn = self.storage._get_conn()
         try:
-            conn = self.storage._get_conn()
             cursor = conn.cursor()
             cursor.execute(
                 """
@@ -470,8 +470,11 @@ class ScenarioBacktester:
                 promotion_status,
             )
         except Exception as exc:
+            conn.rollback()
             logger.error(
                 "[SCENARIO_BACKTESTER] Failed to persist validation trace_id=%s: %s",
                 matrix.trace_id,
                 exc,
             )
+        finally:
+            self.storage._close_conn(conn)

@@ -367,6 +367,9 @@ class MainOrchestrator:
         try:
             from core_brain.operational_mode_manager import OperationalModeManager
             self.operational_mode_manager = OperationalModeManager(storage=self.storage)
+            # Wire adaptive cooldown into BacktestOrchestrator (tier-2 fix)
+            if self.backtest_orchestrator is not None:
+                self.backtest_orchestrator.mode_manager = self.operational_mode_manager
         except Exception as e:
             logger.warning(f"[MODE_MGR] Failed to initialize OperationalModeManager: {e}")
 
@@ -423,7 +426,11 @@ class MainOrchestrator:
         ][:variations_per_strategy]
         
         created_count = 0
-        skipped_count = 0
+        skipped_count = 0  # strategies filtered out (not in SHADOW mode)
+        failed_count  = 0  # real exceptions during instance creation
+
+        # Only create instances for strategies that are in SHADOW mode in DB
+        shadow_strategy_ids = self.storage.get_shadow_mode_strategy_ids()
 
         # Load active instance counts per strategy (idempotency guard)
         existing_active = self.shadow_manager.storage.list_active_instances()
@@ -434,6 +441,13 @@ class MainOrchestrator:
             )
 
         for strategy_id, engine in strategy_engines.items():
+            if strategy_id not in shadow_strategy_ids:
+                logger.debug(
+                    "[SHADOW] ⏭️ Skipping %s — not in SHADOW mode (mode filter)", strategy_id
+                )
+                skipped_count += 1
+                continue
+
             already_active = active_per_strategy.get(strategy_id, 0)
             if already_active >= variations_per_strategy:
                 logger.debug(
@@ -464,13 +478,13 @@ class MainOrchestrator:
 
                 except Exception as e:
                     logger.error(f"[SHADOW] ✗ Failed to create instance for {strategy_id}: {e}")
-                    skipped_count += 1
-        
+                    failed_count += 1
+
         logger.info(
             f"[SHADOW] 🏠 Pool bootstrap complete: {created_count} instances created, "
-            f"{skipped_count} failed"
+            f"{skipped_count} skipped (not SHADOW), {failed_count} failed"
         )
-        return {"created": created_count, "skipped": skipped_count}
+        return {"created": created_count, "skipped": skipped_count, "failed": failed_count}
 
     def _init_core_dependencies(self, scanner: Any, factory: Optional[Any] = None, risk: Any = None, executor: Any = None, storage: Optional[Any] = None, config_path: Optional[str] = None, strategy_ranker: Optional[StrategyRanker] = None, execution_feedback_collector: Optional[ExecutionFeedbackCollector] = None, user_id: Optional[str] = None, tenant_id: Optional[str] = None) -> None:
         """Initializes core engines and resolves storage/config.
@@ -1561,7 +1575,8 @@ class MainOrchestrator:
 
             if sys_config.get("oem_repair_force_backtest"):
                 logger.info("[OEM-REPAIR] Flag force_backtest detectado — reseteando cooldown de backtest")
-                self._last_backtest_run = None  # Fuerza ejecución en _check_and_run_daily_backtest
+                self._last_backtest_run = None  # Fuerza ejecución en _check_and_run_daily_backtest (tier-1)
+                self.storage.reset_backtest_cooldown_for_pending()  # Resetea last_backtest_at en DB (tier-2)
                 consumed["oem_repair_force_backtest"] = None
 
             if sys_config.get("oem_repair_force_ohlc_reload") and self.scanner:
@@ -2546,7 +2561,21 @@ class MainOrchestrator:
         - Scanner warmup phase to ensure data is available
         """
         logger.info("MainOrchestrator starting event loop...")
-        
+
+        # Cleanup: mark INCUBATING shadow instances for BACKTEST strategies as DEAD.
+        # Prevents orphan instances (created before strategy graduated) from blocking
+        # the shadow evaluation loop with permanent Pilar-3 failures.
+        try:
+            orphans = self.storage.mark_orphan_shadow_instances_dead()
+            if orphans:
+                logger.warning(
+                    "[STARTUP] %d orphan shadow instance(s) marked DEAD "
+                    "(parent strategy still in BACKTEST mode).",
+                    orphans,
+                )
+        except Exception as exc:
+            logger.warning("[STARTUP] mark_orphan_shadow_instances_dead failed (non-fatal): %s", exc)
+
         # Register signal handlers for graceful shutdown
         self._register_signal_handlers()
         
