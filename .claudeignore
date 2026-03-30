@@ -1,0 +1,58 @@
+# --- Dependencias y Entornos ---
+node_modules/
+bower_components/
+vendor/
+.venv/
+env/
+venv/
+.env
+.env.*
+
+# --- Builds y Salidas de Compilación ---
+dist/
+build/
+out/
+.next/
+.nuxt/
+target/
+bin/
+obj/
+*.exe
+*.dll
+*.so
+
+# --- Archivos de Sistema y Logs ---
+.DS_Store
+Thumbs.db
+*.log
+logs/
+*.tmp
+*.temp
+
+# --- Multimedia y Binarios (PESADOS en tokens) ---
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+*.ico
+*.mp4
+*.pdf
+*.zip
+*.tar.gz
+*.rar
+
+# --- Cache y Herramientas ---
+.cache/
+.eslintcache
+.stylelintcache
+.npm/
+.yarn/
+.pytest_cache/
+__pycache__/
+*.pyc
+
+# --- Documentación Pesada (Opcional) ---
+# Descomenta si no quieres que Claude lea tus docs locales
+# docs/
+# site/
