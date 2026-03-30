@@ -56,6 +56,47 @@
   - Timeouts configurables: `sys_config` claves `phase_timeout_scan_s`, `phase_timeout_backtest_s`
   - `tests/test_orchestrator_timeout_guards.py`: mock que no retorna → verificar ciclo continúa y logea `[TIMEOUT]`
 
+- [DONE] **FIX-MONITOR-SNAPSHOT-2026-03-30: Higiene Observabilidad — monitor_snapshot.py**
+  - `scripts/monitor_snapshot.py`: (1) `encoding='utf-8', errors='replace'` en `open()` → elimina `UnicodeDecodeError` silencioso. (2) Query `sys_state` obsoleta → `SELECT key, value, updated_at FROM sys_config ORDER BY updated_at DESC LIMIT 10` (SSOT v2.x). Linter amplió el script con `check_file_mass_limits()` y `get_db_snapshot()` defensivo.
+  - TDD: `tests/test_monitor_snapshot.py` — 9 tests (9/9 PASSED). Cubre: DB ausente, tabla sys_config, ausencia de sys_state, encoding UTF-8, bytes inválidos, JSON válido.
+  - `validate_all.py`: 27/27 PASSED.
+
+- [DONE] **FIX-BACKTEST-QUALITY-ZERO-SCORE-2026-03-30: Corrección score_shadow + metrics refresh en evaluate_all_instances (§7 Feedback Loop)**
+  - **Problema**: `evaluate_all_instances()` usaba `instance.metrics` (cache de `sys_shadow_instances`, 0 desde creación). `calculate_instance_metrics_from_sys_trades()` existía pero **nunca se invocaba** en el ciclo de evaluación. Además `score_shadow` en `sys_strategies` nunca se escribía en ningún code path → motor Darwiniano paralizado.
+  - **Gap A**: [shadow_manager.py:544](../core_brain/shadow_manager.py) — `metrics = instance.metrics` sustituido por llamada a `calculate_instance_metrics_from_sys_trades()` antes de cada evaluación. `instance.metrics` actualizado para que `update_shadow_instance()` persista métricas reales.
+  - **Gap B**: `score_shadow` en `sys_strategies` — nuevo `ShadowStorageManager.update_strategy_score_shadow(strategy_id, score)` en `shadow_db.py`. Llamado desde `evaluate_all_instances()` después de cada instancia. Fórmula: `win_rate × min(profit_factor / 3.0, 1.0)`.
+  - **Trigger manual**: nuevo `ShadowManager.recalculate_all_shadow_scores() → {"recalculated": N, "skipped": M}`. Permite recalcular sin esperar el ciclo horario (útil post-migración de datos históricos).
+  - **Confirmación ETI §3**: `calculate_instance_metrics_from_sys_trades()` recibe datos no vacíos post-fix SHADOW-SYNC-ZERO-TRADES — tests documentan ambos casos (con y sin instance_id).
+  - TDD: `tests/test_shadow_manager_metrics_refresh.py` — 7 tests (7/7 PASSED). Cubre: refresh desde sys_trades, cache actualizado post-evaluación, score_shadow > 0 con trades reales, recalculate_all_shadow_scores, bug NULL documentado.
+  - `validate_all.py`: **2119/2119 PASSED** · 0 regresiones.
+
+- [DONE] **FIX-SHADOW-SYNC-ZERO-TRADES-2026-03-30: Corrección ciclo Darwiniano — instance_id NULL en sys_trades**
+  - **Root cause (Vector A)**: `TradeClosureListener._save_trade_with_retry()` construía `trade_data` sin `instance_id`. `BrokerTradeClosedEvent` no tiene ese campo → `sys_trades.instance_id = NULL` → `calculate_instance_metrics_from_sys_trades(instance_id)` retornaba 0 filas → todas las instancias SHADOW con 0 trades → ciclo Darwiniano (3 Pilares) ciego.
+  - **Root cause (Vector B)**: `_get_execution_mode()` hacía fallback a `LIVE` cuando `sys_signal_ranking` no tenía entrada → trades enrutados a `usr_trades` en lugar de `sys_trades`.
+  - `core_brain/trade_closure_listener.py`: nuevo método `_resolve_shadow_context(signal_id) → (execution_mode, instance_id)` que resuelve ambos vectores: (1) consulta `sys_signal_ranking`; (2) si modo SHADOW, busca instancia activa en `sys_shadow_instances` por `strategy_id`; (3) si ranking ausente pero existe instancia SHADOW activa, **infiere SHADOW** en lugar de LIVE. Nuevo helper `_lookup_shadow_instance_id(strategy_id)`. `_get_execution_mode()` redirige a `_resolve_shadow_context()` para compatibilidad. `_save_trade_with_retry()` incluye ahora `instance_id` en `trade_data`.
+  - Confirmado: `save_trade_result()` en `data_vault/trades_db.py` rutea SHADOW → `sys_trades` correctamente (sin cambios necesarios). ADX regression (Problem 2) confirmado resuelto desde sprint anterior.
+  - TDD: `tests/test_trade_closure_listener_shadow_sync.py` — 5 tests (5/5 PASSED). Cubre: `instance_id` en `trade_data`, `execution_mode` correcto, fallback por instancia activa, métricas visibles post-fix, documentación del bug original.
+  - `validate_all.py`: 27/27 PASSED.
+
+- [DONE] **EDGE-IGNITION-PHASE-1-INTEGRITY-GUARD-2026-03-30: Servicio de autodiagnóstico en runtime (IntegrityGuard)**
+  - **Objetivo**: Chequeos vivos data-driven en cada ciclo de trading; veto automático ante estado CRITICAL con trazabilidad completa.
+  - `core_brain/services/integrity_guard.py` — NUEVO: clase `IntegrityGuard` con tres checks:
+    - `Check_Database`: conectividad + legibilidad de `sys_config` (catch amplio, mide elapsed_ms)
+    - `Check_Data_Coherence`: detección de congelamiento de tick (umbral 5 min, `last_market_tick_ts` en `sys_config`)
+    - `Check_Veto_Logic`: ADX nulo/cero persistente — WARNING tras 1 ciclo, CRITICAL tras 3 consecutivos (`_adx_zero_streak`)
+  - `HealthStatus` (OK/WARNING/CRITICAL), `CheckResult`, `HealthReport` como value objects; Trace_ID obligatorio en cada log.
+  - `core_brain/main_orchestrator.py` — import de `IntegrityGuard, HealthStatus`; step 13 en `__init__`; **Integrity Gate** al inicio del `while` en `run()`: si `check_health()` → CRITICAL, llama `_write_integrity_veto()` y detiene el ciclo.
+  - `_write_integrity_veto(trace_id, checks)`: persiste fallo en `sys_audit_logs` con `action=INTEGRITY_VETO`, `status=failure`, `reason` truncado a 1000 chars.
+  - TDD: `tests/test_integrity_guard.py` — 22 tests (22/22 PASSED). Cubre todos los caminos de los 3 checks + agregación + nivel de log.
+  - `validate_all.py`: **27/27 PASSED** · suite total **2143/2143 PASSED** · 0 regresiones.
+
+- [DONE] **FIX-LIFECYCLE-COHERENCE-STALE-BACKTEST-2026-03-30: updated_at congelado en sys_shadow_instances (§7 Feedback Loop)**
+  - **Root cause**: `ShadowStorageManager.update_shadow_instance()` persistía `db_dict["updated_at"]` — el timestamp original deserializado en `from_db_dict`. El UPDATE escribía el mismo valor ya existente → campo congelado desde la creación → motor Darwiniano no podía detectar actividad de vida en las 5 estrategias afectadas.
+  - **Fix**: [shadow_db.py:151](../data_vault/shadow_db.py) — `updated_at = ?` reemplazado por `updated_at = CURRENT_TIMESTAMP`; el parámetro `db_dict["updated_at"]` eliminado del tuple de binding. SQLite estampa el momento real del UPDATE en cada ciclo de evaluación.
+  - **Dependencias**: Fix dependiente de P2 (FIX-SHADOW-SYNC-ZERO-TRADES) y P4 (FIX-BACKTEST-QUALITY-ZERO-SCORE) — los trades deben estar vinculados a instance_id para que el ciclo de backtest invoque `update_shadow_instance()` con datos reales.
+  - TDD: `tests/test_shadow_db_updated_at_refresh.py` — 2 tests (2/2 PASSED). Cubre: `evaluate_all_instances()` avanza `updated_at`; `update_shadow_instance()` directamente avanza `updated_at`.
+  - `validate_all.py`: **2121/2121 PASSED** · 0 regresiones.
+
 - [TODO] **HU 10.13: Contract Tests — Bugs Conocidos**
   - `tests/test_contracts_known_bugs.py`: 4 tests de contrato (ver HU 10.13 en BACKLOG)
     1. `pilar3_min_trades` dinámico: instancia con 8 trades → HEALTHY si DB dice min_trades=5

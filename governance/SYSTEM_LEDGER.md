@@ -4,7 +4,7 @@
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-27 UTC)**: Trace_ID: EDGE-RELIABILITY-SELF-AUDIT-2026 | Sprint 23 en curso (E13 — HU 10.10 + HU 10.11): OEM integrado en producción (`start.py` bloque 8.6) con `shadow_storage` inyectado · 9° check `orchestrator_heartbeat` · endpoint `GET /api/system/health/edge` · `SystemHealthPanel` UI · 21 tests nuevos · **validate_all 27/27 PASSED** · Suite base 1988 intacta.
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-30 UTC)**: Trace_ID: EDGE-IGNITION-PHASE-1-INTEGRITY-GUARD-2026-03-30 | Sprint 23 — IntegrityGuard: autodiagnóstico runtime con veto CRITICAL automático · 22 tests nuevos · **validate_all 27/27 PASSED** · Suite total **2143/2143 PASSED**.
 
 ---
 
@@ -330,6 +330,58 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 | **Validate_all** | ✅ 25/25 PASSED · 1466 tests · 0 failures · Sprint N4 |
 
 
+
+---
+
+## 📅 Registro: 2026-03-30 — HOTFIX OBSERVABILIDAD: monitor_snapshot.py (TRACE_ID: FIX-MONITOR-SNAPSHOT-2026-03-30)
+
+### ✅ HITO COMPLETADO: Hotfix §5 Higiene — Herramienta de observabilidad nunca debe fallar silenciosamente
+
+| Campo | Detalle |
+|---|---|
+| **Regla** | §5 Higiene — La herramienta de observabilidad no puede fallar silenciosamente |
+| **Archivos** | `scripts/monitor_snapshot.py` · `tests/test_monitor_snapshot.py` (nuevo) |
+| **Fix 1** | `open()` → `encoding='utf-8', errors='replace'` en `get_recent_logs()`. Previene `UnicodeDecodeError` con logs de caracteres especiales. |
+| **Fix 2** | Query `SELECT * FROM sys_state` → `SELECT key, value, updated_at FROM sys_config ORDER BY updated_at DESC LIMIT 10`. `sys_state` fue reemplazada por `sys_config` en v2.x (SSOT). |
+| **TDD** | 9 tests nuevos — `TestGetDbSnapshot` (4), `TestGetRecentLogs` (3), `TestGenerateFullSnapshot` (2). 9/9 PASSED. |
+| **validate_all** | ✅ 27/27 PASSED · Suite total 1997 · 0 failures |
+
+---
+
+## 📅 Registro: 2026-03-30 — HOTFIX SCORE_SHADOW=0 + METRICS REFRESH (TRACE_ID: FIX-BACKTEST-QUALITY-ZERO-SCORE-2026-03-30)
+
+### ✅ HITO COMPLETADO: Motor Darwiniano desbloqueado — score_shadow y métricas frescas en evaluate_all_instances
+
+| Campo | Detalle |
+|---|---|
+| **Regla violada** | §7 Feedback Loop — `score=0` impide promote/kill; el motor Darwiniano estaba paralizado |
+| **Archivos** | `core_brain/shadow_manager.py` · `data_vault/shadow_db.py` · `tests/test_shadow_manager_metrics_refresh.py` (nuevo) |
+| **Gap A — Métricas** | `evaluate_all_instances()` usaba `instance.metrics` (cache `sys_shadow_instances`, siempre 0 al crearse). `calculate_instance_metrics_from_sys_trades()` existía pero **nunca se llamaba** en el ciclo de evaluación → evaluación siempre ciega a los trades reales. Fix: línea 544 reemplazada por llamada a `calculate_instance_metrics_from_sys_trades()` antes de los 3 Pilares. `instance.metrics` actualizado para persistir métricas frescas vía `update_shadow_instance()`. |
+| **Gap B — score_shadow** | `sys_strategies.score_shadow` nunca se escribía en ningún code path. Fórmula `score = live×0.50 + shadow×0.30 + backtest×0.20` evaluaba con shadow=0 permanente. Fix: nuevo `ShadowStorageManager.update_strategy_score_shadow(strategy_id, score)`. Llamado desde `evaluate_all_instances()` con fórmula `win_rate × min(profit_factor / 3.0, 1.0)`. |
+| **Trigger manual** | Nuevo `ShadowManager.recalculate_all_shadow_scores() → {"recalculated": N, "skipped": M}`. Para recálculo sin esperar ciclo horario (post-migración de datos históricos, intervención manual). |
+| **ETI confirmación** | `calculate_instance_metrics_from_sys_trades()` recibe datos no vacíos post-fix SHADOW-SYNC: trades con `instance_id` correcto son visibles. Trades con `instance_id=NULL` producen métricas vacías — bug original documentado en test. |
+| **TDD** | 7 tests en `TestEvaluateAllInstancesRefreshesMetrics`, `TestScoreShadowUpdate`, `TestRecalculateAllShadowScores`, `TestCalculateMetricsReceivesNonEmptyData`. 7/7 PASSED. |
+| **validate_all** | ✅ **2119/2119 PASSED** · 0 failures · 0 regresiones · +7 tests nuevos |
+
+---
+
+## 📅 Registro: 2026-03-30 — HOTFIX CICLO DARWINIANO: instance_id NULL en sys_trades (TRACE_ID: FIX-SHADOW-SYNC-ZERO-TRADES-2026-03-30)
+
+### ✅ HITO COMPLETADO: Fix SHADOW Sync — Ciclo Darwiniano desbloqueado para SHADOW_LIQ_SWEEP_0001_V0/V1
+
+| Campo | Detalle |
+|---|---|
+| **Regla violada** | §2.1 SSOT — `sys_trades.instance_id` debe identificar la instancia SHADOW para que el ciclo de 3 Pilares funcione |
+| **Archivos** | `core_brain/trade_closure_listener.py` · `tests/test_trade_closure_listener_shadow_sync.py` (nuevo) |
+| **Root cause A** | `_save_trade_with_retry()` no incluía `instance_id` en `trade_data`. `BrokerTradeClosedEvent` no tiene ese campo. Resultado: `sys_trades.instance_id = NULL` → `calculate_instance_metrics_from_sys_trades(instance_id)` → 0 filas → ciclo Darwiniano ciego para toda instancia SHADOW. |
+| **Root cause B** | `_get_execution_mode()` hacía fallback a `LIVE` cuando `sys_signal_ranking` no tenía entrada para la estrategia → trades enrutados a `usr_trades` en lugar de `sys_trades`. |
+| **Fix 1** | Nuevo `_resolve_shadow_context(signal_id) → (execution_mode, instance_id)`: resuelve modo desde `sys_signal_ranking`; si SHADOW, busca instancia activa en `sys_shadow_instances` por `strategy_id`; si ranking ausente pero instancia SHADOW existe, **infiere SHADOW** (no LIVE). |
+| **Fix 2** | Nuevo helper `_lookup_shadow_instance_id(strategy_id)`: query directa a `sys_shadow_instances`, excluye terminales (DEAD, PROMOTED_TO_REAL), orden `created_at DESC`. |
+| **Fix 3** | `_save_trade_with_retry()`: usa `_resolve_shadow_context()`, agrega `instance_id` al `trade_data`. |
+| **Routing** | `save_trade_result()` en `trades_db.py` confirmado correcto (SHADOW → `sys_trades`). Sin cambios. |
+| **ADX** | Problem 2 (ADX regression) confirmado resuelto desde sprint anterior (`scanner.py:248`). |
+| **TDD** | 5 tests nuevos en `TestShadowSyncZeroTrades` + `TestShadowMetricsAfterFix`. 5/5 PASSED. |
+| **validate_all** | ✅ 27/27 PASSED · Suite total 2002 · 0 failures |
 
 ---
 

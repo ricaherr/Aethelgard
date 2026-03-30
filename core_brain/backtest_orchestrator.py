@@ -1142,8 +1142,9 @@ class BacktestOrchestrator:
             + score_backtest * weights["w_backtest"],
             4,
         )
-        conn = self.storage._get_conn()
+        conn = None
         try:
+            conn = self.storage._get_conn()
             cursor = conn.cursor()
             cursor.execute(
                 """
@@ -1166,13 +1167,15 @@ class BacktestOrchestrator:
                 strategy_id, score_backtest, score,
             )
         except Exception as exc:
-            conn.rollback()
+            if conn is not None:
+                conn.rollback()
             logger.error(
                 "[BACKTEST_ORC] Failed to persist scores for strategy=%s: %s",
                 strategy_id, exc,
             )
         finally:
-            self.storage._close_conn(conn)
+            if conn is not None:
+                self.storage._close_conn(conn)
 
     def _write_pair_affinity(
         self,

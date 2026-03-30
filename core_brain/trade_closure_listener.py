@@ -218,14 +218,15 @@ class TradeClosureListener:
         Returns:
             True if saved, False if failed after retries
         """
-        # FASE D: Determine execution_mode, provider, and account_type for audit trail
-        execution_mode = await self._get_execution_mode(trade.signal_id)
+        # FIX-SHADOW-SYNC-ZERO-TRADES-2026-03-30: resolve context returns both mode and instance_id
+        execution_mode, instance_id = await self._resolve_shadow_context(trade.signal_id)
         provider = self._map_broker_id_to_provider(trade.broker_id)
         account_type = await self._get_account_type(trade.broker_id)
-        
+
         trade_data = {
             "id": trade.ticket,
             "signal_id": trade.signal_id,
+            "instance_id": instance_id,  # FIX: required for calculate_instance_metrics_from_sys_trades
             "symbol": trade.symbol,
             "entry_price": trade.entry_price,
             "exit_price": trade.exit_price,
@@ -271,47 +272,132 @@ class TradeClosureListener:
         
         return False
     
-    async def _get_execution_mode(self, signal_id: Optional[str]) -> str:
-        """Get execution_mode (LIVE/SHADOW) from usr_performance if signal linked.
-        
+    async def _resolve_shadow_context(
+        self, signal_id: Optional[str]
+    ) -> tuple:
+        """Resolve (execution_mode, instance_id) for a trade being closed.
+
+        FIX-SHADOW-SYNC-ZERO-TRADES-2026-03-30:
+        The previous _get_execution_mode() never returned instance_id, causing
+        sys_trades.instance_id = NULL for all SHADOW trades.
+        Without instance_id, calculate_instance_metrics_from_sys_trades() always
+        returns 0 trades, breaking the Darwinian evaluation cycle.
+
+        Resolution order:
+          1. Get strategy_id from signal metadata.
+          2. Query sys_signal_ranking for execution_mode.
+          3. If SHADOW (or ranking absent but active shadow instance exists):
+             look up sys_shadow_instances for the active instance of that strategy.
+          4. Fallback: (LIVE, None).
+
         Args:
-            signal_id: Signal ID to lookup
-            
+            signal_id: Signal ID linked to the closed trade.
+
         Returns:
-            ExecutionMode.LIVE if unknown or signal not linked, otherwise actual mode from usr_performance
+            Tuple (execution_mode: str, instance_id: Optional[str])
         """
+        import json as _json
+
         if not signal_id:
-            return ExecutionMode.LIVE.value  # Default to LIVE if no signal link
-        
+            return ExecutionMode.LIVE.value, None
+
         try:
             signal = self.storage.get_signal_by_id(signal_id)
             if not signal:
-                return ExecutionMode.LIVE.value
-            
+                return ExecutionMode.LIVE.value, None
+
             # Extract strategy_id from signal metadata
             metadata = signal.get('metadata')
             if isinstance(metadata, str):
-                import json
                 try:
-                    metadata = json.loads(metadata)
+                    metadata = _json.loads(metadata)
                 except (ValueError, TypeError):
                     metadata = {}
-            
+
             strategy_id = metadata.get('strategy_id') if isinstance(metadata, dict) else None
             if not strategy_id:
-                return ExecutionMode.LIVE.value
-            
-            # Query sys_signal_ranking for execution_mode
+                return ExecutionMode.LIVE.value, None
+
+            # Try to get execution_mode from sys_signal_ranking
+            mode = ExecutionMode.LIVE.value
             ranking = self.storage.get_signal_ranking(strategy_id)
             if ranking and 'execution_mode' in ranking:
                 mode = ranking.get('execution_mode', ExecutionMode.LIVE.value)
-                logger.debug(f"[ROUTING] Signal {signal_id} → Strategy {strategy_id} → Mode {mode}")
-                return mode
-            
-            return ExecutionMode.LIVE.value
+
+            # For SHADOW mode (from ranking or inferred below), resolve instance_id
+            instance_id = None
+            if mode == ExecutionMode.SHADOW.value:
+                instance_id = self._lookup_shadow_instance_id(strategy_id)
+            elif mode == ExecutionMode.LIVE.value:
+                # If ranking is absent, check whether an active SHADOW instance exists
+                # for this strategy — if so, infer SHADOW mode to avoid losing trades
+                candidate = self._lookup_shadow_instance_id(strategy_id)
+                if candidate:
+                    mode = ExecutionMode.SHADOW.value
+                    instance_id = candidate
+
+            logger.debug(
+                "[ROUTING] Signal %s → Strategy %s → Mode %s → Instance %s",
+                signal_id, strategy_id, mode, instance_id,
+            )
+            return mode, instance_id
+
         except Exception as e:
-            logger.warning(f"Error getting execution_mode for signal {signal_id}: {e}")
-            return ExecutionMode.LIVE.value
+            logger.warning(f"Error resolving shadow context for signal {signal_id}: {e}")
+            return ExecutionMode.LIVE.value, None
+
+    def _lookup_shadow_instance_id(self, strategy_id: str) -> Optional[str]:
+        """Query sys_shadow_instances for the most recent active instance of a strategy.
+
+        FIX-SHADOW-SYNC-ZERO-TRADES-2026-03-30:
+        Called by _resolve_shadow_context() to populate instance_id in trade_data.
+
+        Args:
+            strategy_id: Strategy to look up.
+
+        Returns:
+            instance_id string if found, None otherwise.
+        """
+        try:
+            conn = self.storage._get_conn()
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT instance_id FROM sys_shadow_instances
+                WHERE strategy_id = ?
+                  AND status NOT IN ('DEAD', 'PROMOTED_TO_REAL')
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (strategy_id,),
+            )
+            row = cursor.fetchone()
+            if row:
+                return row[0] if isinstance(row, (list, tuple)) else row["instance_id"]
+            return None
+        except Exception as e:
+            logger.warning(f"[SHADOW] Could not resolve instance_id for strategy {strategy_id}: {e}")
+            return None
+        finally:
+            try:
+                self.storage._close_conn(conn)
+            except Exception:
+                pass
+
+    async def _get_execution_mode(self, signal_id: Optional[str]) -> str:
+        """Get execution_mode (LIVE/SHADOW) from usr_performance if signal linked.
+
+        Deprecated: use _resolve_shadow_context() which also returns instance_id.
+        Kept for backward compatibility with any external callers.
+
+        Args:
+            signal_id: Signal ID to lookup
+
+        Returns:
+            ExecutionMode.LIVE if unknown or signal not linked, otherwise actual mode from usr_performance
+        """
+        mode, _ = await self._resolve_shadow_context(signal_id)
+        return mode
     
     def _map_broker_id_to_provider(self, broker_id: str) -> str:
         """Map broker_id to provider constants (MT5, NT, FIX, INTERNAL).

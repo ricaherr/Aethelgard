@@ -56,6 +56,8 @@ from core_brain.signal_selector import SignalSelector
 from core_brain.cooldown_manager import CooldownManager
 from core_brain.dedup_learner import DedupLearner
 from core_brain.api.routers.shadow_ws import broadcast_shadow_update
+from core_brain.services.integrity_guard import IntegrityGuard, HealthStatus
+from core_brain.services.anomaly_sentinel import AnomalySentinel, DefenseProtocol
 
 logger = logging.getLogger(__name__)
 
@@ -382,6 +384,12 @@ class MainOrchestrator:
 
         # N1-5: StrategyGatekeeper — pre-execution asset efficiency filter (injected via DI)
         self.strategy_gatekeeper = strategy_gatekeeper
+
+        # 13. EDGE-IGNITION-PHASE-1 — IntegrityGuard (Runtime health self-diagnosis)
+        self.integrity_guard = IntegrityGuard(storage=self.storage)
+
+        # 14. EDGE-IGNITION-PHASE-2 — AnomalySentinel (Market anomaly gate)
+        self.anomaly_sentinel = AnomalySentinel(storage=self.storage)
 
     @property
     def signal_factory(self) -> Optional[Any]:
@@ -1842,6 +1850,12 @@ class MainOrchestrator:
             
             logger.info(f"[PRICE_SNAPSHOT] Built {len(price_snapshots)} atomic snapshots. "
                        f"Providers: {set(s.provider_source for s in price_snapshots.values())}")
+
+            # Feed AnomalySentinel with last ticks from each snapshot (EDGE-IGNITION-PHASE-2)
+            for snapshot in price_snapshots.values():
+                if snapshot.df is not None and len(snapshot.df) >= 2:
+                    tail = snapshot.df.tail(10)
+                    self.anomaly_sentinel.push_ticks(tail.to_dict("records"))
             
             # Extraer solo regímenes para actualizar estado
             scan_results = {sym: data["regime"] for sym, data in scan_results_with_data.items()}
@@ -2613,6 +2627,22 @@ class MainOrchestrator:
         
         try:
             while not self._shutdown_requested:
+                # ── INTEGRITY GATE (EDGE-IGNITION-PHASE-1) ──────────────────
+                health = self.integrity_guard.check_health()
+                if health.overall == HealthStatus.CRITICAL:
+                    self._write_integrity_veto(health.trace_id, health.checks)
+                    self._shutdown_requested = True
+                    break
+                # ────────────────────────────────────────────────────────────
+
+                # ── ANOMALY GATE (EDGE-IGNITION-PHASE-2) ────────────────────
+                anomaly_protocol = self.anomaly_sentinel.get_defense_protocol()
+                if anomaly_protocol == DefenseProtocol.LOCKDOWN:
+                    await self._write_anomaly_lockdown(self.anomaly_sentinel.last_trace_id)
+                    self._shutdown_requested = True
+                    break
+                # ────────────────────────────────────────────────────────────
+
                 # Execute one complete cycle
                 await self.run_single_cycle()
                 
@@ -2682,6 +2712,86 @@ class MainOrchestrator:
         except Exception as e:
             logger.error(f"Error during shutdown: {e}", exc_info=True)
     
+    def _write_integrity_veto(self, trace_id: str, checks: list) -> None:
+        """
+        Persiste el veto de IntegrityGuard en sys_audit_logs y solicita shutdown.
+
+        TRACE_ID: EDGE-IGNITION-PHASE-1-INTEGRITY-GUARD
+        """
+        failed = [c for c in checks if c.status.value == "CRITICAL"]
+        reason = "; ".join(f"[{c.name}] {c.message}" for c in failed)
+        logger.critical(
+            "[IntegrityGuard] VETO CRÍTICO — ciclo de trading detenido. "
+            "trace_id=%s | %s",
+            trace_id,
+            reason,
+        )
+        try:
+            conn = self.storage._get_conn()
+            conn.execute(
+                """
+                INSERT INTO sys_audit_logs
+                    (user_id, action, resource, resource_id, status, reason, trace_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "system",
+                    "INTEGRITY_VETO",
+                    "IntegrityGuard",
+                    "main_orchestrator",
+                    "failure",
+                    reason[:1000],
+                    trace_id,
+                ),
+            )
+            conn.commit()
+        except Exception as exc:  # pragma: no cover
+            logger.error("[IntegrityGuard] No se pudo escribir en sys_audit_logs: %s", exc)
+
+    async def _write_anomaly_lockdown(self, trace_id: str) -> None:
+        """
+        Persiste el LOCKDOWN del AnomalySentinel en sys_audit_logs,
+        cancela órdenes pendientes y solicita shutdown.
+
+        TRACE_ID: EDGE-IGNITION-PHASE-2-ANOMALY-SENTINEL
+        """
+        logger.critical(
+            "[ANOMALY_SENTINEL] LOCKDOWN activado — ciclo de trading detenido. "
+            "trace_id=%s",
+            trace_id,
+        )
+
+        # Cancelar órdenes pendientes si el executor lo soporta
+        if hasattr(self, "executor") and hasattr(self.executor, "cancel_all_pending_orders"):
+            try:
+                await self.executor.cancel_all_pending_orders()
+                logger.info("[ANOMALY_SENTINEL] Órdenes pendientes canceladas. trace_id=%s", trace_id)
+            except Exception as exc:
+                logger.error("[ANOMALY_SENTINEL] Error cancelando órdenes: %s", exc)
+
+        # Persistir en sys_audit_logs
+        try:
+            conn = self.storage._get_conn()
+            conn.execute(
+                """
+                INSERT INTO sys_audit_logs
+                    (user_id, action, resource, resource_id, status, reason, trace_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "system",
+                    "ANOMALY_LOCKDOWN",
+                    "AnomalySentinel",
+                    "main_orchestrator",
+                    "failure",
+                    "Flash Crash o anomalía sistémica detectada por AnomalySentinel",
+                    trace_id,
+                ),
+            )
+            conn.commit()
+        except Exception as exc:  # pragma: no cover
+            logger.error("[ANOMALY_SENTINEL] No se pudo escribir en sys_audit_logs: %s", exc)
+
     def _register_signal_handlers(self) -> None:
         """Register signal handlers for Ctrl+C and SIGTERM"""
         def signal_handler(signum: int, frame: Any) -> None:

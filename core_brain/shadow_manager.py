@@ -541,7 +541,14 @@ class ShadowManager:
         # 3. Evaluate each instance
         for instance in instances:
             try:
-                metrics = instance.metrics
+                # FIX-BACKTEST-QUALITY-ZERO-SCORE-2026-03-30:
+                # Use fresh metrics from sys_trades, NOT the stale cache in
+                # sys_shadow_instances (which is 0 at creation and never updated).
+                # Without this, all instances evaluate with 0 trades → score=0 forever.
+                metrics = self.storage.calculate_instance_metrics_from_sys_trades(
+                    instance.instance_id
+                )
+                instance.metrics = metrics
                 trace_id = self.generate_trace_id(instance.instance_id, "HEALTH")
 
                 # --- Run 3 Pilares with regime-adjusted thresholds ---
@@ -615,6 +622,21 @@ class ShadowManager:
                             f"[SHADOW] Failed to log promotion for {instance.instance_id[:8]}: {e}"
                         )
 
+                # --- Update score_shadow in sys_strategies ---
+                # FIX-BACKTEST-QUALITY-ZERO-SCORE-2026-03-30:
+                # score_shadow was never written, leaving it at 0 permanently.
+                # Formula: win_rate × min(profit_factor / 3.0, 1.0) → [0.0, 1.0]
+                try:
+                    score_shadow = self._compute_score_shadow(metrics)
+                    self.storage.update_strategy_score_shadow(
+                        instance.strategy_id, score_shadow
+                    )
+                except Exception as e:
+                    self.logger.error(
+                        f"[SHADOW] Failed to update score_shadow for "
+                        f"strategy={instance.strategy_id}: {e}"
+                    )
+
                 # --- Apply EdgeTuner per-instance overrides ---
                 self._apply_edge_tuner_overrides(instance, health, p1_pass)
 
@@ -670,3 +692,93 @@ class ShadowManager:
             f"({total}/{len(instances)} processed) | Regime={regime}"
         )
         return result
+
+    # ────────────────────────────────────────────────────────────────────────
+    # Score helpers (FIX-BACKTEST-QUALITY-ZERO-SCORE-2026-03-30)
+    # ────────────────────────────────────────────────────────────────────────
+
+    def _compute_score_shadow(self, metrics: ShadowMetrics) -> float:
+        """Derive score_shadow from live shadow metrics. Range [0.0, 1.0].
+
+        Formula: win_rate × min(profit_factor / 3.0, 1.0)
+        Returns 0.0 when no trades are available (avoids false signal).
+
+        Args:
+            metrics: Fresh ShadowMetrics from calculate_instance_metrics_from_sys_trades().
+
+        Returns:
+            Normalized shadow score in [0.0, 1.0].
+        """
+        if metrics.total_trades_executed == 0:
+            return 0.0
+        pf_normalized = min(metrics.profit_factor / 3.0, 1.0)
+        return round(metrics.win_rate * pf_normalized, 4)
+
+    def recalculate_all_shadow_scores(self) -> Dict:
+        """Manual trigger to recalculate shadow metrics and score_shadow for all instances.
+
+        FIX-BACKTEST-QUALITY-ZERO-SCORE-2026-03-30:
+        Exposes a recalculation mechanism that can be called without waiting for
+        the hourly evaluate_all_instances() cycle. Useful after:
+          - Database migration that populates historical instance_id in sys_trades.
+          - Manual intervention to reset scores after a data fix.
+          - On-demand revalidation via API endpoint or admin script.
+
+        Workflow per active instance:
+          1. Compute fresh ShadowMetrics from sys_trades.
+          2. Update sys_shadow_instances metrics columns.
+          3. Update sys_strategies.score_shadow.
+
+        Returns:
+            Dict with 'recalculated' (int count) and 'skipped' (int, instances with 0 trades).
+        """
+        summary: Dict = {"recalculated": 0, "skipped": 0}
+
+        try:
+            instances = self.storage.list_active_instances()
+        except Exception as e:
+            self.logger.error(f"[SHADOW] recalculate_all_shadow_scores: failed to load instances: {e}")
+            return summary
+
+        for instance in instances:
+            try:
+                metrics = self.storage.calculate_instance_metrics_from_sys_trades(
+                    instance.instance_id
+                )
+                if metrics.total_trades_executed == 0:
+                    summary["skipped"] += 1
+                    self.logger.debug(
+                        "[SHADOW] recalculate: skipped %s — 0 trades in sys_trades",
+                        instance.instance_id[:8],
+                    )
+                    continue
+
+                instance.metrics = metrics
+                self.storage.update_shadow_instance(instance)
+
+                score_shadow = self._compute_score_shadow(metrics)
+                self.storage.update_strategy_score_shadow(instance.strategy_id, score_shadow)
+
+                summary["recalculated"] += 1
+                self.logger.info(
+                    "[SHADOW] recalculate: %s strategy=%s trades=%d "
+                    "wr=%.1%% pf=%.2f score_shadow=%.4f",
+                    instance.instance_id[:8],
+                    instance.strategy_id,
+                    metrics.total_trades_executed,
+                    metrics.win_rate,
+                    metrics.profit_factor,
+                    score_shadow,
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"[SHADOW] recalculate: unexpected error for {instance.instance_id[:8]}: {e}",
+                    exc_info=True,
+                )
+
+        self.logger.info(
+            "[SHADOW] recalculate_all_shadow_scores complete: "
+            "recalculated=%d skipped=%d",
+            summary["recalculated"], summary["skipped"],
+        )
+        return summary

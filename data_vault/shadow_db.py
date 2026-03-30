@@ -148,7 +148,7 @@ class ShadowStorageManager:
                 max_drawdown_pct = ?, consecutive_losses_max = ?,
                 equity_curve_cv = ?,
                 promotion_trace_id = ?, backtest_trace_id = ?,
-                updated_at = ?
+                updated_at = CURRENT_TIMESTAMP
             WHERE instance_id = ?
             """,
             (
@@ -162,7 +162,6 @@ class ShadowStorageManager:
                 db_dict["equity_curve_cv"],
                 db_dict["promotion_trace_id"],
                 db_dict["backtest_trace_id"],
-                db_dict["updated_at"],
                 db_dict["instance_id"],
             ),
         )
@@ -458,6 +457,36 @@ class ShadowStorageManager:
             profit_factor=profit_factor,
             equity_curve_cv=equity_cv,
             consecutive_losses_max=max_consec,
+        )
+
+    def update_strategy_score_shadow(self, strategy_id: str, score_shadow: float) -> None:
+        """Persist score_shadow to sys_strategies for the Darwinian scoring formula.
+
+        FIX-BACKTEST-QUALITY-ZERO-SCORE-2026-03-30:
+        score_shadow was never written after shadow evaluation, leaving it at 0.0
+        and biasing the formula  score = live×0.50 + shadow×0.30 + backtest×0.20.
+
+        Formula for score_shadow derived from ShadowMetrics:
+            score_shadow = win_rate × min(profit_factor / 3.0, 1.0)
+        Callers (ShadowManager) compute this value and pass it in.
+
+        Args:
+            strategy_id: sys_strategies.class_id to update.
+            score_shadow: Normalized shadow score in [0.0, 1.0].
+        """
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            UPDATE sys_strategies
+            SET score_shadow = ?, updated_at = ?
+            WHERE class_id = ?
+            """,
+            (round(score_shadow, 4), datetime.now(timezone.utc).isoformat(), strategy_id),
+        )
+        self.conn.commit()
+        logger.debug(
+            "[SHADOW] score_shadow updated: strategy=%s score_shadow=%.4f",
+            strategy_id, score_shadow,
         )
 
     def update_parameter_overrides(self, instance_id: str, overrides: Dict) -> None:
