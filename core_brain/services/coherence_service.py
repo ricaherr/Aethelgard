@@ -590,3 +590,222 @@ class CoherenceService:
                 f"Elevated degradation detected. Coherence={coherence_score*100:.1f}%, "
                 f"Degradation={degradation*100:.1f}%. Continuing with caution."
             )
+
+    # ── EDGE-IGNITION-PHASE-3: Nuevas métricas de degradación ────────────────
+
+    def calculate_slippage_monitor(
+        self,
+        symbol: str,
+        n_trades: int = 5,
+        alert_threshold_pips: float = 2.0,
+        alert_threshold_ratio: float = 0.0002,
+    ) -> Dict[str, Any]:
+        """
+        Slippage_Monitor: Calcula el ratio Real_Execution_Price / Signal_Price.
+
+        Si el slippage promedio de los últimos n_trades excede el umbral
+        (> 2 pips o desviación de precio > 0.02%), emite alerta de degradación.
+
+        Args:
+            symbol: Par de trading (ej. "EURUSD")
+            n_trades: Número de trades recientes a analizar (default: 5)
+            alert_threshold_pips: Umbral de slippage en pips (default: 2.0)
+            alert_threshold_ratio: Umbral de desviación precio (default: 0.02%)
+
+        Returns:
+            Dict con slippage_ratio, avg_slippage_pips, ratio_deviation_pct,
+            alert_triggered, trades_analyzed
+        """
+        try:
+            logs = self.storage.get_execution_shadow_logs_by_symbol_and_window(
+                symbol=symbol,
+                window_minutes=1440,
+                user_id=self.user_id,
+                status_filter="SUCCESS",
+            )
+            recent = logs[-n_trades:] if len(logs) >= n_trades else logs
+
+            if not recent:
+                return {
+                    "slippage_ratio": 1.0,
+                    "avg_slippage_pips": 0.0,
+                    "ratio_deviation_pct": 0.0,
+                    "alert_triggered": False,
+                    "trades_analyzed": 0,
+                    "reason": f"No execution logs for {symbol}",
+                }
+
+            slippages = [float(e.get("slippage_pips", 0.0)) for e in recent]
+            theoretical_prices = [float(e.get("theoretical_price", 0.0)) for e in recent]
+            real_prices = [float(e.get("real_price", 0.0)) for e in recent]
+
+            avg_slippage_pips = mean(slippages) if slippages else 0.0
+            ratios = [
+                real / theo
+                for theo, real in zip(theoretical_prices, real_prices)
+                if theo > 0
+            ]
+            avg_ratio = mean(ratios) if ratios else 1.0
+            ratio_deviation = abs(avg_ratio - 1.0)
+
+            alert = (
+                avg_slippage_pips > alert_threshold_pips
+                or ratio_deviation > alert_threshold_ratio
+            )
+            if alert:
+                logger.warning(
+                    f"[SLIPPAGE_MONITOR] {symbol}: avg_slippage={avg_slippage_pips:.3f} pips, "
+                    f"ratio_deviation={ratio_deviation * 100:.4f}% — alerta de degradación"
+                )
+
+            return {
+                "slippage_ratio": avg_ratio,
+                "avg_slippage_pips": avg_slippage_pips,
+                "ratio_deviation_pct": ratio_deviation * 100,
+                "alert_triggered": alert,
+                "trades_analyzed": len(recent),
+            }
+
+        except Exception as e:
+            logger.error(f"Error in calculate_slippage_monitor({symbol}): {e}")
+            return {
+                "slippage_ratio": 1.0,
+                "avg_slippage_pips": 0.0,
+                "ratio_deviation_pct": 0.0,
+                "alert_triggered": False,
+                "trades_analyzed": 0,
+                "reason": f"Error: {str(e)}",
+            }
+
+    def calculate_profit_factor_drift(
+        self,
+        strategy_id: str,
+        theoretical_pf_baseline: float = 1.5,
+        drift_threshold: float = 0.30,
+    ) -> Dict[str, Any]:
+        """
+        Performance_Drift: Compara el Profit Factor teórico vs. real.
+
+        Teórico = mejor PF del sys_shadow_instances de la estrategia.
+        Real     = PF registrado en sys_signal_ranking (ejecución live).
+        Si la desviación es > 30%, marca estado COHERENCE_LOW.
+
+        Args:
+            strategy_id: Estrategia a evaluar
+            theoretical_pf_baseline: PF teórico de reserva si no hay shadow (default: 1.5)
+            drift_threshold: Umbral de desviación para COHERENCE_LOW (default: 0.30)
+
+        Returns:
+            Dict con theoretical_pf, real_pf, drift_ratio, drift_pct, status, is_drifting
+        """
+        try:
+            ranking = self.storage.get_signal_ranking(strategy_id)
+            real_pf = float(ranking.get("profit_factor", 0.0)) if ranking else 0.0
+
+            theoretical_pf = theoretical_pf_baseline
+            try:
+                conn = self.storage._get_conn()
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT profit_factor FROM sys_shadow_instances
+                    WHERE strategy_id = ? AND status NOT IN ('DEAD', 'PROMOTED_TO_REAL')
+                    ORDER BY profit_factor DESC LIMIT 1
+                    """,
+                    (strategy_id,),
+                )
+                row = cursor.fetchone()
+                if row and row[0] and float(row[0]) > 0:
+                    theoretical_pf = float(row[0])
+            except Exception as exc:
+                logger.debug(f"Could not fetch shadow PF for {strategy_id}: {exc}")
+
+            drift_ratio = (
+                abs(theoretical_pf - real_pf) / theoretical_pf
+                if theoretical_pf > 0
+                else 0.0
+            )
+            status = "COHERENCE_LOW" if drift_ratio > drift_threshold else "COHERENCE_OK"
+
+            if status == "COHERENCE_LOW":
+                logger.warning(
+                    f"[PF_DRIFT] {strategy_id}: theoretical_pf={theoretical_pf:.2f}, "
+                    f"real_pf={real_pf:.2f}, drift={drift_ratio * 100:.1f}% → {status}"
+                )
+
+            return {
+                "strategy_id": strategy_id,
+                "theoretical_pf": theoretical_pf,
+                "real_pf": real_pf,
+                "drift_ratio": drift_ratio,
+                "drift_pct": drift_ratio * 100,
+                "status": status,
+                "is_drifting": status == "COHERENCE_LOW",
+            }
+
+        except Exception as e:
+            logger.error(f"Error in calculate_profit_factor_drift({strategy_id}): {e}")
+            return {
+                "strategy_id": strategy_id,
+                "theoretical_pf": theoretical_pf_baseline,
+                "real_pf": 0.0,
+                "drift_ratio": 0.0,
+                "drift_pct": 0.0,
+                "status": "ERROR",
+                "is_drifting": False,
+            }
+
+    def check_coherence_veto(
+        self,
+        strategy_id: str,
+        symbol: Optional[str] = None,
+        veto_threshold: float = 0.60,
+    ) -> bool:
+        """
+        Veto_Method: Retorna True (VETO) si el Coherence Score < 0.60.
+
+        Basado en Dominio 06, HU 6.3. Umbral de 0.60 permite operar con
+        degradación moderada sin paralizar estrategias por ruido estadístico.
+
+        Lógica compuesta:
+        1. Si symbol disponible: detect_drift() → coherence_score
+        2. Siempre: calculate_profit_factor_drift() → drift de PF
+        3. VETO = score < threshold OR (pf_drift > 30% AND score < 0.70)
+
+        Args:
+            strategy_id: Estrategia a evaluar
+            symbol: Símbolo opcional para análisis de ejecución
+            veto_threshold: Score mínimo (default: 0.60, Dominio 06)
+
+        Returns:
+            bool: True si se debe aplicar VETO a esta estrategia
+        """
+        try:
+            coherence_score = 1.0
+
+            if symbol:
+                drift_result = self.detect_drift(symbol=symbol, strategy_id=strategy_id)
+                if drift_result.get("status") not in (
+                    "INSUFFICIENT_DATA", "BOOTSTRAP_PHASE", "ERROR"
+                ):
+                    coherence_score = drift_result.get("coherence_score", 1.0)
+
+            pf_drift = self.calculate_profit_factor_drift(strategy_id)
+            pf_is_drifting = pf_drift.get("is_drifting", False)
+
+            coherence_veto = coherence_score < veto_threshold
+            pf_veto = pf_is_drifting and coherence_score < 0.70
+            veto = coherence_veto or pf_veto
+
+            if veto:
+                logger.warning(
+                    f"[COHERENCE_VETO] {strategy_id}: score={coherence_score:.2f} "
+                    f"(threshold={veto_threshold}), "
+                    f"pf_drift={pf_drift.get('drift_pct', 0):.1f}% → VETO activado"
+                )
+
+            return veto
+
+        except Exception as e:
+            logger.error(f"Error in check_coherence_veto({strategy_id}): {e}")
+            return False  # Fail-open: no bloquear trading por fallo en detección

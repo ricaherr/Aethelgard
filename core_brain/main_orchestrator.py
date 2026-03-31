@@ -58,6 +58,7 @@ from core_brain.dedup_learner import DedupLearner
 from core_brain.api.routers.shadow_ws import broadcast_shadow_update
 from core_brain.services.integrity_guard import IntegrityGuard, HealthStatus
 from core_brain.services.anomaly_sentinel import AnomalySentinel, DefenseProtocol
+from core_brain.services.coherence_service import CoherenceService
 
 logger = logging.getLogger(__name__)
 
@@ -390,6 +391,9 @@ class MainOrchestrator:
 
         # 14. EDGE-IGNITION-PHASE-2 — AnomalySentinel (Market anomaly gate)
         self.anomaly_sentinel = AnomalySentinel(storage=self.storage)
+
+        # 15. EDGE-IGNITION-PHASE-3 — CoherenceService (Model-Reality drift detection)
+        self.coherence_service = CoherenceService(storage=self.storage)
 
     @property
     def signal_factory(self) -> Optional[Any]:
@@ -2643,6 +2647,11 @@ class MainOrchestrator:
                     break
                 # ────────────────────────────────────────────────────────────
 
+                # ── COHERENCE GATE (EDGE-IGNITION-PHASE-3) ──────────────────
+                # Per-strategy: quarantines affected strategies, does NOT stop the loop
+                await self._run_coherence_gate()
+                # ────────────────────────────────────────────────────────────
+
                 # Execute one complete cycle
                 await self.run_single_cycle()
                 
@@ -2712,6 +2721,127 @@ class MainOrchestrator:
         except Exception as e:
             logger.error(f"Error during shutdown: {e}", exc_info=True)
     
+    async def _run_coherence_gate(self) -> None:
+        """
+        EDGE-IGNITION-PHASE-3: Coherence Gate — deriva modelo vs. realidad.
+
+        Evalúa todas las estrategias LIVE activas. Si alguna supera el umbral
+        de deriva (coherence_score < 0.60), la pone en QUARANTINE de forma
+        individual. El orquestador continúa con las estrategias sanas.
+
+        TRACE_ID: EDGE-IGNITION-PHASE-3-COHERENCE-DRIFT
+        """
+        try:
+            live_strategies = self.storage.get_strategies_by_mode("LIVE")
+            if not live_strategies:
+                return
+
+            for strategy in live_strategies:
+                strategy_id = strategy.get("strategy_id")
+                if not strategy_id:
+                    continue
+
+                # Extraer símbolo del strategy_id (ej. "EURUSD_RSI_M5" → "EURUSD")
+                symbol = strategy_id.split("_")[0] if "_" in strategy_id else None
+
+                veto = self.coherence_service.check_coherence_veto(
+                    strategy_id=strategy_id,
+                    symbol=symbol,
+                )
+                if veto:
+                    trace_id = f"COH-VETO-{uuid.uuid4().hex[:8].upper()}"
+                    await self._write_coherence_veto(
+                        strategy_id=strategy_id,
+                        trace_id=trace_id,
+                    )
+
+        except Exception as e:
+            logger.error(
+                "[COHERENCE_GATE] Error en coherence check: %s", e, exc_info=True
+            )
+
+    async def _write_coherence_veto(self, strategy_id: str, trace_id: str) -> None:
+        """
+        Persiste el COHERENCE_VETO en sys_audit_logs y pone la estrategia
+        en QUARANTINE dentro de sys_shadow_instances y sys_signal_ranking.
+
+        A diferencia de los gates 1 y 2, este veto es por estrategia:
+        el orquestador NO se detiene si otras estrategias siguen sanas.
+
+        TRACE_ID: EDGE-IGNITION-PHASE-3-COHERENCE-DRIFT
+        """
+        logger.warning(
+            "[COHERENCE_GATE] VETO activado — estrategia en cuarentena. "
+            "strategy_id=%s | trace_id=%s",
+            strategy_id,
+            trace_id,
+        )
+
+        # 1. Registrar en sys_audit_logs
+        try:
+            conn = self.storage._get_conn()
+            conn.execute(
+                """
+                INSERT INTO sys_audit_logs
+                    (user_id, action, resource, resource_id, status, reason, trace_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "system",
+                    "COHERENCE_VETO",
+                    "CoherenceService",
+                    strategy_id,
+                    "failure",
+                    "Coherence drift detectado. Estrategia cuarentenada por EDGE-IGNITION-PHASE-3.",
+                    trace_id,
+                ),
+            )
+            conn.commit()
+        except Exception as exc:
+            logger.error(
+                "[COHERENCE_GATE] No se pudo escribir en sys_audit_logs: %s", exc
+            )
+
+        # 2. Marcar instancias shadow de la estrategia como QUARANTINED
+        try:
+            conn = self.storage._get_conn()
+            conn.execute(
+                """
+                UPDATE sys_shadow_instances
+                SET status = 'QUARANTINED', updated_at = ?
+                WHERE strategy_id = ? AND status NOT IN ('DEAD', 'PROMOTED_TO_REAL')
+                """,
+                (
+                    datetime.now(timezone.utc).isoformat(),
+                    strategy_id,
+                ),
+            )
+            conn.commit()
+            logger.info(
+                "[COHERENCE_GATE] sys_shadow_instances de '%s' marcadas QUARANTINED.",
+                strategy_id,
+            )
+        except Exception as exc:
+            logger.error(
+                "[COHERENCE_GATE] No se pudo actualizar sys_shadow_instances: %s", exc
+            )
+
+        # 3. Actualizar execution_mode en sys_signal_ranking a QUARANTINE
+        try:
+            ranking = self.storage.get_signal_ranking(strategy_id)
+            if ranking:
+                ranking["execution_mode"] = "QUARANTINE"
+                ranking["trace_id"] = trace_id
+                self.storage.save_signal_ranking(strategy_id, ranking)
+                logger.info(
+                    "[COHERENCE_GATE] sys_signal_ranking de '%s' → QUARANTINE.",
+                    strategy_id,
+                )
+        except Exception as exc:
+            logger.error(
+                "[COHERENCE_GATE] No se pudo actualizar sys_signal_ranking: %s", exc
+            )
+
     def _write_integrity_veto(self, trace_id: str, checks: list) -> None:
         """
         Persiste el veto de IntegrityGuard en sys_audit_logs y solicita shutdown.

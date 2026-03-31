@@ -1,9 +1,18 @@
 # 06_STRATEGY_COHERENCE: Coherence Drift Monitoring (HU 6.3)
 
-**Trace_ID**: COHERENCE-DRIFT-2026-001  
-**Status**: ✅ COMPLETED (1-Mar-2026)  
-**Version**: 1.0.0  
+**Trace_ID**: COHERENCE-DRIFT-2026-001 · EDGE-IGNITION-PHASE-3-COHERENCE-DRIFT
+**Status**: ✅ COMPLETED (v2.0 — 30-Mar-2026)
+**Version**: 2.0.0
 **Domain**: 06 - Strategy Coherence & Performance Analytics
+
+---
+
+## 📝 Changelog
+
+| Versión | Fecha | Cambios |
+|---------|-------|---------|
+| 1.0.0 | 01-Mar-2026 | Implementación inicial: `detect_drift()`, `CoherenceService` básico |
+| 2.0.0 | 30-Mar-2026 | **EDGE-IGNITION-PHASE-3**: `calculate_slippage_monitor()`, `calculate_profit_factor_drift()`, `check_coherence_veto()` + integración como Gate 3 en `MainOrchestrator` |
 
 ---
 
@@ -369,16 +378,93 @@ socket.on('COHERENCE_DETECTED', (data) => {
 
 ---
 
-## 📞 Support & Questions
+## 🆕 v2.0 — EDGE-IGNITION-PHASE-3: Nuevas Métricas y Gate de Orquestador
 
-For technical questions:
-- Trace_ID format: `COH-{8-char-hex}`
-- Check `coherence_events` table for detailed audit trail
-- Consult SYSTEM_LEDGER.md for migration history
+**Trace_ID**: EDGE-IGNITION-PHASE-3-COHERENCE-DRIFT
+**Fecha**: 30-Mar-2026
+
+### Nuevos métodos en `CoherenceService`
+
+#### `calculate_slippage_monitor(symbol, n_trades=5)`
+Slippage_Monitor per spec Dominio 06:
+
+```python
+result = coherence_service.calculate_slippage_monitor("EURUSD", n_trades=5)
+# result = {
+#   "slippage_ratio": float,        # avg(real_price / theoretical_price)
+#   "avg_slippage_pips": float,     # promedio pips de los últimos n_trades
+#   "ratio_deviation_pct": float,   # abs(ratio - 1.0) * 100
+#   "alert_triggered": bool,        # True si > 2 pips o > 0.02% desviación
+#   "trades_analyzed": int,
+# }
+```
+
+- Fuente de datos: `usr_execution_logs` (últimas 24h, status=SUCCESS)
+- Alertas: `avg_slippage_pips > 2.0` **o** `ratio_deviation > 0.02%`
+
+#### `calculate_profit_factor_drift(strategy_id)`
+Performance_Drift per spec Dominio 06:
+
+```python
+result = coherence_service.calculate_profit_factor_drift("EURUSD_RSI_M5")
+# result = {
+#   "theoretical_pf": float,   # mejor PF de sys_shadow_instances
+#   "real_pf": float,          # PF de sys_signal_ranking (live)
+#   "drift_ratio": float,      # |theoretical - real| / theoretical
+#   "drift_pct": float,
+#   "status": "COHERENCE_OK" | "COHERENCE_LOW",
+#   "is_drifting": bool,       # True si drift > 30%
+# }
+```
+
+- PF teórico: `sys_shadow_instances.profit_factor` (mejor instancia activa)
+- PF real: `sys_signal_ranking.profit_factor` (ejecución live)
+- Umbral: desviación > **30%** → `COHERENCE_LOW`
+
+#### `check_coherence_veto(strategy_id, symbol=None, veto_threshold=0.60)`
+Veto_Method per Dominio 06 HU 6.3:
+
+```python
+veto = coherence_service.check_coherence_veto("EURUSD_RSI_M5", symbol="EURUSD")
+# True  → aplicar QUARANTINE a la estrategia
+# False → continuar operando
+```
+
+Lógica:
+- `coherence_score < 0.60` → VETO (umbral Dominio 06, más permisivo que el 0.80 de detect_drift)
+- `pf_drift > 30%` AND `coherence_score < 0.70` → VETO combinado
+- Error en detección → `False` (fail-open, no bloquear trading)
+
+### Gate 3 en `MainOrchestrator`
+
+```
+while not _shutdown_requested:
+    ── INTEGRITY GATE (Phase 1) ──  → shutdown global si CRITICAL
+    ── ANOMALY GATE  (Phase 2) ──  → shutdown global si LOCKDOWN
+    ── COHERENCE GATE (Phase 3) ── → quarantine por estrategia
+    await run_single_cycle()
+```
+
+**Diferencia clave vs. Gates 1 y 2**: El Coherence Gate cuarentena la estrategia afectada individualmente. El orquestador **continúa** con las estrategias sanas.
+
+**Protocolo de cuarentena** (`_write_coherence_veto`):
+1. `sys_audit_logs`: `action=COHERENCE_VETO`, `resource=CoherenceService`, `status=failure`
+2. `sys_shadow_instances`: `status='QUARANTINED'` para instancias activas de la estrategia
+3. `sys_signal_ranking`: `execution_mode='QUARANTINE'`
 
 ---
 
-**Last Updated**: 2 marzo 2026, 08:00 UTC  
-**Maintainer**: Aethelgard AI System  
+## 📞 Support & Questions
+
+For technical questions:
+- Trace_ID format: `COH-{8-char-hex}` / `COH-VETO-{8-char-hex}`
+- Check `sys_audit_logs` (action=COHERENCE_VETO) para historial de vetos
+- Check `coherence_events` table para audit trail de scores
+- Consult SYSTEM_LEDGER.md para migration history
+
+---
+
+**Last Updated**: 30 marzo 2026, 00:00 UTC
+**Maintainer**: Aethelgard AI System
 **License**: Institutional Use Only
 

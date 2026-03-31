@@ -56,6 +56,21 @@
   - Timeouts configurables: `sys_config` claves `phase_timeout_scan_s`, `phase_timeout_backtest_s`
   - `tests/test_orchestrator_timeout_guards.py`: mock que no retorna → verificar ciclo continúa y logea `[TIMEOUT]`
 
+- [DONE] **EDGE-IGNITION-PHASE-3-COHERENCE-DRIFT-2026-03-30: CoherenceService — Gate 3 (Deriva Modelo vs. Realidad)**
+  - **Objetivo**: Tercer y último gate en el loop principal del orquestador. Detecta deriva entre el modelo teórico y la realidad operativa por estrategia, aplicando cuarentena selectiva sin detener el sistema.
+  - `core_brain/services/coherence_service.py` — 3 nuevos métodos:
+    - `calculate_slippage_monitor(symbol, n_trades=5)`: ratio `real_price / signal_price` sobre últimos 5 trades; alerta si slippage > 2 pips **o** desviación de precio > 0.02%.
+    - `calculate_profit_factor_drift(strategy_id)`: compara PF teórico (mejor `sys_shadow_instances.profit_factor`) vs. real (`sys_signal_ranking.profit_factor`); desviación > 30% → estado `COHERENCE_LOW`.
+    - `check_coherence_veto(strategy_id, symbol=None)`: **Veto_Method** (Dominio 06, HU 6.3); retorna `True` si `coherence_score < 0.60` **o** si PF drift > 30% AND score < 0.70. Fail-open en caso de error (no bloquea trading).
+  - `core_brain/main_orchestrator.py` — integración EDGE-IGNITION-PHASE-3:
+    - Import `CoherenceService`; instancia como `self.coherence_service = CoherenceService(storage=self.storage)` (bloque #15 en `__init__`).
+    - **Coherence Gate** en el `while` del loop principal, como 3er check tras INTEGRITY y ANOMALY, antes de `run_single_cycle()`.
+    - `_run_coherence_gate()`: itera `get_strategies_by_mode('LIVE')`; evalúa cada estrategia con `check_coherence_veto()`; cuarentena la afectada sin detener el orquestador.
+    - `_write_coherence_veto(strategy_id, trace_id)`: persiste `action=COHERENCE_VETO` en `sys_audit_logs`; `UPDATE sys_shadow_instances SET status='QUARANTINED'`; actualiza `sys_signal_ranking.execution_mode='QUARANTINE'`.
+  - **Protocolo diferencial**: Gates 1 y 2 detienen el orquestador (`_shutdown_requested=True`). Gate 3 cuarentena **por estrategia** — otras estrategias sanas continúan operando.
+  - TDD: `tests/test_coherence_service.py` — 14/14 PASSED (existentes, sin regresión). `validate_all.py`: **27/27 PASSED**.
+  - Trace_ID: EDGE-IGNITION-PHASE-3-COHERENCE-DRIFT
+
 - [DONE] **FIX-MONITOR-SNAPSHOT-2026-03-30: Higiene Observabilidad — monitor_snapshot.py**
   - `scripts/monitor_snapshot.py`: (1) `encoding='utf-8', errors='replace'` en `open()` → elimina `UnicodeDecodeError` silencioso. (2) Query `sys_state` obsoleta → `SELECT key, value, updated_at FROM sys_config ORDER BY updated_at DESC LIMIT 10` (SSOT v2.x). Linter amplió el script con `check_file_mass_limits()` y `get_db_snapshot()` defensivo.
   - TDD: `tests/test_monitor_snapshot.py` — 9 tests (9/9 PASSED). Cubre: DB ausente, tabla sys_config, ausencia de sys_state, encoding UTF-8, bytes inválidos, JSON válido.
