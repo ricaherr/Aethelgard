@@ -30,6 +30,7 @@ import json
 import logging
 import psutil
 import signal
+import sqlite3
 import time
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
@@ -59,6 +60,8 @@ from core_brain.api.routers.shadow_ws import broadcast_shadow_update
 from core_brain.services.integrity_guard import IntegrityGuard, HealthStatus
 from core_brain.services.anomaly_sentinel import AnomalySentinel, DefenseProtocol
 from core_brain.services.coherence_service import CoherenceService
+from core_brain.resilience_manager import ResilienceManager
+from core_brain.resilience import EdgeAction, EdgeEventReport, ResilienceLevel, SystemPosture
 
 logger = logging.getLogger(__name__)
 
@@ -394,6 +397,17 @@ class MainOrchestrator:
 
         # 15. EDGE-IGNITION-PHASE-3 — CoherenceService (Model-Reality drift detection)
         self.coherence_service = CoherenceService(storage=self.storage)
+
+        # 16. EDGE-IGNITION-PHASE-4B — ResilienceManager (Immune System Brain)
+        # Sole authority over SystemPosture transitions. Gates 1-3 report here
+        # instead of triggering direct shutdown. Only STRESSED halts the loop.
+        self.resilience_manager = ResilienceManager(storage=self.storage)
+        # Publish to server singleton so API routes can read live posture.
+        try:
+            from core_brain.server import set_resilience_manager
+            set_resilience_manager(self.resilience_manager)
+        except Exception:
+            pass  # Non-fatal: server may not be initialised in test context.
 
     @property
     def signal_factory(self) -> Optional[Any]:
@@ -1080,6 +1094,41 @@ class MainOrchestrator:
             logger.info(f"Regime changed: {self.current_regime} -> {new_regime}")
             self.current_regime = new_regime
     
+    def _persist_scan_telemetry(self, scan_results_with_data: Dict) -> None:
+        """
+        Persist scan-cycle artefacts required by IntegrityGuard health checks.
+
+        Writes two keys to sys_config every time a successful scan cycle
+        produces results:
+          - last_market_tick_ts : ISO-8601 UTC timestamp of this cycle.
+          - dynamic_params.adx  : Maximum ADX observed across all scanned
+                                  assets (non-zero values only). Skipped if
+                                  no valid ADX is available.
+
+        Called by run_single_cycle() immediately after update_module_heartbeat.
+        Source-of-truth contract: docs/10_INFRA_RESILIENCY.md §E14-telemetry.
+        """
+        try:
+            self.storage.update_sys_config(
+                {"last_market_tick_ts": datetime.now(timezone.utc).isoformat()}
+            )
+        except Exception as exc:
+            logger.warning("[TELEMETRY] Could not write last_market_tick_ts: %s", exc)
+
+        valid_adx_values = [
+            float(data["metrics"].get("adx") or 0)
+            for data in scan_results_with_data.values()
+            if isinstance(data.get("metrics"), dict) and (data["metrics"].get("adx") or 0) > 0
+        ]
+        if not valid_adx_values:
+            return
+        try:
+            dynamic_params = self.storage.get_dynamic_params() or {}
+            dynamic_params["adx"] = max(valid_adx_values)
+            self.storage.update_dynamic_params(dynamic_params)
+        except Exception as exc:
+            logger.warning("[TELEMETRY] Could not write adx to dynamic_params: %s", exc)
+
     # ==================== OPTION A: SCAN ORCHESTRATION METHODS ====================
     # These methods move timing logic from ScannerEngine to MainOrchestrator
     # TRACE_ID: OPTION-A-SCAN-ORCHESTRATION-2026-03-11
@@ -1752,6 +1801,23 @@ class MainOrchestrator:
                 self.stats.cycles_completed += 1
                 return
 
+            # ── DEGRADED POSTURE GUARD (EDGE-IGNITION-PHASE-4B) ─────────────
+            # In DEGRADED posture the SignalFactory is blocked: no new entries.
+            # PositionManager (above) already ran so existing positions are managed.
+            if self.resilience_manager.current_posture in (
+                SystemPosture.DEGRADED,
+                SystemPosture.STRESSED,
+            ):
+                logger.warning(
+                    "[ResilienceManager] Posture %s — scan y generación de señales bloqueados. "
+                    "%s",
+                    self.resilience_manager.current_posture.value,
+                    self.resilience_manager.get_current_status_narrative(),
+                )
+                self.stats.cycles_completed += 1
+                return
+            # ────────────────────────────────────────────────────────────────
+
             # Step 0.5: Infrastructure veto (HU 5.3 — The Pulse)
             # TRACE_ID: INFRA-PULSE-HU53-2026-001
             # Reads CPU% non-blocking (interval=None avoids sleep in hot loop).
@@ -1867,6 +1933,9 @@ class MainOrchestrator:
             # Update current regime based on scan
             self._update_regime_from_scan(scan_results)
             self.storage.update_module_heartbeat("scanner")
+
+            # Persist scan telemetry required by IntegrityGuard health checks
+            self._persist_scan_telemetry(scan_results_with_data)
             
             # EXEC-UI-DATA-INTEGRATION: Analyze market structure and populate UI mapping
             # (Always run, even if no trading usr_signals are generated)
@@ -2631,20 +2700,54 @@ class MainOrchestrator:
         
         try:
             while not self._shutdown_requested:
-                # ── INTEGRITY GATE (EDGE-IGNITION-PHASE-1) ──────────────────
-                health = self.integrity_guard.check_health()
-                if health.overall == HealthStatus.CRITICAL:
-                    self._write_integrity_veto(health.trace_id, health.checks)
+                # ── RESILIENCE POSTURE CHECK ─────────────────────────────────
+                # Only STRESSED halts the loop. Lower postures (CAUTION/DEGRADED)
+                # are handled inside run_single_cycle() by blocking SignalFactory
+                # while allowing PositionManager to close existing positions.
+                if self.resilience_manager.current_posture == SystemPosture.STRESSED:
+                    logger.critical(
+                        "[ResilienceManager] Posture STRESSED — deteniendo loop ordenadamente. "
+                        "Narrative: %s",
+                        self.resilience_manager.get_current_status_narrative(),
+                    )
                     self._shutdown_requested = True
                     break
                 # ────────────────────────────────────────────────────────────
 
+                # ── INTEGRITY GATE (EDGE-IGNITION-PHASE-1) ──────────────────
+                # CRITICAL → report L2/SELF_HEAL to ResilienceManager → DEGRADED.
+                # Loop continues; SignalFactory is blocked by posture in run_single_cycle().
+                health = self.integrity_guard.check_health()
+                if health.overall == HealthStatus.CRITICAL:
+                    failed = [c for c in health.checks if c.status.value == "CRITICAL"]
+                    reason = "; ".join(f"[{c.name}] {c.message}" for c in failed)
+                    _ig_report = EdgeEventReport(
+                        level=ResilienceLevel.SERVICE,
+                        scope="IntegrityGuard",
+                        action=EdgeAction.SELF_HEAL,
+                        reason=reason or "IntegrityGuard CRITICAL",
+                        trace_id=health.trace_id,
+                    )
+                    self.resilience_manager.process_report(_ig_report)
+                    self._write_integrity_veto(health.trace_id, health.checks)
+                # ────────────────────────────────────────────────────────────
+
                 # ── ANOMALY GATE (EDGE-IGNITION-PHASE-2) ────────────────────
+                # LOCKDOWN → report L3/LOCKDOWN to ResilienceManager → STRESSED.
+                # Next iteration's posture check will halt the loop gracefully.
                 anomaly_protocol = self.anomaly_sentinel.get_defense_protocol()
                 if anomaly_protocol == DefenseProtocol.LOCKDOWN:
+                    _as_trace = getattr(self.anomaly_sentinel, "last_trace_id", None)
+                    _as_trace = _as_trace or f"EDGE-{uuid.uuid4().hex[:8].upper()}"
+                    _as_report = EdgeEventReport(
+                        level=ResilienceLevel.GLOBAL,
+                        scope="AnomalySentinel",
+                        action=EdgeAction.LOCKDOWN,
+                        reason="AnomalySentinel LOCKDOWN protocol triggered.",
+                        trace_id=_as_trace,
+                    )
+                    self.resilience_manager.process_report(_as_report)
                     await self._write_anomaly_lockdown(self.anomaly_sentinel.last_trace_id)
-                    self._shutdown_requested = True
-                    break
                 # ────────────────────────────────────────────────────────────
 
                 # ── COHERENCE GATE (EDGE-IGNITION-PHASE-3) ──────────────────
@@ -2875,8 +2978,12 @@ class MainOrchestrator:
                 ),
             )
             conn.commit()
+        except sqlite3.IntegrityError as exc:  # pragma: no cover
+            logger.warning("[IntegrityGuard] Entrada duplicada en sys_audit_logs (trace_id ya existe): %s", exc)
+        except sqlite3.OperationalError as exc:  # pragma: no cover
+            logger.error("[IntegrityGuard] DB locked — no se pudo persistir veto en sys_audit_logs: %s", exc)
         except Exception as exc:  # pragma: no cover
-            logger.error("[IntegrityGuard] No se pudo escribir en sys_audit_logs: %s", exc)
+            logger.error("[IntegrityGuard] Error inesperado escribiendo en sys_audit_logs: %s", exc)
 
     async def _write_anomaly_lockdown(self, trace_id: str) -> None:
         """

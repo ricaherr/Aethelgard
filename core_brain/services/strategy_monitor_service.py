@@ -152,7 +152,7 @@ class StrategyMonitorService:
         """
         try:
             # Get all usr_strategies from storage
-            all_usr_strategies = self.storage.get_all_usr_strategies()
+            all_usr_strategies = self.storage.get_all_sys_strategies()
             
             if not all_usr_strategies:
                 logger.warning("[STRATEGY_MONITOR] No usr_strategies found in storage")

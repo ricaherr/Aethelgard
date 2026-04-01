@@ -865,6 +865,11 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
         "ON sys_strategy_pair_coverage (status)"
     )
 
+    # Eliminar tabla huérfana edge_learning (reemplazada por usr_edge_learning — SSOT)
+    row = cursor.execute("SELECT COUNT(*) FROM usr_edge_learning").fetchone()
+    if row and row[0] >= 0:
+        cursor.execute("DROP TABLE IF EXISTS edge_learning")
+
     conn.commit()
     logger.info("Schema initialized (all tables & indexes present).")
 

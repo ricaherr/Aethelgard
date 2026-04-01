@@ -28,7 +28,7 @@ def mock_storage():
     storage = Mock()
     
     # Mock strategy summary list (uses TEST_STRATEGIES)
-    storage.get_all_usr_strategies = Mock(
+    storage.get_all_sys_strategies = Mock(
         return_value=[
             {k: v for k, v in s.items() if k in ['strategy_id', 'execution_mode']}
             for s in TEST_STRATEGIES
