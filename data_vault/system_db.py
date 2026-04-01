@@ -731,7 +731,12 @@ class SystemMixin(BaseRepository):
     # ── Database Maintenance & Backup ────────────────────────────────────────
 
     def create_db_backup(self, backup_dir: Optional[str] = None, retention_count: int = 15) -> Optional[str]:
-        """Create a backup of the main SQLite database online."""
+        """
+        Create a backup of the main SQLite database online.
+
+        FIX-SHADOW-CONTENTION-002: Non-blocking backup using WAL checkpoint.
+        Prevents conn.backup() from holding WAL lock too long.
+        """
         import os
         import shutil
         import time
@@ -744,7 +749,7 @@ class SystemMixin(BaseRepository):
         if not backup_dir:
             db_dir = os.path.dirname(self.db_path) or '.'
             backup_dir = os.path.join(db_dir, 'backups')
-        
+
         os.makedirs(backup_dir, exist_ok=True)
 
         timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
@@ -754,13 +759,20 @@ class SystemMixin(BaseRepository):
         start_time = time.time()
         conn = self._get_conn()
         try:
+            # FIX-SHADOW-CONTENTION-002: Checkpoint PASSIVE before backup
+            # This clears WAL without blocking other writers (PASSIVE doesn't acquire WRITER lock)
+            conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+            logger.debug("[BACKUP] WAL checkpoint (PASSIVE) completed before backup")
+
             backup_conn = sqlite3.connect(backup_path)
-            conn.backup(backup_conn, pages=250, sleep=0.01)
+            # Reduce pages per iteration (from 250 to 50) to allow interspersed read/write
+            # This makes backup more granular and less likely to block other operations
+            conn.backup(backup_conn, pages=50, sleep=0.05)
             backup_conn.close()
 
             file_size_mb = os.path.getsize(backup_path) / (1024 * 1024)
             elapsed = time.time() - start_time
-            logger.info("[BACKUP] DB backup created successfully: %s (%.2f MB, %.2fs)",
+            logger.info("[BACKUP] DB backup created successfully: %s (%.2f MB, %.2fs) [FIX-CONTENTION-002]",
                         backup_filename, file_size_mb, elapsed)
 
             # Implement retention logic

@@ -1107,14 +1107,28 @@ class MainOrchestrator:
 
         Called by run_single_cycle() immediately after update_module_heartbeat.
         Source-of-truth contract: docs/10_INFRA_RESILIENCY.md §E14-telemetry.
-        """
-        try:
-            self.storage.update_sys_config(
-                {"last_market_tick_ts": datetime.now(timezone.utc).isoformat()}
-            )
-        except Exception as exc:
-            logger.warning("[TELEMETRY] Could not write last_market_tick_ts: %s", exc)
 
+        FIX-SCANNER-TICK-PERSISTENCE-001: Aggressive retry on DB lock.
+        """
+        import time
+        max_retries_critical = 3
+
+        # CRITICAL: Persist last_market_tick_ts with aggressive retries
+        tick_ts = datetime.now(timezone.utc).isoformat()
+        for attempt in range(max_retries_critical):
+            try:
+                self.storage.update_sys_config({"last_market_tick_ts": tick_ts})
+                logger.debug(f"[TELEMETRY] last_market_tick_ts persisted: {tick_ts}")
+                break  # Success
+            except Exception as exc:
+                if 'locked' in str(exc).lower() and attempt < max_retries_critical - 1:
+                    sleep_time = 0.5 * (attempt + 1)
+                    logger.warning(f"[TELEMETRY] DB locked on retry {attempt+1}/{max_retries_critical}, sleeping {sleep_time}s...")
+                    time.sleep(sleep_time)
+                else:
+                    logger.warning(f"[TELEMETRY] Could not write last_market_tick_ts after {attempt+1} attempts: {exc}")
+
+        # ADX persistence (non-critical, can fail silently)
         valid_adx_values = [
             float(data["metrics"].get("adx") or 0)
             for data in scan_results_with_data.values()
@@ -1126,8 +1140,9 @@ class MainOrchestrator:
             dynamic_params = self.storage.get_dynamic_params() or {}
             dynamic_params["adx"] = max(valid_adx_values)
             self.storage.update_dynamic_params(dynamic_params)
+            logger.debug(f"[TELEMETRY] ADX updated: {dynamic_params['adx']}")
         except Exception as exc:
-            logger.warning("[TELEMETRY] Could not write adx to dynamic_params: %s", exc)
+            logger.warning(f"[TELEMETRY] Could not write adx to dynamic_params: {exc}")
 
     # ==================== OPTION A: SCAN ORCHESTRATION METHODS ====================
     # These methods move timing logic from ScannerEngine to MainOrchestrator
