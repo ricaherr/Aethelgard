@@ -1,10 +1,12 @@
 # Dominio 10: INFRA_RESILIENCY (Health, Self-Healing, Anomaly Integration)
 
 ## 🎯 Propósito
-Garantizar la operatividad perpetua del sistema mediante una infraestructura auto-sanable, monitoreo proactivo de signos vitales y una gestión eficiente de recursos técnicos. Coordinar la respuesta automática a anomalías sistémicas (volatilidad extrema, flash crashes) para transición segura entre estados de salud.
+Garantizar la operatividad perpetua del sistema mediante una infraestructura auto-sanable de **resiliencia granular**, monitoreo proactivo de signos vitales y gestión eficiente de recursos técnicos. Implementa la **Degradación Elegante**, permitiendo aislar fallos a nivel de activo, estrategia o servicio sin detener el motor principal de Alpha Generation, coordinado por un `ResilienceManager` central.
 
 ## 🚀 Componentes Críticos
 *   **Autonomous Heartbeat**: Sistema de monitoreo de signos vitales que detecta hilos congelados o servicios caídos.
+*   **ResilienceManager (El Cerebro Inmunológico)**: Evalúa la acumulación de eventos granulares y transita la postura global del orquestador.
+*   **ResilienceInterface**: Contrato estándar obligatorio para componentes de diagnóstico.
 *   **Auto-Healing Engine**: Protocolos de recuperación automática que reinician servicios o resincronizan estados tras detectar fallos.
 *   **Resource Sentinel**: Monitor de consumo de CPU, memoria y espacio en disco con alertas de umbral.
 *   **Log Management (Linux Style)**: Sistema de rotación diaria con retención estricta de 15 días para optimizar el almacenamiento.
@@ -18,6 +20,18 @@ El sistema supervisa su propia integridad mediante:
 3.  **Veto Técnico**: Capacidad del sistema para detener operaciones si la infraestructura no garantiza fidelidad (ej: alta latencia de red).
 
 ## 🔗 Integración Anomalías ↔ Estados de Salud
+
+### Arquitectura de Resiliencia Granular (Capas EDGE L0 - L3)
+El sistema implementa 4 capas de contención. La escalada al nivel superior está prohibida si el fallo puede ser contenido y sanado en el nivel inferior.
+
+| Capa | Nivel | Entidad Afectada | Acción Típica | Ejemplo de Disparador |
+|:---|:---|:---|:---|:---|
+| **L0** | `ASSET` | Instrumento (ej. `XAUUSD`) | `MUTE` | Spread > 300% del promedio o liquidez insuficiente. |
+| **L1** | `STRATEGY` | Instancia Algorítmica | `QUARANTINE` | 3 trades fallidos consecutivos (ORDER_REJECTED). |
+| **L2** | `SERVICE` | Componente Interno | `SELF_HEAL` | Congelamiento de ticks (`Check_Data_Coherence`) o socket caído. |
+| **L3** | `GLOBAL` | Ecosistema Completo | `LOCKDOWN` | 3+ activos muteados o pérdida total de ADX (`Check_Veto_Logic`). |
+
+---
 
 ### Máquina de Estados Operacional
 El sistema transita entre 4 estados de salud basándose en dos fuentes de verdad:
@@ -105,6 +119,204 @@ Toda transición de salud se comunica a la UI inmediatamente:
 *   **Resource Gauges**: Medidores dinámicos de carga de sistema, latencia de conexión y volatilidad del mercado.
 *   **Health History Timeline**: Vista histórica de transiciones de estado con contexto (duración, trigger, acciones tomadas).
 
+## 🏛️ E14: Arquitectura de Resiliencia Granular — Especificación Técnica
+
+**Trace_ID**: ARCH-RESILIENCE-ENGINE-V1 | **Épica**: E14 | **Sprint**: 23/24
+
+Esta sección define el contrato arquitectónico completo para la implementación de la Resiliencia Granular. La implementación de código se realiza en HU 10.14 → 10.16.
+
+---
+
+### Principio de Diseño: Degradación Elegante
+
+> **El sistema no es binario. La salud es un espectro.**
+>
+> Un "estornudo" (spread alto en un activo) no mata al organismo. Un hospital no cierra por una bombilla fundida. El sistema debe aislar el fallo en la capa más baja posible y seguir generando Alpha con los componentes sanos.
+
+**Regla de Escalada**: El `ResilienceManager` **no puede escalar** al nivel superior si el fallo puede ser contenido y sanado en el nivel inferior.
+
+---
+
+### Contrato: `ResilienceInterface` (Clase Abstracta)
+
+Todos los componentes de diagnóstico (`IntegrityGuard`, `AnomalySentinel`, `CoherenceService`) deben implementar este contrato o reportar a través de él. Ubicación: `core_brain/resilience.py`.
+
+```python
+# core_brain/resilience.py — Contrato de la Arquitectura Inmunológica
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Optional
+import uuid
+
+
+class ResilienceLevel(Enum):
+    """Capa de contención del fallo. De menor a mayor impacto."""
+    ASSET    = "L0"   # Un solo instrumento
+    STRATEGY = "L1"   # Una estrategia específica
+    SERVICE  = "L2"   # Un componente interno
+    GLOBAL   = "L3"   # Todo el ecosistema
+
+
+class EdgeAction(Enum):
+    """Acción autónoma que el ResilienceManager aplica."""
+    MUTE       = "MUTE"       # L0: Ignorar señales del activo afectado
+    QUARANTINE = "QUARANTINE" # L1: Detener la estrategia afectada
+    SELF_HEAL  = "SELF_HEAL"  # L2: Reiniciar socket / limpiar caché
+    LOCKDOWN   = "LOCKDOWN"   # L3: Suspensión total del sistema
+
+
+class SystemPosture(Enum):
+    """Postura operacional global del orquestador."""
+    NORMAL   = "NORMAL"   # 100% operativo. L0/L1 limpios.
+    CAUTION  = "CAUTION"  # Anomalía local. Cuarentenas activas. Riesgo reducido (0.5%).
+    DEGRADED = "DEGRADED" # Fallo L2. Solo gestión de posiciones abiertas. Sin nuevas entradas.
+    STRESSED = "STRESSED" # L3 activado. Cierre ordenado. Intervención manual requerida.
+
+
+@dataclass
+class EdgeEventReport:
+    """
+    Reporte que cualquier componente emite al ResilienceManager.
+    El componente NO decide la acción — solo reporta severidad y alcance.
+    """
+    level:      ResilienceLevel        # Capa afectada (L0-L3)
+    scope:      str                    # Identificador del afectado (symbol, strategy_id, service_name, "GLOBAL")
+    action:     EdgeAction             # Acción recomendada
+    reason:     str                    # Mensaje legible para auditoría
+    trace_id:   str = field(default_factory=lambda: f"EDGE-{uuid.uuid4().hex[:8].upper()}")
+    metadata:   dict = field(default_factory=dict)
+
+
+class ResilienceInterface(ABC):
+    """
+    Contrato obligatorio para componentes de diagnóstico.
+    Garantiza que ningún componente decide acciones unilateralmente.
+    """
+
+    @abstractmethod
+    def check_health(self) -> Optional[EdgeEventReport]:
+        """
+        Ejecuta el diagnóstico del componente.
+
+        Returns:
+            EdgeEventReport si detecta un problema, None si todo está sano.
+        """
+        ...
+```
+
+---
+
+### Protocolo: `ResilienceManager` (El Cerebro Inmunológico)
+
+El `ResilienceManager` es el único árbitro de acciones. Recibe `EdgeEventReport` de todos los componentes y:
+1. Aplica la acción del reporte al scope indicado
+2. Actualiza la `SystemPosture` global
+3. Detecta correlación de fallos para escalar automáticamente
+4. Persiste el evento en `sys_audit_logs`
+
+**Diseño (HU 10.15):**
+
+```python
+class ResilienceManager:
+    def __init__(self, storage: StorageManager): ...
+
+    def process_report(self, report: EdgeEventReport) -> SystemPosture:
+        """
+        Procesa un EdgeEventReport, aplica la acción y devuelve la
+        nueva postura del sistema.
+
+        Flujo:
+        1. Registrar el evento
+        2. Aplicar EdgeAction al scope
+        3. Ejecutar Correlation Engine
+        4. Transicionar SystemPosture si aplica
+        5. Retornar nueva postura
+        """
+        ...
+
+    def get_posture(self) -> SystemPosture:
+        """Retorna la postura operacional actual (sin I/O)."""
+        ...
+```
+
+---
+
+### Matriz de Intervención (La "Ley" del ResilienceManager)
+
+Esta tabla es el contrato operacional que vincula la capa de fallo con la postura resultante y la acción automática. **El ResilienceManager no puede decidir fuera de estos límites.**
+
+| Capa de Fallo | Entidad Afectada | Postura Resultante | Acción Automática | Comportamiento del Loop |
+|:---|:---|:---|:---|:---|
+| **L0** (`ASSET`) | Instrumento (ej. `XAUUSD`) | `CAUTION` | `MUTE`: Ignorar señales del activo. Reducción de riesgo. | Loop continúa. Otros activos operan normalmente. |
+| **L1** (`STRATEGY`) | Instancia algorítmica | `CAUTION` | `QUARANTINE`: Detener estrategia afectada. Otras estrategias sanas siguen. | Loop continúa. |
+| **L2** (`SERVICE`) | Componente interno (DB, socket) | `DEGRADED` | `SELF_HEAL`: Reintentar hasta 3×. Solo gestión de posiciones abiertas. Sin nuevas entradas. | Loop continúa en modo defensivo. |
+| **L3** (`GLOBAL`) | Ecosistema completo | `STRESSED` | `LOCKDOWN`: Cancelar órdenes, SL → Breakeven, broadcast operador. Intervención manual requerida. | Loop se detiene (`_shutdown_requested = True`). |
+
+> **Regla de Oro**: Solo `STRESSED` (L3) detiene el loop. `DEGRADED`, `CAUTION` y escaladas intermedias degradan el comportamiento sin interrumpir la operatividad.
+
+#### Umbrales del Heartbeat (OEM Check #9)
+
+El check `_check_orchestrator_heartbeat()` opera con su propia nomenclatura interna de check (`OK/WARN/FAIL`), separada de la `SystemPosture`. El `ResilienceManager` interpreta el resultado del check y decide la postura:
+
+| Gap del Heartbeat | Resultado del Check | Postura que aplica ResilienceManager |
+|:---|:---|:---|
+| `< 10 min` | `OK` | `NORMAL` (sin cambio) |
+| `10 – 20 min` | `WARN` | `CAUTION` (alerta, loop continúa) |
+| `> 20 min` | `FAIL` | `DEGRADED` (fallo L2, modo defensivo) |
+| Fallo de persistencia | `FAIL` + escalada | `STRESSED` si correlaciona con L2 adicional |
+
+---
+
+### Motor de Correlación de Fallos
+
+**Problema**: La granularidad tiene un riesgo. Un L0 individual es ruido; tres L0 simultáneos pueden ser el inicio de un colapso sistémico.
+
+**Reglas de Escalada Automática:**
+
+| Condición de Correlación | Acción Automática |
+|:---|:---|
+| ≥ 3 activos en `L0: MUTE` simultáneamente | Escalar a `L3: GLOBAL LOCKDOWN` |
+| ≥ 2 estrategias en `L1: QUARANTINE` en < 5 min | Transición a `DEGRADED` + alerta |
+| `L2: SELF_HEAL` falla 3 veces seguidas | Escalar a `L3: GLOBAL LOCKDOWN` |
+| `SystemPosture` en `DEGRADED` > 30 min sin recovery | Notificar al operador + mantener DEGRADED |
+
+**Ventana de correlación:** Los eventos se evalúan en una ventana deslizante de **5 minutos**.
+
+---
+
+### Refactor del `MainOrchestrator` (HU 10.15)
+
+**Estado Actual (problema):**
+```python
+# Cada gate toma la decisión unilateralmente
+if health.overall == HealthStatus.CRITICAL:
+    self._shutdown_requested = True   # ← "Mazazo"
+    break
+```
+
+**Estado Objetivo (resiliencia granular):**
+```python
+# El componente reporta. El ResilienceManager decide.
+report = self.integrity_guard.check_health()
+if report:
+    new_posture = self.resilience_manager.process_report(report)
+    if new_posture == SystemPosture.STRESSED:
+        break  # Solo L3 detiene el loop
+    # L0/L1/L2: el loop continúa con postura degradada
+```
+
+**Mapeo de Gates actuales → ResilienceInterface:**
+
+| Gate Actual | Nivel | Comportamiento Nuevo |
+|:---|:---|:---|
+| `IntegrityGuard` CRITICAL → shutdown | `L2/L3` | `L2` → DEGRADED (loop continúa). `L3` → STRESSED (shutdown). |
+| `AnomalySentinel` LOCKDOWN → shutdown | `L0/L3` | Flash Crash 1 activo → `L0: MUTE`. Flash Crash sistémico → `L3: LOCKDOWN`. |
+| `CoherenceService` VETO → quarantine | `L1` | Ya funciona por estrategia. Integrar con `ResilienceManager`. |
+
+---
+
 ## 📈 Roadmap del Dominio
 - [x] Implementación de Path Resilience y validación de integridad ambiental.
 - [x] Despliegue del motor de auto-reparación (Repair Protocol).
@@ -118,13 +330,16 @@ Toda transición de salud se comunica a la UI inmediatamente:
   - HU 10.3: PID Lockfile — singleton guard
   - HU 10.4: Capital dinámico desde `sys_config`
   - HU 10.5: EdgeMonitor connector-agnóstico
-- [x] **HU 10.6: AutonomousSystemOrchestrator — Diseño FASE4** ✅ (24-Mar-2026) — 5 sub-componentes documentados, contratos Python, HealingPlaybook, plan incremental 3 fases.
+- [x] **HU 10.6: AutonomousSystemOrchestrator — Diseño FASE4** ✅ (24-Mar-2026)
 - [x] **Sprint 23: EDGE Reliability — HU 10.10 + HU 10.11** ✅ (27-Mar-2026)
   - HU 10.10: OEM integrado en producción con `shadow_storage` inyectado
   - HU 10.11: 9° check `orchestrator_heartbeat` + `last_results` expuesto vía API
   - Endpoint `GET /api/system/health/edge` + UI `SystemHealthPanel`
-- [ ] HU 10.12: Timeout guards en `run_single_cycle()` (Sprint 23 pendiente)
-- [ ] HU 10.13: Contract tests para bugs conocidos (Sprint 23 pendiente)
+- [ ] **HU 10.12**: Timeout guards en `run_single_cycle()` (Sprint 23)
+- [ ] **HU 10.13**: Contract tests para bugs conocidos (Sprint 23)
+- [ ] **HU 10.14**: `ResilienceInterface` + modelos de datos en `core_brain/resilience.py` (Sprint 23)
+- [ ] **HU 10.15**: `ResilienceManager` + refactor `MainOrchestrator` (Sprint 24)
+- [ ] **HU 10.16**: Self-Healing Engine + Correlation Engine (Sprint 24)
 - [ ] Implementación de orquestación de servicios en contenedores aislados.
 - [ ] Integración de meta-aprendizaje sobre recursos técnicos.
 
@@ -709,4 +924,3 @@ gap > 20 min          → FAIL  (CRITICAL — loop posiblemente bloqueado)
 ### Artefactos
 - `core_brain/operational_edge_monitor.py` (check, constantes, last_results, CRITICAL rule)
 - `tests/test_oem_heartbeat_check.py` (10 tests: OK/WARN/FAIL, umbrales exactos, integración health_summary)
-

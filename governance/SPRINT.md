@@ -120,6 +120,60 @@
     4. `calculate_weighted_score`: integrar en flujo o eliminar dead code
   - Cada test debe estar RED antes del fix correspondiente, GREEN después
 
+- [TODO] **HU 10.14: Resilience Playbook & Interface Definition**
+  - **Épica**: E14 | **Trace_ID**: ARCH-RESILIENCE-ENGINE-V1-A
+  - `docs/10_INFRA_RESILIENCY.md` — sección `## 🏛️ E14: Arquitectura de Resiliencia Granular` añadida ✅ (30-Mar-2026) + ampliada ✅ (31-Mar-2026):
+    - Matriz L0-L3 ampliada con `ResilienceLevel`, `EdgeAction`, `SystemPosture`
+    - Contrato `ResilienceInterface` (clase abstracta Python)
+    - Especificación de `EdgeEventReport` (dataclass)
+    - Motor de correlación: reglas de escalada automática (≥3 L0 → L3, ≥2 L1 en 5 min → DEGRADED)
+    - Mapeo de gates actuales → `ResilienceInterface` (IntegrityGuard, AnomalySentinel, CoherenceService)
+    - Roadmap actualizado: HU 10.12-10.16 con Sprint asignado
+    - **Matriz de Intervención** (31-Mar-2026): tabla L0-L3 → Postura → Acción → Comportamiento del loop — es la "ley" del ResilienceManager
+    - **Umbrales del Heartbeat** (31-Mar-2026): separación explícita entre resultado de check (OK/WARN/FAIL) y postura global (NORMAL/CAUTION/DEGRADED/STRESSED)
+  - `core_brain/resilience.py` — NUEVO: `ResilienceLevel`, `EdgeAction`, `SystemPosture` (enums); `EdgeEventReport` (dataclass); `ResilienceInterface` (ABC). Solo contratos — sin lógica de orquestación.
+  - **Criterios de aceptación**:
+    - `from core_brain.resilience import ResilienceInterface, EdgeEventReport` importa sin errores
+    - Archivo `core_brain/resilience.py` existe y pasa linting
+    - `SystemPosture` (NO `SystemState`) definido con exactamente 4 valores: `NORMAL`, `CAUTION`, `DEGRADED`, `STRESSED`
+    - Documentación completa en `docs/10_INFRA_RESILIENCY.md` incluyendo Matriz de Intervención
+    - Tests: `tests/test_resilience_interface.py` — contrato de la interfaz (subclase concreta implementa `check_health()`, dataclass `EdgeEventReport` instancia correctamente, los 4 valores de `SystemPosture` verificados)
+
+---
+
+# SPRINT 24: ARQUITECTURA DE RESILIENCIA GRANULAR (E14) — [TODO]
+
+**Inicio**: por definir
+**Fin**: por definir
+**Objetivo**: Implementar el `ResilienceManager` como árbitro único de acciones defensivas, refactorizar el `MainOrchestrator` para eliminar los shutdowns unilaterales y añadir el motor de Self-Healing + Correlación de fallos.
+**Épica**: E14 | **Trace_ID**: ARCH-RESILIENCE-ENGINE-V1
+**Dominios**: 10_INFRASTRUCTURE_RESILIENCY
+
+## 📋 Tareas del Sprint
+
+- [TODO] **HU 10.15: ResilienceManager & Orchestrator Refactor**
+  - **Épica**: E14 | **Trace_ID**: ARCH-RESILIENCE-ENGINE-V1-B
+  - `core_brain/resilience.py` — `ResilienceManager`: singleton con `process_report(report: EdgeEventReport) → SystemPosture`. Lógica de transición de estados según tabla de `docs/10_INFRA_RESILIENCY.md`. Persistencia de eventos en `sys_audit_logs`. `get_posture() → SystemPosture` sin I/O.
+  - `core_brain/main_orchestrator.py` — Refactor del loop principal:
+    - Instanciar `self.resilience_manager = ResilienceManager(storage=self.storage)` (bloque #16)
+    - **Integrity Gate**: `report = self.integrity_guard.check_health(); posture = self.resilience_manager.process_report(report)` — solo `STRESSED` rompe el loop; `DEGRADED` bloquea nuevas entradas.
+    - **Anomaly Gate**: ídem — Flash Crash 1 activo → `L0: MUTE`; flash crash sistémico → `L3: LOCKDOWN`.
+    - **Coherence Gate**: `CoherenceService.check_coherence_veto()` reporta vía `ResilienceManager`.
+  - **Criterios de aceptación**:
+    - `IntegrityGuard` WARNING no detiene el loop (solo STRESSED lo detiene)
+    - `AnomalySentinel` con 1 anomalía → postura `CAUTION`, no shutdown
+    - `sys_audit_logs` registra cada transición de postura con `trace_id`
+    - Tests: `tests/test_resilience_manager.py` — transiciones de estado, process_report, persistencia
+
+- [TODO] **HU 10.16: Self-Healing & Correlation Engine**
+  - **Épica**: E14 | **Trace_ID**: ARCH-RESILIENCE-ENGINE-V1-C
+  - `core_brain/resilience.py` — `CorrelationEngine`: ventana deslizante de 5 min; reglas: ≥3 `L0:MUTE` simultáneos → emit `L3:LOCKDOWN`; ≥2 `L1:QUARANTINE` en < 5 min → emit `L2:SERVICE` degradado.
+  - `core_brain/resilience.py` — `SelfHealingPlaybook`: acciones por `EdgeAction.SELF_HEAL` (reiniciar socket de broker, limpiar caché de señales, reconectar MT5).
+  - **Criterios de aceptación**:
+    - 3 activos muteados en 4 min → sistema transita a `STRESSED` automáticamente
+    - `L2:SELF_HEAL` reintenta hasta 3 veces antes de escalar a `L3`
+    - Tests: `tests/test_correlation_engine.py` — ventana temporal, escalada automática, self-heal retry
+
 ---
 
 # SPRINT 22: SYS_TRADES — SEPARACIÓN EJECUCIÓN SISTEMA vs TENANT — [DONE]

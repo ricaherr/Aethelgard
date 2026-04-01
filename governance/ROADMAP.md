@@ -33,6 +33,18 @@
 
 ---
 
+### E14: Arquitectura de Resiliencia Granular (EDGE Immunological System) — PENDIENTE
+**Sprint**: 23/24 | **Trace_ID**: ARCH-RESILIENCE-ENGINE-V1
+**Objetivo**: Implementar una infraestructura auto-sanable de resiliencia granular (Capas L0-L3) mediante un `ResilienceManager` que aplique Degradación Elegante frente a anomalías sin requerir el apagado total del sistema.
+
+| HU | Nombre | Dominio | Sprint | Estado |
+|---|---|---|---|---|
+| HU 10.14 | Resilience Playbook & Interface Definition | 10 | 23 | [TODO] |
+| HU 10.15 | ResilienceManager & Orchestrator Refactor | 10 | 24 | [TODO] |
+| HU 10.16 | Self-Healing & Correlation Engine | 10 | 24 | [TODO] |
+
+---
+
 ### E5: Interfaz Fractal & Experiencia Futurista (Dominio 09) — PENDIENTE
 **Sprint**: por definir | **Trace_ID**: UI-V3-FRACTAL-FUTURE-2026
 **Objetivo**: Evolucionar la terminal a una consola de alta densidad de información con navegación fractal y elementos de manipulación directa.
@@ -48,4 +60,3 @@
 > [!NOTE]
 > El historial completo de épicas completadas se encuentra en [SYSTEM_LEDGER.md](SYSTEM_LEDGER.md).
 > El protocolo y último informe de auditoría están en [AUDIT_PROTOCOL.md](AUDIT_PROTOCOL.md) y [AUDITORIA_ESTADO_REAL.md](AUDITORIA_ESTADO_REAL.md).
-
