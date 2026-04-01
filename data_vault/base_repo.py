@@ -38,8 +38,10 @@ class BaseRepository:
         conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=30000")
+        conn.execute("PRAGMA busy_timeout=60000")  # FIX-SHADOW-CONTENTION-001: Aumentado a 60s
         conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA wal_autocheckpoint=10000")  # FIX-SHADOW-CONTENTION-001: Checkpoint cada 10k pages
+        conn.execute("PRAGMA temp_store=MEMORY")  # FIX-SHADOW-CONTENTION-001: Tempfiles en RAM
         return conn
 
     def _close_conn(self, conn: sqlite3.Connection) -> None:

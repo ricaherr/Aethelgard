@@ -163,7 +163,7 @@ class PromotionValidator:
         p3, p3_reason = self.validate_pilar3_consistency(metrics)
 
         if p1 and p2 and p3:
-            summary = f"✅ 3 Pilares HEALTHY: {p1_reason} | {p2_reason} | {p3_reason}"
+            summary = f"[OK] 3 Pilares HEALTHY: {p1_reason} | {p2_reason} | {p3_reason}"
             return True, summary
         else:
             failed_pillars = []
@@ -173,7 +173,7 @@ class PromotionValidator:
                 failed_pillars.append(p2_reason)
             if not p3:
                 failed_pillars.append(p3_reason)
-            summary = f"❌ Pilares FAILED: {' | '.join(failed_pillars)}"
+            summary = f"[FAIL] Pilares FAILED: {' | '.join(failed_pillars)}"
             return False, summary
 
 
@@ -319,7 +319,7 @@ class ShadowManager:
             return HealthStatus.MONITOR
 
         # All 3 Pilares PASS
-        self.logger.info(f"[SHADOW] {trace_id}: ✅ HEALTHY - 3 Pilares validados")
+        self.logger.info(f"[SHADOW] {trace_id}: [OK] HEALTHY - 3 Pilares validados")
         if return_trace:
             return HealthStatus.HEALTHY, trace_id
         return HealthStatus.HEALTHY
@@ -380,7 +380,7 @@ class ShadowManager:
         if not approved:
             return False, f"Pilares validation failed: {pillar_reason}"
 
-        return True, f"✅ Promotable to REAL - 3 Pilares confirmed (Trace: {trace_id})"
+        return True, f"[OK] Promotable to REAL - 3 Pilares confirmed (Trace: {trace_id})"
 
     def _get_current_regime(self) -> str:
         """
@@ -651,28 +651,28 @@ class ShadowManager:
                 if health == HealthStatus.HEALTHY:
                     result["promotions"].append(entry)
                     self.logger.info(
-                        f"[SHADOW] ✅ PROMOTE → REAL: {instance.instance_id[:8]} "
+                        f"[SHADOW] [OK] PROMOTE → REAL: {instance.instance_id[:8]} "
                         f"({instance.strategy_id}) | {p1_reason} | {p2_reason} | {p3_reason}"
                     )
                 elif health == HealthStatus.DEAD:
                     entry["reason"] = p1_reason
                     result["kills"].append(entry)
                     self.logger.warning(
-                        f"[SHADOW] ❌ DEAD: {instance.instance_id[:8]} ({instance.strategy_id}) "
+                        f"[SHADOW] [FAIL] DEAD: {instance.instance_id[:8]} ({instance.strategy_id}) "
                         f"| {p1_reason}"
                     )
                 elif health == HealthStatus.QUARANTINED:
                     entry["reason"] = p2_reason
                     result["quarantines"].append(entry)
                     self.logger.warning(
-                        f"[SHADOW] ⚠️ QUARANTINE: {instance.instance_id[:8]} "
+                        f"[SHADOW] [WARNING] QUARANTINE: {instance.instance_id[:8]} "
                         f"({instance.strategy_id}) | {p2_reason}"
                     )
                 else:  # MONITOR
                     entry["reason"] = p3_reason
                     result["monitors"].append(entry)
                     self.logger.info(
-                        f"[SHADOW] 👁️ MONITOR: {instance.instance_id[:8]} "
+                        f"[SHADOW] [MONITOR] MONITOR: {instance.instance_id[:8]} "
                         f"({instance.strategy_id}) | {p3_reason}"
                     )
 

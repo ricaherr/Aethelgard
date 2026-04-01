@@ -14,8 +14,9 @@ Trace_ID Patterns:
 import json
 import logging
 import sqlite3
+import time
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Callable, Any
 from uuid import uuid4
 
 from models.shadow import (
@@ -45,6 +46,56 @@ class ShadowStorageManager:
         """
         self.conn = storage_conn
         self.conn.row_factory = sqlite3.Row
+
+    def _execute_with_retry(
+        self,
+        func: Callable[..., Any],
+        *args,
+        retries: int = 10,
+        backoff: float = 0.5,
+        **kwargs
+    ) -> Any:
+        """
+        Ejecuta una función con retry exponential si DB está locked.
+
+        FIX-SHADOW-CONTENTION-001: Necesario porque concurrent writers
+        en ShadowManager pueden saturar el WAL con 45+ commits/segundo.
+
+        Args:
+            func: Función a ejecutar (ej: una lambda que hace INSERT)
+            retries: Número máximo de intentos (default 10)
+            backoff: Multiplicador de espera exponencial (default 0.5s)
+            *args, **kwargs: Argumentos para func
+
+        Returns:
+            Resultado de func()
+
+        Raises:
+            Last exception si todos los retries fallan
+        """
+        last_exc = None
+        for attempt in range(retries):
+            try:
+                return func(*args, **kwargs)
+            except sqlite3.OperationalError as e:
+                if 'locked' in str(e).lower():
+                    last_exc = e
+                    if attempt < retries - 1:
+                        wait_time = backoff * (2 ** attempt)  # 0.5s, 1s, 2s, 4s, 8s, 16s...
+                        logger.debug(
+                            f"[SHADOW] DB locked, retrying ({attempt+1}/{retries}) "
+                            f"waiting {wait_time:.1f}s..."
+                        )
+                        time.sleep(wait_time)
+                        continue
+                raise
+            except Exception as e:
+                raise  # No-retry para otros tipos de error
+
+        logger.error(
+            f"[SHADOW] DB locked after {retries} retries, last error: {last_exc}"
+        )
+        raise last_exc if last_exc else RuntimeError("DB locked after retries")
 
     # ────────────────────────────────────────────────────────────────────────
     # sys_shadow_instances CRUD
@@ -137,36 +188,39 @@ class ShadowStorageManager:
 
     def update_shadow_instance(self, instance: ShadowInstance) -> None:
         """Update an existing SHADOW instance."""
-        cursor = self.conn.cursor()
-        db_dict = instance.to_db_dict()
+        def _do_update() -> None:
+            cursor = self.conn.cursor()
+            db_dict = instance.to_db_dict()
+            cursor.execute(
+                """
+                UPDATE sys_shadow_instances SET
+                    strategy_id = ?, status = ?,
+                    total_trades_executed = ?, profit_factor = ?, win_rate = ?,
+                    max_drawdown_pct = ?, consecutive_losses_max = ?,
+                    equity_curve_cv = ?,
+                    promotion_trace_id = ?, backtest_trace_id = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE instance_id = ?
+                """,
+                (
+                    db_dict["strategy_id"],
+                    db_dict["status"],
+                    db_dict["total_trades_executed"],
+                    db_dict["profit_factor"],
+                    db_dict["win_rate"],
+                    db_dict["max_drawdown_pct"],
+                    db_dict["consecutive_losses_max"],
+                    db_dict["equity_curve_cv"],
+                    db_dict["promotion_trace_id"],
+                    db_dict["backtest_trace_id"],
+                    db_dict["instance_id"],
+                ),
+            )
+            self.conn.commit()
+            logger.debug(f"[SHADOW] Updated instance {instance.instance_id}")
 
-        cursor.execute(
-            """
-            UPDATE sys_shadow_instances SET
-                strategy_id = ?, status = ?,
-                total_trades_executed = ?, profit_factor = ?, win_rate = ?,
-                max_drawdown_pct = ?, consecutive_losses_max = ?,
-                equity_curve_cv = ?,
-                promotion_trace_id = ?, backtest_trace_id = ?,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE instance_id = ?
-            """,
-            (
-                db_dict["strategy_id"],
-                db_dict["status"],
-                db_dict["total_trades_executed"],
-                db_dict["profit_factor"],
-                db_dict["win_rate"],
-                db_dict["max_drawdown_pct"],
-                db_dict["consecutive_losses_max"],
-                db_dict["equity_curve_cv"],
-                db_dict["promotion_trace_id"],
-                db_dict["backtest_trace_id"],
-                db_dict["instance_id"],
-            ),
-        )
-        self.conn.commit()
-        logger.debug(f"[SHADOW] Updated instance {instance.instance_id}")
+        # FIX-SHADOW-CONTENTION-001: Retry si DB está locked
+        self._execute_with_retry(_do_update)
 
     def delete_shadow_instance(self, instance_id: str) -> None:
         """
@@ -196,7 +250,7 @@ class ShadowStorageManager:
     ) -> ShadowPerformanceHistory:
         """
         Record a weekly performance evaluation snapshot.
-        
+
         Args:
             instance_id: Instance being evaluated
             pillar1_status: 'PASS' or 'FAIL'
@@ -204,7 +258,7 @@ class ShadowStorageManager:
             pillar3_status: 'PASS' or 'FAIL'
             overall_health: HealthStatus value
             event_trace_id: TRACE_HEALTH_... identifier
-        
+
         Returns:
             ShadowPerformanceHistory object created
         """
@@ -218,28 +272,31 @@ class ShadowStorageManager:
             event_trace_id=event_trace_id,
         )
 
-        cursor = self.conn.cursor()
-        db_dict = history.to_db_dict()
+        def _do_insert() -> None:
+            cursor = self.conn.cursor()
+            db_dict = history.to_db_dict()
+            cursor.execute(
+                """
+                INSERT INTO sys_shadow_performance_history (
+                    instance_id, evaluation_date, pillar1_status, pillar2_status,
+                    pillar3_status, overall_health, event_trace_id, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """,
+                (
+                    db_dict["instance_id"],
+                    db_dict["evaluation_date"],
+                    db_dict["pillar1_status"],
+                    db_dict["pillar2_status"],
+                    db_dict["pillar3_status"],
+                    db_dict["overall_health"],
+                    db_dict["event_trace_id"],
+                ),
+            )
+            self.conn.commit()
+            logger.debug(f"[SHADOW] Recorded performance snapshot for {instance_id}: {event_trace_id}")
 
-        cursor.execute(
-            """
-            INSERT INTO sys_shadow_performance_history (
-                instance_id, evaluation_date, pillar1_status, pillar2_status,
-                pillar3_status, overall_health, event_trace_id, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            """,
-            (
-                db_dict["instance_id"],
-                db_dict["evaluation_date"],
-                db_dict["pillar1_status"],
-                db_dict["pillar2_status"],
-                db_dict["pillar3_status"],
-                db_dict["overall_health"],
-                db_dict["event_trace_id"],
-            ),
-        )
-        self.conn.commit()
-        logger.debug(f"[SHADOW] Recorded performance snapshot for {instance_id}: {event_trace_id}")
+        # FIX-SHADOW-CONTENTION-001: Retry si DB está locked
+        self._execute_with_retry(_do_insert)
         return history
 
     def get_performance_history(
@@ -274,7 +331,7 @@ class ShadowStorageManager:
     ) -> ShadowPromotionLog:
         """
         Record a promotion decision (INSERT-ONLY, audit trail is immutable).
-        
+
         Args:
             instance_id: Instance being promoted
             trace_id: Unique identifier (TRACE_PROMOTION_REAL_...)
@@ -283,7 +340,7 @@ class ShadowStorageManager:
             pillar2_passed: Resiliencia pilar PASS?
             pillar3_passed: Consistencia pilar PASS?
             notes: Additional context
-        
+
         Returns:
             ShadowPromotionLog object created
         """
@@ -298,30 +355,33 @@ class ShadowStorageManager:
             notes=notes,
         )
 
-        cursor = self.conn.cursor()
-        db_dict = log.to_db_dict()
+        def _do_insert() -> None:
+            cursor = self.conn.cursor()
+            db_dict = log.to_db_dict()
+            cursor.execute(
+                """
+                INSERT INTO sys_shadow_promotion_log (
+                    instance_id, trace_id, promotion_status,
+                    pillar1_passed, pillar2_passed, pillar3_passed,
+                    approval_timestamp, notes, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """,
+                (
+                    db_dict["instance_id"],
+                    db_dict["trace_id"],
+                    db_dict["promotion_status"],
+                    db_dict["pillar1_passed"],
+                    db_dict["pillar2_passed"],
+                    db_dict["pillar3_passed"],
+                    db_dict["approval_timestamp"],
+                    db_dict["notes"],
+                ),
+            )
+            self.conn.commit()
+            logger.info(f"[SHADOW] Logged promotion decision {trace_id} for {instance_id}: {promotion_status}")
 
-        cursor.execute(
-            """
-            INSERT INTO sys_shadow_promotion_log (
-                instance_id, trace_id, promotion_status,
-                pillar1_passed, pillar2_passed, pillar3_passed,
-                approval_timestamp, notes, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            """,
-            (
-                db_dict["instance_id"],
-                db_dict["trace_id"],
-                db_dict["promotion_status"],
-                db_dict["pillar1_passed"],
-                db_dict["pillar2_passed"],
-                db_dict["pillar3_passed"],
-                db_dict["approval_timestamp"],
-                db_dict["notes"],
-            ),
-        )
-        self.conn.commit()
-        logger.info(f"[SHADOW] Logged promotion decision {trace_id} for {instance_id}: {promotion_status}")
+        # FIX-SHADOW-CONTENTION-001: Retry si DB está locked
+        self._execute_with_retry(_do_insert)
         return log
 
     def get_promotion_log(self, instance_id: str) -> List[ShadowPromotionLog]:
@@ -460,7 +520,8 @@ class ShadowStorageManager:
         )
 
     def update_strategy_score_shadow(self, strategy_id: str, score_shadow: float) -> None:
-        """Persist score_shadow to sys_strategies for the Darwinian scoring formula.
+        """
+        Persist score_shadow to sys_strategies for the Darwinian scoring formula.
 
         FIX-BACKTEST-QUALITY-ZERO-SCORE-2026-03-30:
         score_shadow was never written after shadow evaluation, leaving it at 0.0
@@ -474,20 +535,24 @@ class ShadowStorageManager:
             strategy_id: sys_strategies.class_id to update.
             score_shadow: Normalized shadow score in [0.0, 1.0].
         """
-        cursor = self.conn.cursor()
-        cursor.execute(
-            """
-            UPDATE sys_strategies
-            SET score_shadow = ?, updated_at = ?
-            WHERE class_id = ?
-            """,
-            (round(score_shadow, 4), datetime.now(timezone.utc).isoformat(), strategy_id),
-        )
-        self.conn.commit()
-        logger.debug(
-            "[SHADOW] score_shadow updated: strategy=%s score_shadow=%.4f",
-            strategy_id, score_shadow,
-        )
+        def _do_update() -> None:
+            cursor = self.conn.cursor()
+            cursor.execute(
+                """
+                UPDATE sys_strategies
+                SET score_shadow = ?, updated_at = ?
+                WHERE class_id = ?
+                """,
+                (round(score_shadow, 4), datetime.now(timezone.utc).isoformat(), strategy_id),
+            )
+            self.conn.commit()
+            logger.debug(
+                "[SHADOW] score_shadow updated: strategy=%s score_shadow=%.4f",
+                strategy_id, score_shadow,
+            )
+
+        # FIX-SHADOW-CONTENTION-001: Retry si DB está locked
+        self._execute_with_retry(_do_update)
 
     def update_parameter_overrides(self, instance_id: str, overrides: Dict) -> None:
         """
@@ -500,17 +565,21 @@ class ShadowStorageManager:
             instance_id: Target SHADOW instance UUID.
             overrides: Dict of parameter overrides (e.g. {"confidence_threshold": 0.77}).
         """
-        cursor = self.conn.cursor()
-        cursor.execute(
-            """
-            UPDATE sys_shadow_instances
-            SET parameter_overrides = ?, updated_at = ?
-            WHERE instance_id = ?
-            """,
-            (json.dumps(overrides), datetime.now(timezone.utc).isoformat(), instance_id),
-        )
-        self.conn.commit()
-        logger.debug(f"[SHADOW] Updated parameter_overrides for {instance_id}: {overrides}")
+        def _do_update() -> None:
+            cursor = self.conn.cursor()
+            cursor.execute(
+                """
+                UPDATE sys_shadow_instances
+                SET parameter_overrides = ?, updated_at = ?
+                WHERE instance_id = ?
+                """,
+                (json.dumps(overrides), datetime.now(timezone.utc).isoformat(), instance_id),
+            )
+            self.conn.commit()
+            logger.debug(f"[SHADOW] Updated parameter_overrides for {instance_id}: {overrides}")
+
+        # FIX-SHADOW-CONTENTION-001: Retry si DB está locked
+        self._execute_with_retry(_do_update)
 
 
 # Convenience function for backwards compatibility

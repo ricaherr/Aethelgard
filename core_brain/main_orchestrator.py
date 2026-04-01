@@ -497,7 +497,7 @@ class MainOrchestrator:
                     )
 
                     logger.info(
-                        f"[SHADOW] ✅ Created pool instance {strategy_id} "
+                        f"[SHADOW] [OK] Created pool instance {strategy_id} "
                         f"(V{variation_idx}, risk={params['risk_pct']:.2%})"
                     )
                     created_count += 1
@@ -507,7 +507,7 @@ class MainOrchestrator:
                     failed_count += 1
 
         logger.info(
-            f"[SHADOW] 🏠 Pool bootstrap complete: {created_count} instances created, "
+            f"[SHADOW] [HOME] Pool bootstrap complete: {created_count} instances created, "
             f"{skipped_count} skipped (not SHADOW), {failed_count} failed"
         )
         return {"created": created_count, "skipped": skipped_count, "failed": failed_count}
@@ -587,11 +587,11 @@ class MainOrchestrator:
             )
             
             logger.info(
-                f"[STRATEGIES] ✅ Dynamic loading complete: "
+                f"[STRATEGIES] [OK] Dynamic loading complete: "
                 f"{stats['active_engines']} active, {stats['failed_loads']} skipped"
             )
         except Exception as e:
-            logger.error(f"[STRATEGIES] ⚠️  Failed to load usr_strategies dynamically: {e}", exc_info=True)
+            logger.error(f"[STRATEGIES] [WARNING]  Failed to load usr_strategies dynamically: {e}", exc_info=True)
             logger.warning("[STRATEGIES] Continuing with existing SignalFactory (may have 0 engines)")
 
     def initialize_sensors(self) -> Dict[str, Any]:
@@ -803,7 +803,7 @@ class MainOrchestrator:
                 logger.debug(f"[ORCHESTRATOR] SocketService obtained: {socket_svc}")
                 
                 self.ui_mapping_service = UIMappingService(socket_service=socket_svc)
-                logger.info("[ORCHESTRATOR][✅] UI_Mapping_Service initialized successfully")
+                logger.info("[ORCHESTRATOR][[OK]] UI_Mapping_Service initialized successfully")
             except ImportError as e:
                 logger.error(f"[ORCHESTRATOR] ImportError initializing UI_Mapping_Service: {e}", exc_info=True)
                 self.ui_mapping_service = None
@@ -878,10 +878,10 @@ class MainOrchestrator:
             # Setup and start scheduler asynchronously (non-blocking)
             # Note: Scheduled as asyncio task in the main event loop
             
-            logger.info("[ECON-INTEGRATION] ✅ Economic integration ready for use")
+            logger.info("[ECON-INTEGRATION] [OK] Economic integration ready for use")
         
         except Exception as e:
-            logger.warning(f"[ECON-INTEGRATION] ⚠️ Could not initialize: {e}")
+            logger.warning(f"[ECON-INTEGRATION] [WARNING] Could not initialize: {e}")
             self.economic_integration = None
 
     def _init_phase4_intelligence_services(
@@ -914,24 +914,24 @@ class MainOrchestrator:
             self.signal_quality_scorer = signal_quality_scorer or SignalQualityScorer(
                 storage_manager=self.storage
             )
-            logger.debug("[PHASE4] ✅ SignalQualityScorer initialized")
+            logger.debug("[PHASE4] [OK] SignalQualityScorer initialized")
             
             # 2. ConsensusEngine (multi-strategy signal density)
             self.consensus_engine = consensus_engine or ConsensusEngine(
                 storage_manager=self.storage
             )
-            logger.debug("[PHASE4] ✅ ConsensusEngine initialized")
+            logger.debug("[PHASE4] [OK] ConsensusEngine initialized")
             
             # 3. FailurePatternRegistry (autonomous learning)
             self.failure_pattern_registry = failure_pattern_registry or FailurePatternRegistry(
                 storage_manager=self.storage
             )
-            logger.debug("[PHASE4] ✅ FailurePatternRegistry initialized")
+            logger.debug("[PHASE4] [OK] FailurePatternRegistry initialized")
             
-            logger.info("[PHASE4] ✅ All signal quality intelligence components ready")
+            logger.info("[PHASE4] [OK] All signal quality intelligence components ready")
         
         except Exception as e:
-            logger.warning(f"[PHASE4] ⚠️ Could not initialize intelligence services: {e}")
+            logger.warning(f"[PHASE4] [WARNING] Could not initialize intelligence services: {e}")
             self.signal_quality_scorer = None
             self.consensus_engine = None
             self.failure_pattern_registry = None
@@ -1370,7 +1370,7 @@ class MainOrchestrator:
                 skipped_count = len(results.get("skipped", []))
                 
                 logger.info(
-                    f"[PHASE3-DEDUP] ✅ Learning cycle complete: "
+                    f"[PHASE3-DEDUP] [OK] Learning cycle complete: "
                     f"{learned_count} adaptations applied, "
                     f"{blocked_count} blocked by governance, "
                     f"{skipped_count} skipped (insufficient data)"
@@ -1438,7 +1438,7 @@ class MainOrchestrator:
                     total_evaluated = len(promotions) + len(kills) + len(quarantines) + len(monitors)
                     
                     logger.info(
-                        f"[SHADOW] ✅ Hourly cycle complete: "
+                        f"[SHADOW] [OK] Hourly cycle complete: "
                         f"{len(promotions)} promoted to REAL, "
                         f"{len(kills)} marked DEAD, "
                         f"{len(quarantines)} QUARANTINED (retest), "
@@ -1455,7 +1455,7 @@ class MainOrchestrator:
                             instance_id = promo.get('instance_id', 'UNKNOWN')
                             trace_id = promo.get('trace_id', '')
                             logger.info(
-                                f"[SHADOW] ✅ PROMOTED: {instance_id} → REAL account "
+                                f"[SHADOW] [OK] PROMOTED: {instance_id} → REAL account "
                                 f"({trace_id})"
                             )
                             # WEEK 5: Emit WebSocket event for promotion
@@ -1483,7 +1483,7 @@ class MainOrchestrator:
                             reason = kill.get('reason', 'UNKNOWN')
                             trace_id = kill.get('trace_id', '')
                             logger.warning(
-                                f"[SHADOW] ❌ DEAD: {instance_id} → {reason} "
+                                f"[SHADOW] [FAIL] DEAD: {instance_id} → {reason} "
                                 f"({trace_id})"
                             )
                             # WEEK 5: Emit WebSocket event for death
@@ -1510,7 +1510,7 @@ class MainOrchestrator:
                             instance_id = quar.get('instance_id', 'UNKNOWN')
                             trace_id = quar.get('trace_id', '')
                             logger.warning(
-                                f"[SHADOW] ⚠️ QUARANTINED: {instance_id} "
+                                f"[SHADOW] [WARNING] QUARANTINED: {instance_id} "
                                 f"({trace_id})"
                             )
                             await self.emit_shadow_status_update(
@@ -1536,7 +1536,7 @@ class MainOrchestrator:
                             instance_id = mon.get('instance_id', 'UNKNOWN')
                             trace_id = mon.get('trace_id', '')
                             logger.info(
-                                f"[SHADOW] 👁️ MONITOR: {instance_id} "
+                                f"[SHADOW] [MONITOR] MONITOR: {instance_id} "
                                 f"({trace_id})"
                             )
                             await self.emit_shadow_status_update(
@@ -1608,7 +1608,7 @@ class MainOrchestrator:
             summary = await self.backtest_orchestrator.run_pending_strategies()
             self._last_backtest_run = now_utc
             logger.info(
-                "[BACKTEST] ✅ Daily cycle complete — evaluated=%d promoted=%d "
+                "[BACKTEST] [OK] Daily cycle complete — evaluated=%d promoted=%d "
                 "failed=%d skipped=%d",
                 summary.get("evaluated", 0),
                 summary.get("promoted", 0),
@@ -1948,7 +1948,7 @@ class MainOrchestrator:
                     logger.warning(f"[UI_MAPPING] All {len(price_snapshots)} snapshots have df=None — skipping structure analysis this cycle")
                 
                 available_pct = (snapshots_with_data / len(price_snapshots) * 100) if price_snapshots else 0
-                logger.info(f"[UI_MAPPING][GATE PASSED] analyzer=✅ service=✅ | Starting structure analysis for {len(price_snapshots)} price snapshots ({available_pct:.1f}% with data)")
+                logger.info(f"[UI_MAPPING][GATE PASSED] analyzer=[OK] service=[OK] | Starting structure analysis for {len(price_snapshots)} price snapshots ({available_pct:.1f}% with data)")
                 structure_count = 0
                 try:
                     for key, snapshot in price_snapshots.items():
@@ -1982,7 +1982,7 @@ class MainOrchestrator:
                                     )
                                     structure_count += 1
                                     # Use validation_level for better status reporting
-                                    level_icon = "✅" if structure_result.get('validation_level') == 'STRONG' else "⚠️"
+                                    level_icon = "[OK]" if structure_result.get('validation_level') == 'STRONG' else "[WARNING]"
                                     logger.info(
                                         f"[UI_MAPPING] {level_icon} Added structure for {snapshot.symbol}: "
                                         f"{structure_result.get('type')} ({structure_result.get('validation_level')}) "
@@ -2000,17 +2000,17 @@ class MainOrchestrator:
                         self._consecutive_empty_structure_cycles += 1
                         if self._consecutive_empty_structure_cycles == self._max_consecutive_empty_cycles:
                             logger.critical(
-                                f"[HEALTH_CHECK] ⚠️ ALERT: {self._consecutive_empty_structure_cycles} consecutive cycles with 0 structures detected. "
+                                f"[HEALTH_CHECK] [WARNING] ALERT: {self._consecutive_empty_structure_cycles} consecutive cycles with 0 structures detected. "
                                 f"This indicates a potential data flow issue (e.g., DataFrames still None, analyzer bug, or timing problem). "
                                 f"Check scanner status, market data providers, and MarketStructureAnalyzer logs."
                             )
                         elif self._consecutive_empty_structure_cycles > self._max_consecutive_empty_cycles:
                             # Keep alerting every cycle if still broken
-                            logger.error(f"[HEALTH_CHECK] ⚠️ PERSISTENT: {self._consecutive_empty_structure_cycles} cycles with 0 structures. System may be degraded.")
+                            logger.error(f"[HEALTH_CHECK] [WARNING] PERSISTENT: {self._consecutive_empty_structure_cycles} cycles with 0 structures. System may be degraded.")
                     else:
                         # Reset counter if we detect structures
                         if self._consecutive_empty_structure_cycles > 0:
-                            logger.info(f"[HEALTH_CHECK] ✅ Recovery: Structures detected after {self._consecutive_empty_structure_cycles} empty cycles")
+                            logger.info(f"[HEALTH_CHECK] [OK] Recovery: Structures detected after {self._consecutive_empty_structure_cycles} empty cycles")
                         self._consecutive_empty_structure_cycles = 0
 
                 except Exception as e:
@@ -2020,7 +2020,7 @@ class MainOrchestrator:
                 try:
                     logger.debug(f"[UI_MAPPING] About to emit trader page update. socket_service={bool(self.ui_mapping_service.socket_service)}")
                     await self.ui_mapping_service.emit_trader_page_update()
-                    logger.debug(f"[UI_MAPPING][✅] emit_trader_page_update() completed successfully")
+                    logger.debug(f"[UI_MAPPING][[OK]] emit_trader_page_update() completed successfully")
                 except Exception as e:
                     logger.error(f"[UI_MAPPING] Error emitting trader page update: {type(e).__name__}: {e}", exc_info=True)
             
@@ -2051,7 +2051,7 @@ class MainOrchestrator:
                             veto_symbols.add(symbol)
                             reason = status.get("reason", "Economic veto")
                             logger.warning(
-                                f"[ECON-VETO] ❌ {symbol}: {reason} "
+                                f"[ECON-VETO] [FAIL] {symbol}: {reason} "
                                 f"(Next: {status.get('next_event')} @ {status.get('time_to_event', 0):.0f}s)"
                             )
                             
@@ -2073,7 +2073,7 @@ class MainOrchestrator:
                         elif status.get("restriction_level") == "CAUTION":
                             caution_symbols.add(symbol)
                             logger.info(
-                                f"[ECON-VETO] ⚠️ {symbol}: MEDIUM impact (unit R @ 50%). "
+                                f"[ECON-VETO] [WARNING] {symbol}: MEDIUM impact (unit R @ 50%). "
                                 f"Next: {status.get('next_event')}"
                             )
                     
@@ -2237,7 +2237,7 @@ class MainOrchestrator:
                             )
                             if breakeven_result.get("adjusted", 0) > 0:
                                 logger.info(
-                                    f"[ECON-VETO-EXEC] ✅ Adjusted {breakeven_result['adjusted']} usr_positions to Break-Even"
+                                    f"[ECON-VETO-EXEC] [OK] Adjusted {breakeven_result['adjusted']} usr_positions to Break-Even"
                                 )
                     except Exception as e:
                         logger.error(f"[ECON-VETO-EXEC] Error adjusting SL to Break-Even: {e}")
@@ -2456,7 +2456,7 @@ class MainOrchestrator:
                         if cooldown_result['retry_count'] >= 4:
                             if self.thought_callback:
                                 await self.thought_callback(
-                                    f"⚠️ ESCALADA: Señal {signal.symbol} ha fallado {cooldown_result['retry_count']} veces. "
+                                    f"[WARNING] ESCALADA: Señal {signal.symbol} ha fallado {cooldown_result['retry_count']} veces. "
                                     f"Requiere revisión manual.",
                                     level="critical", module="ESCALATE"
                                 )
@@ -2485,12 +2485,12 @@ class MainOrchestrator:
                         action = result.get('action')
                         if action == 'promoted':
                             logger.critical(
-                                f"[RANKER] ✅ PROMOTION: {strategy_id} SHADOW→LIVE "
+                                f"[RANKER] [OK] PROMOTION: {strategy_id} SHADOW→LIVE "
                                 f"(Trace: {result.get('trace_id')})"
                             )
                         elif action == 'degraded':
                             logger.critical(
-                                f"[RANKER] ⚠️ DEGRADATION: {strategy_id} LIVE→QUARANTINE "
+                                f"[RANKER] [WARNING] DEGRADATION: {strategy_id} LIVE→QUARANTINE "
                                 f"(Reason: {result.get('reason')}, Trace: {result.get('trace_id')})"
                             )
                         elif action == 'recovered':
@@ -2685,7 +2685,7 @@ class MainOrchestrator:
                 
                 if available_pct >= 50:
                     has_data = True
-                    logger.info(f"[WARMUP] ✅ Scanner ready: {snapshots_with_data}/{len(scan_results)} snapshots with data ({available_pct:.1f}%)")
+                    logger.info(f"[WARMUP] [OK] Scanner ready: {snapshots_with_data}/{len(scan_results)} snapshots with data ({available_pct:.1f}%)")
                 else:
                     logger.debug(f"[WARMUP] Data loading: {snapshots_with_data}/{len(scan_results)} snapshots ({available_pct:.1f}%)")
                     await asyncio.sleep(0.5)
@@ -2696,7 +2696,7 @@ class MainOrchestrator:
         if not has_data:
             logger.warning(f"[WARMUP] Timeout after {warmup_timeout}s, proceeding with partial data (may see 0 structures initially)")
         
-        logger.info("[WARMUP] ✅ Scanner warmup complete, entering main loop")
+        logger.info("[WARMUP] [OK] Scanner warmup complete, entering main loop")
         
         try:
             while not self._shutdown_requested:
@@ -3167,7 +3167,7 @@ async def main() -> None:
         max_retries=3,
         retry_backoff=0.5
     )
-    logger.info("✅ TradeClosureListener initialized with idempotent event handling | ThresholdOptimizer HU 7.1 enabled")
+    logger.info("[OK] TradeClosureListener initialized with idempotent event handling | ThresholdOptimizer HU 7.1 enabled")
     
     # Order Executor
     notifier = get_notifier()
@@ -3206,7 +3206,7 @@ async def main() -> None:
     # Initialize mode selector (loads tenant config from DB)
     await mode_selector.initialize()
     
-    logger.info(f"✅ Hybrid Runtime initialized | Current mode: {mode_selector.current_mode.value}")
+    logger.info(f"[OK] Hybrid Runtime initialized | Current mode: {mode_selector.current_mode.value}")
     
     # Create adapter that makes StrategyModeSelector compatible with MainOrchestrator
     strategy_adapter = StrategyModeAdapter(strategy_mode_selector=mode_selector)

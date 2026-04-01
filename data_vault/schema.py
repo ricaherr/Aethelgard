@@ -931,6 +931,10 @@ def run_migrations(conn: sqlite3.Connection) -> None:
 
     # Enable WAL mode for concurrency performance
     cursor.execute("PRAGMA journal_mode=WAL;")
+    cursor.execute("PRAGMA busy_timeout=60000;")  # FIX-SHADOW-CONTENTION-001: 60s timeout
+    cursor.execute("PRAGMA synchronous=NORMAL;")
+    cursor.execute("PRAGMA wal_autocheckpoint=10000;")  # FIX-SHADOW-CONTENTION-001: Checkpoint cada 10k pages
+    cursor.execute("PRAGMA temp_store=MEMORY;")  # FIX-SHADOW-CONTENTION-001: Temp en RAM
 
     # MIGRATION (FASE D): Rename trade_results to usr_trades (one-time, safe)
     # ──────────────────────────────────────────────────────────────────────

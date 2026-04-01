@@ -395,7 +395,7 @@ window.addEventListener('load', function() {
     app.include_router(strategy_ws_router)  # WebSocket doesn't need /api prefix
     app.include_router(telemetry_router)  # WebSocket doesn't need /api prefix (Fractal V3)
     app.include_router(shadow_ws_router)  # WebSocket doesn't need /api prefix (SHADOW)
-    logger.info("✅ Micro-ETI 3.1+ Admin Management Router: User CRUD endpoints mounted (/api/admin/users). Trading logic delegated to TradingService.")
+    logger.info("[OK] Micro-ETI 3.1+ Admin Management Router: User CRUD endpoints mounted (/api/admin/users). Trading logic delegated to TradingService.")
 
     # Montar archivos estáticos de la nueva UI si existen
     ui_dist_path = os.path.join(os.getcwd(), "ui", "dist")
