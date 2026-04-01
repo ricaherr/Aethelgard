@@ -200,27 +200,7 @@
     * **Descripción**: Diseñar e documentar en `docs/` el `AutonomousSystemOrchestrator` que coordina los 13 componentes EDGE existentes (OperationalEdgeMonitor, EdgeTuner, DedupLearner, CoherenceMonitor, DrawdownMonitor, ExecutionFeedbackCollector, CircuitBreaker, PositionSizeMonitor, RegimeClassifier, ClosingMonitor, AutonomousHealthService, HealthManager, CoherenceService) como un sistema coherente de auto-diagnóstico y healing. Niveles de autonomía: OBSERVE | SUGGEST | HEAL.
     * **Trace_ID**: FASE4-AUTONOMOUS-ORCHESTRATOR-DESIGN-2026-03-24
 
-* **HU 10.14: Resilience Playbook & Interface Definition** `[TODO]`
-    * **Épica**: E14 | **Trace_ID**: ARCH-RESILIENCE-ENGINE-V1-A | **Sprint**: 23
-    * **Qué**: La especificación arquitectónica ya está documentada en `docs/10_INFRA_RESILIENCY.md` (sección E14, Mar-30-2026). Implementar el archivo `core_brain/resilience.py` con los contratos: enums `ResilienceLevel`, `EdgeAction`, `SystemPosture`; dataclass `EdgeEventReport`; clase abstracta `ResilienceInterface`.
-    * **Para qué**: Establecer el contrato de código base para que HU 10.15 y 10.16 puedan implementar sobre él sin ambigüedad.
-    * **Criterios de aceptación**:
-        - `core_brain/resilience.py` existe e importa sin errores
-        - `ResilienceInterface` es una clase abstracta con `check_health() → Optional[EdgeEventReport]`
-        - `SystemPosture` (NO `SystemState`) definido con exactamente 4 valores: `NORMAL`, `CAUTION`, `DEGRADED`, `STRESSED` — cualquier otro nombre es una violación de contrato
-        - Solo contratos y modelos — sin lógica de orquestación
-        - Tests: `tests/test_resilience_interface.py` — subclase concreta, instanciación de `EdgeEventReport`, verificación de los 4 valores de `SystemPosture`
-
-* **HU 10.15: ResilienceManager & Orchestrator Refactor** `[TODO]`
-    * **Épica**: E14 | **Trace_ID**: ARCH-RESILIENCE-ENGINE-V1-B | **Sprint**: 24
-    * **Qué**: Implementar `ResilienceManager` en `core_brain/resilience.py` con `process_report(report) → SystemPosture`. Refactorizar `MainOrchestrator`: los tres Gates (IntegrityGuard, AnomalySentinel, CoherenceService) reportan al `ResilienceManager`; solo `STRESSED` detiene el loop.
-    * **Para qué**: Reemplazar el "mazazo" del apagado total por gestión de estado inteligente y resiliente.
-    * **Criterios de aceptación**:
-        - `IntegrityGuard` WARNING no detiene el loop
-        - `AnomalySentinel` con 1 anomalía → postura `CAUTION`, no shutdown
-        - Tests: `tests/test_resilience_manager.py`
-
-* **HU 10.16: Self-Healing & Correlation Engine** `[TODO]`
+* **HU 10.16: Self-Healing & Correlation Engine** `[DEV]`
     * **Épica**: E14 | **Trace_ID**: ARCH-RESILIENCE-ENGINE-V1-C | **Sprint**: 24
     * **Qué**: `CorrelationEngine` (ventana 5 min): ≥3 `L0:MUTE` → L3 automático; ≥2 `L1:QUARANTINE` en <5 min → DEGRADED. `SelfHealingPlaybook`: reintentos L2 hasta 3 veces antes de escalar.
     * **Para qué**: Dotar al sistema de recuperación autónoma y protección contra fallos en cascada.
@@ -229,14 +209,27 @@
         - `L2:SELF_HEAL` reintenta 3 veces antes de escalar a `L3`
         - Tests: `tests/test_correlation_engine.py`
 
-* **HU 10.17: Veto Reasoner — Estado Narrativo en UI**
-    * **Épica**: E14 | **Trace_ID**: ARCH-RESILIENCE-VETO-REASONER-V1 | **Sprint**: 24 (post HU 10.15)
-    * **Qué**: Exponer el motivo de cada transición de postura en tiempo real. El `ResilienceManager` persiste en `sys_audit_logs` un campo `recovery_plan` (texto accionable). El endpoint `GET /api/system/health/edge` incluye `{"posture": "STRESSED", "cause": "L2_DB_LATENCY", "recovery_plan": "RECONNECT_ATTEMPT_3"}`. La UI muestra un panel narrativo en `SystemHealthPanel` que reemplaza el badge de color por una frase accionable: "Sistema en STRESSED — la base de datos está lenta. Intento de reconexión 3/3 en curso."
-    * **Para qué**: La UI no solo muestra un color rojo — le dice al operador qué está pasando y qué está haciendo el sistema para recuperarse. Convierte el monitoreo pasivo en observabilidad activa.
-    * **Dependencia**: HU 10.15 (ResilienceManager debe existir antes de añadir la capa narrativa).
+* **HU 10.18: Refactor MainOrchestrator — Descomposición por módulos**
+    * **Prioridad**: Alta (deuda técnica crítica — masa crítica §4)
+    * **Trace_ID**: SRE-AUDIT-2026-04-01T08:36 / ETI-P3
+    * **Contexto**: SRE Audit 2026-04-01 identificó `main_orchestrator.py` con 160 KB (~3 400 líneas). Viola la regla de masa crítica §4 (máx. 30 KB / 500 líneas). El archivo es el único punto de fallo de toda la lógica de orquestación — un error de edición puede romper el ciclo completo.
+    * **Descripción**: Extraer los sub-sistemas actuales del orquestador en módulos independientes:
+        - `core_brain/integrity_guard.py`: lógica de `_write_integrity_veto` + gates 1/2/3
+        - `core_brain/coherence_gate.py`: `_write_coherence_veto` + checks de coherencia
+        - `core_brain/session_stats.py`: dataclass `SessionStats` + reconstrucción desde DB
+        - `core_brain/cycle_runner.py`: `run_single_cycle()` + frecuencia adaptiva
+        - `main_orchestrator.py` queda como coordinador ligero (<200 líneas) que inyecta y orquesta los módulos anteriores.
     * **Criterios de aceptación**:
-        - `ResilienceManager.process_report()` persiste `recovery_plan` en `sys_audit_logs` además del `reason`
-        - Endpoint `/api/system/health/edge` retorna `posture`, `cause` y `recovery_plan` en el body
-        - `SystemHealthPanel.tsx` muestra el texto narrativo debajo del badge de postura (no lo reemplaza)
-        - Si `recovery_plan` es vacío, el panel no muestra el bloque narrativo (no rompe la UI)
-        - Tests: `tests/test_veto_reasoner.py` — persistencia de `recovery_plan`, serialización del endpoint, render condicional del componente React
+        - `main_orchestrator.py` ≤ 200 líneas tras la extracción
+        - Ningún módulo extraído supera 500 líneas
+        - 100% de tests existentes pasan sin modificación de lógica
+        - Tests de regresión de integración verifican el ciclo completo
+
+* **HU 10.17b: Veto Reasoner — Endpoint API + UI Component** `[DEV]`
+    * **Épica**: E14 | **Trace_ID**: ARCH-RESILIENCE-VETO-REASONER-V1B | **Sprint**: 25 (post HU 10.15 ✅)
+    * **Contexto**: `ResilienceManager.get_current_status_narrative()` y la persistencia de `recovery_plan` en `sys_audit_logs` ya implementados (Sprint 24). Esta HU cubre la capa de presentación.
+    * **Qué**: Endpoint `GET /api/system/health/edge` devuelve `{"posture": "STRESSED", "cause": "L2_SELF_HEAL", "recovery_plan": "..."}`. `SystemHealthPanel.tsx` muestra texto narrativo debajo del badge de postura; si `recovery_plan` es vacío, el bloque no se renderiza.
+    * **Criterios de aceptación**:
+        - Endpoint `/api/system/health/edge` retorna `posture`, `cause` y `recovery_plan`
+        - `SystemHealthPanel.tsx` render condicional del bloque narrativo
+        - Tests: `tests/test_veto_reasoner.py` — serialización del endpoint, render condicional React

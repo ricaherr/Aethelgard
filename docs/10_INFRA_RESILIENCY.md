@@ -210,35 +210,83 @@ class ResilienceInterface(ABC):
 
 ### Protocolo: `ResilienceManager` (El Cerebro Inmunológico)
 
+**Implementado**: `core_brain/resilience_manager.py` | Trace_ID: ARCH-RESILIENCE-ENGINE-V1-B
+
 El `ResilienceManager` es el único árbitro de acciones. Recibe `EdgeEventReport` de todos los componentes y:
 1. Aplica la acción del reporte al scope indicado
-2. Actualiza la `SystemPosture` global
-3. Detecta correlación de fallos para escalar automáticamente
-4. Persiste el evento en `sys_audit_logs`
+2. Actualiza la `SystemPosture` global (solo escala, nunca baja)
+3. Persiste el evento en `sys_audit_logs` con `recovery_plan` incluido
+4. Expone narrativa accionable para la UI
 
-**Diseño (HU 10.15):**
+**Contrato implementado (HU 10.15 + HU 10.17):**
 
 ```python
 class ResilienceManager:
-    def __init__(self, storage: StorageManager): ...
+    def __init__(self, storage: StorageManager) -> None:
+        """
+        Args:
+            storage: StorageManager para persistencia de audit logs.
+        """
+        ...
+
+    @property
+    def current_posture(self) -> SystemPosture:
+        """Vista de solo lectura de la postura actual (sin I/O)."""
+        ...
 
     def process_report(self, report: EdgeEventReport) -> SystemPosture:
         """
-        Procesa un EdgeEventReport, aplica la acción y devuelve la
-        nueva postura del sistema.
+        Procesa un EdgeEventReport y actualiza la SystemPosture.
 
         Flujo:
-        1. Registrar el evento
-        2. Aplicar EdgeAction al scope
-        3. Ejecutar Correlation Engine
-        4. Transicionar SystemPosture si aplica
-        5. Retornar nueva postura
+        1. Calcular postura objetivo según la matriz de intervención
+        2. Transicionar si target > current (escalada unidireccional)
+        3. Generar recovery_plan textual
+        4. Persistir en sys_audit_logs (fire-and-forget; no lanza si falla)
+        5. Retornar postura actualizada
+
+        Returns:
+            SystemPosture actualizada tras procesar el reporte.
         """
         ...
 
-    def get_posture(self) -> SystemPosture:
-        """Retorna la postura operacional actual (sin I/O)."""
+    def get_current_status_narrative(self) -> str:
+        """
+        Retorna un string legible para la UI explicando la postura actual
+        y el plan de recuperación en curso.
+
+        Retorna "" cuando la postura es NORMAL y no ha habido reportes.
+
+        Ejemplo:
+            "Sistema en DEGRADED — afectado: IntegrityGuard (L2_SELF_HEAL).
+             Componente IntegrityGuard: auto-recuperación en curso."
+        """
         ...
+```
+
+**Matriz de escalado del ResilienceManager:**
+
+| EdgeAction | Umbral | Postura Resultante |
+|:---|:---|:---|
+| `MUTE` (L0) | 1-2 eventos | Sin cambio |
+| `MUTE` (L0) | ≥ 3 eventos (mismo activo) | `CAUTION` |
+| `MUTE` (L0) | ≥ 6 eventos (mismo activo) | `DEGRADED` |
+| `QUARANTINE` (L1) | cualquier evento | `CAUTION` |
+| `SELF_HEAL` (L2) | cualquier evento | `DEGRADED` |
+| `LOCKDOWN` (L3) | cualquier evento | `STRESSED` |
+
+**Integración con MainOrchestrator:**
+
+```
+LOOP PRINCIPAL (run()):
+  ├─ Posture check → si STRESSED: _shutdown_requested = True, break
+  ├─ Gate 1 IntegrityGuard CRITICAL → process_report(L2/SELF_HEAL) → DEGRADED
+  ├─ Gate 2 AnomalySentinel LOCKDOWN → process_report(L3/LOCKDOWN) → STRESSED
+  ├─ Gate 3 CoherenceGate (per-strategy, sin cambio de flujo)
+  └─ run_single_cycle()
+       ├─ PositionManager → SIEMPRE ejecuta (cierre de posiciones)
+       ├─ Posture DEGRADED/STRESSED guard → return (sin scan ni señales)
+       └─ SignalFactory → solo si postura NORMAL/CAUTION
 ```
 
 ---
@@ -266,6 +314,36 @@ El check `_check_orchestrator_heartbeat()` opera con su propia nomenclatura inte
 | `10 – 20 min` | `WARN` | `CAUTION` (alerta, loop continúa) |
 | `> 20 min` | `FAIL` | `DEGRADED` (fallo L2, modo defensivo) |
 | Fallo de persistencia | `FAIL` + escalada | `STRESSED` si correlaciona con L2 adicional |
+
+---
+
+### Contratos de Telemetría en `sys_config` (§E14-telemetry)
+
+> **Implementado**: `core_brain/main_orchestrator.py` — `_persist_scan_telemetry()`
+> **Fix aplicado**: 2026-03-31 — Bug detectado: IntegrityGuard disparaba CRITICAL por claves inexistentes.
+
+`IntegrityGuard` lee dos claves de `sys_config` en cada ciclo. Estas claves **deben ser escritas** por el pipeline de datos antes de que el guard evalúe la salud. Su ausencia es equivalente a un fallo real.
+
+| Clave `sys_config` | Escribe | Formato | Qué verifica `IntegrityGuard` |
+|:---|:---|:---|:---|
+| `last_market_tick_ts` | `MainOrchestrator._persist_scan_telemetry()` | ISO-8601 UTC (`datetime.now(timezone.utc).isoformat()`) | `Check_Data_Coherence`: tick reciente (< 5 min). Ausencia → CRITICAL. |
+| `dynamic_params.adx` | `MainOrchestrator._persist_scan_telemetry()` | `float` > 0 | `Check_Veto_Logic`: ADX no atascado en 0. ≥ 3 ciclos consecutivos en 0/None → CRITICAL. |
+
+**Invariantes:**
+- `_persist_scan_telemetry()` se llama solo cuando `scan_results_with_data` no está vacío (hay datos reales de mercado).
+- `adx` en `dynamic_params` se escribe como el **máximo ADX** entre todos los activos escaneados con valor > 0. Si ningún activo tiene ADX > 0, la clave no se sobrescribe (evitar escribir 0 y prolongar el streak).
+- Ambas escrituras son **fire-and-forget**: los errores se loggean en WARNING pero no interrumpen el ciclo.
+
+#### Schema de `sys_audit_logs` (contrato del `ResilienceManager`)
+
+El `ResilienceManager._persist_audit()` usa las siguientes columnas reales de la tabla:
+
+```sql
+INSERT INTO sys_audit_logs (user_id, action, resource, resource_id, status, reason, trace_id)
+VALUES ('system', 'RESILIENCE_EVENT', <scope>, <level>, <EdgeAction>, <reason+plan>, <trace_id>)
+```
+
+> **Nota**: Las columnas `actor`, `event_type`, `component`, `entity_id`, `details` **no existen** en la tabla. Usar columnas incorrectas causa un WARNING silencioso en cada ciclo. El schema correcto es el que está en `data_vault/global/aethelgard.db`.
 
 ---
 
@@ -314,6 +392,67 @@ if report:
 | `IntegrityGuard` CRITICAL → shutdown | `L2/L3` | `L2` → DEGRADED (loop continúa). `L3` → STRESSED (shutdown). |
 | `AnomalySentinel` LOCKDOWN → shutdown | `L0/L3` | Flash Crash 1 activo → `L0: MUTE`. Flash Crash sistémico → `L3: LOCKDOWN`. |
 | `CoherenceService` VETO → quarantine | `L1` | Ya funciona por estrategia. Integrar con `ResilienceManager`. |
+
+---
+
+---
+
+### Manual Overrides — El Humano Tiene la Última Palabra
+
+**Principio fundamental**: El `ResilienceManager` decide de forma autónoma basándose en datos. Sin embargo, el operador humano siempre puede anular cualquier decisión algorítmica. Este contrato no es opcional: en situaciones de incertidumbre, la inteligencia artificial es un asistente, no un árbitro final.
+
+#### Endpoint de control (HU 10.17b)
+
+```
+POST /api/v3/resilience/command
+```
+
+| Campo | Tipo | Descripción |
+|:---|:---|:---|
+| `action` | `string` | Acción a ejecutar (ver tabla de acciones) |
+| `scope` | `string?` | Identificador del activo/estrategia (requerido para `RELEASE_SCOPE`) |
+| `posture` | `string?` | Postura destino (requerido para `OVERRIDE_POSTURE`) |
+
+**Acciones disponibles:**
+
+| Acción | Efecto | Cuándo usarla |
+|:---|:---|:---|
+| `RETRY_HEALING` | Reinicia todos los contadores de reintentos del `SelfHealingPlaybook`. | Después de una corrección manual del problema subyacente (ej. reconectar el proveedor de datos). |
+| `OVERRIDE_POSTURE` | Fuerza la `SystemPosture` al valor especificado (`NORMAL`, `CAUTION`, `DEGRADED`, `STRESSED`). | Cuando el algoritmo sobre-reaccionó a ruido de mercado y el operador confirma que el sistema está sano. |
+| `RELEASE_SCOPE` | Elimina el activo/estrategia de todos los registros de exclusión: mute-window, cooldowns, provider-map. | Para rehabilitar un instrumento o estrategia que fue bloqueado por error o cuyo problema ya fue resuelto. |
+
+**Ejemplo de llamada — Override a NORMAL:**
+```bash
+curl -X POST /api/v3/resilience/command \
+  -H "Content-Type: application/json" \
+  -d '{"action": "OVERRIDE_POSTURE", "posture": "NORMAL"}'
+```
+
+**Ejemplo — Liberar activo en cuarentena:**
+```bash
+curl -X POST /api/v3/resilience/command \
+  -H "Content-Type: application/json" \
+  -d '{"action": "RELEASE_SCOPE", "scope": "XAUUSD"}'
+```
+
+#### Estado en tiempo real
+
+```
+GET /api/v3/resilience/status
+```
+
+Retorna la postura actual, el presupuesto de sanación restante y las listas completas de exclusiones (muted / quarantined / in_cooldown).
+
+#### ResilienceConsole (UI)
+
+El componente `ResilienceConsole.tsx` (página Monitor) visualiza en tiempo real:
+- Badge de postura coloreado por severidad (NORMAL/CAUTION/DEGRADED/STRESSED).
+- Narrativa textual actualizada desde el heartbeat `/ws/v3/synapse`.
+- Barra de presupuesto de sanación (cuántos reintentos quedan).
+- Tablas de exclusión (activos muteados, estrategias en cuarentena, cooldowns).
+- Botones de intervención con spinner durante la operación.
+
+> **Traza de auditoría**: Toda intervención manual se registra en `sys_audit_logs` con `actor="operator"` para trazabilidad completa de cada override.
 
 ---
 
@@ -924,3 +1063,68 @@ gap > 20 min          → FAIL  (CRITICAL — loop posiblemente bloqueado)
 ### Artefactos
 - `core_brain/operational_edge_monitor.py` (check, constantes, last_results, CRITICAL rule)
 - `tests/test_oem_heartbeat_check.py` (10 tests: OK/WARN/FAIL, umbrales exactos, integración health_summary)
+
+---
+
+## 🔴 Patrón de Cascada: Data Freeze → DB Lock
+
+**Trace_ID**: SRE-AUDIT-2026-04-01T08:36 | Descubierto: 2026-04-01
+
+### Descripción del patrón
+
+Cuando el proveedor de datos (MT5/broker) se desconecta o el mercado cierra sin que el conector lo detecte, se produce una cascada de fallos que paraliza la DB:
+
+```
+MT5 offline / mercado cerrado
+         │
+         ▼
+last_market_tick_ts desactualizado (umbral: 300s)
+         │
+         ▼
+Scanner: ADX = 0 (sin datos OHLC frescos para calcular)
+         │
+         ▼  (3 ciclos consecutivos con ADX = 0)
+IntegrityGuard: CRITICAL → _write_integrity_veto()
+         │
+         ├─► INSERT INTO sys_audit_logs → UNIQUE constraint (trace_id duplicado)
+         │   ← antes enmascaraba el error real
+         │
+         ▼
+Motor de trading: DETENIDO (comportamiento correcto)
+         │
+         ▼
+OEM detecta adx_sanity + backtest_quality → dispara repair flags
+         │
+         ▼
+Orchestrator consume flags → operaciones de reparación intentan escribir en DB
+         │
+         ▼
+DB locked en cascada (write-lock retenido por sesión uvicorn anterior)
+         │
+         ├─► Shadow Manager: Failed to record snapshot
+         ├─► OEM: Error updating system state
+         └─► ResilienceManager: Could not persist audit log
+```
+
+### Root cause
+
+El write-lock sobre la DB no fue liberado por el proceso uvicorn de la sesión anterior. Todos los componentes que intentan persistir estado en el mismo ciclo compiten por el lock y fallan con `database is locked`.
+
+### Solución aplicada (2026-04-01)
+
+1. **`_write_integrity_veto`** (`main_orchestrator.py`): separación de `sqlite3.IntegrityError` (trace_id duplicado → `WARNING`) de `sqlite3.OperationalError` (locked → `ERROR`). Antes ambos caían en `except Exception` ocultando la distinción.
+2. **Desbloqueo manual**: `PRAGMA wal_checkpoint(TRUNCATE)` desde proceso único tras terminar el proceso que retiene el lock.
+
+### Procedimiento de recuperación operacional
+
+```bash
+# 1. Verificar que uvicorn no está corriendo
+# 2. Desbloquear WAL
+sqlite3 data_vault/global/aethelgard.db "PRAGMA wal_checkpoint(TRUNCATE);"
+# 3. Reiniciar el servicio
+# 4. Si MT5 sigue offline → IntegrityGuard vetará de nuevo (comportamiento correcto)
+```
+
+### Comportamiento esperado con MT5 offline
+
+El veto del IntegrityGuard cuando no hay datos de mercado **es correcto** — el sistema no debe ejecutar trades con ADX=0. El ResilienceManager transita a `DEGRADED` como diseñado. El único fallo real es la incapacidad de persistir el estado por el DB lock, no el veto en sí.

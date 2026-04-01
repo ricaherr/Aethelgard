@@ -11,6 +11,88 @@
 
 ---
 
+# SPRINT 25: EDGE IGNITION PHASE 5 & 6 — SELF-HEALING, CORRELATION ENGINE & RESILIENCE UI — [DEV]
+
+**Inicio**: 31 de Marzo, 2026
+**Fin**: en curso
+**Objetivo**: Dotar al `ResilienceManager` de inteligencia de correlación temporal (CorrelationEngine) y de capacidad de auto-reparación acotada (SelfHealingPlaybook). Exponer el estado del sistema inmunológico al operador humano vía API REST + WebSocket + `ResilienceConsole` UI, completando el ciclo inmunológico autónomo con supervisión humana.
+**Épica**: E14 (EDGE Resilience Engine) | **Trace_ID**: EDGE-IGNITION-PHASE-5-SELF-HEALING / EDGE-IGNITION-PHASE-6-RESILIENCE-UI
+**Dominios**: 10_INFRASTRUCTURE_RESILIENCY
+
+## 📋 Tareas del Sprint
+
+- [DEV] **HU 10.17b: Veto Reasoner — Endpoint API + UI Component** (Trace_ID: EDGE-IGNITION-PHASE-6-RESILIENCE-UI | 2026-03-31)
+  - `core_brain/api/routers/resilience.py` (NUEVO): `GET /api/v3/resilience/status` (postura, budget, exclusiones) + `POST /api/v3/resilience/command` (RETRY_HEALING, OVERRIDE_POSTURE, RELEASE_SCOPE)
+  - `core_brain/server.py`: singleton `_resilience_manager_instance` + `set_resilience_manager()` / `get_resilience_manager()`
+  - `core_brain/main_orchestrator.py`: `set_resilience_manager(self.resilience_manager)` publicado al servidor en el bloque #16
+  - `core_brain/api/routers/telemetry.py`: `_get_resilience_status_snapshot()` inyectado en payload de `/ws/v3/synapse` → campo `resilience_status`
+  - `ui/src/hooks/useSynapseTelemetry.ts`: interfaz `ResilienceSnapshot` + campo opcional `resilience_status` en `SynapseTelemetry`
+  - `ui/src/components/diagnostic/ResilienceConsole.tsx` (NUEVO): badge de postura + narrativa dinámica + barra de presupuesto + tablas de exclusión + botones de intervención con spinners
+  - `ui/src/components/diagnostic/MonitorPage.tsx`: `<ResilienceConsole />` integrado al final de la página
+  - `docs/10_INFRA_RESILIENCY.md`: sección "Manual Overrides" añadida (contrato de endpoints + UI)
+  - Glassmorphism + bordes 0.5px + animaciones stagger 100ms (Dominio 09)
+
+- [DEV] **HU 10.16: Self-Healing & Correlation Engine** (Trace_ID: ARCH-RESILIENCE-ENGINE-V1-C | 2026-03-31)
+  - `core_brain/resilience_manager.py` actualizado con tres nuevos sub-sistemas:
+    - **CorrelationEngine**: ventana deslizante de 60s; ≥3 activos distintos con MUTE → LOCKDOWN sintético → STRESSED. Evita re-trigger limpiando la ventana tras cascada.
+    - **RootCauseDiagnosis**: acumula L1/QUARANTINE por DataProvider; ≥2 estrategias en mismo proveedor → upgrade a L2/SERVICE/SELF_HEAL → DEGRADED.
+    - **SelfHealingPlaybook**: 3 recetas con max_retries=3 antes de escalar a STRESSED:
+      - `Check_Data_Coherence` → `reconnect_provider_fn()` inyectado
+      - `Check_Database` → `clear_db_cache_fn()` + `reconnect_provider_fn()` inyectados
+      - `Spread_Anomaly` → cooldown de 300s (5 min) con `is_in_cooldown(scope)`
+    - `is_healing: bool` property refleja si hay una curación en vuelo
+    - Log format: `[AUTO-HEAL] [Attempt X/Y] Executing {action} for {scope}`
+    - Callbacks inyectados al constructor (dependency inversion — no acoplamiento directo a infraestructura)
+  - `tests/test_self_healing.py` (NUEVO): 27 tests — CorrelationEngine (5), RootCauseDiagnosis (4), HealDataCoherence (7), HealDatabase (4), SpreadAnomalyCooldown (4), IsHealingProperty (3)
+  - Sin regresión: `test_resilience_manager.py` (27/27) + `test_resilience_interface.py` (23/23) = 50 tests previos verdes
+
+- [DONE] **SRE Hotfix 2026-04-01 — ETI-CORE/PERSIST/GIT** (Trace_ID: SRE-AUDIT-2026-04-01T08:36 | 2026-04-01)
+  - `ETI-GIT-001`: Commit de 7 artefactos untracked del ResilienceEngine (resilience.py, resilience_manager.py, api/routers/resilience.py, 3 test suites, ResilienceConsole.tsx) — commit `557c24a`
+  - `ETI-CORE-001`: `strategy_monitor_service.py:155` — `get_all_usr_strategies()` (inexistente) → `get_all_sys_strategies()`. Mock de test actualizado. 21/21 tests verdes.
+  - `ETI-PERSIST-001`: `data_vault/schema.py` — `DROP TABLE IF EXISTS edge_learning` añadido al final de `initialize_schema()` con guard `usr_edge_learning` (SSOT)
+  - `ETI-PERSIST-002`: `main_orchestrator.py:_write_integrity_veto` — captura `sqlite3.IntegrityError` (duplicado → WARNING) separada de `sqlite3.OperationalError` (DB locked → ERROR). Import `sqlite3` añadido.
+  - Commit: `59b078c`
+
+---
+
+# SPRINT 24: EDGE RESILIENCE ENGINE — IMMUNE SYSTEM BRAIN — [DONE]
+
+**Inicio**: 31 de Marzo, 2026
+**Fin**: 31 de Marzo, 2026
+**Objetivo**: Materializar el cerebro del sistema inmunológico: implementar `ResilienceManager` como árbitro único de la `SystemPosture`, refactorizar el `MainOrchestrator` para reemplazar el "Panic Button" de apagado por gestión de estado inteligente y resiliente, e implementar el Veto Reasoner para narrativa de estado en la UI.
+**Épica**: E14 (EDGE Resilience Engine) | **Trace_ID**: EDGE-IGNITION-PHASE-4B-RESILIENCE-MANAGER
+**Dominios**: 10_INFRASTRUCTURE_RESILIENCY
+
+## 📋 Tareas del Sprint
+
+- [DONE] **HU 10.15: ResilienceManager & Orchestrator Refactor** (Trace_ID: ARCH-RESILIENCE-ENGINE-V1-B | 2026-03-31)
+  - `core_brain/resilience_manager.py` (NUEVO): clase `ResilienceManager` con `process_report(report) → SystemPosture`
+  - Postura unidireccional (solo escala). Matriz de escalado: MUTE≥3→CAUTION, MUTE≥6→DEGRADED, QUARANTINE→CAUTION, SELF_HEAL→DEGRADED, LOCKDOWN→STRESSED
+  - `core_brain/main_orchestrator.py` refactorizado:
+    - Gate 1 (IntegrityGuard CRITICAL): ya no llama `_shutdown_requested = True`; reporta `L2/SELF_HEAL` al `ResilienceManager` → postura DEGRADED
+    - Gate 2 (AnomalySentinel LOCKDOWN): ya no llama `_shutdown_requested = True`; reporta `L3/LOCKDOWN` → postura STRESSED
+    - Check de postura al inicio del loop: solo STRESSED detiene el ciclo
+    - Guard de postura DEGRADED en `run_single_cycle()`: bloquea SignalFactory/scan; PositionManager siempre ejecuta
+  - `ResilienceManager` inicializado como `self.resilience_manager` (bloque #16 en `__init__`)
+  - Criterios cumplidos: IntegrityGuard WARNING no detiene el loop; AnomalySentinel con 1 anomalía → CAUTION, no shutdown
+  - `tests/test_resilience_manager.py`: 27 tests — escalado L0-L3, postura unidireccional, narrativa, persistencia audit
+
+- [DONE] **HU 10.17: Veto Reasoner — Estado Narrativo en UI** (Trace_ID: ARCH-RESILIENCE-VETO-REASONER-V1 | 2026-03-31)
+  - `ResilienceManager.get_current_status_narrative()`: retorna string legible con postura, scope, causa y plan de recuperación
+  - `process_report()` incluye `recovery_plan` en `sys_audit_logs` (campo `details`: `reason | recovery_plan=...`)
+  - Retorna `""` cuando postura NORMAL y sin reportes previos (no rompe la UI)
+  - Cobertura de tests incluida en `tests/test_resilience_manager.py`
+  - `docs/10_INFRA_RESILIENCY.md` §E14 actualizado con contrato real implementado
+
+## 📊 Snapshot de Cierre
+
+- **Tests añadidos**: 27 (`test_resilience_manager.py`) + 23 ya existentes (`test_resilience_interface.py`) = 50 tests E14
+- **Archivos nuevos**: `core_brain/resilience_manager.py`, `tests/test_resilience_manager.py`
+- **Archivos modificados**: `core_brain/main_orchestrator.py` (imports + init #16 + loop refactor + DEGRADED guard), `docs/10_INFRA_RESILIENCY.md` (§E14 contrato real)
+- **Deuda eliminada**: "Panic Button" de apagado inmediato reemplazado por gestión de estado resiliente; Gates 1 y 2 ya no son disparadores de shutdown unilateral
+
+---
+
 # SPRINT 23: EDGE RELIABILITY — CERTEZA DE COMPONENTES & AUTO-AUDITORÍA — [DEV]
 
 **Inicio**: 27 de Marzo, 2026
@@ -49,6 +131,12 @@
   - `tests/test_backtest_conn_leak.py`: 8 tests — `_close_conn` invocado en path exitoso y en path de excepción para cada método
   - `tests/test_shadow_pool_log_accuracy.py`: 4 tests — `failed` cuenta solo excepciones, `skipped` solo filtros de modo
   - validate_all: 27/27 PASSED
+
+- [DONE] **HU 10.14: Resilience Playbook & Interface Definition** (Trace_ID: ARCH-RESILIENCE-ENGINE-V1-A | 2026-03-31)
+  - `core_brain/resilience.py` (NUEVO): enums `ResilienceLevel` (L0-L3), `EdgeAction` (4 acciones exactas), `SystemPosture` (4 valores: NORMAL/CAUTION/DEGRADED/STRESSED); dataclass `EdgeEventReport` con `trace_id` auto-generado; clase abstracta `ResilienceInterface` con `check_health() → Optional[EdgeEventReport]`
+  - Solo contratos y modelos — sin lógica de orquestación
+  - `tests/test_resilience_interface.py`: 23 tests — valores de enums, instanciación de EdgeEventReport, trace_id único, ABC enforcement
+  - validate_all: todos los tests PASSED
 
 - [TODO] **HU 10.12: Timeout Guards en run_single_cycle**
   - `core_brain/main_orchestrator.py`: `asyncio.wait_for()` en `_request_scan()` (120s), `_check_and_run_daily_backtest()` (300s), `position_manager.monitor_usr_positions()` (60s)
@@ -120,7 +208,7 @@
     4. `calculate_weighted_score`: integrar en flujo o eliminar dead code
   - Cada test debe estar RED antes del fix correspondiente, GREEN después
 
-- [TODO] **HU 10.14: Resilience Playbook & Interface Definition**
+- [DEV] **HU 10.14: Resilience Playbook & Interface Definition**
   - **Épica**: E14 | **Trace_ID**: ARCH-RESILIENCE-ENGINE-V1-A
   - `docs/10_INFRA_RESILIENCY.md` — sección `## 🏛️ E14: Arquitectura de Resiliencia Granular` añadida ✅ (30-Mar-2026) + ampliada ✅ (31-Mar-2026):
     - Matriz L0-L3 ampliada con `ResilienceLevel`, `EdgeAction`, `SystemPosture`
