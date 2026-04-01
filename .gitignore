@@ -169,3 +169,6 @@ backups/
 # Ignorar archivos temporales de SQLite
 *.db-shm
 *.db-wal
+
+# Claude Code — configuración local de permisos (no compartir entre desarrolladores)
+.claude/settings.local.json
