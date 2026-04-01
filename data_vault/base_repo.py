@@ -35,9 +35,10 @@ class BaseRepository:
         """Get database connection with row factory"""
         if self._persistent_conn is not None:
             return self._persistent_conn
-        conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=5)
+        conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA busy_timeout=5000")
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=30000")
         return conn
 
     def _close_conn(self, conn: sqlite3.Connection) -> None:

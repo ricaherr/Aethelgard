@@ -41,6 +41,7 @@ _storage_instance = None  # Lazy-loaded storage
 _regime_classifier_instance = None  # Lazy-loaded regime classifier
 _trading_service_instance = None  # Lazy-loaded trading service
 _oem_instance = None  # OperationalEdgeMonitor — set by start.py after boot
+_resilience_manager_instance = None  # ResilienceManager — set by MainOrchestrator on init
 
 
 def set_oem_instance(oem: "Optional[Any]") -> None:
@@ -52,6 +53,17 @@ def set_oem_instance(oem: "Optional[Any]") -> None:
 def get_oem_instance() -> "Optional[Any]":
     """Return the running OperationalEdgeMonitor instance, or None if not started."""
     return _oem_instance
+
+
+def set_resilience_manager(manager: "Optional[Any]") -> None:
+    """Register the live ResilienceManager instance so API routes can read it."""
+    global _resilience_manager_instance
+    _resilience_manager_instance = manager
+
+
+def get_resilience_manager() -> "Optional[Any]":
+    """Return the live ResilienceManager, or None if the engine is still booting."""
+    return _resilience_manager_instance
 
 def _get_socket_service() -> SocketService:
     """Lazy-load SocketService singleton."""
@@ -367,8 +379,9 @@ window.addEventListener('load', function() {
     from core_brain.api.routers.telemetry import router as telemetry_router
     from core_brain.api.routers.shadow import router as shadow_router
     from core_brain.api.routers.shadow_ws import router as shadow_ws_router
-    
-    # Mount modular routers (Trading, Risk, Market, System, Notifications, Auth, Admin, Anomalies, Strategy WS, Telemetry, SHADOW)
+    from core_brain.api.routers.resilience import router as resilience_router
+
+    # Mount modular routers (Trading, Risk, Market, System, Notifications, Auth, Admin, Anomalies, Strategy WS, Telemetry, SHADOW, Resilience)
     app.include_router(trading_router, prefix="/api")
     app.include_router(risk_router, prefix="/api")
     app.include_router(market_router, prefix="/api")
@@ -377,6 +390,7 @@ window.addEventListener('load', function() {
     app.include_router(auth_router, prefix="/api")
     app.include_router(admin_router, prefix="/api")
     app.include_router(shadow_router, prefix="/api")  # SHADOW REST endpoints
+    app.include_router(resilience_router, prefix="/api")  # Resilience Control (HU 10.17b)
     app.include_router(anomalies_router)
     app.include_router(strategy_ws_router)  # WebSocket doesn't need /api prefix
     app.include_router(telemetry_router)  # WebSocket doesn't need /api prefix (Fractal V3)

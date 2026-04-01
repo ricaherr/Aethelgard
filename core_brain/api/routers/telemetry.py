@@ -195,6 +195,26 @@ async def _get_anomalies_buffer(storage: StorageManager, limit: int = 25) -> Dic
         }
 
 
+def _get_resilience_status_snapshot() -> Dict[str, Any]:
+    """
+    Return a lightweight resilience snapshot for the synapse heartbeat.
+    Fail-open: returns UNAVAILABLE when the manager is not yet initialised.
+    """
+    try:
+        from core_brain.server import get_resilience_manager
+        manager = get_resilience_manager()
+        if manager is None:
+            return {"posture": "UNAVAILABLE", "is_healing": False, "narrative": ""}
+        return {
+            "posture": manager.current_posture.value,
+            "is_healing": manager.is_healing,
+            "narrative": manager.get_current_status_narrative(),
+        }
+    except Exception as exc:
+        logger.debug("[SYNAPSE_WS] resilience snapshot skipped: %s", exc)
+        return {"posture": "UNAVAILABLE", "is_healing": False, "narrative": ""}
+
+
 def _is_within_minutes(timestamp_str: Optional[str], minutes: int) -> bool:
     """Helper: Check if timestamp is within N minutes."""
     if not timestamp_str:
@@ -222,7 +242,8 @@ async def _consolidate_telemetry(tenant_id: str, storage: StorageManager) -> Dic
         "active_scanners": await _get_active_scanners(storage),
         "strategy_array": await _get_strategy_array(tenant_id, storage, circuit_breaker),
         "risk_buffer": await _get_risk_buffer(storage),
-        "anomalies": await _get_anomalies_buffer(storage)
+        "anomalies": await _get_anomalies_buffer(storage),
+        "resilience_status": _get_resilience_status_snapshot(),
     }
 
 

@@ -253,8 +253,7 @@ class SignalsMixin(BaseRepository):
 
     def update_signal_status(self, signal_id: str, status: str, metadata_update: Optional[Dict] = None) -> None:
         """Update signal status and optionally metadata"""
-        conn = self._get_conn()
-        try:
+        def _update(conn: sqlite3.Connection, signal_id: str, status: str, metadata_update: Optional[Dict]) -> None:
             cursor = conn.cursor()
             if metadata_update:
                 cursor.execute("SELECT metadata FROM sys_signals WHERE id = ?", (signal_id,))
@@ -265,11 +264,9 @@ class SignalsMixin(BaseRepository):
                 else:
                     current_metadata = dict(metadata_update)
 
-                # Normalizar updated_at
-                now = datetime.now(timezone.utc).replace(microsecond=0)
-                now_str = now.strftime('%Y-%m-%d %H:%M:%S')
+                now_str = datetime.now(timezone.utc).replace(microsecond=0).strftime('%Y-%m-%d %H:%M:%S')
                 cursor.execute("""
-                    UPDATE sys_signals 
+                    UPDATE sys_signals
                     SET status = ?, metadata = ?, updated_at = ?
                     WHERE id = ?
                 """, (status, json.dumps(current_metadata), now_str, signal_id))
@@ -278,21 +275,20 @@ class SignalsMixin(BaseRepository):
                 # This UPDATE is commented out as order_id column was removed from sys_signals
                 # if 'ticket' in metadata_update:
                 #     cursor.execute("""
-                #         UPDATE sys_signals 
+                #         UPDATE sys_signals
                 #         SET order_id = ?
                 #         WHERE id = ?
                 #     """, (str(metadata_update['ticket']), signal_id))
             else:
-                now = datetime.now(timezone.utc).replace(microsecond=0)
-                now_str = now.strftime('%Y-%m-%d %H:%M:%S')
+                now_str = datetime.now(timezone.utc).replace(microsecond=0).strftime('%Y-%m-%d %H:%M:%S')
                 cursor.execute("""
-                    UPDATE sys_signals 
+                    UPDATE sys_signals
                     SET status = ?, updated_at = ?
                     WHERE id = ?
                 """, (status, now_str, signal_id))
             conn.commit()
-        finally:
-            self._close_conn(conn)
+
+        self._execute_serialized(_update, signal_id, status, metadata_update)
 
     def has_recent_signal(self, symbol: str, signal_type: str, timeframe: Optional[str] = None, minutes: Optional[int] = None, exclude_id: Optional[str] = None) -> bool:
         """Check if there's a recent signal for the given symbol and type within the deduplication window"""

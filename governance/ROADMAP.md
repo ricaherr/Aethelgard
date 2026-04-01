@@ -33,7 +33,7 @@
 
 ---
 
-### E14: Arquitectura de Resiliencia Granular (EDGE Immunological System) — PENDIENTE
+### E14: Arquitectura de Resiliencia Granular (EDGE Immunological System) — ACTIVA
 **Sprint**: 23/24 | **Trace_ID**: ARCH-RESILIENCE-ENGINE-V1
 **Objetivo**: Implementar una infraestructura auto-sanable de resiliencia granular (Capas L0-L3) mediante un `ResilienceManager` que aplique Degradación Elegante frente a anomalías sin requerir el apagado total del sistema.
 

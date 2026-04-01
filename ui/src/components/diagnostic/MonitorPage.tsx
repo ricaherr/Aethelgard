@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { CerebroThought } from '../../types/aethelgard';
 import { AuditLiveMonitor } from './AuditLiveMonitor';
 import { SystemHealthPanel } from './SystemHealthPanel';
+import { ResilienceConsole } from './ResilienceConsole';
 import { useSynapseTelemetry } from '../../hooks/useSynapseTelemetry';
 
 interface MonitorPageProps {
@@ -353,6 +354,9 @@ export const MonitorPage = ({ status, thoughts, runAudit, runRepair }: MonitorPa
 
             {/* EDGE Self-Audit — 9 invariant checks from OperationalEdgeMonitor */}
             <SystemHealthPanel />
+
+            {/* Immune System Control — ResilienceManager live posture & overrides */}
+            <ResilienceConsole />
         </motion.div>
     );
 }

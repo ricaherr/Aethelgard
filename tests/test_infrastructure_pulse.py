@@ -85,6 +85,12 @@ def _build_orchestrator(mock_storage):
     orc._last_shadow_evolution_date = None
     orc._last_ranking_cycle = None
 
+    # EDGE-IGNITION-PHASE-4B — ResilienceManager (postura NORMAL por defecto en tests)
+    from core_brain.resilience import SystemPosture
+    _rm = MagicMock()
+    _rm.current_posture = SystemPosture.NORMAL
+    orc.resilience_manager = _rm
+
     return orc
 
 

@@ -1090,8 +1090,7 @@ class SystemMixin(BaseRepository):
         Only affects strategies whose mode is 'BACKTEST'. SHADOW and LIVE strategies
         are not touched.
         """
-        conn = self._get_conn()
-        try:
+        def _reset(conn: sqlite3.Connection) -> None:
             cursor = conn.cursor()
             cursor.execute(
                 "UPDATE sys_strategies SET last_backtest_at = NULL WHERE mode = 'BACKTEST'"
@@ -1101,10 +1100,11 @@ class SystemMixin(BaseRepository):
                 "[DB] reset_backtest_cooldown_for_pending: %d strategy(ies) reset.",
                 cursor.rowcount,
             )
+
+        try:
+            self._execute_serialized(_reset)
         except Exception as exc:
             logger.error("[DB] reset_backtest_cooldown_for_pending failed: %s", exc)
-        finally:
-            self._close_conn(conn)
 
     def mark_orphan_shadow_instances_dead(self) -> int:
         """Mark INCUBATING shadow instances as DEAD when their parent strategy is

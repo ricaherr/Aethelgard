@@ -57,6 +57,12 @@ export interface AnomalyEvent {
   timestamp: string;
 }
 
+export interface ResilienceSnapshot {
+  posture: 'NORMAL' | 'CAUTION' | 'DEGRADED' | 'STRESSED' | 'UNAVAILABLE';
+  is_healing: boolean;
+  narrative: string;
+}
+
 export interface SynapseTelemetry {
   trace_id: string;
   timestamp: string;
@@ -71,6 +77,7 @@ export interface SynapseTelemetry {
     timestamp: string;
     error?: string;
   };
+  resilience_status?: ResilienceSnapshot;
 }
 
 export interface UseSynapseTelemetryHook {
