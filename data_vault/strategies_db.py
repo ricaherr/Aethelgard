@@ -102,7 +102,8 @@ class StrategiesMixin(BaseRepository):
         
         conn = None
         try:
-            conn = sqlite3.connect(global_db_path)
+            conn = sqlite3.connect(global_db_path, check_same_thread=False, timeout=30)
+            conn.execute("PRAGMA busy_timeout=30000")
             conn.row_factory = sqlite3.Row  # Enable dict-like access
             cursor = conn.cursor()
             cursor.execute("""
@@ -143,7 +144,8 @@ class StrategiesMixin(BaseRepository):
         
         conn = None
         try:
-            conn = sqlite3.connect(global_db_path)
+            conn = sqlite3.connect(global_db_path, check_same_thread=False, timeout=30)
+            conn.execute("PRAGMA busy_timeout=30000")
             conn.row_factory = sqlite3.Row  # Enable dict-like access
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM sys_strategies ORDER BY created_at DESC")
@@ -516,7 +518,8 @@ class StrategiesMixin(BaseRepository):
         
         conn = None
         try:
-            conn = sqlite3.connect(global_db_path)
+            conn = sqlite3.connect(global_db_path, check_same_thread=False, timeout=30)
+            conn.execute("PRAGMA busy_timeout=30000")
             conn.row_factory = sqlite3.Row  # Enable dict-like access
             cursor = conn.cursor()
             cursor.execute("""

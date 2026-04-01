@@ -477,5 +477,6 @@ def _extract_adx(pulse_entry: Dict) -> float:
         return 0.0
     data = pulse_entry.get("data") or pulse_entry
     if isinstance(data, dict):
-        return float(data.get("adx", 0.0) or 0.0)
+        adx = data.get("adx") or data.get("metrics", {}).get("adx", 0.0)
+        return float(adx or 0.0)
     return 0.0

@@ -95,12 +95,13 @@ class TestCheckDataCoherence:
         assert result.status == HealthStatus.WARNING
         assert "last_market_tick_ts" in result.message
 
-    def test_integrity_guard_check_data_coherence_critical_con_tick_viejo(self):
+    def test_integrity_guard_check_data_coherence_warning_con_tick_viejo(self):
+        # Broker offline / arranque tras sesión anterior → estado operacional válido, no fallo
         storage = _make_storage({"last_market_tick_ts": _stale_tick_ts()})
         guard = IntegrityGuard(storage=storage)
         result = guard._check_data_coherence("trace-012")
-        assert result.status == HealthStatus.CRITICAL
-        assert "Congelamiento" in result.message
+        assert result.status == HealthStatus.WARNING
+        assert "desactualizado" in result.message.lower()
 
     def test_integrity_guard_check_data_coherence_critical_con_ts_invalido(self):
         storage = _make_storage({"last_market_tick_ts": "not-a-datetime"})
@@ -196,8 +197,9 @@ class TestCheckHealth:
         assert len(report.checks) == 3
 
     def test_integrity_guard_check_health_overall_critical_cuando_hay_un_check_critical(self):
+        # Timestamp inválido = corrupción real de DB → CRITICAL (tick viejo = sólo WARNING)
         storage = _make_storage({
-            "last_market_tick_ts": _stale_tick_ts(),   # CRITICAL
+            "last_market_tick_ts": "not-a-datetime",   # CRITICAL: corrupción de datos
             "dynamic_params": {"adx": 20.0},
         })
         guard = IntegrityGuard(storage=storage)
@@ -220,8 +222,9 @@ class TestCheckHealth:
         assert report.timestamp
 
     def test_integrity_guard_check_health_log_nivel_critical_cuando_overall_critical(self):
+        # Timestamp inválido = corrupción real → overall CRITICAL → log.critical() llamado
         storage = _make_storage({
-            "last_market_tick_ts": _stale_tick_ts(),
+            "last_market_tick_ts": "not-a-datetime",
             "dynamic_params": {"adx": 20.0},
         })
         guard = IntegrityGuard(storage=storage)

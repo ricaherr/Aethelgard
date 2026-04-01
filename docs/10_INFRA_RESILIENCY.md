@@ -1128,3 +1128,53 @@ sqlite3 data_vault/global/aethelgard.db "PRAGMA wal_checkpoint(TRUNCATE);"
 ### Comportamiento esperado con MT5 offline
 
 El veto del IntegrityGuard cuando no hay datos de mercado **es correcto** — el sistema no debe ejecutar trades con ADX=0. El ResilienceManager transita a `DEGRADED` como diseñado. El único fallo real es la incapacidad de persistir el estado por el DB lock, no el veto en sí.
+
+### Análisis profundo de causas raíz (2026-04-01)
+
+> **Trace_ID**: DB-LOCK-ROOT-CAUSE-2026-04-01
+
+El informe SRE inicial apuntaba a la ausencia de `timeout=30` y `journal_mode=WAL`. Ambos existían en `base_repo.py`. Las causas reales son:
+
+| # | Causa | Confianza | Archivos afectados |
+|:--|:---|:---|:---|
+| A | `auth_repo.py` y `strategies_db.py` usaban `sqlite3.connect()` sin `timeout` (default 5s). Bajo pico de escritura fallaban rápido y podían cascadear reintentos. | Alta | `data_vault/auth_repo.py`, `data_vault/strategies_db.py` |
+| B | `_db_lock` (threading.Lock) solo protege código que pasa por `_execute_serialized`. El 95% de métodos usan `_get_conn()` directamente — la serialización Python-level es ilusoria para ellos. | Alta | `data_vault/base_repo.py` (arquitectural, no corregido) |
+| C | Fábrica de conexiones: cada `_get_conn()` crea una nueva conexión. Con OEM + IntegrityGuard + BacktestOrchestrator corriendo en paralelo, puede haber 10–20 conexiones simultáneas. SQLite WAL permite múltiples lectores pero solo 1 escritor. | Alta | Sistémica |
+| D | `synchronous=FULL` (default) en modo WAL es innecesariamente costoso. `synchronous=NORMAL` mantiene la integridad ante crashes y es significativamente más rápido. | Media | `data_vault/base_repo.py` |
+| E | 50+ minutos de lock = cadena de locks cortos (shadow × 8 instancias × 30s timeout × múltiples ciclos), no UN lock sostenido. Shadow Manager confirmado como secuencial (no paralelo). | Hipótesis probable | `core_brain/shadow_manager.py` (no requiere fix) |
+
+**Descartado explícitamente**: Shadow Manager actualiza instancias en bucle `for` secuencial (líneas 542, 743). No genera pico de escritura paralela.
+
+### Correcciones aplicadas (2026-04-01) — Opciones A + D
+
+**`data_vault/auth_repo.py` — `_get_connection()`:**
+```python
+# ANTES
+conn = sqlite3.connect(self.db_path)
+# DESPUÉS
+conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30)
+conn.execute("PRAGMA busy_timeout=30000")
+```
+
+**`data_vault/strategies_db.py` — 3 ocurrencias (líneas 105, 147, 521):**
+```python
+# ANTES
+conn = sqlite3.connect(global_db_path)
+# DESPUÉS
+conn = sqlite3.connect(global_db_path, check_same_thread=False, timeout=30)
+conn.execute("PRAGMA busy_timeout=30000")
+```
+
+**`data_vault/base_repo.py` — `_get_conn()`:**
+```python
+# AÑADIDO (Opción D)
+conn.execute("PRAGMA synchronous=NORMAL")
+```
+
+### Opciones descartadas (decisión documentada)
+
+| Opción | Descripción | Motivo de descarte |
+|:---|:---|:---|
+| B | Conexión compartida por instancia (1 conn/StorageManager) | Múltiples instancias de StorageManager siguen compitiendo. Cambio arquitectural, riesgo medio. |
+| C | Writer thread dedicado con cola | Refactoring profundo de todos los métodos write. Riesgo alto sin TDD completo previo. |
+| E | Serializar updates del Shadow Manager | Shadow ya es secuencial — no hay pico paralelo que serializar. |

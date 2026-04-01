@@ -31,7 +31,8 @@ class AuthRepository:
     @contextmanager
     def _get_connection(self) -> Any:
         """Context manager para conexión a BD (row_factory habilitado)."""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30)
+        conn.execute("PRAGMA busy_timeout=30000")
         conn.row_factory = sqlite3.Row
         try:
             yield conn

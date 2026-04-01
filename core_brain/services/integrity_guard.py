@@ -162,10 +162,11 @@ class IntegrityGuard:
             if age_seconds > _TICK_STALENESS_SECONDS:
                 return CheckResult(
                     name="Check_Data_Coherence",
-                    status=HealthStatus.CRITICAL,
+                    status=HealthStatus.WARNING,
                     message=(
-                        f"Congelamiento detectado: último tick hace "
-                        f"{int(age_seconds)}s (umbral {_TICK_STALENESS_SECONDS}s)."
+                        f"Datos desactualizados: último tick hace "
+                        f"{int(age_seconds)}s (umbral {_TICK_STALENESS_SECONDS}s). "
+                        f"Broker sin conexión activa — sistema en modo análisis."
                     ),
                     trace_id=trace_id,
                     elapsed_ms=round(elapsed, 2),
