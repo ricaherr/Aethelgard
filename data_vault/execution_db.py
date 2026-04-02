@@ -78,7 +78,7 @@ class ExecutionMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             query = "SELECT * FROM usr_execution_logs"
-            params = []
+            params: List[Any] = []
             
             if user_id:
                 query += " WHERE user_id = ?"

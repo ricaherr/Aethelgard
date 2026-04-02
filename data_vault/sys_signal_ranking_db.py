@@ -1,7 +1,7 @@
 import logging
 import sqlite3
 import uuid
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, cast, Any
 from datetime import datetime, timezone
 from .base_repo import BaseRepository
 
@@ -77,7 +77,7 @@ class StrategyRankingMixin(BaseRepository):
                 (strategy_id,),
             ).fetchone()
             if row and row[0]:
-                return row[0]
+                return cast(str, row[0])
             return 'BACKTEST'
         except Exception as e:
             logger.error(f"[LAZY-INIT] Error reading sys_strategies for {strategy_id}: {e}")
@@ -133,7 +133,7 @@ class StrategyRankingMixin(BaseRepository):
         )
         
         # Retornar registro recién creado
-        return self.get_signal_ranking(strategy_id)
+        return cast(Dict, self.get_signal_ranking(strategy_id))
 
     def get_all_signal_rankings(self) -> List[Dict]:
         """Get all strategy rankings, sorted by execution mode and profit factor."""
@@ -297,7 +297,7 @@ class StrategyRankingMixin(BaseRepository):
             """, (user_id,))
             rows = cursor.fetchall()
             
-            result = {}
+            result: Dict[str, Dict[str, Any]] = {}
             for regime, metric_name, weight in rows:
                 if regime not in result:
                     result[regime] = {}

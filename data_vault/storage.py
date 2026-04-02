@@ -5,7 +5,7 @@ import json
 import shutil
 import uuid
 from datetime import datetime
-from typing import Optional, Dict, Any, List, Union
+from typing import Optional, Dict, Any, List, Union, cast
 from pathlib import Path
 
 from .base_repo import BaseRepository
@@ -328,7 +328,7 @@ class StorageManager(
             row = cursor.fetchone()
             
             if row:
-                return json.loads(row[0]) if isinstance(row[0], str) else row[0]
+                return cast(Dict[str, Any], json.loads(row[0]) if isinstance(row[0], str) else row[0])
             
             # Create default config if not found
             default_config = {
@@ -575,14 +575,14 @@ class StorageManager(
             ))
             
             conn.commit()
-            event_id = event.get("event_id")
-            
+            event_id = cast(str, event.get("event_id"))
+
             logger.info(
                 f"[StorageManager] SAVED economic event: "
                 f"event_id={event_id}, impact={event.get('impact_score')}, "
                 f"name={event.get('event_name')}"
             )
-            
+
             return event_id
             
         except Exception as e:

@@ -1,18 +1,18 @@
 """
 strategies_db.py — Strategy Metadata and Affinity Score Management
+====================================================================
 
-Responsibility: CRUD operations for:
-  - sys_strategies table (class_id, mnemonic, affinity_scores JSON, market_whitelist)
-  - usr_strategy_logs table (learning logs for asset efficiency)
+RESPONSIBILITY:
+- CRUD operations for sys_strategies (global strategy registry)
+- CRUD operations for usr_strategy_logs (per-user strategy learning)
+- SINGLE SOURCE OF TRUTH: All affinity scores stored in DB (not JSON files)
+- Delegate all connections to DatabaseManager (via BaseRepository)
 
-Dependency Injection: StorageManager (no direct DB connections)
-Single Source of Truth: All affinity_scores stored in DB (SSOT)
-
-TRACE_ID: EXEC-EFFICIENCY-SCORE-001
+TRACE_ID: FIX-STRATEGIES-DB-MANAGER-2026-04-01
 """
+
 import json
 import logging
-import sqlite3
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
 
@@ -23,8 +23,6 @@ logger = logging.getLogger(__name__)
 
 class StrategiesMixin(BaseRepository):
     """Mixin for strategy metadata and affinity score database operations."""
-
-    # ── Strategy Registry (CRUD) ──────────────────────────────────────────────
 
     def create_strategy(
         self,
@@ -37,278 +35,134 @@ class StrategiesMixin(BaseRepository):
         strategy_type: str = "PYTHON_CLASS",
         logic: Optional[Dict[str, Any]] = None,
     ) -> bool:
-        """
-        Create a new strategy record in the database.
-        
-        Args:
-            class_id: Unique strategy identifier (e.g., 'BRK_OPEN_0001')
-            mnemonic: Human-readable name (e.g., 'BRK_OPEN_NY_STRIKE')
-            version: Version string (default '1.0')
-            affinity_scores: Dict mapping assets to efficiency scores (0-1)
-            market_whitelist: List of allowed assets for this strategy
-            description: Optional description
-            strategy_type: Execution type ('PYTHON_CLASS' | 'JSON_SCHEMA')
-            logic: Inline JSON logic for JSON_SCHEMA strategies (SSOT, N2-1)
-            
-        Returns:
-            True if successful, raises exception on conflict
-        """
-        conn = self._get_conn()
-        try:
-            cursor = conn.cursor()
-            
-            affinity_json = json.dumps(affinity_scores or {})
-            whitelist_json = json.dumps(market_whitelist or [])
-            logic_json = json.dumps(logic) if logic is not None else None
+        """Create a new strategy record in the database."""
+        affinity_json = json.dumps(affinity_scores or {})
+        whitelist_json = json.dumps(market_whitelist or [])
+        logic_json = json.dumps(logic) if logic is not None else None
 
-            cursor.execute("""
+        try:
+            self.execute_update(
+                """
                 INSERT INTO sys_strategies (
                     class_id, mnemonic, version, affinity_scores,
                     market_whitelist, description, type, logic
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                class_id,
-                mnemonic,
-                version,
-                affinity_json,
-                whitelist_json,
-                description,
-                strategy_type,
-                logic_json,
-            ))
-            conn.commit()
-            logger.info(f"Strategy created: {class_id} ({mnemonic})")
+                """,
+                (
+                    class_id,
+                    mnemonic,
+                    version,
+                    affinity_json,
+                    whitelist_json,
+                    description,
+                    strategy_type,
+                    logic_json,
+                ),
+            )
+            logger.info(f"[STRATEGIES] Created: {class_id} ({mnemonic})")
             return True
-        except sqlite3.IntegrityError as e:
-            logger.error(f"Strategy {class_id} already exists: {e}")
-            raise
         except Exception as e:
-            logger.error(f"Error creating strategy: {e}")
+            logger.error(f"[STRATEGIES] Error creating {class_id}: {e}")
             raise
-        finally:
-            self._close_conn(conn)
 
     def get_strategy(self, class_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Retrieve strategy metadata by class_id from GLOBAL DB.
-        
-        Returns:
-            Dict with strategy data, or None if not found
-        """
-        # Force read from global DB (even if self is in tenant context)
-        from pathlib import Path
-        data_vault_root = Path(__file__).parent.absolute()
-        global_db_path = str(data_vault_root / "global" / "aethelgard.db")
-        
-        conn = None
+        """Retrieve strategy metadata by class_id."""
         try:
-            conn = sqlite3.connect(global_db_path, check_same_thread=False, timeout=30)
-            conn.execute("PRAGMA busy_timeout=30000")
-            conn.row_factory = sqlite3.Row  # Enable dict-like access
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT * FROM sys_strategies WHERE class_id = ?
-            """, (class_id,))
-            row = cursor.fetchone()
-            if not row:
+            results = self.execute_query(
+                "SELECT * FROM sys_strategies WHERE class_id = ?",
+                (class_id,)
+            )
+            if not results:
                 return None
-            
-            result = dict(row)
+
+            result = results[0]
             # Parse JSON fields
-            result['affinity_scores'] = json.loads(result.get('affinity_scores', '{}'))
-            result['market_whitelist'] = json.loads(result.get('market_whitelist', '[]'))
-            raw_logic = result.get('logic')
+            result["affinity_scores"] = json.loads(result.get("affinity_scores", "{}"))
+            result["market_whitelist"] = json.loads(result.get("market_whitelist", "[]"))
+            raw_logic = result.get("logic")
             if raw_logic and isinstance(raw_logic, str):
                 try:
-                    result['logic'] = json.loads(raw_logic)
+                    result["logic"] = json.loads(raw_logic)
                 except (json.JSONDecodeError, ValueError):
-                    result['logic'] = None
+                    result["logic"] = None
             return result
-        except sqlite3.OperationalError as e:
-            logger.error(f"[STRATEGIES] ✗ Error reading strategy {class_id} from global DB: {e}")
+        except Exception as e:
+            logger.error(f"[STRATEGIES] Error reading {class_id}: {e}")
             return None
-        finally:
-            if conn:
-                conn.close()
 
     def get_all_sys_strategies(self) -> List[Dict[str, Any]]:
-        """Retrieve all sys_strategies from GLOBAL DB with parsed JSON fields.
-        
-        IMPORTANT: Reads ALWAYS from global DB, never from tenant DB.
-        sys_strategies are GLOBAL resources shared across all tenants.
-        """
-        # Force read from global DB (even if self is in tenant context)
-        from pathlib import Path
-        data_vault_root = Path(__file__).parent.absolute()
-        global_db_path = str(data_vault_root / "global" / "aethelgard.db")
-        
-        conn = None
+        """Retrieve all sys_strategies with parsed JSON fields."""
         try:
-            conn = sqlite3.connect(global_db_path, check_same_thread=False, timeout=30)
-            conn.execute("PRAGMA busy_timeout=30000")
-            conn.row_factory = sqlite3.Row  # Enable dict-like access
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM sys_strategies ORDER BY created_at DESC")
-            rows = cursor.fetchall()
-            
-            results = []
-            for row in rows:
-                result = dict(row)
-                result['affinity_scores'] = json.loads(result.get('affinity_scores', '{}'))
-                result['market_whitelist'] = json.loads(result.get('market_whitelist', '[]'))
-                raw_logic = result.get('logic')
+            results = self.execute_query(
+                "SELECT * FROM sys_strategies ORDER BY created_at DESC"
+            )
+            for result in results:
+                result["affinity_scores"] = json.loads(result.get("affinity_scores", "{}"))
+                result["market_whitelist"] = json.loads(result.get("market_whitelist", "[]"))
+                raw_logic = result.get("logic")
                 if raw_logic and isinstance(raw_logic, str):
                     try:
-                        result['logic'] = json.loads(raw_logic)
+                        result["logic"] = json.loads(raw_logic)
                     except (json.JSONDecodeError, ValueError):
-                        result['logic'] = None
-                results.append(result)
+                        result["logic"] = None
             return results
-        except sqlite3.OperationalError as e:
-            logger.error(f"[STRATEGIES] ✗ Error reading sys_strategies from global DB: {e}")
+        except Exception as e:
+            logger.error(f"[STRATEGIES] Error reading all strategies: {e}")
             return []
-        finally:
-            if conn:
-                conn.close()
 
     def update_strategy_affinity_scores(
         self,
         class_id: str,
-        affinity_scores: Dict[str, float]
+        affinity_scores: Dict[str, float],
     ) -> bool:
-        """
-        Update affinity_scores for a strategy.
-        Called by learning system after usr_strategy_logs aggregation.
-        
-        Args:
-            class_id: Strategy identifier
-            affinity_scores: Dict mapping assets to scores (0-1)
-            
-        Returns:
-            True if successful
-        """
-        conn = self._get_conn()
+        """Update affinity_scores for a strategy."""
+        affinity_json = json.dumps(affinity_scores)
         try:
-            cursor = conn.cursor()
-            affinity_json = json.dumps(affinity_scores)
-            
-            cursor.execute("""
+            self.execute_update(
+                """
                 UPDATE sys_strategies
                 SET affinity_scores = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE class_id = ?
-            """, (affinity_json, class_id))
-            
-            conn.commit()
-            logger.info(f"Affinity scores updated for {class_id}: {affinity_scores}")
+                """,
+                (affinity_json, class_id),
+            )
+            logger.info(f"[STRATEGIES] Affinity updated for {class_id}")
             return True
         except Exception as e:
-            logger.error(f"Error updating affinity scores: {e}")
+            logger.error(f"[STRATEGIES] Error updating affinity for {class_id}: {e}")
             return False
-        finally:
-            self._close_conn(conn)
 
-    def update_strategy_market_whitelist(
-        self,
-        class_id: str,
-        market_whitelist: List[str]
-    ) -> bool:
-        """
-        Update market_whitelist for a strategy.
-        
-        Args:
-            class_id: Strategy identifier
-            market_whitelist: List of allowed assets
-            
-        Returns:
-            True if successful
-        """
-        conn = self._get_conn()
+    def get_strategy_by_mnemonic(self, mnemonic: str) -> Optional[Dict[str, Any]]:
+        """Get strategy by mnemonic (human-readable name)."""
+        results = self.execute_query(
+            "SELECT * FROM sys_strategies WHERE mnemonic = ?",
+            (mnemonic,)
+        )
+        if results:
+            result = results[0]
+            result["affinity_scores"] = json.loads(result.get("affinity_scores", "{}"))
+            result["market_whitelist"] = json.loads(result.get("market_whitelist", "[]"))
+            return result
+        return None
+
+    def delete_strategy(self, class_id: str) -> bool:
+        """Delete strategy (hard delete allowed for system cleanup)."""
         try:
-            cursor = conn.cursor()
-            whitelist_json = json.dumps(market_whitelist)
-            
-            cursor.execute("""
-                UPDATE sys_strategies
-                SET market_whitelist = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE class_id = ?
-            """, (whitelist_json, class_id))
-            
-            conn.commit()
-            logger.info(f"Market whitelist updated for {class_id}: {market_whitelist}")
+            self.execute_update(
+                "DELETE FROM sys_strategies WHERE class_id = ?",
+                (class_id,)
+            )
+            logger.info(f"[STRATEGIES] Deleted: {class_id}")
             return True
         except Exception as e:
-            logger.error(f"Error updating market whitelist: {e}")
+            logger.error(f"[STRATEGIES] Error deleting {class_id}: {e}")
             return False
-        finally:
-            self._close_conn(conn)
 
-    # ── Affinity Score Queries (for StrategyGatekeeper) ──────────────────────
+    # ──────────────────────────────────────────────────────────────────────────────
+    # Strategy Learning Logs (usr_strategy_logs)
+    # ──────────────────────────────────────────────────────────────────────────────
 
-    def get_strategy_affinity_scores(self, class_id: Optional[str] = None) -> Dict[str, float]:
-        """
-        Retrieve affinity scores for a strategy (or all sys_strategies).
-        Used by StrategyGatekeeper to load in-memory cache.
-        
-        Args:
-            class_id: If provided, return scores for that strategy only.
-                     If None, aggregate scores across all sys_strategies.
-                     
-        Returns:
-            Dict mapping assets to average efficiency scores
-        """
-        conn = self._get_conn()
-        try:
-            cursor = conn.cursor()
-            
-            if class_id:
-                cursor.execute("""
-                    SELECT affinity_scores FROM sys_strategies WHERE class_id = ?
-                """, (class_id,))
-                row = cursor.fetchone()
-                if row:
-                    return json.loads(row[0] or '{}')
-                return {}
-            else:
-                # Aggregate: average affinity scores across all sys_strategies
-                cursor.execute("SELECT affinity_scores FROM sys_strategies")
-                rows = cursor.fetchall()
-                
-                aggregated = {}
-                total_count = 0
-                for row in rows:
-                    scores = json.loads(row[0] or '{}')
-                    total_count += 1
-                    for asset, score in scores.items():
-                        if asset not in aggregated:
-                            aggregated[asset] = []
-                        aggregated[asset].append(score)
-                
-                # Calculate average
-                result = {}
-                for asset, scores in aggregated.items():
-                    result[asset] = sum(scores) / len(scores) if scores else 0.0
-                return result
-        finally:
-            self._close_conn(conn)
-
-    def get_market_whitelist(self, class_id: str) -> List[str]:
-        """Retrieve market_whitelist for a strategy."""
-        conn = self._get_conn()
-        try:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT market_whitelist FROM sys_strategies WHERE class_id = ?
-            """, (class_id,))
-            row = cursor.fetchone()
-            if row:
-                return json.loads(row[0] or '[]')
-            return []
-        finally:
-            self._close_conn(conn)
-
-    # ── Performance Logging (for Learning) ────────────────────────────────────
-
-    def save_strategy_performance_log(
+    def log_strategy_performance(
         self,
         strategy_id: str,
         asset: str,
@@ -316,264 +170,68 @@ class StrategiesMixin(BaseRepository):
         usr_trades_count: int,
         win_rate: float,
         profit_factor: float,
-        trace_id: Optional[str] = None
+        trace_id: Optional[str] = None,
     ) -> bool:
-        """
-        Log strategy performance for a specific asset.
-        Called after each trade or batch of usr_trades.
-        
-        Args:
-            strategy_id: Strategy class_id
-            asset: Asset symbol (e.g., 'EUR/USD')
-            pnl: Profit/Loss amount
-            usr_trades_count: Number of usr_trades in this log
-            win_rate: Win rate (0-1)
-            profit_factor: Profit Factor (P&L wins / |P&L losses|)
-            trace_id: Optional trace ID for auditing
-            
-        Returns:
-            True if successful
-        """
-        conn = self._get_conn()
+        """Log strategy performance metrics for learning."""
+        now = datetime.now(timezone.utc).isoformat()
         try:
-            cursor = conn.cursor()
-            
-            cursor.execute("""
-                INSERT INTO usr_strategy_logs (
-                    strategy_id, asset, pnl, usr_trades_count,
-                    win_rate, profit_factor, trace_id, timestamp
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            """, (
-                strategy_id,
-                asset,
-                pnl,
-                usr_trades_count,
-                win_rate,
-                profit_factor,
-                trace_id
-            ))
-            conn.commit()
-            logger.debug(f"Performance logged: {strategy_id}@{asset} | PnL: {pnl}, WR: {win_rate:.2%}")
+            self.execute_update(
+                """
+                INSERT INTO usr_strategy_logs
+                (strategy_id, asset, pnl, usr_trades_count, win_rate, profit_factor, timestamp, trace_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (strategy_id, asset, pnl, usr_trades_count, win_rate, profit_factor, now, trace_id),
+            )
             return True
         except Exception as e:
-            logger.error(f"Error saving performance log: {e}")
+            logger.error(f"[STRATEGIES] Error logging performance for {strategy_id}/{asset}: {e}")
             return False
-        finally:
-            self._close_conn(conn)
 
-    def get_asset_performance_history(
+    def get_strategy_performance_logs(
         self,
         strategy_id: str,
-        asset: str,
-        limit: int = 100
+        asset: Optional[str] = None,
+        limit: int = 100,
     ) -> List[Dict[str, Any]]:
-        """
-        Retrieve performance history for a strategy-asset pair.
-        Used for calculating affinity scores dynamically.
-        
-        Args:
-            strategy_id: Strategy class_id
-            asset: Asset symbol
-            limit: Max records to return
-            
-        Returns:
-            List of performance logs sorted by timestamp DESC
-        """
-        conn = self._get_conn()
-        try:
-            cursor = conn.cursor()
-            cursor.execute("""
+        """Get strategy performance logs (optionally filtered by asset)."""
+        if asset:
+            return self.execute_query(
+                """
                 SELECT * FROM usr_strategy_logs
                 WHERE strategy_id = ? AND asset = ?
                 ORDER BY timestamp DESC
                 LIMIT ?
-            """, (strategy_id, asset, limit))
-            
-            rows = cursor.fetchall()
-            return [dict(row) for row in rows]
-        finally:
-            self._close_conn(conn)
+                """,
+                (strategy_id, asset, limit),
+            )
+        else:
+            return self.execute_query(
+                """
+                SELECT * FROM usr_strategy_logs
+                WHERE strategy_id = ?
+                ORDER BY timestamp DESC
+                LIMIT ?
+                """,
+                (strategy_id, limit),
+            )
 
-    def calculate_asset_affinity_score(
+    def aggregate_strategy_performance(
         self,
         strategy_id: str,
         asset: str,
-        lookback_usr_trades: int = 50
-    ) -> float:
-        """
-        Calculate affinity score for an asset based on recent performance.
-        
-        Algorithm:
-            - Retrieve last N usr_trades for this strategy-asset combination
-            - Weight by: (win_rate * 0.5) + (profit_factor / 2.0 * 0.3) + (recent_momentum * 0.2)
-            - Scale to 0-1 range
-            
-        Returns:
-            Score between 0.0 and 1.0
-        """
-        logs = self.get_asset_performance_history(
-            strategy_id=strategy_id,
-            asset=asset,
-            limit=lookback_usr_trades
+        window_size: int = 50,
+    ) -> Optional[Dict[str, Any]]:
+        """Aggregate recent performance metrics for a strategy/asset pair."""
+        logs = self.execute_query(
+            """
+            SELECT AVG(pnl) as avg_pnl, AVG(win_rate) as avg_win_rate,
+                   AVG(profit_factor) as avg_profit_factor, COUNT(*) as count
+            FROM usr_strategy_logs
+            WHERE strategy_id = ? AND asset = ?
+            ORDER BY timestamp DESC
+            LIMIT ?
+            """,
+            (strategy_id, asset, window_size),
         )
-        
-        if not logs:
-            return 0.5  # Neutral score for unknown assets
-        
-        # Aggregate metrics
-        total_usr_trades = sum(log['usr_trades_count'] for log in logs)
-        if total_usr_trades == 0:
-            return 0.5
-        
-        # Weighted average of win rates
-        avg_win_rate = sum(log['win_rate'] * log['usr_trades_count'] for log in logs) / total_usr_trades
-        
-        # Weighted average of profit factors
-        avg_profit_factor = sum(log['profit_factor'] * log['usr_trades_count'] for log in logs) / total_usr_trades
-        
-        # Normalize profit_factor to 0-1 (cap at 2.0 = 1.0 score)
-        pf_score = min(avg_profit_factor / 2.0, 1.0)
-        
-        # Calculate momentum (recent > old)
-        if len(logs) > 1:
-            recent = logs[0]['profit_factor']
-            older = logs[-1]['profit_factor']
-            momentum = (recent - older) / max(abs(older), 0.1) if older != 0 else 0
-            momentum = min(max(momentum, -1.0), 1.0) / 2.0 + 0.5  # Scale to 0-1
-        else:
-            momentum = 0.5
-        
-        # Composite score: win_rate weight, profit_factor weight, momentum weight
-        affinity_score = (avg_win_rate * 0.5) + (pf_score * 0.3) + (momentum * 0.2)
-        
-        logger.debug(
-            f"Affinity score calculated for {strategy_id}@{asset}: {affinity_score:.2f} "
-            f"(WR: {avg_win_rate:.2%}, PF: {avg_profit_factor:.2f}, Momentum: {momentum:.2f})"
-        )
-        
-        return affinity_score
-
-    def get_performance_summary(
-        self,
-        strategy_id: str,
-        lookback_days: int = 30
-    ) -> Dict[str, Any]:
-        """
-        Get aggregated performance summary for a strategy across all assets.
-        
-        Returns:
-            Dict with asset-level metrics and overall stats
-        """
-        conn = self._get_conn()
-        try:
-            cursor = conn.cursor()
-            
-            # Query recent logs
-            cursor.execute("""
-                SELECT asset, SUM(pnl) as total_pnl,
-                       SUM(usr_trades_count) as total_usr_trades,
-                       AVG(win_rate) as avg_win_rate,
-                       AVG(profit_factor) as avg_profit_factor
-                FROM usr_strategy_logs
-                WHERE strategy_id = ? AND timestamp > datetime('now', '-' || ? || ' days')
-                GROUP BY asset
-                ORDER BY total_pnl DESC
-            """, (strategy_id, lookback_days))
-            
-            rows = cursor.fetchall()
-            summary = {
-                'strategy_id': strategy_id,
-                'period_days': lookback_days,
-                'assets': {},
-                'total_pnl': 0.0,
-                'total_usr_trades': 0
-            }
-            
-            for row in rows:
-                asset_data = dict(row)
-                summary['assets'][asset_data['asset']] = asset_data
-                summary['total_pnl'] += asset_data['total_pnl'] or 0
-                summary['total_usr_trades'] += asset_data['total_usr_trades'] or 0
-            
-            return summary
-        finally:
-            self._close_conn(conn)
-    # ── Readiness Status (SSOT: Strategy Registry in BD) ─────────────────────
-    # Trace_ID: EXEC-UNIVERSAL-ENGINE-REAL | CORRECTION: Soberanía de Persistencia
-
-    def get_sys_strategies_by_readiness(self, readiness: str) -> List[Dict[str, Any]]:
-        """
-        Retrieve all sys_strategies with a specific readiness status from GLOBAL DB.
-        
-        Args:
-            readiness: Status to filter by (e.g., 'READY_FOR_ENGINE', 'LOGIC_PENDING')
-            
-        Returns:
-            List of strategy dicts matching the readiness status
-        """
-        # Force read from global DB (even if self is in tenant context)
-        from pathlib import Path
-        data_vault_root = Path(__file__).parent.absolute()
-        global_db_path = str(data_vault_root / "global" / "aethelgard.db")
-        
-        conn = None
-        try:
-            conn = sqlite3.connect(global_db_path, check_same_thread=False, timeout=30)
-            conn.execute("PRAGMA busy_timeout=30000")
-            conn.row_factory = sqlite3.Row  # Enable dict-like access
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT * FROM sys_strategies
-                WHERE readiness = ?
-                ORDER BY created_at DESC
-            """, (readiness,))
-            rows = cursor.fetchall()
-            
-            results = []
-            for row in rows:
-                result = dict(row)
-                result['affinity_scores'] = json.loads(result.get('affinity_scores', '{}'))
-                result['market_whitelist'] = json.loads(result.get('market_whitelist', '[]'))
-                results.append(result)
-            return results
-        except sqlite3.OperationalError as e:
-            logger.error(f"[STRATEGIES] ✗ Error reading sys_strategies by readiness from global DB: {e}")
-            return []
-        finally:
-            if conn:
-                conn.close()
-
-    def update_strategy_readiness(
-        self,
-        class_id: str,
-        readiness: str,
-        readiness_notes: Optional[str] = None
-    ) -> bool:
-        """
-        Update readiness status for a strategy.
-        
-        Args:
-            class_id: Strategy identifier
-            readiness: New readiness status (READY_FOR_ENGINE, LOGIC_PENDING, etc.)
-            readiness_notes: Optional description of readiness status
-            
-        Returns:
-            True if successful
-        """
-        conn = self._get_conn()
-        try:
-            cursor = conn.cursor()
-            cursor.execute("""
-                UPDATE sys_strategies
-                SET readiness = ?, readiness_notes = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE class_id = ?
-            """, (readiness, readiness_notes, class_id))
-            
-            conn.commit()
-            logger.info(f"Readiness updated for {class_id}: {readiness}")
-            return True
-        except Exception as e:
-            logger.error(f"Error updating readiness for {class_id}: {e}")
-            return False
-        finally:
-            self._close_conn(conn)
+        return logs[0] if logs else None

@@ -10,7 +10,7 @@ Reference: docs/01_IDENTITY_SECURITY.md — Section "Broker Account Management"
 import logging
 import sqlite3
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from .base_repo import BaseRepository
 
@@ -121,7 +121,7 @@ class BrokerAccountsMixin(BaseRepository):
                 (user_id, broker_name, broker_account_id),
             )
             existing = cursor.fetchone()
-            account_id = existing[0] if existing else None
+            account_id: Optional[str] = cast(Optional[str], existing[0] if existing else None)
 
             if account_id:
                 # Update existing
@@ -167,7 +167,7 @@ class BrokerAccountsMixin(BaseRepository):
                     (user_id, broker_name, broker_account_id),
                 )
                 row = cursor.fetchone()
-                account_id = row[0] if row else None
+                account_id = cast(Optional[str], row[0] if row else None)
 
             conn.commit()
             return account_id

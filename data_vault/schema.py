@@ -29,8 +29,13 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
     """
     Create all database tables and indexes if they don't exist.
     Safe to call on every startup (idempotent via IF NOT EXISTS).
+    Uses EXCLUSIVE lock to serialize concurrent initializations.
     """
     cursor = conn.cursor()
+    # Use BEGIN EXCLUSIVE to serialize schema initialization and seeding
+    # Prevents "database is locked" errors when multiple StorageManager instances
+    # call initialize_schema simultaneously (especially during tests)
+    cursor.execute("BEGIN EXCLUSIVE")
 
     # ── 0. Identity & Authentication (SSOT - Single Database) ──────────────────
     cursor.execute("""
@@ -930,11 +935,13 @@ def run_migrations(conn: sqlite3.Connection) -> None:
             cursor.execute(f"ALTER TABLE sys_broker_accounts ADD COLUMN {col} BOOLEAN DEFAULT 0")
 
     # Enable WAL mode for concurrency performance
+    # NOTE: DatabaseManager already set these PRAGMA in get_connection()
+    # These lines are kept for safety (idempotent) but DatabaseManager is SSOT
     cursor.execute("PRAGMA journal_mode=WAL;")
-    cursor.execute("PRAGMA busy_timeout=60000;")  # FIX-SHADOW-CONTENTION-001: 60s timeout
+    cursor.execute("PRAGMA busy_timeout=120000;")
     cursor.execute("PRAGMA synchronous=NORMAL;")
-    cursor.execute("PRAGMA wal_autocheckpoint=10000;")  # FIX-SHADOW-CONTENTION-001: Checkpoint cada 10k pages
-    cursor.execute("PRAGMA temp_store=MEMORY;")  # FIX-SHADOW-CONTENTION-001: Temp en RAM
+    cursor.execute("PRAGMA wal_autocheckpoint=50000;")
+    cursor.execute("PRAGMA temp_store=MEMORY;")
 
     # MIGRATION (FASE D): Rename trade_results to usr_trades (one-time, safe)
     # ──────────────────────────────────────────────────────────────────────
@@ -1271,22 +1278,29 @@ def provision_tenant_db(db_path: str) -> None:
     Called exclusively by TenantDBFactory on first access (auto-provisioning).
 
     Idempotent: safe to call even if the DB already exists.
+    Uses DatabaseManager for connection pooling (SSOT).
     """
+    from .database_manager import get_database_manager
+
     import os
     os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+
+    # Use DatabaseManager singleton to get pooled connection (NOT direct sqlite3.connect)
+    db_manager = get_database_manager()
+    conn = db_manager.get_connection(db_path)
+
     try:
         initialize_schema(conn)
         run_migrations(conn)
         seed_default_usr_preferences(conn)
         bootstrap_symbol_mappings(conn)
+        conn.commit()  # Explicit commit for provisioning
         logger.info("[TENANT] DB provisioned: %s", db_path)
     except Exception as exc:
+        conn.rollback()
         logger.error("[TENANT] Provisioning failed for %s: %s", db_path, exc)
         raise
-    finally:
-        conn.close()
+    # NOTE: DO NOT close conn - DatabaseManager owns lifecycle
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────

@@ -2,13 +2,13 @@ import json
 import uuid
 import logging
 import sqlite3
-from datetime import date, datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta, tzinfo
 from utils.time_utils import to_utc
 from enum import Enum
-from typing import Dict, List, Optional, Any, Union
+from typing import Dict, List, Never, Optional, Any, Union, cast, Tuple
 from .base_repo import BaseRepository
 
-logger = logging.getLogger(__name__)
+logger: logging.Logger = logging.getLogger(__name__)
 
 def calculate_deduplication_window(timeframe: Optional[str]) -> int:
     """
@@ -66,11 +66,11 @@ class SignalsMixin(BaseRepository):
         Build UTC bounds (inclusive/exclusive) for a local calendar date.
         This keeps date-based queries coherent while timestamps are stored in UTC.
         """
-        local_tz = datetime.now().astimezone().tzinfo or timezone.utc
-        start_local = datetime.combine(date_filter, datetime.min.time(), tzinfo=local_tz)
-        end_local = start_local + timedelta(days=1)
-        start_utc = start_local.astimezone(timezone.utc).replace(microsecond=0)
-        end_utc = end_local.astimezone(timezone.utc).replace(microsecond=0)
+        local_tz: tzinfo | timezone = datetime.now().astimezone().tzinfo or timezone.utc
+        start_local: datetime = datetime.combine(date_filter, datetime.min.time(), tzinfo=local_tz)
+        end_local: datetime = start_local + timedelta(days=1)
+        start_utc: datetime = start_local.astimezone(timezone.utc).replace(microsecond=0)
+        end_utc: datetime = end_local.astimezone(timezone.utc).replace(microsecond=0)
         return (
             start_utc.strftime('%Y-%m-%d %H:%M:%S'),
             end_utc.strftime('%Y-%m-%d %H:%M:%S')
@@ -78,13 +78,13 @@ class SignalsMixin(BaseRepository):
 
     def _get_signal_type_value(self, signal: Any) -> str:
         """Extract signal type value, handling both string and Enum types"""
-        signal_type = getattr(signal, 'signal_type', None)
+        signal_type: Any | None = getattr(signal, 'signal_type', None)
         if signal_type is None:
             return 'unknown'
         if isinstance(signal_type, str):
             return signal_type
         if hasattr(signal_type, 'value'):
-            return signal_type.value
+            return cast(str, signal_type.value)
         return str(signal_type)
 
     def save_signal(self, signal: dict, origin_mode: str = 'LIVE') -> str:
@@ -101,7 +101,7 @@ class SignalsMixin(BaseRepository):
             signal_id: Unique identifier for the saved signal.
         """
         signal_id = str(uuid.uuid4())
-        metadata = getattr(signal, 'metadata', {})
+        metadata: Any | Dict[Any, Any] = getattr(signal, 'metadata', {})
         serialized_metadata = {}
         for key, value in metadata.items():
             if isinstance(value, (str, int, float, bool, type(None))):
@@ -110,33 +110,37 @@ class SignalsMixin(BaseRepository):
                 serialized_metadata[key] = value.value
             else:
                 serialized_metadata[key] = str(value)
-        
-        connector_type = getattr(signal, 'connector_type', 'unknown')
+
+        connector_type_raw: Any | str = getattr(signal, 'connector_type', 'unknown')
         if hasattr(signal, 'connector_type'):
             connector_type_value = getattr(signal, 'connector_type')
             connector_type = connector_type_value if isinstance(connector_type_value, str) else connector_type_value.value
+        else:
+            connector_type = connector_type_raw
         
         def _save(conn: sqlite3.Connection, signal_id: str) -> None:
-            cursor = conn.cursor()
-            now_utc = datetime.now(timezone.utc).replace(microsecond=0).strftime('%Y-%m-%d %H:%M:%S')
+            cursor: sqlite3.Cursor = conn.cursor()
+            now_utc: str = datetime.now(timezone.utc).replace(microsecond=0).strftime('%Y-%m-%d %H:%M:%S')
 
-            timestamp = getattr(signal, 'timestamp', None)
+            timestamp: Any | None = getattr(signal, 'timestamp', None)
+            timestamp_value: str
             if timestamp:
                 # Normaliza a UTC ISO 8601
-                dt_utc = to_utc(timestamp)
+                dt_utc: str = to_utc(timestamp)
+                dt_utc_obj: datetime
                 if isinstance(dt_utc, str):
                     try:
                         dt_utc_obj = datetime.strptime(dt_utc, '%Y-%m-%d %H:%M:%S.%f')
                     except Exception:
                         dt_utc_obj = datetime.strptime(dt_utc, '%Y-%m-%d %H:%M:%S')
                 else:
-                    dt_utc_obj = dt_utc
+                    dt_utc_obj = datetime.now(timezone.utc)
                 timestamp_value = dt_utc_obj.replace(microsecond=0).strftime('%Y-%m-%d %H:%M:%S')
             else:
                 # When signal has no timestamp, use current UTC time instead of leaving NULL
                 timestamp_value = now_utc
 
-            base_columns = ['id', 'symbol', 'signal_type', 'confidence', 'metadata', 'connector_type', 'timeframe', 'price', 'direction', 'origin_mode', 'strategy_id', 'score', 'source']
+            base_columns: List[str] = ['id', 'symbol', 'signal_type', 'confidence', 'metadata', 'connector_type', 'timeframe', 'price', 'direction', 'origin_mode', 'strategy_id', 'score', 'source']
             base_values = [
                 signal_id,
                 getattr(signal, 'symbol', 'unknown'),
@@ -153,19 +157,19 @@ class SignalsMixin(BaseRepository):
                 metadata.get('source')        # Extract source from metadata
             ]
 
-            entry_price = getattr(signal, 'entry_price', None)
-            stop_loss = getattr(signal, 'stop_loss', None)
-            take_profit = getattr(signal, 'take_profit', None)
+            entry_price: Any | None = getattr(signal, 'entry_price', None)
+            stop_loss: Any | None = getattr(signal, 'stop_loss', None)
+            take_profit: Any | None = getattr(signal, 'take_profit', None)
             # Respect status from Signal object, default to PENDING if not set or None
             # Executor will update to 'EXECUTED' after confirmation
-            status = getattr(signal, 'status', None) or 'PENDING'
+            status: Any | str = getattr(signal, 'status', None) or 'PENDING'
 
             # Always include timestamp and created_at explicitly — never rely on SQLite DEFAULT
-            columns = ['timestamp', 'created_at', 'status'] + base_columns
+            columns: List[str] = ['timestamp', 'created_at', 'status'] + base_columns
             values = [timestamp_value, now_utc, status] + base_values
 
-            placeholders = ','.join('?' for _ in values)
-            columns_str = ','.join(columns)
+            placeholders: str = ','.join('?' for _ in values)
+            columns_str: str = ','.join(columns)
 
             cursor.execute(f"""
                 INSERT INTO sys_signals ({columns_str})
@@ -178,11 +182,11 @@ class SignalsMixin(BaseRepository):
 
     def get_sys_signals(self, limit: int = 100, status: Optional[str] = None) -> List[Dict]:
         """Get sys_signals from database"""
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             query = "SELECT * FROM sys_signals"
-            params = []
+            params: List[Any] = []
             if status:
                 query += " WHERE status = ?"
                 params.append(status)
@@ -190,10 +194,10 @@ class SignalsMixin(BaseRepository):
             params.append(limit)
 
             cursor.execute(query, params)
-            rows = cursor.fetchall()
+            rows: List[Any] = cursor.fetchall()
             usr_signals = []
             for row in rows:
-                signal = dict(row)
+                signal: Dict[Any, Any] = dict(row)
                 signal['metadata'] = json.loads(signal['metadata']) if signal['metadata'] else {}
                 usr_signals.append(signal)
             return usr_signals
@@ -202,13 +206,13 @@ class SignalsMixin(BaseRepository):
 
     def get_signal_by_id(self, signal_id: str) -> Optional[Dict]:
         """Get a signal by its ID"""
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute("SELECT * FROM sys_signals WHERE id = ?", (signal_id,))
             row = cursor.fetchone()
             if row:
-                signal = dict(row)
+                signal: Dict[Any, Any] = dict(row)
                 signal['metadata'] = json.loads(signal['metadata']) if signal['metadata'] else {}
                 return signal
             return None
@@ -222,9 +226,9 @@ class SignalsMixin(BaseRepository):
 
     def get_sys_signals_by_date(self, target_date: date, status: Optional[str] = None) -> List[Dict]:
         """Get all sys_signals from a specific date"""
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             start_utc, end_utc = self._local_date_bounds_utc(target_date)
             query = """
                 SELECT * FROM sys_signals
@@ -234,17 +238,17 @@ class SignalsMixin(BaseRepository):
                     OR json_extract(metadata, '$.date') = ?
                 )
             """
-            target_date_str = target_date.isoformat()
-            params = [start_utc, end_utc, target_date_str, target_date_str]
+            target_date_str: str = target_date.isoformat()
+            params: List[str] = [start_utc, end_utc, target_date_str, target_date_str]
             if status:
                 query += " AND UPPER(status) = ?"
                 params.append(status.upper())
             query += " ORDER BY timestamp DESC"
             cursor.execute(query, params)
-            rows = cursor.fetchall()
+            rows: List[Any] = cursor.fetchall()
             usr_signals = []
             for row in rows:
-                signal = dict(row)
+                signal: Dict[Any, Any] = dict(row)
                 signal['metadata'] = json.loads(signal['metadata']) if signal['metadata'] else {}
                 usr_signals.append(signal)
             return usr_signals
@@ -254,7 +258,9 @@ class SignalsMixin(BaseRepository):
     def update_signal_status(self, signal_id: str, status: str, metadata_update: Optional[Dict] = None) -> None:
         """Update signal status and optionally metadata"""
         def _update(conn: sqlite3.Connection, signal_id: str, status: str, metadata_update: Optional[Dict]) -> None:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
+            now_str: str = datetime.now(timezone.utc).replace(microsecond=0).strftime('%Y-%m-%d %H:%M:%S')
+
             if metadata_update:
                 cursor.execute("SELECT metadata FROM sys_signals WHERE id = ?", (signal_id,))
                 row = cursor.fetchone()
@@ -264,7 +270,6 @@ class SignalsMixin(BaseRepository):
                 else:
                     current_metadata = dict(metadata_update)
 
-                now_str = datetime.now(timezone.utc).replace(microsecond=0).strftime('%Y-%m-%d %H:%M:%S')
                 cursor.execute("""
                     UPDATE sys_signals
                     SET status = ?, metadata = ?, updated_at = ?
@@ -280,7 +285,6 @@ class SignalsMixin(BaseRepository):
                 #         WHERE id = ?
                 #     """, (str(metadata_update['ticket']), signal_id))
             else:
-                now_str = datetime.now(timezone.utc).replace(microsecond=0).strftime('%Y-%m-%d %H:%M:%S')
                 cursor.execute("""
                     UPDATE sys_signals
                     SET status = ?, updated_at = ?
@@ -295,9 +299,9 @@ class SignalsMixin(BaseRepository):
         if minutes is None:
             minutes = calculate_deduplication_window(timeframe)
         
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             
             # Deduplicate only against LIVE signals: PENDING or ACTIVE.
             # EXPIRED signals have timed out and must NOT block new ones.
@@ -318,54 +322,51 @@ class SignalsMixin(BaseRepository):
                 params.append(exclude_id)
                 
             cursor.execute(query, params)
-            count = cursor.fetchone()[0]
-            
+            count: int = cast(int, cursor.fetchone()[0])
+
             if count > 0:
                 logger.info(f"DEBUG DB: has_recent_signal({symbol}, {signal_type}, {timeframe}) -> TRUE (Count: {count})")
-                
+
             return count > 0
         finally:
             self._close_conn(conn)
 
-    def get_recent_sys_signals(self, minutes: int = 60, limit: int = 100, symbol: str = None, timeframe: str = None, status: str = None) -> List[Dict]:
+    def get_recent_sys_signals(self, minutes: int = 60, limit: int = 100, symbol: Optional[str] = None, timeframe: Optional[str] = None, status: Optional[str] = None) -> List[Dict]:
         """Get recent sys_signals within the last N minutes with optional filters"""
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             
             query = "SELECT * FROM sys_signals WHERE datetime(timestamp) >= datetime('now', '-' || ? || ' minutes')"
-            params = [minutes]
+            params: List[Any] = [minutes]
             
             if symbol:
-                symbol_list = [s.strip().upper().replace('=X', '') for s in symbol.split(',') if s.strip()]
+                symbol_list: List[str] = [s.strip().upper().replace('=X', '') for s in symbol.split(',') if s.strip()]
                 if symbol_list:
-                    placeholders = ','.join(['?'] * len(symbol_list))
-                    query += f" AND UPPER(REPLACE(symbol, '=X', '')) IN ({placeholders})"
+                    query += f" AND UPPER(REPLACE(symbol, '=X', '')) IN ({','.join(['?'] * len(symbol_list))})"
                     params.extend(symbol_list)
-            
+
             if timeframe:
-                tf_list = [tf.strip().upper() for tf in timeframe.split(',') if tf.strip()]
+                tf_list: List[str] = [tf.strip().upper() for tf in timeframe.split(',') if tf.strip()]
                 if tf_list:
-                    placeholders = ','.join(['?'] * len(tf_list))
-                    query += f" AND timeframe IN ({placeholders})"
+                    query += f" AND timeframe IN ({','.join(['?'] * len(tf_list))})"
                     params.extend(tf_list)
 
             if status:
-                status_list = [s.strip().upper() for s in status.split(',') if s.strip()]
+                status_list: List[str] = [s.strip().upper() for s in status.split(',') if s.strip()]
                 if status_list:
-                    placeholders = ','.join(['?'] * len(status_list))
-                    query += f" AND UPPER(status) IN ({placeholders})"
+                    query += f" AND UPPER(status) IN ({','.join(['?'] * len(status_list))})"
                     params.extend(status_list)
                 
             query += " ORDER BY timestamp DESC LIMIT ?"
             params.append(limit)
             
             cursor.execute(query, params)
-            rows = cursor.fetchall()
+            rows: List[Any] = cursor.fetchall()
             usr_signals = []
             for row in rows:
-                signal = dict(row)
-                metadata_raw = signal.get('metadata')
+                signal: Dict[Any, Any] = dict(row)
+                metadata_raw: Any | None = signal.get('metadata')
                 if metadata_raw:
                     try:
                         signal['metadata'] = json.loads(metadata_raw) if isinstance(metadata_raw, str) else metadata_raw
@@ -380,9 +381,9 @@ class SignalsMixin(BaseRepository):
 
     def get_open_operations(self) -> List[Dict]:
         """Get sys_signals that are executed but not closed (open operations)"""
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute("""
                 SELECT s.* FROM sys_signals s
                 LEFT JOIN usr_trades t ON s.id = t.signal_id
@@ -390,10 +391,10 @@ class SignalsMixin(BaseRepository):
                 AND t.signal_id IS NULL
                 ORDER BY s.timestamp DESC
             """)
-            rows = cursor.fetchall()
+            rows: List[Any] = cursor.fetchall()
             operations = []
             for row in rows:
-                operation = dict(row)
+                operation: Dict[Any, Any] = dict(row)
                 if operation.get('metadata'):
                     operation['metadata'] = json.loads(operation['metadata'])
                 operations.append(operation)
@@ -403,12 +404,12 @@ class SignalsMixin(BaseRepository):
 
     def count_executed_usr_signals(self, date_filter: Optional[date] = None) -> int:
         """Count executed sys_signals, optionally filtered by date"""
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             if date_filter:
                 start_utc, end_utc = self._local_date_bounds_utc(date_filter)
-                target_date_str = date_filter.isoformat()
+                target_date_str: str = date_filter.isoformat()
                 cursor.execute("""
                     SELECT COUNT(*) FROM sys_signals 
                     WHERE LOWER(status) = 'executed'
@@ -420,10 +421,10 @@ class SignalsMixin(BaseRepository):
                 """, (start_utc, end_utc, target_date_str, target_date_str))
             else:
                 cursor.execute("""
-                    SELECT COUNT(*) FROM sys_signals 
+                    SELECT COUNT(*) FROM sys_signals
                     WHERE LOWER(status) = 'executed'
                 """)
-            return cursor.fetchone()[0]
+            return cast(int, cursor.fetchone()[0])
         finally:
             self._close_conn(conn)
 
@@ -442,10 +443,10 @@ class SignalsMixin(BaseRepository):
         Log signal pipeline event for audit trail.
         Stages: CREATED, STRATEGY_ANALYSIS, RISK_VALIDATION, EXECUTED, REJECTED.
         """
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
-            metadata_json = json.dumps(metadata) if metadata else None
+            cursor: sqlite3.Cursor = conn.cursor()
+            metadata_json: str | None = json.dumps(metadata) if metadata else None
             cursor.execute("""
                 INSERT INTO usr_signal_pipeline
                 (signal_id, stage, decision, reason, metadata)
@@ -462,9 +463,9 @@ class SignalsMixin(BaseRepository):
 
     def get_signal_pipeline_history(self, limit: int = 100) -> List[Dict]:
         """Get recent signal pipeline events."""
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute("""
                 SELECT * FROM usr_signal_pipeline
                 ORDER BY timestamp DESC
@@ -472,7 +473,7 @@ class SignalsMixin(BaseRepository):
             """, (limit,))
             events = []
             for row in cursor.fetchall():
-                event = dict(row)
+                event: Dict[Any, Any] = dict(row)
                 if event.get("metadata"):
                     try:
                         event["metadata"] = json.loads(event["metadata"])
@@ -485,9 +486,9 @@ class SignalsMixin(BaseRepository):
 
     def get_signal_pipeline_trace(self, signal_id: str) -> List[Dict]:
         """Get complete pipeline trace for a specific signal, chronological order."""
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute("""
                 SELECT * FROM usr_signal_pipeline
                 WHERE signal_id = ?
@@ -495,7 +496,7 @@ class SignalsMixin(BaseRepository):
             """, (signal_id,))
             events = []
             for row in cursor.fetchall():
-                event = dict(row)
+                event: Dict[Any, Any] = dict(row)
                 if event.get("metadata"):
                     try:
                         event["metadata"] = json.loads(event["metadata"])

@@ -2,7 +2,7 @@ import json
 import uuid
 import logging
 import sqlite3
-from typing import Dict, List, Optional, Union, overload
+from typing import Dict, List, Optional, Union, overload, Any, cast
 from datetime import datetime, timezone
 from .base_repo import BaseRepository
 from utils.encryption import get_encryptor
@@ -139,7 +139,7 @@ class AccountsMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def save_broker_account(self, *args, **kwargs) -> str:
+    def save_broker_account(self, *args: Any, **kwargs: Any) -> str:
         """Save broker account - accepts dict, named params, or positional args"""
         if args:
             if len(args) >= 3:
@@ -187,8 +187,8 @@ class AccountsMixin(BaseRepository):
         
         if account_data.get('password'):
             self.update_credential(account_data['id'], {'password': account_data['password']})
-        
-        return account_data['id']
+
+        return cast(str, account_data['id'])
 
     def get_sys_broker_accounts(self, enabled_only: bool = False, broker_id: Optional[str] = None, account_type: Optional[str] = None) -> List[Dict]:
         """Get all broker accounts, optionally filtered by enabled status, broker_id, and account_type"""
@@ -296,7 +296,7 @@ class AccountsMixin(BaseRepository):
                 return {}
             
             try:
-                return json.loads(row[0])
+                return cast(Dict[str, bool], json.loads(row[0]))
             except (json.JSONDecodeError, TypeError):
                 logger.warning(f"Invalid JSON in modules_enabled for account {account_id}")
                 return {}
@@ -382,8 +382,8 @@ class AccountsMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             cursor.execute("BEGIN TRANSACTION")
-            update_fields = []
-            update_values = []
+            update_fields: List[str] = []
+            update_values: List[Any] = []
             
             if account_name is not None:
                 update_fields.append("account_name = ?")
@@ -458,7 +458,7 @@ class AccountsMixin(BaseRepository):
             row = cursor.fetchone()
             if row:
                 decrypted = get_encryptor().decrypt(row['encrypted_data'])
-                sys_credentials = json.loads(decrypted)
+                sys_credentials = cast(Dict[str, Any], json.loads(decrypted))
                 return sys_credentials.get(credential_type) if credential_type else sys_credentials
             return None
         finally:

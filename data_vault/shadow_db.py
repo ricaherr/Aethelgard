@@ -50,10 +50,10 @@ class ShadowStorageManager:
     def _execute_with_retry(
         self,
         func: Callable[..., Any],
-        *args,
+        *args: Any,
         retries: int = 10,
         backoff: float = 0.5,
-        **kwargs
+        **kwargs: Any
     ) -> Any:
         """
         Ejecuta una función con retry exponential si DB está locked.
@@ -107,8 +107,8 @@ class ShadowStorageManager:
         strategy_id: str,
         account_id: str,
         account_type: str,
-        parameter_overrides: Dict = None,
-        regime_filters: List[str] = None,
+        parameter_overrides: Optional[Dict[Any, Any]] = None,
+        regime_filters: Optional[List[str]] = None,
     ) -> ShadowInstance:
         """
         Create a new SHADOW instance in the pool.

@@ -59,7 +59,8 @@ class HealthManager:
             
         try:
             import sqlite3
-            conn: Connection = sqlite3.connect(self.db_path)
+            # FIX-TIMEOUT-ESCALATION-001: 120s timeout sufficient with connection pool
+            conn: Connection = sqlite3.connect(self.db_path, check_same_thread=False, timeout=120)
             cursor: Cursor = conn.cursor()
             # Simple check of critical tables
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")

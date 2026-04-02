@@ -65,7 +65,8 @@ class StrategyRegistry:
     def _load_registry(self) -> None:
         """Carga usr_strategies desde DB."""
         try:
-            conn = sqlite3.connect(self.db_path)
+            # FIX-TIMEOUT-ESCALATION-001: 120s timeout sufficient with connection pool
+            conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=120)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             

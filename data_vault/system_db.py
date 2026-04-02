@@ -1,7 +1,7 @@
 import json
 import logging
 import sqlite3
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, cast
 from datetime import datetime, timezone
 from utils.time_utils import to_utc
 from .base_repo import BaseRepository
@@ -11,9 +11,9 @@ logger = logging.getLogger(__name__)
 class SystemMixin(BaseRepository):
     """Mixin for System State, Stats, Data Providers and Learning operations."""
 
-    def update_sys_config(self, new_state: dict) -> None:
+    def update_sys_config(self, new_state: dict[str, Any]) -> None:
         """Update system state in database"""
-        def _update(conn: sqlite3.Connection, new_state: dict) -> None:
+        def _update(conn: sqlite3.Connection, new_state: dict[str, Any]) -> None:
             cursor = conn.cursor()
             for key, value in new_state.items():
                 try:
@@ -48,6 +48,8 @@ class SystemMixin(BaseRepository):
                     state[row['key']] = row['value']
             return state
         finally:
+            # FIX-PERSISTENT-CONN-POOL: NEVER close pooled connections
+            # _close_conn() is now a no-op for shared connections
             self._close_conn(conn)
 
     def get_active_timeframes(self) -> List[str]:
@@ -56,14 +58,15 @@ class SystemMixin(BaseRepository):
         tfs = state.get('active_timeframes', [])
         if isinstance(tfs, str):
             try:
-                return json.loads(tfs)
+                result = json.loads(tfs)
+                return result if isinstance(result, list) else []
             except json.JSONDecodeError:
                 return [t for t in tfs.split(',') if t.strip()]
         if isinstance(tfs, list):
             return tfs
         return ['M1', 'M5', 'M15'] # Default fallback
 
-    def save_tuning_adjustment(self, adjustment: Dict) -> None:
+    def save_tuning_adjustment(self, adjustment: Dict[str, Any]) -> None:
         """Save tuning adjustment to database"""
         conn = self._get_conn()
         try:
@@ -76,7 +79,7 @@ class SystemMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_tuning_history(self, limit: int = 50) -> List[Dict]:
+    def get_tuning_history(self, limit: int = 50) -> List[Dict[str, Any]]:
         """Get tuning adjustment history"""
         conn = self._get_conn()
         try:
@@ -115,7 +118,7 @@ class SystemMixin(BaseRepository):
         config = state.get('modules_config', {})
         if isinstance(config, str):
             try:
-                return json.loads(config)
+                return cast(Dict[str, Any], json.loads(config))
             except json.JSONDecodeError:
                 logger.error("Failed to decode modules_config from DB")
                 return {}
@@ -125,14 +128,14 @@ class SystemMixin(BaseRepository):
         """Save modules configuration to system state (SSOT)."""
         self.update_sys_config({'modules_config': config})
 
-    def get_edge_learning_history(self, limit: int = 20) -> List[Dict]:
+    def get_edge_learning_history(self, limit: int = 20) -> List[Dict[str, Any]]:
         """Get EDGE learning history"""
         query = "SELECT * FROM usr_edge_learning ORDER BY timestamp DESC LIMIT ?"
         return self.execute_query(query, (limit,))
 
     def save_data_provider(self, name: str, enabled: bool = True, priority: int = 50,
                           requires_auth: bool = False, api_key: Optional[str] = None,
-                          api_secret: Optional[str] = None, additional_config: Optional[Dict] = None,
+                          api_secret: Optional[str] = None, additional_config: Optional[Dict[str, Any]] = None,
                           is_system: bool = False, provider_type: str = "generic",
                           connector_module: Optional[str] = None,
                           connector_class: Optional[str] = None) -> None:
@@ -179,7 +182,7 @@ class SystemMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_sys_data_providers(self) -> List[Dict]:
+    def get_sys_data_providers(self) -> List[Dict[str, Any]]:
         """Get all data providers"""
         conn = self._get_conn()
         try:
@@ -324,7 +327,7 @@ class SystemMixin(BaseRepository):
             "monitor": True,
             "notificator": True
         }
-        return sys_config.get("modules_enabled", default_modules)
+        return cast(Dict[str, bool], sys_config.get("modules_enabled", default_modules))
     
     def set_global_module_enabled(self, module_name: str, enabled: bool) -> None:
         """
@@ -403,8 +406,9 @@ class SystemMixin(BaseRepository):
             cursor = conn.cursor()
             cursor.execute("SELECT provider, enabled, config FROM usr_notification_settings")
             results = cursor.fetchall()
-            conn.close()
-            
+            # FIX-PERSISTENT-CONN-POOL: NEVER close pooled connections directly
+            self._close_conn(conn)
+
             settings = []
             for row in results:
                 settings.append({
@@ -458,11 +462,11 @@ class SystemMixin(BaseRepository):
         try:
             cursor = conn.cursor()
             query = "SELECT * FROM usr_notifications WHERE user_id = ?"
-            params = [user_id]
-            
+            params: List[Any] = [user_id]
+
             if unread_only:
                 query += " AND read = 0"
-            
+
             query += " ORDER BY timestamp DESC LIMIT ?"
             params.append(limit)
             
@@ -531,30 +535,30 @@ class SystemMixin(BaseRepository):
         Si no existe, retorna un diccionario vacío para que el manager use defaults.
         """
         state = self.get_sys_config()
-        return state.get("risk_settings", {})
+        return cast(Dict[str, Any], state.get("risk_settings", {}))
 
-    def update_risk_settings(self, settings: Dict[str, Any]) -> bool:
+    def update_risk_settings(self, settings: Dict[str, Any]) -> None:
         """
         Actualiza la configuración de riesgo en el estado del sistema.
         """
         state = self.get_sys_config()
         state["risk_settings"] = settings
-        return self.update_sys_config(state)
+        self.update_sys_config(state)
 
     def get_dynamic_params(self) -> Dict[str, Any]:
         """
         Obtiene los parámetros dinámicos (Auto-tune) desde el estado del sistema.
         """
         state = self.get_sys_config()
-        return state.get("dynamic_params", {})
+        return cast(Dict[str, Any], state.get("dynamic_params", {}))
 
-    def update_dynamic_params(self, params: Dict[str, Any]) -> bool:
+    def update_dynamic_params(self, params: Dict[str, Any]) -> None:
         """
         Actualiza los parámetros dinámicos en el estado del sistema.
         """
         state = self.get_sys_config()
         state["dynamic_params"] = params
-        return self.update_sys_config(state)
+        self.update_sys_config(state)
     # ========== SYMBOL MAPPINGS (SSOT) ==========
 
     def save_symbol_mapping(self, internal_symbol: str, provider_id: str, provider_symbol: str, is_default: bool = False) -> None:
@@ -593,7 +597,7 @@ class SystemMixin(BaseRepository):
                 cursor.execute("SELECT internal_symbol, provider_id, provider_symbol FROM sys_symbol_mappings")
             
             rows = cursor.fetchall()
-            mapping = {}
+            mapping: Dict[str, Dict[str, str]] = {}
             for row in rows:
                 internal = row['internal_symbol']
                 pid = row['provider_id']
@@ -609,7 +613,7 @@ class SystemMixin(BaseRepository):
 
     # ── User Preferences (Perfiles y Autonomía) ──────────────────────────────
 
-    def get_usr_preferences(self, user_id: str = "default") -> Optional[Dict]:
+    def get_usr_preferences(self, user_id: str = "default") -> Optional[Dict[str, Any]]:
         """Obtiene las preferencias del usuario desde la base de datos."""
         conn = self._get_conn()
         try:
@@ -634,7 +638,7 @@ class SystemMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def update_usr_preferences(self, user_id: str, preferences: Dict) -> bool:
+    def update_usr_preferences(self, user_id: str, preferences: Dict[str, Any]) -> bool:
         """Actualiza las preferencias del usuario en la base de datos."""
         conn = self._get_conn()
         try:
@@ -671,7 +675,7 @@ class SystemMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_default_profile(self, profile_type: str) -> Dict:
+    def get_default_profile(self, profile_type: str) -> Dict[str, Any]:
         """Retorna configuración por defecto para un tipo de perfil."""
         profiles = {
             "explorer": {
@@ -722,10 +726,8 @@ class SystemMixin(BaseRepository):
         if not account_id:
             return global_enabled
 
-        individual_enabled = self.get_individual_modules_enabled(account_id).get(module_name)
-        if individual_enabled is not None:
-            return individual_enabled
-
+        # NOTE: Individual module settings per account_id could be added here
+        # Currently, only global module settings are supported
         return global_enabled
 
     # ── Database Maintenance & Backup ────────────────────────────────────────
@@ -757,7 +759,7 @@ class SystemMixin(BaseRepository):
         backup_path = os.path.join(backup_dir, backup_filename)
 
         start_time = time.time()
-        conn = self._get_conn()
+        conn = self.get_connection()
         try:
             # FIX-SHADOW-CONTENTION-002: Checkpoint PASSIVE before backup
             # This clears WAL without blocking other writers (PASSIVE doesn't acquire WRITER lock)
@@ -785,8 +787,6 @@ class SystemMixin(BaseRepository):
                 try: os.remove(backup_path)
                 except: pass
             return None
-        finally:
-            self._close_conn(conn)
 
     def _cleanup_old_backups(self, backup_dir: str, retention_count: int) -> None:
         """Keep only the N most recent backups."""
@@ -811,7 +811,7 @@ class SystemMixin(BaseRepository):
         except Exception as e:
             logger.error("[BACKUP] Error during retention cleanup: %s", e)
 
-    def list_db_backups(self) -> List[Dict]:
+    def list_db_backups(self) -> List[Dict[str, Any]]:
         """List all available database backups."""
         import os
 
@@ -845,7 +845,7 @@ class SystemMixin(BaseRepository):
                 })
 
         # Sort newest first
-        backups.sort(key=lambda x: x["timestamp"], reverse=True)
+        backups.sort(key=lambda x: cast(float, x["timestamp"]), reverse=True)
         return backups
 
     def restore_db_backup(self, backup_filename: str) -> bool:
@@ -871,8 +871,11 @@ class SystemMixin(BaseRepository):
         logger.warning("!!! RESTORING DATABASE FROM BACKUP: %s !!!", backup_filename)
 
         try:
-            self._pool.close_all()
-            
+            # Close DatabaseManager connection before replacing DB file
+            from .database_manager import get_database_manager
+            db_manager = get_database_manager()
+            db_manager.close_connection(self.db_path)
+
             temp_db_path = self.db_path + ".tmp"
             if os.path.exists(self.db_path):
                 os.rename(self.db_path, temp_db_path)
@@ -882,8 +885,7 @@ class SystemMixin(BaseRepository):
             if os.path.exists(temp_db_path):
                 os.remove(temp_db_path)
 
-            self._pool = getattr(self, '__pool_class__', None)(self.db_path) if hasattr(self, '__pool_class__') else None
-
+            # DatabaseManager will reconnect on next access
             logger.info("[BACKUP] Database restored successfully.")
             return True
         except Exception as e:
@@ -899,7 +901,7 @@ class SystemMixin(BaseRepository):
                     logger.critical("[BACKUP] FATAL: Failed to revert database: %s", revert_exc)
             return False
 
-    def check_integrity(self) -> Dict:
+    def check_integrity(self) -> Dict[str, Any]:
         """Run SQLite PRAGMA integrity_check and quick_check."""
         conn = self._get_conn()
         try:
@@ -959,7 +961,7 @@ class SystemMixin(BaseRepository):
 
     # ── Deduplication Learn ing (PHASE 3) ────────────────────────────────────
 
-    async def get_dedup_events_since(self, cutoff_date: datetime) -> List[Dict]:
+    async def get_dedup_events_since(self, cutoff_date: datetime) -> List[Dict[str, Any]]:
         """
         Get all dedup events (signal blockages) since cutoff_date.
         Used by DedupLearner for weekly gap analysis.
@@ -996,7 +998,7 @@ class SystemMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    async def get_dedup_rule(self, symbol: str, timeframe: str, strategy: str) -> Optional[Dict]:
+    async def get_dedup_rule(self, symbol: str, timeframe: str, strategy: str) -> Optional[Dict[str, Any]]:
         """
         Get dedup rule for specific (symbol, timeframe, strategy).
         

@@ -418,10 +418,27 @@ def get_app() -> FastAPI:
         _app_instance = create_app()
     return _app_instance
 
-# CRITICAL: Initialize app for uvicorn at module level
-# This MUST be a FastAPI instance that Uvicorn can find and use
-app = get_app()
+# CRITICAL: For uvicorn compatibility, provide 'app' at module level
+# BUT: Avoid initialization during pytest imports via environment check
+import os
+import sys
+
+# Check if we're in pytest context
+_is_testing = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
+
+if not _is_testing:
+    # Production/development mode: initialize app immediately for uvicorn
+    app = get_app()
+else:
+    # Test mode: delay initialization to prevent DB contention during conftest
+    # The app will be created on first access via get_app()
+    class LazyApp:
+        """Lazy proxy for FastAPI app (for test compatibility)."""
+        def __getattr__(self, name: str) -> Any:
+            return getattr(get_app(), name)
+
+    app = LazyApp()  # type: ignore
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(get_app(), host="0.0.0.0", port=8000)
