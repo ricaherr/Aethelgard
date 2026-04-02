@@ -41,6 +41,14 @@ def temp_db():
         conn.close()
         yield db_path
 
+        # Cleanup: Close DatabaseManager connection to allow temp dir deletion
+        from data_vault.database_manager import get_database_manager
+        db_manager = get_database_manager()
+        try:
+            db_manager.close_connection(db_path)
+        except Exception:
+            pass  # Connection might already be closed
+
 
 @pytest.fixture
 def auth_repo(temp_db):

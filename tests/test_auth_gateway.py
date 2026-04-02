@@ -1,7 +1,7 @@
 import pytest
 import sqlite3
 from fastapi.testclient import TestClient
-from core_brain.server import app
+from core_brain.server import get_app
 from core_brain.api.dependencies.auth import get_auth_service
 from core_brain.services.auth_service import AuthService
 from data_vault.auth_repo import AuthRepository
@@ -10,16 +10,28 @@ import os
 
 @pytest.fixture
 def auth_repo():
-    # Usar una base de datos temporal con schema completo para testing
+    # Use a temporary test database that DatabaseManager will manage
     test_db = "data_vault/global/test_auth.db"
     os.makedirs(os.path.dirname(test_db), exist_ok=True)
-    conn = sqlite3.connect(test_db)
+
+    # Initialize schema using DatabaseManager-aware connection
+    from data_vault.database_manager import get_database_manager
+    db_manager = get_database_manager()
+    conn = db_manager.get_connection(test_db)
     initialize_schema(conn)
-    conn.close()
+    conn.commit()  # Ensure schema is persisted
+    # Don't close - DatabaseManager manages it
+
     repo = AuthRepository(db_path=test_db)
     yield repo
+
+    # Cleanup: close DatabaseManager connection and remove test file
+    db_manager.close_connection(test_db)
     if os.path.exists(test_db):
-        os.remove(test_db)
+        try:
+            os.remove(test_db)
+        except Exception:
+            pass  # File may be in use
 
 @pytest.fixture
 def auth_service(auth_repo):
@@ -27,6 +39,8 @@ def auth_service(auth_repo):
 
 @pytest.fixture
 def client(auth_service):
+    # Use get_app() directly to get the real FastAPI instance for TestClient
+    app = get_app()
     app.dependency_overrides[get_auth_service] = lambda: auth_service
     yield TestClient(app)
     app.dependency_overrides.clear()

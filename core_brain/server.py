@@ -430,12 +430,27 @@ if not _is_testing:
     # Production/development mode: initialize app immediately for uvicorn
     app = get_app()
 else:
-    # Test mode: delay initialization to prevent DB contention during conftest
-    # The app will be created on first access via get_app()
+    # Test mode: delay initialization + make it fully transparent to TestClient
     class LazyApp:
-        """Lazy proxy for FastAPI app (for test compatibility)."""
+        """
+        Lazy proxy for FastAPI app (for test compatibility).
+        Transparently delegates all operations to the real app.
+        """
         def __getattr__(self, name: str) -> Any:
+            """Delegate attribute access to real app."""
             return getattr(get_app(), name)
+
+        async def __call__(self, scope: Any, receive: Any = None, send: Any = None) -> Any:
+            """
+            Async callable ASGI3 app interface.
+            TestClient and ASGI servers both call this.
+            """
+            real_app = get_app()
+            # For ASGI3, all three args should be provided
+            if receive is not None and send is not None:
+                return await real_app(scope, receive, send)
+            # For TestClient intermediate calls, just delegate
+            return real_app
 
     app = LazyApp()  # type: ignore
 

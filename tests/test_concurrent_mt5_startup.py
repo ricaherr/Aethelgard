@@ -21,17 +21,20 @@ def test_mt5_connector_states():
         storage = StorageManager()
         connector = MT5Connector(storage=storage)
 
+        # IMPORTANT: Enable connector in config before calling start()
+        connector.config['enabled'] = True
+
         # Should start in DISCONNECTED state
         assert not connector.is_connected
         assert connector.connection_state == ConnectionState.DISCONNECTED
 
         # start() should initiate background connection
         connector.start()
-        
-        # Should be connecting in background
+
+        # Should be connecting in background (now that config is enabled)
         assert connector.connection_thread is not None
         assert connector.connection_thread.is_alive()
-        
+
         # Wait a bit for thread to start
         time.sleep(0.1)
         assert connector.connection_state in [ConnectionState.CONNECTING, ConnectionState.FAILED]

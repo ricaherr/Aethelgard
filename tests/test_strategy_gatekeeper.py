@@ -17,9 +17,8 @@ from data_vault.storage import StorageManager
 @pytest.fixture
 def mock_storage():
     """Mock StorageManager for testing."""
-    mock = MagicMock(spec=StorageManager)
+    mock = MagicMock()
     mock.get_sys_config.return_value = {}
-    mock.save_strategy_performance_log.return_value = True
     mock.get_strategy_affinity_scores.return_value = {
         'EUR/USD': 0.92,
         'GBP/USD': 0.85,

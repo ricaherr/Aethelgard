@@ -58,26 +58,29 @@ class MockSymbolInfo:
 
 
 @pytest.fixture
-def storage():
+def storage(tmp_path):
     """
-    Create isolated in-memory database for testing.
+    Create isolated database for testing using temporary files.
 
-    Each test gets a unique :memory: database (identified by UUID).
+    Each test gets a unique database in a temporary directory.
     This ensures complete test isolation without file system locks.
 
-    The unique URI (e.g., ":memory:_abc123def456") ensures that:
-    - Connection pool creates a new entry for each test
-    - No cross-contamination between parallel tests
-    - All data within single test uses same DB
+    Args:
+        tmp_path: Pytest's built-in temporary directory fixture
+
+    Returns:
+        StorageManager instance with isolated database
     """
     import uuid
-    # Create unique in-memory DB per test to avoid pool collisions
-    unique_db_path = f":memory:_{uuid.uuid4().hex[:8]}"
+    # Create unique DB file per test in temp directory
+    db_file = tmp_path / f"test_db_{uuid.uuid4().hex[:8]}.db"
+    unique_db_path = str(db_file)
+
     storage_mgr = StorageManager(db_path=unique_db_path)
 
     yield storage_mgr
 
-    # Cleanup: Close the unique in-memory connection after test
+    # Cleanup: Close the unique connection after test
     from data_vault.database_manager import get_database_manager
     db_manager = get_database_manager()
     db_manager.close_connection(unique_db_path)
@@ -88,14 +91,14 @@ def cleanup_database_manager():
     """
     Auto-cleanup fixture: Ensures ALL test database connections are properly closed.
 
-    This is CRITICAL for Windows+ to allow tmp path cleanup:
+    This is CRITICAL for Windows to allow tmp path cleanup:
     Without this, PermissionError: [WinError 32] prevents pytest from deleting tmp files.
 
     The global database connection stays alive for the full test session.
     """
     yield
 
-    # After test completes, close ALL non-global DB connections
+    # After test completes, close ALL non-global DB connections immediately
     # This allows pytest to clean up tmp_path directories on Windows
     from data_vault.database_manager import get_database_manager
     db_manager = get_database_manager()
@@ -104,22 +107,25 @@ def cleanup_database_manager():
     from pathlib import Path
     global_db_path = str(Path(__file__).parent.parent / "data_vault" / "global" / "aethelgard.db")
 
-    # Close any non-global connections
-    for db_path in list(db_manager._connection_pool.keys()):
+    # Close ALL non-global connections (including :memory: and tmp files)
+    # We iterate over a copy of keys to avoid RuntimeError during iteration
+    db_paths_to_close = list(db_manager._connection_pool.keys())
+
+    for db_path in db_paths_to_close:
         # Keep ONLY the global database alive
-        if db_path != global_db_path and ":memory:" not in db_path:
+        if db_path != global_db_path:
             try:
+                # Explicit checkpoint before closing to ensure WAL is merged
+                conn = db_manager._connection_pool.get(db_path)
+                if conn:
+                    try:
+                        conn.execute("PRAGMA wal_checkpoint(RESTART)")
+                    except Exception:
+                        pass  # Connection might be in bad state
+
                 db_manager.close_connection(db_path)
             except Exception:
                 pass  # Connection might already be closed
-
-    # Also explicitly close any :memory: connections (test DBs)
-    for db_path in list(db_manager._connection_pool.keys()):
-        if ":memory:" in db_path:
-            try:
-                db_manager.close_connection(db_path)
-            except Exception:
-                pass
 
 
 # ============================================================================

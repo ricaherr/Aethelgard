@@ -49,10 +49,12 @@ class BaseRepository:
     def _ensure_db_directory(self) -> None:
         """Ensure database directory exists (skip for :memory: databases)."""
         import os
-        # Skip for in-memory databases
-        if self.db_path == ":memory:":
+        # Skip for in-memory databases (both ":memory:" and ":memory:_UUID")
+        if ":memory:" in self.db_path:
             return
-        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+        db_dir = os.path.dirname(self.db_path)
+        if db_dir:  # Only create if dirname is not empty
+            os.makedirs(db_dir, exist_ok=True)
 
     def get_connection(self) -> sqlite3.Connection:
         """
