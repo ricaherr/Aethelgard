@@ -12,7 +12,7 @@ import json
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, cast
 from decimal import Decimal
 
 
@@ -67,17 +67,17 @@ class ShadowMetrics:
     zero_profit_days_pct: float = 0.0       # (12) Métrica 12
     last_activity_hours_ago: float = 0.0    # (13) Métrica 13
     
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> Dict[str, Any]:
         """Convert metrics to dictionary for DB storage."""
         return asdict(self)
-    
+
     @classmethod
-    def from_dict(cls, data: Dict) -> "ShadowMetrics":
+    def from_dict(cls, data: Dict[str, Any]) -> "ShadowMetrics":
         """Create instance from dictionary."""
         return cls(**{k: v for k, v in data.items() if hasattr(cls, k)})
 
 
-def _parse_parameter_overrides(raw: str) -> Dict:
+def _parse_parameter_overrides(raw: str) -> Dict[str, Any]:
     """
     Safely deserialize parameter_overrides from DB storage.
 
@@ -87,11 +87,11 @@ def _parse_parameter_overrides(raw: str) -> Dict:
     if not raw:
         return {}
     try:
-        return json.loads(raw)
+        return cast(Dict[str, Any], json.loads(raw))
     except (json.JSONDecodeError, TypeError):
         import ast
         try:
-            return ast.literal_eval(raw)
+            return cast(Dict[str, Any], ast.literal_eval(raw))
         except Exception:
             return {}
 
@@ -113,7 +113,7 @@ class ShadowInstance:
     account_id: str                      # FK to account (DEMO = MT5_DEMO_001)
     account_type: str                    # DEMO o REAL (inmutable)
     
-    parameter_overrides: Dict = field(default_factory=dict)  # {"risk_pct": 0.02}
+    parameter_overrides: Dict[str, Any] = field(default_factory=dict)  # {"risk_pct": 0.02}
     regime_filters: List[str] = field(default_factory=list)  # ["TREND_UP", "EXPANSION"]
     
     birth_timestamp: datetime = field(default_factory=datetime.now)
@@ -134,7 +134,7 @@ class ShadowInstance:
         if self.account_type not in ("DEMO", "REAL"):
             raise ValueError(f"account_type must be DEMO or REAL, got {self.account_type}")
     
-    def to_db_dict(self) -> Dict:
+    def to_db_dict(self) -> Dict[str, Any]:
         """Convert to dictionary format for DB insertion."""
         return {
             "instance_id": self.instance_id,
@@ -158,7 +158,7 @@ class ShadowInstance:
         }
     
     @classmethod
-    def from_db_dict(cls, data: Dict) -> "ShadowInstance":
+    def from_db_dict(cls, data: Dict[str, Any]) -> "ShadowInstance":
         """Create instance from DB row dict."""
         metrics = ShadowMetrics(
             profit_factor=data.get("profit_factor", 0.0),
@@ -263,7 +263,7 @@ class ShadowPerformanceHistory:
     overall_health: HealthStatus = HealthStatus.INCUBATING
     event_trace_id: str = ""
     
-    def to_db_dict(self) -> Dict:
+    def to_db_dict(self) -> Dict[str, Any]:
         return {
             "instance_id": self.instance_id,
             "evaluation_date": self.evaluation_date.date().isoformat(),
@@ -275,7 +275,7 @@ class ShadowPerformanceHistory:
         }
     
     @classmethod
-    def from_db_dict(cls, data: Dict) -> "ShadowPerformanceHistory":
+    def from_db_dict(cls, data: Dict[str, Any]) -> "ShadowPerformanceHistory":
         return cls(
             id=data.get("id"),
             instance_id=data["instance_id"],
@@ -308,7 +308,7 @@ class ShadowPromotionLog:
     
     notes: str = ""
     
-    def to_db_dict(self) -> Dict:
+    def to_db_dict(self) -> Dict[str, Any]:
         return {
             "instance_id": self.instance_id,
             "trace_id": self.trace_id,
@@ -322,7 +322,7 @@ class ShadowPromotionLog:
         }
     
     @classmethod
-    def from_db_dict(cls, data: Dict) -> "ShadowPromotionLog":
+    def from_db_dict(cls, data: Dict[str, Any]) -> "ShadowPromotionLog":
         return cls(
             promotion_id=data.get("promotion_id"),
             instance_id=data["instance_id"],

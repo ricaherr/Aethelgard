@@ -37,7 +37,7 @@ from __future__ import annotations
 import logging
 import time
 from collections import defaultdict
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from core_brain.resilience import (
     EdgeAction,
@@ -115,7 +115,7 @@ class ResilienceManager:
 
     def __init__(
         self,
-        storage,
+        storage: Any,
         reconnect_provider_fn: Optional[Callable[[], bool]] = None,
         clear_db_cache_fn: Optional[Callable[[], None]] = None,
     ) -> None:

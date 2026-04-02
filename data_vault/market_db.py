@@ -2,7 +2,7 @@ import json
 import logging
 import sqlite3
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from .base_repo import BaseRepository
 
 logger = logging.getLogger(__name__)
@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 class MarketMixin(BaseRepository):
     """Mixin for Market State and Coherence database operations."""
 
-    def log_sys_market_pulse(self, state_data: Dict) -> None:
+    def log_sys_market_pulse(self, state_data: dict[str, Any]) -> None:
         """Log market state data"""
         conn = self._get_conn()
         try:
@@ -23,7 +23,7 @@ class MarketMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_sys_market_pulse_history(self, symbol: str, limit: int = 100) -> List[Dict]:
+    def get_sys_market_pulse_history(self, symbol: str, limit: int = 100) -> list[dict[str, Any]]:
         """Get market state history for a symbol"""
         conn = self._get_conn()
         try:
@@ -81,7 +81,7 @@ class MarketMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_latest_heatmap_state(self) -> List[Dict]:
+    def get_latest_heatmap_state(self) -> list[dict[str, Any]]:
         """
         Obtiene el último estado conocido (`JSON`) de cada símbolo/timeframe
         de forma eficiente para reconstruir la matriz de calor.
@@ -124,7 +124,7 @@ class MarketMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_all_sys_market_pulses(self) -> Dict[str, Dict]:
+    def get_all_sys_market_pulses(self) -> dict[str, dict[str, Any]]:
         """
         Obtiene el último estado de mercado para cada símbolo.
         """
@@ -155,7 +155,7 @@ class MarketMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_asset_profile(self, symbol: str, trace_id: Optional[str] = None) -> Optional[Dict]:
+    def get_asset_profile(self, symbol: str, trace_id: Optional[str] = None) -> Optional[dict[str, Any]]:
         """
         Get asset profile for a symbol.
         SSOT: Unified instrument normalization.
@@ -174,7 +174,7 @@ class MarketMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_all_usr_assets_cfg(self) -> List[Dict]:
+    def get_all_usr_assets_cfg(self) -> list[dict[str, Any]]:
         """
         Get all asset configurations (enabled and disabled).
         FASE 4: Used for signal filtering to only generate signals for enabled assets.
@@ -190,8 +190,8 @@ class MarketMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def log_market_cache(self, symbol: str, data: Optional[List[Dict]] = None, 
-                         limit_records: int = 100, metadata: Optional[Dict] = None) -> None:
+    def log_market_cache(self, symbol: str, data: Optional[list[dict[str, Any]]] = None,
+                         limit_records: int = 100, metadata: Optional[dict[str, Any]] = None) -> None:
         """
         Persist market data cache (agnóstico - Rule #15 SSOT).
         
@@ -242,7 +242,7 @@ class MarketMixin(BaseRepository):
         finally:
             self._close_conn(conn)
     
-    def get_market_cache(self, symbol: str, count: int = 100) -> Optional[List[Dict]]:
+    def get_market_cache(self, symbol: str, count: int = 100) -> Optional[list[dict[str, Any]]]:
         """
         Retrieve market data cache (SSOT persistence - Rule #15).
         

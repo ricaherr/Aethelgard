@@ -14,7 +14,7 @@ Features:
 
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -141,7 +141,7 @@ class PositionSizeMonitor:
             self.consecutive_failures = 0  # Reset on success
             
             # Auto-reset circuit breaker after successful calculation
-            if self.circuit_breaker_active:
+            if self.circuit_breaker_active and self.circuit_breaker_activated_at is not None:
                 elapsed = (datetime.now() - self.circuit_breaker_activated_at).total_seconds()
                 if elapsed >= self.circuit_breaker_timeout:
                     self._reset_circuit_breaker()
@@ -231,7 +231,7 @@ class PositionSizeMonitor:
         
         return False
     
-    def get_health_metrics(self) -> Dict:
+    def get_health_metrics(self) -> Dict[str, Any]:
         """
         Get current health metrics.
         

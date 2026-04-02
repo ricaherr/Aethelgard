@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional, cast
 
 from .base_repo import BaseRepository
 
-logger = logging.getLogger(__name__)
+logger: logging.Logger = logging.getLogger(__name__)
 
 
 class BrokerAccountsMixin(BaseRepository):
@@ -38,9 +38,9 @@ class BrokerAccountsMixin(BaseRepository):
             broker_name: Broker identifier (e.g. 'mt5', 'ctrader', 'fix_prime')
             account_status: Filter by status (default: ACTIVE)
         """
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute(
                 """
                 SELECT * FROM usr_broker_accounts
@@ -69,14 +69,14 @@ class BrokerAccountsMixin(BaseRepository):
         Args:
             user_id: The authenticated trader's user_id
         """
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute(
                 "SELECT * FROM usr_broker_accounts WHERE user_id = ? ORDER BY created_at DESC",
                 (user_id,),
             )
-            rows = cursor.fetchall()
+            rows: List[Any] = cursor.fetchall()
             return [dict(row) for row in rows]
         except Exception as exc:
             logger.error(
@@ -109,8 +109,8 @@ class BrokerAccountsMixin(BaseRepository):
         to ensure idempotent upserts.
         """
         def _write(conn: sqlite3.Connection) -> Optional[str]:
-            cursor = conn.cursor()
-            now = datetime.now(timezone.utc).isoformat()
+            cursor: sqlite3.Cursor = conn.cursor()
+            now: str = datetime.now(timezone.utc).isoformat()
 
             # Check if exists (to reuse id on update)
             cursor.execute(
@@ -121,7 +121,7 @@ class BrokerAccountsMixin(BaseRepository):
                 (user_id, broker_name, broker_account_id),
             )
             existing = cursor.fetchone()
-            account_id: Optional[str] = cast(Optional[str], existing[0] if existing else None)
+            account_id: Optional[str] = cast(Optional[str], existing[0]) if existing else None
 
             if account_id:
                 # Update existing
@@ -167,13 +167,13 @@ class BrokerAccountsMixin(BaseRepository):
                     (user_id, broker_name, broker_account_id),
                 )
                 row = cursor.fetchone()
-                account_id = cast(Optional[str], row[0] if row else None)
+                account_id = cast(Optional[str], row[0]) if row else None
 
             conn.commit()
             return account_id
 
         try:
-            result = self._execute_serialized(_write)
+            result: str | None = self._execute_serialized(_write)
             logger.debug(
                 "[BrokerAccountsMixin] Saved account user=%s broker=%s account_id=%s",
                 user_id, broker_name, broker_account_id,
@@ -201,7 +201,7 @@ class BrokerAccountsMixin(BaseRepository):
             user_id: Must match account's user_id (ownership check)
             status: New status ('ACTIVE', 'SUSPENDED', 'CLOSED')
         """
-        VALID_STATUSES = {"ACTIVE", "SUSPENDED", "CLOSED"}
+        VALID_STATUSES: set[str] = {"ACTIVE", "SUSPENDED", "CLOSED"}
         if status not in VALID_STATUSES:
             logger.warning(
                 "[BrokerAccountsMixin] Invalid status '%s'. Must be one of %s",
@@ -210,7 +210,7 @@ class BrokerAccountsMixin(BaseRepository):
             return False
 
         def _update(conn: sqlite3.Connection) -> bool:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute(
                 """
                 UPDATE usr_broker_accounts
@@ -223,7 +223,7 @@ class BrokerAccountsMixin(BaseRepository):
             return cursor.rowcount > 0
 
         try:
-            updated = self._execute_serialized(_update)
+            updated: bool = self._execute_serialized(_update)
             if updated:
                 logger.info(
                     "[BrokerAccountsMixin] Account %s status → %s (user=%s)",

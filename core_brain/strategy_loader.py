@@ -13,7 +13,7 @@ MÁS INFORMACIÓN: scripts/migrate_strategy_registries.py
 import sqlite3
 import json
 import logging
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, cast
 from pathlib import Path
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -262,7 +262,7 @@ class StrategyLoaderService:
                 if hasattr(module, candidate):
                     strategy_class = getattr(module, candidate)
                     logger.info(f"[LOADER] Loaded class {candidate} from {module_path}")
-                    return strategy_class
+                    return cast(type, strategy_class)
             
             logger.error(f"[LOADER] Could not find strategy class in {module_path}")
             return None

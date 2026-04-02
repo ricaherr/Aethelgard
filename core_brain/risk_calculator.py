@@ -18,7 +18,7 @@ Architecture:
 - SSOT: Single Source of Truth for risk calculation
 """
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +32,10 @@ class RiskCalculator:
         Risk (USD) = Risk (Quote Currency) × Conversion Rate to USD
     """
     
-    def __init__(self, connector):
+    def __init__(self, connector: Any) -> None:
         """
         Initialize RiskCalculator with broker connector.
-        
+
         Args:
             connector: Broker connector with methods:
                 - get_symbol_info(symbol) -> SymbolInfo with trade_contract_size
@@ -145,10 +145,11 @@ class RiskCalculator:
                 logger.warning(f"[RiskCalc] Failed to get current price for {symbol}, cannot convert")
                 return 0.0
             
-            risk_usd = risk_quote_currency / current_rate
+            current_rate_f: float = float(current_rate)
+            risk_usd = risk_quote_currency / current_rate_f
             logger.debug(
                 f"[RiskCalc] {symbol} base=USD, risk_quote={risk_quote_currency:.2f}, "
-                f"rate={current_rate:.5f} => risk_usd={risk_usd:.2f}"
+                f"rate={current_rate_f:.5f} => risk_usd={risk_usd:.2f}"
             )
             return risk_usd
         
@@ -197,13 +198,13 @@ class RiskCalculator:
         direct_rate = self.connector.get_current_price(direct_pair)
         if direct_rate and direct_rate > 0:
             logger.debug(f"[RiskCalc] Found {direct_pair}={direct_rate:.5f} (direct)")
-            return direct_rate
-        
+            return float(direct_rate)
+
         # Try inverse pair: USD+QUOTE (e.g., USDCHF)
         inverse_pair = f"USD{quote_currency}"
         inverse_rate = self.connector.get_current_price(inverse_pair)
         if inverse_rate and inverse_rate > 0:
-            conversion_rate = 1.0 / inverse_rate
+            conversion_rate: float = 1.0 / float(inverse_rate)
             logger.debug(
                 f"[RiskCalc] Found {inverse_pair}={inverse_rate:.5f}, "
                 f"inverse={conversion_rate:.5f}"

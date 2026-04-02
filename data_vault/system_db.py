@@ -1174,7 +1174,7 @@ class SystemMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_shadow_mode_strategy_ids(self) -> set:
+    def get_shadow_mode_strategy_ids(self) -> set[str]:
         """Return set of class_ids for strategies currently in SHADOW mode."""
         conn = self._get_conn()
         try:

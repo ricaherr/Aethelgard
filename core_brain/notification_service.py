@@ -6,7 +6,7 @@ y su nivel de autonomía configurado.
 """
 
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional, cast
 from datetime import datetime
 from enum import Enum
 
@@ -37,7 +37,7 @@ class NotificationService:
     el perfil y configuración de autonomía del usuario.
     """
     
-    def __init__(self, storage_manager):
+    def __init__(self, storage_manager: Any) -> None:
         """
         Args:
             storage_manager: Instancia de StorageManager para acceder a preferencias
@@ -93,27 +93,27 @@ class NotificationService:
         
         # Riesgos SIEMPRE se notifican
         if category == NotificationCategory.RISK:
-            return prefs.get('notify_risks', True)
-        
+            return bool(prefs.get('notify_risks', True))
+
         # Señales: solo si auto-trading OFF
         if category == NotificationCategory.SIGNAL:
             if prefs.get('auto_trading_enabled', False):
                 return False  # No notificar señales si auto-trading activo
-            
+
             # Verificar umbral de score
             score = context.get('score', 0)
             threshold = prefs.get('notify_threshold_score', 0.85)
-            return score >= threshold and prefs.get('notify_usr_signals', True)
-        
+            return bool(score >= threshold and prefs.get('notify_usr_signals', True))
+
         # Ejecuciones: solo si auto-trading ON
         if category == NotificationCategory.EXECUTION:
             if not prefs.get('auto_trading_enabled', False):
                 return False  # No notificar ejecuciones si auto-trading inactivo
-            return prefs.get('notify_usr_executions', True)
-        
+            return bool(prefs.get('notify_usr_executions', True))
+
         # Cambios de régimen
         if category == NotificationCategory.REGIME:
-            return prefs.get('notify_regime_changes', True)
+            return bool(prefs.get('notify_regime_changes', True))
         
         # Por defecto, notificar
         return True
@@ -242,8 +242,8 @@ class NotificationService:
             return self._notification_risk_exposure(context, auto_adjust_enabled)
         elif risk_type == 'consecutive_losses':
             return self._notification_risk_consecutive_losses(context, auto_adjust_enabled)
-        
-        return None
+
+        return {}
     
     def _notification_risk_drawdown(
         self,
@@ -427,15 +427,15 @@ class NotificationService:
     
     def get_unread_notifications(self, user_id: str = 'default') -> List[Dict[str, Any]]:
         """Retorna notificaciones no leídas del usuario desde la DB."""
-        return self.storage.get_user_notifications(user_id, unread_only=True)
-    
+        return cast(List[Dict[str, Any]], self.storage.get_user_notifications(user_id, unread_only=True))
+
     def mark_as_read(self, notification_id: str) -> bool:
         """Marca una notificación como leída en la DB."""
-        return self.storage.mark_notification_read(notification_id)
-    
+        return bool(self.storage.mark_notification_read(notification_id))
+
     def clear_old_notifications(self, hours: int = 24) -> int:
         """Elimina notificaciones antiguas de la DB."""
-        removed = self.storage.delete_old_notifications(hours)
+        removed: int = int(self.storage.delete_old_notifications(hours))
         if removed > 0:
             logger.info(f"Cleared {removed} old notifications from DB")
         return removed

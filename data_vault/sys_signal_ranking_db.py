@@ -1,24 +1,24 @@
 import logging
 import sqlite3
 import uuid
-from typing import Dict, List, Optional, cast, Any
+from typing import Any, Dict, List, Optional, cast
 from datetime import datetime, timezone
 from .base_repo import BaseRepository
 
-logger = logging.getLogger(__name__)
+logger: logging.Logger = logging.getLogger(__name__)
 
 
 class StrategyRankingMixin(BaseRepository):
     """Mixin for Strategy Ranking and Shadow Portfolio database operations."""
 
-    def save_signal_ranking(self, strategy_id: str, ranking_data: Dict) -> str:
+    def save_signal_ranking(self, strategy_id: str, ranking_data: Dict[str, Any]) -> str:
         """
         Save or update strategy ranking data.
         Returns trace_id for auditing.
         """
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             trace_id = ranking_data.get('trace_id') or f"RANK-{uuid.uuid4().hex[:8].upper()}"
             
             cursor.execute("""
@@ -49,11 +49,11 @@ class StrategyRankingMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_signal_ranking(self, strategy_id: str) -> Optional[Dict]:
+    def get_signal_ranking(self, strategy_id: str) -> Optional[Dict[str, Any]]:
         """Get current ranking data for a strategy."""
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute("""
                 SELECT * FROM sys_signal_ranking WHERE strategy_id = ?
             """, (strategy_id,))
@@ -70,7 +70,7 @@ class StrategyRankingMixin(BaseRepository):
         Retorna 'BACKTEST' si la estrategia no existe — safe default conservador
         que evita que estrategias no registradas lleguen a producción.
         """
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
             row = conn.execute(
                 "SELECT mode FROM sys_strategies WHERE class_id = ?",
@@ -85,7 +85,7 @@ class StrategyRankingMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def ensure_signal_ranking_for_strategy(self, strategy_id: str) -> Dict:
+    def ensure_signal_ranking_for_strategy(self, strategy_id: str) -> Dict[str, Any]:
         """
         Lazy initialization: Obtener o crear entrada en sys_signal_ranking para una estrategia.
         
@@ -100,7 +100,7 @@ class StrategyRankingMixin(BaseRepository):
             strategy_id: Identificador único de la estrategia (ej: 'BRK_OPEN_0001')
             
         Returns:
-            Dict con los datos de sys_signal_ranking (existente o recién creado)
+            Dict[str, Any] con los datos de sys_signal_ranking (existente o recién creado)
             
         Usado por: StrategyEngineFactory._get_execution_mode() cuando carga estrategias
         """
@@ -111,7 +111,7 @@ class StrategyRankingMixin(BaseRepository):
             return existing
         
         # No existe → Determinar modo desde sys_strategies (SSOT)
-        initial_mode = self._get_mode_from_sys_strategies(strategy_id)
+        initial_mode: str = self._get_mode_from_sys_strategies(strategy_id)
         logger.warning(
             f"[LAZY-INIT] {strategy_id}: Creating automatic entry in sys_signal_ranking "
             f"(mode={initial_mode} from sys_strategies)"
@@ -133,13 +133,13 @@ class StrategyRankingMixin(BaseRepository):
         )
         
         # Retornar registro recién creado
-        return cast(Dict, self.get_signal_ranking(strategy_id))
+        return self.get_signal_ranking(strategy_id) or {}
 
-    def get_all_signal_rankings(self) -> List[Dict]:
+    def get_all_signal_rankings(self) -> List[Dict[str, Any]]:
         """Get all strategy rankings, sorted by execution mode and profit factor."""
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute("""
                 SELECT * FROM sys_signal_ranking 
                 ORDER BY 
@@ -151,7 +151,7 @@ class StrategyRankingMixin(BaseRepository):
                     END,
                     profit_factor DESC
             """)
-            rows = cursor.fetchall()
+            rows: List[Any] = cursor.fetchall()
             return [dict(row) for row in rows]
         finally:
             self._close_conn(conn)
@@ -162,9 +162,9 @@ class StrategyRankingMixin(BaseRepository):
         Generates trace_id if not provided.
         Returns trace_id for audit trail.
         """
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             if trace_id is None:
                 trace_id = f"RANK-{uuid.uuid4().hex[:8].upper()}"
             
@@ -185,30 +185,30 @@ class StrategyRankingMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_strategies_by_mode(self, mode: str) -> List[Dict]:
+    def get_strategies_by_mode(self, mode: str) -> List[Dict[str, Any]]:
         """Get all strategies with a specific execution mode."""
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute("""
                 SELECT * FROM sys_signal_ranking 
                 WHERE execution_mode = ?
                 ORDER BY profit_factor DESC
             """, (mode,))
-            rows = cursor.fetchall()
+            rows: List[Any] = cursor.fetchall()
             return [dict(row) for row in rows]
         finally:
             self._close_conn(conn)
 
     def log_strategy_state_change(self, strategy_id: str, old_mode: str, new_mode: str,
-                                 trace_id: str, reason: str, metrics: Dict) -> None:
+                                 trace_id: str, reason: str, metrics: Dict[str, Any]) -> None:
         """
         Log strategy state changes for audit trail.
         Stores in sys_config JSON for historical tracking.
         """
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             log_entry = {
                 'timestamp': datetime.now(timezone.utc).isoformat(),
                 'strategy_id': strategy_id,
@@ -238,11 +238,11 @@ class StrategyRankingMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_signal_ranking_history(self, strategy_id: str, limit: int = 50) -> List[Dict]:
+    def get_signal_ranking_history(self, strategy_id: str, limit: int = 50) -> List[Dict[str, Any]]:
         """Get historical state changes for a strategy from usr_edge_learning table."""
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute("""
                 SELECT timestamp, detection, action_taken, learning, details
                 FROM usr_edge_learning
@@ -250,7 +250,7 @@ class StrategyRankingMixin(BaseRepository):
                 ORDER BY timestamp DESC
                 LIMIT ?
             """, (f'%{strategy_id}%', limit))
-            rows = cursor.fetchall()
+            rows: List[Any] = cursor.fetchall()
             return [dict(row) for row in rows]
         finally:
             self._close_conn(conn)
@@ -265,17 +265,17 @@ class StrategyRankingMixin(BaseRepository):
         Returns:
             Dictionary mapping metric_name -> weight (as string for Decimal conversion)
         """
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
             # Note: sys_regime_configs currently might be global or user-specific.
             # If following the isolation protocol, we filter by user_id.
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute("""
                 SELECT metric_name, weight FROM sys_regime_configs 
                 WHERE regime = ? AND (user_id = ? OR user_id IS NULL)
                 ORDER BY metric_name
             """, (regime, user_id))
-            rows = cursor.fetchall()
+            rows: List[Any] = cursor.fetchall()
             return {row[0]: row[1] for row in rows}
         finally:
             self._close_conn(conn)
@@ -287,15 +287,15 @@ class StrategyRankingMixin(BaseRepository):
         Returns:
             Dict[regime → Dict[metric_name → weight]]
         """
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute("""
                 SELECT regime, metric_name, weight FROM sys_regime_configs
                 WHERE (user_id = ? OR user_id IS NULL)
                 ORDER BY regime, metric_name
             """, (user_id,))
-            rows = cursor.fetchall()
+            rows: List[Any] = cursor.fetchall()
             
             result: Dict[str, Dict[str, Any]] = {}
             for regime, metric_name, weight in rows:
@@ -316,9 +316,9 @@ class StrategyRankingMixin(BaseRepository):
             metric_name: Metric to update
             weight: New weight value (as string for Decimal)
         """
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute("""
                 INSERT OR REPLACE INTO sys_regime_configs 
                 (regime, metric_name, weight, updated_at)

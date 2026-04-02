@@ -87,7 +87,7 @@ class SignalsMixin(BaseRepository):
             return cast(str, signal_type.value)
         return str(signal_type)
 
-    def save_signal(self, signal: dict, origin_mode: str = 'LIVE') -> str:
+    def save_signal(self, signal: Dict[str, Any], origin_mode: str = 'LIVE') -> str:
         """Save a signal to persistent storage with full traceability.
         
         Args:
@@ -180,7 +180,7 @@ class SignalsMixin(BaseRepository):
         self._execute_serialized(_save, signal_id)
         return signal_id
 
-    def get_sys_signals(self, limit: int = 100, status: Optional[str] = None) -> List[Dict]:
+    def get_sys_signals(self, limit: int = 100, status: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get sys_signals from database"""
         conn: sqlite3.Connection = self._get_conn()
         try:
@@ -204,7 +204,7 @@ class SignalsMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_signal_by_id(self, signal_id: str) -> Optional[Dict]:
+    def get_signal_by_id(self, signal_id: str) -> Optional[Dict[str, Any]]:
         """Get a signal by its ID"""
         conn: sqlite3.Connection = self._get_conn()
         try:
@@ -219,12 +219,12 @@ class SignalsMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_sys_signals_today(self, status: Optional[str] = None) -> List[Dict]:
+    def get_sys_signals_today(self, status: Optional[str] = None) -> List[Dict[str, Any]]:
         """Obtiene las señales del día actual."""
         from datetime import date
         return self.get_sys_signals_by_date(date.today(), status=status)
 
-    def get_sys_signals_by_date(self, target_date: date, status: Optional[str] = None) -> List[Dict]:
+    def get_sys_signals_by_date(self, target_date: date, status: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get all sys_signals from a specific date"""
         conn: sqlite3.Connection = self._get_conn()
         try:
@@ -255,9 +255,9 @@ class SignalsMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def update_signal_status(self, signal_id: str, status: str, metadata_update: Optional[Dict] = None) -> None:
+    def update_signal_status(self, signal_id: str, status: str, metadata_update: Optional[Dict[str, Any]] = None) -> None:
         """Update signal status and optionally metadata"""
-        def _update(conn: sqlite3.Connection, signal_id: str, status: str, metadata_update: Optional[Dict]) -> None:
+        def _update(conn: sqlite3.Connection, signal_id: str, status: str, metadata_update: Optional[Dict[str, Any]]) -> None:
             cursor: sqlite3.Cursor = conn.cursor()
             now_str: str = datetime.now(timezone.utc).replace(microsecond=0).strftime('%Y-%m-%d %H:%M:%S')
 
@@ -331,7 +331,7 @@ class SignalsMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_recent_sys_signals(self, minutes: int = 60, limit: int = 100, symbol: Optional[str] = None, timeframe: Optional[str] = None, status: Optional[str] = None) -> List[Dict]:
+    def get_recent_sys_signals(self, minutes: int = 60, limit: int = 100, symbol: Optional[str] = None, timeframe: Optional[str] = None, status: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get recent sys_signals within the last N minutes with optional filters"""
         conn: sqlite3.Connection = self._get_conn()
         try:
@@ -379,7 +379,7 @@ class SignalsMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_open_operations(self) -> List[Dict]:
+    def get_open_operations(self) -> List[Dict[str, Any]]:
         """Get sys_signals that are executed but not closed (open operations)"""
         conn: sqlite3.Connection = self._get_conn()
         try:
@@ -437,7 +437,7 @@ class SignalsMixin(BaseRepository):
         stage: str,
         decision: Optional[str] = None,
         reason: Optional[str] = None,
-        metadata: Optional[Dict] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """
         Log signal pipeline event for audit trail.
@@ -461,7 +461,7 @@ class SignalsMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_signal_pipeline_history(self, limit: int = 100) -> List[Dict]:
+    def get_signal_pipeline_history(self, limit: int = 100) -> List[Dict[str, Any]]:
         """Get recent signal pipeline events."""
         conn: sqlite3.Connection = self._get_conn()
         try:
@@ -484,7 +484,7 @@ class SignalsMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_signal_pipeline_trace(self, signal_id: str) -> List[Dict]:
+    def get_signal_pipeline_trace(self, signal_id: str) -> List[Dict[str, Any]]:
         """Get complete pipeline trace for a specific signal, chronological order."""
         conn: sqlite3.Connection = self._get_conn()
         try:

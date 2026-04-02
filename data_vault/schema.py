@@ -32,10 +32,6 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
     Uses EXCLUSIVE lock to serialize concurrent initializations.
     """
     cursor = conn.cursor()
-    # Use BEGIN EXCLUSIVE to serialize schema initialization and seeding
-    # Prevents "database is locked" errors when multiple StorageManager instances
-    # call initialize_schema simultaneously (especially during tests)
-    cursor.execute("BEGIN EXCLUSIVE")
 
     # ── 0. Identity & Authentication (SSOT - Single Database) ──────────────────
     cursor.execute("""

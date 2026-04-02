@@ -29,7 +29,7 @@ from models.shadow import (
     PillarStatus,
 )
 
-logger = logging.getLogger(__name__)
+logger: logging.Logger = logging.getLogger(__name__)
 
 
 class ShadowStorageManager:
@@ -39,12 +39,12 @@ class ShadowStorageManager:
     Dependency Injection: storage_conn passed in, NOT created here.
     """
 
-    def __init__(self, storage_conn: sqlite3.Connection):
+    def __init__(self, storage_conn: sqlite3.Connection) -> None:
         """
         Initialize with existing storage connection.
         No self-instantiation of databases.
         """
-        self.conn = storage_conn
+        self.conn: sqlite3.Connection = storage_conn
         self.conn.row_factory = sqlite3.Row
 
     def _execute_with_retry(
@@ -73,7 +73,7 @@ class ShadowStorageManager:
         Raises:
             Last exception si todos los retries fallan
         """
-        last_exc = None
+        last_exc: Optional[Exception] = None
         for attempt in range(retries):
             try:
                 return func(*args, **kwargs)
@@ -89,7 +89,7 @@ class ShadowStorageManager:
                         time.sleep(wait_time)
                         continue
                 raise
-            except Exception as e:
+            except Exception:
                 raise  # No-retry para otros tipos de error
 
         logger.error(
@@ -107,7 +107,7 @@ class ShadowStorageManager:
         strategy_id: str,
         account_id: str,
         account_type: str,
-        parameter_overrides: Optional[Dict[Any, Any]] = None,
+        parameter_overrides: Optional[Dict[str, Any]] = None,
         regime_filters: Optional[List[str]] = None,
     ) -> ShadowInstance:
         """
@@ -140,7 +140,7 @@ class ShadowStorageManager:
             birth_timestamp=datetime.now(timezone.utc),
         )
 
-        cursor = self.conn.cursor()
+        cursor: sqlite3.Cursor = self.conn.cursor()
         db_dict = instance.to_db_dict()
 
         cursor.execute(
@@ -170,7 +170,7 @@ class ShadowStorageManager:
 
     def get_shadow_instance(self, instance_id: str) -> Optional[ShadowInstance]:
         """Retrieve a SHADOW instance by ID."""
-        cursor = self.conn.cursor()
+        cursor: sqlite3.Cursor = self.conn.cursor()
         cursor.execute("SELECT * FROM sys_shadow_instances WHERE instance_id = ?", (instance_id,))
         row = cursor.fetchone()
         if not row:
@@ -179,7 +179,7 @@ class ShadowStorageManager:
 
     def get_all_shadow_instances(self, account_id: str) -> List[ShadowInstance]:
         """Get all instances for an account."""
-        cursor = self.conn.cursor()
+        cursor: sqlite3.Cursor = self.conn.cursor()
         cursor.execute(
             "SELECT * FROM sys_shadow_instances WHERE account_id = ? ORDER BY created_at DESC",
             (account_id,),
@@ -189,7 +189,7 @@ class ShadowStorageManager:
     def update_shadow_instance(self, instance: ShadowInstance) -> None:
         """Update an existing SHADOW instance."""
         def _do_update() -> None:
-            cursor = self.conn.cursor()
+            cursor: sqlite3.Cursor = self.conn.cursor()
             db_dict = instance.to_db_dict()
             cursor.execute(
                 """
@@ -227,7 +227,7 @@ class ShadowStorageManager:
         Mark a SHADOW instance as deleted (soft delete is safer).
         Note: Hard delete is discouraged (audit trail loss).
         """
-        cursor = self.conn.cursor()
+        cursor: sqlite3.Cursor = self.conn.cursor()
         cursor.execute(
             "UPDATE sys_shadow_instances SET status = ? WHERE instance_id = ?",
             (ShadowStatus.DEAD.value, instance_id),
@@ -273,7 +273,7 @@ class ShadowStorageManager:
         )
 
         def _do_insert() -> None:
-            cursor = self.conn.cursor()
+            cursor: sqlite3.Cursor = self.conn.cursor()
             db_dict = history.to_db_dict()
             cursor.execute(
                 """
@@ -303,7 +303,7 @@ class ShadowStorageManager:
         self, instance_id: str, limit: int = 10
     ) -> List[ShadowPerformanceHistory]:
         """Get recent performance snapshots for an instance."""
-        cursor = self.conn.cursor()
+        cursor: sqlite3.Cursor = self.conn.cursor()
         cursor.execute(
             """
             SELECT * FROM sys_shadow_performance_history
@@ -356,7 +356,7 @@ class ShadowStorageManager:
         )
 
         def _do_insert() -> None:
-            cursor = self.conn.cursor()
+            cursor: sqlite3.Cursor = self.conn.cursor()
             db_dict = log.to_db_dict()
             cursor.execute(
                 """
@@ -386,7 +386,7 @@ class ShadowStorageManager:
 
     def get_promotion_log(self, instance_id: str) -> List[ShadowPromotionLog]:
         """Get all promotion log entries for an instance."""
-        cursor = self.conn.cursor()
+        cursor: sqlite3.Cursor = self.conn.cursor()
         cursor.execute(
             """
             SELECT * FROM sys_shadow_promotion_log
@@ -404,22 +404,22 @@ class ShadowStorageManager:
     @staticmethod
     def generate_health_trace_id(instance_id: str) -> str:
         """Generate TRACE_ID for health evaluation."""
-        now = datetime.now(timezone.utc)
-        timestamp = now.strftime("%Y%m%d_%H%M%S")
+        now: datetime = datetime.now(timezone.utc)
+        timestamp: str = now.strftime("%Y%m%d_%H%M%S")
         return f"TRACE_HEALTH_{timestamp}_{instance_id[:8]}"
 
     @staticmethod
     def generate_promotion_trace_id(instance_id: str) -> str:
         """Generate TRACE_ID for promotion to REAL."""
-        now = datetime.now(timezone.utc)
-        timestamp = now.strftime("%Y%m%d_%H%M%S")
+        now: datetime = datetime.now(timezone.utc)
+        timestamp: str = now.strftime("%Y%m%d_%H%M%S")
         return f"TRACE_PROMOTION_REAL_{timestamp}_{instance_id[:8]}"
 
     @staticmethod
     def generate_kill_trace_id(instance_id: str) -> str:
         """Generate TRACE_ID for killing an instance."""
-        now = datetime.now(timezone.utc)
-        timestamp = now.strftime("%Y%m%d_%H%M%S")
+        now: datetime = datetime.now(timezone.utc)
+        timestamp: str = now.strftime("%Y%m%d_%H%M%S")
         return f"TRACE_KILL_{timestamp}_{instance_id[:8]}"
 
     # ────────────────────────────────────────────────────────────────────────
@@ -436,7 +436,7 @@ class ShadowStorageManager:
         Returns:
             List of ShadowInstance ordered by creation date (oldest first).
         """
-        cursor = self.conn.cursor()
+        cursor: sqlite3.Cursor = self.conn.cursor()
         cursor.execute(
             """
             SELECT * FROM sys_shadow_instances
@@ -445,7 +445,7 @@ class ShadowStorageManager:
             """,
             (ShadowStatus.DEAD.value, ShadowStatus.PROMOTED_TO_REAL.value),
         )
-        rows = cursor.fetchall()
+        rows: List[Any] = cursor.fetchall()
         return [ShadowInstance.from_db_dict(dict(row)) for row in rows]
 
     def calculate_instance_metrics_from_sys_trades(self, instance_id: str) -> ShadowMetrics:
@@ -461,7 +461,7 @@ class ShadowStorageManager:
         """
         import statistics as _stats
 
-        cursor = self.conn.cursor()
+        cursor: sqlite3.Cursor = self.conn.cursor()
         cursor.execute(
             """
             SELECT profit, close_time FROM sys_trades
@@ -470,21 +470,21 @@ class ShadowStorageManager:
             """,
             (instance_id,),
         )
-        rows = cursor.fetchall()
+        rows: List[Any] = cursor.fetchall()
 
         if not rows:
             return ShadowMetrics()
 
-        profits = [r["profit"] for r in rows if r["profit"] is not None]
+        profits: List[Any] = [r["profit"] for r in rows if r["profit"] is not None]
         if not profits:
             return ShadowMetrics()
 
-        total = len(profits)
-        wins = [p for p in profits if p > 0]
-        losses = [abs(p) for p in profits if p < 0]
+        total: int = len(profits)
+        wins: List[Any] = [p for p in profits if p > 0]
+        losses: List[Any] = [abs(p) for p in profits if p < 0]
 
-        win_rate = len(wins) / total if total > 0 else 0.0
-        profit_factor = (
+        win_rate: float = len(wins) / total if total > 0 else 0.0
+        profit_factor: float = (
             sum(wins) / sum(losses) if losses else (1.5 if wins else 0.0)
         )
 
@@ -536,7 +536,7 @@ class ShadowStorageManager:
             score_shadow: Normalized shadow score in [0.0, 1.0].
         """
         def _do_update() -> None:
-            cursor = self.conn.cursor()
+            cursor: sqlite3.Cursor = self.conn.cursor()
             cursor.execute(
                 """
                 UPDATE sys_strategies
@@ -554,7 +554,7 @@ class ShadowStorageManager:
         # FIX-SHADOW-CONTENTION-001: Retry si DB está locked
         self._execute_with_retry(_do_update)
 
-    def update_parameter_overrides(self, instance_id: str, overrides: Dict) -> None:
+    def update_parameter_overrides(self, instance_id: str, overrides: Dict[str, Any]) -> None:
         """
         Persist EdgeTuner-adjusted parameter overrides for a SHADOW instance.
 
@@ -566,7 +566,7 @@ class ShadowStorageManager:
             overrides: Dict of parameter overrides (e.g. {"confidence_threshold": 0.77}).
         """
         def _do_update() -> None:
-            cursor = self.conn.cursor()
+            cursor: sqlite3.Cursor = self.conn.cursor()
             cursor.execute(
                 """
                 UPDATE sys_shadow_instances

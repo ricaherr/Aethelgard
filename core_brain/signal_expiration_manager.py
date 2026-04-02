@@ -16,7 +16,7 @@ Uso:
     # stats = {'total_expired': 5, 'by_timeframe': {'M5': 3, 'H1': 2}}
 """
 from datetime import datetime, timedelta
-from typing import Dict
+from typing import Any, Dict
 import logging
 
 logger = logging.getLogger(__name__)
@@ -51,16 +51,16 @@ EXPIRATION_WINDOWS = {
 class SignalExpirationManager:
     """Manages automatic signal expiration based on timeframe"""
     
-    def __init__(self, storage):
+    def __init__(self, storage: Any) -> None:
         """
         Initialize SignalExpirationManager.
-        
+
         Args:
             storage: StorageManager instance (dependency injection)
         """
         self.storage = storage
     
-    def expire_old_sys_signals(self) -> Dict[str, int]:
+    def expire_old_sys_signals(self) -> Dict[str, Any]:
         """
         Mark PENDING sys_signals as EXPIRED if they exceeded timeframe window.
         
@@ -81,7 +81,7 @@ class SignalExpirationManager:
                 }
             }
         """
-        stats = {'total_expired': 0, 'total_checked': 0, 'by_timeframe': {}}
+        stats: Dict[str, Any] = {'total_expired': 0, 'total_checked': 0, 'by_timeframe': {}}
         
         # Get all PENDING sys_signals (only these can be expired)
         pending_sys_signals = self.storage.get_sys_signals(status='PENDING')

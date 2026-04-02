@@ -18,7 +18,7 @@ Dependency Injection: StorageManager (provided by caller)
 TRACE_ID: EXEC-EFFICIENCY-SCORE-001
 """
 import logging
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
@@ -35,10 +35,10 @@ class StrategyGatekeeper:
     If both conditions fail, execution aborts instantly (< 1ms).
     """
 
-    def __init__(self, storage):
+    def __init__(self, storage: Any) -> None:
         """
         Initialize the Gatekeeper with dependency injection.
-        
+
         Args:
             storage: StorageManager instance (for affinity score queries)
         """
@@ -183,7 +183,7 @@ class StrategyGatekeeper:
                     f"[GATEKEEPER] Performance logged for {strategy_id}@{asset}: "
                     f"PnL={pnl:.2f}, WR={win_rate:.2%}, PF={profit_factor:.2f}"
                 )
-            return result
+            return bool(result)
         except Exception as e:
             logger.error(f"[GATEKEEPER] Error logging performance: {e}")
             return False

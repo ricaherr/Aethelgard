@@ -2,23 +2,23 @@ import json
 import uuid
 import logging
 import sqlite3
-from typing import Dict, List, Optional, Union, overload, Any, cast
+from typing import Any, Dict, List, Optional, Union, cast, overload
 from datetime import datetime, timezone
 from .base_repo import BaseRepository
 from utils.encryption import get_encryptor
 
-logger = logging.getLogger(__name__)
+logger: logging.Logger = logging.getLogger(__name__)
 
 class AccountsMixin(BaseRepository):
     """Mixin for Account, Broker, and Platform database operations."""
 
-    def save_broker(self, broker_data: Dict) -> None:
+    def save_broker(self, broker_data: Dict[str, Any]) -> None:
         """Save broker configuration"""
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute("PRAGMA table_info(sys_brokers)")
-            columns = [row[1] for row in cursor.fetchall()]
+            columns: List[Any] = [row[1] for row in cursor.fetchall()]
 
             if 'broker_id' in columns:
                 cursor.execute("""
@@ -56,10 +56,10 @@ class AccountsMixin(BaseRepository):
     def _get_broker_id_column(self, cursor: sqlite3.Cursor) -> str:
         """Detect broker identifier column for schema compatibility."""
         cursor.execute("PRAGMA table_info(sys_brokers)")
-        columns = [row[1] for row in cursor.fetchall()]
+        columns: List[Any] = [row[1] for row in cursor.fetchall()]
         return "broker_id" if "broker_id" in columns else "id"
 
-    def _normalize_broker_row(self, broker: Dict) -> Dict:
+    def _normalize_broker_row(self, broker: Dict[str, Any]) -> Dict[str, Any]:
         """Normalize broker row for old/new schema compatibility."""
         if 'config' in broker and broker['config']:
             config = json.loads(broker['config'])
@@ -78,23 +78,23 @@ class AccountsMixin(BaseRepository):
 
         return broker
 
-    def get_brokers(self) -> List[Dict]:
+    def get_brokers(self) -> List[Dict[str, Any]]:
         """Get all sys_brokers"""
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute("SELECT * FROM sys_brokers")
-            rows = cursor.fetchall()
+            rows: List[Any] = cursor.fetchall()
             return [self._normalize_broker_row(dict(row)) for row in rows]
         finally:
             self._close_conn(conn)
 
-    def get_broker(self, broker_id: str) -> Optional[Dict]:
+    def get_broker(self, broker_id: str) -> Optional[Dict[str, Any]]:
         """Get specific broker by ID"""
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
-            lookup_column = self._get_broker_id_column(cursor)
+            cursor: sqlite3.Cursor = conn.cursor()
+            lookup_column: str = self._get_broker_id_column(cursor)
             cursor.execute(f"SELECT * FROM sys_brokers WHERE {lookup_column} = ?", (broker_id,))
             row = cursor.fetchone()
             if row:
@@ -103,11 +103,11 @@ class AccountsMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def save_platform(self, platform_data: Dict) -> None:
+    def save_platform(self, platform_data: Dict[str, Any]) -> None:
         """Save platform configuration"""
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute("""
                 INSERT OR REPLACE INTO sys_platforms (id, name, type, config)
                 VALUES (?, ?, ?, ?)
@@ -121,16 +121,16 @@ class AccountsMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_platforms(self) -> List[Dict]:
+    def get_platforms(self) -> List[Dict[str, Any]]:
         """Get all sys_platforms"""
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute("SELECT * FROM sys_platforms")
-            rows = cursor.fetchall()
+            rows: List[Any] = cursor.fetchall()
             sys_platforms = []
             for row in rows:
-                platform = dict(row)
+                platform: Dict[str, Any] = dict(row)
                 if 'config' in platform and platform['config']:
                     config = json.loads(platform['config']) if platform['config'] else {}
                     platform.update(config)
@@ -162,9 +162,9 @@ class AccountsMixin(BaseRepository):
         elif 'account_id' in account_data:
             account_data['id'] = account_data['account_id']
         
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute("""
                 INSERT OR REPLACE INTO sys_broker_accounts 
                 (account_id, broker_id, platform_id, account_name, account_number, server, account_type, enabled, created_at, updated_at)
@@ -187,14 +187,14 @@ class AccountsMixin(BaseRepository):
         
         if account_data.get('password'):
             self.update_credential(account_data['id'], {'password': account_data['password']})
-
+        
         return cast(str, account_data['id'])
 
-    def get_sys_broker_accounts(self, enabled_only: bool = False, broker_id: Optional[str] = None, account_type: Optional[str] = None) -> List[Dict]:
+    def get_sys_broker_accounts(self, enabled_only: bool = False, broker_id: Optional[str] = None, account_type: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get all broker accounts, optionally filtered by enabled status, broker_id, and account_type"""
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             query = "SELECT * FROM sys_broker_accounts WHERE 1=1"
             params = []
             if enabled_only:
@@ -206,17 +206,17 @@ class AccountsMixin(BaseRepository):
                 query += " AND account_type = ?"
                 params.append(account_type)
             cursor.execute(query, params)
-            rows = cursor.fetchall()
+            rows: List[Any] = cursor.fetchall()
             return [dict(row) for row in rows]
         finally:
             self._close_conn(conn)
 
-    def get_usr_broker_accounts(self, enabled_only: bool = False, broker_id: Optional[str] = None, account_type: Optional[str] = None) -> List[Dict]:
+    def get_usr_broker_accounts(self, enabled_only: bool = False, broker_id: Optional[str] = None, account_type: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get all user broker accounts, optionally filtered by enabled status, broker_id, and account_type"""
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
             # Check if table exists first (graceful degradation)
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='usr_broker_accounts'")
             if not cursor.fetchone():
                 logger.warning("Table usr_broker_accounts does not exist yet. Returning empty list.")
@@ -233,7 +233,7 @@ class AccountsMixin(BaseRepository):
                 query += " AND account_type = ?"
                 params.append(account_type)
             cursor.execute(query, params)
-            rows = cursor.fetchall()
+            rows: List[Any] = cursor.fetchall()
             return [dict(row) for row in rows]
         except Exception as e:
             logger.error(f"Error querying usr_broker_accounts: {e}")
@@ -241,11 +241,11 @@ class AccountsMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def get_account(self, account_id: str) -> Optional[Dict]:
+    def get_account(self, account_id: str) -> Optional[Dict[str, Any]]:
         """Get specific broker account by ID"""
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute("SELECT * FROM sys_broker_accounts WHERE account_id = ?", (account_id,))
             row = cursor.fetchone()
             return dict(row) if row else None
@@ -267,15 +267,15 @@ class AccountsMixin(BaseRepository):
             account_id: The account ID to query
             
         Returns:
-            Dict of module overrides {module_name: enabled_status}
+            Dict[str, Any] of module overrides {module_name: enabled_status}
         """
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             
             # Check if column exists (backwards compatibility)
             cursor.execute("PRAGMA table_info(sys_broker_accounts)")
-            columns = [row[1] for row in cursor.fetchall()]
+            columns: List[Any] = [row[1] for row in cursor.fetchall()]
             
             if 'modules_enabled' not in columns:
                 # Add column if missing (auto-migration)
@@ -313,16 +313,16 @@ class AccountsMixin(BaseRepository):
             module_name: Name of the module (scanner, executor, etc.)
             enabled: True to enable, False to disable
         """
-        modules = self.get_individual_modules_enabled(account_id)
+        modules: Dict[str, bool] = self.get_individual_modules_enabled(account_id)
         modules[module_name] = enabled
         
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             
             # Ensure column exists
             cursor.execute("PRAGMA table_info(sys_broker_accounts)")
-            columns = [row[1] for row in cursor.fetchall()]
+            columns: List[Any] = [row[1] for row in cursor.fetchall()]
             
             if 'modules_enabled' not in columns:
                 cursor.execute("""
@@ -347,16 +347,16 @@ class AccountsMixin(BaseRepository):
             account_id: The account ID
             modules_dict: Dictionary of {module_name: enabled_status}
         """
-        current_modules = self.get_individual_modules_enabled(account_id)
+        current_modules: Dict[str, bool] = self.get_individual_modules_enabled(account_id)
         current_modules.update(modules_dict)
         
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             
             # Ensure column exists
             cursor.execute("PRAGMA table_info(sys_broker_accounts)")
-            columns = [row[1] for row in cursor.fetchall()]
+            columns: List[Any] = [row[1] for row in cursor.fetchall()]
             
             if 'modules_enabled' not in columns:
                 cursor.execute("""
@@ -378,9 +378,9 @@ class AccountsMixin(BaseRepository):
                                    account_name: Optional[str] = None, account_type: Optional[str] = None,
                                    enabled: Optional[bool] = None) -> None:
         """Update account sys_credentials with explicit mapping and post-write verification."""
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute("BEGIN TRANSACTION")
             update_fields: List[str] = []
             update_values: List[Any] = []
@@ -406,12 +406,12 @@ class AccountsMixin(BaseRepository):
             update_values.append(account_id)
             
             if update_fields:
-                set_clause = ", ".join(update_fields)
+                set_clause: str = ", ".join(update_fields)
                 cursor.execute(f"UPDATE sys_broker_accounts SET {set_clause} WHERE account_id = ?", update_values)
             
             if password is not None:
                 cursor.execute("DELETE FROM sys_credentials WHERE broker_account_id = ?", (account_id,))
-                encrypted_data = get_encryptor().encrypt(json.dumps({'password': password}))
+                encrypted_data: bytes = get_encryptor().encrypt(json.dumps({'password': password}))
                 cursor.execute("INSERT INTO sys_credentials (broker_account_id, encrypted_data) VALUES (?, ?)", (account_id, encrypted_data))
             
             conn.commit()
@@ -427,12 +427,12 @@ class AccountsMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
-    def update_credential(self, account_id: str, credential_data: Dict) -> None:
+    def update_credential(self, account_id: str, credential_data: Dict[str, Any]) -> None:
         """Update encrypted sys_credentials for account"""
-        encrypted_data = get_encryptor().encrypt(json.dumps(credential_data))
-        conn = self._get_conn()
+        encrypted_data: bytes = get_encryptor().encrypt(json.dumps(credential_data))
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute("INSERT OR REPLACE INTO sys_credentials (broker_account_id, encrypted_data) VALUES (?, ?)", (account_id, encrypted_data))
             conn.commit()
         finally:
@@ -445,30 +445,30 @@ class AccountsMixin(BaseRepository):
         self.update_credential(account_id, existing)
 
     @overload
-    def get_credentials(self, account_id: str) -> Optional[Dict]: ...
+    def get_credentials(self, account_id: str) -> Optional[Dict[str, Any]]: ...
     @overload
     def get_credentials(self, account_id: str, credential_type: str) -> Optional[str]: ...
 
-    def get_credentials(self, account_id: str, credential_type: Optional[str] = None) -> Optional[Union[Dict, str]]:
+    def get_credentials(self, account_id: str, credential_type: Optional[str] = None) -> Optional[Union[Dict[str, Any], str]]:
         """Get decrypted sys_credentials for account."""
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute("SELECT encrypted_data FROM sys_credentials WHERE broker_account_id = ?", (account_id,))
             row = cursor.fetchone()
             if row:
-                decrypted = get_encryptor().decrypt(row['encrypted_data'])
-                sys_credentials = cast(Dict[str, Any], json.loads(decrypted))
-                return sys_credentials.get(credential_type) if credential_type else sys_credentials
+                decrypted: str = get_encryptor().decrypt(row['encrypted_data'])
+                sys_credentials = json.loads(decrypted)
+                return cast(Optional[Union[Dict[str, Any], str]], sys_credentials.get(credential_type) if credential_type else sys_credentials)
             return None
         finally:
             self._close_conn(conn)
 
     def delete_credential(self, account_id: str) -> None:
         """Delete sys_credentials for account"""
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute("DELETE FROM sys_credentials WHERE broker_account_id = ?", (account_id,))
             conn.commit()
         finally:
@@ -476,20 +476,20 @@ class AccountsMixin(BaseRepository):
 
     def delete_account(self, account_id: str) -> None:
         """Delete broker account and associated sys_credentials"""
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute("DELETE FROM sys_credentials WHERE broker_account_id = ?", (account_id,))
             cursor.execute("DELETE FROM sys_broker_accounts WHERE account_id = ?", (account_id,))
             conn.commit()
         finally:
             self._close_conn(conn)
 
-    def get_all_accounts(self) -> List[Dict]:
+    def get_all_accounts(self) -> List[Dict[str, Any]]:
         """Get all broker accounts (alias for get_sys_broker_accounts)"""
         return self.get_sys_broker_accounts()
 
-    def get_broker_provision_status(self) -> List[Dict]:
+    def get_broker_provision_status(self) -> List[Dict[str, Any]]:
         """
         Get current broker provisioning status.
         Returns list of broker dicts with their associated accounts.

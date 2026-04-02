@@ -18,7 +18,7 @@ Trace_ID: ARCH-RESILIENCE-ENGINE-V1-A
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import Any, Dict, Optional
 import uuid
 
 
@@ -76,7 +76,7 @@ class EdgeEventReport:
     action:   EdgeAction
     reason:   str
     trace_id: str  = field(default_factory=lambda: f"EDGE-{uuid.uuid4().hex[:8].upper()}")
-    metadata: dict = field(default_factory=dict)
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------

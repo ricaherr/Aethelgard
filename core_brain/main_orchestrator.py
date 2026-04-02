@@ -1094,6 +1094,23 @@ class MainOrchestrator:
             logger.info(f"Regime changed: {self.current_regime} -> {new_regime}")
             self.current_regime = new_regime
     
+    def _persist_tick_timestamp(self, tick_ts: str) -> None:
+        """Persist last_market_tick_ts to sys_config with retry on DB lock."""
+        import time
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                self.storage.update_sys_config({"last_market_tick_ts": tick_ts})
+                logger.debug(f"[TELEMETRY] last_market_tick_ts persisted: {tick_ts}")
+                return
+            except Exception as exc:
+                if 'locked' in str(exc).lower() and attempt < max_retries - 1:
+                    sleep_time = 0.5 * (attempt + 1)
+                    logger.warning(f"[TELEMETRY] DB locked on retry {attempt+1}/{max_retries}, sleeping {sleep_time}s...")
+                    time.sleep(sleep_time)
+                else:
+                    logger.warning(f"[TELEMETRY] Could not write last_market_tick_ts after {attempt+1} attempts: {exc}")
+
     def _persist_scan_telemetry(self, scan_results_with_data: Dict) -> None:
         """
         Persist scan-cycle artefacts required by IntegrityGuard health checks.
@@ -1107,28 +1124,9 @@ class MainOrchestrator:
 
         Called by run_single_cycle() immediately after update_module_heartbeat.
         Source-of-truth contract: docs/10_INFRA_RESILIENCY.md §E14-telemetry.
-
-        FIX-SCANNER-TICK-PERSISTENCE-001: Aggressive retry on DB lock.
         """
-        import time
-        max_retries_critical = 3
+        self._persist_tick_timestamp(datetime.now(timezone.utc).isoformat())
 
-        # CRITICAL: Persist last_market_tick_ts with aggressive retries
-        tick_ts = datetime.now(timezone.utc).isoformat()
-        for attempt in range(max_retries_critical):
-            try:
-                self.storage.update_sys_config({"last_market_tick_ts": tick_ts})
-                logger.debug(f"[TELEMETRY] last_market_tick_ts persisted: {tick_ts}")
-                break  # Success
-            except Exception as exc:
-                if 'locked' in str(exc).lower() and attempt < max_retries_critical - 1:
-                    sleep_time = 0.5 * (attempt + 1)
-                    logger.warning(f"[TELEMETRY] DB locked on retry {attempt+1}/{max_retries_critical}, sleeping {sleep_time}s...")
-                    time.sleep(sleep_time)
-                else:
-                    logger.warning(f"[TELEMETRY] Could not write last_market_tick_ts after {attempt+1} attempts: {exc}")
-
-        # ADX persistence (non-critical, can fail silently)
         valid_adx_values = [
             float(data["metrics"].get("adx") or 0)
             for data in scan_results_with_data.values()

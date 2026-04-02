@@ -8,7 +8,7 @@ from typing import Optional, Dict, List, Any, Tuple
 from .base_repo import BaseRepository
 from utils.time_utils import to_utc, to_utc_datetime
 
-logger = logging.getLogger(__name__)
+logger: logging.Logger = logging.getLogger(__name__)
 
 class ExecutionMixin(BaseRepository):
     """
@@ -33,9 +33,9 @@ class ExecutionMixin(BaseRepository):
         Registra un 'Shadow Log' para comparar el precio teórico vs real.
         Cumple con la norma de fidelidad F-001 del Manifiesto.
         """
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             
             # Convertimos Decimal a float o str para SQLite
             # Usamos float para precios para permitir comparaciones, 
@@ -74,9 +74,9 @@ class ExecutionMixin(BaseRepository):
 
     def get_execution_shadow_logs(self, limit: int = 100, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """Recupera los logs de ejecución recientes."""
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             query = "SELECT * FROM usr_execution_logs"
             params: List[Any] = []
             
@@ -88,11 +88,11 @@ class ExecutionMixin(BaseRepository):
             params.append(limit)
             
             cursor.execute(query, params)
-            rows = cursor.fetchall()
+            rows: List[Any] = cursor.fetchall()
             
             logs = []
             for row in rows:
-                log = dict(row)
+                log: Dict[Any, Any] = dict(row)
                 if log.get('metadata'):
                     try:
                         log['metadata'] = json.loads(log['metadata'])
@@ -124,13 +124,13 @@ class ExecutionMixin(BaseRepository):
             List of execution logs with fields: signal_id, symbol, theoretical_price, 
             real_price, slippage_pips, latency_ms, status, timestamp
         """
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             
             # Calculate time threshold using to_utc() for system-standard UTC normalization
             # SQLite stores timestamps as ISO 8601 strings in UTC via DEFAULT CURRENT_TIMESTAMP
-            time_threshold = to_utc(datetime.now(timezone.utc) - timedelta(minutes=window_minutes))
+            time_threshold: str = to_utc(datetime.now(timezone.utc) - timedelta(minutes=window_minutes))
             
             query = """
                 SELECT
@@ -147,7 +147,7 @@ class ExecutionMixin(BaseRepository):
                     AND status = ?
                     AND timestamp >= ?
             """
-            params = [symbol, status_filter, time_threshold]
+            params: List[str] = [symbol, status_filter, time_threshold]
             
             if user_id:
                 query += " AND user_id = ?"
@@ -156,9 +156,9 @@ class ExecutionMixin(BaseRepository):
             query += " ORDER BY timestamp ASC"
             
             cursor.execute(query, params)
-            rows = cursor.fetchall()
+            rows: List[Any] = cursor.fetchall()
             
-            logs = [dict(row) for row in rows]
+            logs: List[Dict[Any, Any]] = [dict(row) for row in rows]
             return logs
         finally:
             self._close_conn(conn)
@@ -170,18 +170,18 @@ class ExecutionMixin(BaseRepository):
         Reads from usr_execution_logs for auto-calibration of SlippageController.
         Returns None when fewer than min_records exist (insufficient history).
         """
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute(
                 "SELECT ABS(slippage_pips) FROM usr_execution_logs "
                 "WHERE symbol = ? ORDER BY ABS(slippage_pips) ASC",
                 (symbol,),
             )
-            values = [row[0] for row in cursor.fetchall()]
+            values: List[Any] = [row[0] for row in cursor.fetchall()]
             if len(values) < min_records:
                 return None
-            idx = min(int(len(values) * 0.9), len(values) - 1)
+            idx: int = min(int(len(values) * 0.9), len(values) - 1)
             return Decimal(str(values[idx]))
         except Exception as exc:
             logger.debug("[ExecutionMixin] get_slippage_p90 failed for %s: %s", symbol, exc)
@@ -196,9 +196,9 @@ class ExecutionMixin(BaseRepository):
         Returns the active cooldown record for a signal_id if it has not expired.
         Returns None if no record exists or the cooldown has already expired.
         """
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute(
                 """
                 SELECT * FROM sys_cooldown_tracker
@@ -233,10 +233,10 @@ class ExecutionMixin(BaseRepository):
         Called by CooldownManager after a signal execution failure.
         Persists all context columns defined in sys_cooldown_tracker schema.
         """
-        now = datetime.now(timezone.utc).isoformat()
+        now: str = datetime.now(timezone.utc).isoformat()
 
         def _write(conn: sqlite3.Connection) -> None:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute(
                 """
                 INSERT OR REPLACE INTO sys_cooldown_tracker
@@ -289,10 +289,10 @@ class ExecutionMixin(BaseRepository):
         Llamado por SignalQualityScorer._persist_assessment() tras evaluar señales A/A+.
         Sigue el patrón _execute_serialized del proyecto (sync, no async).
         """
-        created_at = datetime.now(timezone.utc).isoformat()
+        created_at: str = datetime.now(timezone.utc).isoformat()
 
         def _write(conn: sqlite3.Connection) -> None:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute(
                 """
                 INSERT OR REPLACE INTO sys_signal_quality_assessments
@@ -331,7 +331,7 @@ class ExecutionMixin(BaseRepository):
         Called when a signal is retried successfully or manually cleared.
         """
         def _delete(conn: sqlite3.Connection) -> None:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute(
                 "DELETE FROM sys_cooldown_tracker WHERE signal_id = ?",
                 (signal_id,),
@@ -349,9 +349,9 @@ class ExecutionMixin(BaseRepository):
         Returns the number of signals currently under active cooldown (not yet expired).
         Used by SignalSelector to gate the pipeline when too many cooldowns accumulate.
         """
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
-            cursor = conn.cursor()
+            cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute(
                 "SELECT COUNT(*) FROM sys_cooldown_tracker WHERE cooldown_expires > datetime('now')"
             )

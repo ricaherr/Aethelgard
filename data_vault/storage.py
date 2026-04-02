@@ -27,7 +27,7 @@ from .schema import (
     bootstrap_symbol_mappings,
 )
 
-logger = logging.getLogger(__name__)
+logger: logging.Logger = logging.getLogger(__name__)
 
 JSON_BOOTSTRAP_DONE_KEY = "_json_bootstrap_done_v1"
 
@@ -68,9 +68,10 @@ class StorageManager(
         - db_path=None, user_id=VALUE → data_vault/tenants/{id}/aethelgard.db (auto-create if needed)
         - db_path=VALUE                  → Use explicit path (backward compat; will resolve dynamically)
         """
-        self.user_id = user_id
+        self.user_id: str | None = user_id
         
         # Resolve database path based on context
+        resolved_db_path: str
         if db_path is None:
             resolved_db_path = self._resolve_db_path(user_id)
         else:
@@ -86,7 +87,7 @@ class StorageManager(
             self._ensure_tenant_db_exists()
         
         # Initialize database schema and migrations
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
             logger.info("Initializing database schema...")
             # DDL (idempotent via CREATE TABLE IF NOT EXISTS)
@@ -122,16 +123,16 @@ class StorageManager(
         
         Important: User ID is inferred from path, not stored as column in usr_* tables.
         """
-        data_vault_root = Path(__file__).parent.absolute()
+        data_vault_root: Path = Path(__file__).parent.absolute()
         
         if user_id is None or user_id == "":
             # Global database (Capa 0)
-            global_dir = data_vault_root / "global"
+            global_dir: Path = data_vault_root / "global"
             global_dir.mkdir(exist_ok=True)
             return str(global_dir / "aethelgard.db")
         else:
             # Tenant database (Capa 1)
-            tenant_dir = data_vault_root / "tenants" / user_id
+            tenant_dir: Path = data_vault_root / "tenants" / user_id
             tenant_dir.mkdir(parents=True, exist_ok=True)
             return str(tenant_dir / "aethelgard.db")
 
@@ -151,7 +152,7 @@ class StorageManager(
             logger.debug(f"Tenant DB already exists: {tenant_db}")
             return  # Already provisioned
         
-        template_db = Path(__file__).parent / "templates" / "usr_template.db"
+        template_db: Path = Path(__file__).parent / "templates" / "usr_template.db"
         
         if not template_db.exists():
             logger.warning(f"Template DB not found: {template_db}. Creating new tenant DB from scratch.")
@@ -174,7 +175,7 @@ class StorageManager(
         SSOT NOTE: This is idempotent (runs once, flag stored in sys_config).
         After bootstrap, database is the ONLY source of truth (aethelgard.db).
         """
-        cursor = conn.cursor()
+        cursor: sqlite3.Cursor = conn.cursor()
         
         # Check if already done
         cursor.execute("SELECT value FROM sys_config WHERE key = ?", (JSON_BOOTSTRAP_DONE_KEY,))
@@ -186,7 +187,7 @@ class StorageManager(
         
         try:
             # Seed symbols from config/
-            instruments_path = os.path.join("config", "instruments.json")
+            instruments_path: str = os.path.join("config", "instruments.json")
             if os.path.exists(instruments_path):
                 try:
                     with open(instruments_path, "r") as f:
@@ -200,7 +201,7 @@ class StorageManager(
                     logger.warning(f"[BOOTSTRAP] Failed to load instruments.json for bootstrap: {e}")
             
             # Seed risk parameters from config/
-            params_path = os.path.join("config", "dynamic_params.json")
+            params_path: str = os.path.join("config", "dynamic_params.json")
             if os.path.exists(params_path):
                 try:
                     with open(params_path, "r") as f:
@@ -213,10 +214,10 @@ class StorageManager(
                     logger.warning(f"[BOOTSTRAP] Failed to load dynamic_params.json for bootstrap: {e}")
             
             # Seed sys_strategies from data_vault/seed/ (SSOT location for strategy registry)
-            seed_sys_strategies_path = os.path.join("data_vault", "seed", "strategy_registry.json")
+            seed_sys_strategies_path: str = os.path.join("data_vault", "seed", "strategy_registry.json")
             if os.path.exists(seed_sys_strategies_path):
                 try:
-                    with open(seed_sys_strategies_path, "r", encoding="utf-8") as f:  # IMPORTANTE: especificar utf-8
+                    with open(seed_sys_strategies_path, "r", encoding="utf-8") as f:
                         registry = json.load(f)
                         sys_strategies = registry.get("strategies", [])  # JSON key is "strategies"
                         if sys_strategies:
@@ -254,7 +255,7 @@ class StorageManager(
 
     def run_legacy_json_bootstrap_once(self) -> None:
         """Public trigger: Legacy method name retained for backward compatibility."""
-        conn = self._get_conn()
+        conn: sqlite3.Connection = self._get_conn()
         try:
             self._bootstrap_from_json(conn)
         finally:
@@ -265,7 +266,7 @@ class StorageManager(
         DB-first reload: returns current global_config from sys_config.
         """
         try:
-            state = self.get_sys_config()
+            state: Dict[str, Any] = self.get_sys_config()
             cfg = state.get("global_config", {})
             return cfg if isinstance(cfg, dict) else {}
         except Exception as e:
@@ -280,8 +281,8 @@ class StorageManager(
             event: Dict con los datos del evento
         """
         try:
-            conn = self._get_conn()
-            cursor = conn.cursor()
+            conn: sqlite3.Connection = self._get_conn()
+            cursor: sqlite3.Cursor = conn.cursor()
             
             cursor.execute("""
                 INSERT INTO usr_coherence_events 
@@ -318,8 +319,8 @@ class StorageManager(
             User config dict or None
         """
         try:
-            conn = self._get_conn()
-            cursor = conn.cursor()
+            conn: sqlite3.Connection = self._get_conn()
+            cursor: sqlite3.Cursor = conn.cursor()
             
             cursor.execute(
                 "SELECT value FROM sys_config WHERE key = ?",
@@ -328,10 +329,10 @@ class StorageManager(
             row = cursor.fetchone()
             
             if row:
-                return cast(Dict[str, Any], json.loads(row[0]) if isinstance(row[0], str) else row[0])
+                return cast(Optional[Dict[str, Any]], json.loads(row[0]) if isinstance(row[0], str) else row[0])
             
             # Create default config if not found
-            default_config = {
+            default_config: Dict[str, str] = {
                 "user_id": user_id,
                 "strategy_runtime_mode": "legacy"
             }
@@ -353,8 +354,8 @@ class StorageManager(
             updates: Dict with updates to apply
         """
         try:
-            conn = self._get_conn()
-            cursor = conn.cursor()
+            conn: sqlite3.Connection = self._get_conn()
+            cursor: sqlite3.Cursor = conn.cursor()
             
             # Get current config
             cursor.execute(
@@ -363,6 +364,7 @@ class StorageManager(
             )
             row = cursor.fetchone()
             
+            current: Dict[str, Any]
             if row:
                 current = json.loads(row[0]) if isinstance(row[0], str) else row[0]
             else:
@@ -392,8 +394,8 @@ class StorageManager(
             entry: Event entry to log
         """
         try:
-            conn = self._get_conn()
-            cursor = conn.cursor()
+            conn: sqlite3.Connection = self._get_conn()
+            cursor: sqlite3.Cursor = conn.cursor()
             
             # Get current ledger
             cursor.execute(
@@ -443,8 +445,8 @@ class StorageManager(
             Empty list if table doesn't exist (graceful degradation)
         """
         try:
-            conn = self._get_conn()
-            cursor = conn.cursor()
+            conn: sqlite3.Connection = self._get_conn()
+            cursor: sqlite3.Cursor = conn.cursor()
             
             # Check if economic_calendar table exists
             cursor.execute(
@@ -470,7 +472,7 @@ class StorageManager(
             query += " ORDER BY event_time_utc DESC LIMIT 100"
             
             cursor.execute(query, params)
-            rows = cursor.fetchall()
+            rows: List[Any] = cursor.fetchall()
             
             if not rows:
                 return []
@@ -528,8 +530,8 @@ class StorageManager(
         from core_brain.news_errors import PersistenceError
         
         try:
-            conn = self._get_conn()
-            cursor = conn.cursor()
+            conn: sqlite3.Connection = self._get_conn()
+            cursor: sqlite3.Cursor = conn.cursor()
             
             # Ensure economic_calendar table exists
             cursor.execute("""
@@ -575,14 +577,14 @@ class StorageManager(
             ))
             
             conn.commit()
-            event_id = cast(str, event.get("event_id"))
-
+            event_id: str = cast(str, event.get("event_id"))
+            
             logger.info(
                 f"[StorageManager] SAVED economic event: "
                 f"event_id={event_id}, impact={event.get('impact_score')}, "
                 f"name={event.get('event_name')}"
             )
-
+            
             return event_id
             
         except Exception as e:
@@ -638,17 +640,17 @@ class StorageManager(
             # Convert datetime objects to ISO format strings if needed
             from datetime import datetime
             if isinstance(start_time, datetime):
-                start_str = start_time.isoformat()
+                start_str: str = start_time.isoformat()
             else:
                 start_str = str(start_time)
                 
             if isinstance(end_time, datetime):
-                end_str = end_time.isoformat()
+                end_str: str = end_time.isoformat()
             else:
                 end_str = str(end_time)
             
-            conn = self._get_conn()
-            cursor = conn.cursor()
+            conn: sqlite3.Connection = self._get_conn()
+            cursor: sqlite3.Cursor = conn.cursor()
             
             # Check if economic_calendar table exists
             cursor.execute(
@@ -670,16 +672,16 @@ class StorageManager(
             """
             
             cursor.execute(query, (start_str, end_str))
-            rows = cursor.fetchall()
+            rows: List[Any] = cursor.fetchall()
             
             if not rows:
                 return []
             
             # Convert rows to dicts
             events = []
-            col_names = [description[0] for description in cursor.description]
+            col_names: List[str] = [description[0] for description in cursor.description]
             for row in rows:
-                event_dict = dict(zip(col_names, row))
+                event_dict: Dict[str | Any, Any] = dict(zip(col_names, row))
                 events.append(event_dict)
             
             logger.debug(
