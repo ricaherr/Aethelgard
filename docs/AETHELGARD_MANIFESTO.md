@@ -532,36 +532,36 @@ if dxy_data:
    - Interpreta schema JSON
    - Genera OutputSignal (candidata)
    ↓
-3. StrategySignalValidator.validate() [4 PILARES]
+4. StrategySignalValidator.validate() [4 PILARES]
    - Pilar 1: ¿Sensores disponibles? → SensorialPillar
    - Pilar 2: ¿Régimen permite? → RegimePillar
    - Pilar 3: ¿Membresía suficiente? → MultiTenantPillar
    - Pilar 4: ¿Coherencia validada? → CoherencePillar
    ↓ [ValidationReport: PASSED/FAILED/BLOCKED]
-4. StrategyGatekeeper.can_execute_on_tick()
+5. StrategyGatekeeper.can_execute_on_tick()
    - ¿activo en whitelist?
    - ¿score >= min_threshold?
    ↓
-5. RiskManager.evaluate_signal()
+6. RiskManager.evaluate_signal()
    - Risk per trade
    - Máximo drawdown
    - Posiciones abiertas
    ↓
-6. ConflictResolver.resolve_conflicts()
+7. ConflictResolver.resolve_conflicts()
    - ¿Múltiples señales mismo activo?
    - Selecciona por Asset Affinity Score
    - Exclusión mutua: Una estrategia por activo
    ↓
-7. Executor.execute_signal()
+8. Executor.execute_signal()
    - Abre posición
    - Registra TRACE_ID
    ↓
-8. TradeClosureListener
+9. TradeClosureListener
    - Monitorea SL/TP
    - Calcula P&L
    - Actualiza affinity scores
    ↓
-9. CoherenceService
+10. CoherenceService
    - Compara shadow vs live
    - Recalcula coherence_score
    - Ajusta dinámicamente
