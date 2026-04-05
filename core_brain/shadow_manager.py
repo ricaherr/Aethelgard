@@ -22,7 +22,7 @@ Rules:
 import logging
 import sqlite3
 from datetime import datetime, timezone
-from typing import Dict, List, Tuple, Optional, Union
+from typing import Any, Dict, List, Tuple, Optional, Union
 from dataclasses import dataclass
 
 from models.shadow import (
@@ -224,10 +224,14 @@ class ShadowManager:
                     conn = storage.connection
                 elif hasattr(storage, 'get_conn'):
                     conn = storage.get_conn()
+                elif hasattr(storage, '_get_conn'):
+                    conn = storage._get_conn()
+                elif hasattr(storage, 'get_connection'):
+                    conn = storage.get_connection()
                 else:
                     raise AttributeError(
                         f"Cannot extract SQLite connection from {type(storage).__name__}. "
-                        f"Expected .conn or .connection attribute or get_conn() method."
+                        f"Expected .conn/.connection or one of get_conn(), _get_conn(), get_connection()."
                     )
                 self.storage = ShadowStorageManager(conn)
             except (AttributeError, TypeError) as e:

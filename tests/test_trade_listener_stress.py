@@ -22,6 +22,7 @@ import tempfile
 from pathlib import Path
 from datetime import datetime
 import os
+import time
 
 from data_vault.storage import StorageManager
 from core_brain.risk_manager import RiskManager
@@ -58,7 +59,13 @@ def temp_db():
     
     # Cleanup
     if os.path.exists(db_path):
-        os.remove(db_path)
+        # Windows can keep sqlite handles briefly after close; retry delete.
+        for _ in range(10):
+            try:
+                os.remove(db_path)
+                break
+            except PermissionError:
+                time.sleep(0.05)
 
 
 @pytest.fixture
@@ -66,7 +73,10 @@ def storage(temp_db):
     """Initialize StorageManager with temp DB."""
     storage = StorageManager(db_path=temp_db)
     # Tables are created automatically in __init__
-    return storage
+    try:
+        yield storage
+    finally:
+        storage.close()
 
 
 @pytest.fixture

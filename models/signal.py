@@ -39,6 +39,14 @@ class MarketRegime(Enum):
     CRASH = "CRASH"
     NORMAL = "NORMAL"
 
+class ReviewStatus(Enum):
+    """Estados de review para señales de grado B/C (DISC-001: Signal Review Queue)."""
+    NONE = "NONE"  # Señal no requiere review (A+/A grades)
+    PENDING = "PENDING"  # Esperando aprobación del trader
+    APPROVED = "APPROVED"  # Trader aprobó → ejecutada
+    REJECTED = "REJECTED"  # Trader rechazó → archivada
+    AUTO_EXECUTED = "AUTO_EXECUTED"  # Timeout 5 min, ejecutada automáticamente
+
 class Signal(BaseModel):
     """
     Representa una señal de trading generada por un motor de análisis.

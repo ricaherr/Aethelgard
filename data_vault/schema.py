@@ -128,9 +128,18 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             status TEXT DEFAULT 'active',
             order_id TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            review_status TEXT DEFAULT 'NONE' CHECK(review_status IN ('NONE', 'PENDING', 'APPROVED', 'REJECTED', 'AUTO_EXECUTED')),
+            trader_review_reason TEXT,
+            review_timeout_at TEXT
         )
     """)
+    # Existing DBs may still have the pre-DISC-001 sys_signals schema at this point.
+    # Guard index creation to avoid startup failure before run_migrations adds review_status.
+    cursor.execute("PRAGMA table_info(sys_signals)")
+    _sys_signals_cols = [r[1] for r in cursor.fetchall()]
+    if "review_status" in _sys_signals_cols:
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_signals_review_status ON sys_signals(review_status) WHERE review_status='PENDING'")
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS usr_trades (
             id TEXT PRIMARY KEY,
@@ -1051,6 +1060,26 @@ def run_migrations(conn: sqlite3.Connection) -> None:
             conn.rollback()
             raise
 
+    # MIGRATION (DISC-001): Add review_status, trader_review_reason, review_timeout_at for B/C grade signal review queue
+    # ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+    # Enables trader approval workflow for B/C-grade signals (moderate confidence)
+    # TRACE_ID: DISC-SQ-001-2026-04-04
+    cursor.execute("PRAGMA table_info(sys_signals)")
+    sys_signals_cols = [r[1] for r in cursor.fetchall()]
+    review_migrations = [
+        ("review_status", "TEXT DEFAULT 'NONE' CHECK(review_status IN ('NONE', 'PENDING', 'APPROVED', 'REJECTED', 'AUTO_EXECUTED'))"),
+        ("trader_review_reason", "TEXT"),
+        ("review_timeout_at", "TEXT"),
+    ]
+    for col, col_type in review_migrations:
+        if col not in sys_signals_cols:
+            cursor.execute(f"ALTER TABLE sys_signals ADD COLUMN {col} {col_type}")
+            logger.info(f"Migration applied: sys_signals.{col} added for signal review queue (DISC-001)")
+    
+    # Create index for efficient filtering of pending reviews
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_signals_review_status ON sys_signals(review_status) WHERE review_status='PENDING'")
+    logger.info("Index created: idx_sys_signals_review_status for signal review queue optimization")
+
     # sys_regime_configs: add tenant_id for multi-tenant isolation (nullable for backward compat)
     cursor.execute("PRAGMA table_info(sys_regime_configs)")
     rc_cols = [r[1] for r in cursor.fetchall()]
@@ -1117,7 +1146,89 @@ def run_migrations(conn: sqlite3.Connection) -> None:
     if "logic" not in strat_cols:
         cursor.execute("ALTER TABLE sys_strategies ADD COLUMN logic TEXT DEFAULT NULL")
         logger.info("Migration applied: sys_strategies.logic added.")
+    strategy_registry_cols = [
+        ("class_file", "TEXT DEFAULT NULL"),
+        ("class_name", "TEXT DEFAULT NULL"),
+        ("schema_file", "TEXT DEFAULT NULL"),
+    ]
+    for col, col_def in strategy_registry_cols:
+        if col not in strat_cols:
+            cursor.execute(f"ALTER TABLE sys_strategies ADD COLUMN {col} {col_def}")
+            logger.info(f"Migration applied: sys_strategies.{col} added.")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_strategies_readiness ON sys_strategies (readiness)")
+
+    # Repair partial strategy records from seed registry when metadata fields are missing.
+    # This unblocks StrategyEngineFactory instantiation without overriding non-empty values.
+    strategy_seed_path = Path("data_vault") / "seed" / "strategy_registry.json"
+    if strategy_seed_path.exists():
+        try:
+            with strategy_seed_path.open("r", encoding="utf-8") as seed_file:
+                registry_data = json.load(seed_file)
+            strategy_seed = registry_data.get("strategies", [])
+            repaired_rows = 0
+            for entry in strategy_seed:
+                class_id = entry.get("strategy_id")
+                if not class_id:
+                    continue
+                cursor.execute(
+                    """
+                    UPDATE sys_strategies
+                    SET
+                        type = CASE
+                            WHEN type IS NULL OR TRIM(type) = '' THEN ?
+                            ELSE type
+                        END,
+                        readiness = CASE
+                            WHEN readiness IS NULL OR TRIM(readiness) = '' THEN ?
+                            ELSE readiness
+                        END,
+                        readiness_notes = CASE
+                            WHEN (readiness_notes IS NULL OR TRIM(readiness_notes) = '') AND ? IS NOT NULL THEN ?
+                            ELSE readiness_notes
+                        END,
+                        class_file = CASE
+                            WHEN class_file IS NULL OR TRIM(class_file) = '' THEN ?
+                            ELSE class_file
+                        END,
+                        class_name = CASE
+                            WHEN class_name IS NULL OR TRIM(class_name) = '' THEN ?
+                            ELSE class_name
+                        END,
+                        schema_file = CASE
+                            WHEN schema_file IS NULL OR TRIM(schema_file) = '' THEN ?
+                            ELSE schema_file
+                        END
+                    WHERE class_id = ?
+                      AND (
+                          type IS NULL OR TRIM(type) = ''
+                          OR readiness IS NULL OR TRIM(readiness) = ''
+                          OR class_file IS NULL OR TRIM(class_file) = ''
+                          OR class_name IS NULL OR TRIM(class_name) = ''
+                          OR schema_file IS NULL OR TRIM(schema_file) = ''
+                      )
+                    """,
+                    (
+                        entry.get("type", "PYTHON_CLASS"),
+                        entry.get("readiness", "UNKNOWN"),
+                        entry.get("readiness_notes"),
+                        entry.get("readiness_notes"),
+                        entry.get("class_file"),
+                        entry.get("class_name"),
+                        entry.get("schema_file"),
+                        class_id,
+                    ),
+                )
+                repaired_rows += cursor.rowcount
+            if repaired_rows:
+                logger.info(
+                    "Migration applied: sys_strategies metadata repaired from seed for %d row(s).",
+                    repaired_rows,
+                )
+        except Exception as repair_error:
+            logger.warning(
+                "Migration warning: could not repair sys_strategies metadata from seed (%s)",
+                repair_error,
+            )
 
     # MIGRATION (EXEC-V5-BACKTEST-SCENARIO-ENGINE): Regime specialisation columns
     # target_regime: which stress cluster this SHADOW instance targets.

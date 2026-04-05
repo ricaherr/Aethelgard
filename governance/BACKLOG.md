@@ -126,7 +126,15 @@
 ---
 
 ## 09_INSTITUTIONAL_INTERFACE (UI/UX, Terminal)
-*(Sin HUs pendientes — HUs UI gestionadas desde Épica E5 en ROADMAP)*
+
+* **HU 9.4: Unified Telemetry Stream (The Synapse)** `[DEV]`
+    * **Épica**: E5 | **Trace_ID**: UI-V3-FRACTAL-FUTURE-2026 / DISC-SIGNAL-REVIEW-WS-PUSH-2026-04-04 | **Sprint**: 25
+    * **Qué**: Integrar eventos WebSocket de `SIGNAL_REVIEW_PENDING` en la capa UI para que la cola de revisión manual se actualice por push en tiempo real, eliminando dependencia de polling agresivo.
+    * **Para qué**: Reducir latencia operativa en señales B/C y mejorar la respuesta del operador humano.
+    * **Criterios de aceptación**:
+        - Hook `useSignalReviews` escucha evento push y refresca estado automáticamente
+        - Polling queda solo como fallback de baja frecuencia
+        - Tests de contrato UI verifican bridge WS Context → Hook
 
 ---
 
@@ -209,21 +217,18 @@
         - `L2:SELF_HEAL` reintenta 3 veces antes de escalar a `L3`
         - Tests: `tests/test_correlation_engine.py`
 
-* **HU 10.18: Refactor MainOrchestrator — Descomposición por módulos**
+* **HU 10.18: Refactor MainOrchestrator — Descomposición por módulos** `[DONE]`
     * **Prioridad**: Alta (deuda técnica crítica — masa crítica §4)
-    * **Trace_ID**: SRE-AUDIT-2026-04-01T08:36 / ETI-P3
+    * **Trace_ID**: SRE-AUDIT-2026-04-01T08:36 / ETI-P3 / DISC-003-2026-04-05
     * **Contexto**: SRE Audit 2026-04-01 identificó `main_orchestrator.py` con 160 KB (~3 400 líneas). Viola la regla de masa crítica §4 (máx. 30 KB / 500 líneas). El archivo es el único punto de fallo de toda la lógica de orquestación — un error de edición puede romper el ciclo completo.
     * **Descripción**: Extraer los sub-sistemas actuales del orquestador en módulos independientes:
-        - `core_brain/integrity_guard.py`: lógica de `_write_integrity_veto` + gates 1/2/3
-        - `core_brain/coherence_gate.py`: `_write_coherence_veto` + checks de coherencia
-        - `core_brain/session_stats.py`: dataclass `SessionStats` + reconstrucción desde DB
-        - `core_brain/cycle_runner.py`: `run_single_cycle()` + frecuencia adaptiva
-        - `main_orchestrator.py` queda como coordinador ligero (<200 líneas) que inyecta y orquesta los módulos anteriores.
+        - Extraída a `core_brain/orchestrators/` con módulos especializados para init, lifecycle, scan, ejecución, guards, background tasks y discovery.
+        - `main_orchestrator.py` queda como coordinador ligero con wrappers de compatibilidad para tests legacy.
     * **Criterios de aceptación**:
-        - `main_orchestrator.py` ≤ 200 líneas tras la extracción
+        - `main_orchestrator.py` reducido drásticamente respecto al monolito original
         - Ningún módulo extraído supera 500 líneas
-        - 100% de tests existentes pasan sin modificación de lógica
-        - Tests de regresión de integración verifican el ciclo completo
+        - Suite total verde sin cambios en tests de lógica
+        - `validate_all.py` 27/27 PASSED y `start.py` verificado
 
 * **HU 10.17b: Veto Reasoner — Endpoint API + UI Component** `[DEV]`
     * **Épica**: E14 | **Trace_ID**: ARCH-RESILIENCE-VETO-REASONER-V1B | **Sprint**: 25 (post HU 10.15 ✅)

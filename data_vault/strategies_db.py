@@ -34,6 +34,11 @@ class StrategiesMixin(BaseRepository):
         description: Optional[str] = None,
         strategy_type: str = "PYTHON_CLASS",
         logic: Optional[Dict[str, Any]] = None,
+        readiness: str = "UNKNOWN",
+        readiness_notes: Optional[str] = None,
+        class_file: Optional[str] = None,
+        class_name: Optional[str] = None,
+        schema_file: Optional[str] = None,
     ) -> bool:
         """Create a new strategy record in the database."""
         affinity_json = json.dumps(affinity_scores or {})
@@ -45,8 +50,9 @@ class StrategiesMixin(BaseRepository):
                 """
                 INSERT INTO sys_strategies (
                     class_id, mnemonic, version, affinity_scores,
-                    market_whitelist, description, type, logic
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    market_whitelist, description, type, logic,
+                    readiness, readiness_notes, class_file, class_name, schema_file
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     class_id,
@@ -57,6 +63,11 @@ class StrategiesMixin(BaseRepository):
                     description,
                     strategy_type,
                     logic_json,
+                    readiness,
+                    readiness_notes,
+                    class_file,
+                    class_name,
+                    schema_file,
                 ),
             )
             logger.info(f"[STRATEGIES] Created: {class_id} ({mnemonic})")

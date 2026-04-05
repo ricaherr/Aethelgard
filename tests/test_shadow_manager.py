@@ -47,6 +47,23 @@ class TestShadowManagerInitialization:
         assert manager.promotion_validator is not None
         assert isinstance(manager.promotion_validator, PromotionValidator)
 
+    def test_manager_accepts_storage_with_private_get_conn(self):
+        """ShadowManager should accept StorageManager-like adapters exposing _get_conn()."""
+
+        class StorageAdapter:
+            def __init__(self, conn: sqlite3.Connection):
+                self._conn = conn
+
+            def _get_conn(self) -> sqlite3.Connection:
+                return self._conn
+
+        conn = sqlite3.connect(":memory:")
+        adapter = StorageAdapter(conn)
+
+        manager = ShadowManager(storage=adapter)
+
+        assert isinstance(manager.storage, ShadowStorageManager)
+
 
 class TestHealthyInstance:
     """Tests for healthy SHADOW instance (3/3 Pilares PASS)."""

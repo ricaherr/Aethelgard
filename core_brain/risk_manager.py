@@ -575,6 +575,58 @@ class RiskManager:
                 "error": str(e)
             }
 
+    async def rebalance_after_caution(
+        self,
+        symbol: str,
+        trace_id: Optional[str] = None,
+        target_risk_multiplier: float = 1.0,
+    ) -> Dict[str, Any]:
+        """
+        Restore normal risk multiplier after an economic CAUTION window ends.
+
+        Persists the change in sys_config to keep SSOT aligned across modules.
+        """
+        try:
+            if not symbol:
+                return {
+                    "status": "error",
+                    "symbol": symbol,
+                    "reason": "symbol_required",
+                }
+
+            if target_risk_multiplier <= 0.0 or target_risk_multiplier > 1.0:
+                logger.warning(
+                    f"[RISK_MANAGER] Invalid target_risk_multiplier={target_risk_multiplier} for {symbol}. "
+                    "Using safe default 1.0"
+                )
+                target_risk_multiplier = 1.0
+
+            self.storage.update_sys_config({
+                f"econ_risk_multiplier_{symbol}": target_risk_multiplier,
+                "econ_rebalance_last_symbol": symbol,
+                "econ_rebalance_last_trace_id": trace_id or "N/A",
+                "econ_rebalance_last_at": datetime.now().isoformat(),
+            })
+
+            logger.info(
+                f"[RISK_MANAGER] [TRACE_ID: {trace_id}] Post-CAUTION rebalance completed for {symbol}. "
+                f"multiplier={target_risk_multiplier}"
+            )
+
+            return {
+                "status": "ok",
+                "symbol": symbol,
+                "risk_multiplier": target_risk_multiplier,
+                "trace_id": trace_id,
+            }
+        except Exception as e:
+            logger.error(f"[RISK_MANAGER] Error in rebalance_after_caution for {symbol}: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "symbol": symbol,
+                "reason": str(e),
+            }
+
     def get_status(self) -> Dict:
         return {
             "capital": self.capital,

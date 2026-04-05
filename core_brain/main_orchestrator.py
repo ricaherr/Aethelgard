@@ -2,185 +2,120 @@
 Main Orchestrator - Aethelgard Trading System
 =============================================
 
-Orchestrates the complete trading cycle: Scan -> Signal -> Risk -> Execute.
-
-Key Features:
-- Asynchronous event loop for non-blocking operation
-- Dynamic frequency adjustment based on market regime
-- Session statistics with DB reconstruction (Resilient Recovery)
-- Adaptive heartbeat (faster when usr_signals active)
-- Graceful shutdown with state persistence
-- Error resilience with automatic recovery
-
-Principles Applied:
-- Autonomy: Self-regulating loop frequency + adaptive heartbeat
-- Resilience: Reconstructs session state from DB after restart
-- Agnosticism: Works with any injected components
-- Security: Persists critical state before shutdown
-
-Architecture: "Orquestador Resiliente"
-- SessionStats se reconstruye desde la DB al iniciar
-- Latido de Guardia: sleep se reduce si hay señales activas
-- Persistencia completa de usr_trades ejecutados del día
+Thin coordinator after DISC-003 mass decomposition.
+Orchestrates Scan -> Signal -> Risk -> Execute through extracted modules.
 """
 import sys
-import os
 import asyncio
-import json
 import logging
 import psutil
-import signal
-import sqlite3
-import time
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Dict, Optional, Any, List, Tuple
-import uuid
+from typing import Any, Dict, Optional
 
 # Add project root to path
 BASE_DIR = Path(__file__).parent.parent
 sys.path.append(str(BASE_DIR))
 
-from models.signal import MarketRegime, Signal
 from data_vault.storage import StorageManager
-from core_brain.coherence_monitor import CoherenceMonitor
-from core_brain.signal_expiration_manager import SignalExpirationManager
-from core_brain.position_manager import PositionManager
+from models.signal import MarketRegime
 from core_brain.regime import RegimeClassifier
-from core_brain.edge_tuner import EdgeTuner
-from core_brain.threshold_optimizer import ThresholdOptimizer
-from core_brain.execution_feedback import ExecutionFeedbackCollector, ExecutionFailureReason
-from core_brain.trade_closure_listener import TradeClosureListener
-from core_brain.strategy_ranker import StrategyRanker
-from core_brain.signal_selector import SignalSelector
-from core_brain.cooldown_manager import CooldownManager
 from core_brain.dedup_learner import DedupLearner
+from core_brain.signal_expiration_manager import SignalExpirationManager
 from core_brain.api.routers.shadow_ws import broadcast_shadow_update
-from core_brain.services.integrity_guard import IntegrityGuard, HealthStatus
-from core_brain.services.anomaly_sentinel import AnomalySentinel, DefenseProtocol
+from core_brain.services.integrity_guard import IntegrityGuard
+from core_brain.services.anomaly_sentinel import AnomalySentinel
 from core_brain.services.coherence_service import CoherenceService
+from core_brain.services.signal_review_manager import SignalReviewManager
 from core_brain.resilience_manager import ResilienceManager
-from core_brain.resilience import EdgeAction, EdgeEventReport, ResilienceLevel, SystemPosture
+from core_brain.orchestrators import _background_tasks as background_tasks
+from core_brain.orchestrators import _cycle_exec as cycle_exec
+from core_brain.orchestrators import _cycle_scan as cycle_scan
+from core_brain.orchestrators import _cycle_trade as cycle_trade
+from core_brain.orchestrators import _discovery as discovery
+from core_brain.orchestrators import _init_methods as init_methods
+from core_brain.orchestrators import _lifecycle as lifecycle
+from core_brain.orchestrators import _scan_methods as scan_methods
+from core_brain.orchestrators._types import PriceSnapshot, ScanBundle
 
 logger = logging.getLogger(__name__)
 
+
 def _resolve_storage(storage: Optional[StorageManager], user_id: Optional[str] = None) -> StorageManager:
-    """
-    Resolve storage dependency with legacy fallback.
-    Main path should inject StorageManager from composition root.
-    
-    Multi-tenant architecture: Supports user_id for user-aware DB isolation.
-    
-    Raises:
-        RuntimeError: If StorageManager initialization fails and storage is None.
-    """
+    """Resolve storage dependency with legacy fallback."""
     if storage is not None:
         return storage
-    
-    logger.warning(f"MainOrchestrator initialized without explicit storage! Falling back to default storage (user_id={user_id}).")
-    
+
+    logger.warning(
+        "MainOrchestrator initialized without explicit storage! Falling back to default storage (user_id=%s).",
+        user_id,
+    )
     try:
         return StorageManager(user_id=user_id)
     except Exception as e:
-        logger.error(f"CRITICAL: Failed to initialize StorageManager with user_id={user_id}. Error: {str(e)}", exc_info=True)
+        logger.error(
+            "CRITICAL: Failed to initialize StorageManager with user_id=%s. Error: %s",
+            user_id,
+            str(e),
+            exc_info=True,
+        )
         raise RuntimeError(f"StorageManager initialization failed: {str(e)}") from e
-
-
-@dataclass
-class PriceSnapshot:
-    """Atomic snapshot of price data with provider traceability.
-    
-    Ensures every decision in the pipeline knows:
-    - WHAT data was used (df)
-    - WHERE it came from (provider_source)
-    - WHEN it was captured (timestamp)
-    
-    Rule: If MT5 is connected, MT5 is the SSOT for live prices.
-    Yahoo is strictly a historical fallback.
-    """
-    symbol: str
-    timeframe: str
-    df: Any  # pd.DataFrame
-    provider_source: str
-    timestamp: datetime = field(default_factory=datetime.now)
-    regime: Optional[Any] = None  # MarketRegime
-
 
 # Global references for API/Control
 scanner = None
 orchestrator = None
 
+
 @dataclass
 class SessionStats:
     """
     Tracks session statistics for the current trading day.
-    Resets automatically when a new day begins.
-    
-    RESILIENCIA: Can reconstruct state from database on initialization.
-    This ensures usr_trades executed today are not forgotten after restarts.
+    Reconstructs state from DB on initialization.
     """
     date: date = field(default_factory=lambda: date.today())
     usr_signals_processed: int = 0
     usr_signals_executed: int = 0
     cycles_completed: int = 0
     errors_count: int = 0
-    # Pipeline tracking
     scans_total: int = 0
     usr_signals_generated: int = 0
     usr_signals_risk_passed: int = 0
     usr_signals_vetoed: int = 0
-    
+
     @classmethod
-    def from_storage(cls, storage: StorageManager) -> 'SessionStats':
-        """
-        Reconstruct SessionStats from persistent storage.
-        
-        This method enables recovery after system restarts, ensuring
-        we don't lose track of today's executed usr_signals.
-        
-        Args:
-            storage: StorageManager instance to query
-            
-        Returns:
-            SessionStats instance reconstructed from DB
-        """
+    def from_storage(cls, storage: StorageManager) -> "SessionStats":
         today = date.today()
-        
-        # Query DB for today's executed usr_signals (marked with status='executed')
         executed_count = storage.count_executed_usr_signals(today)
-        
-        # Retrieve system state for other metrics
         sys_config = storage.get_sys_config()
         session_data = sys_config.get("session_stats", {})
-        
-        # Check if session data is from today
+
         stored_date_str = session_data.get("date", "")
         try:
             stored_date = date.fromisoformat(stored_date_str)
             is_today = stored_date == today
         except (ValueError, TypeError):
             is_today = False
-        
+
         if is_today:
-            # Restore full stats from storage
             stats = cls(
                 date=today,
                 usr_signals_processed=session_data.get("usr_signals_processed", 0),
-                usr_signals_executed=executed_count,  # Always source from DB
+                usr_signals_executed=executed_count,
                 cycles_completed=session_data.get("cycles_completed", 0),
-                errors_count=session_data.get("errors_count", 0)
+                errors_count=session_data.get("errors_count", 0),
+                scans_total=session_data.get("scans_total", 0),
+                usr_signals_generated=session_data.get("usr_signals_generated", 0),
+                usr_signals_risk_passed=session_data.get("usr_signals_risk_passed", 0),
+                usr_signals_vetoed=session_data.get("usr_signals_vetoed", 0),
             )
             logger.info(f"SessionStats reconstructed from DB: {stats}")
         else:
-            # Fresh start for new day
             stats = cls(date=today, usr_signals_executed=executed_count)
             logger.info(f"New day detected. Fresh SessionStats initialized: {stats}")
-        
         return stats
-    
+
     def reset_if_new_day(self) -> None:
-        """Reset stats if a new day has started"""
         today = date.today()
         if self.date != today:
             logger.info(f"New day detected. Resetting stats. Previous: {self}")
@@ -189,64 +124,30 @@ class SessionStats:
             self.usr_signals_executed = 0
             self.cycles_completed = 0
             self.errors_count = 0
-    
+            self.scans_total = 0
+            self.usr_signals_generated = 0
+            self.usr_signals_risk_passed = 0
+            self.usr_signals_vetoed = 0
+
     def __str__(self) -> str:
         return (
-            f"SessionStats(date={self.date}, "
-            f"processed={self.usr_signals_processed}, "
-            f"executed={self.usr_signals_executed}, "
-            f"cycles={self.cycles_completed}, "
+            f"SessionStats(date={self.date}, processed={self.usr_signals_processed}, "
+            f"executed={self.usr_signals_executed}, cycles={self.cycles_completed}, "
             f"errors={self.errors_count})"
         )
 
 
 class MainOrchestrator:
-    async def ensure_optimal_demo_accounts(self) -> None:
-        """
-        Provisiona cuentas demo maestras solo cuando sea óptimo:
-        - Al inicio si no existe cuenta válida
-        - Si falla la conexión o expira la cuenta
-        - Cuando el usuario activa modo DEMO y no hay cuenta
-        """
-        from connectors.auto_provisioning import BrokerProvisioner
-        provisioner = BrokerProvisioner(storage=self.storage)
-        for broker_id, info in self.broker_status.items():
-            if info['auto_provision']:
-                # Verificar si existe cuenta demo válida
-                if not provisioner.has_demo_account(broker_id):
-                    logger.info(f"[EDGE] No existe cuenta demo válida para {broker_id}. Provisionando...")
-                    success, result = await provisioner.ensure_demo_account(broker_id)
-                    if success:
-                        self.broker_status[broker_id]['status'] = 'demo_ready'
-                        logger.info(f"[OK] Cuenta demo lista para {broker_id}")
-                    else:
-                        self.broker_status[broker_id]['status'] = f"error: {result.get('error', 'unknown')}"
-                        logger.warning(f"[ERROR] Error al provisionar demo {broker_id}: {result}")
-                else:
-                    logger.info(f"[EDGE] Ya existe cuenta demo válida para {broker_id}. No se reprovisiona.")
-            else:
-                self.broker_status[broker_id]['status'] = 'manual_required'
-                logger.info(f"[WARNING]  {broker_id} requiere provisión manual")
-    """
-    Main orchestrator for the Aethelgard trading system.
-    
-    Manages the complete trading cycle:
-    1. Scanner: Identifies market opportunities
-    2. Signal Factory: Generates trading usr_signals
-    3. Risk Manager: Validates risk parameters
-    4. Executor: Places usr_orders
-    
-    Features:
-    - Dynamic loop frequency based on market regime
-    - Adaptive heartbeat: faster sleep when active usr_signals present
-    - Resilient recovery: reconstructs session state from DB
-    - Latido de Guardia: CPU-friendly monitoring
-    """
-    
-    # Adaptive heartbeat constants
-    MIN_SLEEP_INTERVAL = 3  # Seconds (when usr_signals active)
-    HEARTBEAT_CHECK_INTERVAL = 1  # Check every second for shutdown
-    
+    """Thin coordinator for the Aethelgard trading cycle."""
+
+    # FASE 2: usr_strategies initialization now lives in
+    # core_brain.orchestrators._lifecycle.main() and _init_methods.py.
+    # The runtime path uses StrategyEngineFactory to build strategy_engines,
+    # then injects them into SignalFactory without any hardcoded strategy class.
+
+    MIN_SLEEP_INTERVAL = 3
+    HEARTBEAT_CHECK_INTERVAL = 1
+
     def __init__(
         self,
         scanner: Any,
@@ -259,1416 +160,216 @@ class MainOrchestrator:
         coherence_monitor: Optional[Any] = None,
         expiration_manager: Optional[Any] = None,
         regime_classifier: Optional[Any] = None,
-        strategy_ranker: Optional[StrategyRanker] = None,
+        strategy_ranker: Optional[Any] = None,
         thought_callback: Optional[Any] = None,
         config_path: Optional[str] = None,
         ui_mapping_service: Optional[Any] = None,
         heartbeat_monitor: Optional[Any] = None,
         conflict_resolver: Optional[Any] = None,
-        execution_feedback_collector: Optional[ExecutionFeedbackCollector] = None,
-        signal_quality_scorer: Optional[Any] = None,  # PHASE 4: Unified signal quality authority
-        consensus_engine: Optional[Any] = None,  # PHASE 4: Multi-strategy consensus detection
-        failure_pattern_registry: Optional[Any] = None,  # PHASE 4: Autonomous failure learning
-        strategy_gatekeeper: Optional[Any] = None,  # N1-5: Pre-execution asset efficiency filter
-        tenant_id: Optional[str] = None,  # DEPRECATED: Use user_id instead
-        user_id: Optional[str] = None  # Multi-user support: User identifier for DB isolation
+        execution_feedback_collector: Optional[Any] = None,
+        signal_quality_scorer: Optional[Any] = None,
+        consensus_engine: Optional[Any] = None,
+        failure_pattern_registry: Optional[Any] = None,
+        strategy_gatekeeper: Optional[Any] = None,
+        tenant_id: Optional[str] = None,
+        user_id: Optional[str] = None,
     ):
-        """
-        Initialize MainOrchestrator with Explicit Dependency Injection (SOLID).
-        
-        TRACE_ID: MAIN-ORCHESTRATOR-DI-SEPARATION-2026
-        
-        signal_factory is NOW OPTIONAL:
-        - If None: User must call initialize_sensors() then set_signal_factory() afterwards
-        - If provided: Uses it immediately (backward compatible)
-        
-        This separation allows:
-        1. Sensors to be initialized FIRST
-        2. SignalFactory created WITH sensores already available
-        3. Zero duplicate strategy loads
-        """
+        from core_brain.server import set_resilience_manager
+
         self.thought_callback = thought_callback
-        # Support both old (tenant_id) and new (user_id) parameters
         effective_user_id = user_id or tenant_id
-        self.user_id = effective_user_id  # Store user context
-        
-        # Initialize sensor dictionary early (will be populated by initialize_sensors())
-        self.available_sensors = {}
-        self._signal_factory = signal_factory  # Store for later injection if None
-        
-        # 1. Base dependencies and config
-        self._init_core_dependencies(scanner, signal_factory, risk_manager, executor, storage, config_path, strategy_ranker, execution_feedback_collector=execution_feedback_collector, user_id=effective_user_id, tenant_id=tenant_id)
-        
-        # 1.5 Dynamic strategy loading is done explicitly via set_signal_factory() or start()
-        # Do NOT auto-load here; it would replace injected signal_factory (tests and production use explicit injection)
-        
-        # 2. Classifier and Position Management
+        self.user_id = effective_user_id
+        self.available_sensors: Dict[str, Any] = {}
+        self._signal_factory = signal_factory
+
+        self._init_core_dependencies(
+            scanner,
+            signal_factory,
+            risk_manager,
+            executor,
+            storage,
+            config_path,
+            strategy_ranker,
+            execution_feedback_collector,
+            effective_user_id,
+            tenant_id,
+        )
+
         self.regime_classifier = regime_classifier or RegimeClassifier(storage=self.storage)
         if position_manager is None:
             self._init_position_management()
         else:
             self.position_manager = position_manager
 
-        # 3. Ancillary Services (Expiration, Coherence, Listeners)
         self._init_ancillary_services(expiration_manager, coherence_monitor, trade_closure_listener)
-
-        # 4. System State and Session Tracking (SSOT)
         self._init_sys_config()
-        
-        # 5. Cycle intervals and Heartbeat
         self._init_loop_intervals()
-
-        # 6. Broker Discovery and Status
         self._init_broker_discovery()
-
-        # 7. Orchestration & Reporting (NEW - Vector V4)
         self._init_orchestration_services(ui_mapping_service, heartbeat_monitor, conflict_resolver)
-
-        # 8. Market Analysis & UI Integration (EXEC-UI-DATA-INTEGRATION)
         self._init_market_analysis_services()
-        
-        # 9. Economic Calendar Veto Interface (PHASE 8: News-Based Trading Lockdown)
         self._init_economic_integration()
-        
-        # 10. PHASE 3: Deduplication Learner (Weekly Auto-Calibration)
+
         self.dedup_learner = DedupLearner(storage_manager=self.storage)
         self._last_dedup_learning = datetime.now(timezone.utc)
-        
-        # 11. WEEK 3: SHADOW Evolution Manager (Hourly Feedback Loop)
-        try:
-            from core_brain.shadow_manager import ShadowManager
-            _dyn_pilar3 = self.storage.get_dynamic_params() or {}
-            _pilar3_min = int(_dyn_pilar3.get("pilar3_min_trades", 5))
-            self.shadow_manager = ShadowManager(
-                storage=self.storage,
-                regime_classifier=self.regime_classifier,
-                edge_tuner=EdgeTuner(self.storage),
-                pilar3_min_trades=_pilar3_min,
-            )
-            self.last_shadow_evolution = None  # Track last hourly run (datetime)
-        except Exception as e:
-            logger.warning(f"[WEEK3] Failed to initialize ShadowManager: {e}")
-            self.shadow_manager = None
-            self.last_shadow_evolution = None
 
-        # 11.5: EXEC-V5 — BacktestOrchestrator (Daily cycle, BACKTEST → SHADOW pipeline)
-        self.backtest_orchestrator = None
-        self._last_backtest_run: Optional[datetime] = None
-        try:
-            from core_brain.backtest_orchestrator import BacktestOrchestrator
-            from core_brain.scenario_backtester import ScenarioBacktester
-            from core_brain.data_provider_manager import DataProviderManager
-            _bkt_dpm = DataProviderManager(storage=self.storage)
-            self.backtest_orchestrator = BacktestOrchestrator(
-                storage=self.storage,
-                data_provider_manager=_bkt_dpm,
-                scenario_backtester=ScenarioBacktester(self.storage),
-                shadow_manager=self.shadow_manager,
-            )
-        except Exception as e:
-            logger.warning(f"[BACKTEST] Failed to initialize BacktestOrchestrator: {e}")
-
-        # 11.6: HU 10.7 — OperationalModeManager (adaptive context + backtest budget)
-        self.operational_mode_manager = None
-        try:
-            from core_brain.operational_mode_manager import OperationalModeManager
-            self.operational_mode_manager = OperationalModeManager(storage=self.storage)
-            # Wire adaptive cooldown into BacktestOrchestrator (tier-2 fix)
-            if self.backtest_orchestrator is not None:
-                self.backtest_orchestrator.mode_manager = self.operational_mode_manager
-        except Exception as e:
-            logger.warning(f"[MODE_MGR] Failed to initialize OperationalModeManager: {e}")
-
-        # 12. PHASE 4: Intelligent Signal Quality Scoring (Unified Authority)
+        self._init_shadow_manager()
+        self._init_backtest_orchestrator()
         self._init_phase4_intelligence_services(
-            signal_quality_scorer=signal_quality_scorer,
-            consensus_engine=consensus_engine,
-            failure_pattern_registry=failure_pattern_registry
+            signal_quality_scorer,
+            consensus_engine,
+            failure_pattern_registry,
         )
 
-        # N1-5: StrategyGatekeeper — pre-execution asset efficiency filter (injected via DI)
+        self.signal_review_manager = SignalReviewManager(storage_manager=self.storage)
         self.strategy_gatekeeper = strategy_gatekeeper
-
-        # 13. EDGE-IGNITION-PHASE-1 — IntegrityGuard (Runtime health self-diagnosis)
         self.integrity_guard = IntegrityGuard(storage=self.storage)
-
-        # 14. EDGE-IGNITION-PHASE-2 — AnomalySentinel (Market anomaly gate)
         self.anomaly_sentinel = AnomalySentinel(storage=self.storage)
-
-        # 15. EDGE-IGNITION-PHASE-3 — CoherenceService (Model-Reality drift detection)
         self.coherence_service = CoherenceService(storage=self.storage)
-
-        # 16. EDGE-IGNITION-PHASE-4B — ResilienceManager (Immune System Brain)
-        # Sole authority over SystemPosture transitions. Gates 1-3 report here
-        # instead of triggering direct shutdown. Only STRESSED halts the loop.
         self.resilience_manager = ResilienceManager(storage=self.storage)
-        # Publish to server singleton so API routes can read live posture.
         try:
-            from core_brain.server import set_resilience_manager
             set_resilience_manager(self.resilience_manager)
         except Exception:
-            pass  # Non-fatal: server may not be initialised in test context.
+            pass
 
     @property
     def signal_factory(self) -> Optional[Any]:
-        """Public property for backward compatibility. Returns _signal_factory."""
         return self._signal_factory
-    
+
     @signal_factory.setter
     def signal_factory(self, factory: Optional[Any]) -> None:
-        """Setter for backward compatibility."""
         self._signal_factory = factory
+
+    async def ensure_optimal_demo_accounts(self) -> None:
+        from core_brain.orchestrators._discovery import ensure_optimal_demo_accounts_impl
+        await ensure_optimal_demo_accounts_impl(self)
+
+    def _init_core_dependencies(
+        self,
+        scanner: Any,
+        factory: Optional[Any] = None,
+        risk: Any = None,
+        executor: Any = None,
+        storage: Optional[StorageManager] = None,
+        config_path: Optional[str] = None,
+        strategy_ranker: Optional[Any] = None,
+        execution_feedback_collector: Optional[Any] = None,
+        user_id: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+    ) -> None:
+        init_methods.init_core_dependencies(
+            self,
+            scanner,
+            factory,
+            risk,
+            executor,
+            storage,
+            config_path,
+            strategy_ranker,
+            execution_feedback_collector,
+            user_id,
+            tenant_id,
+        )
+
+    def _load_dynamic_usr_strategies(self) -> None:
+        init_methods.load_dynamic_usr_strategies(self)
+
+    def _init_position_management(self) -> None:
+        init_methods.init_position_management(self)
+
+    def _init_ancillary_services(
+        self,
+        expiration: Optional[Any],
+        coherence: Optional[Any],
+        listener: Optional[Any],
+    ) -> None:
+        init_methods.init_ancillary_services(self, expiration, coherence, listener)
+
+    def _init_sys_config(self) -> None:
+        init_methods.init_sys_config(self)
+
+    def _init_loop_intervals(self) -> None:
+        init_methods.init_loop_intervals(self)
+
+    def _init_broker_discovery(self) -> None:
+        init_methods.init_broker_discovery(self)
+
+    def _init_orchestration_services(
+        self,
+        ui_mapping: Optional[Any],
+        heartbeat: Optional[Any],
+        resolver: Optional[Any],
+    ) -> None:
+        init_methods.init_orchestration_services(self, ui_mapping, heartbeat, resolver)
+
+    def _init_market_analysis_services(self) -> None:
+        init_methods.init_market_analysis_services(self)
+
+    def _init_economic_integration(self) -> None:
+        init_methods.init_economic_integration(self)
+
+    def _init_phase4_intelligence_services(
+        self,
+        signal_quality_scorer: Optional[Any],
+        consensus_engine: Optional[Any],
+        failure_pattern_registry: Optional[Any],
+    ) -> None:
+        init_methods.init_phase4_intelligence_services(
+            self,
+            signal_quality_scorer,
+            consensus_engine,
+            failure_pattern_registry,
+        )
+
+    def _init_shadow_manager(self) -> None:
+        init_methods.init_shadow_manager(self)
+
+    def _init_backtest_orchestrator(self) -> None:
+        init_methods.init_backtest_orchestrator(self)
 
     async def initialize_shadow_pool(
         self,
         strategy_engines: Dict[str, Any],
         account_id: str = "DEMO_MT5_001",
-        variations_per_strategy: int = 2
+        variations_per_strategy: int = 2,
     ) -> Dict[str, Any]:
-        """
-        Bootstrap SHADOW pool with automatic instance creation.
-        
-        Called during start.py initialization AFTER loading strategies.
-        Creates M parameter variations per strategy to enable Darwinian selection.
-        
-        Args:
-            strategy_engines: Dict of loaded strategy engines
-            account_id: DEMO account to associate instances with
-            variations_per_strategy: How many parameter sets per strategy (2-4 recommended)
-            
-        Returns:
-            Dict with creation stats {'created': N, 'skipped': M}
-        """
-        if not self.shadow_manager:
-            logger.warning("[SHADOW] ShadowManager not initialized, skipping pool bootstrap")
-            return {"created": 0, "skipped": len(strategy_engines)}
-        
-        # Parameter variation templates (creates diversity in the pool)
-        param_variations = [
-            {"risk_pct": 0.01, "regime_filters": ["TREND_UP", "EXPANSION"]},
-            {"risk_pct": 0.015, "regime_filters": ["TREND_UP"]},
-            # Optional 3rd variation if requested
-            {"risk_pct": 0.02, "regime_filters": []},
-        ][:variations_per_strategy]
-        
-        created_count = 0
-        skipped_count = 0  # strategies filtered out (not in SHADOW mode)
-        failed_count  = 0  # real exceptions during instance creation
-
-        # Only create instances for strategies that are in SHADOW mode in DB
-        shadow_strategy_ids = self.storage.get_shadow_mode_strategy_ids()
-
-        # Load active instance counts per strategy (idempotency guard)
-        existing_active = self.shadow_manager.storage.list_active_instances()
-        active_per_strategy: Dict[str, int] = {}
-        for inst in existing_active:
-            active_per_strategy[inst.strategy_id] = (
-                active_per_strategy.get(inst.strategy_id, 0) + 1
-            )
-
-        for strategy_id, engine in strategy_engines.items():
-            if strategy_id not in shadow_strategy_ids:
-                logger.debug(
-                    "[SHADOW] ⏭️ Skipping %s — not in SHADOW mode (mode filter)", strategy_id
-                )
-                skipped_count += 1
-                continue
-
-            already_active = active_per_strategy.get(strategy_id, 0)
-            if already_active >= variations_per_strategy:
-                logger.debug(
-                    f"[SHADOW] ⏭️ Skipping {strategy_id}: "
-                    f"{already_active} active instances already exist"
-                )
-
-                continue
-
-            for variation_idx, params in enumerate(param_variations):
-                try:
-                    instance_id = f"SHADOW_{strategy_id}_V{variation_idx}_{uuid.uuid4().hex[:8]}"
-
-                    self.shadow_manager.storage.create_shadow_instance(
-                        instance_id=instance_id,
-                        strategy_id=strategy_id,
-                        account_id=account_id,
-                        account_type="DEMO",
-                        parameter_overrides={"risk_pct": params["risk_pct"]},
-                        regime_filters=params.get("regime_filters", [])
-                    )
-
-                    logger.info(
-                        f"[SHADOW] [OK] Created pool instance {strategy_id} "
-                        f"(V{variation_idx}, risk={params['risk_pct']:.2%})"
-                    )
-                    created_count += 1
-
-                except Exception as e:
-                    logger.error(f"[SHADOW] ✗ Failed to create instance for {strategy_id}: {e}")
-                    failed_count += 1
-
-        logger.info(
-            f"[SHADOW] [HOME] Pool bootstrap complete: {created_count} instances created, "
-            f"{skipped_count} skipped (not SHADOW), {failed_count} failed"
+        return await discovery.initialize_shadow_pool_impl(
+            self,
+            strategy_engines,
+            account_id,
+            variations_per_strategy,
         )
-        return {"created": created_count, "skipped": skipped_count, "failed": failed_count}
-
-    def _init_core_dependencies(self, scanner: Any, factory: Optional[Any] = None, risk: Any = None, executor: Any = None, storage: Optional[Any] = None, config_path: Optional[str] = None, strategy_ranker: Optional[StrategyRanker] = None, execution_feedback_collector: Optional[ExecutionFeedbackCollector] = None, user_id: Optional[str] = None, tenant_id: Optional[str] = None) -> None:
-        """Initializes core engines and resolves storage/config.
-        
-        Multi-user architecture: Passes user_id to storage resolution for per-user DB isolation.
-        tenant_id is deprecated (kept for backward compatibility).
-        signal_factory (factory) is optional - can be set later via set_signal_factory().
-        execution_feedback_collector is optional - auto-created if None.
-        """
-        self.scanner = scanner
-        self._signal_factory = factory  # Optional - may be None
-        self.risk_manager = risk
-        self.executor = executor
-        effective_user_id = user_id or tenant_id
-        self.storage = _resolve_storage(storage, user_id=effective_user_id)
-        self.strategy_ranker = strategy_ranker or StrategyRanker(storage=self.storage)
-        self.config = self._load_config(config_path)
-        
-        # Initialize ExecutionFeedbackCollector for autonomous learning loop
-        self.execution_feedback_collector = execution_feedback_collector or ExecutionFeedbackCollector(storage=self.storage)
-        logger.info(f"[FEEDBACK] ExecutionFeedbackCollector initialized (DOMINIO-10 Auto-Healing)")
-        
-        # PHASE 1: Initialize Signal Deduplication & Cooldown Management (HU 3.3 + 4.7)
-        self.signal_selector = SignalSelector(storage_manager=self.storage)
-        self.cooldown_manager = CooldownManager(storage_manager=self.storage)
-        logger.info(f"[DEDUP] Signal Selector & Cooldown Manager initialized (HU 3.3/4.7)")
-
-    def _load_dynamic_usr_strategies(self) -> None:
-        """
-        Load all usr_strategies dynamically from BD (MANIFESTO II.3-II.4).
-        Creates a new SignalFactory with populated strategy engines.
-        CUMPLE: DEVELOPMENT_GUIDELINES 1.6 (Service Layer) + Dynamic Registry.
-        
-        Uses already-initialized sensors from initialize_sensors() or initializes them if needed.
-        """
-        try:
-            from core_brain.services.strategy_engine_factory import StrategyEngineFactory
-            from core_brain.signal_factory import SignalFactory
-            from core_brain.confluence import MultiTimeframeConfluenceAnalyzer
-            from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
-            
-            logger.info("[STRATEGIES] Initiating dynamic loading from BD (SSOT)...")
-            
-            # Ensure sensors are initialized (use existing or create new)
-            if not self.available_sensors:
-                logger.info("[STRATEGIES] Sensors not yet initialized, initializing now...")
-                self.initialize_sensors()
-            
-            available_sensors = self.available_sensors
-            
-            # Load required dependencies
-            dynamic_params = self.storage.get_dynamic_params()
-            confluence_analyzer = MultiTimeframeConfluenceAnalyzer(storage=self.storage)
-            trifecta_analyzer = TrifectaAnalyzer(storage=self.storage)
-            
-            logger.info(f"[STRATEGIES] Using sensors: {list(available_sensors.keys())}")
-            
-            # Create factory and instantiate all usr_strategies
-            strategy_factory = StrategyEngineFactory(
-                storage=self.storage,
-                config=dynamic_params,
-                available_sensors=available_sensors
-            )
-            active_engines = strategy_factory.instantiate_all_sys_strategies()
-            stats = strategy_factory.get_stats()
-            
-            # Create new SignalFactory with loaded usr_strategies
-            self.signal_factory = SignalFactory(
-                storage_manager=self.storage,
-                strategy_engines=active_engines,
-                confluence_analyzer=confluence_analyzer,
-                trifecta_analyzer=trifecta_analyzer,
-                execution_feedback_collector=self.execution_feedback_collector
-            )
-            
-            logger.info(
-                f"[STRATEGIES] [OK] Dynamic loading complete: "
-                f"{stats['active_engines']} active, {stats['failed_loads']} skipped"
-            )
-        except Exception as e:
-            logger.error(f"[STRATEGIES] [WARNING]  Failed to load usr_strategies dynamically: {e}", exc_info=True)
-            logger.warning("[STRATEGIES] Continuing with existing SignalFactory (may have 0 engines)")
-
-    def initialize_sensors(self) -> Dict[str, Any]:
-        """
-        Explicitly initialize ALL sensors (DI).
-        
-        Returns:
-            Dict[sensor_name -> sensor_instance]
-            
-        Called BEFORE creating SignalFactory to ensure sensores are ready.
-        This method replaces the implicit initialization that was hidden in _load_dynamic_usr_strategies().
-        
-        TRACE_ID: MAIN-ORCHESTRATOR-SENSOR-INIT-2026
-        """
-        try:
-            from core_brain.services.fundamental_guard import FundamentalGuardService
-            from core_brain.sensors import (
-                MovingAverageSensor,
-                ElephantCandleDetector,
-                SessionLiquiditySensor,
-                LiquiditySweepDetector,
-                MarketStructureAnalyzer,
-                SessionStateDetector,
-                ReasoningEventBuilder,
-            )
-            
-            logger.info("[SENSORS] Initializing all sensors (explicit DI)...")
-            
-            # Create all sensors
-            moving_avg_sensor = MovingAverageSensor(storage=self.storage)
-            elephant_detector = ElephantCandleDetector(
-                storage=self.storage, 
-                moving_average_sensor=moving_avg_sensor
-            )
-            liq_sensor = SessionLiquiditySensor(storage=self.storage)
-            liq_sweep_detector = LiquiditySweepDetector(storage=self.storage)
-            market_struct_analyzer = MarketStructureAnalyzer(storage=self.storage)
-            session_state = SessionStateDetector(storage=self.storage)
-            reasoning_builder = ReasoningEventBuilder(
-                storage=self.storage,
-                market_structure_analyzer=market_struct_analyzer
-            )
-            fundamental_guard = FundamentalGuardService(storage=self.storage)
-            
-            # Map sensors
-            self.available_sensors = {
-                "moving_average_sensor": moving_avg_sensor,
-                "elephant_candle_detector": elephant_detector,
-                "session_liquidity_sensor": liq_sensor,
-                "liquidity_sweep_detector": liq_sweep_detector,
-                "market_structure_analyzer": market_struct_analyzer,
-                "session_state_detector": session_state,
-                "reasoning_event_builder": reasoning_builder,
-                "fundamental_guard": fundamental_guard,
-            }
-            
-            logger.info(f"[SENSORS] ✓ All sensors initialized: {list(self.available_sensors.keys())}")
-            return self.available_sensors
-            
-        except Exception as e:
-            logger.error(f"[SENSORS] ✗ Failed to initialize sensors: {e}", exc_info=True)
-            raise
-
-    def set_signal_factory(self, signal_factory: Any) -> None:
-        """
-        Explicitly inject SignalFactory AFTER sensors are ready.
-        
-        Args:
-            signal_factory: Configured SignalFactory instance
-            
-        This method is called after initialize_sensors() and main initialization is complete.
-        Ensures sensors are available BEFORE strategies are loaded.
-        
-        TRACE_ID: MAIN-ORCHESTRATOR-SIGNAL-FACTORY-INJECT-2026
-        """
-        if signal_factory is None:
-            raise ValueError("signal_factory cannot be None")
-        
-        logger.info("[DI] Injecting SignalFactory (sensores already initialized)")
-        self._signal_factory = signal_factory  # Property setter handles backward compatibility
-        logger.info("[DI] ✓ SignalFactory injected successfully")
-
-    def _is_market_closed(self) -> bool:
-        """
-        Returns True when forex market is closed (weekend / no active session).
-
-        Forex cerrado: sábado completo + domingo antes de 22:00 UTC (apertura Sydney).
-        Fail-open: any exception → False (assume market open to avoid blocking trades).
-        Extracted as a method to allow deterministic patching in tests.
-        """
-        try:
-            _utc_now = datetime.now(timezone.utc)
-            _weekday = _utc_now.weekday()  # 5=sábado, 6=domingo
-            if _weekday == 5 or (_weekday == 6 and _utc_now.hour < 22):
-                return True
-            from core_brain.services.market_session_service import MarketSessionService
-            _active_sessions = [s for s in ("sydney", "tokyo", "london", "ny")
-                                 if MarketSessionService(self.storage).is_session_active(s, _utc_now)]
-            return not _active_sessions
-        except Exception:
-            return False  # fail-open
-
-    def _init_position_management(self) -> None:
-        """Initializes PositionManager with configuration mapping and connector resolution."""
-        pm_cfg_raw = self.config.get("position_management", {}) if isinstance(self.config, dict) else {}
-        pm_cfg = dict(pm_cfg_raw) if isinstance(pm_cfg_raw, dict) else {}
-        
-        # Map legacy keys
-        map_keys = {
-            "modification_cooldown_seconds": "cooldown_seconds",
-            "stale_position_thresholds": "stale_thresholds_hours",
-            "sl_tp_adjustments": "regime_adjustments"
-        }
-        for old, new in map_keys.items():
-            if old in pm_cfg and new not in pm_cfg:
-                pm_cfg[new] = pm_cfg[old]
-        
-        pm_cfg.setdefault("max_drawdown_multiplier", 2.0)
-        pm_cfg.setdefault("cooldown_seconds", 300)
-        pm_cfg.setdefault("max_modifications_per_day", 10)
-
-        # Resolve connector from executor
-        connector = None
-        connectors = getattr(self.executor, "connectors", None)
-        if isinstance(connectors, dict) and connectors:
-            connector = next(iter(connectors.values()))
-        
-        if connector is None:
-            class _NullConnector:
-                def get_open_positions(self) -> List[Dict[str, Any]]: return []
-            connector = _NullConnector()
-
-        self.position_manager = PositionManager(
-            storage=self.storage,
-            connector=connector,
-            regime_classifier=self.regime_classifier,
-            config=pm_cfg
-        )
-
-    def _init_ancillary_services(self, expiration: Optional[Any], coherence: Optional[Any], listener: Optional[Any]) -> None:
-        """Initializes secondary services for signal lifecycle and monitoring."""
-        self.expiration_manager = expiration or SignalExpirationManager(storage=self.storage)
-        self.coherence_monitor = coherence or CoherenceMonitor(storage=self.storage)
-
-        if listener is None:
-            self.trade_closure_listener = TradeClosureListener(
-                storage=self.storage,
-                risk_manager=self.risk_manager,
-                edge_tuner=EdgeTuner(storage=self.storage),
-                threshold_optimizer=ThresholdOptimizer(storage=self.storage)
-            )
-        else:
-            self.trade_closure_listener = listener
-
-    def _init_sys_config(self) -> None:
-        """Loads global module status and session statistics from SSOT."""
-        modules = self.storage.get_global_modules_enabled() if hasattr(self.storage, "get_global_modules_enabled") else {}
-        self.modules_enabled_global = modules if isinstance(modules, dict) else {}
-        
-        # Log module states
-        disabled = [k for k, v in self.modules_enabled_global.items() if not v]
-        if disabled:
-            logger.warning(f"[WARNING] Modules DISABLED globally: {', '.join(disabled)}")
-        else:
-            logger.info("[OK] Todos los módulos están HABILITADOS globalmente")
-        
-        self.stats = SessionStats.from_storage(self.storage)
-        self.current_regime = MarketRegime.RANGE
-        self._shutdown_requested = False
-        self._active_usr_signals = []
-        self._last_checked_deal_ticket = 0
-        
-        # Health check: Track consecutive cycles with 0 structures detected
-        self._consecutive_empty_structure_cycles = 0
-        self._max_consecutive_empty_cycles = 3  # Trigger alert after this many
-
-    def _init_loop_intervals(self) -> None:
-        """Sets up the intervals for the main orchestrator loop based on regimes."""
-        orchestrator_config = self.config.get("orchestrator", {})
-        self.intervals = {
-            MarketRegime.TREND: orchestrator_config.get("loop_interval_trend", 5),
-            MarketRegime.RANGE: orchestrator_config.get("loop_interval_range", 30),
-            MarketRegime.VOLATILE: orchestrator_config.get("loop_interval_volatile", 15),
-            MarketRegime.SHOCK: orchestrator_config.get("loop_interval_shock", 60)
-        }
-        logger.info(f"MainOrchestrator heartbeat: MIN={self.MIN_SLEEP_INTERVAL}s")
-        
-        # Initialize ranking cycle timing (PHASE 4: StrategyRanker integration)
-        self._last_ranking_cycle = datetime.now(timezone.utc) - timedelta(minutes=10)  # Force first eval
-        self._ranking_interval = 300  # 5 minutes in seconds
-
-    def _init_broker_discovery(self) -> None:
-        """Discovers and classifies available sys_brokers from storage."""
-        self.sys_brokers = self._discover_brokers()
-        self.broker_status = self._classify_brokers(self.sys_brokers)
-
-    def _init_orchestration_services(self, ui_mapping: Optional[Any], heartbeat: Optional[Any], resolver: Optional[Any]) -> None:
-        """Initializes orchestration & reporting services (Vector V4)."""
-        # UI Mapping Service (NEW)
-        if ui_mapping is not None:
-            self.ui_mapping_service = ui_mapping
-            logger.info("[ORCHESTRATOR] UI_Mapping_Service injected from parameter")
-        else:
-            try:
-                from core_brain.services.ui_mapping_service import UIMappingService
-                from core_brain.services.socket_service import get_socket_service
-                
-                socket_svc = get_socket_service()  # Get singleton instance
-                logger.debug(f"[ORCHESTRATOR] SocketService obtained: {socket_svc}")
-                
-                self.ui_mapping_service = UIMappingService(socket_service=socket_svc)
-                logger.info("[ORCHESTRATOR][[OK]] UI_Mapping_Service initialized successfully")
-            except ImportError as e:
-                logger.error(f"[ORCHESTRATOR] ImportError initializing UI_Mapping_Service: {e}", exc_info=True)
-                self.ui_mapping_service = None
-            except Exception as e:
-                logger.error(f"[ORCHESTRATOR] Exception initializing UI_Mapping_Service: {e}", exc_info=True)
-                self.ui_mapping_service = None
-        
-        # Strategy Heartbeat Monitor (NEW)
-        if heartbeat is not None:
-            self.heartbeat_monitor = heartbeat
-        else:
-            try:
-                from core_brain.services.strategy_heartbeat_monitor import StrategyHeartbeatMonitor
-                socket_svc = getattr(self, 'socket_service', None)
-                self.heartbeat_monitor = StrategyHeartbeatMonitor(storage=self.storage, socket_service=socket_svc)
-                logger.info("[ORCHESTRATOR] StrategyHeartbeatMonitor initialized (default)")
-            except Exception as e:
-                logger.warning(f"[ORCHESTRATOR] Could not initialize StrategyHeartbeatMonitor: {e}")
-                self.heartbeat_monitor = None
-        
-        # Conflict Resolver (NEW)
-        if resolver is not None:
-            self.conflict_resolver = resolver
-        else:
-            try:
-                from core_brain.conflict_resolver import ConflictResolver
-                fundamental_guard = getattr(self.risk_manager, 'fundamental_guard', None)
-                self.conflict_resolver = ConflictResolver(
-                    storage=self.storage,
-                    regime_classifier=self.regime_classifier,
-                    fundamental_guard=fundamental_guard
-                )
-                logger.info("[ORCHESTRATOR] ConflictResolver initialized (default)")
-            except Exception as e:
-                logger.warning(f"[ORCHESTRATOR] Could not initialize ConflictResolver: {e}")
-                self.conflict_resolver = None
-
-    def _init_market_analysis_services(self) -> None:
-        """Initializes market structure analyzer for UI integration (EXEC-UI-DATA-INTEGRATION)."""
-        try:
-            from core_brain.sensors.market_structure_analyzer import MarketStructureAnalyzer
-            self.market_structure_analyzer = MarketStructureAnalyzer(storage=self.storage)
-            logger.info("[ORCHESTRATOR] MarketStructureAnalyzer initialized for UI data feed")
-        except Exception as e:
-            logger.warning(f"[ORCHESTRATOR] Could not initialize MarketStructureAnalyzer: {e}")
-            self.market_structure_analyzer = None
-    
-    def _init_economic_integration(self) -> None:
-        """
-        Initializes Economic Calendar Veto Interface (PHASE 8: News-Based Trading Lockdown).
-        
-        Responsibilities:
-        - Initialize EconomicIntegrationManager with scheduler
-        - Setup non-blocking fetch-persist job
-        - Preserve agnosis (MainOrchestrator never contacts providers directly)
-        """
-        try:
-            from core_brain.economic_integration import create_economic_integration
-            from connectors.economic_data_gateway import EconomicDataProviderRegistry
-            from core_brain.news_sanitizer import NewsSanitizer
-            
-            logger.info("[ECON-INTEGRATION] Initializing Economic Calendar Veto Interface...")
-            
-            # Create integration manager with all dependencies
-            self.economic_integration = create_economic_integration(
-                gateway=EconomicDataProviderRegistry(),
-                sanitizer=NewsSanitizer(),
-                storage=self.storage,
-                scheduler_config=None  # Use defaults
-            )
-            
-            # Setup and start scheduler asynchronously (non-blocking)
-            # Note: Scheduled as asyncio task in the main event loop
-            
-            logger.info("[ECON-INTEGRATION] [OK] Economic integration ready for use")
-        
-        except Exception as e:
-            logger.warning(f"[ECON-INTEGRATION] [WARNING] Could not initialize: {e}")
-            self.economic_integration = None
-
-    def _init_phase4_intelligence_services(
-        self,
-        signal_quality_scorer: Optional[Any] = None,
-        consensus_engine: Optional[Any] = None,
-        failure_pattern_registry: Optional[Any] = None
-    ) -> None:
-        """
-        Initializes PHASE 4: Intelligent Signal Quality Scoring Components.
-        
-        Components:
-        1. SignalQualityScorer: Unified authority (technical 60% + contextual 40%)
-        2. ConsensusEngine: Multi-strategy consensus detection
-        3. FailurePatternRegistry: Autonomous failure pattern learning
-        
-        All dependencies are injected from caller or auto-created if None.
-        Trace: PHASE4-INTELLIGENCE-INIT-2026-03-11
-        """
-        try:
-            from core_brain.intelligence import (
-                SignalQualityScorer,
-                ConsensusEngine,
-                FailurePatternRegistry
-            )
-            
-            logger.info("[PHASE4] Initializing Signal Quality Scoring Intelligence...")
-            
-            # 1. SignalQualityScorer (unified scoring authority)
-            self.signal_quality_scorer = signal_quality_scorer or SignalQualityScorer(
-                storage_manager=self.storage
-            )
-            logger.debug("[PHASE4] [OK] SignalQualityScorer initialized")
-            
-            # 2. ConsensusEngine (multi-strategy signal density)
-            self.consensus_engine = consensus_engine or ConsensusEngine(
-                storage_manager=self.storage
-            )
-            logger.debug("[PHASE4] [OK] ConsensusEngine initialized")
-            
-            # 3. FailurePatternRegistry (autonomous learning)
-            self.failure_pattern_registry = failure_pattern_registry or FailurePatternRegistry(
-                storage_manager=self.storage
-            )
-            logger.debug("[PHASE4] [OK] FailurePatternRegistry initialized")
-            
-            logger.info("[PHASE4] [OK] All signal quality intelligence components ready")
-        
-        except Exception as e:
-            logger.warning(f"[PHASE4] [WARNING] Could not initialize intelligence services: {e}")
-            self.signal_quality_scorer = None
-            self.consensus_engine = None
-            self.failure_pattern_registry = None
-
-    def _discover_brokers(self) -> List[Dict]:
-        """Descubre todos los sys_brokers registrados en la base de datos."""
-        try:
-            return self.storage.get_brokers()
-        except Exception as e:
-            logger.error(f"Error discovering sys_brokers: {e}")
-            return []
-
-    def _classify_brokers(self, sys_brokers: List[Dict]) -> Dict[str, Dict]:
-        """Clasifica sys_brokers según provisión automática o manual."""
-        status = {}
-        for broker in sys_brokers:
-            broker_id = broker.get('broker_id')
-            auto = broker.get('auto_provision_available', False)
-            status[broker_id] = {
-                'name': broker.get('name'),
-                'auto_provision': bool(auto),
-                'manual_required': not bool(auto),
-                'sys_platforms': broker.get('platforms_available'),
-                'website': broker.get('website'),
-                'status': 'pending',
-            }
-        return status
 
     async def provision_all_demo_accounts(self) -> None:
-        """Provisiona cuentas demo maestras para todos los sys_brokers con provisión automática."""
-        from connectors.auto_provisioning import BrokerProvisioner
-        provisioner = BrokerProvisioner(storage=self.storage)
-        for broker_id, info in self.broker_status.items():
-            if info['auto_provision']:
-                logger.info(f"[EDGE] Provisionando cuenta demo para broker: {broker_id}")
-                success, result = await provisioner.ensure_demo_account(broker_id)
-                if success:
-                    self.broker_status[broker_id]['status'] = 'demo_ready'
-                    logger.info(f"[OK] Cuenta demo lista para {broker_id}")
-                else:
-                    self.broker_status[broker_id]['status'] = f"error: {result.get('error', 'unknown')}"
-                    logger.warning(f"[ERROR] Error al provisionar demo {broker_id}: {result}")
-            else:
-                self.broker_status[broker_id]['status'] = 'manual_required'
-                logger.info(f"[WARNING]  {broker_id} requiere provisión manual")
-        
-        # Session tracking - RECONSTRUCT FROM DB
-        self.stats = SessionStats.from_storage(self.storage)
-        
-        # Current market regime (updated after each scan)
-        self.current_regime: MarketRegime = MarketRegime.RANGE
-        
-        # Shutdown flag
-        self._shutdown_requested = False
-        
-        # Active usr_signals tracking (for adaptive heartbeat)
-        self._active_usr_signals: List[Signal] = []
+        await discovery.provision_all_demo_accounts_impl(self)
 
-        # Coherence monitor
-        self.coherence_monitor = CoherenceMonitor(storage=self.storage)
-        
-        # Loop intervals by regime (seconds)
-        orchestrator_config = self.config.get("orchestrator", {})
-        self.intervals = {
-            MarketRegime.TREND: orchestrator_config.get("loop_interval_trend", 5),
-            MarketRegime.RANGE: orchestrator_config.get("loop_interval_range", 30),
-            MarketRegime.VOLATILE: orchestrator_config.get("loop_interval_volatile", 15),
-            MarketRegime.SHOCK: orchestrator_config.get("loop_interval_shock", 60)
-        }
-        
-        logger.info(
-            f"MainOrchestrator initialized with intervals: "
-            f"TREND={self.intervals[MarketRegime.TREND]}s, "
-            f"RANGE={self.intervals[MarketRegime.RANGE]}s, "
-            f"VOLATILE={self.intervals[MarketRegime.VOLATILE]}s, "
-            f"SHOCK={self.intervals[MarketRegime.SHOCK]}s"
-        )
-        logger.info(f"Adaptive heartbeat: MIN={self.MIN_SLEEP_INTERVAL}s when usr_signals active")
-    
-    def _load_config(self, config_path: Optional[str]) -> Dict:
-        """
-        Load configuration using DB as SSOT, with optional file merge for legacy compatibility.
-        """
-        config: Dict[str, Any] = {}
+    def initialize_sensors(self) -> Dict[str, Any]:
+        return init_methods.initialize_sensors_impl(self)
 
-        try:
-            db_config = self.storage.get_dynamic_params()
-            if isinstance(db_config, dict):
-                config.update(db_config)
-        except Exception as e:
-            logger.warning("Failed to load dynamic params from DB: %s", e)
+    def set_signal_factory(self, signal_factory: Optional[Any]) -> None:
+        self.signal_factory = signal_factory
+        if signal_factory is None:
+            init_methods.load_dynamic_usr_strategies(self)
 
-        if config_path:
-            try:
-                cfg_path = Path(config_path)
-                if cfg_path.exists():
-                    with open(cfg_path, "r", encoding="utf-8") as f:
-                        file_cfg = json.load(f)
-                    if isinstance(file_cfg, dict):
-                        config.update(file_cfg)
-            except Exception as e:
-                logger.warning("Failed loading legacy config files: %s", e)
-
-        return config
-    
     def _get_sleep_interval(self) -> int:
-        """
-        Get sleep interval based on current market regime.
-        
-        LATIDO DE GUARDIA: Reduces sleep interval when active usr_signals present,
-        enabling faster response to market conditions.
-        
-        Returns:
-            Sleep interval in seconds
-        """
-        base_interval = self.intervals.get(self.current_regime, 30)
-        
-        # Adaptive heartbeat: faster when usr_signals are active
-        if self._active_usr_signals:
-            adaptive_interval = min(base_interval, self.MIN_SLEEP_INTERVAL)
-            logger.debug(
-                f"Adaptive heartbeat active: {len(self._active_usr_signals)} usr_signals, "
-                f"interval reduced to {adaptive_interval}s"
-            )
-            return adaptive_interval
-        
-        return base_interval
-    
-    def _update_regime_from_scan(self, scan_results: Dict[str, MarketRegime]) -> None:
-        """
-        Update current regime based on scan results.
-        Uses the most aggressive regime found across all symbols.
-        
-        Args:
-            scan_results: Dictionary of symbol -> MarketRegime
-        """
-        if not scan_results:
-            return
-        
-        # Priority order: SHOCK > VOLATILE > TREND > RANGE
-        regime_priority: Dict[MarketRegime, int] = {
-            MarketRegime.SHOCK: 4,
-            MarketRegime.VOLATILE: 3,
-            MarketRegime.TREND: 2,
-            MarketRegime.RANGE: 1
-        }
-        
-        max_priority = 0
-        new_regime: MarketRegime = MarketRegime.RANGE
-        
-        # scan_results es un Dict[str, MarketRegime] donde key=symbol, value=MarketRegime
-        for _, regime in scan_results.items():
-            priority = regime_priority.get(regime, 1)
-            
-            if priority > max_priority:
-                max_priority = priority
-                new_regime = regime
-        
-        if new_regime != self.current_regime:
-            logger.info(f"Regime changed: {self.current_regime} -> {new_regime}")
-            self.current_regime = new_regime
-    
-    def _persist_tick_timestamp(self, tick_ts: str) -> None:
-        """Persist last_market_tick_ts to sys_config with retry on DB lock."""
-        import time
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                self.storage.update_sys_config({"last_market_tick_ts": tick_ts})
-                logger.debug(f"[TELEMETRY] last_market_tick_ts persisted: {tick_ts}")
-                return
-            except Exception as exc:
-                if 'locked' in str(exc).lower() and attempt < max_retries - 1:
-                    sleep_time = 0.5 * (attempt + 1)
-                    logger.warning(f"[TELEMETRY] DB locked on retry {attempt+1}/{max_retries}, sleeping {sleep_time}s...")
-                    time.sleep(sleep_time)
-                else:
-                    logger.warning(f"[TELEMETRY] Could not write last_market_tick_ts after {attempt+1} attempts: {exc}")
+        return discovery.get_sleep_interval_impl(self)
 
-    def _persist_scan_telemetry(self, scan_results_with_data: Dict) -> None:
-        """
-        Persist scan-cycle artefacts required by IntegrityGuard health checks.
+    def _is_market_closed(self) -> bool:
+        return init_methods.is_market_closed_impl(self)
 
-        Writes two keys to sys_config every time a successful scan cycle
-        produces results:
-          - last_market_tick_ts : ISO-8601 UTC timestamp of this cycle.
-          - dynamic_params.adx  : Maximum ADX observed across all scanned
-                                  assets (non-zero values only). Skipped if
-                                  no valid ADX is available.
-
-        Called by run_single_cycle() immediately after update_module_heartbeat.
-        Source-of-truth contract: docs/10_INFRA_RESILIENCY.md §E14-telemetry.
-        """
-        self._persist_tick_timestamp(datetime.now(timezone.utc).isoformat())
-
-        valid_adx_values = [
-            float(data["metrics"].get("adx") or 0)
-            for data in scan_results_with_data.values()
-            if isinstance(data.get("metrics"), dict) and (data["metrics"].get("adx") or 0) > 0
-        ]
-        if not valid_adx_values:
-            return
-        try:
-            dynamic_params = self.storage.get_dynamic_params() or {}
-            dynamic_params["adx"] = max(valid_adx_values)
-            self.storage.update_dynamic_params(dynamic_params)
-            logger.debug(f"[TELEMETRY] ADX updated: {dynamic_params['adx']}")
-        except Exception as exc:
-            logger.warning(f"[TELEMETRY] Could not write adx to dynamic_params: {exc}")
-
-    # ==================== OPTION A: SCAN ORCHESTRATION METHODS ====================
-    # These methods move timing logic from ScannerEngine to MainOrchestrator
-    # TRACE_ID: OPTION-A-SCAN-ORCHESTRATION-2026-03-11
-    
-    def _get_scan_schedule(self) -> Dict[str, float]:
-        """
-        Build per-symbol|timeframe scan intervals based on current regimes.
-        
-        REPLACES: ScannerEngine._get_assets_to_scan() timing logic.
-        
-        Returns:
-            Dict mapping "symbol|timeframe" -> interval_seconds
-            
-        Example:
-            {"EURUSD|M5": 1.0, "AAPL|M1": 5.0, "BTC|H1": 10.0}
-        """
-        schedule = {}
-        
-        try:
-            for symbol in self.scanner.assets:
-                for tf in self.scanner.active_timeframes:
-                    key = f"{symbol}|{tf}"
-                    
-                    # Get current regime for this symbol|timeframe
-                    regime = self.scanner.last_regime.get(key, MarketRegime.NORMAL)
-                    
-                    # Determine interval based on regime
-                    if regime in [MarketRegime.TREND, MarketRegime.CRASH]:
-                        interval = 1.0  # Aggressive: Trend/Crash scan every 1s
-                    elif regime in [MarketRegime.RANGE, MarketRegime.NORMAL]:
-                        interval = 10.0  # Conservative: Range/Normal scan every 10s
-                    elif regime == MarketRegime.VOLATILE:
-                        interval = 5.0  # Moderate: Volatile scan every 5s
-                    else:
-                        interval = 10.0  # Default
-                    
-                    schedule[key] = interval
-        except Exception as e:
-            logger.warning(f"[OPTION-A] Error building scan schedule: {e}")
-            # Fallback: conservative intervals for all keys (use getattr for compatibility)
-            for symbol in getattr(self.scanner, 'assets', []):
-                for tf in getattr(self.scanner, 'active_timeframes', []):
-                    key = f"{symbol}|{tf}"
-                    schedule[key] = 10.0
-        
-        return schedule
-    
-    def _should_scan_now(self, schedule: Dict[str, float]) -> List[Tuple[str, str]]:
-        """
-        Determine which assets need scanning based on schedule and last scan time.
-        
-        REPLACES: ScannerEngine._get_assets_to_scan() decision logic.
-        
-        Args:
-            schedule: Dict from _get_scan_schedule()
-        
-        Returns:
-            List of (symbol, timeframe) tuples that should be scanned now
-        """
-        to_scan = []
-        now = time.monotonic()
-        
-        try:
-            for key, interval in schedule.items():
-                symbol, tf = key.split("|")
-                last_scan_time = self.scanner.last_scan_time.get(key, 0.0)
-                
-                # Check if interval has elapsed since last scan
-                if now - last_scan_time >= interval:
-                    to_scan.append((symbol, tf))
-        except Exception as e:
-            logger.warning(f"[OPTION-A] Error checking scan readiness: {e}")
-        
-        return to_scan
-    
-    async def _request_scan(self, assets_to_scan: List[Tuple[str, str]]) -> Dict[str, Dict[str, Any]]:
-        """
-        Request ScannerEngine to execute scan for specific assets.
-        
-        REPLACES: MainOrchestrator blindly calling get_scan_results_with_data().
-        MainOrchestrator is now the orchestrator: it DECIDES when to scan,
-        ScannerEngine is pure executor: it DOES the scanning.
-        
-        Args:
-            assets_to_scan: List of (symbol, timeframe) tuples to scan
-        
-        Returns:
-            Dict of scan results: {symbol|timeframe -> {regime, metrics, df, ...}}
-        """
-        if not assets_to_scan:
-            logger.debug("[OPTION-A] No assets need scanning at this moment")
-            return {}
-        
-        logger.info(f"[OPTION-A] Requesting scan for {len(assets_to_scan)} asset-timeframe pairs")
-        
-        try:
-            # Call ScannerEngine.execute_scan() (pure executor, not autonomous)
-            new_results = await asyncio.to_thread(
-                self.scanner.execute_scan,
-                assets_to_scan
-            )
-            
-            logger.info(f"[OPTION-A] ✓ Scan completed: {len(new_results)} results")
-            return new_results
-        except Exception as e:
-            logger.error(f"[OPTION-A] Error requesting scan: {e}")
-            return {}
-    
-    # ==================== END OPTION A METHODS ====================
-    
-    async def _check_closed_usr_positions(self) -> None:
-        """
-        Check connectors for newly closed usr_positions and process them through TradeClosureListener.
-        """
-        try:
-            from datetime import datetime
-            from models.broker_event import BrokerEvent, BrokerEventType, BrokerTradeClosedEvent
-            from models.signal import ConnectorType
-            
-            # Get connector from executor
-            if not hasattr(self.executor, 'connectors'):
-                return
-            
-            mt5_connector = self.executor.connectors.get(ConnectorType.METATRADER5)
-            if not mt5_connector or not mt5_connector.is_connected:
-                return
-            
-            # Get closed positions from connector (agnostic)
-            # This avoids direct MetaTrader5 import in core_brain
-            closed_usr_positions = mt5_connector.get_closed_usr_positions(hours=24)
-            
-            if not closed_usr_positions:
-                return
-            
-            # Filter for new ones (ticket > last_checked)
-            new_usr_positions = [p for p in closed_usr_positions if p['ticket'] > self._last_checked_deal_ticket]
-            
-            if not new_usr_positions:
-                return
-            
-            logger.info(f"Found {len(new_usr_positions)} new closed usr_positions to process via Listener")
-            
-            # Process each position
-            for pos in new_usr_positions:
-                # Find corresponding signal in DB
-                signal_id = pos.get('signal_id')
-                matching_signal = None
-                
-                if signal_id:
-                    matching_signal = self.storage.get_signal_by_id(signal_id)
-                
-                if not matching_signal:
-                    # Fallback: search by ticket
-                    sys_signals = self.storage.get_sys_signals(limit=100)
-                    for sig in sys_signals:
-                        if sig.get('order_id') == str(pos['ticket']):
-                            matching_signal = sig
-                            break
-                
-                if not matching_signal:
-                    continue
-                
-                # Create BrokerTradeClosedEvent
-                # Normalize entry_time to UTC-aware
-                entry_time = datetime.fromisoformat(matching_signal['timestamp']) if 'timestamp' in matching_signal else datetime.now(timezone.utc)
-                if entry_time.tzinfo is None:
-                    entry_time = entry_time.replace(tzinfo=timezone.utc)
-                
-                # Exit time from MT5 is already UTC-aware, but normalize if needed
-                exit_time = pos['close_time']
-                if isinstance(exit_time, datetime) and exit_time.tzinfo is None:
-                    exit_time = exit_time.replace(tzinfo=timezone.utc)
-                
-                trade_event = BrokerTradeClosedEvent(
-                    ticket=pos['ticket'],
-                    signal_id=matching_signal.get('id'),
-                    symbol=pos['symbol'],
-                    entry_price=pos.get('entry_price') or matching_signal.get('entry_price', 0.0),
-                    exit_price=pos['exit_price'],
-                    profit_loss=pos['profit'],
-                    pips=0.0,
-                    exit_reason=pos.get('exit_reason', "MT5_CLOSE"),
-                    entry_time=entry_time,
-                    exit_time=exit_time,
-                    broker_id="MT5",
-                    metadata={"ticket": pos['ticket']}
-                )
-                
-                # Wrap in BrokerEvent
-                event = BrokerEvent(
-                    event_type=BrokerEventType.TRADE_CLOSED,
-                    data=trade_event,
-                    timestamp=datetime.now(timezone.utc)
-                )
-                
-                # Process through listener
-                await self.trade_closure_listener.handle_trade_closed_event(event)
-                
-                # Update last checked ticket
-                self._last_checked_deal_ticket = max(self._last_checked_deal_ticket, pos['ticket'])
-            
-        except Exception as e:
-            logger.error(f"Error checking closed usr_positions: {e}")
-
-    async def _check_and_run_weekly_dedup_learning(self) -> None:
-        """
-        PHASE 3: Check if it's Sunday 23:00 UTC and run dedup learning if needed.
-        
-        Executes weekly dedup window auto-calibration:
-        - Collects signal gaps from past 7 days
-        - Calculates optimal windows (median - 20% margin)
-        - Validates governance constraints (±30% change, 10%-300% bounds)
-        - Persists learned windows to sys_dedup_rules
-        
-        Schedule: Sundays 23:00-23:59 UTC (once per week)
-        """
-        try:
-            now_utc = datetime.now(timezone.utc)
-            
-            # Check if it's Sunday (weekday() returns 6 for Sunday)
-            is_sunday = now_utc.weekday() == 6
-            
-            # Check if it's 23:00-23:59 UTC
-            is_learning_hour = now_utc.hour == 23
-            
-            # Make sure we haven't run in the last 24 hours (to avoid multiple runs)
-            hours_since_last = (now_utc - self._last_dedup_learning).total_seconds() / 3600
-            enough_time_passed = hours_since_last >= 24
-            
-            if is_sunday and is_learning_hour and enough_time_passed:
-                logger.info("[PHASE3-DEDUP] 🔄 Starting weekly dedup window learning cycle...")
-                
-                # Run the learning cycle
-                results = await self.dedup_learner.run_weekly_learning_cycle()
-                
-                # Log results
-                learned_count = len(results.get("learned", []))
-                blocked_count = len(results.get("blocked", []))
-                skipped_count = len(results.get("skipped", []))
-                
-                logger.info(
-                    f"[PHASE3-DEDUP] [OK] Learning cycle complete: "
-                    f"{learned_count} adaptations applied, "
-                    f"{blocked_count} blocked by governance, "
-                    f"{skipped_count} skipped (insufficient data)"
-                )
-                
-                # Update timestamp
-                self._last_dedup_learning = now_utc
-                
-                # Detailed logging for learned rules
-                if results["learned"]:
-                    for result in results["learned"]:
-                        logger.info(
-                            f"[PHASE3-DEDUP] LEARNED: {result.symbol} {result.timeframe} "
-                            f"({result.strategy}): {result.window_old}→{result.window_new} min "
-                            f"(+{result.change_pct:.1f}%, optimal={result.window_optimal} from {result.gap_count} gaps)"
-                        )
-                
-        except Exception as e:
-            logger.error(f"[PHASE3-DEDUP] Error in weekly learning: {e}", exc_info=False)
-            # Don't re-raise - learning errors should not block trading
-
-    async def _check_and_run_weekly_shadow_evolution(self) -> None:
-        """
-        SHADOW Feedback Loop — runs every hour at the close of each session window.
-
-        Executes hourly SHADOW instance evaluation:
-        - Retrieve all active (non-terminal) instances from DB.
-        - Evaluate health using 3-Pilar framework with regime-adjusted thresholds.
-        - Classify: HEALTHY (promote to REAL) | QUARANTINED | MONITOR | DEAD.
-        - Update instance status and persist snapshots to sys_shadow_performance_history.
-        - Apply EdgeTuner parameter_overrides per instance.
-        - Generate Trace_ID audit trail for all decisions.
-
-        Schedule: Every hour (minimum 1 h between runs).
-        Previously weekly (Mondays 00:00 UTC) — upgraded to hourly per EXEC-V4-SHADOW-INTEGRATION.
-        """
-        if not self.shadow_manager:
-            return
-
-        try:
-            now_utc = datetime.now(timezone.utc)
-
-            # Gate: at least 1 hour must pass between runs
-            if self.last_shadow_evolution:
-                hours_since_last = (now_utc - self.last_shadow_evolution).total_seconds() / 3600
-                enough_time_passed = hours_since_last >= 1.0
-            else:
-                enough_time_passed = True
-
-            if enough_time_passed:
-                logger.info("[SHADOW] 🔄 Starting hourly SHADOW feedback loop cycle...")
-                trace_base = f"TRACE_EVOLUTION_HOURLY_{now_utc.strftime('%Y%m%d_%H%M%S')}"
-                
-                try:
-                    # Evaluate all SHADOW instances
-                    results = self.shadow_manager.evaluate_all_instances()
-                    
-                    # Extract classifications
-                    promotions = results.get("promotions", [])
-                    kills = results.get("kills", [])
-                    quarantines = results.get("quarantines", [])
-                    monitors = results.get("monitors", [])
-                    
-                    # Log comprehensive results
-                    total_evaluated = len(promotions) + len(kills) + len(quarantines) + len(monitors)
-                    
-                    logger.info(
-                        f"[SHADOW] [OK] Hourly cycle complete: "
-                        f"{len(promotions)} promoted to REAL, "
-                        f"{len(kills)} marked DEAD, "
-                        f"{len(quarantines)} QUARANTINED (retest), "
-                        f"{len(monitors)} in MONITOR status "
-                        f"({total_evaluated} total evaluated) | {trace_base}"
-                    )
-                    
-                    # Update timestamp to prevent re-running
-                    self.last_shadow_evolution = now_utc
-                    
-                    # Detailed logging for promoted instances
-                    if promotions:
-                        for promo in promotions:
-                            instance_id = promo.get('instance_id', 'UNKNOWN')
-                            trace_id = promo.get('trace_id', '')
-                            logger.info(
-                                f"[SHADOW] [OK] PROMOTED: {instance_id} → REAL account "
-                                f"({trace_id})"
-                            )
-                            # WEEK 5: Emit WebSocket event for promotion
-                            await self.emit_shadow_status_update(
-                                instance_id=instance_id,
-                                health_status="HEALTHY",
-                                pilar1_status="PASS",
-                                pilar2_status="PASS",
-                                pilar3_status="PASS",
-                                metrics={
-                                    "profit_factor": 0,
-                                    "win_rate": 0,
-                                    "max_drawdown_pct": 0,
-                                    "consecutive_losses_max": 0,
-                                    "trade_count": 0
-                                },
-                                trace_id=trace_id,
-                                action="PROMOTE"
-                            )
-                    
-                    # Log deaths
-                    if kills:
-                        for kill in kills:
-                            instance_id = kill.get('instance_id', 'UNKNOWN')
-                            reason = kill.get('reason', 'UNKNOWN')
-                            trace_id = kill.get('trace_id', '')
-                            logger.warning(
-                                f"[SHADOW] [FAIL] DEAD: {instance_id} → {reason} "
-                                f"({trace_id})"
-                            )
-                            # WEEK 5: Emit WebSocket event for death
-                            await self.emit_shadow_status_update(
-                                instance_id=instance_id,
-                                health_status="DEAD",
-                                pilar1_status="FAIL",
-                                pilar2_status="UNKNOWN",
-                                pilar3_status="UNKNOWN",
-                                metrics={
-                                    "profit_factor": 0,
-                                    "win_rate": 0,
-                                    "max_drawdown_pct": 0,
-                                    "consecutive_losses_max": 0,
-                                    "trade_count": 0
-                                },
-                                trace_id=trace_id,
-                                action="DEMOTE"
-                            )
-                    
-                    # WEEK 5: Emit events for quarantined instances
-                    if quarantines:
-                        for quar in quarantines:
-                            instance_id = quar.get('instance_id', 'UNKNOWN')
-                            trace_id = quar.get('trace_id', '')
-                            logger.warning(
-                                f"[SHADOW] [WARNING] QUARANTINED: {instance_id} "
-                                f"({trace_id})"
-                            )
-                            await self.emit_shadow_status_update(
-                                instance_id=instance_id,
-                                health_status="QUARANTINED",
-                                pilar1_status="PASS",
-                                pilar2_status="FAIL",
-                                pilar3_status="UNKNOWN",
-                                metrics={
-                                    "profit_factor": 0,
-                                    "win_rate": 0,
-                                    "max_drawdown_pct": 0,
-                                    "consecutive_losses_max": 0,
-                                    "trade_count": 0
-                                },
-                                trace_id=trace_id,
-                                action="QUARANTINE"
-                            )
-                    
-                    # WEEK 5: Emit events for monitored instances
-                    if monitors:
-                        for mon in monitors:
-                            instance_id = mon.get('instance_id', 'UNKNOWN')
-                            trace_id = mon.get('trace_id', '')
-                            logger.info(
-                                f"[SHADOW] [MONITOR] MONITOR: {instance_id} "
-                                f"({trace_id})"
-                            )
-                            await self.emit_shadow_status_update(
-                                instance_id=instance_id,
-                                health_status="MONITOR",
-                                pilar1_status="PASS",
-                                pilar2_status="PASS",
-                                pilar3_status="FAIL",
-                                metrics={
-                                    "profit_factor": 0,
-                                    "win_rate": 0,
-                                    "max_drawdown_pct": 0,
-                                    "consecutive_losses_max": 0,
-                                    "trade_count": 0
-                                },
-                                trace_id=trace_id,
-                                action="MONITOR"
-                            )
-                    
-                    # Emit callback notification
-                    if self.thought_callback:
-                        message = (
-                            f"Evolución SHADOW: {len(promotions)} instancias promovidas a REAL, "
-                            f"{len(kills)} eliminadas, {len(quarantines)} en cuarentena, "
-                            f"{len(monitors)} en monitoreo."
-                        )
-                        await self.thought_callback(message, level="info", module="SHADOW")
-                    
-                except Exception as e:
-                    logger.error(f"[SHADOW] Error during evolution: {e}", exc_info=True)
-                    
-        except Exception as e:
-            logger.error(f"[SHADOW] Error checking schedule: {e}", exc_info=False)
-            # Don't re-raise - scheduler errors should not block trading
+    async def _sync_economic_caution_state(self, caution_symbols: set, trace_id: str) -> None:
+        await init_methods.sync_economic_caution_state(self, caution_symbols, trace_id)
 
     async def _check_and_run_daily_backtest(self) -> None:
-        """
-        EXEC-V5: Run BacktestOrchestrator daily for all strategies in BACKTEST mode.
+        await background_tasks.check_and_run_daily_backtest(self)
 
-        Schedule: once every 24 hours (cooldown per-strategy is also enforced internally).
-        On first startup, runs immediately so new deployments are evaluated right away.
-        """
-        if not getattr(self, "backtest_orchestrator", None):
-            return
+    async def _check_and_run_weekly_dedup_learning(self) -> None:
+        await background_tasks.check_and_run_weekly_dedup_learning(self)
 
-        try:
-            now_utc = datetime.now(timezone.utc)
-
-            # HU 10.7: Check operational context and resource budget before running
-            if getattr(self, "operational_mode_manager", None):
-                from core_brain.operational_mode_manager import BacktestBudget
-                budget = self.operational_mode_manager.get_backtest_budget()
-                if budget == BacktestBudget.DEFERRED:
-                    logger.info("[BACKTEST] Skipped — resources constrained (DEFERRED budget).")
-                    return
-                # Adaptive cooldown: AGGRESSIVE=1h, MODERATE=12h, CONSERVATIVE=24h
-                ctx = self.operational_mode_manager.current_context
-                freqs = self.operational_mode_manager.get_component_frequencies(ctx)
-                cooldown_h = freqs.get("backtest_cooldown_h", 24.0)
-            else:
-                cooldown_h = 24.0
-
-            if self._last_backtest_run:
-                hours_since = (now_utc - self._last_backtest_run).total_seconds() / 3600
-                if hours_since < cooldown_h:
-                    return
-
-            logger.info("[BACKTEST] 🔄 Starting daily BACKTEST → SHADOW pipeline...")
-            summary = await self.backtest_orchestrator.run_pending_strategies()
-            self._last_backtest_run = now_utc
-            logger.info(
-                "[BACKTEST] [OK] Daily cycle complete — evaluated=%d promoted=%d "
-                "failed=%d skipped=%d",
-                summary.get("evaluated", 0),
-                summary.get("promoted", 0),
-                summary.get("failed", 0),
-                summary.get("skipped", 0),
-            )
-        except Exception as exc:
-            logger.error("[BACKTEST] Error during daily backtest cycle: %s", exc, exc_info=False)
+    async def _check_and_run_weekly_shadow_evolution(self) -> None:
+        await background_tasks.check_and_run_weekly_shadow_evolution(self)
 
     async def _consume_oem_repair_flags(self) -> None:
-        """
-        Lee y ejecuta los flags de reparación escritos por el OperationalEdgeMonitor.
-
-        Flags reconocidos (escritos en sys_config por OEM._write_repair_flags):
-          oem_repair_force_backtest    → fuerza ciclo de backtest en este ciclo
-          oem_repair_force_ohlc_reload → fuerza recarga de OHLC en el scanner
-          oem_repair_force_ranking     → fuerza ciclo de ranking inmediato
-
-        Cada flag se consume una sola vez: se limpia en sys_config después de actuar.
-        Errors son no-fatales — el ciclo continúa aunque el repair falle.
-        """
-        try:
-            sys_config = self.storage.get_sys_config()
-            consumed: Dict[str, Any] = {}
-
-            if sys_config.get("oem_repair_force_backtest"):
-                logger.info("[OEM-REPAIR] Flag force_backtest detectado — reseteando cooldown de backtest")
-                self._last_backtest_run = None  # Fuerza ejecución en _check_and_run_daily_backtest (tier-1)
-                self.storage.reset_backtest_cooldown_for_pending()  # Resetea last_backtest_at en DB (tier-2)
-                consumed["oem_repair_force_backtest"] = None
-
-            if sys_config.get("oem_repair_force_ohlc_reload") and self.scanner:
-                logger.info("[OEM-REPAIR] Flag force_ohlc_reload detectado — reseteando tiempos de scan")
-                self.scanner.last_scan_time.clear()  # Fuerza recarga completa de OHLC en siguiente scan
-                consumed["oem_repair_force_ohlc_reload"] = None
-
-            if sys_config.get("oem_repair_force_ranking"):
-                logger.info("[OEM-REPAIR] Flag force_ranking detectado — forzando ciclo de ranking inmediato")
-                self._last_ranking_cycle = datetime.now(timezone.utc) - timedelta(seconds=self._ranking_interval + 10)
-                consumed["oem_repair_force_ranking"] = None
-
-            if consumed:
-                self.storage.update_sys_config(consumed)
-                logger.info("[OEM-REPAIR] %d flag(s) consumido(s): %s", len(consumed), list(consumed.keys()))
-
-        except Exception as exc:
-            logger.warning("[OEM-REPAIR] Error consumiendo repair flags (no bloquea ciclo): %s", exc)
+        await background_tasks.consume_oem_repair_flags(self)
 
     async def emit_shadow_status_update(
         self,
@@ -1679,1592 +380,97 @@ class MainOrchestrator:
         pilar3_status: str,
         metrics: dict,
         trace_id: str,
-        action: str
+        action: str,
     ) -> None:
-        """
-        Emit SHADOW_STATUS_UPDATE WebSocket event to all registered clients.
-        
-        Called from _check_and_run_weekly_shadow_evolution() for each evaluated instance.
-        
-        Args:
-            instance_id: UUID of SHADOW instance
-            health_status: 'HEALTHY' | 'DEAD' | 'QUARANTINED' | 'MONITOR' | 'INCUBATING'
-            pilar1_status: 'PASS' | 'FAIL' | 'UNKNOWN'
-            pilar2_status: 'PASS' | 'FAIL' | 'UNKNOWN'
-            pilar3_status: 'PASS' | 'FAIL' | 'UNKNOWN'
-            metrics: Dict with profit_factor, win_rate, max_drawdown_pct, consecutive_losses_max, trade_count
-            trace_id: Unique audit trail ID (format: SHADOW_STATUS_UPDATE_YYYYMMDD_HHMMSS_uuid)
-            action: 'PROMOTE' | 'DEMOTE' | 'QUARANTINE' | 'MONITOR'
-        """
         try:
+            metrics_payload = metrics
+            if hasattr(metrics, "model_dump"):
+                metrics_payload = metrics.model_dump()
+            elif hasattr(metrics, "dict"):
+                metrics_payload = metrics.dict()
+            elif hasattr(metrics, "__dict__") and not isinstance(metrics, dict):
+                metrics_payload = vars(metrics)
+
             payload = {
                 "event_type": "SHADOW_STATUS_UPDATE",
                 "instance_id": instance_id,
-                "health_status": health_status,
+                "health_status": getattr(health_status, "value", health_status),
                 "pilar1_status": pilar1_status,
                 "pilar2_status": pilar2_status,
                 "pilar3_status": pilar3_status,
-                "metrics": metrics,
+                "metrics": metrics_payload,
                 "action": action,
-                "trace_id": trace_id
+                "trace_id": trace_id,
             }
-            
-            # Broadcast to all registered SHADOW WebSocket clients (RULE T1: per-tenant)
             await broadcast_shadow_update(self.user_id, payload)
-            logger.debug(
-                f"[SHADOW_WS] Emitted SHADOW_STATUS_UPDATE for {instance_id} "
-                f"({action}), {trace_id}"
-            )
-                
         except Exception as e:
             logger.error(f"[SHADOW_WS] Error emitting shadow status update: {e}")
-            # Don't re-raise - WebSocket errors should not block evaluation
+
+    async def _check_closed_usr_positions(self) -> None:
+        await background_tasks.check_closed_usr_positions(self)
+
+    def _get_scan_schedule(self) -> Dict[str, Any]:
+        return scan_methods.get_scan_schedule(self)
+
+    def _should_scan_now(self, schedule: Dict[str, Any]) -> Any:
+        return scan_methods.should_scan_now(self, schedule)
+
+    async def _request_scan(self, assets_to_scan: Any) -> Dict[str, Any]:
+        return await scan_methods.request_scan(self, assets_to_scan)
+
+    def _update_regime_from_scan(self, scan_results: Dict[str, Any]) -> None:
+        scan_methods.update_regime_from_scan(self, scan_results)
+
+    def _persist_scan_telemetry(self, scan_results_with_data: Dict[str, Any]) -> None:
+        scan_methods.persist_scan_telemetry(self, scan_results_with_data)
 
     async def run_single_cycle(self) -> None:
-        """
-        Execute a single complete trading cycle.
-        
-        Cycle steps:
-        1. Scan market for opportunities
-        2. Generate usr_signals from scan results
-        3. Validate with risk manager
-        4. Execute approved usr_signals (with DB persistence)
-        5. Update statistics
-        """
         try:
-            # HOT-RELOAD: Recargar estado de módulos para detectar cambios desde UI
-            self.modules_enabled_global = self.storage.get_global_modules_enabled()
-            
-            # Check if we need to reset stats for new day
-            self.stats.reset_if_new_day()
-            
-            # PHASE 3: Check if we need to run weekly dedup learning (Sundays 23:00 UTC)
-            await self._check_and_run_weekly_dedup_learning()
-            
-            # SHADOW Feedback Loop: hourly evaluation of all active instances
-            await self._check_and_run_weekly_shadow_evolution()
-
-            # EXEC-V5: BacktestOrchestrator — daily BACKTEST → SHADOW pipeline
-            await self._check_and_run_daily_backtest()
-            
-            # Step 0: Initial heartbeat update and feedback
-            self.storage.update_module_heartbeat("orchestrator")
-
-            # OEM Repair Flags — consume acciones correctivas solicitadas por el monitor
-            await self._consume_oem_repair_flags()
-
-            if self.thought_callback:
-                await self.thought_callback("Iniciando ciclo de monitoreo autónomo...", module="CORE")
-            
-            # EDGE: Expire old PENDING usr_signals based on timeframe window
-            # This prevents stale usr_signals from accumulating in database
-            if self.thought_callback:
-                await self.thought_callback("Verificando caducidad de señales no ejecutadas...", module="ALPHA")
-                
-            expiration_stats = self.expiration_manager.expire_old_sys_signals()
-            logger.info(f"[EXPIRATION] Processed {expiration_stats.get('total_checked', 0)} sys_signals, "
-                       f"expired {expiration_stats['total_expired']}")
-            if expiration_stats['total_expired'] > 0:
-                logger.info(f"[EXPIRATION] [OK] Breakdown: {expiration_stats['by_timeframe']}")
-            
-            # MODULE TOGGLE: Position Manager
-            if not self.modules_enabled_global.get("position_manager", True):
-                if self.thought_callback:
-                    await self.thought_callback("Position Manager deshabilitado.", level="warning", module="MGMT")
-                logger.debug("[TOGGLE] position_manager deshabilitado globalmente - saltado")
-            elif self.position_manager:
-                if self.thought_callback:
-                    await self.thought_callback("Evaluando salud de posiciones abiertas...", module="MGMT")
-                
-                # Iterate over ALL active execution connectors (multi-account architecture)
-                # Each user's broker account is interrogated independently for open positions
-                from core_brain.connectivity_orchestrator import ConnectivityOrchestrator
-                _orch = ConnectivityOrchestrator()
-                exec_connectors = {
-                    pid: conn
-                    for pid, conn in _orch.connectors.items()
-                    if _orch.supports_info.get(pid, {}).get("exec", False)
-                       and getattr(conn, 'is_connected', False)
-                }
-
-                if not exec_connectors:
-                    logger.debug("[POSITION_MANAGER] No active execution connectors — position monitoring skipped")
-                else:
-                    combined_actions = []
-                    total_monitored = 0
-                    for account_id, exec_connector in exec_connectors.items():
-                        try:
-                            position_stats = self.position_manager.monitor_usr_positions(connector=exec_connector)
-                            total_monitored += position_stats.get('monitored', 0)
-                            combined_actions.extend(position_stats.get('actions', []))
-                        except Exception as pm_err:
-                            logger.error(f"[POSITION_MANAGER] Error monitoring account '{account_id}': {pm_err}")
-
-                    if combined_actions:
-                        logger.info(
-                            f"[POSITION_MANAGER] Monitored {total_monitored} positions across "
-                            f"{len(exec_connectors)} account(s), executed {len(combined_actions)} actions"
-                        )
-                        for action in combined_actions:
-                            logger.info(f"[POSITION_MANAGER] ✓ {action['action']}: ticket={action.get('ticket')}")
-            
-            # MODULE TOGGLE: Scanner
-            if not self.modules_enabled_global.get("scanner", True):
-                logger.debug("[TOGGLE] scanner deshabilitado globalmente - ciclo terminado")
-                self.stats.cycles_completed += 1
+            if not await cycle_scan.run_pre_phase(self):
                 return
-
-            # ── DEGRADED POSTURE GUARD (EDGE-IGNITION-PHASE-4B) ─────────────
-            # In DEGRADED posture the SignalFactory is blocked: no new entries.
-            # PositionManager (above) already ran so existing positions are managed.
-            if self.resilience_manager.current_posture in (
-                SystemPosture.DEGRADED,
-                SystemPosture.STRESSED,
-            ):
-                logger.warning(
-                    "[ResilienceManager] Posture %s — scan y generación de señales bloqueados. "
-                    "%s",
-                    self.resilience_manager.current_posture.value,
-                    self.resilience_manager.get_current_status_narrative(),
-                )
-                self.stats.cycles_completed += 1
+            scan_bundle = await cycle_scan.run_scan_phase(self)
+            if scan_bundle is None:
                 return
-            # ────────────────────────────────────────────────────────────────
-
-            # Step 0.5: Infrastructure veto (HU 5.3 — The Pulse)
-            # TRACE_ID: INFRA-PULSE-HU53-2026-001
-            # Reads CPU% non-blocking (interval=None avoids sleep in hot loop).
-            # Threshold is read from dynamic_params (SSOT) with 90% default.
-            # Only new trade scanning is vetoed — PositionManager already ran above.
-            _dyn = self.storage.get_dynamic_params() or {}
-            _cpu_threshold = _dyn.get("cpu_veto_threshold", 90)
-            _cpu_now = psutil.cpu_percent(interval=None)
-            if _cpu_now > _cpu_threshold:
-                logger.warning(
-                    f"[PULSE] CPU veto: {_cpu_now:.1f}% > {_cpu_threshold}% — skipping trade scan cycle"
-                )
-                self.storage.save_notification({
-                    "category": "SYSTEM_STRESS",
-                    "priority": "high",
-                    "title": "CPU Critical — Scan Cycle Vetoed",
-                    "message": f"CPU at {_cpu_now:.1f}% exceeds {_cpu_threshold}% threshold. Trade scanning skipped.",
-                    "details": {"cpu_percent": _cpu_now, "threshold": _cpu_threshold},
-                    "read": False,
-                })
-                self.stats.cycles_completed += 1
+            if not await cycle_exec.run_econ_phase(self, scan_bundle):
                 return
-
-            # Step 0.6: Market session guard — skip scan/execution when all sessions closed
-            if self._is_market_closed():
-                logger.info("[MARKET-GUARD] Mercado cerrado (fin de semana / fuera de sesión) — ciclo de scan/ejecución omitido")
-                self.stats.cycles_completed += 1
+            signals = await cycle_exec.run_signal_filter(self, scan_bundle)
+            if signals is None:
                 return
-
-            # Step 1: Get current market regimes from scanner WITH DataFrames
-            if self.thought_callback:
-                await self.thought_callback("Escaneando mercados en busca de anomalías...", module="SCANNER")
-            
-            logger.debug("Getting market regimes with data from scanner...")
-            
-            # ==================== OPTION A: MainOrchestrator Orchestrates Scanning ====================
-            # TRACE_ID: OPTION-A-RUN-SINGLE-CYCLE-2026-03-11
-            # 
-            # BEFORE (Broken): ScannerEngine ran autonomously + MainOrch called blindly
-            #                  Result: Triple-scanning (67% waste)
-            #
-            # AFTER (Fixed):   MainOrch decides WHEN, ScannerEngine does WHAT
-            #                  Result: Single scan per due asset
-            
-            # Step 1a: Build timing schedule based on current regimes
-            scan_schedule = self._get_scan_schedule()
-            logger.debug(f"[OPTION-A] Built scan schedule: {len(scan_schedule)} symbol|timeframe pairs")
-            
-            # Step 1b: Determine which assets need scanning NOW
-            assets_to_scan = self._should_scan_now(scan_schedule)
-            
-            if assets_to_scan:
-                logger.info(
-                    f"[OPTION-A] {len(assets_to_scan)} assets due for scanning: "
-                    f"{', '.join([f'{s}|{tf}' for s, tf in assets_to_scan[:5]])}{'...' if len(assets_to_scan) > 5 else ''}"
-                )
-                
-                # Step 1c: Request scan from ScannerEngine (pure executor, not autonomous)
-                new_scan_results = await self._request_scan(assets_to_scan)
-            else:
-                logger.debug("[OPTION-A] No assets due for scanning - using cached results")
-                new_scan_results = {}
-            
-            # Step 1d: Merge new results with cached results (ScannerEngine.last_results)
-            raw_last = getattr(self.scanner, 'last_results', {})
-            scan_results_with_data = raw_last.copy() if isinstance(raw_last, dict) else {}
-            if new_scan_results:
-                scan_results_with_data.update(new_scan_results)
-                logger.info(f"[OPTION-A] Merged {len(new_scan_results)} new scans with {len(scan_results_with_data) - len(new_scan_results)} cached results")
-            
-            # Fallback: if still empty, try legacy get_scan_results_with_data() (used in tests/older integrations)
-            if not scan_results_with_data and hasattr(self.scanner, 'get_scan_results_with_data'):
-                scan_results_with_data = self.scanner.get_scan_results_with_data() or {}
-                if scan_results_with_data:
-                    logger.debug("[OPTION-A] Fallback to get_scan_results_with_data() succeeded")
-            
-            # ==================== END OPTION A IMPLEMENTATION ====================
-            
-            if not scan_results_with_data:
-                logger.warning("No scan results available yet (first cycle or all offline)")
-                return
-            
-            # Update pipeline stats: scans
-            self.stats.scans_total += len(scan_results_with_data)
-            
-            # MILESTONE 6.3: Build PriceSnapshots for atomic traceability
-            # Each scan result is wrapped with its provider_source for audit trail
-            price_snapshots: Dict[str, PriceSnapshot] = {}
-            for key, data in scan_results_with_data.items():
-                provider = data.get("provider_source", "UNKNOWN")
-                price_snapshots[key] = PriceSnapshot(
-                    symbol=data.get("symbol", key.split("|")[0]),
-                    timeframe=data.get("timeframe", key.split("|")[-1] if "|" in key else "M5"),
-                    df=data.get("df"),
-                    provider_source=provider,
-                    regime=data.get("regime")
-                )
-                # Inject provider_source into scan_results_with_data for downstream consumers
-                data["provider_source"] = provider
-            
-            logger.info(f"[PRICE_SNAPSHOT] Built {len(price_snapshots)} atomic snapshots. "
-                       f"Providers: {set(s.provider_source for s in price_snapshots.values())}")
-
-            # Feed AnomalySentinel with last ticks from each snapshot (EDGE-IGNITION-PHASE-2)
-            for snapshot in price_snapshots.values():
-                if snapshot.df is not None and len(snapshot.df) >= 2:
-                    tail = snapshot.df.tail(10)
-                    self.anomaly_sentinel.push_ticks(tail.to_dict("records"))
-            
-            # Extraer solo regímenes para actualizar estado
-            scan_results = {sym: data["regime"] for sym, data in scan_results_with_data.items()}
-            
-            # Update current regime based on scan
-            self._update_regime_from_scan(scan_results)
-            self.storage.update_module_heartbeat("scanner")
-
-            # Persist scan telemetry required by IntegrityGuard health checks
-            self._persist_scan_telemetry(scan_results_with_data)
-            
-            # EXEC-UI-DATA-INTEGRATION: Analyze market structure and populate UI mapping
-            # (Always run, even if no trading usr_signals are generated)
-            if self.market_structure_analyzer and self.ui_mapping_service:
-                snapshots_with_data = sum(
-                    1 for s in price_snapshots.values()
-                    if s.df is not None and len(s.df) > 0
-                )
-                if snapshots_with_data == 0:
-                    logger.warning(f"[UI_MAPPING] All {len(price_snapshots)} snapshots have df=None — skipping structure analysis this cycle")
-                
-                available_pct = (snapshots_with_data / len(price_snapshots) * 100) if price_snapshots else 0
-                logger.info(f"[UI_MAPPING][GATE PASSED] analyzer=[OK] service=[OK] | Starting structure analysis for {len(price_snapshots)} price snapshots ({available_pct:.1f}% with data)")
-                structure_count = 0
-                try:
-                    for key, snapshot in price_snapshots.items():
-                        if snapshot.df is not None and len(snapshot.df) > 0:
-                            # Detect market structure (HH/HL/LH/LL, breakers, etc.)
-                            structure_result = self.market_structure_analyzer.detect_market_structure(snapshot.symbol, snapshot.df)
-                            
-                            if structure_result:
-                                # Flexibilize: emit even if is_valid=False, as long as we have some pivots
-                                has_some_pivots = (
-                                    structure_result.get('hh_count', 0) > 0 or 
-                                    structure_result.get('hl_count', 0) > 0 or 
-                                    structure_result.get('lh_count', 0) > 0 or 
-                                    structure_result.get('ll_count', 0) > 0
-                                )
-                                
-                                if structure_result.get('is_valid') or has_some_pivots:
-                                    # Provide structure data to UI mapping service with new validation_level
-                                    self.ui_mapping_service.add_structure_signal(
-                                        asset=snapshot.symbol,
-                                        structure_data={
-                                            'hh_indices': structure_result.get('hh_indices', []),
-                                            'hl_indices': structure_result.get('hl_indices', []),
-                                            'lh_indices': structure_result.get('lh_indices', []),
-                                            'll_indices': structure_result.get('ll_indices', []),
-                                            'structure_type': structure_result.get('type', 'UNKNOWN'),
-                                            'is_valid': structure_result.get('is_valid', False),
-                                            'validation_level': structure_result.get('validation_level', 'INSUFFICIENT'),
-                                            'confidence': structure_result.get('confidence', 0.0)
-                                        }
-                                    )
-                                    structure_count += 1
-                                    # Use validation_level for better status reporting
-                                    level_icon = "[OK]" if structure_result.get('validation_level') == 'STRONG' else "[WARNING]"
-                                    logger.info(
-                                        f"[UI_MAPPING] {level_icon} Added structure for {snapshot.symbol}: "
-                                        f"{structure_result.get('type')} ({structure_result.get('validation_level')}) "
-                                        f"[Confidence: {structure_result.get('confidence', 0.0):.0f}%] "
-                                        f"(HH={structure_result.get('hh_count')}, "
-                                        f"HL={structure_result.get('hl_count')}, "
-                                        f"LH={structure_result.get('lh_count')}, "
-                                        f"LL={structure_result.get('ll_count')})"
-                                    )
-                    
-                    logger.info(f"[UI_MAPPING] Structure analysis complete: {structure_count} structures detected out of {len(price_snapshots)}")
-                    
-                    # HEALTH CHECK: Monitor for consecutive empty structure cycles
-                    if structure_count == 0:
-                        self._consecutive_empty_structure_cycles += 1
-                        if self._consecutive_empty_structure_cycles == self._max_consecutive_empty_cycles:
-                            logger.critical(
-                                f"[HEALTH_CHECK] [WARNING] ALERT: {self._consecutive_empty_structure_cycles} consecutive cycles with 0 structures detected. "
-                                f"This indicates a potential data flow issue (e.g., DataFrames still None, analyzer bug, or timing problem). "
-                                f"Check scanner status, market data providers, and MarketStructureAnalyzer logs."
-                            )
-                        elif self._consecutive_empty_structure_cycles > self._max_consecutive_empty_cycles:
-                            # Keep alerting every cycle if still broken
-                            logger.error(f"[HEALTH_CHECK] [WARNING] PERSISTENT: {self._consecutive_empty_structure_cycles} cycles with 0 structures. System may be degraded.")
-                    else:
-                        # Reset counter if we detect structures
-                        if self._consecutive_empty_structure_cycles > 0:
-                            logger.info(f"[HEALTH_CHECK] [OK] Recovery: Structures detected after {self._consecutive_empty_structure_cycles} empty cycles")
-                        self._consecutive_empty_structure_cycles = 0
-
-                except Exception as e:
-                    logger.error(f"[UI_MAPPING] Error analyzing structure: {type(e).__name__}: {e}", exc_info=True)
-                
-                # Emit UI update (Vector V4 - Encendido Visual)
-                try:
-                    logger.debug(f"[UI_MAPPING] About to emit trader page update. socket_service={bool(self.ui_mapping_service.socket_service)}")
-                    await self.ui_mapping_service.emit_trader_page_update()
-                    logger.debug(f"[UI_MAPPING][[OK]] emit_trader_page_update() completed successfully")
-                except Exception as e:
-                    logger.error(f"[UI_MAPPING] Error emitting trader page update: {type(e).__name__}: {e}", exc_info=True)
-            
-            # Generate unique trace ID for this cycle
-            trace_id = str(uuid.uuid4())
-            logger.debug(f"Starting cycle with trace_id: {trace_id}")
-            
-            # ════════════════════════════════════════════════════════════════════════════════════
-            # PHASE 8: Economic Veto Check (News-Based Trading Lockdown)
-            # ════════════════════════════════════════════════════════════════════════════════════
-            # Before generating usr_signals, verify trading is allowed by economic calendar.
-            # If HIGH impact event: block new usr_positions, move SL to Break-Even.
-            # If MEDIUM impact event: allow with CAUTION (unit R @ 50%).
-            # Agnosis: MainOrchestrator never knows provider sources.
-            
-            if self.economic_integration:
-                try:
-                    current_time = datetime.now(timezone.utc)
-                    
-                    # Check each symbol in scan results for economic veto
-                    veto_symbols = set()  # Symbols that should NOT have new usr_positions opened
-                    caution_symbols = set()  # Symbols with MEDIUM impact (reduced size)
-                    
-                    for symbol in scan_results.keys():
-                        status = await self.economic_integration.get_trading_status(symbol, current_time)
-                        
-                        if not status.get("is_tradeable", True):
-                            veto_symbols.add(symbol)
-                            reason = status.get("reason", "Economic veto")
-                            logger.warning(
-                                f"[ECON-VETO] [FAIL] {symbol}: {reason} "
-                                f"(Next: {status.get('next_event')} @ {status.get('time_to_event', 0):.0f}s)"
-                            )
-                            
-                            # HIGH impact: Prepare position management
-                            if status.get("restriction_level") == "BLOCK":
-                                logger.warning(f"[ECON-VETO] HIGH IMPACT: Adjusting open usr_positions for {symbol} to Break-Even")
-                                # Activate RiskManager lockdown for BLOCK-level events
-                                try:
-                                    await self.risk_manager.activate_lockdown(
-                                        symbol=symbol,
-                                        reason=f'ECON_VETO: {status.get("next_event", "UNKNOWN")}',
-                                        trace_id=trace_id
-                                    )
-                                    logger.info(f"[ECON-VETO] Lockdown activated for {symbol} due to high-impact economic event")
-                                except Exception as e:
-                                    logger.error(f"[ECON-VETO] Failed to activate lockdown for {symbol}: {e}", exc_info=True)
-                                # Will be handled in position manager below
-                        
-                        elif status.get("restriction_level") == "CAUTION":
-                            caution_symbols.add(symbol)
-                            logger.info(
-                                f"[ECON-VETO] [WARNING] {symbol}: MEDIUM impact (unit R @ 50%). "
-                                f"Next: {status.get('next_event')}"
-                            )
-                    
-                    # If ALL symbols are vetoed: enter SLEEP mode until buffer ends
-                    if veto_symbols and len(veto_symbols) == len(scan_results):
-                        # Find earliest buffer end time
-                        earliest_recovery = None
-                        for symbol in veto_symbols:
-                            status = await self.economic_integration.get_trading_status(symbol, current_time)
-                            if status.get("time_to_event") is not None:
-                                # Calculate when we can resume trading
-                                post_buffer_secs = (status.get("buffer_post_minutes", 0) * 60)
-                                time_to_tradeable = status.get("time_to_event", 0) + post_buffer_secs
-                                if earliest_recovery is None or time_to_tradeable < earliest_recovery:
-                                    earliest_recovery = time_to_tradeable
-                        
-                        if earliest_recovery and earliest_recovery > 0:
-                            sleep_duration = min(earliest_recovery, 60)  # Cap at 60s per cycle
-                            logger.info(
-                                f"[ECON-VETO] SYSTEM_IDLE: All symbols vetoed. "
-                                f"Sleeping {sleep_duration:.0f}s until buffer ends."
-                            )
-                            if self.thought_callback:
-                                await self.thought_callback(
-                                    f"⏸️ Pausa prevista por evento económico. Reanudando en {int(sleep_duration)}s.",
-                                    module="ECON",
-                                    level="info"
-                                )
-                            await asyncio.sleep(min(sleep_duration, self.MIN_SLEEP_INTERVAL))
-                            self.stats.cycles_completed += 1
-                            return
-                    
-                    # Store veto and caution symbols for use in signal generation
-                    self._econ_veto_symbols = veto_symbols
-                    self._econ_caution_symbols = caution_symbols
-                
-                except Exception as e:
-                    logger.error(f"[ECON-VETO] Error in economic check: {e}", exc_info=True)
-                    # Fail-open: continue trading if check fails
-                    self._econ_veto_symbols = set()
-                    self._econ_caution_symbols = set()
-            else:
-                self._econ_veto_symbols = set()
-                self._econ_caution_symbols = set()
-            
-            # Step 2: Generate usr_signals WITH DataFrames
-            logger.debug("Generating usr_signals from scan results with data...")
-            usr_signals = await self.signal_factory.generate_usr_signals_batch(scan_results_with_data, trace_id)
-            self.storage.update_module_heartbeat("signal_factory")
-            
-            if not usr_signals:
-                logger.debug("No usr_signals generated")
-                if self.thought_callback:
-                    await self.thought_callback("Silencio en el mercado. No se detectan setups institucionales.", module="ALPHA")
-                # Clear active usr_signals if none generated
-                self._active_usr_signals.clear()
-                self.stats.cycles_completed += 1
-                return
-            
-            # Signal processing continues (unreachable code bug fixed)
-            if self.thought_callback:
-                await self.thought_callback(f"Setup detectado: {len(usr_signals)} señales en pipeline alpha.", module="ALPHA")
-            
-            logger.info(f"Generated {len(usr_signals)} usr_signals")
-            self.stats.usr_signals_processed += len(usr_signals)
-            self.stats.usr_signals_generated += len(usr_signals)
-            
-            # Step 3: Validate usr_signals with risk manager
-            validated_usr_signals = []
-            for signal in usr_signals:
-                is_valid = True
-                if hasattr(self.risk_manager, "validate_signal"):
-                    is_valid = bool(self.risk_manager.validate_signal(signal))
-                if is_valid:
-                    validated_usr_signals.append(signal)
-                else:
-                    logger.info(f"Signal {signal.symbol} rejected by risk manager (Trace ID: {signal.trace_id})")
-            
-            if not validated_usr_signals:
-                logger.info("No usr_signals passed risk validation")
-                self._active_usr_signals.clear()
-                self.stats.cycles_completed += 1
-                return
-            
-            logger.info(f"{len(validated_usr_signals)} usr_signals passed risk validation")
-            
-            # Update pipeline stats
-            self.stats.usr_signals_risk_passed += len(validated_usr_signals)
-            self.stats.usr_signals_vetoed += (len(usr_signals) - len(validated_usr_signals))
-            self.storage.update_module_heartbeat("risk_manager")
-            
-            # Update active usr_signals for adaptive heartbeat
-            self._active_usr_signals = validated_usr_signals
-            
-            # MODULE TOGGLE: Executor
-            if not self.modules_enabled_global.get("executor", True):
-                logger.info(
-                    f"[TOGGLE] executor deshabilitado globalmente - "
-                    f"{len(validated_usr_signals)} señales aprobadas NO ejecutadas"
-                )
-                self.stats.cycles_completed += 1
-                self._active_usr_signals.clear()
-                return
-            
-            # EDGE Auto-Correction: Verify lockdown BEFORE checking it (every 10 cycles)
-            if self.stats.cycles_completed % 10 == 0:
-                from core_brain.health import HealthManager
-                health = HealthManager()
-                lockdown_check = health.auto_correct_lockdown(self.storage, self.risk_manager)
-                
-                if lockdown_check.get("action_taken") == "LOCKDOWN_DEACTIVATED":
-                    logger.warning(
-                        f"[AUTO] EDGE AUTO-CORRECTION: {lockdown_check['reason']}"
-                    )
-            
-            # Step 4: Check risk manager lockdown (additional check)
-            if self.risk_manager.is_lockdown_active():
-                logger.warning("Lockdown mode active. Skipping signal execution.")
-                self.stats.cycles_completed += 1
-                return
-            
-            # ════════════════════════════════════════════════════════════════════════════════════
-            # Step 4a: Economic calendar veto filter (news-based lockdown, symbol-level)
-            # ════════════════════════════════════════════════════════════════════════════════════
-            
-            # Remove usr_signals for symbols under economic veto
-            econ_veto_symbols = getattr(self, '_econ_veto_symbols', set())
-            filtered_usr_signals = []
-            for signal in validated_usr_signals:
-                if signal.symbol in econ_veto_symbols:
-                    logger.info(
-                        f"[ECON-VETO-EXEC] Signal for {signal.symbol} blocked: "
-                        f"Economic veto active"
-                    )
-                    self.stats.usr_signals_vetoed += 1
-                    
-                    # HIGH impact: Adjust open usr_positions to Break-Even
-                    try:
-                        current_status = await self.economic_integration.get_trading_status(
-                            signal.symbol,
-                            datetime.now(timezone.utc)
-                        )
-                        if current_status.get("restriction_level") == "BLOCK":
-                            logger.warning(
-                                f"[ECON-VETO-EXEC] HIGH IMPACT: Adjusting usr_positions for {signal.symbol} to Break-Even"
-                            )
-                            # Activate lockdown for this symbol due to BLOCK-level event
-                            try:
-                                await self.risk_manager.activate_lockdown(
-                                    symbol=signal.symbol,
-                                    reason=f'ECON_VETO: {current_status.get("next_event", "UNKNOWN")}',
-                                    trace_id=getattr(signal, 'trace_id', None)
-                                )
-                                logger.info(f"[ECON-VETO-EXEC] Lockdown activated for {signal.symbol}")
-                            except Exception as e:
-                                logger.error(f"[ECON-VETO-EXEC] Failed to activate lockdown: {e}", exc_info=True)
-                            
-                            breakeven_result = await self.risk_manager.adjust_stops_to_breakeven(
-                                symbol=signal.symbol,
-                                reason=f"HIGH impact economic event: {current_status.get('next_event', 'UNKNOWN')}"
-                            )
-                            if breakeven_result.get("adjusted", 0) > 0:
-                                logger.info(
-                                    f"[ECON-VETO-EXEC] [OK] Adjusted {breakeven_result['adjusted']} usr_positions to Break-Even"
-                                )
-                    except Exception as e:
-                        logger.error(f"[ECON-VETO-EXEC] Error adjusting SL to Break-Even: {e}")
-                else:
-                    filtered_usr_signals.append(signal)
-            
-            validated_usr_signals = filtered_usr_signals
-
-            # Apply 50% volume reduction for CAUTION symbols (MEDIUM impact event active)
-            econ_caution_symbols = getattr(self, '_econ_caution_symbols', set())
-            if econ_caution_symbols:
-                for i, sig in enumerate(validated_usr_signals):
-                    if sig.symbol in econ_caution_symbols and sig.signal_type.value in ('BUY', 'SELL'):
-                        old_vol = sig.volume
-                        new_vol = max(round(old_vol * 0.5, 2), 0.01)
-                        validated_usr_signals[i] = sig.model_copy(update={"volume": new_vol})
-                        logger.info(
-                            f"[ECON-CAUTION] {sig.symbol} volume {old_vol}\u2192{new_vol} "
-                            f"(MEDIUM impact event active)"
-                        )
-
-            if not validated_usr_signals:
-                logger.info("All usr_signals filtered by economic veto")
-                self.stats.cycles_completed += 1
-                return
-
-            # Step 4b: StrategyGatekeeper — pre-execution asset efficiency filter
-            # Veto signals whose asset affinity score is below the strategy threshold.
-            # < 1ms per check (in-memory only). Gatekeeper is optional (backward compatible).
-            if self.strategy_gatekeeper is not None:
-                # Read configurable threshold from dynamic_params (SSOT).
-                # Starts at 0.0 (allow-all) until the learning loop establishes baselines.
-                # Once asset_scores are populated via trades, raise threshold to ~0.5.
-                _gk_min = self.config.get("gatekeeper_min_threshold", 0.0)
-                gatekeeper_passed = []
-                for signal in validated_usr_signals:
-                    strategy_id = getattr(signal, "strategy_id", None) or "default"
-                    if self.strategy_gatekeeper.can_execute_on_tick(
-                        asset=signal.symbol,
-                        min_threshold=_gk_min,
-                        strategy_id=strategy_id,
-                    ):
-                        gatekeeper_passed.append(signal)
-                    else:
-                        logger.info(
-                            "[GATEKEEPER] Signal vetoed: %s (strategy=%s)",
-                            signal.symbol, strategy_id
-                        )
-                        self.stats.usr_signals_vetoed += 1
-                vetoed_count = len(validated_usr_signals) - len(gatekeeper_passed)
-                if vetoed_count:
-                    logger.info("[GATEKEEPER] %d signal(s) vetoed by StrategyGatekeeper", vetoed_count)
-                validated_usr_signals = gatekeeper_passed
-
-            if not validated_usr_signals:
-                logger.info("[GATEKEEPER] All signals vetoed by StrategyGatekeeper")
-                self.stats.cycles_completed += 1
-                return
-
-            # Step 5: Execute validated usr_signals with DB persistence
-            for signal in validated_usr_signals:
-                try:
-                    logger.info(f"Executing signal: {signal.symbol} {signal.signal_type}")
-                    
-                    # PHASE 1: Signal Deduplication Check (before executor)
-                    # Get recent signals for dedup window check
-                    recent_signals = self.storage.get_recent_sys_signals(
-                        symbol=signal.symbol,
-                        timeframe=getattr(signal, 'timeframe', 'M5'),
-                        minutes=120  # Default lookback window
-                    )
-
-                    # Convert any Signal model objects → dicts for downstream components
-                    recent_signals_dicts = []
-                    for s in (recent_signals or []):
-                        if isinstance(s, dict):
-                            recent_signals_dicts.append(s)
-                        elif hasattr(s, 'model_dump'):
-                            recent_signals_dicts.append(s.model_dump())
-                        elif hasattr(s, '__dict__'):
-                            recent_signals_dicts.append(vars(s))
-                    
-                    market_context = {
-                        "volatility_zscore": getattr(self, 'volatility_zscore', 0.0),
-                        "regime": getattr(self.regime_classifier, 'current_regime', 'UNKNOWN') if self.regime_classifier else 'UNKNOWN'
-                    }
-                    
-                    # Check deduplication
-                    signal_dict = signal.model_dump() if hasattr(signal, 'model_dump') else vars(signal)
-                    signal_dict['signal_id'] = signal_dict.get('trace_id') or signal_dict.get('signal_id')
-                    signal_dict['strategy'] = signal_dict.get('strategy_id')
-                    dedup_decision, dedup_metadata = await self.signal_selector.should_operate_signal(
-                        signal_dict,
-                        recent_signals_dicts,
-                        market_context
-                    )
-                    
-                    # Handle dedup decisions
-                    if dedup_decision.value == 'REJECT_DUPLICATE':
-                        logger.warning(f"Signal {signal.symbol} REJECTED - deduplication: {dedup_metadata.get('reason')}")
-                        self.stats.usr_signals_vetoed += 1
-                        if self.thought_callback:
-                            await self.thought_callback(
-                                f"Señal duplicada rechazada: {signal.symbol} ({dedup_metadata.get('category', 'unknown')})",
-                                level="warning", module="DEDUP"
-                            )
-                        continue
-                    
-                    if dedup_decision.value == 'REJECT_COOLDOWN':
-                        remaining = dedup_metadata.get('remaining_minutes', 0)
-                        logger.warning(
-                            f"Signal {signal.symbol} en COOLDOWN por {dedup_metadata.get('failure_reason')} "
-                            f"- {remaining:.1f} min restantes"
-                        )
-                        self.stats.usr_signals_vetoed += 1
-                        if self.thought_callback:
-                            await self.thought_callback(
-                                f"Señal en enfriamiento: {signal.symbol} (vence en {remaining:.1f} min)",
-                                level="info", module="COOLDOWN"
-                            )
-                        continue
-                    
-                    # Check if strategy is authorized for LIVE execution (Shadow Ranking)
-                    if not self._is_strategy_authorized_for_execution(signal):
-                        logger.warning(
-                            f"Signal for {signal.symbol} blocked: Strategy {getattr(signal, 'strategy', 'unknown')} "
-                            f"not authorized for LIVE execution (checking usr_performance table)"
-                        )
-                        self.stats.usr_signals_vetoed += 1
-                        continue
-                    
-                    # PHASE 4: Signal Quality Scoring (unified authority before execution)
-                    # SHADOW signals bypass the gate — ShadowManager evaluates them separately.
-                    quality_result = None
-                    signal_origin = getattr(signal, 'origin_mode', None) or signal_dict.get('origin_mode')
-                    if signal_origin == 'SHADOW':
-                        logger.debug(f"[PHASE4] SHADOW signal {signal.symbol} bypasses quality gate")
-                    elif self.signal_quality_scorer:
-                        try:
-                            signal_dict = signal.model_dump() if hasattr(signal, "model_dump") else vars(signal)
-                            quality_result = await self.signal_quality_scorer.assess_signal_quality(
-                                signal_dict,
-                                recent_signals_dicts,
-                                market_context
-                            )
-                            logger.info(
-                                f"[PHASE4-QUALITY] {signal.symbol}: Grade={quality_result.grade.value} "
-                                f"Score={quality_result.overall_score:.1f}% (Technical={quality_result.technical_score:.1f}% "
-                                f"Contextual={quality_result.contextual_score:.1f}%)"
-                            )
-
-                            # Only execute if grade is A+ or A
-                            if quality_result.grade.value not in ['A+', 'A']:
-                                logger.warning(
-                                    f"Signal {signal.symbol} BLOCKED by quality scoring: "
-                                    f"Grade {quality_result.grade.value} (threshold: A+/A only)"
-                                )
-                                self.stats.usr_signals_vetoed += 1
-                                if self.thought_callback:
-                                    await self.thought_callback(
-                                        f"Señal bloqueada por calidad: {signal.symbol} (Calificación {quality_result.grade.value})",
-                                        level="info", module="PHASE4"
-                                    )
-                                continue
-                        except Exception as e:
-                            logger.error(f"[PHASE4-QUALITY] Error assessing signal quality: {e}")
-                            # Graceful degradation: proceed with execution if quality check fails
-                    
-                    success = await self.executor.execute_signal(signal)
-                    
-                    if success:
-                        if self.thought_callback:
-                            await self.thought_callback(f"ORDEN EJECUTADA: {signal.symbol} via {signal.connector}", level="success", module="EXEC")
-                        if not getattr(self.executor, "persists_usr_signals", False):
-                            signal_id = self.storage.save_signal(signal)
-                            logger.info(
-                                f"Signal executed and persisted: {signal.symbol} (ID: {signal_id})"
-                            )
-                        self.stats.usr_signals_executed += 1
-                    else:
-                        logger.warning(f"Signal execution failed: {signal.symbol}")
-                        # Record execution failure for autonomous learning (DOMINIO-10)
-                        # Extract specific failure reason from ExecutionService response (IMPROVEMENT)
-                        failure_reason = ExecutionFailureReason.UNKNOWN
-                        failure_details = {"signal_type": str(signal.signal_type) if signal.signal_type else None}
-                        if hasattr(self.executor, 'last_execution_response') and self.executor.last_execution_response:
-                            last_response = self.executor.last_execution_response
-                            if hasattr(last_response, 'failure_reason') and last_response.failure_reason:
-                                failure_reason = last_response.failure_reason
-                            if hasattr(last_response, 'failure_context') and last_response.failure_context:
-                                failure_details.update(last_response.failure_context)
-                        
-                        await self.execution_feedback_collector.record_failure(
-                            signal_id=getattr(signal, 'id', None),
-                            symbol=signal.symbol,
-                            strategy_name=getattr(signal, 'strategy', None),
-                            reason=failure_reason,
-                            details=failure_details
-                        )
-                        
-                        # PHASE 1: Apply cooldown for failed execution
-                        cooldown_result = await self.cooldown_manager.apply_cooldown(
-                            getattr(signal, 'signal_id', None) or getattr(signal, 'id', None),
-                            signal.symbol,
-                            getattr(signal, 'strategy', 'unknown'),
-                            failure_reason.value if isinstance(failure_reason, ExecutionFailureReason) else str(failure_reason),
-                            market_context
-                        )
-                        
-                        logger.warning(
-                            f"Cooldown applied for {signal.symbol}: {cooldown_result['cooldown_minutes']} min "
-                            f"(retry #{cooldown_result['retry_count']})"
-                        )
-                        
-                        # Notify if moving to escalation
-                        if cooldown_result['retry_count'] >= 4:
-                            if self.thought_callback:
-                                await self.thought_callback(
-                                    f"[WARNING] ESCALADA: Señal {signal.symbol} ha fallado {cooldown_result['retry_count']} veces. "
-                                    f"Requiere revisión manual.",
-                                    level="critical", module="ESCALATE"
-                                )
-                        
-                
-                except Exception as e:
-                    logger.error(f"Error executing signal {signal.symbol}: {e}")
-                    self.stats.errors_count += 1
-            
-            
-            self.storage.update_module_heartbeat("executor")
-            
-            # Step 6: Check for closed usr_positions and update signal status
-            await self._check_closed_usr_positions()
-            
-            # PHASE 4: Strategy Ranking Cycle (every 5 minutes)
-            # Evaluate all usr_strategies for mode transitions (SHADOW->LIVE, LIVE->QUARANTINE, etc.)
-            time_since_last_ranking = datetime.now(timezone.utc) - self._last_ranking_cycle
-            if time_since_last_ranking.total_seconds() >= self._ranking_interval:
-                try:
-                    logger.info(f"[RANKER] Starting ranking cycle (interval: 5 minutes)")
-                    ranking_results = self.strategy_ranker.evaluate_all_usr_strategies()
-                    
-                    # Log transitions
-                    for strategy_id, result in ranking_results.items():
-                        action = result.get('action')
-                        if action == 'promoted':
-                            logger.critical(
-                                f"[RANKER] [OK] PROMOTION: {strategy_id} SHADOW→LIVE "
-                                f"(Trace: {result.get('trace_id')})"
-                            )
-                        elif action == 'degraded':
-                            logger.critical(
-                                f"[RANKER] [WARNING] DEGRADATION: {strategy_id} LIVE→QUARANTINE "
-                                f"(Reason: {result.get('reason')}, Trace: {result.get('trace_id')})"
-                            )
-                        elif action == 'recovered':
-                            logger.critical(
-                                f"[RANKER] 🔄 RECOVERY: {strategy_id} QUARANTINE→SHADOW "
-                                f"(Trace: {result.get('trace_id')})"
-                            )
-                    
-                    self._last_ranking_cycle = datetime.now(timezone.utc)
-                    
-                except Exception as e:
-                    logger.error(f"[RANKER] Error in ranking cycle (non-blocking): {e}", exc_info=False)
-                    # Don't re-raise - ranking errors should not block trading
-            
-            # Step 7: Clear active usr_signals after execution and update cycle count
-            self._active_usr_signals.clear()
-            self.stats.cycles_completed += 1
-            self._persist_session_stats()
-            
-            # Coherence monitoring
-            usr_coherence_events = self.coherence_monitor.run_once()
-            if usr_coherence_events:
-                    for event in usr_coherence_events:
-                        logger.warning(
-                            f"Coherence inconsistency: symbol={event.symbol}, stage={event.stage}, status={event.status}, reason={event.reason}, connector={event.connector_type}"
-                        )
-            
-            # NEW: Update heartbeat for all usr_strategies (Vector V4 - Monitor)
-            if self.heartbeat_monitor:
-                try:
-                    self._update_all_usr_strategies_heartbeat()
-                except Exception as e:
-                    logger.warning(f"[HEARTBEAT] Error updating heartbeats: {e}")
-            
-            logger.info(f"Cycle completed. Stats: {self.stats}")
-            
+            await cycle_trade.run_execute_phase(self, signals, scan_bundle)
         except Exception as e:
             logger.error(f"Error in cycle execution: {e}", exc_info=True)
             self.stats.errors_count += 1
             self.stats.cycles_completed += 1
-    
+
     def _update_all_usr_strategies_heartbeat(self) -> None:
-        """Update heartbeat for all usr_strategies to reflect cycle end (Vector V4)."""
-        if not self.heartbeat_monitor:
-            return
-        
-        from core_brain.services.strategy_heartbeat_monitor import StrategyState
-        
-        # Mark all usr_strategies as IDLE at end of cycle
-        for strategy_id in getattr(self.heartbeat_monitor, 'STRATEGY_IDS', []):
-            try:
-                self.heartbeat_monitor.update_heartbeat(
-                    strategy_id=strategy_id,
-                    state=StrategyState.IDLE,
-                    asset=None,
-                    position_open=False
-                )
-            except Exception as e:
-                logger.debug(f"[HEARTBEAT] Error updating {strategy_id}: {e}")
-    
+        lifecycle.update_all_usr_strategies_heartbeat(self)
+
     def _persist_session_stats(self) -> None:
-        """
-        Persist current session stats to storage.
-        
-        Called after each cycle to ensure stats are not lost on crash.
-        """
-        session_data = {
-            "date": self.stats.date.isoformat(),
-            "usr_signals_processed": self.stats.usr_signals_processed,
-            "usr_signals_executed": self.stats.usr_signals_executed,
-            "cycles_completed": self.stats.cycles_completed,
-            "errors_count": self.stats.errors_count,
-            "scans_total": self.stats.scans_total,
-            "usr_signals_generated": self.stats.usr_signals_generated,
-            "usr_signals_risk_passed": self.stats.usr_signals_risk_passed,
-            "usr_signals_vetoed": self.stats.usr_signals_vetoed,
-            "last_update": datetime.now().isoformat()
-        }
-        
-        self.storage.update_sys_config({"session_stats": session_data})
-    
-    def _is_strategy_authorized_for_execution(self, signal: Signal) -> bool:
-        """
-        Check if a signal's strategy is authorized for LIVE execution.
-        
-        This implements the Shadow Ranking System:
-        - Only LIVE usr_strategies execute real usr_orders
-        - SHADOW usr_strategies generate metrics but don't execute
-        - QUARANTINE usr_strategies are blocked
-        
-        Args:
-            signal: Signal object with optional 'strategy' attribute
-            
-        Returns:
-            True if authorized for execution, False otherwise
-        """
-        strategy_id = getattr(signal, 'strategy', None)
-        
-        # If signal doesn't have strategy attribute, allow execution (legacy compatibility)
-        if not strategy_id:
-            return True
-        
-        try:
-            ranking = self.storage.get_signal_ranking(strategy_id)
-            
-            if not ranking:
-                # Strategy not found in ranking table - allow execution for new usr_strategies
-                logger.debug(f"Strategy {strategy_id} not in ranking table - allowing execution")
-                return True
-            
-            execution_mode = ranking.get('execution_mode', 'SHADOW')
-            
+        lifecycle.persist_session_stats_impl(self)
 
-            if execution_mode == 'LIVE':
-                return True
-            elif execution_mode == 'SHADOW':
-                # Route to DEMO account for paper execution so metrics can accumulate.
-                # Without paper trades, 3 Pilares can never be evaluated and no strategy
-                # can ever be promoted. The executor handles routing to DEMO account.
-                logger.info(
-                    f"Strategy {strategy_id} in SHADOW mode - routing to DEMO account "
-                    f"for paper execution"
-                )
-                return True
-            elif execution_mode == 'QUARANTINE':
-                logger.warning(
-                    f"Strategy {strategy_id} in QUARANTINE - signal blocked until risk metrics improve"
-                )
-                return False
-            elif execution_mode == 'BACKTEST':
-                logger.info(
-                    f"Strategy {strategy_id} in BACKTEST mode - ignored for direct execution (batch-only mode)"
-                )
-                return False
-            else:
-                logger.warning(f"Unknown execution mode for strategy {strategy_id}: {execution_mode}")
-                return False
-                
-        except Exception as e:
-            logger.error(f"Error checking strategy authorization for {strategy_id}: {e}")
-            # Conservative: block execution on error to avoid surprises
-            return False
-    
+    def _is_strategy_authorized_for_execution(self, signal: Any) -> bool:
+        return lifecycle.is_strategy_authorized_for_execution(self, signal)
+
     async def run(self) -> None:
-        """
-        Main event loop.
-        
-        Runs continuously until shutdown is requested.
-        
-        Features:
-        - Dynamic loop frequency based on market regime
-        - Adaptive heartbeat (faster with active usr_signals)
-        - Graceful shutdown on SIGINT/SIGTERM
-        - Session persistence after each cycle
-        - Scanner warmup phase to ensure data is available
-        """
-        logger.info("MainOrchestrator starting event loop...")
+        await lifecycle.run_main_loop(self)
 
-        # Cleanup: mark INCUBATING shadow instances for BACKTEST strategies as DEAD.
-        # Prevents orphan instances (created before strategy graduated) from blocking
-        # the shadow evaluation loop with permanent Pilar-3 failures.
-        try:
-            orphans = self.storage.mark_orphan_shadow_instances_dead()
-            if orphans:
-                logger.warning(
-                    "[STARTUP] %d orphan shadow instance(s) marked DEAD "
-                    "(parent strategy still in BACKTEST mode).",
-                    orphans,
-                )
-        except Exception as exc:
-            logger.warning("[STARTUP] mark_orphan_shadow_instances_dead failed (non-fatal): %s", exc)
-
-        # Register signal handlers for graceful shutdown
-        self._register_signal_handlers()
-        
-        # WARMUP PHASE: Wait for scanner to have data ready
-        # This prevents "0 structures detected" on first cycles
-        logger.info("[WARMUP] Waiting for scanner to populate initial data...")
-        warmup_timeout = 30  # seconds
-        warmup_start = time.time()
-        has_data = False
-        
-        while not has_data and (time.time() - warmup_start) < warmup_timeout:
-            scan_results = await asyncio.to_thread(self.scanner.get_scan_results_with_data)
-            # Check if at least 50% of snapshots have data
-            if scan_results:
-                snapshots_with_data = sum(
-                    1 for data in scan_results.values() 
-                    if data.get("df") is not None and len(data.get("df", [])) > 0
-                )
-                available_pct = (snapshots_with_data / len(scan_results)) * 100 if scan_results else 0
-                
-                if available_pct >= 50:
-                    has_data = True
-                    logger.info(f"[WARMUP] [OK] Scanner ready: {snapshots_with_data}/{len(scan_results)} snapshots with data ({available_pct:.1f}%)")
-                else:
-                    logger.debug(f"[WARMUP] Data loading: {snapshots_with_data}/{len(scan_results)} snapshots ({available_pct:.1f}%)")
-                    await asyncio.sleep(0.5)
-            else:
-                logger.debug("[WARMUP] Waiting for first scan results...")
-                await asyncio.sleep(0.5)
-        
-        if not has_data:
-            logger.warning(f"[WARMUP] Timeout after {warmup_timeout}s, proceeding with partial data (may see 0 structures initially)")
-        
-        logger.info("[WARMUP] [OK] Scanner warmup complete, entering main loop")
-        
-        try:
-            while not self._shutdown_requested:
-                # ── RESILIENCE POSTURE CHECK ─────────────────────────────────
-                # Only STRESSED halts the loop. Lower postures (CAUTION/DEGRADED)
-                # are handled inside run_single_cycle() by blocking SignalFactory
-                # while allowing PositionManager to close existing positions.
-                if self.resilience_manager.current_posture == SystemPosture.STRESSED:
-                    logger.critical(
-                        "[ResilienceManager] Posture STRESSED — deteniendo loop ordenadamente. "
-                        "Narrative: %s",
-                        self.resilience_manager.get_current_status_narrative(),
-                    )
-                    self._shutdown_requested = True
-                    break
-                # ────────────────────────────────────────────────────────────
-
-                # ── INTEGRITY GATE (EDGE-IGNITION-PHASE-1) ──────────────────
-                # CRITICAL → report L2/SELF_HEAL to ResilienceManager → DEGRADED.
-                # Loop continues; SignalFactory is blocked by posture in run_single_cycle().
-                health = self.integrity_guard.check_health()
-                if health.overall == HealthStatus.CRITICAL:
-                    failed = [c for c in health.checks if c.status.value == "CRITICAL"]
-                    reason = "; ".join(f"[{c.name}] {c.message}" for c in failed)
-                    _ig_report = EdgeEventReport(
-                        level=ResilienceLevel.SERVICE,
-                        scope="IntegrityGuard",
-                        action=EdgeAction.SELF_HEAL,
-                        reason=reason or "IntegrityGuard CRITICAL",
-                        trace_id=health.trace_id,
-                    )
-                    self.resilience_manager.process_report(_ig_report)
-                    self._write_integrity_veto(health.trace_id, health.checks)
-                # ────────────────────────────────────────────────────────────
-
-                # ── ANOMALY GATE (EDGE-IGNITION-PHASE-2) ────────────────────
-                # LOCKDOWN → report L3/LOCKDOWN to ResilienceManager → STRESSED.
-                # Next iteration's posture check will halt the loop gracefully.
-                anomaly_protocol = self.anomaly_sentinel.get_defense_protocol()
-                if anomaly_protocol == DefenseProtocol.LOCKDOWN:
-                    _as_trace = getattr(self.anomaly_sentinel, "last_trace_id", None)
-                    _as_trace = _as_trace or f"EDGE-{uuid.uuid4().hex[:8].upper()}"
-                    _as_report = EdgeEventReport(
-                        level=ResilienceLevel.GLOBAL,
-                        scope="AnomalySentinel",
-                        action=EdgeAction.LOCKDOWN,
-                        reason="AnomalySentinel LOCKDOWN protocol triggered.",
-                        trace_id=_as_trace,
-                    )
-                    self.resilience_manager.process_report(_as_report)
-                    await self._write_anomaly_lockdown(self.anomaly_sentinel.last_trace_id)
-                # ────────────────────────────────────────────────────────────
-
-                # ── COHERENCE GATE (EDGE-IGNITION-PHASE-3) ──────────────────
-                # Per-strategy: quarantines affected strategies, does NOT stop the loop
-                await self._run_coherence_gate()
-                # ────────────────────────────────────────────────────────────
-
-                # Execute one complete cycle
-                await self.run_single_cycle()
-                
-                # Dynamic sleep based on current regime and active usr_signals
-                sleep_interval = self._get_sleep_interval()
-                logger.debug(
-                    f"Sleeping for {sleep_interval}s "
-                    f"(regime: {self.current_regime}, "
-                    f"active_usr_signals: {len(self._active_usr_signals)})"
-                )
-                
-                # Use small sleep chunks to allow quick shutdown
-                # LATIDO DE GUARDIA: Check every second for responsiveness
-                for _ in range(sleep_interval):
-                    if self._shutdown_requested:
-                        break
-                    await asyncio.sleep(self.HEARTBEAT_CHECK_INTERVAL)
-                    
-        except asyncio.CancelledError:
-            logger.info("Event loop cancelled")
-        except Exception as e:
-            logger.critical(f"Fatal error in event loop: {e}", exc_info=True)
-        finally:
-            await self.shutdown()
-    
     async def shutdown(self) -> None:
-        """
-        Graceful shutdown procedure.
-        
-        Steps:
-        1. Set shutdown flag
-        2. Save current session stats
-        3. Persist lockdown state
-        4. Close broker connections
-        """
-        logger.info("Initiating graceful shutdown...")
-        self._shutdown_requested = True
-        
-        try:
-            # Save final session stats
-            logger.info(f"Final session stats: {self.stats}")
-            
-            # Persist lockdown state
-            logger.info("Saving system state...")
-            sys_config = {
-                "last_shutdown": datetime.now().isoformat(),
-                "lockdown_active": self.risk_manager.is_lockdown_active(),
-                "consecutive_losses": self.risk_manager.consecutive_losses,
-                "last_regime": self.current_regime.value,
-                "session_stats": {
-                    "date": self.stats.date.isoformat(),
-                    "usr_signals_processed": self.stats.usr_signals_processed,
-                    "usr_signals_executed": self.stats.usr_signals_executed,
-                    "cycles_completed": self.stats.cycles_completed,
-                    "errors_count": self.stats.errors_count
-                }
-            }
-            self.storage.update_sys_config(sys_config)
-            
-            # Close broker connections (if connectors have cleanup methods)
-            if hasattr(self.executor, 'close_connections'):
-                logger.info("Closing broker connections...")
-                await self.executor.close_connections()
-            
-            logger.info("Shutdown completed successfully")
-            
-        except Exception as e:
-            logger.error(f"Error during shutdown: {e}", exc_info=True)
-    
-    async def _run_coherence_gate(self) -> None:
-        """
-        EDGE-IGNITION-PHASE-3: Coherence Gate — deriva modelo vs. realidad.
-
-        Evalúa todas las estrategias LIVE activas. Si alguna supera el umbral
-        de deriva (coherence_score < 0.60), la pone en QUARANTINE de forma
-        individual. El orquestador continúa con las estrategias sanas.
-
-        TRACE_ID: EDGE-IGNITION-PHASE-3-COHERENCE-DRIFT
-        """
-        try:
-            live_strategies = self.storage.get_strategies_by_mode("LIVE")
-            if not live_strategies:
-                return
-
-            for strategy in live_strategies:
-                strategy_id = strategy.get("strategy_id")
-                if not strategy_id:
-                    continue
-
-                # Extraer símbolo del strategy_id (ej. "EURUSD_RSI_M5" → "EURUSD")
-                symbol = strategy_id.split("_")[0] if "_" in strategy_id else None
-
-                veto = self.coherence_service.check_coherence_veto(
-                    strategy_id=strategy_id,
-                    symbol=symbol,
-                )
-                if veto:
-                    trace_id = f"COH-VETO-{uuid.uuid4().hex[:8].upper()}"
-                    await self._write_coherence_veto(
-                        strategy_id=strategy_id,
-                        trace_id=trace_id,
-                    )
-
-        except Exception as e:
-            logger.error(
-                "[COHERENCE_GATE] Error en coherence check: %s", e, exc_info=True
-            )
-
-    async def _write_coherence_veto(self, strategy_id: str, trace_id: str) -> None:
-        """
-        Persiste el COHERENCE_VETO en sys_audit_logs y pone la estrategia
-        en QUARANTINE dentro de sys_shadow_instances y sys_signal_ranking.
-
-        A diferencia de los gates 1 y 2, este veto es por estrategia:
-        el orquestador NO se detiene si otras estrategias siguen sanas.
-
-        TRACE_ID: EDGE-IGNITION-PHASE-3-COHERENCE-DRIFT
-        """
-        logger.warning(
-            "[COHERENCE_GATE] VETO activado — estrategia en cuarentena. "
-            "strategy_id=%s | trace_id=%s",
-            strategy_id,
-            trace_id,
-        )
-
-        # 1. Registrar en sys_audit_logs
-        try:
-            conn = self.storage._get_conn()
-            conn.execute(
-                """
-                INSERT INTO sys_audit_logs
-                    (user_id, action, resource, resource_id, status, reason, trace_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    "system",
-                    "COHERENCE_VETO",
-                    "CoherenceService",
-                    strategy_id,
-                    "failure",
-                    "Coherence drift detectado. Estrategia cuarentenada por EDGE-IGNITION-PHASE-3.",
-                    trace_id,
-                ),
-            )
-            conn.commit()
-        except Exception as exc:
-            logger.error(
-                "[COHERENCE_GATE] No se pudo escribir en sys_audit_logs: %s", exc
-            )
-
-        # 2. Marcar instancias shadow de la estrategia como QUARANTINED
-        try:
-            conn = self.storage._get_conn()
-            conn.execute(
-                """
-                UPDATE sys_shadow_instances
-                SET status = 'QUARANTINED', updated_at = ?
-                WHERE strategy_id = ? AND status NOT IN ('DEAD', 'PROMOTED_TO_REAL')
-                """,
-                (
-                    datetime.now(timezone.utc).isoformat(),
-                    strategy_id,
-                ),
-            )
-            conn.commit()
-            logger.info(
-                "[COHERENCE_GATE] sys_shadow_instances de '%s' marcadas QUARANTINED.",
-                strategy_id,
-            )
-        except Exception as exc:
-            logger.error(
-                "[COHERENCE_GATE] No se pudo actualizar sys_shadow_instances: %s", exc
-            )
-
-        # 3. Actualizar execution_mode en sys_signal_ranking a QUARANTINE
-        try:
-            ranking = self.storage.get_signal_ranking(strategy_id)
-            if ranking:
-                ranking["execution_mode"] = "QUARANTINE"
-                ranking["trace_id"] = trace_id
-                self.storage.save_signal_ranking(strategy_id, ranking)
-                logger.info(
-                    "[COHERENCE_GATE] sys_signal_ranking de '%s' → QUARANTINE.",
-                    strategy_id,
-                )
-        except Exception as exc:
-            logger.error(
-                "[COHERENCE_GATE] No se pudo actualizar sys_signal_ranking: %s", exc
-            )
-
-    def _write_integrity_veto(self, trace_id: str, checks: list) -> None:
-        """
-        Persiste el veto de IntegrityGuard en sys_audit_logs y solicita shutdown.
-
-        TRACE_ID: EDGE-IGNITION-PHASE-1-INTEGRITY-GUARD
-        """
-        failed = [c for c in checks if c.status.value == "CRITICAL"]
-        reason = "; ".join(f"[{c.name}] {c.message}" for c in failed)
-        logger.critical(
-            "[IntegrityGuard] VETO CRÍTICO — ciclo de trading detenido. "
-            "trace_id=%s | %s",
-            trace_id,
-            reason,
-        )
-        try:
-            conn = self.storage._get_conn()
-            conn.execute(
-                """
-                INSERT INTO sys_audit_logs
-                    (user_id, action, resource, resource_id, status, reason, trace_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    "system",
-                    "INTEGRITY_VETO",
-                    "IntegrityGuard",
-                    "main_orchestrator",
-                    "failure",
-                    reason[:1000],
-                    trace_id,
-                ),
-            )
-            conn.commit()
-        except sqlite3.IntegrityError as exc:  # pragma: no cover
-            logger.warning("[IntegrityGuard] Entrada duplicada en sys_audit_logs (trace_id ya existe): %s", exc)
-        except sqlite3.OperationalError as exc:  # pragma: no cover
-            logger.error("[IntegrityGuard] DB locked — no se pudo persistir veto en sys_audit_logs: %s", exc)
-        except Exception as exc:  # pragma: no cover
-            logger.error("[IntegrityGuard] Error inesperado escribiendo en sys_audit_logs: %s", exc)
-
-    async def _write_anomaly_lockdown(self, trace_id: str) -> None:
-        """
-        Persiste el LOCKDOWN del AnomalySentinel en sys_audit_logs,
-        cancela órdenes pendientes y solicita shutdown.
-
-        TRACE_ID: EDGE-IGNITION-PHASE-2-ANOMALY-SENTINEL
-        """
-        logger.critical(
-            "[ANOMALY_SENTINEL] LOCKDOWN activado — ciclo de trading detenido. "
-            "trace_id=%s",
-            trace_id,
-        )
-
-        # Cancelar órdenes pendientes si el executor lo soporta
-        if hasattr(self, "executor") and hasattr(self.executor, "cancel_all_pending_orders"):
-            try:
-                await self.executor.cancel_all_pending_orders()
-                logger.info("[ANOMALY_SENTINEL] Órdenes pendientes canceladas. trace_id=%s", trace_id)
-            except Exception as exc:
-                logger.error("[ANOMALY_SENTINEL] Error cancelando órdenes: %s", exc)
-
-        # Persistir en sys_audit_logs
-        try:
-            conn = self.storage._get_conn()
-            conn.execute(
-                """
-                INSERT INTO sys_audit_logs
-                    (user_id, action, resource, resource_id, status, reason, trace_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    "system",
-                    "ANOMALY_LOCKDOWN",
-                    "AnomalySentinel",
-                    "main_orchestrator",
-                    "failure",
-                    "Flash Crash o anomalía sistémica detectada por AnomalySentinel",
-                    trace_id,
-                ),
-            )
-            conn.commit()
-        except Exception as exc:  # pragma: no cover
-            logger.error("[ANOMALY_SENTINEL] No se pudo escribir en sys_audit_logs: %s", exc)
+        await lifecycle.shutdown_impl(self)
 
     def _register_signal_handlers(self) -> None:
-        """Register signal handlers for Ctrl+C and SIGTERM"""
-        def signal_handler(signum: int, frame: Any) -> None:
-            logger.info(f"Received signal {signum}. Requesting shutdown...")
-            self._shutdown_requested = True
-        
-        # Register handlers
-        signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
-        signal.signal(signal.SIGTERM, signal_handler)  # Kill command
+        lifecycle.register_signal_handlers(self)
 
 
 async def main() -> None:
-    """
-    Main entry point for Aethelgard.
-    Includes pre-flight health checks and component initialization.
-    """
-    from core_brain.health import HealthManager
-    from core_brain.data_provider_manager import DataProviderManager
-    from core_brain.scanner import ScannerEngine
-    from core_brain.signal_factory import SignalFactory
-    from core_brain.risk_manager import RiskManager
-    from core_brain.executor import OrderExecutor
-    from core_brain.notificator import get_notifier
-    from core_brain.trade_closure_listener import TradeClosureListener
-    from core_brain.edge_tuner import EdgeTuner
-    from core_brain.threshold_optimizer import ThresholdOptimizer
-    
-    print("=" * 50)
-    print(">>> AETHELGARD ORCHESTRATOR STARTUP")
-    print("=" * 50)
-    
-    # 1. Pre-flight Health Check
-    health = HealthManager()
-    summary = health.run_full_diagnostic()
-    
-    if summary["overall_status"] != "GREEN":
-        print(f"[WARNING]  ISSUES DETECTED: {summary['overall_status']}. Attempting auto-repair...")
-        if health.try_auto_repair():
-            print("[OK] Auto-repair successful. Re-checking...")
-            summary = health.run_full_diagnostic()
-        else:
-            print("[ERROR] Auto-repair failed.")
-
-    if summary["overall_status"] == "RED":
-        print("[CRITICAL] CRITICAL ERRORS STILL PRESENT. ABORTING STARTUP.")
-        print(json.dumps(summary["config"], indent=2))
-        print(json.dumps(summary["db"], indent=2))
-        return
-    
-    if summary["overall_status"] == "YELLOW":
-        print("[WARNING]  SYSTEM READY WITH WARNINGS. PROCEEDING...")
-    else:
-        print("[OK] HEALTH CHECK PASSED.")
-    
-    # 2. Component Initialization
-    storage = StorageManager()
-    
-    # Data Provider (Using Yahoo as default for live test)
-    provider_manager = DataProviderManager(storage=storage)
-    data_provider = provider_manager.get_best_provider()
-    
-    if not data_provider:
-        print("[CRITICAL] No data provider available. Aborting.")
-        return
-    
-    # Instrument Manager: Get only enabled instruments for scanning
-    from core_brain.instrument_manager import InstrumentManager
-    instrument_mgr = InstrumentManager(storage=storage)
-    enabled_assets = instrument_mgr.get_enabled_symbols()
-    
-    if not enabled_assets:
-        print("[CRITICAL] No enabled instruments found in DB (sys_config['instruments_config']). Aborting.")
-        return
-    
-    print(f"[SCAN] Scanning {len(enabled_assets)} enabled instruments: {enabled_assets[:10]}...")
-    
-    # Scanner (Only scans enabled instruments from configuration)
-    _scanner = ScannerEngine(assets=enabled_assets, data_provider=data_provider, storage=storage)
-    
-    # --- Strategies & Analyzers (DI) ---
-    from core_brain.confluence import MultiTimeframeConfluenceAnalyzer
-    from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
-    from core_brain.services.strategy_engine_factory import StrategyEngineFactory
-    
-    dynamic_params = storage.get_dynamic_params()
-    
-    confluence_analyzer = MultiTimeframeConfluenceAnalyzer(storage=storage)
-    trifecta_analyzer = TrifectaAnalyzer(storage=storage)
-    
-    # FASE 2: Load all usr_strategies dynamically from BD (SSOT via StrategyEngineFactory)
-    # Cumple DEVELOPMENT_GUIDELINES 1.6 (Service Layer) + MANIFESTO II.3 (Dynamic Registry)
-    try:
-        strategy_factory = StrategyEngineFactory(
-            storage=storage,
-            config=dynamic_params,
-            available_sensors={}  # TODO: Populate when sensors are fully instantiated
-        )
-        active_engines = strategy_factory.instantiate_all_sys_strategies()
-        stats = strategy_factory.get_stats()
-        logger.info(
-            f"[STRATEGIES] ✓ Dynamic loading from BD completed: "
-            f"{stats['active_engines']} active, {stats['failed_loads']} skipped"
-        )
-    except RuntimeError as e:
-        logger.error(f"[STRATEGIES] ✗ CRITICAL: {e}")
-        print(f"[CRITICAL] ABORTING STARTUP: {e}")
-        return
-
-    # Initialize ExecutionFeedbackCollector for autonomous learning (DOMINIO-10)
-    execution_feedback_collector = ExecutionFeedbackCollector(storage=storage)
-    
-    # 2. Component Initialization (Signal Factory)
-    signal_factory = SignalFactory(
-        storage_manager=storage,
-        strategy_engines=active_engines,
-        confluence_analyzer=confluence_analyzer,
-        trifecta_analyzer=trifecta_analyzer,
-        execution_feedback_collector=execution_feedback_collector
-    )
-    
-    # Risk Manager ($10k starting capital) - Dependency Injection
-    risk_manager = RiskManager(storage=storage, initial_capital=10000.0, instrument_manager=instrument_mgr)
-    
-    # EdgeTuner (Parameter auto-calibration)
-    edge_tuner = EdgeTuner(storage=storage)
-    
-    # ThresholdOptimizer (Confidence threshold adaptation - HU 7.1)
-    threshold_optimizer = ThresholdOptimizer(storage=storage)
-    
-    # Trade Closure Listener (Autonomous feedback loop)
-    trade_listener = TradeClosureListener(
-        storage=storage,
-        risk_manager=risk_manager,
-        edge_tuner=edge_tuner,
-        threshold_optimizer=threshold_optimizer,
-        max_retries=3,
-        retry_backoff=0.5
-    )
-    logger.info("[OK] TradeClosureListener initialized with idempotent event handling | ThresholdOptimizer HU 7.1 enabled")
-    
-    # Order Executor
-    notifier = get_notifier()
-    executor = OrderExecutor(risk_manager=risk_manager, storage=storage, notificator=notifier)
-    
-    # ─────────────────────────────────────────────────────────────────
-    # HU 3.6 & 3.9: DUAL MOTOR INITIALIZATION
-    # ─────────────────────────────────────────────────────────────────
-    logger.info("🔄 Initializing Hybrid Runtime (MODE_UNIVERSAL)")
-    
-    # Import required components for dual-motor
-    # NOTE: LegacyStrategyExecutor removed (v2.0 uses MODE_UNIVERSAL exclusively)
-    from core_brain.universal_strategy_executor import UniversalStrategyExecutor
-    from core_brain.strategy_mode_selector import StrategyModeSelector, RuntimeMode
-    from core_brain.strategy_mode_adapter import StrategyModeAdapter
-    
-    # Get or initialize tenant ID (for now, "default_tenant")
-    tenant_id = "default_tenant"
-    
-    # Create executors
-    # NOTE: legacy_executor=None (MODE_LEGACY removed, v2.0 uses MODE_UNIVERSAL only)
-    universal_executor = UniversalStrategyExecutor(
-        indicator_provider=data_provider,
-        strategy_schemas_dir=None  # Uses default: core_brain/usr_strategies/universal/
-    )
-    
-    # Create mode selector
-    mode_selector = StrategyModeSelector(
-        storage_manager=storage,
-        legacy_executor=None,  # Removed in v2.0
-        universal_executor=universal_executor,
-        tenant_id=tenant_id,
-        trace_id="STARTUP-2026-001"
-    )
-    
-    # Initialize mode selector (loads tenant config from DB)
-    await mode_selector.initialize()
-    
-    logger.info(f"[OK] Hybrid Runtime initialized | Current mode: {mode_selector.current_mode.value}")
-    
-    # Create adapter that makes StrategyModeSelector compatible with MainOrchestrator
-    strategy_adapter = StrategyModeAdapter(strategy_mode_selector=mode_selector)
-    
-    # 3. Create Orchestrator
-    # Note: We pass strategy_adapter instead of signal_factory
-    # The adapter provides SignalFactory-like interface while delegating to StrategyModeSelector
-    _orchestrator = MainOrchestrator(
-        scanner=_scanner,
-        signal_factory=strategy_adapter,  # Changed from signal_factory to strategy_adapter
-        risk_manager=risk_manager,
-        executor=executor,
-        storage=storage,
-        execution_feedback_collector=execution_feedback_collector
-    )
-    
-    # Store references for API/control access
-    logger.info("🎛️  Strategy Mode Selector ready for hot-swap via API endpoint /api/tenant/config/strategy-mode")
-    
-    # REMOVED: Scanner background thread (11-Mar-2026 - OPTION A)
-    # ScannerEngine.run() is deprecated. MainOrchestrator now orchestrates scanning via:
-    # - _get_scan_schedule() → timing based on regimes
-    # - _should_scan_now() → determine which assets need scanning
-    # - _request_scan() → execute_scan() on ScannerEngine (pure executor, not autonomous)
-    logger.info("✓ OPTION A: MainOrchestrator is sole scanner orchestrator (ScannerEngine is pure executor)")
-    
-    # 5. Run the main loop
-    print("🚀 System LIVE. Starting event loop...")
-    
-    global scanner, orchestrator
-    scanner = _scanner
-    orchestrator = _orchestrator
-    
-    await orchestrator.run()
+    await lifecycle.main()
 
 
 if __name__ == "__main__":
-    # Configure logging
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
-    
-    # Run the orchestrator
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\n👋 Shutdown by user.")
+        print("\nShutdown by user.")

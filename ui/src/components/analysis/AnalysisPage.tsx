@@ -8,6 +8,8 @@ import HeatmapView from './HeatmapView';
 import { useToast, ToastContainer } from '../common/Toast';
 import { useHeatmapData } from '../../hooks/useHeatmapData';
 import { useApi } from '../../hooks/useApi';
+import { useSignalReviews } from '../../hooks/useSignalReviews';
+import { SignalReviewPanel } from './SignalReviewPanel';
 
 const DEFAULT_SYMBOL = 'EURUSD';
 type ViewMode = 'feed' | 'heatmap';
@@ -20,6 +22,13 @@ const AnalysisPage: React.FC = () => {
   const [filtersPanelCollapsed, setFiltersPanelCollapsed] = useState(false);
   const toast = useToast();
   const { data: heatmapData, loading: heatmapLoading } = useHeatmapData();
+  const {
+    pendingReviews,
+    loading: reviewLoading,
+    refreshPending,
+    approveReview,
+    rejectReview,
+  } = useSignalReviews();
 
   // Active Filters with localStorage persistence
   const [activeFilters, setActiveFilters] = useState(() => {
@@ -132,6 +141,35 @@ const AnalysisPage: React.FC = () => {
     setSymbol(signal.symbol);
     setSelectedSignal(signal);
     setFullscreenChart(true);
+  };
+
+  const handleApproveReview = async (signalId: string) => {
+    const result = await approveReview(signalId, 'Approved from Analysis UI');
+    if (result.success) {
+      const execOk = !!result.execution?.success;
+      if (execOk) {
+        toast.success(result.execution?.message || 'Review approved and signal executed');
+      } else {
+        toast.error(result.execution?.message || 'Review approved, but execution failed');
+      }
+      if ((window as any).__signalFeedRefresh) {
+        (window as any).__signalFeedRefresh();
+      }
+    } else {
+      toast.error(result.detail || 'Failed to approve review');
+    }
+  };
+
+  const handleRejectReview = async (signalId: string) => {
+    const result = await rejectReview(signalId, 'Rejected from Analysis UI');
+    if (result.success) {
+      toast.success(result.message || 'Review rejected');
+      if ((window as any).__signalFeedRefresh) {
+        (window as any).__signalFeedRefresh();
+      }
+    } else {
+      toast.error(result.detail || 'Failed to reject review');
+    }
   };
 
   return (
@@ -249,6 +287,13 @@ const AnalysisPage: React.FC = () => {
                     exit={{ opacity: 0, y: -10 }}
                     className="h-full overflow-y-auto custom-scrollbar pr-2"
                   >
+                    <SignalReviewPanel
+                      pendingReviews={pendingReviews}
+                      loading={reviewLoading}
+                      onRefresh={refreshPending}
+                      onApprove={handleApproveReview}
+                      onReject={handleRejectReview}
+                    />
                     <SignalFeed
                       filters={activeFilters}
                       onExecuteSignal={handleExecuteSignal}

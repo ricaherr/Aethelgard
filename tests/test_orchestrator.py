@@ -342,6 +342,66 @@ class TestMainOrchestrator:
         
         # But executor should NOT be called due to lockdown
         mock_executor.execute_signal.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_economic_caution_transition_persists_multiplier(
+        self,
+        mock_scanner,
+        mock_signal_factory,
+        mock_executor,
+        temp_config,
+        temp_storage,
+    ):
+        """Entering CAUTION should persist 0.5 risk multiplier per symbol (SSOT)."""
+        mock_risk_manager = MagicMock()
+        mock_risk_manager.is_lockdown_active.return_value = False
+        mock_risk_manager.rebalance_after_caution = AsyncMock(return_value={"status": "ok"})
+
+        orchestrator = MainOrchestrator(
+            scanner=mock_scanner,
+            signal_factory=mock_signal_factory,
+            risk_manager=mock_risk_manager,
+            executor=mock_executor,
+            storage=temp_storage,
+            config_path=temp_config,
+        )
+
+        await orchestrator._sync_economic_caution_state({"EURUSD"}, "TRACE-CAUTION-ENTER")
+
+        state = temp_storage.get_sys_config()
+        assert state.get("econ_risk_multiplier_EURUSD") == 0.5
+        mock_risk_manager.rebalance_after_caution.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_economic_caution_exit_triggers_rebalance(
+        self,
+        mock_scanner,
+        mock_signal_factory,
+        mock_executor,
+        temp_config,
+        temp_storage,
+    ):
+        """Exiting CAUTION should invoke RiskManager rebalancing hook."""
+        mock_risk_manager = MagicMock()
+        mock_risk_manager.is_lockdown_active.return_value = False
+        mock_risk_manager.rebalance_after_caution = AsyncMock(return_value={"status": "ok"})
+
+        orchestrator = MainOrchestrator(
+            scanner=mock_scanner,
+            signal_factory=mock_signal_factory,
+            risk_manager=mock_risk_manager,
+            executor=mock_executor,
+            storage=temp_storage,
+            config_path=temp_config,
+        )
+
+        orchestrator._prev_econ_caution_symbols = {"EURUSD", "GBPUSD"}
+        await orchestrator._sync_economic_caution_state({"GBPUSD"}, "TRACE-CAUTION-EXIT")
+
+        mock_risk_manager.rebalance_after_caution.assert_awaited_once_with(
+            symbol="EURUSD",
+            trace_id="TRACE-CAUTION-EXIT",
+        )
     
     @pytest.mark.asyncio
     async def test_session_stats_persistence(
@@ -383,8 +443,10 @@ class TestMainOrchestrator:
         )
         
         # Run multiple cycles
-        for _ in range(3):
-            await orchestrator.run_single_cycle()
+        # Keep this test focused on stats persistence, not dynamic CPU veto.
+        with patch("core_brain.main_orchestrator.psutil.cpu_percent", return_value=0.0):
+            for _ in range(3):
+                await orchestrator.run_single_cycle()
         
         # Verify stats accumulated
         assert orchestrator.stats.cycles_completed == 3
@@ -417,11 +479,13 @@ class TestMainOrchestrator:
             config_path=temp_config
         )
         
-        # First cycle should handle error gracefully
-        await orchestrator.run_single_cycle()
-        
-        # Second cycle should work
-        await orchestrator.run_single_cycle()
+        # Keep this test focused on scanner failure recovery (not CPU veto behavior).
+        with patch("core_brain.main_orchestrator.psutil.cpu_percent", return_value=0.0):
+            # First cycle should handle error gracefully
+            await orchestrator.run_single_cycle()
+
+            # Second cycle should work
+            await orchestrator.run_single_cycle()
         
         # Verify second call was made despite first error (may be +1 due to UI_MAPPING re-fetch)
         assert mock_scanner.get_scan_results_with_data.call_count >= 2

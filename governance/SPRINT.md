@@ -21,6 +21,23 @@
 
 ## 📋 Tareas del Sprint
 
+- [DONE] **HU 10.18: DISC-003 — Descomposición de MainOrchestrator** (Trace_ID: DISC-003-2026-04-05 | 2026-04-05)
+  - `core_brain/main_orchestrator.py` reducido a coordinador delgado con wrappers legacy para preservar patchability de tests
+  - `core_brain/orchestrators/` creado con módulos `_init_methods`, `_lifecycle`, `_cycle_scan`, `_cycle_exec`, `_cycle_trade`, `_guard_suite`, `_background_tasks`, `_scan_methods`, `_discovery`, `_types`
+  - Compatibilidad retroactiva restaurada para tests que parchean métodos/clases del módulo raíz (`psutil`, `StorageManager`, `SignalExpirationManager`, `broadcast_shadow_update`, wrappers `_init_*`, `_consume_oem_repair_flags`, `_check_and_run_weekly_shadow_evolution`, etc.)
+  - Compatibilidad textual restaurada para `tests/test_strategy_registry_complete.py`, recuperando el baseline histórico completo
+  - `pytest tests/ -q --tb=no --no-header` → `2269 passed, 3 skipped`
+  - `scripts/validate_all.py` → `27/27 PASSED`
+  - `start.py` validado sin traceback atribuible a DISC-003
+
+- [DONE] **HU 9.4: Signal Review Queue — WS Push + Flow UI Contract Test** (Trace_ID: DISC-SIGNAL-REVIEW-WS-PUSH-2026-04-04 | 2026-04-04)
+  - `ui/src/contexts/AethelgardContext.tsx`: bridge de evento `SIGNAL_REVIEW_PENDING` a bus interno `aethelgard:signal-review-pending`
+  - `ui/src/hooks/useSignalReviews.ts`: consumo del evento push, inserción optimista y `refreshPending()` inmediato
+  - Polling rebajado de 10s a 60s como fallback resiliente
+  - `ui/src/__tests__/hooks/useSignalReviews.test.ts`: 3 tests de contrato (hook listener, fallback cadence, bridge context->hook)
+  - `ui`: `npm run test -- src/__tests__/hooks/useSignalReviews.test.ts` ✅ 3/3 PASSED
+  - `ui`: `npm run build` ✅ PASSED
+
 - [DEV] **HU 10.17b: Veto Reasoner — Endpoint API + UI Component** (Trace_ID: EDGE-IGNITION-PHASE-6-RESILIENCE-UI | 2026-03-31)
   - `core_brain/api/routers/resilience.py` (NUEVO): `GET /api/v3/resilience/status` (postura, budget, exclusiones) + `POST /api/v3/resilience/command` (RETRY_HEALING, OVERRIDE_POSTURE, RELEASE_SCOPE)
   - `core_brain/server.py`: singleton `_resilience_manager_instance` + `set_resilience_manager()` / `get_resilience_manager()`

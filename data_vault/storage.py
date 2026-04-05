@@ -224,8 +224,20 @@ class StorageManager(
                             for strat in sys_strategies:
                                 cursor.execute("""
                                     INSERT OR REPLACE INTO sys_strategies 
-                                    (class_id, mnemonic, version, affinity_scores, market_whitelist, readiness, readiness_notes)
-                                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                                    (
+                                        class_id,
+                                        mnemonic,
+                                        version,
+                                        affinity_scores,
+                                        market_whitelist,
+                                        readiness,
+                                        readiness_notes,
+                                        type,
+                                        class_file,
+                                        class_name,
+                                        schema_file
+                                    )
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                                 """, (
                                     strat.get("strategy_id"),
                                     strat.get("mnemonic"),
@@ -233,7 +245,11 @@ class StorageManager(
                                     json.dumps(strat.get("affinity_scores", {})),
                                     json.dumps(strat.get("market_whitelist", [])),
                                     strat.get("readiness", "UNKNOWN"),
-                                    strat.get("readiness_notes")
+                                    strat.get("readiness_notes"),
+                                    strat.get("type", "PYTHON_CLASS"),
+                                    strat.get("class_file"),
+                                    strat.get("class_name"),
+                                    strat.get("schema_file"),
                                 ))
                             logger.info(f"[BOOTSTRAP] Seeded {len(sys_strategies)} sys_strategies from data_vault/seed/strategy_registry.json")
                 except Exception as e:
@@ -249,9 +265,12 @@ class StorageManager(
             conn.rollback()
 
     def close(self) -> None:
-        """Close connection pool"""
-        if hasattr(self, '_pool') and self._pool:
-            self._pool.close_all()
+        """Close underlying database connection for this storage instance."""
+        try:
+            if hasattr(self, "db_manager") and self.db_manager:
+                self.db_manager.close_connection(self.db_path)
+        except Exception as e:
+            logger.warning(f"StorageManager.close failed for {self.db_path}: {e}")
 
     def run_legacy_json_bootstrap_once(self) -> None:
         """Public trigger: Legacy method name retained for backward compatibility."""

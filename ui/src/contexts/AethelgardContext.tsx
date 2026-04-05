@@ -83,6 +83,14 @@ export function AethelgardProvider({ children }: { children: ReactNode }) {
                 }, ...prev].slice(0, 100));
                 break;
 
+            case 'SIGNAL_REVIEW_PENDING':
+                if (typeof window !== 'undefined') {
+                    window.dispatchEvent(new CustomEvent('aethelgard:signal-review-pending', {
+                        detail: payload
+                    }));
+                }
+                break;
+
             default:
                 break;
         }

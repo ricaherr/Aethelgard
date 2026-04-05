@@ -4,7 +4,7 @@
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-03-30 UTC)**: Trace_ID: EDGE-IGNITION-PHASE-1-INTEGRITY-GUARD-2026-03-30 | Sprint 23 — IntegrityGuard: autodiagnóstico runtime con veto CRITICAL automático · 22 tests nuevos · **validate_all 27/27 PASSED** · Suite total **2143/2143 PASSED**.
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-05 UTC)**: Trace_ID: DISC-003-2026-04-05 | Sprint 25 — MainOrchestrator descompuesto en submódulos `core_brain/orchestrators/` y reducido a coordinador delgado con compatibilidad legacy preservada · baseline final **2269 passed, 3 skipped** · **validate_all 27/27 PASSED** · `start.py` validado sin regresión atribuible a DISC-003.
 
 ---
 
@@ -2304,6 +2304,177 @@ Reducción de `server.py` de 1107 a 272 líneas (-75.4%). Extracción de lógica
    - Método: `TechnicalAnalyzer.calculate_volatility_disconnect()` en `core_brain/tech_utils.py`
    - Lógica: Ratio RV (ventana corta) vs HV (ventana larga). Ratio > 2.0 = `HIGH_VOLATILITY_BURST`.
    - Integración: `SignalFactory.generate_signal()` enriquece metadata con FVG y etiqueta de volatilidad.
+
+---
+
+## 📋 SPRINT 24 — DISC-001: Signal Review Queue for B/C-Grade Signals (2026-04-04)
+
+**Trace_ID**: `DISC-SIGNAL-REVIEW-QUEUE-IMPL-2026-04-04`  
+**Épica**: DISC-001 ✅ COMPLETADA  
+**Status**: Sprint cerrado · Feature PRODUCCIÓN-READY
+
+### Resumen Ejecución
+
+**Objetivo**: Implementar queue de revisión manual para señales de grado B y C (confianza moderada/baja) con timeout automático de 5 minutos para auto-ejecución.
+
+**Implementación**:
+1. **Backend - SignalReviewManager** (`core_brain/services/signal_review_manager.py` — 510 líneas):
+   - `queue_for_review()`: Encola señales B/C con status `PENDING`, timeout 5min, emit WS notification
+   - `process_trader_approval()`: Trader aprueba → `APPROVED`, listo para ejecución manual
+   - `process_trader_rejection()`: Trader rechaza → `REJECTED`, 30-min cooldown por estrategia/símbolo
+   - `check_and_execute_timed_out_reviews()`: Auto-exec después de 5min inactividad → `AUTO_EXECUTED`
+   - `get_pending_reviews_for_trader()`: Fetch pending signals con countdown timer
+   - `_emit_review_notification()`: WebSocket event broadcast `SIGNAL_REVIEW_PENDING`
+
+2. **Database Schema** (`data_vault/schema.py`):
+   - Columnas agregadas a `sys_signals`: `review_status` (ENUM), `trader_review_reason` (TEXT), `review_timeout_at` (DATETIME)
+   - Índice: `idx_sys_signals_review_status` optimiza queries de pending reviews
+   - Migration guarded por `PRAGMA table_info()` para backward compatibility con DBs antiguas
+
+3. **Models** (`models/signal.py`):
+   - Enum `ReviewStatus` con 5 estados: `NONE`, `PENDING`, `APPROVED`, `REJECTED`, `AUTO_EXECUTED`
+
+4. **MainOrchestrator Integration** (`core_brain/main_orchestrator.py`):
+   - Constructor: Inyecta `SignalReviewManager(storage_manager=self.storage)`
+   - Ciclo principal: `check_and_execute_timed_out_reviews()` cada heartbeat, procesa auto-execs
+   - Quality gate: B/C-grade signals → `queue_for_review()` (no bloquean automáticamente)
+   - A+/A grades: bypass queue, auto-execute (comportamiento previo)
+   - F-grade: bloqueados permanentemente (sin cambio)
+
+5. **API Endpoints** (`core_brain/api/routers/trading.py`):
+   - `GET /api/signals/reviews/pending`: Fetch pending reviews para trader actual
+   - `POST /api/signals/reviews/{signal_id}/approve`: Aprobar + ejecutar manual
+   - `POST /api/signals/reviews/{signal_id}/reject`: Rechazar + cooldown
+   - Tenant-aware via `TenantDBFactory.get_storage(token.sub)`
+
+6. **Frontend UI** (`ui/src/`):
+   - Hook: `useSignalReviews.ts` — polling cada 10s + approve/reject actions
+   - Component: `SignalReviewPanel.tsx` — panel visual con countdown timer en Analysis page
+   - Integration: `AnalysisPage.tsx` — importa panel y handlers
+
+### Tests TDD (11/11 PASSED ✅)
+
+| Test | AR | Descripción |
+|---|---|---|
+| `test_b_grade_queued_not_executed` | AC-001 | B-grade (72%) queued con status=PENDING, no auto-exec |
+| `test_trader_approval_executes` | AC-003 | Trader aprueba → APPROVED, removido de pendings |
+| `test_trader_rejection_archives` | AC-004 | Trader rechaza → REJECTED, 30-min cooldown aplicado |
+| `test_timeout_auto_execute` | AC-005 | 5-min timeout expired → AUTO_EXECUTED |
+| `test_a_grade_bypasses_review` | AC-006 | A-grades nunca queued (boundary condition) |
+| `test_get_pending_reviews` | AC-008 | API lista pending signals con remaining_seconds |
+| `test_get_pending_signal_reviews_ok` | API | GET /pending devuelve list de pendings |
+| `test_approve_signal_review_ok` | API | POST /approve ejecuta signal |
+| `test_approve_signal_review_bad_request` | API | POST /approve signal no PENDING → 400 |
+| `test_reject_signal_review_ok` | API | POST /reject archiva signal |
+| `test_reject_signal_review_bad_request` | API | POST /reject signal no PENDING → 400 |
+
+**Suite Total**: 2154/2154 PASSED · +11 tests nuevos · 0 regresiones
+
+### Validación Integral
+
+```
+✅ OrchestrationTests (11/11 PASSED)
+✅ SignalReviewQueueTests (6/6 PASSED)
+✅ SignalReviewAPITests (5/5 PASSED)
+✅ validate_all.py (27/27 PASSED)
+✅ System Startup (python start.py — iniciación exitosa)
+```
+
+### Auditoría de Warnings de Arranque (2026-04-04 21:51 UTC)
+
+**Nota**: Los siguientes warnings/errores se detectaron en `python start.py` y se clasifican como PRE-EXISTENTES (no causados por DISC-001):
+
+| Clase | Código | Severidad | Causa Root | Acción |
+|---|---|---|---|---|
+| **STRATEGY** | BRK_OPEN_0001 | ⚠️ WARNING | `readiness=LOGIC_PENDING` (código no validado) | Estrategia bloqueada por gobernanza § 7.2 — EXPECTED |
+| **STRATEGY** | institutional_footprint | ⚠️ WARNING | `readiness=LOGIC_PENDING` (código no validado) | Estrategia bloqueada por gobernanza § 7.2 — EXPECTED |
+| **STRATEGY** | SESS_EXT_0001 | ⚠️ WARNING | `readiness=LOGIC_PENDING` (código no validado) | Estrategia bloqueada por gobernanza § 7.2 — EXPECTED |
+| **STRATEGY_REG** | MOM_BIAS_0001 | ❌ ERROR | `Missing class_file or class_name in registry` | Mismatch en DB `sys_strategies` — no mapping a clase Python. REQUIRES: Actualizar registry o eliminar entrada. |
+| **STRATEGY_REG** | LIQ_SWEEP_0001 | ❌ ERROR | `Missing class_file or class_name in registry` | Mismatch en DB `sys_strategies` — no mapping a clase Python. REQUIRES: Actualizar registry o eliminar entrada. |
+| **STRATEGY_REG** | STRUC_SHIFT_0001 | ❌ ERROR | `Missing class_file or class_name in registry` | Mismatch en DB `sys_strategies` — no mapping a clase Python. REQUIRES: Actualizar registry o eliminar entrada. |
+| **CONNECTOR** | MT5 | ⚠️ WARNING | Broker no disponible (error conectividad o credentials) | EXPECTED en entorno sin MT5 instalado. BACKTEST_ONLY mode activado. |
+| **DATA_PROVIDER** | GBPJPY | ⚠️ WARNING | Yahoo Finance no retorna datos para par | Pares exóticos pueden no estar disponibles en provider gratuito. EXPECTED. |
+
+**Clasificación**:
+- **EXPECTED** (6 items): Comportamiento normal de governance y broker ausente
+- **FIXME** (3 items): Registry mismatch en `sys_strategies` requiere actualización DB manual
+
+**Impact en DISC-001**: NINGUNO. Todos los warnings pre-exitentes a implementación.
+
+### Artefactos Entregables
+
+| Archivo | Líneas | Estado | Rol |
+|---|---|---|---|
+| `core_brain/services/signal_review_manager.py` | 510 | ✅ NEW | Backend logic queue + timeout |
+| `models/signal.py` | +11 | ✅ EDIT | ReviewStatus enum agregado |
+| `data_vault/schema.py` | +25 | ✅ EDIT | New columns + migration |
+| `core_brain/main_orchestrator.py` | +65 | ✅ EDIT | Review queue injection + gate + timeout check |
+| `core_brain/api/routers/trading.py` | +68 | ✅ EDIT | 3 nuevos endpoints (/pending, /approve, /reject) |
+| `ui/src/hooks/useSignalReviews.ts` | 115 | ✅ NEW | Frontend hook polling + actions |
+| `ui/src/components/analysis/SignalReviewPanel.tsx` | 101 | ✅ NEW | UI panel con countdown timer |
+| `ui/src/components/analysis/AnalysisPage.tsx` | +32 | ✅ EDIT | Panel integration + handlers |
+| `tests/test_signal_review_queue.py` | 348 | ✅ NEW | 6 core tests |
+| `tests/test_signal_review_api.py` | 99 | ✅ NEW | 5 API tests |
+| `tests/test_orchestrator.py` | +3 | ✅ EDIT | CPU patch para determinismo |
+| `tests/test_trade_listener_stress.py` | +16 | ✅ EDIT | Lock management fixes |
+| `.ai_orchestration_protocol.md` | +72 | ✅ EDIT | Sección 6: Dictamen de Discrepancia |
+| `governance/DISCREPANCIAS.md` | 438 | ✅ NEW | 5 dictámenes (DISC-001 a DISC-005) documentados |
+
+### Gobernanza
+
+| Documento | Actualización |
+|---|---|
+| `SYSTEM_LEDGER.md` | Nueva sección Sprint 24 + warnings de arranque auditados |
+| `.ai_orchestration_protocol.md` | Sección 6 "Dictamen de Discrepancia" agregada con estructura canónica |
+| `governance/DISCREPANCIAS.md` | 5 dictámenes públicos (DISC-001 a DISC-005) con decisiones pendientes del usuario |
+| ROADMAP (próxima iteración) | HU 2.8 (DISC-001) marcada como `[DONE]` |
+
+### Decisiones de Arquitectura (PAD)
+
+1. **ReviewStatus como Enum en lugar de strings**: Type safety + autocomplete
+2. **5-minute timeout fixed**: Configurable via `REVIEW_TIMEOUT_SECONDS` en manager
+3. **DB-first architecture**: SSOT en `sys_signals.review_status`, no memory-only cache
+4. **WebSocket async non-blocking**: Emit separado de queue, no bloquea orchestrator
+5. **TenantDBFactory per endpoint**: RULE T1 isolation garantizado
+
+### Próximos Pasos (PENDIENTE)
+
+1. **HU 2.9**: Push WebSocket en frontend (eliminar depencia de polling)
+2. **HU 2.10**: E2E test del flujo completo UI (pending → approve/reject → feed update)
+3. **HU 2.11**: Governance closure (ROADMAP/BACKLOG/SPRINT actualizado per SCRUM)
+4. **HU 3.4**: Resolver 3 STRATEGY_REG issues (MOM_BIAS_0001, LIQ_SWEEP_0001, STRUC_SHIFT_0001)
+
+---
+
+## 📋 SPRINT 25 — DISC-005: Economic CAUTION Recovery & Rebalance (2026-04-05)
+
+**Trace_ID**: `DISC-ECON-CAUTION-REB-2026-04-05`  
+**Dictamen**: DISC-005 ✅ RESUELTO  
+**Status**: Implementación validada · Governance sincronizado
+
+### Resumen Ejecución
+
+**Objetivo**: Cerrar la discrepancia entre la reducción de riesgo en `CAUTION` y la ausencia de restauración post-evento.
+
+**Implementación**:
+1. `core_brain/orchestrators/_init_methods.py`: sincroniza entrada/salida de símbolos en `CAUTION` mediante diff de conjuntos y persiste `econ_risk_multiplier_{symbol}`.
+2. `core_brain/orchestrators/_cycle_exec.py`: aplica el multiplicador persistido al volumen efectivo de las señales afectadas.
+3. `core_brain/risk_manager.py`: implementa `rebalance_after_caution()` para restaurar el multiplicador a `1.0` y registrar el rebalance en SSOT.
+
+### Validación
+
+```
+✅ tests/test_risk_manager_caution_rebalance.py
+✅ tests/test_orchestrator.py (transición entry/exit de CAUTION)
+✅ batería focalizada 2026-04-05: 26 passed
+```
+
+### Decisión de Cierre
+
+- El hallazgo DISC-005 queda resuelto a nivel operativo.
+- El enfoque final no necesitó un campo explícito `caution_event_cleared`; la transición se detecta con `previous_symbols - caution_symbols`.
+- Cualquier mejora adicional en narrativa o diagramas del MANIFESTO se considera refinamiento documental, no pendiente funcional del hallazgo.
+
 
 **Validación**:
 - ✅ `tests/test_institutional_alpha.py`: 9/9 PASSED.

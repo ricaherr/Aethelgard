@@ -45,13 +45,13 @@
 
 ---
 
-### E5: Interfaz Fractal & Experiencia Futurista (Dominio 09) — PENDIENTE
-**Sprint**: por definir | **Trace_ID**: UI-V3-FRACTAL-FUTURE-2026
+### E5: Interfaz Fractal & Experiencia Futurista (Dominio 09) — ACTIVA
+**Sprint**: 25 | **Trace_ID**: UI-V3-FRACTAL-FUTURE-2026
 **Objetivo**: Evolucionar la terminal a una consola de alta densidad de información con navegación fractal y elementos de manipulación directa.
 
 | HU | Nombre | Dominio | Sprint | Estado |
 |---|---|---|---|---|
-| HU 9.4 | Unified Telemetry Stream (The Synapse) | 09 | — | [TODO] |
+| HU 9.4 | Unified Telemetry Stream (The Synapse) | 09 | 25 | [DEV] |
 | HU 9.5 | Fractal Zoom Engine | 09 | — | [TODO] |
 | HU 9.6 | Direct Manipulation (Drag & Drop) | 09 | — | [TODO] |
 | HU 9.7 | Sci-Fi Component Library (HUDs) | 09 | — | [TODO] |

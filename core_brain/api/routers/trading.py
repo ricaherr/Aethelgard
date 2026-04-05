@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Request, Depends
 from data_vault.storage import StorageManager
 from data_vault.tenant_factory import TenantDBFactory
 from core_brain.api.dependencies.auth import get_current_active_user
+from core_brain.services.signal_review_manager import SignalReviewManager
 from models.auth import TokenPayload
 from models.signal import Signal, SignalType, ConnectorType
 
@@ -36,6 +37,12 @@ async def _broadcast_thought(message: str, module: str = "TRADING", level: str =
     """Broadcast thoughts to WebSocket clients."""
     from core_brain.server import broadcast_thought
     await broadcast_thought(message, module=module, level=level, metadata=metadata)
+
+
+def _get_signal_review_manager(token: TokenPayload) -> SignalReviewManager:
+    """Build tenant-aware SignalReviewManager (RULE T1)."""
+    tenant_storage = TenantDBFactory.get_storage(token.sub)
+    return SignalReviewManager(storage_manager=tenant_storage)
 
 
 @router.get("/signals")
@@ -277,6 +284,82 @@ async def execute_signal_manual(data: dict, token: TokenPayload = Depends(get_cu
             "message": f"❌ Error: {str(e)}",
             "signal_id": signal_id if 'signal_id' in locals() else None
         }
+
+
+@router.get("/signals/reviews/pending")
+async def get_pending_signal_reviews(token: TokenPayload = Depends(get_current_active_user)) -> Dict[str, Any]:
+    """Return pending B/C-grade signal reviews for current tenant."""
+    try:
+        manager = _get_signal_review_manager(token)
+        pending = await manager.get_pending_reviews_for_trader(trader_id=token.sub)
+        return {"pending_reviews": pending, "count": len(pending)}
+    except Exception as e:
+        logger.error(f"Error fetching pending signal reviews: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/signals/reviews/{signal_id}/approve")
+async def approve_signal_review(
+    signal_id: str,
+    data: Dict[str, Any],
+    token: TokenPayload = Depends(get_current_active_user),
+) -> Dict[str, Any]:
+    """Approve a pending signal review and execute manually via existing execution route."""
+    try:
+        manager = _get_signal_review_manager(token)
+        success, message = await manager.process_trader_approval(
+            signal_id=signal_id,
+            trader_id=token.sub,
+            approval_reason=data.get("reason") if isinstance(data, dict) else None,
+        )
+        if not success:
+            raise HTTPException(status_code=400, detail=message)
+
+        execution_result = await execute_signal_manual({"signal_id": signal_id}, token)
+        return {
+            "success": execution_result.get("success", False),
+            "review": {"signal_id": signal_id, "status": "APPROVED", "message": message},
+            "execution": execution_result,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error approving signal review {signal_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/signals/reviews/{signal_id}/reject")
+async def reject_signal_review(
+    signal_id: str,
+    data: Dict[str, Any],
+    token: TokenPayload = Depends(get_current_active_user),
+) -> Dict[str, Any]:
+    """Reject a pending signal review and keep signal out of execution path."""
+    try:
+        reason = "Rejected by trader"
+        if isinstance(data, dict) and data.get("reason"):
+            reason = str(data.get("reason"))
+
+        manager = _get_signal_review_manager(token)
+        success, message = await manager.process_trader_rejection(
+            signal_id=signal_id,
+            trader_id=token.sub,
+            rejection_reason=reason,
+        )
+        if not success:
+            raise HTTPException(status_code=400, detail=message)
+
+        return {
+            "success": True,
+            "signal_id": signal_id,
+            "status": "REJECTED",
+            "message": message,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error rejecting signal review {signal_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/positions/open")

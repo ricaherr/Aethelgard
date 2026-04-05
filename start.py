@@ -573,7 +573,13 @@ async def main() -> None:
 
         _shadow_storage_for_oem = None
         try:
-            _conn = getattr(storage, 'conn', None) or getattr(storage, 'connection', None)
+            _conn = (
+                getattr(storage, 'conn', None)
+                or getattr(storage, 'connection', None)
+                or (storage.get_conn() if hasattr(storage, 'get_conn') else None)
+                or (storage._get_conn() if hasattr(storage, '_get_conn') else None)
+                or (storage.get_connection() if hasattr(storage, 'get_connection') else None)
+            )
             if _conn is not None:
                 _shadow_storage_for_oem = _ShadowStorageManager(_conn)
                 logger.info("[OEM] shadow_storage inyectado correctamente")
