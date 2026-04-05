@@ -8,6 +8,7 @@ Orchestrates Scan -> Signal -> Risk -> Execute through extracted modules.
 import sys
 import asyncio
 import logging
+import uuid
 import psutil
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
@@ -439,6 +440,18 @@ class MainOrchestrator:
             await cycle_trade.run_execute_phase(self, signals, scan_bundle)
         except Exception as e:
             logger.error(f"Error in cycle execution: {e}", exc_info=True)
+            # ETI-ERROR-TRACKER-001: Persist error to sys_audit_logs
+            try:
+                self.storage.log_audit_event(
+                    user_id="SYSTEM",
+                    action="CYCLE_EXECUTION_ERROR",
+                    resource="orchestrator",
+                    status="failure",
+                    reason=f"{type(e).__name__}: {str(e)[:500]}",
+                    trace_id=f"CYCLE_ERROR_{uuid.uuid4().hex[:8]}",
+                )
+            except Exception as audit_err:
+                logger.debug(f"[AUDIT] Could not log cycle error: {audit_err}")
             self.stats.errors_count += 1
             self.stats.cycles_completed += 1
 

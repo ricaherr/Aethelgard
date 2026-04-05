@@ -1,6 +1,7 @@
 import json
 import logging
 import sqlite3
+import uuid
 from typing import Dict, List, Optional, Any, cast
 from datetime import datetime, timezone
 from utils.time_utils import to_utc
@@ -65,6 +66,43 @@ class SystemMixin(BaseRepository):
         if isinstance(tfs, list):
             return tfs
         return ['M1', 'M5', 'M15'] # Default fallback
+
+    def log_audit_event(
+        self,
+        user_id: str,
+        action: str,
+        resource: str,
+        resource_id: Optional[str] = None,
+        status: str = "success",
+        reason: Optional[str] = None,
+        trace_id: Optional[str] = None,
+    ) -> None:
+        """
+        Log an error or critical event to sys_audit_logs for historical tracking.
+
+        Used exclusively for capturing ERRORS and critical decisions.
+        Trace_ID: ETI-ERROR-TRACKER-001
+        """
+        if trace_id is None:
+            trace_id = f"{action}_{uuid.uuid4().hex[:8]}"
+
+        def _insert_audit(conn: sqlite3.Connection) -> None:
+            conn.execute(
+                """
+                INSERT INTO sys_audit_logs
+                    (user_id, action, resource, resource_id, status, reason, trace_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (user_id, action, resource, resource_id, status, reason, trace_id),
+            )
+            conn.commit()
+
+        try:
+            self._execute_serialized(_insert_audit)
+        except sqlite3.IntegrityError:
+            logger.debug(f"[AUDIT] Duplicate trace_id {trace_id} — skipping insert")
+        except Exception as e:
+            logger.error(f"[AUDIT] Failed to log event: {e}", exc_info=True)
 
     def save_tuning_adjustment(self, adjustment: Dict[str, Any]) -> None:
         """Save tuning adjustment to database"""

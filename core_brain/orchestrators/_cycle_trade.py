@@ -6,6 +6,7 @@ run_execute_phase → dedup, strategy auth, quality scoring, execute, ranking, s
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, List
 
@@ -248,7 +249,20 @@ async def run_execute_phase(
                     )
 
         except Exception as e:
-            logger.error(f"Error executing signal {signal.symbol}: {e}")
+            logger.error(f"Error executing signal {signal.symbol}: {e}", exc_info=True)
+            # ETI-ERROR-TRACKER-001: Persist error to sys_audit_logs
+            try:
+                orch.storage.log_audit_event(
+                    user_id="SYSTEM",
+                    action="SIGNAL_EXECUTION_ERROR",
+                    resource=signal.symbol,
+                    resource_id=signal.id if hasattr(signal, 'id') else None,
+                    status="failure",
+                    reason=f"{type(e).__name__}: {str(e)[:500]}",
+                    trace_id=f"EXEC_ERROR_{uuid.uuid4().hex[:8]}",
+                )
+            except Exception as audit_err:
+                logger.debug(f"[AUDIT] Could not log signal error: {audit_err}")
             orch.stats.errors_count += 1
 
     orch.storage.update_module_heartbeat("executor")
