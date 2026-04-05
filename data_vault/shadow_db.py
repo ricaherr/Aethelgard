@@ -39,13 +39,32 @@ class ShadowStorageManager:
     Dependency Injection: storage_conn passed in, NOT created here.
     """
 
-    def __init__(self, storage_conn: sqlite3.Connection) -> None:
+    def __init__(self, storage_conn: sqlite3.Connection | Any) -> None:
         """
-        Initialize with existing storage connection.
-        No self-instantiation of databases.
+        Initialize with either a sqlite3 connection or a storage provider.
+
+        Accepted inputs:
+            - sqlite3.Connection (legacy tests / direct use)
+            - object exposing _get_conn() (StorageManager)
+
+        This avoids coupling long-lived components to a single connection
+        object while preserving backwards compatibility.
         """
-        self.conn: sqlite3.Connection = storage_conn
-        self.conn.row_factory = sqlite3.Row
+        if hasattr(storage_conn, "_get_conn") and callable(storage_conn._get_conn):
+            self._conn_provider: Callable[[], sqlite3.Connection] = storage_conn._get_conn
+            self._static_conn: Optional[sqlite3.Connection] = None
+        else:
+            self._conn_provider = lambda: storage_conn
+            self._static_conn = storage_conn
+
+        conn = self.conn
+        conn.row_factory = sqlite3.Row
+
+    @property
+    def conn(self) -> sqlite3.Connection:
+        conn = self._conn_provider()
+        conn.row_factory = sqlite3.Row
+        return conn
 
     def _execute_with_retry(
         self,
@@ -583,6 +602,6 @@ class ShadowStorageManager:
 
 
 # Convenience function for backwards compatibility
-def create_shadow_manager(storage_conn: sqlite3.Connection) -> ShadowStorageManager:
+def create_shadow_manager(storage_conn: sqlite3.Connection | Any) -> ShadowStorageManager:
     """Factory function to create ShadowStorageManager with DI."""
     return ShadowStorageManager(storage_conn)

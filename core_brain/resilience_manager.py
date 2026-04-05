@@ -490,7 +490,6 @@ class ResilienceManager:
         and never propagate to the caller.
         """
         details = f"{report.reason} | recovery_plan={self._last_recovery_plan}"
-        conn = None
         try:
             conn = self._storage._get_conn()
             conn.execute(
@@ -514,9 +513,3 @@ class ResilienceManager:
             logger.warning(
                 "[ResilienceManager] Could not persist audit log: %s", exc
             )
-        finally:
-            if conn is not None:
-                try:
-                    conn.close()
-                except Exception:
-                    pass

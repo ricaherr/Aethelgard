@@ -204,6 +204,22 @@ class IntegrityGuard:
                 dynamic_params = json.loads(dynamic_params)
 
             adx_value = dynamic_params.get("adx", dynamic_params.get("ADX"))
+            market_probably_closed = self._is_market_probably_closed(config)
+
+            if market_probably_closed and (adx_value is None or adx_value == 0):
+                # Prevent false-positive CRITICAL during inactive sessions.
+                self._adx_zero_streak = 0
+                elapsed = (time.monotonic() - t0) * 1000
+                return CheckResult(
+                    name="Check_Veto_Logic",
+                    status=HealthStatus.WARNING,
+                    message=(
+                        "ADX nulo/cero con mercado inactivo (tick stale). "
+                        "No se eleva a CRITICAL fuera de sesión."
+                    ),
+                    trace_id=trace_id,
+                    elapsed_ms=round(elapsed, 2),
+                )
 
             if adx_value is None or adx_value == 0:
                 self._adx_zero_streak += 1
@@ -261,6 +277,37 @@ class IntegrityGuard:
         if HealthStatus.WARNING in statuses:
             return HealthStatus.WARNING
         return HealthStatus.OK
+
+    @staticmethod
+    def _is_market_probably_closed(config: Dict) -> bool:
+        """
+        Heuristic to avoid ADX false positives when the market is inactive.
+
+        Requires a stale last_market_tick_ts to consider closure; otherwise
+        keeps fail-open behavior to avoid masking real runtime failures.
+        """
+        try:
+            last_tick_raw = config.get("last_market_tick_ts")
+            if not last_tick_raw:
+                return False
+
+            last_tick_dt = datetime.fromisoformat(str(last_tick_raw))
+            if last_tick_dt.tzinfo is None:
+                last_tick_dt = last_tick_dt.replace(tzinfo=timezone.utc)
+
+            utc_now = datetime.now(timezone.utc)
+            tick_age = (utc_now - last_tick_dt).total_seconds()
+            if tick_age <= _TICK_STALENESS_SECONDS:
+                return False
+
+            # Fast path for canonical forex weekend closure.
+            weekday = utc_now.weekday()
+            if weekday == 5 or (weekday == 6 and utc_now.hour < 22):
+                return True
+
+            return False
+        except Exception:
+            return False
 
     @staticmethod
     def _emit_health_log(report: HealthReport) -> None:

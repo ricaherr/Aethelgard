@@ -179,6 +179,23 @@ class TestCheckVetoLogic:
         result = guard._check_veto_logic("trace-027")
         assert result.status == HealthStatus.OK
 
+    def test_integrity_guard_check_veto_logic_warning_en_mercado_cerrado_con_adx_cero(self):
+        storage = _make_storage(
+            {
+                "dynamic_params": {"adx": 0},
+                "last_market_tick_ts": _stale_tick_ts(),
+            }
+        )
+        guard = IntegrityGuard(storage=storage)
+        guard._adx_zero_streak = 2
+
+        with patch.object(guard, "_is_market_probably_closed", return_value=True):
+            result = guard._check_veto_logic("trace-028")
+
+        assert result.status == HealthStatus.WARNING
+        assert "mercado inactivo" in result.message
+        assert guard._adx_zero_streak == 0
+
 
 # ── check_health (agregación) ─────────────────────────────────────────────────
 

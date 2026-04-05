@@ -569,22 +569,12 @@ async def main() -> None:
         logger.info("[INIT] Heartbeat inicial del orchestrator escrito (previene falso FAIL en OEM)")
 
         from core_brain.operational_edge_monitor import OperationalEdgeMonitor
-        from data_vault.shadow_db import ShadowStorageManager as _ShadowStorageManager
+        from data_vault.shadow_db import create_shadow_manager
 
         _shadow_storage_for_oem = None
         try:
-            _conn = (
-                getattr(storage, 'conn', None)
-                or getattr(storage, 'connection', None)
-                or (storage.get_conn() if hasattr(storage, 'get_conn') else None)
-                or (storage._get_conn() if hasattr(storage, '_get_conn') else None)
-                or (storage.get_connection() if hasattr(storage, 'get_connection') else None)
-            )
-            if _conn is not None:
-                _shadow_storage_for_oem = _ShadowStorageManager(_conn)
-                logger.info("[OEM] shadow_storage inyectado correctamente")
-            else:
-                logger.warning("[OEM] No se pudo obtener conexión SQLite — check shadow_sync omitido")
+            _shadow_storage_for_oem = create_shadow_manager(storage)
+            logger.info("[OEM] shadow_storage inyectado correctamente")
         except Exception as _exc:
             logger.warning("[OEM] Error creando shadow_storage: %s — check shadow_sync omitido", _exc)
 

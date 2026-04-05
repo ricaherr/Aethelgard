@@ -120,6 +120,7 @@ def write_integrity_veto(orch: "MainOrchestrator", trace_id: str, checks: list) 
     """Persist IntegrityGuard CRITICAL veto to sys_audit_logs."""
     failed = [c for c in checks if c.status.value == "CRITICAL"]
     reason = "; ".join(f"[{c.name}] {c.message}" for c in failed)
+    audit_trace_id = f"{trace_id}:IV:{uuid.uuid4().hex[:6]}"
     logger.critical(
         "[IntegrityGuard] VETO CRÍTICO — ciclo de trading detenido. "
         "trace_id=%s | %s",
@@ -140,8 +141,8 @@ def write_integrity_veto(orch: "MainOrchestrator", trace_id: str, checks: list) 
                 "IntegrityGuard",
                 "main_orchestrator",
                 "failure",
-                reason[:1000],
-                trace_id,
+                f"parent_trace_id={trace_id}; {reason}"[:1000],
+                audit_trace_id,
             ),
         )
         conn.commit()

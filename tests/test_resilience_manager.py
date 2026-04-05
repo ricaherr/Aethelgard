@@ -328,3 +328,13 @@ class TestAuditPersistence:
         details_field = args[1][-2]
         assert "recovery_plan=" in details_field
         assert "manual" in details_field
+
+    def test_persist_audit_no_cierra_conexion_pooled(self) -> None:
+        storage = MagicMock()
+        conn_mock = MagicMock()
+        storage._get_conn.return_value = conn_mock
+        manager = ResilienceManager(storage=storage)
+
+        manager.process_report(_self_heal_report("IntegrityGuard"))
+
+        conn_mock.close.assert_not_called()
