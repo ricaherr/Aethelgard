@@ -15,6 +15,7 @@ Restricciones técnicas:
 TRACE_ID: EDGE-IGNITION-PHASE-1-INTEGRITY-GUARD-2026-03-30
 """
 import logging
+import math
 import sqlite3
 import time
 import uuid
@@ -208,12 +209,12 @@ class IntegrityGuard:
                 import json
                 dynamic_params = json.loads(dynamic_params)
 
-            adx_value = dynamic_params.get("adx", dynamic_params.get("ADX"))
+            adx_value = _normalize_adx(dynamic_params.get("adx", dynamic_params.get("ADX")))
             market_probably_closed = self._is_market_probably_closed(config)
             repair_armed = bool(config.get("oem_repair_force_ohlc_reload"))
             tick_age_s = self._get_tick_age_seconds(config)
 
-            if repair_armed and (adx_value is None or adx_value == 0):
+            if repair_armed and adx_value is None:
                 # Allow one recovery cycle while OEM refreshes OHLC snapshots.
                 self._adx_zero_streak = 0
                 elapsed = (time.monotonic() - t0) * 1000
@@ -221,7 +222,7 @@ class IntegrityGuard:
                     name="Check_Veto_Logic",
                     status=HealthStatus.WARNING,
                     message=(
-                        "ADX nulo/cero durante reparación OEM activa "
+                        "ADX inválido/nulo/cero durante reparación OEM activa "
                         f"(tick_age={tick_age_s if tick_age_s is not None else 'unknown'}s). "
                         "Se mantiene en WARNING hasta completar recarga."
                     ),
@@ -229,7 +230,7 @@ class IntegrityGuard:
                     elapsed_ms=round(elapsed, 2),
                 )
 
-            if market_probably_closed and (adx_value is None or adx_value == 0):
+            if market_probably_closed and adx_value is None:
                 # Prevent false-positive CRITICAL during inactive sessions.
                 self._adx_zero_streak = 0
                 elapsed = (time.monotonic() - t0) * 1000
@@ -237,14 +238,14 @@ class IntegrityGuard:
                     name="Check_Veto_Logic",
                     status=HealthStatus.WARNING,
                     message=(
-                        "ADX nulo/cero con mercado inactivo (tick stale). "
+                        "ADX inválido/nulo/cero con mercado inactivo (tick stale). "
                         f"No se eleva a CRITICAL fuera de sesión. tick_age={tick_age_s if tick_age_s is not None else 'unknown'}s"
                     ),
                     trace_id=trace_id,
                     elapsed_ms=round(elapsed, 2),
                 )
 
-            if adx_value is None or adx_value == 0:
+            if adx_value is None:
                 self._adx_zero_streak += 1
             else:
                 self._adx_zero_streak = 0
@@ -255,7 +256,7 @@ class IntegrityGuard:
                     name="Check_Veto_Logic",
                     status=HealthStatus.CRITICAL,
                     message=(
-                        f"ADX nulo/cero durante {self._adx_zero_streak} ciclos "
+                        f"ADX inválido/nulo/cero durante {self._adx_zero_streak} ciclos "
                         f"consecutivos (umbral {_ADX_ZERO_COUNT_THRESHOLD}). "
                         f"Indicadores críticos comprometidos. tick_age={tick_age_s if tick_age_s is not None else 'unknown'}s"
                     ),
@@ -267,7 +268,7 @@ class IntegrityGuard:
                     name="Check_Veto_Logic",
                     status=HealthStatus.WARNING,
                     message=(
-                        f"ADX nulo/cero en {self._adx_zero_streak} ciclo(s). "
+                        f"ADX inválido/nulo/cero en {self._adx_zero_streak} ciclo(s). "
                         f"Monitoreo activo (umbral {_ADX_ZERO_COUNT_THRESHOLD}). "
                         f"tick_age={tick_age_s if tick_age_s is not None else 'unknown'}s"
                     ),
@@ -366,3 +367,14 @@ class IntegrityGuard:
             report.overall.value,
             details,
         )
+
+
+def _normalize_adx(adx_raw: object) -> Optional[float]:
+    """Return normalized ADX or None when value is invalid/non-finite/<= 0."""
+    try:
+        adx = float(adx_raw)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(adx) or adx <= 0.0:
+        return None
+    return adx

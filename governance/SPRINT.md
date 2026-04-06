@@ -11,15 +11,23 @@
 
 ---
 
-# SPRINT 25: EDGE IGNITION PHASE 5 & 6 — SELF-HEALING, CORRELATION ENGINE & RESILIENCE UI — [DEV]
+# SPRINT 25: EDGE IGNITION PHASE 5 & 6 — SELF-HEALING, CORRELATION ENGINE & RESILIENCE UI — [DONE]
 
 **Inicio**: 31 de Marzo, 2026
-**Fin**: en curso
+**Fin**: 5 de Abril, 2026
 **Objetivo**: Dotar al `ResilienceManager` de inteligencia de correlación temporal (CorrelationEngine) y de capacidad de auto-reparación acotada (SelfHealingPlaybook). Exponer el estado del sistema inmunológico al operador humano vía API REST + WebSocket + `ResilienceConsole` UI, completando el ciclo inmunológico autónomo con supervisión humana.
 **Épica**: E14 (EDGE Resilience Engine) | **Trace_ID**: EDGE-IGNITION-PHASE-5-SELF-HEALING / EDGE-IGNITION-PHASE-6-RESILIENCE-UI
 **Dominios**: 10_INFRASTRUCTURE_RESILIENCY
 
 ## 📋 Tareas del Sprint
+
+- [DONE] **HU 10.19: Hardening OEM + ADX + SSOT Naming** (Trace_ID: ETI-SRE-AUDIT-OEM-ADX-SSOT-2026-04-05 | 2026-04-05)
+  - Heartbeat OEM endurecido con umbral configurable `oem_silenced_component_gap_seconds` y mensaje explícito de Componente Silenciado
+  - Fail-fast ADX/OHLC aplicado en scanner + normalización robusta en integrity guard para evitar evaluación con dato inválido
+  - Persistencia: tablas canónicas aditivas `sys_session_tokens` y `sys_position_metadata` con backfill desde legacy
+  - Tests focalizados: 49/49 PASSED (`scanner`, `integrity_guard`, `oem`, `schema`, `system_db`)
+  - `scripts/validate_all.py`: 27/27 PASSED
+  - `start.py` validado en arranque (sin traceback de regresión; proceso detenido tras verificación)
 
 - [DONE] **HU 10.18: DISC-003 — Descomposición de MainOrchestrator** (Trace_ID: DISC-003-2026-04-05 | 2026-04-05)
   - `core_brain/main_orchestrator.py` reducido a coordinador delgado con wrappers legacy para preservar patchability de tests
@@ -71,6 +79,15 @@
   - `ETI-PERSIST-001`: `data_vault/schema.py` — `DROP TABLE IF EXISTS edge_learning` añadido al final de `initialize_schema()` con guard `usr_edge_learning` (SSOT)
   - `ETI-PERSIST-002`: `main_orchestrator.py:_write_integrity_veto` — captura `sqlite3.IntegrityError` (duplicado → WARNING) separada de `sqlite3.OperationalError` (DB locked → ERROR). Import `sqlite3` añadido.
   - Commit: `59b078c`
+
+## 📊 Snapshot de Cierre
+
+- **HUs completadas**: 10.19 (SRE Hardening), 10.18 (DISC-003 Orquestador), 10.17b (ResilienceConsole API+UI), 10.16 (Self-Healing+Correlation), 9.4 (Synapse WS Push), SRE-Hotfix-2026-04-01
+- **Tests suite total**: 2269 passed, 3 skipped
+- **validate_all.py**: 27/27 PASSED
+- **Artefactos nuevos**: `core_brain/orchestrators/` (módulos de descomposición), `ui/src/components/diagnostic/ResilienceConsole.tsx`, `tests/test_schema_ssot_canonical_tables.py`, `tests/test_system_db_heartbeat_canonical.py`
+- **Épicas completadas este sprint**: E13 (EDGE Reliability) + E14 (Resilience Engine) — ambas archivadas en SYSTEM_LEDGER
+- **Deuda técnica**: tablas legacy `session_tokens` y `position_metadata` deprecación planificada (P2)
 
 ---
 

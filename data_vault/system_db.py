@@ -347,14 +347,27 @@ class SystemMixin(BaseRepository):
         return heartbeats
 
     def get_latest_module_heartbeat_audit(self, module_name: str) -> Optional[str]:
-        """Return latest HEARTBEAT timestamp for a module from sys_audit_logs."""
+        """Return latest HEARTBEAT timestamp for a module from canonical audit table."""
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
             cursor.execute(
                 """
+                SELECT name
+                FROM sqlite_master
+                WHERE type='table' AND name IN ('sys_audit_logs', 'system_audit_logs')
+                ORDER BY CASE name WHEN 'sys_audit_logs' THEN 0 ELSE 1 END
+                LIMIT 1
+                """
+            )
+            table_row = cursor.fetchone()
+            if not table_row:
+                return None
+            table_name = table_row[0] if isinstance(table_row, tuple) else table_row["name"]
+            cursor.execute(
+                f"""
                 SELECT timestamp
-                FROM sys_audit_logs
+                FROM {table_name}
                 WHERE action = 'HEARTBEAT' AND resource = ?
                 ORDER BY timestamp DESC
                 LIMIT 1

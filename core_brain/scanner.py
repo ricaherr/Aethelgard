@@ -14,6 +14,7 @@ import logging
 import threading
 import time
 import json
+import math
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -248,6 +249,29 @@ class ScannerEngine:
             classifier.load_ohlc(df)
             regime = classifier.classify()
             metrics = classifier.get_metrics()
+
+            # Fail-fast: avoid classifying flow with invalid ADX metrics.
+            if not self._is_valid_adx(metrics):
+                logger.warning(
+                    "[%s] ADX invalid or zero after classification (%s). Skipping signal evaluation for data quality.",
+                    key,
+                    metrics.get("adx") if isinstance(metrics, dict) else None,
+                )
+                if self.storage:
+                    try:
+                        self.storage.save_coherence_event({
+                            "symbol": symbol,
+                            "timeframe": timeframe,
+                            "stage": "SCANNER",
+                            "status": "FAIL",
+                            "incoherence_type": "DATA_QUALITY",
+                            "reason": "ADX_INVALID",
+                            "details": f"Invalid ADX in scanner metrics: {metrics}",
+                            "connector_type": "mt5" if self.is_local_provider else "generic",
+                        })
+                    except Exception as exc:
+                        logger.debug("[%s] Could not persist ADX invalid coherence event: %s", key, exc)
+                return None
             
             # Resetear fallos consecutivos si el escaneo fue exitoso
             self.consecutive_failures.pop(key, None)
@@ -258,6 +282,18 @@ class ScannerEngine:
             logger.error("Error escaneando %s [%s]: %s", symbol, timeframe, e)
             self._handle_scan_failure(key)
             return None
+
+    @staticmethod
+    def _is_valid_adx(metrics: Any) -> bool:
+        """Return True when metrics carry a finite ADX value strictly greater than zero."""
+        if not isinstance(metrics, dict):
+            return False
+        adx_raw = metrics.get("adx")
+        try:
+            adx = float(adx_raw)
+        except (TypeError, ValueError):
+            return False
+        return math.isfinite(adx) and adx > 0.0
 
     def _handle_scan_failure(self, key: str) -> None:
         """Maneja el fallo de escaneo actualizando el Circuit Breaker y registrando el evento."""

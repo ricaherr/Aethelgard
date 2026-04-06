@@ -35,6 +35,7 @@ def oem_with_storage():
     storage.get_all_sys_market_pulses.return_value = {}
     storage.save_edge_learning.return_value = None
     storage.get_latest_module_heartbeat_audit.return_value = None
+    storage.get_sys_config.return_value = {}
 
     oem = OperationalEdgeMonitor(storage=storage, interval_seconds=9999)
     return oem, storage
@@ -68,6 +69,17 @@ class TestOrchestratorHeartbeatCheck:
 
         assert result.status == CheckStatus.WARN
 
+    def test_fail_si_componente_silenciado_por_umbral_configurado(self, oem_with_storage):
+        """Con umbral explícito de 120s, heartbeat de 3 min se marca como componente silenciado."""
+        oem, storage = oem_with_storage
+        storage.get_module_heartbeats.return_value = {"orchestrator": _ts(3)}
+        storage.get_sys_config.return_value = {"oem_silenced_component_gap_seconds": 120}
+
+        result = oem._check_orchestrator_heartbeat()
+
+        assert result.status == CheckStatus.FAIL
+        assert "Componente Silenciado" in result.detail
+
     def test_fail_si_heartbeat_ausente_mucho_tiempo(self, oem_with_storage):
         """Heartbeat hace 25 minutos → FAIL (posible bloqueo del loop)."""
         oem, storage = oem_with_storage
@@ -76,7 +88,11 @@ class TestOrchestratorHeartbeatCheck:
         result = oem._check_orchestrator_heartbeat()
 
         assert result.status == CheckStatus.FAIL
-        assert "bloqueo" in result.detail.lower() or "posible" in result.detail.lower()
+        assert (
+            "bloqueo" in result.detail.lower()
+            or "posible" in result.detail.lower()
+            or "componente silenciado" in result.detail.lower()
+        )
 
     def test_warn_si_no_existe_heartbeat(self, oem_with_storage):
         """Sin heartbeat registrado → WARN (puede ser primer arranque)."""

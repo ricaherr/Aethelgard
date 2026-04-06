@@ -4,7 +4,7 @@
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-05 UTC)**: Trace_ID: DISC-003-2026-04-05 | Sprint 25 — MainOrchestrator descompuesto en submódulos `core_brain/orchestrators/` y reducido a coordinador delgado con compatibilidad legacy preservada · baseline final **2269 passed, 3 skipped** · **validate_all 27/27 PASSED** · `start.py` validado sin regresión atribuible a DISC-003.
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-05 UTC)**: Sprint 25 CERRADO — E13 + E14 ARCHIVADAS · Trace_ID último commit: ETI-SRE-AUDIT-OEM-ADX-SSOT-2026-04-05 · baseline **2269 passed, 3 skipped** · **validate_all 27/27 PASSED**.
 
 ---
 
@@ -26,6 +26,55 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 ---
 
 ## 🏛️ ÉPICAS ARCHIVADAS
+
+### ════════════════════════════════════════════════════════════════
+### ÉPICA E14 COMPLETADA — Arquitectura de Resiliencia Granular (EDGE Immunological System) (5-Abr-2026)
+**Trace_ID**: `ARCH-RESILIENCE-ENGINE-V1` | **Sprints**: 23/24/25 | **Dominios**: 10
+
+| Campo | Valor |
+|---|---|
+| **Épica** | E14 — Arquitectura de Resiliencia Granular (EDGE Immunological System) |
+| **Trace_ID** | `ARCH-RESILIENCE-ENGINE-V1` |
+| **Sprints** | 23, 24, 25 |
+| **Completada** | 5 de Abril, 2026 |
+| **Dominios** | 10_INFRASTRUCTURE_RESILIENCY · 09_INSTITUTIONAL_INTERFACE |
+| **HUs** | HU 10.14, 10.15, 10.16, 10.17, 10.17b, 10.18, 10.19, SRE-Hotfix |
+| **validate_all** | ✅ 27/27 PASSED |
+
+**Objetivo cumplido**: Sistema inmunológico autónomo end-to-end. Contratos `ResilienceInterface`/`EdgeEventReport` → árbitro `ResilienceManager` con postura unidireccional L0-L3 → `CorrelationEngine` + `SelfHealingPlaybook` con 3 recetas y max_retries=3 → `ResilienceConsole` UI con API REST+WS y botones de intervención → `MainOrchestrator` descompuesto en 9 submódulos → OEM con umbral configurable `oem_silenced_component_gap_seconds`, fail-fast ADX, tablas canónicas `sys_session_tokens`/`sys_position_metadata`.
+
+| HU | Artefactos clave | Tests |
+|---|---|---|
+| HU 10.14 | `core_brain/resilience.py` (enums, dataclass, ABC) | 23/23 |
+| HU 10.15 | `core_brain/resilience_manager.py`, loops refactorizados | 27/27 |
+| HU 10.16 | CorrelationEngine + SelfHealingPlaybook | 27/27 |
+| HU 10.17/17b | `api/routers/resilience.py`, `ResilienceConsole.tsx` | 4/4 |
+| HU 10.18/DISC-003 | `core_brain/orchestrators/` (9 módulos), wrappers legacy | 2269/2269 |
+| HU 10.19 | OEM heartbeat, ADX fail-fast, SSOT schema | 49/49 |
+
+### ════════════════════════════════════════════════════════════════
+
+---
+
+### ════════════════════════════════════════════════════════════════
+### ÉPICA E13 COMPLETADA — EDGE Reliability — Certeza de Componentes & Auto-Auditoría (5-Abr-2026)
+**Trace_ID**: `EDGE-RELIABILITY-SELF-AUDIT-2026` | **Sprints**: 23/25 | **Dominios**: 10
+
+| Campo | Valor |
+|---|---|
+| **Épica** | E13 — EDGE Reliability — Certeza de Componentes & Auto-Auditoría |
+| **Trace_ID** | `EDGE-RELIABILITY-SELF-AUDIT-2026` |
+| **Sprints** | 23, 25 |
+| **Completada** | 5 de Abril, 2026 |
+| **Dominios** | 10_INFRASTRUCTURE_RESILIENCY |
+| **HUs** | 4 (HU 10.10, 10.11, 10.12, 10.13) |
+| **validate_all** | ✅ 27/27 PASSED |
+
+**Objetivo cumplido**: OEM integrado en `start.py` con `shadow_storage` inyectado + thread daemon (HU 10.10). Check `_check_orchestrator_heartbeat()` — WARN >10 min, FAIL >20 min (HU 10.11). Fases críticas con `asyncio.wait_for()` — scan 120s, backtest 300s, positions 60s (HU 10.12). 4 tests de contrato para bugs de auditoría conocidos (HU 10.13). Suite final: 2269/2269 PASSED.
+
+### ════════════════════════════════════════════════════════════════
+
+---
 
 ### Sprint 22 — sys_trades: Separación Ejecución Sistema vs Tenant (26-Mar-2026)
 **Trace_ID**: `EXEC-V8-SYS-TRADES-SEPARATION` | **Épica**: E8 (parcial — HU 8.1) | **Estado**: Sprint cerrado

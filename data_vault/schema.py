@@ -93,6 +93,35 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_session_tokens_user_id ON session_tokens (user_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_session_tokens_expires_at ON session_tokens (expires_at)")
 
+    # Canonical prefixed table (SSOT naming). Keep legacy table for compatibility.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sys_session_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            token_hash TEXT UNIQUE NOT NULL,
+            user_id TEXT NOT NULL,
+            token_type TEXT NOT NULL,
+            expires_at DATETIME NOT NULL,
+            revoked BOOLEAN DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            last_used_at DATETIME,
+            user_agent TEXT,
+            ip_address TEXT
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_session_tokens_token_hash ON sys_session_tokens (token_hash)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_session_tokens_user_id ON sys_session_tokens (user_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_session_tokens_expires_at ON sys_session_tokens (expires_at)")
+    cursor.execute("""
+        INSERT OR IGNORE INTO sys_session_tokens (
+            id, token_hash, user_id, token_type, expires_at, revoked,
+            created_at, last_used_at, user_agent, ip_address
+        )
+        SELECT
+            id, token_hash, user_id, token_type, expires_at, revoked,
+            created_at, last_used_at, user_agent, ip_address
+        FROM session_tokens
+    """)
+
     # ── 1. System State & Learning ──────────────────────────────────────────
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS sys_config (
@@ -267,6 +296,37 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
     """)
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_position_metadata_symbol ON position_metadata (symbol)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_position_metadata_entry_time ON position_metadata (entry_time DESC)")
+
+    # Canonical prefixed table (SSOT naming). Keep legacy table for compatibility.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sys_position_metadata (
+            ticket INTEGER PRIMARY KEY,
+            symbol TEXT NOT NULL,
+            entry_price REAL NOT NULL,
+            entry_time TEXT NOT NULL,
+            direction TEXT,
+            sl REAL,
+            tp REAL,
+            volume REAL NOT NULL,
+            initial_risk_usd REAL,
+            entry_regime TEXT,
+            timeframe TEXT,
+            strategy TEXT,
+            data TEXT
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_position_metadata_symbol ON sys_position_metadata (symbol)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_position_metadata_entry_time ON sys_position_metadata (entry_time DESC)")
+    cursor.execute("""
+        INSERT OR IGNORE INTO sys_position_metadata (
+            ticket, symbol, entry_price, entry_time, direction, sl, tp,
+            volume, initial_risk_usd, entry_regime, timeframe, strategy, data
+        )
+        SELECT
+            ticket, symbol, entry_price, entry_time, direction, sl, tp,
+            volume, initial_risk_usd, entry_regime, timeframe, strategy, data
+        FROM position_metadata
+    """)
 
     # ── 4. Market State & Coherence ──────────────────────────────────────────
     cursor.execute("""

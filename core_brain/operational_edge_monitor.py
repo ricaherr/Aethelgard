@@ -61,6 +61,7 @@ class OperationalEdgeMonitor(threading.Thread):
     MIN_ADX_NONZERO_RATIO = 0.10
     MAX_HEARTBEAT_GAP_WARN_MINUTES = 10
     MAX_HEARTBEAT_GAP_FAIL_MINUTES = 20
+    SILENCED_COMPONENT_GAP_SECONDS_DEFAULT = 120
 
     def __init__(
         self,
@@ -447,6 +448,23 @@ class OperationalEdgeMonitor(threading.Thread):
             )
 
         gap_minutes = (datetime.now(timezone.utc) - last_beat).total_seconds() / 60
+        gap_seconds = gap_minutes * 60
+
+        silenced_threshold_raw = self.storage.get_sys_config().get(
+            "oem_silenced_component_gap_seconds",
+            self.MAX_HEARTBEAT_GAP_FAIL_MINUTES * 60,
+        )
+        try:
+            silenced_threshold_seconds = max(60, int(silenced_threshold_raw))
+        except (TypeError, ValueError):
+            silenced_threshold_seconds = self.SILENCED_COMPONENT_GAP_SECONDS_DEFAULT
+
+        if gap_seconds > silenced_threshold_seconds:
+            return CheckResult(
+                CheckStatus.FAIL,
+                f"Componente Silenciado: sin HEARTBEAT hace {gap_seconds:.0f}s "
+                f"(umbral: {silenced_threshold_seconds}s, source={source})",
+            )
 
         if gap_minutes > self.MAX_HEARTBEAT_GAP_FAIL_MINUTES:
             return CheckResult(
