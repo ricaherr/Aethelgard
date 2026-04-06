@@ -11,6 +11,39 @@
 
 ---
 
+# SPRINT 26: E15 — PERSISTENCIA AGNÓSTICA & TELEMETRÍA BROKER-NEUTRAL — [TODO]
+
+**Inicio**: 6 de Abril, 2026
+**Fin**: _(pendiente)_
+**Objetivo**: Resolver bloqueo DB en SQLite sin anti-patrones de embudo global y eliminar dependencias hardcoded a MT5 en telemetría/salud, preservando escalabilidad hacia Postgres/MySQL.
+**Épica**: E15 (Persistencia Agnóstica & Telemetría Broker-Neutral) | **Trace_ID**: ARCH-DB-DRIVER-AGNOSTIC-MT5-DECOUPLING-2026-04-06
+**Dominios**: 08_DATA_SOVEREIGNTY · 10_INFRASTRUCTURE_RESILIENCY
+
+## 📋 Tareas del Sprint
+
+- [TODO] **HU 10.20: Telemetría agnóstica de proveedor (sin dependencia MT5 hardcoded)**
+  - Refactor de `start.py` para reducir inyecciones directas orientadas a MT5 en componentes de flujo general.
+  - Revisión de chequeos de runtime para basar disponibilidad en proveedor activo/capabilidades, no en broker nominal.
+  - Ajuste de tareas de background que asumen `ConnectorType.METATRADER5` como fuente única.
+
+- [TODO] **HU 8.2: Contrato de Persistencia Agnóstica (IDatabaseDriver + adapters)**
+  - Definir interfaz de driver de datos y adaptar `StorageManager` a delegación por backend.
+  - Mantener contrato estable para mixins/repositorios existentes.
+  - Preparar pathway para adapter SQL robusto (sin cola forzada).
+
+- [TODO] **HU 8.3: Concurrencia SQLite híbrida (retry/backoff + cola selectiva)**
+  - Implementar estrategia anti-lock en adapter SQLite sin serialización total del Core.
+  - Aplicar cola selectiva a telemetría/eventos de alta frecuencia donde tenga sentido operativo.
+  - Preservar throughput y semántica transaccional en operaciones críticas.
+
+## 📊 Snapshot Inicial
+
+- **Estado inicial**: Sprint definido, sin implementación de código aún.
+- **Gate de inicio**: ETI aprobado para cada HU antes de cambios de código.
+- **Criterio de cierre**: `validate_all.py` ✅ 100% + arranque con `start.py` sin regresiones.
+
+---
+
 # SPRINT 25: EDGE IGNITION PHASE 5 & 6 — SELF-HEALING, CORRELATION ENGINE & RESILIENCE UI — [DONE]
 
 **Inicio**: 31 de Marzo, 2026

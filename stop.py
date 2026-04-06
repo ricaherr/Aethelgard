@@ -3,6 +3,7 @@
 EMERGENCY STOP - Aethelgard System
 ===================================
 Detiene TODOS los procesos del sistema de forma segura.
+Limpia los bloqueos residuales (WAL) en las bases de datos SQLite.
 
 Mata exclusivamente procesos de Aethelgard identificados por cmdline,
 sin afectar otros procesos Python del sistema.
@@ -12,6 +13,7 @@ Pasos:
 2. Matar cualquier proceso en puerto 8000 que pertenezca al proyecto
 3. Limpiar lockfile singleton (data_vault/aethelgard.lock)
 4. Limpiar cache Python (.pyc / __pycache__)
+5. Liberar DB Locks forzando WAL Checkpoint (TRUNCATE)
 
 Usage:
     python stop.py
@@ -20,6 +22,7 @@ Usage:
 import sys
 import os
 import shutil
+import sqlite3
 from pathlib import Path
 
 # Force UTF-8 output on Windows to avoid encoding errors with accented chars
@@ -123,6 +126,24 @@ def _clean_pycache() -> int:
                 pass
     return count
 
+def _clean_db_locks() -> int:
+    """
+    Busca todas las bases de datos de Aethelgard (Global y Tenants)
+    y fuerza un checkpoint del WAL para liberar locks colgados por procesos asesinados.
+    """
+    cleaned = 0
+    for db_path in project_root.rglob("aethelgard.db"):
+        try:
+            # Timeout corto: si está bloqueada por otro proceso legítimo fallará rápido
+            conn = sqlite3.connect(db_path, timeout=3.0)
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+            conn.close()
+            cleaned += 1
+        except Exception as e:
+            print(f"  [WARN] No se pudo limpiar DB lock en {db_path.parent.name}/{db_path.name}: {e}")
+            
+    return cleaned
 
 def main() -> None:
     print("\n" + "=" * 70)
@@ -145,6 +166,13 @@ def main() -> None:
 
     print("\n[>] Limpiando lockfile...")
     _clean_lockfile()
+
+    print("\n[>] Liberando DB Locks (SQLite WAL Checkpoints)...")
+    dbs_cleaned = _clean_db_locks()
+    if dbs_cleaned > 0:
+        print(f"  [OK] {dbs_cleaned} base(s) de datos sincronizada(s) y liberada(s)")
+    else:
+        print("  [INFO] Sin bases de datos que requieran limpieza")
 
     print("\n[>] Limpiando cache Python...")
     cache_count = _clean_pycache()

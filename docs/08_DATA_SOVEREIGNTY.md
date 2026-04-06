@@ -131,6 +131,46 @@ sys_calendar      ────→ Tenant B: Consulta eventos macro (read-only)
 
 ---
 
+## 🧩 E15 (Sprint 26): Persistencia Agnóstica y Concurrencia por Adapter
+
+**Trace_ID**: ARCH-DB-DRIVER-AGNOSTIC-MT5-DECOUPLING-2026-04-06
+
+### Problema Arquitectónico
+
+SQLite puede degradar bajo alta concurrencia de escritura (`database is locked`), pero motores robustos como Postgres/MySQL resuelven concurrencia de forma nativa. Forzar una cola global a nivel aplicación para todos los motores sería un cuello de botella artificial y una deuda de escalabilidad.
+
+### Decisión de Diseño
+
+La mitigación de concurrencia se define por backend de persistencia, no por lógica de negocio.
+
+- El Core mantiene concurrencia natural y se mantiene ciego al motor.
+- El adapter SQLite aplica políticas anti-lock específicas.
+- Los adapters SQL robustos no heredan restricciones de SQLite.
+
+### Contrato Objetivo (HU 8.2)
+
+Introducir interfaz de acceso homogéneo para operaciones de datos:
+
+- `execute(...)`
+- `execute_many(...)`
+- `fetch_one(...)`
+- `fetch_all(...)`
+- Semántica transaccional uniforme y política de errores consistente
+
+`StorageManager` delega al driver activo sin exponer detalles del motor al resto del sistema.
+
+### Estrategia SQLite Híbrida (HU 8.3)
+
+Para SQLite, aplicar mitigación incremental dentro del adapter:
+
+1. `retry/backoff` en escrituras críticas con límites y trazabilidad.
+2. Cola selectiva para telemetría/eventos de alta frecuencia.
+3. Sin serialización total de todas las escrituras del sistema.
+
+Resultado esperado: menor incidencia de locks sin perder throughput ni bloquear la migración a Postgres/MySQL.
+
+---
+
 ## 🗄️ Estructura de Persistencia: Jerarquía de Verdad Global
 
 ### Arquitectura de Dos Capas (Capa 0 Global + Capa 1 Tenant)

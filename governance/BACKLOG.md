@@ -106,6 +106,18 @@
     * **Descripción**: Implementar tabla `usr_broker_accounts` en `schema.py` y `usr_template.db` para separar cuentas de usuario de cuentas del sistema. `sys_broker_accounts` queda exclusivamente para cuentas DEMO del sistema. `usr_broker_accounts` almacena cuentas REAL/DEMO por trader, aisladas por `user_id`. Crear `BrokerAccountsMixin` con métodos CRUD y script de migración idempotente.
     * **Referencia arquitectónica**: `docs/01_IDENTITY_SECURITY.md` Sección "Broker Account Management". Trace_ID: ARCH-USR-BROKER-ACCOUNTS-2026-N5
 
+* **HU 8.2: Contrato de Persistencia Agnóstica (IDatabaseDriver + adapters)** `[TODO]`
+    * **Prioridad**: Alta (E15)
+    * **Descripción**: Introducir contrato interno de acceso a datos para desacoplar `StorageManager` de la implementación SQLite, habilitando `SQLiteDriver` y futuro `PostgresDriver/MySQLDriver` sin cambiar lógica de negocio.
+    * **Alcance**: `execute`, `execute_many`, `fetch_one`, `fetch_all`, manejo transaccional y política de errores uniforme.
+    * **🖥️ UI Representation**: No aplica (cambio de arquitectura backend).
+
+* **HU 8.3: Concurrencia SQLite Híbrida (Retry/Backoff + Cola Selectiva)** `[TODO]`
+    * **Prioridad**: Alta (E15)
+    * **Descripción**: Mitigar `database is locked` sin embudo global: mantener concurrencia natural del Core y aplicar mitigación específica para SQLite en el adapter (retry/backoff para writes críticos + cola selectiva para telemetría/eventos de alta frecuencia).
+    * **Alcance**: Preservar compatibilidad con migración a motores robustos (sin imponer cola en adapters SQL).
+    * **🖥️ UI Representation**: No aplica (estabilidad operativa y resiliencia de persistencia).
+
 ---
 
 ## 09_INSTITUTIONAL_INTERFACE (UI/UX, Terminal)
@@ -123,4 +135,10 @@
     * **Prioridad**: Media (diseño y documentación, no implementación de código aún)
     * **Descripción**: Diseñar e documentar en `docs/` el `AutonomousSystemOrchestrator` que coordina los 13 componentes EDGE existentes (OperationalEdgeMonitor, EdgeTuner, DedupLearner, CoherenceMonitor, DrawdownMonitor, ExecutionFeedbackCollector, CircuitBreaker, PositionSizeMonitor, RegimeClassifier, ClosingMonitor, AutonomousHealthService, HealthManager, CoherenceService) como un sistema coherente de auto-diagnóstico y healing. Niveles de autonomía: OBSERVE | SUGGEST | HEAL.
     * **Trace_ID**: FASE4-AUTONOMOUS-ORCHESTRATOR-DESIGN-2026-03-24
+
+* **HU 10.20: Telemetría Agnóstica de Proveedor (sin dependencia MT5 hardcoded)** `[TODO]`
+    * **Prioridad**: Alta (E15)
+    * **Descripción**: Desacoplar chequeos de salud y telemetría de referencias explícitas a MT5 en arranque/orquestación, usando capacidades de proveedor vía `DataProviderManager` y conectores activos sin suposiciones de broker único.
+    * **Alcance**: `start.py`, tareas de background del orquestador y contratos de disponibilidad de datos.
+    * **🖥️ UI Representation**: Mayor continuidad de señales y menor ruido de alertas cuando cambia el proveedor de mercado.
 

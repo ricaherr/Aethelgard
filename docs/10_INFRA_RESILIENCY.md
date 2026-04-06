@@ -19,6 +19,32 @@ El sistema supervisa su propia integridad mediante:
 2.  **Propuestas de Gestión**: Detección proactiva de anomalías técnicas reportadas vía `Thoughts` en la UI.
 3.  **Veto Técnico**: Capacidad del sistema para detener operaciones si la infraestructura no garantiza fidelidad (ej: alta latencia de red).
 
+---
+
+## 🧭 E15 (Sprint 26): Telemetría Broker-Neutral (HU 10.20)
+
+**Trace_ID**: ARCH-DB-DRIVER-AGNOSTIC-MT5-DECOUPLING-2026-04-06
+
+### Objetivo
+
+Eliminar decisiones de salud y continuidad operativa basadas en un broker único hardcodeado, reemplazándolas por criterios agnósticos de proveedor activo y frescura de datos.
+
+### Alcance
+
+- Arranque y DI: reducir dependencias directas a MT5 en componentes que deben operar en modo agnóstico.
+- Runtime: reemplazar chequeos de disponibilidad basados en broker nominal por chequeos de capacidad/proveedor activo.
+- Background tasks: evitar suposición de `METATRADER5` como única fuente de estado operable.
+
+### Criterios Operativos
+
+1. Si un proveedor alternativo está activo y suministra datos frescos, el sistema no debe degradar por ausencia de MT5.
+2. Las alertas de salud deben reflejar estado real de datos/servicios, no el nombre del broker.
+3. Los módulos que requieren capacidades específicas de ejecución deben declararlas explícitamente, sin contaminar chequeos globales.
+
+### Beneficio Esperado
+
+Mayor continuidad operativa en escenarios multi-proveedor y menor probabilidad de cascadas de degradación falsas por caída de un conector no crítico.
+
 ## 🔗 Integración Anomalías ↔ Estados de Salud
 
 ### Arquitectura de Resiliencia Granular (Capas EDGE L0 - L3)
