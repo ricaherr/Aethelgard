@@ -223,6 +223,55 @@ def _seed_backtest_config(storage: "StorageManager") -> None:
         logger.warning("[CONFIG] No se pudo sembrar backtest_config: %s", exc)
 
 
+def _ensure_exec_capable_account(storage: "StorageManager") -> bool:
+    """Ensure at least one enabled sys_broker_accounts row has supports_exec=1.
+
+    Idempotent behavior:
+    - If an execution-capable account already exists, no writes are performed.
+    - Otherwise, creates/updates a deterministic system demo account seed.
+
+    Returns:
+        True if a seed account was created/updated, False otherwise.
+    """
+    try:
+        accounts = storage.get_sys_broker_accounts(enabled_only=True)
+        if any(bool(acc.get("supports_exec", 0)) for acc in accounts):
+            return False
+
+        seed_account_id = "SYS_EXEC_DEMO_AUTO"
+        storage.save_broker_account(
+            id=seed_account_id,
+            broker_id="mt5",
+            platform_id="mt5",
+            account_name="System Demo Execution Seed",
+            account_number="AUTO-DEMO-EXEC",
+            account_type="demo",
+            enabled=True,
+        )
+
+        storage.execute_update(
+            """
+            UPDATE sys_broker_accounts
+            SET supports_exec = 1,
+                supports_data = COALESCE(supports_data, 0),
+                enabled = 1,
+                updated_at = ?
+            WHERE account_id = ?
+            """,
+            (datetime.now(), seed_account_id),
+        )
+
+        logger.warning(
+            "[EXEC-SEED] No execution-capable account found. "
+            "Created fallback demo account '%s' (supports_exec=1).",
+            seed_account_id,
+        )
+        return True
+    except Exception as exc:
+        logger.error("[EXEC-SEED] Failed to ensure execution-capable account: %s", exc)
+        return False
+
+
 # launch_dashboard eliminada - UI unificada en puerto 8000
 
 def launch_server() -> None:
@@ -362,6 +411,7 @@ async def main() -> None:
         
         _seed_risk_config(storage)
         _seed_backtest_config(storage)
+        _ensure_exec_capable_account(storage)
         initial_capital = _read_initial_capital(storage)
         risk_manager = RiskManager(
             storage=storage,

@@ -34,6 +34,7 @@ def oem_with_storage():
     storage.get_recent_sys_signals.return_value = []
     storage.get_all_sys_market_pulses.return_value = {}
     storage.save_edge_learning.return_value = None
+    storage.get_latest_module_heartbeat_audit.return_value = None
 
     oem = OperationalEdgeMonitor(storage=storage, interval_seconds=9999)
     return oem, storage
@@ -81,11 +82,23 @@ class TestOrchestratorHeartbeatCheck:
         """Sin heartbeat registrado → WARN (puede ser primer arranque)."""
         oem, storage = oem_with_storage
         storage.get_module_heartbeats.return_value = {}
+        storage.get_latest_module_heartbeat_audit.return_value = None
 
         result = oem._check_orchestrator_heartbeat()
 
         assert result.status == CheckStatus.WARN
         assert "no" in result.detail.lower() or "sin" in result.detail.lower()
+
+    def test_ok_con_fallback_a_sys_audit_logs_si_sys_config_vacio(self, oem_with_storage):
+        """Si sys_config no trae heartbeat, OEM usa fallback desde sys_audit_logs."""
+        oem, storage = oem_with_storage
+        storage.get_module_heartbeats.return_value = {}
+        storage.get_latest_module_heartbeat_audit.return_value = _ts(2)
+
+        result = oem._check_orchestrator_heartbeat()
+
+        assert result.status == CheckStatus.OK
+        assert "source=sys_audit_logs" in result.detail
 
     def test_warn_si_formato_invalido(self, oem_with_storage):
         """Timestamp malformado → WARN (no FAIL) para no dar falsos positivos."""

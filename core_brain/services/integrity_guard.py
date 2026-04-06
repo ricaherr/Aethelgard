@@ -139,13 +139,17 @@ class IntegrityGuard:
         try:
             config = self._storage.get_sys_config()
             last_tick_raw: Optional[str] = config.get("last_market_tick_ts")
+            repair_armed = bool(config.get("oem_repair_force_ohlc_reload"))
 
             if last_tick_raw is None:
                 elapsed = (time.monotonic() - t0) * 1000
                 return CheckResult(
                     name="Check_Data_Coherence",
                     status=HealthStatus.WARNING,
-                    message="last_market_tick_ts no encontrado en sys_config. Sin datos de tick.",
+                    message=(
+                        "last_market_tick_ts no encontrado en sys_config. Sin datos de tick. "
+                        f"repair_armed={repair_armed}"
+                    ),
                     trace_id=trace_id,
                     elapsed_ms=round(elapsed, 2),
                 )
@@ -166,7 +170,8 @@ class IntegrityGuard:
                     message=(
                         f"Datos desactualizados: último tick hace "
                         f"{int(age_seconds)}s (umbral {_TICK_STALENESS_SECONDS}s). "
-                        f"Broker sin conexión activa — sistema en modo análisis."
+                        f"Broker sin conexión activa — sistema en modo análisis. "
+                        f"repair_armed={repair_armed}"
                     ),
                     trace_id=trace_id,
                     elapsed_ms=round(elapsed, 2),
@@ -205,6 +210,24 @@ class IntegrityGuard:
 
             adx_value = dynamic_params.get("adx", dynamic_params.get("ADX"))
             market_probably_closed = self._is_market_probably_closed(config)
+            repair_armed = bool(config.get("oem_repair_force_ohlc_reload"))
+            tick_age_s = self._get_tick_age_seconds(config)
+
+            if repair_armed and (adx_value is None or adx_value == 0):
+                # Allow one recovery cycle while OEM refreshes OHLC snapshots.
+                self._adx_zero_streak = 0
+                elapsed = (time.monotonic() - t0) * 1000
+                return CheckResult(
+                    name="Check_Veto_Logic",
+                    status=HealthStatus.WARNING,
+                    message=(
+                        "ADX nulo/cero durante reparación OEM activa "
+                        f"(tick_age={tick_age_s if tick_age_s is not None else 'unknown'}s). "
+                        "Se mantiene en WARNING hasta completar recarga."
+                    ),
+                    trace_id=trace_id,
+                    elapsed_ms=round(elapsed, 2),
+                )
 
             if market_probably_closed and (adx_value is None or adx_value == 0):
                 # Prevent false-positive CRITICAL during inactive sessions.
@@ -215,7 +238,7 @@ class IntegrityGuard:
                     status=HealthStatus.WARNING,
                     message=(
                         "ADX nulo/cero con mercado inactivo (tick stale). "
-                        "No se eleva a CRITICAL fuera de sesión."
+                        f"No se eleva a CRITICAL fuera de sesión. tick_age={tick_age_s if tick_age_s is not None else 'unknown'}s"
                     ),
                     trace_id=trace_id,
                     elapsed_ms=round(elapsed, 2),
@@ -234,7 +257,7 @@ class IntegrityGuard:
                     message=(
                         f"ADX nulo/cero durante {self._adx_zero_streak} ciclos "
                         f"consecutivos (umbral {_ADX_ZERO_COUNT_THRESHOLD}). "
-                        "Indicadores críticos comprometidos."
+                        f"Indicadores críticos comprometidos. tick_age={tick_age_s if tick_age_s is not None else 'unknown'}s"
                     ),
                     trace_id=trace_id,
                     elapsed_ms=round(elapsed, 2),
@@ -245,7 +268,8 @@ class IntegrityGuard:
                     status=HealthStatus.WARNING,
                     message=(
                         f"ADX nulo/cero en {self._adx_zero_streak} ciclo(s). "
-                        f"Monitoreo activo (umbral {_ADX_ZERO_COUNT_THRESHOLD})."
+                        f"Monitoreo activo (umbral {_ADX_ZERO_COUNT_THRESHOLD}). "
+                        f"tick_age={tick_age_s if tick_age_s is not None else 'unknown'}s"
                     ),
                     trace_id=trace_id,
                     elapsed_ms=round(elapsed, 2),
@@ -308,6 +332,23 @@ class IntegrityGuard:
             return False
         except Exception:
             return False
+
+    @staticmethod
+    def _get_tick_age_seconds(config: Dict) -> Optional[int]:
+        """Return tick age in seconds for observability messages, if available."""
+        try:
+            last_tick_raw = config.get("last_market_tick_ts")
+            if not last_tick_raw:
+                return None
+
+            last_tick_dt = datetime.fromisoformat(str(last_tick_raw))
+            if last_tick_dt.tzinfo is None:
+                last_tick_dt = last_tick_dt.replace(tzinfo=timezone.utc)
+
+            age_seconds = int((datetime.now(timezone.utc) - last_tick_dt).total_seconds())
+            return max(age_seconds, 0)
+        except Exception:
+            return None
 
     @staticmethod
     def _emit_health_log(report: HealthReport) -> None:

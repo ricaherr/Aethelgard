@@ -427,16 +427,24 @@ class OperationalEdgeMonitor(threading.Thread):
         """El loop principal debe actualizar su heartbeat en menos de MAX_HEARTBEAT_GAP_FAIL_MINUTES."""
         heartbeats = self.storage.get_module_heartbeats()
         orchestrator_ts = heartbeats.get("orchestrator")
+        source = "sys_config"
+
+        if orchestrator_ts is None and hasattr(self.storage, "get_latest_module_heartbeat_audit"):
+            orchestrator_ts = self.storage.get_latest_module_heartbeat_audit("orchestrator")
+            source = "sys_audit_logs"
 
         if orchestrator_ts is None:
             return CheckResult(
                 CheckStatus.WARN,
-                "Sin heartbeat registrado — orchestrator puede no haber iniciado aún",
+                "Sin heartbeat registrado en sys_config ni sys_audit_logs — orchestrator puede no haber iniciado aún",
             )
 
         last_beat = _parse_ts(orchestrator_ts)
         if last_beat is None:
-            return CheckResult(CheckStatus.WARN, f"Heartbeat con formato inválido: {orchestrator_ts}")
+            return CheckResult(
+                CheckStatus.WARN,
+                f"Heartbeat con formato inválido ({source}): {orchestrator_ts}",
+            )
 
         gap_minutes = (datetime.now(timezone.utc) - last_beat).total_seconds() / 60
 
@@ -444,14 +452,17 @@ class OperationalEdgeMonitor(threading.Thread):
             return CheckResult(
                 CheckStatus.FAIL,
                 f"Loop principal sin heartbeat hace {gap_minutes:.1f} min "
-                f"(umbral: {self.MAX_HEARTBEAT_GAP_FAIL_MINUTES} min) — posible bloqueo",
+                f"(umbral: {self.MAX_HEARTBEAT_GAP_FAIL_MINUTES} min, source={source}) — posible bloqueo",
             )
         if gap_minutes > self.MAX_HEARTBEAT_GAP_WARN_MINUTES:
             return CheckResult(
                 CheckStatus.WARN,
-                f"Heartbeat tardío: {gap_minutes:.1f} min (umbral warn: {self.MAX_HEARTBEAT_GAP_WARN_MINUTES} min)",
+                f"Heartbeat tardío: {gap_minutes:.1f} min (umbral warn: {self.MAX_HEARTBEAT_GAP_WARN_MINUTES} min, source={source})",
             )
-        return CheckResult(CheckStatus.OK, f"Loop principal activo (heartbeat hace {gap_minutes:.1f} min)")
+        return CheckResult(
+            CheckStatus.OK,
+            f"Loop principal activo (heartbeat hace {gap_minutes:.1f} min, source={source})",
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────

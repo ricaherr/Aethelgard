@@ -420,7 +420,9 @@ class ShadowManager:
         Returns:
             PromotionValidator configured for the given regime.
         """
-        validator = PromotionValidator()
+        validator = PromotionValidator(
+            min_trades=self.promotion_validator.PILAR3_MIN_TRADES
+        )
 
         if regime == "TREND":
             validator.PILAR1_MIN_WR = 0.55
@@ -650,6 +652,13 @@ class ShadowManager:
                     "strategy_id": instance.strategy_id,
                     "trace_id": trace_id,
                     "regime": regime,
+                    "metrics": {
+                        "profit_factor": metrics.profit_factor,
+                        "win_rate": metrics.win_rate,
+                        "max_drawdown_pct": metrics.max_drawdown_pct,
+                        "consecutive_losses_max": metrics.consecutive_losses_max,
+                        "trade_count": metrics.total_trades_executed,
+                    },
                 }
 
                 if health == HealthStatus.HEALTHY:

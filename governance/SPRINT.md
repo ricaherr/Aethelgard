@@ -49,7 +49,7 @@
   - `docs/10_INFRA_RESILIENCY.md`: sección "Manual Overrides" añadida (contrato de endpoints + UI)
   - Glassmorphism + bordes 0.5px + animaciones stagger 100ms (Dominio 09)
 
-- [DEV] **HU 10.16: Self-Healing & Correlation Engine** (Trace_ID: ARCH-RESILIENCE-ENGINE-V1-C | 2026-03-31)
+- [DONE] **HU 10.16: Self-Healing & Correlation Engine** (Trace_ID: ARCH-RESILIENCE-ENGINE-V1-C | 2026-03-31)
   - `core_brain/resilience_manager.py` actualizado con tres nuevos sub-sistemas:
     - **CorrelationEngine**: ventana deslizante de 60s; ≥3 activos distintos con MUTE → LOCKDOWN sintético → STRESSED. Evita re-trigger limpiando la ventana tras cascada.
     - **RootCauseDiagnosis**: acumula L1/QUARANTINE por DataProvider; ≥2 estrategias en mismo proveedor → upgrade a L2/SERVICE/SELF_HEAL → DEGRADED.
@@ -120,7 +120,7 @@
 
 ## 📋 Tareas del Sprint
 
-- [DEV] **HU 10.10: OEM Production Integration**
+- [DONE] **HU 10.10: OEM Production Integration**
   - `start.py`: `OperationalEdgeMonitor` instanciado con `shadow_storage` inyectado (línea ~543), thread daemon arranca después del SHADOW pool
   - `core_brain/server.py`: singleton `_oem_instance` + `set_oem_instance()` / `get_oem_instance()`
   - `core_brain/api/routers/system.py`: endpoint `GET /system/health/edge`
@@ -129,7 +129,7 @@
   - `ui/src/components/diagnostic/MonitorPage.tsx`: `<SystemHealthPanel />` integrado al final de la página
   - `tests/test_oem_production_integration.py`: 9 tests — integración, singleton, endpoint UNAVAILABLE
 
-- [DEV] **HU 10.11: OEM Loop Heartbeat Check**
+- [DONE] **HU 10.11: OEM Loop Heartbeat Check**
   - `core_brain/operational_edge_monitor.py`: `_check_orchestrator_heartbeat()` como 9° check; `last_results` + `last_checked_at` en instancia; log de OK con warnings count; `CRITICAL` si heartbeat FAIL o >= 2 FAIL
   - Umbrales: `OK` < 10 min, `WARN` 10-20 min, `FAIL` > 20 min
   - `tests/test_oem_heartbeat_check.py`: 10 tests — OK/WARN/FAIL, umbrales exactos, integración con health_summary
@@ -155,7 +155,7 @@
   - `tests/test_resilience_interface.py`: 23 tests — valores de enums, instanciación de EdgeEventReport, trace_id único, ABC enforcement
   - validate_all: todos los tests PASSED
 
-- [TODO] **HU 10.12: Timeout Guards en run_single_cycle**
+- [DONE] **HU 10.12: Timeout Guards en run_single_cycle**
   - `core_brain/main_orchestrator.py`: `asyncio.wait_for()` en `_request_scan()` (120s), `_check_and_run_daily_backtest()` (300s), `position_manager.monitor_usr_positions()` (60s)
   - `shadow_manager.evaluate_all_instances()`: mover a `asyncio.to_thread()` con timeout 60s (elimina bloqueo síncrono del event loop)
   - Timeouts configurables: `sys_config` claves `phase_timeout_scan_s`, `phase_timeout_backtest_s`
@@ -217,7 +217,7 @@
   - TDD: `tests/test_shadow_db_updated_at_refresh.py` — 2 tests (2/2 PASSED). Cubre: `evaluate_all_instances()` avanza `updated_at`; `update_shadow_instance()` directamente avanza `updated_at`.
   - `validate_all.py`: **2121/2121 PASSED** · 0 regresiones.
 
-- [TODO] **HU 10.13: Contract Tests — Bugs Conocidos**
+- [DONE] **HU 10.13: Contract Tests — Bugs Conocidos**
   - `tests/test_contracts_known_bugs.py`: 4 tests de contrato (ver HU 10.13 en BACKLOG)
     1. `pilar3_min_trades` dinámico: instancia con 8 trades → HEALTHY si DB dice min_trades=5
     2. `_degrade_strategy()` huérfano: verificar comportamiento real y alinear docstring con código

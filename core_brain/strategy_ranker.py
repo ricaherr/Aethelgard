@@ -37,7 +37,7 @@ class StrategyRanker:
     Promotion Logic (SHADOW -> LIVE):
     - Profit Factor > 1.5 AND Win Rate > 50% in last 50 usr_trades
     
-    Degradation Logic (LIVE -> QUARANTINE):
+    Degradation Logic (LIVE -> SHADOW rehabilitation):
     - Drawdown >= 3% OR Consecutive Losses >= 5
     
     Recovery Logic (QUARANTINE -> SHADOW):
@@ -92,14 +92,34 @@ class StrategyRanker:
         
         # Route to appropriate evaluation logic
         if current_mode == 'SHADOW':
-            return self._evaluate_shadow(strategy_id, ranking)
+            result = self._evaluate_shadow(strategy_id, ranking)
         elif current_mode == 'LIVE':
-            return self._evaluate_live(strategy_id, ranking)
+            result = self._evaluate_live(strategy_id, ranking)
         elif current_mode == 'QUARANTINE':
-            return self._evaluate_quarantine(strategy_id, ranking)
+            result = self._evaluate_quarantine(strategy_id, ranking)
         else:
             logger.error(f"Unknown execution mode: {current_mode}")
             return {'action': 'error', 'reason': 'unknown_mode'}
+
+        # Contract surface: expose weighted score in every normal evaluation.
+        try:
+            weighted_regime = str(
+                ranking.get('current_regime')
+                or ranking.get('market_regime')
+                or 'TREND'
+            ).upper()
+            result['weighted_score'] = float(
+                self.calculate_weighted_score(strategy_id, weighted_regime)
+            )
+            result['weighted_regime'] = weighted_regime
+        except Exception as exc:
+            logger.debug(
+                "Could not compute weighted_score for %s: %s",
+                strategy_id,
+                exc,
+            )
+
+        return result
     
     def _evaluate_shadow(self, strategy_id: str, ranking: Dict) -> Dict[str, Any]:
         """

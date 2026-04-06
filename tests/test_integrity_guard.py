@@ -196,6 +196,23 @@ class TestCheckVetoLogic:
         assert "mercado inactivo" in result.message
         assert guard._adx_zero_streak == 0
 
+    def test_integrity_guard_check_veto_logic_warning_con_oem_repair_flag_activo(self):
+        storage = _make_storage(
+            {
+                "dynamic_params": {"adx": 0},
+                "oem_repair_force_ohlc_reload": True,
+                "last_market_tick_ts": _fresh_tick_ts(),
+            }
+        )
+        guard = IntegrityGuard(storage=storage)
+        guard._adx_zero_streak = 2
+
+        result = guard._check_veto_logic("trace-029")
+
+        assert result.status == HealthStatus.WARNING
+        assert "reparación OEM activa" in result.message
+        assert guard._adx_zero_streak == 0
+
 
 # ── check_health (agregación) ─────────────────────────────────────────────────
 

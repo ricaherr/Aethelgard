@@ -155,7 +155,7 @@
         - Check idempotente — no genera múltiples alertas por la misma instancia en el mismo día
         - Tests verifican detección y clasificación de causa
 
-* **HU 10.10: OEM Production Integration** `[TODO]`
+* **HU 10.10: OEM Production Integration** `[DONE]`
     * **Épica**: E13 | **Trace_ID**: EDGE-RELIABILITY-OEM-INTEGRATION-2026
     * **Qué**: Integrar `OperationalEdgeMonitor` en `start.py` como componente activo de producción. Inyectar `shadow_storage` (instancia de `ShadowStorageManager`) al constructor para que el check `shadow_sync` pueda evaluar instancias reales. Arrancar el thread daemon del OEM como parte de la secuencia de inicialización, después del `ShadowManager`.
     * **Para qué**: El OEM existe desde Sprint 7 con 27 tests pasando, pero nunca fue integrado en el flujo de arranque real. Sin esta integración, los 8 checks de invariantes de negocio nunca se ejecutan en producción.
@@ -166,7 +166,7 @@
         - Test de integración verifica que el OEM se inicia con `shadow_storage != None`
         - Tests: `tests/test_oem_production_integration.py`
 
-* **HU 10.11: OEM Loop Heartbeat Check** `[TODO]`
+* **HU 10.11: OEM Loop Heartbeat Check** `[DONE]`
     * **Épica**: E13 | **Trace_ID**: EDGE-RELIABILITY-OEM-HEARTBEAT-2026
     * **Qué**: Añadir al `OperationalEdgeMonitor` un noveno check: `_check_orchestrator_heartbeat()`. Este check lee el último timestamp de heartbeat del orchestrator desde `sys_audit_logs` o `sys_config` y emite `FAIL` si han pasado más de `max_heartbeat_gap_minutes` (configurable, default 10 min) sin actualización.
     * **Para qué**: Actualmente el OEM no detecta si el loop principal está bloqueado. Un ciclo que se cuelga en `await fetch_ohlc()` no genera ningún log ni alerta. Este check convierte el heartbeat del orchestrator (ya actualizado en cada ciclo) en una señal de vida verificable externamente.
@@ -177,7 +177,7 @@
         - `get_health_summary()` eleva a `CRITICAL` con >= 2 checks fallidos (antes era 3 — ajuste porque heartbeat ausente es siempre crítico)
         - Tests: `tests/test_oem_heartbeat_check.py` (check OK/WARN/FAIL, integración con health_summary)
 
-* **HU 10.12: Timeout Guards en run_single_cycle** `[TODO]`
+* **HU 10.12: Timeout Guards en run_single_cycle** `[DONE]`
     * **Épica**: E13 | **Trace_ID**: EDGE-RELIABILITY-TIMEOUT-GUARDS-2026
     * **Qué**: Envolver las fases críticas de `run_single_cycle()` en `asyncio.wait_for()` con timeouts configurables. Fases a proteger: (1) `_request_scan()` — timeout 120s, (2) `_check_and_run_daily_backtest()` — timeout 300s, (3) `position_manager.monitor_usr_positions()` — timeout 60s. En caso de timeout: loguear `[TIMEOUT] Fase X superó Ys — ciclo continúa`, actualizar heartbeat, y continuar con la siguiente fase (no abortar el ciclo completo).
     * **Para qué**: Confirmado en Sprint 21 que `_check_and_run_daily_backtest` sin timeout colgaba tests ~250s. En producción, un `fetch_ohlc()` bloqueado por red puede congelar el loop indefinidamente sin ninguna señal de alerta. Los timeouts convierten un bloqueo silencioso en un evento observable y recuperable.
@@ -188,7 +188,7 @@
         - Timeouts configurables desde `sys_config` (clave: `phase_timeout_scan_s`, `phase_timeout_backtest_s`)
         - Tests: `tests/test_orchestrator_timeout_guards.py` (mock que no retorna → verificar que ciclo continúa)
 
-* **HU 10.13: Contract Tests — Bugs Conocidos** `[TODO]`
+* **HU 10.13: Contract Tests — Bugs Conocidos** `[DONE]`
     * **Épica**: E13 | **Trace_ID**: EDGE-RELIABILITY-CONTRACT-TESTS-2026
     * **Qué**: Convertir cada bug identificado en la auditoría del 27-Mar-2026 en un test de contrato que falla hoy y pasa después del fix correspondiente. Estos tests actúan como red de seguridad permanente: si algún bug regresa, el test falla inmediatamente.
     * **Para qué**: Las auditorías manuales son ciclos sin fin. Un test de contrato es una auditoría automatizada que corre en cada `validate_all.py`. Si el test existe, el bug no puede regresar sin que el sistema lo detecte.
@@ -208,7 +208,7 @@
     * **Descripción**: Diseñar e documentar en `docs/` el `AutonomousSystemOrchestrator` que coordina los 13 componentes EDGE existentes (OperationalEdgeMonitor, EdgeTuner, DedupLearner, CoherenceMonitor, DrawdownMonitor, ExecutionFeedbackCollector, CircuitBreaker, PositionSizeMonitor, RegimeClassifier, ClosingMonitor, AutonomousHealthService, HealthManager, CoherenceService) como un sistema coherente de auto-diagnóstico y healing. Niveles de autonomía: OBSERVE | SUGGEST | HEAL.
     * **Trace_ID**: FASE4-AUTONOMOUS-ORCHESTRATOR-DESIGN-2026-03-24
 
-* **HU 10.16: Self-Healing & Correlation Engine** `[DEV]`
+* **HU 10.16: Self-Healing & Correlation Engine** `[DONE]`
     * **Épica**: E14 | **Trace_ID**: ARCH-RESILIENCE-ENGINE-V1-C | **Sprint**: 24
     * **Qué**: `CorrelationEngine` (ventana 5 min): ≥3 `L0:MUTE` → L3 automático; ≥2 `L1:QUARANTINE` en <5 min → DEGRADED. `SelfHealingPlaybook`: reintentos L2 hasta 3 veces antes de escalar.
     * **Para qué**: Dotar al sistema de recuperación autónoma y protección contra fallos en cascada.

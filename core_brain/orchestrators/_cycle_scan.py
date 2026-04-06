@@ -6,6 +6,7 @@ run_scan_phase → OPTION-A orchestrated scan, snapshot building, UI mapping →
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import uuid
@@ -30,6 +31,65 @@ from core_brain.orchestrators._scan_methods import (
 logger = logging.getLogger(__name__)
 
 
+def _get_phase_timeout_seconds(orch: Any, key: str, default: float) -> float:
+    """Read per-phase timeout from sys_config with safe fallback."""
+    try:
+        sys_config = orch.storage.get_sys_config() or {}
+        value = sys_config.get(key, default)
+        timeout_value = float(value)
+        if timeout_value <= 0:
+            return default
+        return timeout_value
+    except Exception:
+        return default
+
+
+def _record_phase_timeout(orch: Any, phase: str, timeout_s: float) -> None:
+    """Emit structured timeout telemetry to logs + sys_audit_logs + sys_config."""
+    timeout_payload = {
+        "phase": phase,
+        "timeout_s": timeout_s,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+    logger.warning(
+        "[TIMEOUT] phase=%s exceeded %.2fs — cycle continues in fail-safe mode",
+        phase,
+        timeout_s,
+    )
+
+    try:
+        orch.storage.log_audit_event(
+            user_id="SYSTEM",
+            action="PHASE_TIMEOUT",
+            resource="MainOrchestrator",
+            resource_id=phase,
+            status="failure",
+            reason=f"Timeout in phase={phase} after {timeout_s:.2f}s",
+            trace_id=f"TIMEOUT_{phase}_{uuid.uuid4().hex[:8].upper()}",
+        )
+    except Exception as exc:
+        logger.debug("[TIMEOUT] Could not write audit event: %s", exc)
+
+    try:
+        orch.storage.update_sys_config({"last_phase_timeout": timeout_payload})
+    except Exception as exc:
+        logger.debug("[TIMEOUT] Could not persist timeout payload to sys_config: %s", exc)
+
+
+async def _run_with_timeout(orch: Any, phase: str, awaitable: Any, timeout_s: float) -> bool:
+    """Run awaitable with timeout; return False on timeout/error and keep cycle alive."""
+    try:
+        await asyncio.wait_for(awaitable, timeout=timeout_s)
+        return True
+    except asyncio.TimeoutError:
+        _record_phase_timeout(orch, phase, timeout_s)
+        return False
+    except Exception as exc:
+        logger.warning("[TIMEOUT-GUARD] phase=%s failed: %s", phase, exc)
+        return False
+
+
 async def run_pre_phase(orch: Any) -> bool:
     """
     Pre-cycle phase: background tasks, module toggles, guards.
@@ -49,7 +109,18 @@ async def run_pre_phase(orch: Any) -> bool:
     # Background weekly/daily tasks
     await orch._check_and_run_weekly_dedup_learning()
     await orch._check_and_run_weekly_shadow_evolution()
-    await orch._check_and_run_daily_backtest()  # thin wrapper — patched in tests
+
+    backtest_timeout_s = _get_phase_timeout_seconds(
+        orch,
+        key="phase_timeout_backtest_s",
+        default=300.0,
+    )
+    await _run_with_timeout(
+        orch,
+        phase="daily_backtest",
+        awaitable=orch._check_and_run_daily_backtest(),
+        timeout_s=backtest_timeout_s,
+    )
 
     orch.storage.update_module_heartbeat("orchestrator")
 
@@ -164,13 +235,28 @@ async def run_pre_phase(orch: Any) -> bool:
         else:
             combined_actions: List[Any] = []
             total_monitored = 0
+            position_timeout_s = _get_phase_timeout_seconds(
+                orch,
+                key="phase_timeout_positions_s",
+                default=60.0,
+            )
             for account_id, exec_connector in exec_connectors.items():
                 try:
-                    position_stats = orch.position_manager.monitor_usr_positions(
-                        connector=exec_connector
+                    position_stats = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            orch.position_manager.monitor_usr_positions,
+                            connector=exec_connector,
+                        ),
+                        timeout=position_timeout_s,
                     )
                     total_monitored += position_stats.get("monitored", 0)
                     combined_actions.extend(position_stats.get("actions", []))
+                except asyncio.TimeoutError:
+                    _record_phase_timeout(
+                        orch,
+                        phase=f"position_monitor:{account_id}",
+                        timeout_s=position_timeout_s,
+                    )
                 except Exception as pm_err:
                     logger.error(
                         f"[POSITION_MANAGER] Error monitoring account '{account_id}': {pm_err}"
@@ -257,7 +343,19 @@ async def run_scan_phase(orch: Any) -> Optional[ScanBundle]:
             f"[OPTION-A] {len(assets_to_scan)} assets due: "
             f"{', '.join([f'{s}|{tf}' for s, tf in assets_to_scan[:5]])}{'...' if len(assets_to_scan) > 5 else ''}"
         )
-        new_scan_results = await orch._request_scan(assets_to_scan)
+        scan_timeout_s = _get_phase_timeout_seconds(
+            orch,
+            key="phase_timeout_scan_s",
+            default=120.0,
+        )
+        try:
+            new_scan_results = await asyncio.wait_for(
+                orch._request_scan(assets_to_scan),
+                timeout=scan_timeout_s,
+            )
+        except asyncio.TimeoutError:
+            _record_phase_timeout(orch, "scan_request", scan_timeout_s)
+            new_scan_results = {}
     else:
         logger.debug("[OPTION-A] No assets due — using cached results")
         new_scan_results = {}

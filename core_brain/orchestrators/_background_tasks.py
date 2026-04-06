@@ -165,41 +165,41 @@ async def check_and_run_weekly_shadow_evolution(orch: "MainOrchestrator") -> Non
             for promo in promotions:
                 instance_id = promo.get("instance_id", "UNKNOWN")
                 trace_id = promo.get("trace_id", "")
+                metrics_payload = promo.get("metrics", {})
                 logger.info(f"[SHADOW] PROMOTED: {instance_id} → REAL ({trace_id})")
                 await emit_shadow_status_update(
                     orch, instance_id, "HEALTHY", "PASS", "PASS", "PASS",
-                    {"profit_factor": 0, "win_rate": 0, "max_drawdown_pct": 0,
-                     "consecutive_losses_max": 0, "trade_count": 0},
+                    metrics_payload,
                     trace_id, "PROMOTE",
                 )
             for kill in kills:
                 instance_id = kill.get("instance_id", "UNKNOWN")
                 trace_id = kill.get("trace_id", "")
+                metrics_payload = kill.get("metrics", {})
                 logger.warning(f"[SHADOW] DEAD: {instance_id} → {kill.get('reason')} ({trace_id})")
                 await emit_shadow_status_update(
                     orch, instance_id, "DEAD", "FAIL", "UNKNOWN", "UNKNOWN",
-                    {"profit_factor": 0, "win_rate": 0, "max_drawdown_pct": 0,
-                     "consecutive_losses_max": 0, "trade_count": 0},
+                    metrics_payload,
                     trace_id, "DEMOTE",
                 )
             for quar in quarantines:
                 instance_id = quar.get("instance_id", "UNKNOWN")
                 trace_id = quar.get("trace_id", "")
+                metrics_payload = quar.get("metrics", {})
                 logger.warning(f"[SHADOW] QUARANTINED: {instance_id} ({trace_id})")
                 await emit_shadow_status_update(
                     orch, instance_id, "QUARANTINED", "PASS", "FAIL", "UNKNOWN",
-                    {"profit_factor": 0, "win_rate": 0, "max_drawdown_pct": 0,
-                     "consecutive_losses_max": 0, "trade_count": 0},
+                    metrics_payload,
                     trace_id, "QUARANTINE",
                 )
             for mon in monitors:
                 instance_id = mon.get("instance_id", "UNKNOWN")
                 trace_id = mon.get("trace_id", "")
+                metrics_payload = mon.get("metrics", {})
                 logger.info(f"[SHADOW] MONITOR: {instance_id} ({trace_id})")
                 await emit_shadow_status_update(
                     orch, instance_id, "MONITOR", "PASS", "PASS", "FAIL",
-                    {"profit_factor": 0, "win_rate": 0, "max_drawdown_pct": 0,
-                     "consecutive_losses_max": 0, "trade_count": 0},
+                    metrics_payload,
                     trace_id, "MONITOR",
                 )
             if orch.thought_callback:

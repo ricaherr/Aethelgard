@@ -297,8 +297,44 @@ class SystemMixin(BaseRepository):
             self._close_conn(conn)
 
     def update_module_heartbeat(self, module_name: str) -> None:
-        """Update last activity timestamp for a module"""
-        self.update_sys_config({f"heartbeat_{module_name}": datetime.now(timezone.utc).isoformat()})
+        """Update last activity timestamp for a module.
+
+        Also persists a HEARTBEAT event to sys_audit_logs with throttling so
+        the audit trail remains queryable without flooding storage.
+        """
+        now_iso = datetime.now(timezone.utc).isoformat()
+        self.update_sys_config({f"heartbeat_{module_name}": now_iso})
+
+        try:
+            sys_config = self.get_sys_config()
+            interval_raw = sys_config.get("heartbeat_audit_interval_s", 120)
+            try:
+                interval_seconds = max(10, int(interval_raw))
+            except (TypeError, ValueError):
+                interval_seconds = 120
+
+            last_key = f"heartbeat_audit_last_{module_name}"
+            last_logged_raw = sys_config.get(last_key)
+            should_log = True
+            if last_logged_raw:
+                last_logged_dt = to_utc(last_logged_raw)
+                delta = datetime.now(timezone.utc) - last_logged_dt
+                should_log = delta.total_seconds() >= interval_seconds
+
+            if should_log:
+                trace_id = f"HEARTBEAT_{module_name}_{uuid.uuid4().hex[:8].upper()}"
+                self.log_audit_event(
+                    user_id="SYSTEM",
+                    action="HEARTBEAT",
+                    resource=module_name,
+                    resource_id="module",
+                    status="success",
+                    reason=f"heartbeat_{module_name}",
+                    trace_id=trace_id,
+                )
+                self.update_sys_config({last_key: now_iso})
+        except Exception as exc:
+            logger.debug("[HEARTBEAT] Audit heartbeat persistence skipped: %s", exc)
 
     def get_module_heartbeats(self) -> Dict[str, str]:
         """Get last activity timestamps for all modules"""
@@ -309,6 +345,31 @@ class SystemMixin(BaseRepository):
                 module_name = key.replace("heartbeat_", "")
                 heartbeats[module_name] = value
         return heartbeats
+
+    def get_latest_module_heartbeat_audit(self, module_name: str) -> Optional[str]:
+        """Return latest HEARTBEAT timestamp for a module from sys_audit_logs."""
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT timestamp
+                FROM sys_audit_logs
+                WHERE action = 'HEARTBEAT' AND resource = ?
+                ORDER BY timestamp DESC
+                LIMIT 1
+                """,
+                (module_name,),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return None
+            return row["timestamp"]
+        except Exception as exc:
+            logger.debug("[HEARTBEAT] Could not read latest audit heartbeat: %s", exc)
+            return None
+        finally:
+            self._close_conn(conn)
 
     def get_statistics(self) -> Dict[str, Any]:
         """Get system statistics for dashboard (LIVE trades only for backward compatibility)"""
