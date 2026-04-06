@@ -38,7 +38,7 @@
   - `ui`: `npm run test -- src/__tests__/hooks/useSignalReviews.test.ts` ✅ 3/3 PASSED
   - `ui`: `npm run build` ✅ PASSED
 
-- [DEV] **HU 10.17b: Veto Reasoner — Endpoint API + UI Component** (Trace_ID: EDGE-IGNITION-PHASE-6-RESILIENCE-UI | 2026-03-31)
+- [DONE] **HU 10.17b: Veto Reasoner — Endpoint API + UI Component** (Trace_ID: EDGE-IGNITION-PHASE-6-RESILIENCE-UI | 2026-03-31)
   - `core_brain/api/routers/resilience.py` (NUEVO): `GET /api/v3/resilience/status` (postura, budget, exclusiones) + `POST /api/v3/resilience/command` (RETRY_HEALING, OVERRIDE_POSTURE, RELEASE_SCOPE)
   - `core_brain/server.py`: singleton `_resilience_manager_instance` + `set_resilience_manager()` / `get_resilience_manager()`
   - `core_brain/main_orchestrator.py`: `set_resilience_manager(self.resilience_manager)` publicado al servidor en el bloque #16
@@ -46,6 +46,8 @@
   - `ui/src/hooks/useSynapseTelemetry.ts`: interfaz `ResilienceSnapshot` + campo opcional `resilience_status` en `SynapseTelemetry`
   - `ui/src/components/diagnostic/ResilienceConsole.tsx` (NUEVO): badge de postura + narrativa dinámica + barra de presupuesto + tablas de exclusión + botones de intervención con spinners
   - `ui/src/components/diagnostic/MonitorPage.tsx`: `<ResilienceConsole />` integrado al final de la página
+  - `tests/test_veto_reasoner.py`: 2 tests — endpoint 503 si manager no inicializado + serialización de postura/narrativa/exclusiones
+  - `ui/src/__tests__/components/ResilienceConsole.test.ts`: 2 tests — contrato endpoint v3 + render narrativo condicional
   - `docs/10_INFRA_RESILIENCY.md`: sección "Manual Overrides" añadida (contrato de endpoints + UI)
   - Glassmorphism + bordes 0.5px + animaciones stagger 100ms (Dominio 09)
 

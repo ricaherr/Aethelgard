@@ -230,11 +230,11 @@
         - Suite total verde sin cambios en tests de lógica
         - `validate_all.py` 27/27 PASSED y `start.py` verificado
 
-* **HU 10.17b: Veto Reasoner — Endpoint API + UI Component** `[DEV]`
+* **HU 10.17b: Veto Reasoner — Endpoint API + UI Component** `[DONE]`
     * **Épica**: E14 | **Trace_ID**: ARCH-RESILIENCE-VETO-REASONER-V1B | **Sprint**: 25 (post HU 10.15 ✅)
     * **Contexto**: `ResilienceManager.get_current_status_narrative()` y la persistencia de `recovery_plan` en `sys_audit_logs` ya implementados (Sprint 24). Esta HU cubre la capa de presentación.
-    * **Qué**: Endpoint `GET /api/system/health/edge` devuelve `{"posture": "STRESSED", "cause": "L2_SELF_HEAL", "recovery_plan": "..."}`. `SystemHealthPanel.tsx` muestra texto narrativo debajo del badge de postura; si `recovery_plan` es vacío, el bloque no se renderiza.
+    * **Qué**: Endpoint `GET /api/v3/resilience/status` devuelve postura, narrativa, estado de healing, budget y exclusiones. `ResilienceConsole.tsx` muestra narrativa debajo del badge de postura; si la narrativa es vacía, el bloque no se renderiza.
     * **Criterios de aceptación**:
-        - Endpoint `/api/system/health/edge` retorna `posture`, `cause` y `recovery_plan`
-        - `SystemHealthPanel.tsx` render condicional del bloque narrativo
-        - Tests: `tests/test_veto_reasoner.py` — serialización del endpoint, render condicional React
+        - Endpoint `/api/v3/resilience/status` retorna `posture`, `narrative`, `is_healing`, `heal_budget_remaining` y `exclusions`
+        - `ResilienceConsole.tsx` render condicional del bloque narrativo
+        - Tests: `tests/test_veto_reasoner.py` + `ui/src/__tests__/components/ResilienceConsole.test.ts`
