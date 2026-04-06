@@ -9,11 +9,12 @@ Realiza "Chequeos Vivos" (Lightweight Health Checks) sobre datos en ejecución:
 
 Restricciones técnicas:
   - Sin análisis estático (AST), sin pytest/mypy, sin escaneo de archivos.
-  - Tiempo de CPU por ciclo completo ≤ 200 ms.
+  - Tiempo de CPU por ciclo completo <= 200 ms.
   - Cada log de salud lleva Trace_ID obligatorio.
 
 TRACE_ID: EDGE-IGNITION-PHASE-1-INTEGRITY-GUARD-2026-03-30
 """
+import json
 import logging
 import math
 import sqlite3
@@ -28,9 +29,9 @@ from data_vault.storage import StorageManager
 
 logger = logging.getLogger(__name__)
 
-# ── Constantes ──────────────────────────────────────────────────────────────
+# -- Constantes --------------------------------------------------------------
 _TICK_STALENESS_SECONDS = 300   # 5 minutos
-_ADX_ZERO_COUNT_THRESHOLD = 3  # Cuántos ceros seguidos disparan CRITICAL
+_ADX_ZERO_COUNT_THRESHOLD = 3  # Cuantos ceros seguidos disparan CRITICAL
 
 
 class HealthStatus(Enum):
@@ -42,7 +43,7 @@ class HealthStatus(Enum):
 
 @dataclass
 class CheckResult:
-    """Resultado atómico de un chequeo individual."""
+    """Resultado atomico de un chequeo individual."""
     name: str
     status: HealthStatus
     message: str
@@ -63,7 +64,7 @@ class HealthReport:
 
 class IntegrityGuard:
     """
-    Servicio de autodiagnóstico en runtime para el orquestador principal.
+    Servicio de autodiagnostico en runtime para el orquestador principal.
 
     Uso:
         guard = IntegrityGuard(storage=storage_manager)
@@ -76,13 +77,13 @@ class IntegrityGuard:
         self._storage = storage
         self._adx_zero_streak: int = 0  # Contador de ciclos con ADX == 0
 
-    # ── API pública ──────────────────────────────────────────────────────────
+    # -- API publica ---------------------------------------------------------
 
     def check_health(self) -> HealthReport:
         """
         Ejecuta los tres chequeos en secuencia y retorna un HealthReport.
 
-        Performance: ≤ 200 ms total de CPU.
+        Performance: <= 200 ms total de CPU.
         """
         trace_id = str(uuid.uuid4())
         results: List[CheckResult] = [
@@ -100,18 +101,16 @@ class IntegrityGuard:
         self._emit_health_log(report)
         return report
 
-    # ── Chequeos individuales ─────────────────────────────────────────────────
+    # -- Chequeos individuales ----------------------------------------------
 
     def _check_database(self, parent_trace_id: str) -> CheckResult:
-        """
-        Check_Database: Valida conexión funcional a DB y lectura de sys_config.
-        """
+        """Check_Database: Valida conexion funcional a DB y lectura de sys_config."""
         t0 = time.monotonic()
         trace_id = f"{parent_trace_id}:db"
         try:
             config = self._storage.get_sys_config()
             if not isinstance(config, dict):
-                raise ValueError("sys_config no retornó un dict")
+                raise ValueError("sys_config no retorno un dict")
             elapsed = (time.monotonic() - t0) * 1000
             return CheckResult(
                 name="Check_Database",
@@ -132,8 +131,8 @@ class IntegrityGuard:
 
     def _check_data_coherence(self, parent_trace_id: str) -> CheckResult:
         """
-        Check_Data_Coherence: Detecta congelamiento si el último tick de mercado
-        en sys_config tiene más de _TICK_STALENESS_SECONDS de antigüedad.
+        Check_Data_Coherence: Detecta congelamiento si el ultimo tick de mercado
+        en sys_config tiene mas de _TICK_STALENESS_SECONDS de antiguedad.
         """
         t0 = time.monotonic()
         trace_id = f"{parent_trace_id}:coherence"
@@ -169,9 +168,9 @@ class IntegrityGuard:
                     name="Check_Data_Coherence",
                     status=HealthStatus.WARNING,
                     message=(
-                        f"Datos desactualizados: último tick hace "
+                        f"Datos desactualizados: ultimo tick hace "
                         f"{int(age_seconds)}s (umbral {_TICK_STALENESS_SECONDS}s). "
-                        f"Broker sin conexión activa — sistema en modo análisis. "
+                        f"Broker sin conexion activa - sistema en modo analisis. "
                         f"repair_armed={repair_armed}"
                     ),
                     trace_id=trace_id,
@@ -180,7 +179,7 @@ class IntegrityGuard:
             return CheckResult(
                 name="Check_Data_Coherence",
                 status=HealthStatus.OK,
-                message=f"Tick fresco: {int(age_seconds)}s de antigüedad.",
+                message=f"Tick fresco: {int(age_seconds)}s de antiguedad.",
                 trace_id=trace_id,
                 elapsed_ms=round(elapsed, 2),
             )
@@ -196,7 +195,7 @@ class IntegrityGuard:
 
     def _check_veto_logic(self, parent_trace_id: str) -> CheckResult:
         """
-        Check_Veto_Logic: Si el ADX (o indicadores críticos) en sys_config
+        Check_Veto_Logic: Si el ADX (o indicadores criticos) en sys_config
         presentan valor nulo o 0 de forma persistente (_ADX_ZERO_COUNT_THRESHOLD
         ciclos consecutivos), retorna HEALTH_CRITICAL.
         """
@@ -206,10 +205,12 @@ class IntegrityGuard:
             config = self._storage.get_sys_config()
             dynamic_params: Dict = config.get("dynamic_params", {})
             if isinstance(dynamic_params, str):
-                import json
                 dynamic_params = json.loads(dynamic_params)
 
             adx_value = _normalize_adx(dynamic_params.get("adx", dynamic_params.get("ADX")))
+            if adx_value is None:
+                adx_value = self._get_fallback_adx_from_market_pulse()
+
             market_probably_closed = self._is_market_probably_closed(config)
             repair_armed = bool(config.get("oem_repair_force_ohlc_reload"))
             tick_age_s = self._get_tick_age_seconds(config)
@@ -222,7 +223,7 @@ class IntegrityGuard:
                     name="Check_Veto_Logic",
                     status=HealthStatus.WARNING,
                     message=(
-                        "ADX inválido/nulo/cero durante reparación OEM activa "
+                        "ADX invalido/nulo/cero durante reparacion OEM activa "
                         f"(tick_age={tick_age_s if tick_age_s is not None else 'unknown'}s). "
                         "Se mantiene en WARNING hasta completar recarga."
                     ),
@@ -238,8 +239,8 @@ class IntegrityGuard:
                     name="Check_Veto_Logic",
                     status=HealthStatus.WARNING,
                     message=(
-                        "ADX inválido/nulo/cero con mercado inactivo (tick stale). "
-                        f"No se eleva a CRITICAL fuera de sesión. tick_age={tick_age_s if tick_age_s is not None else 'unknown'}s"
+                        "ADX invalido/nulo/cero con mercado inactivo (tick stale). "
+                        f"No se eleva a CRITICAL fuera de sesion. tick_age={tick_age_s if tick_age_s is not None else 'unknown'}s"
                     ),
                     trace_id=trace_id,
                     elapsed_ms=round(elapsed, 2),
@@ -256,9 +257,9 @@ class IntegrityGuard:
                     name="Check_Veto_Logic",
                     status=HealthStatus.CRITICAL,
                     message=(
-                        f"ADX inválido/nulo/cero durante {self._adx_zero_streak} ciclos "
+                        f"ADX invalido/nulo/cero durante {self._adx_zero_streak} ciclos "
                         f"consecutivos (umbral {_ADX_ZERO_COUNT_THRESHOLD}). "
-                        f"Indicadores críticos comprometidos. tick_age={tick_age_s if tick_age_s is not None else 'unknown'}s"
+                        f"Indicadores criticos comprometidos. tick_age={tick_age_s if tick_age_s is not None else 'unknown'}s"
                     ),
                     trace_id=trace_id,
                     elapsed_ms=round(elapsed, 2),
@@ -268,7 +269,7 @@ class IntegrityGuard:
                     name="Check_Veto_Logic",
                     status=HealthStatus.WARNING,
                     message=(
-                        f"ADX inválido/nulo/cero en {self._adx_zero_streak} ciclo(s). "
+                        f"ADX invalido/nulo/cero en {self._adx_zero_streak} ciclo(s). "
                         f"Monitoreo activo (umbral {_ADX_ZERO_COUNT_THRESHOLD}). "
                         f"tick_age={tick_age_s if tick_age_s is not None else 'unknown'}s"
                     ),
@@ -278,7 +279,7 @@ class IntegrityGuard:
             return CheckResult(
                 name="Check_Veto_Logic",
                 status=HealthStatus.OK,
-                message=f"ADX válido: {adx_value}.",
+                message=f"ADX valido: {adx_value}.",
                 trace_id=trace_id,
                 elapsed_ms=round(elapsed, 2),
             )
@@ -287,12 +288,12 @@ class IntegrityGuard:
             return CheckResult(
                 name="Check_Veto_Logic",
                 status=HealthStatus.CRITICAL,
-                message=f"Error al leer indicadores críticos: {exc}",
+                message=f"Error al leer indicadores criticos: {exc}",
                 trace_id=trace_id,
                 elapsed_ms=round(elapsed, 2),
             )
 
-    # ── Helpers ───────────────────────────────────────────────────────────────
+    # -- Helpers --------------------------------------------------------------
 
     @staticmethod
     def _aggregate_status(results: List[CheckResult]) -> HealthStatus:
@@ -351,6 +352,32 @@ class IntegrityGuard:
         except Exception:
             return None
 
+    def _get_fallback_adx_from_market_pulse(self) -> Optional[float]:
+        """
+        Fallback ADX source from latest sys_market_pulse entries.
+
+        Uses the maximum non-zero ADX found across latest symbol pulses.
+        Returns None when pulse data is unavailable or all values are invalid.
+        """
+        try:
+            if not hasattr(self._storage, "get_all_sys_market_pulses"):
+                return None
+
+            pulses = self._storage.get_all_sys_market_pulses() or {}
+            if not isinstance(pulses, dict) or not pulses:
+                return None
+
+            best: Optional[float] = None
+            for pulse_entry in pulses.values():
+                adx = _extract_adx_from_pulse_entry(pulse_entry)
+                if adx is None:
+                    continue
+                if best is None or adx > best:
+                    best = adx
+            return best
+        except Exception:
+            return None
+
     @staticmethod
     def _emit_health_log(report: HealthReport) -> None:
         log_fn = logger.info
@@ -378,3 +405,27 @@ def _normalize_adx(adx_raw: object) -> Optional[float]:
     if not math.isfinite(adx) or adx <= 0.0:
         return None
     return adx
+
+
+def _extract_adx_from_pulse_entry(pulse_entry: object) -> Optional[float]:
+    """Extract ADX from a pulse entry with tolerant nested-shape parsing."""
+    if not isinstance(pulse_entry, dict):
+        return None
+
+    data = pulse_entry.get("data")
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except Exception:
+            data = None
+
+    metrics = None
+    if isinstance(data, dict):
+        metrics = data.get("metrics")
+        if not isinstance(metrics, dict):
+            metrics = data
+
+    if not isinstance(metrics, dict):
+        return None
+
+    return _normalize_adx(metrics.get("adx", metrics.get("ADX")))

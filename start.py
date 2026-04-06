@@ -184,6 +184,7 @@ def _seed_risk_config(storage: "StorageManager") -> None:
                 "risk_per_trade": 0.005,
                 "max_consecutive_losses": 3,
                 "pilar3_min_trades": 5,
+                "adx": None,
             }
         elif "pilar3_min_trades" not in existing.get("dynamic_params", {}):
             # Sub-key patch: dynamic_params exists but pre-dates HU 3.13

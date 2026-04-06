@@ -101,6 +101,13 @@ class TestWriteRepairFlags:
 
         storage.update_sys_config.assert_not_called()
 
+    def test_adx_sanity_warn_no_escribe_ningun_flag(self):
+        """adx_sanity WARN no debe armar repair loop automático."""
+        oem, storage, _ = _make_oem_with_failing()
+        oem._write_repair_flags(failing=[], warnings=["adx_sanity"])
+
+        storage.update_sys_config.assert_not_called()
+
     def test_rejection_rate_fail_no_escribe_ningun_flag(self):
         """rejection_rate FAIL → sin auto-reparación (causa puede ser legítima)."""
         oem, storage, _ = _make_oem_with_failing("rejection_rate")

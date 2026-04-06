@@ -31,6 +31,7 @@ def _make_storage(sys_config: dict) -> MagicMock:
     """Crea un StorageManager mock con get_sys_config() configurado."""
     storage = MagicMock()
     storage.get_sys_config.return_value = sys_config
+    storage.get_all_sys_market_pulses.return_value = {}
     return storage
 
 
@@ -210,7 +211,26 @@ class TestCheckVetoLogic:
         result = guard._check_veto_logic("trace-029")
 
         assert result.status == HealthStatus.WARNING
-        assert "reparación OEM activa" in result.message
+        assert "reparacion OEM activa" in result.message
+        assert guard._adx_zero_streak == 0
+
+    def test_integrity_guard_check_veto_logic_usa_fallback_desde_market_pulse(self):
+        storage = _make_storage(
+            {
+                "dynamic_params": {},
+                "last_market_tick_ts": _fresh_tick_ts(),
+            }
+        )
+        storage.get_all_sys_market_pulses.return_value = {
+            "EURUSD": {"data": {"metrics": {"adx": 21.7}}}
+        }
+
+        guard = IntegrityGuard(storage=storage)
+        guard._adx_zero_streak = 2
+        result = guard._check_veto_logic("trace-030")
+
+        assert result.status == HealthStatus.OK
+        assert "21.7" in result.message
         assert guard._adx_zero_streak == 0
 
 

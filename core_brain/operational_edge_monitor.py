@@ -219,6 +219,8 @@ class OperationalEdgeMonitor(threading.Thread):
         "adx_sanity":          "oem_repair_force_ohlc_reload",
         "score_stale":         "oem_repair_force_ranking",
     }
+    # Warnings are only auto-repairable for selected checks.
+    _WARN_REPAIR_CHECKS = {"score_stale"}
 
     def _write_repair_flags(self, failing: List[str], warnings: List[str]) -> None:
         """
@@ -230,7 +232,9 @@ class OperationalEdgeMonitor(threading.Thread):
         flags: Dict[str, str] = {}
         requested_at = self.last_checked_at or datetime.now(timezone.utc).isoformat()
 
-        for check in failing + warnings:
+        checks_to_repair = list(failing) + [w for w in warnings if w in self._WARN_REPAIR_CHECKS]
+
+        for check in checks_to_repair:
             flag_key = self._REPAIR_FLAG_MAP.get(check)
             if flag_key and flag_key not in flags:
                 flags[flag_key] = requested_at
@@ -568,13 +572,13 @@ class OperationalEdgeMonitor(threading.Thread):
 
     def _classify_stagnation_cause(self, instance: Any, cfg: Dict[str, Any]) -> str:
         """Clasifica causa probable de estancamiento para diagnóstico OEM."""
-        if not self._any_session_active():
-            return "OUTSIDE_SESSION_WINDOW"
-
         symbol = str(getattr(instance, "symbol", "") or "")
         active_symbols = cfg.get("active_symbols")
         if symbol and isinstance(active_symbols, list) and active_symbols and symbol not in active_symbols:
             return "SYMBOL_NOT_WHITELISTED"
+
+        if not self._any_session_active():
+            return "OUTSIDE_SESSION_WINDOW"
 
         target_regime = str(getattr(instance, "target_regime", "") or "").upper()
         if target_regime and target_regime != "ANY":
