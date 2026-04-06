@@ -21,6 +21,17 @@
 
 ## 📋 Tareas del Sprint
 
+- [DONE] **HU 10.9: Stagnation Intelligence — Shadow con 0 operaciones** (Trace_ID: SHADOW-STAGNATION-INTEL-2026-04-05 | 2026-04-05)
+  - `core_brain/operational_edge_monitor.py`: nuevo check `shadow_stagnation` integrado en `run_checks()` como 10° invariante OEM
+  - Heurística de causa probable implementada: `OUTSIDE_SESSION_WINDOW` · `REGIME_MISMATCH` · `SYMBOL_NOT_WHITELISTED` · `UNKNOWN`
+  - Idempotencia diaria por `instance_id` con persistencia en `sys_config` (`oem_shadow_stagnation_alerts_daily`) + cache en memoria del OEM
+  - Registro de evidencia en `sys_audit_logs` vía `log_audit_event(action='SHADOW_STAGNATION_ALERT')`
+  - Tests nuevos: `tests/test_oem_stagnation.py` (6/6 PASSED)
+  - Compatibilidad OEM actualizada: tests de conteo de checks migrados de 9→10 en `test_operational_edge_monitor.py` y `test_oem_production_integration.py`
+  - Validación focalizada: `53/53 PASSED` (OEM suite)
+  - `scripts/validate_all.py`: `27/27 PASSED`
+  - `start.py` validado en arranque (OEM levantado con `checks=10`; proceso detenido tras smoke test)
+
 - [DONE] **HU 10.19: Hardening OEM + ADX + SSOT Naming** (Trace_ID: ETI-SRE-AUDIT-OEM-ADX-SSOT-2026-04-05 | 2026-04-05)
   - Heartbeat OEM endurecido con umbral configurable `oem_silenced_component_gap_seconds` y mensaje explícito de Componente Silenciado
   - Fail-fast ADX/OHLC aplicado en scanner + normalización robusta en integrity guard para evitar evaluación con dato inválido
@@ -82,7 +93,7 @@
 
 ## 📊 Snapshot de Cierre
 
-- **HUs completadas**: 10.19 (SRE Hardening), 10.18 (DISC-003 Orquestador), 10.17b (ResilienceConsole API+UI), 10.16 (Self-Healing+Correlation), 9.4 (Synapse WS Push), SRE-Hotfix-2026-04-01
+- **HUs completadas**: 10.9 (Stagnation Intelligence), 10.19 (SRE Hardening), 10.18 (DISC-003 Orquestador), 10.17b (ResilienceConsole API+UI), 10.16 (Self-Healing+Correlation), 9.4 (Synapse WS Push), SRE-Hotfix-2026-04-01
 - **Tests suite total**: 2269 passed, 3 skipped
 - **validate_all.py**: 27/27 PASSED
 - **Artefactos nuevos**: `core_brain/orchestrators/` (módulos de descomposición), `ui/src/components/diagnostic/ResilienceConsole.tsx`, `tests/test_schema_ssot_canonical_tables.py`, `tests/test_system_db_heartbeat_canonical.py`
@@ -129,10 +140,10 @@
 
 ---
 
-# SPRINT 23: EDGE RELIABILITY — CERTEZA DE COMPONENTES & AUTO-AUDITORÍA — [DEV]
+# SPRINT 23: EDGE RELIABILITY — CERTEZA DE COMPONENTES & AUTO-AUDITORÍA — [DONE]
 
 **Inicio**: 27 de Marzo, 2026
-**Fin**: en curso
+**Fin**: 31 de Marzo, 2026
 **Objetivo**: Garantizar que el sistema se auto-audita en tiempo real mediante la activación del `OperationalEdgeMonitor` en producción, añadir guards de timeout en el loop principal para convertir bloqueos silenciosos en eventos observables, y establecer tests de contrato que conviertan cada bug conocido en una red de seguridad permanente contra regresiones.
 **Épica**: E13 (EDGE Reliability) | **Trace_ID**: EDGE-RELIABILITY-SELF-AUDIT-2026
 **Dominios**: 10_INFRASTRUCTURE_RESILIENCY
@@ -243,60 +254,6 @@
     3. Métricas SHADOW en WebSocket: `broadcast_shadow_update` contiene profit_factor/win_rate reales
     4. `calculate_weighted_score`: integrar en flujo o eliminar dead code
   - Cada test debe estar RED antes del fix correspondiente, GREEN después
-
-- [DEV] **HU 10.14: Resilience Playbook & Interface Definition**
-  - **Épica**: E14 | **Trace_ID**: ARCH-RESILIENCE-ENGINE-V1-A
-  - `docs/10_INFRA_RESILIENCY.md` — sección `## 🏛️ E14: Arquitectura de Resiliencia Granular` añadida ✅ (30-Mar-2026) + ampliada ✅ (31-Mar-2026):
-    - Matriz L0-L3 ampliada con `ResilienceLevel`, `EdgeAction`, `SystemPosture`
-    - Contrato `ResilienceInterface` (clase abstracta Python)
-    - Especificación de `EdgeEventReport` (dataclass)
-    - Motor de correlación: reglas de escalada automática (≥3 L0 → L3, ≥2 L1 en 5 min → DEGRADED)
-    - Mapeo de gates actuales → `ResilienceInterface` (IntegrityGuard, AnomalySentinel, CoherenceService)
-    - Roadmap actualizado: HU 10.12-10.16 con Sprint asignado
-    - **Matriz de Intervención** (31-Mar-2026): tabla L0-L3 → Postura → Acción → Comportamiento del loop — es la "ley" del ResilienceManager
-    - **Umbrales del Heartbeat** (31-Mar-2026): separación explícita entre resultado de check (OK/WARN/FAIL) y postura global (NORMAL/CAUTION/DEGRADED/STRESSED)
-  - `core_brain/resilience.py` — NUEVO: `ResilienceLevel`, `EdgeAction`, `SystemPosture` (enums); `EdgeEventReport` (dataclass); `ResilienceInterface` (ABC). Solo contratos — sin lógica de orquestación.
-  - **Criterios de aceptación**:
-    - `from core_brain.resilience import ResilienceInterface, EdgeEventReport` importa sin errores
-    - Archivo `core_brain/resilience.py` existe y pasa linting
-    - `SystemPosture` (NO `SystemState`) definido con exactamente 4 valores: `NORMAL`, `CAUTION`, `DEGRADED`, `STRESSED`
-    - Documentación completa en `docs/10_INFRA_RESILIENCY.md` incluyendo Matriz de Intervención
-    - Tests: `tests/test_resilience_interface.py` — contrato de la interfaz (subclase concreta implementa `check_health()`, dataclass `EdgeEventReport` instancia correctamente, los 4 valores de `SystemPosture` verificados)
-
----
-
-# SPRINT 24: ARQUITECTURA DE RESILIENCIA GRANULAR (E14) — [TODO]
-
-**Inicio**: por definir
-**Fin**: por definir
-**Objetivo**: Implementar el `ResilienceManager` como árbitro único de acciones defensivas, refactorizar el `MainOrchestrator` para eliminar los shutdowns unilaterales y añadir el motor de Self-Healing + Correlación de fallos.
-**Épica**: E14 | **Trace_ID**: ARCH-RESILIENCE-ENGINE-V1
-**Dominios**: 10_INFRASTRUCTURE_RESILIENCY
-
-## 📋 Tareas del Sprint
-
-- [TODO] **HU 10.15: ResilienceManager & Orchestrator Refactor**
-  - **Épica**: E14 | **Trace_ID**: ARCH-RESILIENCE-ENGINE-V1-B
-  - `core_brain/resilience.py` — `ResilienceManager`: singleton con `process_report(report: EdgeEventReport) → SystemPosture`. Lógica de transición de estados según tabla de `docs/10_INFRA_RESILIENCY.md`. Persistencia de eventos en `sys_audit_logs`. `get_posture() → SystemPosture` sin I/O.
-  - `core_brain/main_orchestrator.py` — Refactor del loop principal:
-    - Instanciar `self.resilience_manager = ResilienceManager(storage=self.storage)` (bloque #16)
-    - **Integrity Gate**: `report = self.integrity_guard.check_health(); posture = self.resilience_manager.process_report(report)` — solo `STRESSED` rompe el loop; `DEGRADED` bloquea nuevas entradas.
-    - **Anomaly Gate**: ídem — Flash Crash 1 activo → `L0: MUTE`; flash crash sistémico → `L3: LOCKDOWN`.
-    - **Coherence Gate**: `CoherenceService.check_coherence_veto()` reporta vía `ResilienceManager`.
-  - **Criterios de aceptación**:
-    - `IntegrityGuard` WARNING no detiene el loop (solo STRESSED lo detiene)
-    - `AnomalySentinel` con 1 anomalía → postura `CAUTION`, no shutdown
-    - `sys_audit_logs` registra cada transición de postura con `trace_id`
-    - Tests: `tests/test_resilience_manager.py` — transiciones de estado, process_report, persistencia
-
-- [TODO] **HU 10.16: Self-Healing & Correlation Engine**
-  - **Épica**: E14 | **Trace_ID**: ARCH-RESILIENCE-ENGINE-V1-C
-  - `core_brain/resilience.py` — `CorrelationEngine`: ventana deslizante de 5 min; reglas: ≥3 `L0:MUTE` simultáneos → emit `L3:LOCKDOWN`; ≥2 `L1:QUARANTINE` en < 5 min → emit `L2:SERVICE` degradado.
-  - `core_brain/resilience.py` — `SelfHealingPlaybook`: acciones por `EdgeAction.SELF_HEAL` (reiniciar socket de broker, limpiar caché de señales, reconectar MT5).
-  - **Criterios de aceptación**:
-    - 3 activos muteados en 4 min → sistema transita a `STRESSED` automáticamente
-    - `L2:SELF_HEAL` reintenta hasta 3 veces antes de escalar a `L3`
-    - Tests: `tests/test_correlation_engine.py` — ventana temporal, escalada automática, self-heal retry
 
 ---
 

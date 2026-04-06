@@ -1,19 +1,20 @@
 """
 operational_edge_monitor.py — Verificación de Invariantes de Negocio
 
-Componente standalone que ejecuta 9 checks contra la capa de almacenamiento
+Componente standalone que ejecuta 10 checks contra la capa de almacenamiento
 y reporta el estado de salud operacional del sistema.
 
 Checks:
-  shadow_sync              — Instancias SHADOW maduras acumulando trades
-  backtest_quality         — Al menos una estrategia con backtest_score > 0
-  connector_exec           — Al menos un conector de ejecución habilitado
-  signal_flow              — Señales generadas en las últimas 2h
-  adx_sanity               — ADX no atascado en 0 en los market pulses
-  lifecycle_coherence      — Sin estrategias con rankings vencidos >48h
-  rejection_rate           — Tasa de rechazo de señales < 95%
-  score_stale              — Rankings actualizados en las últimas 72h
-  orchestrator_heartbeat   — Loop principal sin bloqueos (heartbeat < 20 min)
+    shadow_sync              — Instancias SHADOW maduras acumulando trades
+    backtest_quality         — Al menos una estrategia con backtest_score > 0
+    connector_exec           — Al menos un conector de ejecución habilitado
+    signal_flow              — Señales generadas en las últimas 2h
+    adx_sanity               — ADX no atascado en 0 en los market pulses
+    lifecycle_coherence      — Sin estrategias con rankings vencidos >48h
+    rejection_rate           — Tasa de rechazo de señales < 95%
+    score_stale              — Rankings actualizados en las últimas 72h
+    orchestrator_heartbeat   — Loop principal sin bloqueos (heartbeat < 20 min)
+    shadow_stagnation        — Instancias SHADOW activas sin trades recientes
 """
 import json
 import logging
@@ -43,7 +44,7 @@ class CheckResult:
 
 class OperationalEdgeMonitor(threading.Thread):
     """
-    Daemon thread that audits 8 business invariants on every tick.
+    Daemon thread that audits business invariants on every tick.
 
     All checks are also callable synchronously via run_checks() and
     get_health_summary() for use in REST health endpoints or CLI scripts.
@@ -62,6 +63,8 @@ class OperationalEdgeMonitor(threading.Thread):
     MAX_HEARTBEAT_GAP_WARN_MINUTES = 10
     MAX_HEARTBEAT_GAP_FAIL_MINUTES = 20
     SILENCED_COMPONENT_GAP_SECONDS_DEFAULT = 120
+    SHADOW_STAGNATION_WINDOW_HOURS_DEFAULT = 24
+    SHADOW_STAGNATION_ALERTS_STATE_KEY = "oem_shadow_stagnation_alerts_daily"
 
     def __init__(
         self,
@@ -77,12 +80,13 @@ class OperationalEdgeMonitor(threading.Thread):
         self.running = True
         self.last_results: Dict[str, CheckResult] = {}
         self.last_checked_at: Optional[str] = None
+        self._stagnation_alert_cache: Dict[str, str] = {}
 
     # ── Thread interface ──────────────────────────────────────────────────────
 
     def run(self) -> None:
         logger.info(
-            "[OPS-EDGE] Operational invariant monitor started (interval=%ds, checks=9)",
+            "[OPS-EDGE] Operational invariant monitor started (interval=%ds, checks=10)",
             self.interval_seconds,
         )
         while self.running:
@@ -145,7 +149,7 @@ class OperationalEdgeMonitor(threading.Thread):
     # ─────────────────────────────────────────────────────────────────────────
 
     def run_checks(self) -> Dict[str, CheckResult]:
-        """Ejecuta los 9 checks. Errores individuales no detienen el resto."""
+        """Ejecuta los checks OEM. Errores individuales no detienen el resto."""
         checks = {
             "shadow_sync": self._check_shadow_sync,
             "backtest_quality": self._check_backtest_quality,
@@ -156,6 +160,7 @@ class OperationalEdgeMonitor(threading.Thread):
             "rejection_rate": self._check_rejection_rate,
             "score_stale": self._check_score_stale,
             "orchestrator_heartbeat": self._check_orchestrator_heartbeat,
+            "shadow_stagnation": self._check_shadow_stagnation,
         }
         results = {}
         for name, fn in checks.items():
@@ -481,6 +486,127 @@ class OperationalEdgeMonitor(threading.Thread):
             CheckStatus.OK,
             f"Loop principal activo (heartbeat hace {gap_minutes:.1f} min, source={source})",
         )
+
+    def _check_shadow_stagnation(self) -> CheckResult:
+        """Detecta instancias SHADOW activas sin trades en la ventana operativa."""
+        if self.shadow_storage is None:
+            return CheckResult(CheckStatus.WARN, "shadow_storage no inyectado — check omitido")
+
+        cfg = self.storage.get_sys_config() if hasattr(self.storage, "get_sys_config") else {}
+        window_raw = cfg.get("shadow_stagnation_hours", self.SHADOW_STAGNATION_WINDOW_HOURS_DEFAULT)
+        try:
+            window_hours = max(1, int(window_raw))
+        except (TypeError, ValueError):
+            window_hours = self.SHADOW_STAGNATION_WINDOW_HOURS_DEFAULT
+
+        instances = self.shadow_storage.list_active_instances()
+        if not instances:
+            return CheckResult(CheckStatus.OK, "Sin instancias SHADOW activas para evaluar")
+
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=window_hours)
+        today_utc = datetime.now(timezone.utc).date().isoformat()
+        stale_instances: List[str] = []
+        causes: List[str] = []
+        emitted = 0
+
+        for instance in instances:
+            instance_id = str(getattr(instance, "instance_id", ""))
+            if not instance_id:
+                continue
+
+            recent_trades = self._count_recent_shadow_trades(instance_id, cutoff)
+            if recent_trades > 0:
+                continue
+
+            stale_instances.append(instance_id)
+            cause = self._classify_stagnation_cause(instance, cfg)
+            causes.append(cause)
+
+            if self._can_emit_stagnation_alert(instance_id, today_utc, cfg):
+                self.storage.log_audit_event(
+                    user_id="system",
+                    action="SHADOW_STAGNATION_ALERT",
+                    resource="shadow_instance",
+                    resource_id=instance_id,
+                    status="warning",
+                    reason=(
+                        f"Instance={instance_id} has 0 SHADOW trades in the last {window_hours}h; "
+                        f"probable_cause={cause}"
+                    ),
+                )
+                emitted += 1
+                self._mark_stagnation_alert_emitted(instance_id, today_utc, cfg)
+
+        if not stale_instances:
+            return CheckResult(CheckStatus.OK, f"Sin estancamiento SHADOW en ventana de {window_hours}h")
+
+        unique_causes = sorted(set(causes))
+        return CheckResult(
+            CheckStatus.WARN,
+            (
+                f"SHADOW_STAGNATION_ALERT: {len(stale_instances)} instancia(s) sin trades en {window_hours}h; "
+                f"causas={unique_causes}; alerts_emitidas={emitted}"
+            ),
+        )
+
+    def _count_recent_shadow_trades(self, instance_id: str, cutoff: datetime) -> int:
+        """Cuenta trades SHADOW de una instancia con close_time >= cutoff."""
+        if not hasattr(self.storage, "get_sys_trades"):
+            return 0
+        trades = self.storage.get_sys_trades(
+            execution_mode="SHADOW",
+            instance_id=instance_id,
+            limit=1000,
+        )
+        recent = 0
+        for trade in trades or []:
+            ts_raw = trade.get("close_time") or trade.get("created_at")
+            ts = _parse_ts(ts_raw)
+            if ts and ts >= cutoff:
+                recent += 1
+        return recent
+
+    def _classify_stagnation_cause(self, instance: Any, cfg: Dict[str, Any]) -> str:
+        """Clasifica causa probable de estancamiento para diagnóstico OEM."""
+        if not self._any_session_active():
+            return "OUTSIDE_SESSION_WINDOW"
+
+        symbol = str(getattr(instance, "symbol", "") or "")
+        active_symbols = cfg.get("active_symbols")
+        if symbol and isinstance(active_symbols, list) and active_symbols and symbol not in active_symbols:
+            return "SYMBOL_NOT_WHITELISTED"
+
+        target_regime = str(getattr(instance, "target_regime", "") or "").upper()
+        if target_regime and target_regime != "ANY":
+            pulses = self.storage.get_all_sys_market_pulses() if hasattr(self.storage, "get_all_sys_market_pulses") else {}
+            observed_regimes = {
+                str((p.get("data") or p).get("regime", "")).upper()
+                for p in (pulses or {}).values()
+                if isinstance((p.get("data") or p), dict)
+            }
+            observed_regimes.discard("")
+            if observed_regimes and target_regime not in observed_regimes:
+                return "REGIME_MISMATCH"
+
+        return "UNKNOWN"
+
+    def _can_emit_stagnation_alert(self, instance_id: str, day_key: str, cfg: Dict[str, Any]) -> bool:
+        """Idempotencia diaria por instancia para SHADOW_STAGNATION_ALERT."""
+        if self._stagnation_alert_cache.get(instance_id) == day_key:
+            return False
+        state = cfg.get(self.SHADOW_STAGNATION_ALERTS_STATE_KEY, {})
+        if not isinstance(state, dict):
+            return True
+        return state.get(instance_id) != day_key
+
+    def _mark_stagnation_alert_emitted(self, instance_id: str, day_key: str, cfg: Dict[str, Any]) -> None:
+        """Persist idempotencia diaria del alert de estancamiento en sys_config."""
+        self._stagnation_alert_cache[instance_id] = day_key
+        state = cfg.get(self.SHADOW_STAGNATION_ALERTS_STATE_KEY, {})
+        if not isinstance(state, dict):
+            state = {}
+        state[instance_id] = day_key
+        self.storage.update_sys_config({self.SHADOW_STAGNATION_ALERTS_STATE_KEY: state})
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -4,11 +4,11 @@
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-05 UTC)**: Sprint 25 CERRADO — E13 + E14 ARCHIVADAS · Trace_ID último commit: ETI-SRE-AUDIT-OEM-ADX-SSOT-2026-04-05 · baseline **2269 passed, 3 skipped** · **validate_all 27/27 PASSED**.
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-05 UTC)**: HU 10.9 registrada en ledger (Sprint 25) · Trace_ID: SHADOW-STAGNATION-INTEL-2026-04-05 · baseline **2269 passed, 3 skipped** · **validate_all 27/27 PASSED**.
 
 ---
 
-## � FORMATO ÉPICA-ARCHIVO
+## 📋 FORMATO ÉPICA-ARCHIVO
 
 Cuando una Épica se completa, se archiva aquí con el siguiente formato comprimido y luego **se elimina del ROADMAP**. El historial técnico detallado permanece en los Registros cronológicos más abajo.
 
@@ -2523,6 +2523,23 @@ Reducción de `server.py` de 1107 a 272 líneas (-75.4%). Extracción de lógica
 - El hallazgo DISC-005 queda resuelto a nivel operativo.
 - El enfoque final no necesitó un campo explícito `caution_event_cleared`; la transición se detecta con `previous_symbols - caution_symbols`.
 - Cualquier mejora adicional en narrativa o diagramas del MANIFESTO se considera refinamiento documental, no pendiente funcional del hallazgo.
+
+### HU 10.9 — Stagnation Intelligence (Cierre Técnico)
+
+**Trace_ID**: `SHADOW-STAGNATION-INTEL-2026-04-05`  
+**Estado**: ✅ COMPLETADA (Sprint 25)
+
+**Implementación**:
+1. `core_brain/operational_edge_monitor.py`: nuevo check `shadow_stagnation` como 10° invariante OEM.
+2. Causa probable inferida por heurística: `OUTSIDE_SESSION_WINDOW` · `REGIME_MISMATCH` · `SYMBOL_NOT_WHITELISTED` · `UNKNOWN`.
+3. Idempotencia diaria por instancia: estado persistido en `sys_config` (`oem_shadow_stagnation_alerts_daily`) + caché local del OEM.
+4. Evidencia operacional en `sys_audit_logs` usando `log_audit_event(action='SHADOW_STAGNATION_ALERT')`.
+
+**Validación**:
+- ✅ `tests/test_oem_stagnation.py`: 6/6 PASSED.
+- ✅ OEM suite focalizada: 53/53 PASSED.
+- ✅ `scripts/validate_all.py`: 27/27 PASSED.
+- ✅ `start.py`: arranque validado sin regresión (OEM activo con `checks=10`).
 
 
 **Validación**:

@@ -637,7 +637,7 @@ async def main() -> None:
 
         from core_brain.server import set_oem_instance
         set_oem_instance(oem)
-        logger.info("[OK] Operational Edge Monitor activo (9 invariantes de negocio, cada 5 min)")
+        logger.info("[OK] Operational Edge Monitor activo (10 invariantes de negocio, cada 5 min)")
 
         # 9. Autonomous Health Service (EDGE Autonomy)
         logger.info("[INIT] Inicializando Servicio de Salud Autónomo...")

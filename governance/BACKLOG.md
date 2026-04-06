@@ -119,17 +119,6 @@
     * **Descripción**: Sistema de monitoreo de signos vitales y auto-recuperación de servicios.
     * **🖥️ UI**: Widget de "Status Vital" con log de eventos técnicos.
 
-* **HU 10.9: Stagnation Intelligence — Shadow con 0 operaciones**
-    * **Prioridad**: Alta
-    * **Trace_ID**: SHADOW-STAGNATION-INTEL-2026-03-25
-    * **Contexto**: Estrategias en SHADOW con `mode='SHADOW'` acumulan 0 trades en sesiones donde las condiciones de mercado no coinciden con las ventanas de activación (ej. SESS_EXT sólo 13:00-16:00 UTC). El sistema no distingue entre "sin señal = correcto" y "sin señal = bug silencioso".
-    * **Descripción**: Implementar en `OperationalEdgeMonitor` un check de estancamiento que detecte instancias SHADOW con 0 trades en las últimas N horas y emita evento diagnóstico con causa probable (fuera de ventana horaria, régimen incompatible, símbolo no habilitado). No bloquea ni promueve — sólo alerta y registra en `sys_audit_logs`.
-    * **Criterios de aceptación**:
-        - Instancia SHADOW con 0 trades en 24h emite evento `SHADOW_STAGNATION_ALERT`
-        - Causa probable incluida: `OUTSIDE_SESSION_WINDOW` · `REGIME_MISMATCH` · `SYMBOL_NOT_WHITELISTED` · `UNKNOWN`
-        - Check idempotente — no genera múltiples alertas por la misma instancia en el mismo día
-        - Tests verifican detección y clasificación de causa
-
 * **HU 10.6: AutonomousSystemOrchestrator — Diseño FASE4** `[TODO]`
     * **Prioridad**: Media (diseño y documentación, no implementación de código aún)
     * **Descripción**: Diseñar e documentar en `docs/` el `AutonomousSystemOrchestrator` que coordina los 13 componentes EDGE existentes (OperationalEdgeMonitor, EdgeTuner, DedupLearner, CoherenceMonitor, DrawdownMonitor, ExecutionFeedbackCollector, CircuitBreaker, PositionSizeMonitor, RegimeClassifier, ClosingMonitor, AutonomousHealthService, HealthManager, CoherenceService) como un sistema coherente de auto-diagnóstico y healing. Niveles de autonomía: OBSERVE | SUGGEST | HEAL.

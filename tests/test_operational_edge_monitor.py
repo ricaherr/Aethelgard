@@ -425,14 +425,14 @@ class TestCheckScoreStale:
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestRunChecksAndSummary:
-    def test_run_checks_returns_all_9_keys(self):
-        """run_checks() debe retornar exactamente los 9 checks conocidos."""
+    def test_run_checks_returns_all_10_keys(self):
+        """run_checks() debe retornar exactamente los 10 checks conocidos."""
         monitor = OperationalEdgeMonitor(storage=_make_storage())
         results = monitor.run_checks()
         expected_keys = {
             "shadow_sync", "backtest_quality", "connector_exec", "signal_flow",
             "adx_sanity", "lifecycle_coherence", "rejection_rate", "score_stale",
-            "orchestrator_heartbeat",
+            "orchestrator_heartbeat", "shadow_stagnation",
         }
         assert set(results.keys()) == expected_keys
 

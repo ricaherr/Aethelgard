@@ -128,7 +128,7 @@ class TestOemProductionIntegration:
         assert oem.last_checked_at is None
 
     def test_oem_run_checks_popula_last_results(self, mock_storage, shadow_storage):
-        """Después de run_checks(), last_results debe contener los 9 checks."""
+        """Después de run_checks(), last_results debe contener los 10 checks."""
         oem = OperationalEdgeMonitor(
             storage=mock_storage,
             shadow_storage=shadow_storage,
@@ -136,11 +136,12 @@ class TestOemProductionIntegration:
         )
         oem.run_checks()
         # run_checks() no actualiza last_results — eso lo hace run()
-        # pero podemos llamar manualmente para verificar que devuelve 9
+        # pero podemos llamar manualmente para verificar que devuelve 10
         results = oem.run_checks()
-        assert len(results) == 9
+        assert len(results) == 10
         assert "orchestrator_heartbeat" in results
         assert "shadow_sync" in results
+        assert "shadow_stagnation" in results
 
     def test_oem_thread_actualiza_last_results_al_ejecutar(self, mock_storage, shadow_storage):
         """Al iniciar el thread, last_results debe popularse dentro de interval_seconds."""
@@ -161,7 +162,7 @@ class TestOemProductionIntegration:
 
         oem.stop()
         assert oem.last_checked_at is not None
-        assert len(oem.last_results) == 9
+        assert len(oem.last_results) == 10
 
     def test_get_health_summary_incluye_last_checked_at_en_none_inicial(self, mock_storage):
         """get_health_summary() funciona aunque last_checked_at sea None."""
