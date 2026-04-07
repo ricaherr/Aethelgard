@@ -36,7 +36,7 @@
 ---
 
 ## 01_IDENTITY_SECURITY (SaaS, Auth, Isolation)
-* **HU 1.3: User Role & Membership Level** *(Deuda Técnica)*
+* **HU 1.3: User Role & Membership Level** `[TODO]` *(Deuda Técnica — Prioridad Máxima)*
     * **Qué**: Completar la jerarquía de acceso SaaS (Admin / Pro / Basic — 3 tiers).
     * **Estado actual**: `ModuleManager` existe con BASIC/PREMIUM (2 niveles). `tier` en `sys_users` con `update_user_tier()`. Pero: (1) spec requiere 3 niveles; (2) `ModuleManager` lee de `modules.json` violando SSOT (debe leer de DB); (3) UI de perfil con features bloqueadas/desbloqueadas no implementada.
     * **Para qué**: Comercialización SaaS basada en niveles de membresía.
@@ -50,7 +50,7 @@
 ---
 
 ## 03_ALPHA_GENERATION (Signal Factory, Indicators)
-* **HU 3.3: Multi-Market Alpha Correlator**
+* **HU 3.3: Multi-Market Alpha Correlator** `[TODO]`
     * **Prioridad**: Baja
     * **Descripción**: Scanner de confluencia inter-mercado para validación cruzada de señales de alta fidelidad.
     * **🖥️ UI Representation**: Widget de "Correlación Sistémica" con indicadores de fuerza y dirección multi-activo.
@@ -69,15 +69,15 @@
 ---
 
 ## 06_PORTFOLIO_INTELLIGENCE (Shadow, Performance)
-* **HU 6.1: Shadow Reality Engine (Penalty Injector)**
+* **HU 6.1: Shadow Reality Engine (Penalty Injector)** `[TODO]`
     * **Prioridad**: Alta
     * **Descripción**: Desarrollo del motor de ajuste que inyecta latencia y slippage real en el rendimiento de estrategias Shadow (Lineamiento F-001).
     * **🖥️ UI Representation**: Gráfico de equity "Shadow vs Theory" con desglose de pips perdidos por ineficiencia.
 
-* **HU 6.2: Multi-Tenant Strategy Ranker** *(Pendiente resolución de ambigüedad)*
-    * **Descripción**: Sistema de clasificación darwinista para organizar estrategias por rendimiento ajustado al riesgo para cada usuario.
-    * **Nota**: `core_brain/strategy_ranker.py` (SHADOW→LIVE→QUARANTINE) existe y opera. En Sprint 4/E3 el mismo número HU 6.2 fue asignado a "Conflict Resolver". Necesita resolución: ¿este HU ya está cubierto por `StrategyRanker`?
-    * **🖥️ UI Representation**: Dashboard "Strategy Darwinism" con rankings dinámicos y estados de cuarentena.
+* **HU 6.2: Multi-Tenant Strategy Ranker** `[TODO]`
+    * **Descripción**: Sistema de clasificación darwinista para organizar estrategias por rendimiento ajustado al riesgo **por usuario (tenant)**. El `StrategyRanker` existente opera a nivel de sistema global (sin `user_id`). Brecha confirmada: falta `get_rankings_for_user(user_id)`, endpoint REST y UI de portafolio individual.
+    * **Resolución de ambigüedad**: `core_brain/strategy_ranker.py` cubre el motor del sistema (SHADOW→LIVE transitioning). Esta HU añade la capa multi-tenant de visibilidad y ranking por trader.
+    * **🖥️ UI Representation**: Dashboard "Strategy Darwinism" con rankings dinámicos y estados de cuarentena por usuario.
 
 
 ---

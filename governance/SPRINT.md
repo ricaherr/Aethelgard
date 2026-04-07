@@ -11,6 +11,46 @@
 
 ---
 
+# SPRINT 27: E16 — MEMBRESÍA SAAS, CORRELACIÓN MULTI-MERCADO & DARWINISMO DE PORTAFOLIO — [DEV]
+
+**Inicio**: 8 de Abril, 2026
+**Fin**: —
+**Objetivo**: Completar la jerarquía de acceso SaaS (3 tiers + SSOT fix), implementar correlación inter-mercado para señales de alta fidelidad, el motor Shadow Reality con penalización real de latencia/slippage, y el ranking darwinista de estrategias por tenant con UI.
+**Épica**: E16 (Membresía SaaS, Correlación Multi-Mercado & Darwinismo de Portafolio) | **Trace_ID**: E16-SAAS-PORTFOLIO-DARWIN-2026
+**Dominios**: 01_IDENTITY_SECURITY · 03_ALPHA_GENERATION · 06_PORTFOLIO_INTELLIGENCE
+
+## 📋 Tareas del Sprint
+
+- [TODO] **HU 1.3: User Role & Membership Level** *(🔴 PRIORIDAD MÁXIMA — Deuda Técnica)*
+  - Agregar tercer tier (`INSTITUTIONAL` o `ADMIN`) al enum `MembershipLevel` en `module_manager.py`.
+  - Eliminar fallback a `modules.json`: `get_modules_config()` debe leer EXCLUSIVAMENTE de DB (`StorageManager`).
+  - Sincronizar `sys_users.tier` con el nuevo enum (migración de schema si aplica).
+  - Implementar endpoint REST `GET /api/profile/membership` → devuelve tier actual + módulos desbloqueados/bloqueados.
+  - Construir componente React "Membership Badge" en menú de perfil UI con feature visibility.
+
+- [TODO] **HU 3.3: Multi-Market Alpha Correlator**
+  - Diseñar `MultiMarketCorrelator` en `core_brain/` que correlacione señales activas entre activos (FOREX, índices, commodities).
+  - Implementar índice de confluencia inter-mercado: si 3+ activos correlacionados emiten misma dirección, boost de confianza de señal.
+  - Exponer vía endpoint REST `GET /api/alpha/correlations`.
+  - Widget UI "Correlación Sistémica" con indicadores de fuerza y dirección multi-activo.
+
+- [TODO] **HU 6.1: Shadow Reality Engine (Penalty Injector)**
+  - Implementar `ShadowRealityEngine` que aplique latencia simulada y slippage real histórico al P&L de estrategias SHADOW.
+  - Ajustar métricas de `StrategyRanker` para usar P&L penalizado (no teórico) en decisiones de promoción.
+  - Exponer endpoint `GET /api/portfolio/shadow-equity/{strategy_id}` con curva "Shadow vs Theory".
+  - Gráfico UI "Shadow vs Theory Equity Curve" con desglose de pips perdidos por ineficiencia.
+
+- [TODO] **HU 6.2: Multi-Tenant Strategy Ranker**
+  - Implementar `get_rankings_for_user(user_id: str)` en `StrategyRanker` que filtre rankings por estrategias activas del tenant.
+  - Implementar endpoint REST `GET /api/portfolio/rankings` (autenticado, devuelve ranking personalizado por JWT user).
+  - Dashboard React "Strategy Darwinism" con tabla de rankings dinámicos y badges de estado (SHADOW/LIVE/QUARANTINE) por trader.
+
+## 📊 Snapshot de Cierre
+
+*(Se completa cuando el sprint finaliza)*
+
+---
+
 # SPRINT 26: E15 — PERSISTENCIA AGNÓSTICA & TELEMETRÍA BROKER-NEUTRAL — [DONE]
 
 **Inicio**: 6 de Abril, 2026

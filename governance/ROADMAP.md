@@ -30,6 +30,19 @@
 | HU 9.7 | Sci-Fi Component Library (HUDs) | 09 | — | [TODO] |
 | HU 9.8 | Event Soldering (ANOMALY + REASONING) | 09 | — | [TODO] |
 
+---
+
+### E16: Membresía SaaS, Correlación Multi-Mercado & Darwinismo de Portafolio — ACTIVA
+**Sprint**: 27 | **Trace_ID**: E16-SAAS-PORTFOLIO-DARWIN-2026
+**Objetivo**: Completar la jerarquía de acceso SaaS (3 tiers), implementar correlación inter-mercado para señales de alta fidelidad, el motor Shadow Reality con penalización real y el ranking darwinista de estrategias por usuario.
+
+| HU | Nombre | Dominio | Sprint | Estado |
+|---|---|---|---|---|
+| HU 1.3 | User Role & Membership Level (Deuda Técnica) | 01 | 27 | [TODO] |
+| HU 3.3 | Multi-Market Alpha Correlator | 03 | 27 | [TODO] |
+| HU 6.1 | Shadow Reality Engine (Penalty Injector) | 06 | 27 | [TODO] |
+| HU 6.2 | Multi-Tenant Strategy Ranker | 06 | 27 | [TODO] |
+
 > [!NOTE]
 > El historial completo de épicas completadas se encuentra en [SYSTEM_LEDGER.md](SYSTEM_LEDGER.md).
 > El protocolo y último informe de auditoría están en [AUDIT_PROTOCOL.md](AUDIT_PROTOCOL.md) y [AUDITORIA_ESTADO_REAL.md](AUDITORIA_ESTADO_REAL.md).
