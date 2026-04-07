@@ -136,7 +136,7 @@
     * **Descripción**: Diseñar e documentar en `docs/` el `AutonomousSystemOrchestrator` que coordina los 13 componentes EDGE existentes (OperationalEdgeMonitor, EdgeTuner, DedupLearner, CoherenceMonitor, DrawdownMonitor, ExecutionFeedbackCollector, CircuitBreaker, PositionSizeMonitor, RegimeClassifier, ClosingMonitor, AutonomousHealthService, HealthManager, CoherenceService) como un sistema coherente de auto-diagnóstico y healing. Niveles de autonomía: OBSERVE | SUGGEST | HEAL.
     * **Trace_ID**: FASE4-AUTONOMOUS-ORCHESTRATOR-DESIGN-2026-03-24
 
-* **HU 10.20: Telemetría Agnóstica de Proveedor (sin dependencia MT5 hardcoded)** `[TODO]`
+* **HU 10.20: Telemetría Agnóstica de Proveedor (sin dependencia MT5 hardcoded)** `[DONE]`
     * **Prioridad**: Alta (E15)
     * **Descripción**: Desacoplar chequeos de salud y telemetría de referencias explícitas a MT5 en arranque/orquestación, usando capacidades de proveedor vía `DataProviderManager` y conectores activos sin suposiciones de broker único.
     * **Alcance**: `start.py`, tareas de background del orquestador y contratos de disponibilidad de datos.

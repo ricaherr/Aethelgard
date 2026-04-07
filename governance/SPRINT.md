@@ -21,7 +21,7 @@
 
 ## 📋 Tareas del Sprint
 
-- [TODO] **HU 10.20: Telemetría agnóstica de proveedor (sin dependencia MT5 hardcoded)**
+- [DONE] **HU 10.20: Telemetría agnóstica de proveedor (sin dependencia MT5 hardcoded)**
   - Refactor de `start.py` para reducir inyecciones directas orientadas a MT5 en componentes de flujo general.
   - Revisión de chequeos de runtime para basar disponibilidad en proveedor activo/capabilidades, no en broker nominal.
   - Ajuste de tareas de background que asumen `ConnectorType.METATRADER5` como fuente única.

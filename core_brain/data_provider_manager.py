@@ -81,7 +81,6 @@ class DataProviderManager:
     DEFAULT_PROVIDERS = {
         "yahoo": {
             "name": "yahoo",
-            "enabled": True,
             "requires_auth": False,
             "priority": 50,  # Lower priority (fallback) 
             "free_tier": True,
@@ -93,7 +92,6 @@ class DataProviderManager:
         },
         "alphavantage": {
             "name": "alphavantage",
-            "enabled": False,
             "requires_auth": True,
             "priority": 80,
             "free_tier": True,
@@ -104,7 +102,6 @@ class DataProviderManager:
         },
         "twelvedata": {
             "name": "twelvedata",
-            "enabled": False,
             "requires_auth": True,
             "priority": 70,
             "free_tier": True,
@@ -115,7 +112,6 @@ class DataProviderManager:
         },
         "ccxt": {
             "name": "ccxt",
-            "enabled": False,
             "requires_auth": False,
             "priority": 90,
             "free_tier": True,
@@ -126,7 +122,6 @@ class DataProviderManager:
         },
         "polygon": {
             "name": "polygon",
-            "enabled": False,
             "requires_auth": True,
             "priority": 60,
             "free_tier": True,
@@ -137,7 +132,6 @@ class DataProviderManager:
         },
         "mt5": {
             "name": "mt5",
-            "enabled": False,
             "requires_auth": True,
             "priority": 70,  # Alternative FOREX connector (needs local MT5 install)
             "free_tier": True,
@@ -148,7 +142,6 @@ class DataProviderManager:
         },
         "ctrader": {
             "name": "ctrader",
-            "enabled": False,
             "requires_auth": True,
             "priority": 100,  # Primary FOREX connector (WebSocket, no DLL, M1 viable)
             "free_tier": False,
@@ -230,23 +223,11 @@ class DataProviderManager:
                     # CRITICAL: Use DEFAULT_PROVIDERS as fallback for priority
                     # This ensures code changes to priorities take effect immediately
                     # WITHOUT being overridden by old DB values
-                    # SPECIAL CASE: Yahoo is always fallback priority (50)
-                    # MT5 is always highest priority (100) if connected
                     default_config = self.DEFAULT_PROVIDERS.get(name, {})
-                    
-                    if name == "yahoo":
-                        # Yahoo is ALWAYS fallback priority, never override
-                        priority = 50
-                    elif name == "ctrader":
-                        # cTrader is ALWAYS primary FOREX connector (highest priority)
-                        priority = 100
-                    elif name == "mt5":
-                        # MT5 is alternative connector (lower than cTrader)
-                        priority = 70
-                    else:
-                        # For other providers, allow DB to override but use default as fallback
-                        db_priority = config_data.get('priority')
-                        priority = db_priority if db_priority is not None else default_config.get('priority', 50)
+
+                    # For all providers, prefer DB priority and fallback to metadata default.
+                    db_priority = config_data.get('priority')
+                    priority = db_priority if db_priority is not None else default_config.get('priority', 50)
                     
                     self.providers[name] = ProviderConfig(
                         name=name,
@@ -265,6 +246,7 @@ class DataProviderManager:
                     if c.enabled
                 )
                 logger.info(f"[PROVIDER PRIORITY] Active (by priority): {enabled_summary}")
+                self._backfill_provider_loader_metadata(db_providers)
             else:
                 # No DB config - initialize with defaults
                 logger.info("No provider configuration in DB - initializing with defaults")
@@ -272,13 +254,46 @@ class DataProviderManager:
         except Exception as e:
             logger.error(f"Error loading provider config from DB: {e}")
             self._initialize_defaults()
+
+    def _backfill_provider_loader_metadata(self, db_providers: List[Dict[str, Any]]) -> None:
+        """Ensure connector module/class metadata is persisted in DB for dynamic loading."""
+        providers_by_name = {str(p.get("name", "")).lower(): p for p in db_providers}
+        updated_count = 0
+
+        for name, metadata in self.provider_metadata.items():
+            db_row = providers_by_name.get(name.lower())
+            if not db_row:
+                continue
+
+            if db_row.get("connector_module") and db_row.get("connector_class"):
+                continue
+
+            self.storage.save_data_provider(
+                name=name,
+                enabled=bool(db_row.get("enabled", False)),
+                priority=int(db_row.get("priority", metadata.get("priority", 50))),
+                requires_auth=bool(db_row.get("requires_auth", metadata.get("requires_auth", False))),
+                api_key=db_row.get("api_key"),
+                api_secret=db_row.get("api_secret"),
+                additional_config=db_row.get("additional_config") or {},
+                is_system=bool(db_row.get("is_system", metadata.get("is_system", False))),
+                connector_module=metadata.get("module"),
+                connector_class=metadata.get("class"),
+            )
+            updated_count += 1
+
+        if updated_count:
+            logger.info(
+                "[PROVIDER-METADATA] Backfilled connector loader metadata for %d provider(s)",
+                updated_count,
+            )
     
     def _initialize_defaults(self) -> None:
         """Initialize default provider configurations and save to DB"""
         for name, metadata in self.provider_metadata.items():
             config = ProviderConfig(
                 name=name,
-                enabled=metadata.get("enabled", False),
+                enabled=True,
                 requires_auth=metadata.get("requires_auth", False),
                 priority=metadata.get("priority", 50),
                 free_tier=metadata.get("free_tier", True),
@@ -288,13 +303,16 @@ class DataProviderManager:
             # Save to DB
             self.storage.save_data_provider(
                 name=name,
-                enabled=config.enabled,
+                enabled=None,
                 priority=config.priority,
                 requires_auth=config.requires_auth,
                 api_key=config.api_key,
                 api_secret=config.api_secret,
                 additional_config=config.additional_config,
-                is_system=config.is_system
+                is_system=config.is_system,
+                connector_module=metadata.get("module"),
+                connector_class=metadata.get("class"),
+                insert_only=True,
             )
         
         logger.info("Initialized default provider configurations in database")
@@ -303,6 +321,7 @@ class DataProviderManager:
         """Save current provider configuration to DB"""
         try:
             for name, config in self.providers.items():
+                metadata = self.provider_metadata.get(name, {})
                 self.storage.save_data_provider(
                     name=name,
                     enabled=config.enabled,
@@ -311,7 +330,9 @@ class DataProviderManager:
                     api_key=config.api_key,
                     api_secret=config.api_secret,
                     additional_config=config.additional_config,
-                    is_system=config.is_system
+                    is_system=config.is_system,
+                    connector_module=metadata.get("module"),
+                    connector_class=metadata.get("class"),
                 )
             logger.info("Provider configuration saved to database")
         except Exception as e:
@@ -604,6 +625,13 @@ class DataProviderManager:
         
         for provider_info in active:
             name = provider_info["name"]
+            supports = [str(s).lower() for s in provider_info.get("supports", [])]
+
+            # Generic startup selection should prefer multi-asset/general providers.
+            # Crypto-only providers are considered by symbol-specific routing.
+            if supports and all(asset == "crypto" for asset in supports):
+                logger.debug(f"Skipping {name}: crypto-only provider for generic startup selection")
+                continue
             
             # Check if sys_credentials configured if required
             config: ProviderConfig = self.providers[name]
@@ -818,6 +846,49 @@ class DataProviderManager:
             "requires_auth": metadata.get("requires_auth", False),
             "free_tier": metadata.get("free_tier", True)
         }
+
+    def get_connected_active_provider(self) -> Optional[Dict[str, Any]]:
+        """
+        Resolve the first active provider that is connected and currently available.
+
+        Returns:
+            Provider descriptor with minimal telemetry metadata, or None if unavailable.
+        """
+        for provider_info in self.get_active_providers():
+            provider_name = provider_info["name"]
+            instance = self._get_provider_instance(provider_name)
+            if not instance:
+                continue
+
+            is_connected = bool(getattr(instance, "is_connected", True))
+            is_available = True
+            if hasattr(instance, "is_available"):
+                try:
+                    is_available = bool(instance.is_available())
+                except Exception:
+                    is_available = False
+
+            if not is_connected and is_available:
+                connect_fn = getattr(instance, "connect_blocking", None) or getattr(instance, "connect", None)
+                if callable(connect_fn):
+                    try:
+                        is_connected = bool(connect_fn())
+                    except Exception:
+                        is_connected = False
+
+            if not (is_connected and is_available):
+                continue
+
+            return {
+                "name": provider_name,
+                "instance": instance,
+                "priority": provider_info.get("priority", 0),
+                "supports": provider_info.get("supports", []),
+                "is_connected": is_connected,
+                "is_available": is_available,
+            }
+
+        return None
     
     def fetch_ohlc(
         self,

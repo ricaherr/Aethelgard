@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Dict, Any
+from typing import TYPE_CHECKING, Dict, Any, Optional, Tuple
 
 if TYPE_CHECKING:
     from core_brain.main_orchestrator import MainOrchestrator
@@ -16,21 +16,43 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _resolve_closed_positions_connector(orch: "MainOrchestrator") -> Optional[Tuple[str, Any]]:
+    """Pick a connected connector that can report closed positions."""
+    connectors = getattr(getattr(orch, "executor", None), "connectors", None)
+    if not isinstance(connectors, dict):
+        return None
+
+    for connector_key, connector in connectors.items():
+        if not connector:
+            continue
+        if not hasattr(connector, "get_closed_usr_positions"):
+            continue
+        if not bool(getattr(connector, "is_connected", True)):
+            continue
+
+        connector_name = getattr(connector, "provider_id", None)
+        if not connector_name:
+            connector_name = getattr(connector_key, "value", str(connector_key))
+        return str(connector_name), connector
+
+    return None
+
+
 async def check_closed_usr_positions(orch: "MainOrchestrator") -> None:
     """Check connectors for newly closed positions and process via TradeClosureListener."""
     try:
         from datetime import datetime
-        from models.broker_event import BrokerEvent, BrokerEventType, BrokerTradeClosedEvent
-        from models.signal import ConnectorType
+        from models.broker_event import BrokerEvent, BrokerEventType, BrokerTradeClosedEvent, TradeResult
 
         if not hasattr(orch.executor, "connectors"):
             return
 
-        mt5_connector = orch.executor.connectors.get(ConnectorType.METATRADER5)
-        if not mt5_connector or not mt5_connector.is_connected:
+        resolved = _resolve_closed_positions_connector(orch)
+        if not resolved:
             return
+        connector_name, closed_positions_connector = resolved
 
-        closed_usr_positions = mt5_connector.get_closed_usr_positions(hours=24)
+        closed_usr_positions = closed_positions_connector.get_closed_usr_positions(hours=24)
         if not closed_usr_positions:
             return
 
@@ -80,16 +102,20 @@ async def check_closed_usr_positions(orch: "MainOrchestrator") -> None:
                 exit_price=pos["exit_price"],
                 profit_loss=pos["profit"],
                 pips=0.0,
-                exit_reason=pos.get("exit_reason", "MT5_CLOSE"),
+                result=TradeResult.WIN if float(pos.get("profit", 0.0)) > 0 else (
+                    TradeResult.LOSS if float(pos.get("profit", 0.0)) < 0 else TradeResult.BREAKEVEN
+                ),
+                exit_reason=pos.get("exit_reason", "CONNECTOR_CLOSE"),
                 entry_time=entry_time,
                 exit_time=exit_time,
-                broker_id="MT5",
+                broker_id=connector_name.upper(),
                 metadata={"ticket": pos["ticket"]},
             )
             event = BrokerEvent(
                 event_type=BrokerEventType.TRADE_CLOSED,
                 data=trade_event,
                 timestamp=datetime.now(timezone.utc),
+                broker_id=connector_name.upper(),
             )
             await orch.trade_closure_listener.handle_trade_closed_event(event)
             orch._last_checked_deal_ticket = max(orch._last_checked_deal_ticket, pos["ticket"])

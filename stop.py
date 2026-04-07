@@ -37,6 +37,38 @@ LOCK_PATH = project_root / "data_vault" / "aethelgard.lock"
 PROJECT_MARKER = str(project_root).replace("\\", "/")  # path usado como firma de proceso
 
 
+def _is_aethelgard_process(cmdline: list[str], proc_cwd: str | None, project_marker: str) -> bool:
+    """Return True when a process belongs to this workspace.
+
+    Handles both absolute invocations (contains project path in cmdline)
+    and relative invocations like `python .\\start.py` where only cwd
+    points to the workspace.
+    """
+    cmd_str = " ".join(cmdline or []).replace("\\", "/").lower()
+    cwd_str = (proc_cwd or "").replace("\\", "/").lower()
+    marker = project_marker.lower()
+    return marker in cmd_str or (cwd_str and cwd_str.startswith(marker))
+
+
+def _kill_lockfile_pid() -> int:
+    """Kill PID recorded in lockfile if still alive.
+
+    This is a safety net when process detection by cmdline fails.
+    """
+    if not LOCK_PATH.exists():
+        return 0
+    try:
+        import psutil
+
+        pid = int(LOCK_PATH.read_text().strip())
+        proc = psutil.Process(pid)
+        proc.kill()
+        print(f"  [OK] PID {pid} detenido por lockfile")
+        return 1
+    except Exception:
+        return 0
+
+
 def _kill_aethelgard_processes() -> int:
     """
     Mata procesos start.py y uvicorn pertenecientes a este proyecto.
@@ -48,17 +80,21 @@ def _kill_aethelgard_processes() -> int:
     killed = []
     project_lower = PROJECT_MARKER.lower()
 
-    for proc in psutil.process_iter(["pid", "name", "cmdline"]):
+    for proc in psutil.process_iter(["pid", "name", "cmdline", "cwd"]):
         try:
             cmdline = proc.info["cmdline"] or []
             cmd_str = " ".join(cmdline).replace("\\", "/").lower()
 
             is_python = "python" in (proc.info["name"] or "").lower()
-            is_aethelgard = project_lower in cmd_str
+            is_aethelgard = _is_aethelgard_process(cmdline, proc.info.get("cwd"), project_lower)
             is_relevant = any(k in cmd_str for k in ("start.py", "uvicorn", "core_brain.server"))
 
             if is_python and is_aethelgard and is_relevant:
                 proc.kill()
+                try:
+                    proc.wait(timeout=2)
+                except Exception:
+                    pass
                 killed.append((proc.pid, " ".join(cmdline)[:100]))
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
@@ -83,8 +119,14 @@ def _kill_port_8000() -> int:
         if conn.laddr and conn.laddr.port == 8000 and conn.pid:
             try:
                 proc = psutil.Process(conn.pid)
-                cmd_str = " ".join(proc.cmdline()).replace("\\", "/").lower()
-                if project_lower in cmd_str:
+                cmdline = proc.cmdline()
+                cmd_str = " ".join(cmdline).replace("\\", "/").lower()
+                proc_cwd = None
+                try:
+                    proc_cwd = proc.cwd()
+                except Exception:
+                    pass
+                if _is_aethelgard_process(cmdline, proc_cwd, project_lower):
                     proc.kill()
                     killed.append(conn.pid)
                     print(f"  [OK] PID {conn.pid} (puerto 8000) detenido")
@@ -160,6 +202,9 @@ def main() -> None:
 
     print("\n[>] Deteniendo procesos Aethelgard (start.py / uvicorn)...")
     total_killed += _kill_aethelgard_processes()
+
+    print("\n[>] Aplicando fallback por lockfile PID...")
+    total_killed += _kill_lockfile_pid()
 
     print("\n[>] Verificando puerto 8000...")
     total_killed += _kill_port_8000()

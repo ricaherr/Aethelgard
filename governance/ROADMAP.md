@@ -36,7 +36,7 @@
 
 | HU | Nombre | Dominio | Sprint | Estado |
 |---|---|---|---|---|
-| HU 10.20 | Telemetría agnóstica de proveedor (sin dependencia MT5 hardcoded) | 10 | 26 | [TODO] |
+| HU 10.20 | Telemetría agnóstica de proveedor (sin dependencia MT5 hardcoded) | 10 | 26 | [DONE] |
 | HU 8.2 | Contrato de Persistencia Agnóstica (IDatabaseDriver + adapters) | 08 | 26 | [TODO] |
 | HU 8.3 | Concurrencia SQLite híbrida (retry/backoff + cola selectiva) | 08 | 26 | [TODO] |
 

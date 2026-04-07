@@ -171,12 +171,13 @@ class SystemMixin(BaseRepository):
         query = "SELECT * FROM usr_edge_learning ORDER BY timestamp DESC LIMIT ?"
         return self.execute_query(query, (limit,))
 
-    def save_data_provider(self, name: str, enabled: bool = True, priority: int = 50,
+    def save_data_provider(self, name: str, enabled: Optional[bool] = None, priority: int = 50,
                           requires_auth: bool = False, api_key: Optional[str] = None,
                           api_secret: Optional[str] = None, additional_config: Optional[Dict[str, Any]] = None,
                           is_system: bool = False, provider_type: str = "generic",
                           connector_module: Optional[str] = None,
-                          connector_class: Optional[str] = None) -> None:
+                          connector_class: Optional[str] = None,
+                          insert_only: bool = False) -> None:
         """Save data provider configuration.
 
         SSOT rule: On conflict (row already exists), the `enabled` column is NEVER
@@ -192,30 +193,44 @@ class SystemMixin(BaseRepository):
         if additional_config is None:
             additional_config = {}
 
+        enabled_value = 1 if enabled is None else int(bool(enabled))
+
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO sys_data_providers
-                (name, type, enabled, priority, requires_auth, api_key, api_secret,
-                 additional_config, is_system, connector_module, connector_class)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(name) DO UPDATE SET
-                    type=excluded.type,
-                    enabled=COALESCE(sys_data_providers.enabled, excluded.enabled),
-                    priority=excluded.priority,
-                    requires_auth=excluded.requires_auth,
-                    api_key=excluded.api_key,
-                    api_secret=excluded.api_secret,
-                    additional_config=excluded.additional_config,
-                    is_system=excluded.is_system,
-                    connector_module=COALESCE(excluded.connector_module, sys_data_providers.connector_module),
-                    connector_class=COALESCE(excluded.connector_class, sys_data_providers.connector_class)
-            """, (
-                name, provider_type, enabled, priority, requires_auth,
-                api_key, api_secret, json.dumps(additional_config), is_system,
-                connector_module, connector_class
-            ))
+            if insert_only:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO sys_data_providers
+                    (name, type, enabled, priority, requires_auth, api_key, api_secret,
+                     additional_config, is_system, connector_module, connector_class)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    name, provider_type, enabled_value, priority, requires_auth,
+                    api_key, api_secret, json.dumps(additional_config), is_system,
+                    connector_module, connector_class
+                ))
+            else:
+                cursor.execute("""
+                    INSERT INTO sys_data_providers
+                    (name, type, enabled, priority, requires_auth, api_key, api_secret,
+                     additional_config, is_system, connector_module, connector_class)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(name) DO UPDATE SET
+                        type=excluded.type,
+                        enabled=COALESCE(sys_data_providers.enabled, excluded.enabled),
+                        priority=excluded.priority,
+                        requires_auth=excluded.requires_auth,
+                        api_key=excluded.api_key,
+                        api_secret=excluded.api_secret,
+                        additional_config=excluded.additional_config,
+                        is_system=excluded.is_system,
+                        connector_module=COALESCE(excluded.connector_module, sys_data_providers.connector_module),
+                        connector_class=COALESCE(excluded.connector_class, sys_data_providers.connector_class)
+                """, (
+                    name, provider_type, enabled_value, priority, requires_auth,
+                    api_key, api_secret, json.dumps(additional_config), is_system,
+                    connector_module, connector_class
+                ))
             conn.commit()
         finally:
             self._close_conn(conn)

@@ -37,13 +37,10 @@ from core_brain.edge_monitor import EdgeMonitor
 from core_brain.services.strategy_engine_factory import StrategyEngineFactory
 from data_vault.storage import StorageManager
 from data_vault.backup_manager import DatabaseBackupManager
-from connectors.paper_connector import PaperConnector
-from connectors.mt5_connector import MT5Connector
 from models.signal import ConnectorType
 
 # Core Brain Imports
 from core_brain.data_provider_manager import DataProviderManager
-from connectors.generic_data_provider import GenericDataProvider
 from core_brain.notificator import get_notifier
 from core_brain.multi_timeframe_limiter import MultiTimeframeLimiter
 from core_brain.coherence_monitor import CoherenceMonitor
@@ -273,6 +270,57 @@ def _ensure_exec_capable_account(storage: "StorageManager") -> bool:
         return False
 
 
+def _resolve_connector_type(provider_id: str) -> ConnectorType:
+    """Map connector provider_id to known ConnectorType with generic fallback."""
+    normalized = (provider_id or "").lower()
+    if "mt5" in normalized or "metatrader" in normalized:
+        return ConnectorType.METATRADER5
+    if "paper" in normalized:
+        return ConnectorType.PAPER
+    if "fix" in normalized:
+        return ConnectorType.FIX
+    return ConnectorType.GENERIC
+
+
+def _build_active_connectors(connectivity_orchestrator: object) -> dict[ConnectorType, object]:
+    """Collect registered connectors from ConnectivityOrchestrator without broker hardcoding."""
+    connectors = getattr(connectivity_orchestrator, "connectors", {})
+    if not isinstance(connectors, dict):
+        return {}
+
+    resolved: dict[ConnectorType, object] = {}
+    for connector in connectors.values():
+        if not connector:
+            continue
+        provider_id = getattr(connector, "provider_id", connector.__class__.__name__)
+        connector_type = _resolve_connector_type(str(provider_id))
+        if connector_type not in resolved:
+            resolved[connector_type] = connector
+
+    return resolved
+
+
+def _connect_registered_connectors(connectors: dict[ConnectorType, object]) -> dict[ConnectorType, bool]:
+    """Attempt connector bootstrap without assuming specific broker implementations."""
+    bootstrap_status: dict[ConnectorType, bool] = {}
+    for connector_type, connector in connectors.items():
+        if bool(getattr(connector, "is_connected", False)):
+            bootstrap_status[connector_type] = True
+            continue
+
+        connect_fn = getattr(connector, "connect_blocking", None) or getattr(connector, "connect", None)
+        if not callable(connect_fn):
+            bootstrap_status[connector_type] = False
+            continue
+
+        try:
+            bootstrap_status[connector_type] = bool(connect_fn())
+        except Exception:
+            bootstrap_status[connector_type] = False
+
+    return bootstrap_status
+
+
 # launch_dashboard eliminada - UI unificada en puerto 8000
 
 def launch_server() -> None:
@@ -426,28 +474,36 @@ async def main() -> None:
         # 3. Connectors & Data Provider (Unificación de Conexión)
         # ----------------------------------------------------------------
         
-        # A) Inicializar ConnectivityOrchestrator y Connectors Dinámicos (SSOT)
+        # A) Inicializar Data Provider Manager (SSOT providers from DB)
+        logger.info("[INIT] Inicializando Data Provider Manager (DI)...")
+        provider_manager = DataProviderManager(storage=storage)
+
+        # B) Inicializar ConnectivityOrchestrator y Connectors Dinámicos (SSOT)
         logger.info("[INIT] Inicializando ConnectivityOrchestrator y conectores desde BD...")
         from core_brain.connectivity_orchestrator import ConnectivityOrchestrator
         orchestrator = ConnectivityOrchestrator()
         orchestrator.set_storage(storage)
+
+        # C) Inyección de Dependencia: Registrar conectores por proveedor activo de DB
+        for provider_info in provider_manager.get_active_providers():
+            provider_name = str(provider_info.get("name", "")).strip().lower()
+            if not provider_name:
+                continue
+            connector = orchestrator.get_connector(provider_name)
+            if connector:
+                provider_manager.register_provider_instance(provider_name, connector)
         
-        # MT5 es opcional — puede estar deshabilitado cuando cTrader es el proveedor primario.
-        # El DataProviderManager selecciona el proveedor activo por prioridad (SSOT).
+        # Fallback: Registrar conectores preexistentes por provider_id (compatibilidad)
+        for connector in orchestrator.connectors.values():
+            if not connector:
+                continue
+            provider_id = str(getattr(connector, "provider_id", "")).lower()
+            if not provider_id:
+                continue
+            provider_manager.register_provider_instance(provider_id, connector)
+        logger.info("[DI] Conectores registrados en DataProviderManager desde DB")
+
         mt5_connector = orchestrator.get_connector('mt5')
-        if mt5_connector:
-            logger.info("[INIT] MT5 connector disponible (opcional, para ejecución)")
-        else:
-            logger.debug("[INIT] MT5 no activo — cTrader es el proveedor primario de datos")
-        
-        # B) Inicializar Data Provider Manager
-        logger.info("[INIT] Inicializando Data Provider Manager (DI)...")
-        provider_manager = DataProviderManager(storage=storage)
-        
-        # C) Inyección de Dependencia: Registrar instancia de MT5 en el manager
-        if mt5_connector:
-            provider_manager.register_provider_instance("mt5", mt5_connector)
-            logger.info("[DI] Instancia de MT5 inyectada en DataProviderManager")
         
         # D) Inicializar Scanner Engine (usando el provider_manager configurado)
         logger.info("[INIT] Inicializando Scanner Engine...")
@@ -490,10 +546,17 @@ async def main() -> None:
             mt5_connector=mt5_connector
         )
         
-        # Construir diccionario de conectores seguros (evitar None)
-        active_connectors = {}
-        if mt5_connector:
-            active_connectors[ConnectorType.METATRADER5] = mt5_connector
+        # Construir diccionario de conectores activos sin suposición nominal de broker
+        active_connectors = _build_active_connectors(orchestrator)
+        connector_bootstrap = _connect_registered_connectors(active_connectors)
+        connected_count = sum(1 for status in connector_bootstrap.values() if status)
+        logger.info("[CONNECT] Bootstrap conectores: %d/%d conectados", connected_count, len(active_connectors))
+
+        active_provider = provider_manager.get_connected_active_provider()
+        if active_provider:
+            logger.info("[PROVIDER] Proveedor de datos activo (DB): %s", active_provider["name"])
+        else:
+            logger.warning("[PROVIDER] No hay proveedor activo conectado desde DB")
             
         order_executor = OrderExecutor(
             risk_manager=risk_manager,
@@ -647,25 +710,13 @@ async def main() -> None:
         health_task = asyncio.create_task(health_service.start())
         logger.info("[OK] Salud Autónoma activa")
         
-        # === INICIAR MT5 SINCRÓNICAMENTE (MT5 library doesn't share state across threads) ===
-        logger.info("[CONNECT] Conectando a MT5 (sincrónico en thread principal)...")
-        if mt5_connector:
-            # Connect synchronously in main thread (MT5 library is thread-specific)
-            # This ensures mt5.initialize() happens in the SAME thread that will call execute_signal()
-            connected = mt5_connector.connect_blocking()
-            if connected:
-                logger.info(f"[OK] MT5 conectado exitosamente. Símbolos disponibles: {len(mt5_connector.available_symbols)}")
-                
-                # Cache account balance in system_state for API queries
-                try:
-                    account_balance = mt5_connector.get_account_balance()
-                    logger.info(f"   Balance obtenido: ${account_balance:,.2f} (MT5_LIVE)")
-                except Exception as e:
-                    logger.warning(f"[WARN] No se pudo obtener balance de MT5: {e}")
-            else:
-                logger.error("[ERROR] MT5 connection failed!")
-            
-            # Set MT5 connector in SignalFactory for reconciliation
+        # MT5 sigue soportado para ejecución cuando está disponible (cuentas MT5 de usuario)
+        if mt5_connector and bool(getattr(mt5_connector, "is_connected", False)):
+            try:
+                account_balance = mt5_connector.get_account_balance()
+                logger.info(f"   Balance obtenido: ${account_balance:,.2f} (MT5)")
+            except Exception as e:
+                logger.warning(f"[WARN] No se pudo obtener balance de MT5: {e}")
             signal_factory.set_mt5_connector(mt5_connector)
         
         logger.info("")
@@ -687,7 +738,7 @@ async def main() -> None:
         logger.info("[INFO] Inicializando Closing Monitor...")
         closing_monitor = ClosingMonitor(
             storage=storage,
-            connectors={ConnectorType.METATRADER5: mt5_connector},
+            connectors=active_connectors,
             interval_seconds=60
         )
         monitor_task = asyncio.create_task(closing_monitor.start())
