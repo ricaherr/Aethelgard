@@ -135,11 +135,19 @@ class SignalFactory:
 
     def set_mt5_connector(self, mt5_connector: Any) -> None:
         """Set MT5 connector for reconciliation (optional)."""
-        self.mt5_connector = mt5_connector
-        if mt5_connector:
-            logger.info("MT5 connector set for SignalFactory reconciliation")
-        else:
-            logger.debug("MT5 connector cleared from SignalFactory")
+        self.set_reconciliation_connector(mt5_connector)
+
+    def set_reconciliation_connector(self, connector: Any) -> None:
+        """Set a reconciliation connector using capability checks (agnostic wiring)."""
+        if connector and hasattr(connector, "get_open_positions"):
+            self.mt5_connector = connector
+            self.signal_deduplicator.mt5_connector = connector
+            logger.info("Reconciliation connector set for SignalFactory")
+            return
+
+        self.mt5_connector = None
+        self.signal_deduplicator.mt5_connector = None
+        logger.debug("Reconciliation connector cleared from SignalFactory")
 
     def _load_parameters(self) -> Dict:
         """Deprecado: Usar storage_manager.get_dynamic_params() directamente."""

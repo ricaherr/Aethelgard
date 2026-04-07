@@ -25,18 +25,20 @@ logger = logging.getLogger(__name__)
 class MultiTimeframeLimiter:
     """Validates multi-timeframe exposure limits per symbol"""
     
-    def __init__(self, storage, config: Dict, mt5_connector: Optional[MT5Connector] = None):
+    def __init__(self, storage, config: Dict, connector: Optional[Any] = None, mt5_connector: Optional[Any] = None):
         """
         Initialize MultiTimeframeLimiter.
         
         Args:
             storage: StorageManager instance (dependency injection)
             config: Full config dict with 'multi_timeframe_limits' section
-            mt5_connector: MT5Connector instance for real-time validation (DI)
+            connector: Agnóstico connector instance (preferred, HU 10.20)
+            mt5_connector: MT5Connector instance for backward compat (deprecated)
         """
         self.storage = storage
         self.config = config.get('multi_timeframe_limits', {})
-        self.mt5_connector = mt5_connector
+        # Prefer agnóstico connector, fallback to mt5_connector for backward compat
+        self.mt5_connector = connector or mt5_connector
         self.enabled = self.config.get('enabled', True)
         self.max_usr_positions = self.config.get('max_usr_positions_per_symbol', 3)
         self.max_volume = self.config.get('max_total_volume_per_symbol', 5.0)

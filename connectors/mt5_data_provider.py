@@ -7,7 +7,7 @@ ARCHITECTURE: Single source of truth = DATABASE (reads from broker_accounts)
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
@@ -17,6 +17,7 @@ except ImportError:
     mt5 = None
 
 from data_vault.storage import StorageManager
+from connectors.base_connector import BaseConnector
 
 logger = logging.getLogger(__name__)
 
@@ -34,12 +35,16 @@ TIMEFRAME_MAP = {
 }
 
 
-class MT5DataProvider:
+class MT5DataProvider(BaseConnector):
     """
     Obtiene OHLC desde MT5 mediante copy_rates_from_pos.
     No requiere gráficas abiertas; los símbolos deben estar en Market Watch.
     ARCHITECTURE: Configuration from DATABASE only (broker_accounts table)
     """
+    
+    @property
+    def provider_id(self) -> str:
+        return "mt5"
 
     def __init__(self, storage: StorageManager, account_id: Optional[str] = None, login: Optional[int] = None, password: str = "", server: str = "", init_mt5: bool = True):
         """
@@ -102,7 +107,15 @@ class MT5DataProvider:
             self.account_id = account['account_id']
             credentials = self.storage.get_credentials(self.account_id)
             
-            self.login = int(account.get('login') or account.get('account_number'))
+            # Guardia defensiva: account_number puede no ser numérico (ej: SYS_EXEC_DEMO_AUTO)
+            account_number = account.get('login') or account.get('account_number')
+            try:
+                self.login = int(account_number)
+            except (ValueError, TypeError):
+                logger.error(f"Account {self.account_id}: account_number '{account_number}' no es numérico. Fallback a None.")
+                self.login = None
+                return
+            
             self.server = str(account.get('server', '')).strip()
             self.password = str(credentials.get('password', '')).strip() if credentials else ""
             
@@ -148,12 +161,19 @@ class MT5DataProvider:
         logger.info("MT5DataProvider listo. Versión MT5: %s", mt5.version())
         return True
 
+    def connect(self) -> bool:
+        return self._try_initialize()
+
     def shutdown(self) -> None:
         """Cierra la conexión con MT5."""
         if mt5 and self._initialized:
             mt5.shutdown()
             self._initialized = False
             logger.info("MT5DataProvider cerrado.")
+
+    def disconnect(self) -> bool:
+        self.shutdown()
+        return True
 
     def _resolve_timeframe(self, timeframe: str) -> int:
         t = (timeframe or "M5").upper()
@@ -199,6 +219,24 @@ class MT5DataProvider:
         df = df[["time", "open", "high", "low", "close"]].copy()
         return df
 
+    def get_market_data(self, symbol: str, timeframe: str, count: int) -> Optional[Any]:
+        return self.fetch_ohlc(symbol=symbol, timeframe=timeframe, count=count)
+
+    def execute_order(self, signal: Any) -> Dict[str, Any]:
+        return {
+            "success": False,
+            "error": "MT5DataProvider is data-only. Use execution connector for orders.",
+        }
+
+    def get_positions(self) -> List[Dict[str, Any]]:
+        return []
+
     def is_available(self) -> bool:
         """Indica si MT5 está inicializado y listo."""
         return bool(mt5 and self._initialized)
+
+    def get_latency(self) -> float:
+        return 0.0
+
+    def get_last_tick(self, symbol: str) -> Dict[str, float]:
+        return {"bid": 0.0, "ask": 0.0, "time": 0.0}

@@ -889,6 +889,15 @@ class DataProviderManager:
             }
 
         return None
+
+    def get_active_provider(self) -> Optional[Dict[str, Any]]:
+        """
+        Backward-compatible singular accessor for active connected provider.
+
+        Returns:
+            Same descriptor structure as get_connected_active_provider().
+        """
+        return self.get_connected_active_provider()
     
     def fetch_ohlc(
         self,

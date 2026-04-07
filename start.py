@@ -321,6 +321,28 @@ def _connect_registered_connectors(connectors: dict[ConnectorType, object]) -> d
     return bootstrap_status
 
 
+def _bind_signal_factory_reconciliation_connector(
+    signal_factory: object,
+    active_provider: dict[str, object] | None,
+) -> None:
+    """Bind reconciliation connector using active provider descriptor without broker hardcoding."""
+    connector = active_provider.get("instance") if isinstance(active_provider, dict) else None
+    if not connector:
+        return
+
+    if hasattr(signal_factory, "set_reconciliation_connector"):
+        signal_factory.set_reconciliation_connector(connector)
+
+    balance_fn = getattr(connector, "get_account_balance", None)
+    if callable(balance_fn):
+        try:
+            account_balance = balance_fn()
+            provider_name = active_provider.get("name", "unknown")
+            logger.info("   Balance obtenido: $%s (%s)", f"{account_balance:,.2f}", provider_name)
+        except Exception as e:
+            logger.warning("[WARN] No se pudo obtener balance del proveedor activo: %s", e)
+
+
 # launch_dashboard eliminada - UI unificada en puerto 8000
 
 def launch_server() -> None:
@@ -503,8 +525,6 @@ async def main() -> None:
             provider_manager.register_provider_instance(provider_id, connector)
         logger.info("[DI] Conectores registrados en DataProviderManager desde DB")
 
-        mt5_connector = orchestrator.get_connector('mt5')
-        
         # D) Inicializar Scanner Engine (usando el provider_manager configurado)
         logger.info("[INIT] Inicializando Scanner Engine...")
         scanner = ScannerEngine(
@@ -540,10 +560,11 @@ async def main() -> None:
 
         logger.info("[INIT] Inicializando Order Executor (DI)...")
         
+        active_provider = provider_manager.get_connected_active_provider()
         multi_tf_limiter = MultiTimeframeLimiter(
             storage=storage,
             config=dynamic_params,
-            mt5_connector=mt5_connector
+            connector=active_provider["instance"] if active_provider else None
         )
         
         # Construir diccionario de conectores activos sin suposición nominal de broker
@@ -593,9 +614,10 @@ async def main() -> None:
         
         # 7.5 Position Manager (DI)
         logger.info("[INIT] Inicializando Position Manager...")
+        best_exec_connector = provider_manager.get_best_provider()
         position_manager = PositionManager(
             storage=storage,
-            connector=mt5_connector,
+            connector=best_exec_connector,
             regime_classifier=regime_classifier,
             config=dynamic_params.get("position_management", {})
         )
@@ -607,6 +629,7 @@ async def main() -> None:
         
         # STEP 1: Create MainOrchestrator WITHOUT signal_factory (signal_factory=None)
         # This ensures __init__ doesn't try to load strategies yet
+        # Use agnóstico connectors dict instead of hardcoded mt5_connector
         orchestrator = MainOrchestrator(
             scanner=scanner,
             signal_factory=None,  # OPTION 4: Defer factory injection
@@ -651,7 +674,6 @@ async def main() -> None:
             confluence_analyzer=confluence_analyzer,
             trifecta_analyzer=trifecta_analyzer,
             notification_service=notification_service,
-            mt5_connector=mt5_connector,
             instrument_manager=instrument_manager,
         )
         
@@ -710,14 +732,7 @@ async def main() -> None:
         health_task = asyncio.create_task(health_service.start())
         logger.info("[OK] Salud Autónoma activa")
         
-        # MT5 sigue soportado para ejecución cuando está disponible (cuentas MT5 de usuario)
-        if mt5_connector and bool(getattr(mt5_connector, "is_connected", False)):
-            try:
-                account_balance = mt5_connector.get_account_balance()
-                logger.info(f"   Balance obtenido: ${account_balance:,.2f} (MT5)")
-            except Exception as e:
-                logger.warning(f"[WARN] No se pudo obtener balance de MT5: {e}")
-            signal_factory.set_mt5_connector(mt5_connector)
+        _bind_signal_factory_reconciliation_connector(signal_factory, active_provider)
         
         logger.info("")
         logger.info("=" * 70)

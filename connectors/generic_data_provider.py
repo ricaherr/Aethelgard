@@ -5,9 +5,11 @@ Utiliza Yahoo Finance (yfinance) para obtener datos OHLC sin requerir MT5
 """
 import logging
 import threading
-from typing import Optional
+from typing import Any, Dict, List, Optional
 import pandas as pd
 import time
+
+from connectors.base_connector import BaseConnector
 
 try:
     import yfinance as yf
@@ -22,11 +24,15 @@ logging.getLogger('yfinance').setLevel(logging.CRITICAL)
 YFINANCE_LOCK = threading.Lock()
 
 
-class GenericDataProvider:
+class GenericDataProvider(BaseConnector):
     """
     Proveedor de datos genérico usando Yahoo Finance.
     Totalmente autónomo, no requiere MT5 ni software externo.
     """
+    
+    @property
+    def provider_id(self) -> str:
+        return "yahoo"
     
     # Mapeo de símbolos Aethelgard -> Yahoo Finance
     SYMBOL_MAPPING = {
@@ -98,6 +104,35 @@ class GenericDataProvider:
         self.min_interval = 2.0     # Default rate limit (2 seconds)
         
         logger.info("GenericDataProvider inicializado (Yahoo Finance)")
+
+    def connect(self) -> bool:
+        """Generic provider is local/HTTP based and does not require a session handshake."""
+        return self.is_available()
+
+    def disconnect(self) -> bool:
+        """No persistent session to close for Yahoo-based provider."""
+        return True
+
+    def get_market_data(self, symbol: str, timeframe: str, count: int) -> Optional[Any]:
+        return self.fetch_ohlc(symbol=symbol, timeframe=timeframe, count=count)
+
+    def execute_order(self, signal: Any) -> Dict[str, Any]:
+        return {
+            "success": False,
+            "error": "GenericDataProvider is data-only and cannot execute orders.",
+        }
+
+    def get_positions(self) -> List[Dict[str, Any]]:
+        return []
+
+    def is_available(self) -> bool:
+        return yf is not None
+
+    def get_latency(self) -> float:
+        return 0.0
+
+    def get_last_tick(self, symbol: str) -> Dict[str, float]:
+        return {"bid": 0.0, "ask": 0.0, "time": 0.0}
     
     def _map_symbol(self, symbol: str) -> str:
         """
