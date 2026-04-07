@@ -197,6 +197,26 @@ class DatabaseManager:
             else:
                 return cursor.rowcount if cursor.rowcount is not None else 0
 
+    def execute_many(self, db_path: str, sql: str, param_list: list[tuple[Any, ...]]) -> int:
+        """
+        Execute batch INSERT/UPDATE/DELETE statements in a single transaction.
+
+        Args:
+            db_path: Database path
+            sql: SQL statement
+            param_list: List of parameter tuples
+
+        Returns:
+            Number of rows affected (best effort from sqlite cursor.rowcount)
+        """
+        if not param_list:
+            return 0
+
+        with self.transaction(db_path) as conn:
+            cursor = conn.cursor()
+            cursor.executemany(sql, param_list)
+            return cursor.rowcount if cursor.rowcount is not None else 0
+
     def close_connection(self, db_path: str) -> None:
         """
         Explicitly close a connection (rarely needed).

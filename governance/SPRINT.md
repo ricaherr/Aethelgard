@@ -11,7 +11,7 @@
 
 ---
 
-# SPRINT 26: E15 — PERSISTENCIA AGNÓSTICA & TELEMETRÍA BROKER-NEUTRAL — [TODO]
+# SPRINT 26: E15 — PERSISTENCIA AGNÓSTICA & TELEMETRÍA BROKER-NEUTRAL — [DEV]
 
 **Inicio**: 6 de Abril, 2026
 **Fin**: _(pendiente)_
@@ -26,7 +26,7 @@
   - Revisión de chequeos de runtime para basar disponibilidad en proveedor activo/capabilidades, no en broker nominal.
   - Ajuste de tareas de background que asumen `ConnectorType.METATRADER5` como fuente única.
 
-- [TODO] **HU 8.2: Contrato de Persistencia Agnóstica (IDatabaseDriver + adapters)**
+- [DONE] **HU 8.2: Contrato de Persistencia Agnóstica (IDatabaseDriver + adapters)**
   - Definir interfaz de driver de datos y adaptar `StorageManager` a delegación por backend.
   - Mantener contrato estable para mixins/repositorios existentes.
   - Preparar pathway para adapter SQL robusto (sin cola forzada).
@@ -36,11 +36,12 @@
   - Aplicar cola selectiva a telemetría/eventos de alta frecuencia donde tenga sentido operativo.
   - Preservar throughput y semántica transaccional en operaciones críticas.
 
-## 📊 Snapshot Inicial
+## 📊 Snapshot Progreso (in-flight)
 
-- **Estado inicial**: Sprint definido, sin implementación de código aún.
-- **Gate de inicio**: ETI aprobado para cada HU antes de cambios de código.
-- **Criterio de cierre**: `validate_all.py` ✅ 100% + arranque con `start.py` sin regresiones.
+- **HU 10.20**: [DONE] — Telemetría agnóstica MT5 (completada Sprint 26 apertura)
+- **HU 8.2**: [DONE] — Contrato IDatabaseDriver + SQLiteDriver + errores normalizados · 6/6 tests · `validate_all.py` 27/27 · `start.py` sin regresión · Trace_ID: `ARCH-DB-DRIVER-AGNOSTIC-HU8.2-2026-04-07`
+- **HU 8.3**: [TODO] — Pendiente
+- **Criterio de cierre del Sprint**: `validate_all.py` ✅ 100% + arranque con `start.py` sin regresiones en todas las HUs.
 
 ---
 

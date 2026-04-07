@@ -87,30 +87,25 @@ class StorageManager(
             self._ensure_tenant_db_exists()
         
         # Initialize database schema and migrations
-        conn: sqlite3.Connection = self._get_conn()
         try:
             logger.info("Initializing database schema...")
-            # DDL (idempotent via CREATE TABLE IF NOT EXISTS)
-            initialize_schema(conn)
-            # Incremental migrations
-            run_migrations(conn)
-            # Default user preferences
-            seed_default_usr_preferences(conn)
-            # Symbol mapping bootstrap
-            bootstrap_symbol_mappings(conn)
-            
-            # JSON config migration (SSOT: once on first init)
-            self._bootstrap_from_json(conn)
-            
+            with self.transaction() as conn:
+                # DDL (idempotent via CREATE TABLE IF NOT EXISTS)
+                initialize_schema(conn)
+                # Incremental migrations
+                run_migrations(conn)
+                # Default user preferences
+                seed_default_usr_preferences(conn)
+                # Symbol mapping bootstrap
+                bootstrap_symbol_mappings(conn)
+                # JSON config migration (SSOT: once on first init)
+                self._bootstrap_from_json(conn)
+
             # Default asset profiles (required for normalization)
             self.seed_initial_assets()
-            
-            self._close_conn(conn)
         except Exception as e:
             logger.error(f"Error during schema initialization: {e}")
             raise
-        finally:
-            self._close_conn(conn)
 
     @staticmethod
     def _resolve_db_path(user_id: Optional[str]) -> str:
@@ -258,11 +253,10 @@ class StorageManager(
             # Mark bootstrap as complete
             cursor.execute("INSERT OR REPLACE INTO sys_config (key, value) VALUES (?, ?)", 
                            (JSON_BOOTSTRAP_DONE_KEY, "true"))
-            conn.commit()
             logger.info("[BOOTSTRAP] JSON→SQLite migration completed (SSOT: database is now canonical).")
         except Exception as e:
             logger.error(f"[BOOTSTRAP] Migration failed: {e}")
-            conn.rollback()
+            raise
 
     def close(self) -> None:
         """Close underlying database connection for this storage instance."""
@@ -274,11 +268,8 @@ class StorageManager(
 
     def run_legacy_json_bootstrap_once(self) -> None:
         """Public trigger: Legacy method name retained for backward compatibility."""
-        conn: sqlite3.Connection = self._get_conn()
-        try:
+        with self.transaction() as conn:
             self._bootstrap_from_json(conn)
-        finally:
-            self._close_conn(conn)
 
     def reload_global_config(self) -> Dict[str, Any]:
         """

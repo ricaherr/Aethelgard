@@ -17,7 +17,7 @@ import sqlite3
 from typing import Optional, List, Dict, Any, Generator, Callable, TypeVar
 from contextlib import contextmanager
 
-from .database_manager import get_database_manager
+from .drivers import IDatabaseDriver, get_database_driver
 
 T = TypeVar('T')  # Generic return type for _execute_serialized
 
@@ -43,7 +43,8 @@ class BaseRepository:
                 os.path.dirname(__file__), "global", "aethelgard.db"
             )
         self.db_path: str = db_path
-        self.db_manager = get_database_manager()
+        self.db_driver: IDatabaseDriver = get_database_driver()
+        self.db_manager = getattr(self.db_driver, "database_manager", None)
         self._ensure_db_directory()
 
     def _ensure_db_directory(self) -> None:
@@ -64,7 +65,7 @@ class BaseRepository:
         Returns:
             sqlite3.Connection (pooled, thread-safe)
         """
-        return self.db_manager.get_connection(self.db_path)
+        return self.db_driver.get_connection(self.db_path)
 
     def execute_query(self, sql: str, params: tuple[Any, ...] = ()) -> List[Dict[str, Any]]:
         """
@@ -78,7 +79,7 @@ class BaseRepository:
             List of dicts (rows)
         """
         try:
-            return self.db_manager.execute_query(self.db_path, sql, params)
+            return self.db_driver.fetch_all(self.db_path, sql, params)
         except Exception as e:
             logger.error(f"Query failed on {self.db_path}: {e}")
             raise
@@ -95,7 +96,7 @@ class BaseRepository:
             Rows affected or last insert rowid
         """
         try:
-            return self.db_manager.execute_update(self.db_path, sql, params)
+            return self.db_driver.execute(self.db_path, sql, params)
         except Exception as e:
             logger.error(f"Update failed on {self.db_path}: {e}")
             raise
@@ -111,7 +112,7 @@ class BaseRepository:
                 cursor = conn.cursor()
                 cursor.execute("INSERT ...")
         """
-        with self.db_manager.transaction(self.db_path) as conn:
+        with self.db_driver.transaction(self.db_path) as conn:
             yield conn
 
     def get_db_health(self) -> Dict[str, Any]:
@@ -121,7 +122,7 @@ class BaseRepository:
         Returns:
             Health status dict
         """
-        return self.db_manager.health_check()
+        return self.db_driver.health_check()
 
     # ──────────────────────────────────────────────────────────────────────────────
     # BACKWARDS COMPATIBILITY: Old-style methods (delegated to DatabaseManager)

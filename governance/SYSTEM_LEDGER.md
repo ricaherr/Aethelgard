@@ -4,7 +4,7 @@
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-05 UTC)**: HU 10.9 registrada en ledger (Sprint 25) · Trace_ID: SHADOW-STAGNATION-INTEL-2026-04-05 · baseline **2269 passed, 3 skipped** · **validate_all 27/27 PASSED**.
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-07 UTC)**: HU 8.2 registrada en ledger (Sprint 26) · Trace_ID: ARCH-DB-DRIVER-AGNOSTIC-HU8.2-2026-04-07 · baseline **2269 passed, 3 skipped** + **6 tests nuevos** · **validate_all 27/27 PASSED**.
 
 ---
 
@@ -26,6 +26,19 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 ---
 
 ## 🏛️ ÉPICAS ARCHIVADAS
+
+---
+
+### Sprint 26 — HU 8.2: Contrato de Persistencia Agnóstica (7-Abr-2026)
+**Trace_ID**: `ARCH-DB-DRIVER-AGNOSTIC-HU8.2-2026-04-07` | **Épica**: E15 (Sprint activo) | **Estado**: HU completada
+
+| HU | Descripción | Artefactos clave | Tests |
+|---|---|---|---|
+| **HU 8.2** | Contrato `IDatabaseDriver` (ABC) con operaciones `execute`, `execute_many`, `fetch_one`, `fetch_all`, `transaction`, `health_check`. `SQLiteDriver` como adapter que delega a `DatabaseManager`. `DatabaseManager.execute_many()` añadido para soporte de lotes. Jerarquía de errores de persistencia (`PersistenceError` → `Operational/Integrity/Programming/Transaction`) con `normalize_persistence_error()`. `BaseRepository` enrutado al driver activo vía `db_driver`; `db_manager` conservado como alias retrocompatible. `StorageManager` bootstrap/`_bootstrap_from_json` migrados a `self.transaction()` eliminando commit/rollback internos. `data_vault/__init__.py` exporta contrato y driver. | `data_vault/drivers/__init__.py`, `data_vault/drivers/interface.py`, `data_vault/drivers/sqlite_driver.py`, `data_vault/drivers/errors.py`, `data_vault/base_repo.py`, `data_vault/database_manager.py`, `data_vault/storage.py`, `data_vault/__init__.py`, `tests/test_database_driver_contract.py` | 6/6 |
+
+**Suite total tras HU 8.2**: 2269+6=2275 passed (nuevos) · 3 skipped · validate_all **27/27 PASSED** · `start.py` smoke OK sin regresiones
+
+---
 
 ### ════════════════════════════════════════════════════════════════
 ### ÉPICA E14 COMPLETADA — Arquitectura de Resiliencia Granular (EDGE Immunological System) (5-Abr-2026)

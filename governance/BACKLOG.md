@@ -106,12 +106,6 @@
     * **Descripción**: Implementar tabla `usr_broker_accounts` en `schema.py` y `usr_template.db` para separar cuentas de usuario de cuentas del sistema. `sys_broker_accounts` queda exclusivamente para cuentas DEMO del sistema. `usr_broker_accounts` almacena cuentas REAL/DEMO por trader, aisladas por `user_id`. Crear `BrokerAccountsMixin` con métodos CRUD y script de migración idempotente.
     * **Referencia arquitectónica**: `docs/01_IDENTITY_SECURITY.md` Sección "Broker Account Management". Trace_ID: ARCH-USR-BROKER-ACCOUNTS-2026-N5
 
-* **HU 8.2: Contrato de Persistencia Agnóstica (IDatabaseDriver + adapters)** `[TODO]`
-    * **Prioridad**: Alta (E15)
-    * **Descripción**: Introducir contrato interno de acceso a datos para desacoplar `StorageManager` de la implementación SQLite, habilitando `SQLiteDriver` y futuro `PostgresDriver/MySQLDriver` sin cambiar lógica de negocio.
-    * **Alcance**: `execute`, `execute_many`, `fetch_one`, `fetch_all`, manejo transaccional y política de errores uniforme.
-    * **🖥️ UI Representation**: No aplica (cambio de arquitectura backend).
-
 * **HU 8.3: Concurrencia SQLite Híbrida (Retry/Backoff + Cola Selectiva)** `[TODO]`
     * **Prioridad**: Alta (E15)
     * **Descripción**: Mitigar `database is locked` sin embudo global: mantener concurrencia natural del Core y aplicar mitigación específica para SQLite en el adapter (retry/backoff para writes críticos + cola selectiva para telemetría/eventos de alta frecuencia).
