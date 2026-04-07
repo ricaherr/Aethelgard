@@ -11,10 +11,10 @@
 
 ---
 
-# SPRINT 26: E15 — PERSISTENCIA AGNÓSTICA & TELEMETRÍA BROKER-NEUTRAL — [DEV]
+# SPRINT 26: E15 — PERSISTENCIA AGNÓSTICA & TELEMETRÍA BROKER-NEUTRAL — [DONE]
 
 **Inicio**: 6 de Abril, 2026
-**Fin**: _(pendiente)_
+**Fin**: 7 de Abril, 2026
 **Objetivo**: Resolver bloqueo DB en SQLite sin anti-patrones de embudo global y eliminar dependencias hardcoded a MT5 en telemetría/salud, preservando escalabilidad hacia Postgres/MySQL.
 **Épica**: E15 (Persistencia Agnóstica & Telemetría Broker-Neutral) | **Trace_ID**: ARCH-DB-DRIVER-AGNOSTIC-MT5-DECOUPLING-2026-04-06
 **Dominios**: 08_DATA_SOVEREIGNTY · 10_INFRASTRUCTURE_RESILIENCY
@@ -31,17 +31,20 @@
   - Mantener contrato estable para mixins/repositorios existentes.
   - Preparar pathway para adapter SQL robusto (sin cola forzada).
 
-- [TODO] **HU 8.3: Concurrencia SQLite híbrida (retry/backoff + cola selectiva)**
+- [DONE] **HU 8.3: Concurrencia SQLite híbrida (retry/backoff + cola selectiva)**
   - Implementar estrategia anti-lock en adapter SQLite sin serialización total del Core.
   - Aplicar cola selectiva a telemetría/eventos de alta frecuencia donde tenga sentido operativo.
   - Preservar throughput y semántica transaccional en operaciones críticas.
 
-## 📊 Snapshot Progreso (in-flight)
+## 📊 Snapshot de Cierre
 
 - **HU 10.20**: [DONE] — Telemetría agnóstica MT5 (completada Sprint 26 apertura)
 - **HU 8.2**: [DONE] — Contrato IDatabaseDriver + SQLiteDriver + errores normalizados · 6/6 tests · `validate_all.py` 27/27 · `start.py` sin regresión · Trace_ID: `ARCH-DB-DRIVER-AGNOSTIC-HU8.2-2026-04-07`
-- **HU 8.3**: [TODO] — Pendiente
-- **Criterio de cierre del Sprint**: `validate_all.py` ✅ 100% + arranque con `start.py` sin regresiones en todas las HUs.
+- **HU 8.3**: [DONE] — Retry/backoff acotado + cola selectiva de telemetría + métricas de concurrencia + bypass bootstrap/migraciones · 7/7 tests HU 8.3
+- **Suite focalizada HU 8.2+8.3**: 14/14 PASSED
+- **Validación integral**: `validate_all.py` 27/27 PASSED
+- **Smoke de arranque**: `start.py` sin fallo fatal atribuible a E15
+- **Estado Sprint 26**: [DONE] — E15 implementada end-to-end
 
 ---
 
@@ -1490,14 +1493,14 @@
 
 ---
 
-# SPRINT 8: DESBLOQUEO OPERACIONAL DEL PIPELINE — [DEV]
+# SPRINT 8: DESBLOQUEO OPERACIONAL DEL PIPELINE — [DONE]
 
 **Inicio**: 24 de Marzo, 2026
-**Fin**: —
+**Fin**: 24 de Marzo, 2026
 **Objetivo**: Resolver 5 bloqueos operacionales que impiden el flujo BACKTEST→SHADOW→LIVE: filtro de activos en SignalFactory (15/18 símbolos descartados), cooldown de backtest bloqueado por campo incorrecto, EdgeMonitor hardcodeado a MT5, capital hardcodeado, y ausencia de PID lock. Documentar diseño FASE4 AutonomousSystemOrchestrator.
 **Épica**: E9 | **Trace_ID**: PIPELINE-UNBLOCK-EDGE-2026-03-24
 **Dominios**: 03_ALPHA_GENERATION · 07_LIFECYCLE · 10_INFRA_RESILIENCY
-**Estado**: P9+P6+P3+P2+P5 DONE — FASE4 (diseño) pendiente
+**Estado**: [DONE] 6/6 tareas — E9 COMPLETADA (ver SYSTEM_LEDGER)
 
 ## 📋 Tareas del Sprint
 
@@ -1524,7 +1527,7 @@
   - `start.py`: `EdgeMonitor` recibe `connectors=active_connectors`.
   - TDD: `TestEdgeMonitorConnectorAgnostic` — 6 tests (10/10 total PASSED)
 
-- [TODO] **FASE4 — HU 10.6: AutonomousSystemOrchestrator — Diseño**
+- [DONE] **FASE4 — HU 10.6: AutonomousSystemOrchestrator — Diseño**
   - Documentar diseño completo en `docs/10_AUTONOMOUS_ORCHESTRATOR.md`.
   - Inventario de 13 componentes EDGE existentes + mapa de coordinación.
   - Especificar: DiagnosticsEngine, BaselineTracker, HealingPlaybook, ObservabilityLedger, EscalationRouter.
@@ -1532,14 +1535,15 @@
 
 ---
 
-## 📸 Snapshot Sprint 8 (Parcial — P2/P3/P5/P6/P9)
+## 📸 Snapshot Sprint 8 (Final)
 
 | Métrica | Valor |
 |---|---|
 | **Versión Sistema** | v4.6.0-beta |
-| **Tareas Completadas** | 5/6 ✅ (FASE4 diseño pendiente) |
+| **Tareas Completadas** | 6/6 ✅ |
 | **Suite de Tests** | 1601 passed · 0 failed |
 | **Nuevos Tests** | +22 (P9×9, P3×3, P2×3, P5×6 + actualización test_signal_factory_asset_filtering) |
 | **Bugs Críticos Resueltos** | 5 (filtro activos, cooldown backtest, EdgeMonitor MT5, capital hardcoded, proceso duplicado) |
+| **HU 10.6 Diseño FASE4** | Completo en `docs/10_INFRA_RESILIENCY.md` (E9 archivada) |
 | **Regresiones** | 0 |
-| **Fecha Snapshot** | 24 de Marzo, 2026 |
+| **Fecha Cierre** | 24 de Marzo, 2026 |

@@ -4,7 +4,7 @@
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-07 UTC)**: HU 8.2 registrada en ledger (Sprint 26) · Trace_ID: ARCH-DB-DRIVER-AGNOSTIC-HU8.2-2026-04-07 · baseline **2269 passed, 3 skipped** + **6 tests nuevos** · **validate_all 27/27 PASSED**.
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-07 UTC)**: HU 8.3 registrada en ledger (Sprint 26) · Trace_ID: ARCH-SQLITE-HYBRID-CONCURRENCY-HU8.3-2026-04-07 · suite focalizada **14/14 PASSED** · **validate_all 27/27 PASSED**.
 
 ---
 
@@ -26,6 +26,36 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 ---
 
 ## 🏛️ ÉPICAS ARCHIVADAS
+
+---
+
+### ════════════════════════════════════════════════════════════════
+### ÉPICA E15 COMPLETADA — Persistencia Agnóstica & Telemetría Broker-Neutral (7-Abr-2026)
+**Trace_ID**: `ARCH-DB-DRIVER-AGNOSTIC-MT5-DECOUPLING-2026-04-06` | **Sprints**: 26 | **Dominios**: 08 · 10
+
+| Campo | Valor |
+|---|---|
+| **Épica** | E15 — Persistencia Agnóstica & Telemetría Broker-Neutral |
+| **Trace_ID** | `ARCH-DB-DRIVER-AGNOSTIC-MT5-DECOUPLING-2026-04-06` |
+| **Sprints** | 26 |
+| **Completada** | 7 de Abril, 2026 |
+| **Dominios** | 08_DATA_SOVEREIGNTY · 10_INFRASTRUCTURE_RESILIENCY |
+| **HUs** | HU 10.20, HU 8.2, HU 8.3 |
+| **validate_all** | ✅ 27/27 PASSED |
+
+**Objetivo cumplido**: eliminación del acoplamiento operativo a MT5 en telemetría/salud y consolidación de la capa de persistencia agnóstica con contrato de driver + política híbrida SQLite (retry/backoff y cola selectiva), preservando camino limpio hacia motores SQL robustos.
+### ════════════════════════════════════════════════════════════════
+
+---
+
+### Sprint 26 — HU 8.3: Concurrencia SQLite Híbrida (7-Abr-2026)
+**Trace_ID**: `ARCH-SQLITE-HYBRID-CONCURRENCY-HU8.3-2026-04-07` | **Épica**: E15 (Sprint cerrado) | **Estado**: HU completada
+
+| HU | Descripción | Artefactos clave | Tests |
+|---|---|---|---|
+| **HU 8.3** | Implementación de política híbrida SQLite en `SQLiteDriver`: retry/backoff acotado para writes críticos, cola selectiva para telemetría (`write_mode=telemetry`), métricas de concurrencia (`retry_attempts`, `retry_exhausted`, `telemetry_enqueued`, `telemetry_dropped`, `telemetry_flushed`, `last_flush_latency_ms`), carga runtime de policy desde `sys_config`, y bypass explícito de cola en bootstrap/migraciones vía `force_critical_writes`. Se añadió hook de observabilidad y clasificador de lock/busy en `DatabaseManager`; `BaseRepository` expone `execute_telemetry_update` para enrutar eventos de alta frecuencia sin imponer embudo global. | `data_vault/drivers/sqlite_driver.py`, `data_vault/drivers/interface.py`, `data_vault/database_manager.py`, `data_vault/base_repo.py`, `data_vault/storage.py`, `tests/test_sqlite_hybrid_concurrency_hu83.py`, `tests/test_database_driver_contract.py` | 8/8 |
+
+**Suite total tras HU 8.3**: HU 8.2+8.3 = 14/14 PASSED · validate_all **27/27 PASSED** · `start.py` smoke OK sin fallo fatal atribuible a persistencia
 
 ---
 
@@ -444,6 +474,42 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 | **ADX** | Problem 2 (ADX regression) confirmado resuelto desde sprint anterior (`scanner.py:248`). |
 | **TDD** | 5 tests nuevos en `TestShadowSyncZeroTrades` + `TestShadowMetricsAfterFix`. 5/5 PASSED. |
 | **validate_all** | ✅ 27/27 PASSED · Suite total 2002 · 0 failures |
+
+---
+
+## 📅 Registro: 2026-04-07 — AUDITORÍA GOVERNANCE: HUs Sin Estado Archivadas
+
+### ✅ CORRECCIÓN DE GOVERNANCE: 5 HUs ya implementadas eliminadas del BACKLOG
+
+| HU | Nombre | Evidencia en SYSTEM_LEDGER | Referencia |
+|---|---|---|---|
+| **HU 2.3** | Contextual Memory Calibration | Archivada en E2 (SAAS-GENESIS-2026-001, 27-Feb-2026) | `core_brain/regime.py` `shock_lookback`, lookbacks configurables en sensores |
+| **HU 3.1** | Contextual Alpha Scoring System | Archivada en E2 + Phase 4 (PHASE4-TRIFECTA-COMPLETION-2026) | `SignalQualityScorer`: `technical_score×0.60 + contextual_score×0.40`, grados A+/A/B/C/F |
+| **HU 3.5** | Dynamic Alpha Thresholding | Cubierta por HU 7.1 (ADAPTIVE-THRESHOLD-2026-001, Sprint N2) + HU 7.5 (Sprint 21) | `DynamicThresholdController`: ajuste por drought/drawdown; `min_confidence` config-driven |
+| **HU 6.2** | Multi-Tenant Strategy Ranker | Implementada en `core_brain/strategy_ranker.py` (entradas tempranas SYSTEM_LEDGER). ⚠️ HU number reutilizado en E3 para "Conflict Resolver" → ambigüedad registrada en BACKLOG | `StrategyRanker`: SHADOW→LIVE→QUARANTINE con pesos por régimen |
+| **HU 10.1** | Autonomous Heartbeat & Self-Healing | Archivada en E3 (HU 10.1 Strategy Heartbeat) + E13 (OEM) + E14 (ResilienceManager + SelfHealingPlaybook) | `StrategyHeartbeatMonitor`, `AutonomousHealthService`, `SelfHealingPlaybook` |
+
+**Acción**: HUs eliminadas del BACKLOG. Solo HU 3.5 carece de entrada cronológica propia; queda referenciada por HU 7.1 + HU 7.5.
+
+---
+
+## 📅 Registro: 2026-03-17 — SPRINT N5: ESTABILIZACIÓN CORE — HU 5.4 + HU 8.1 (TRACE_ID: RUNTIME-FIX-COOLDOWN-KWARGS-2026-N5)
+
+### ✅ HITO COMPLETADO: Estabilización Core — Inyección kwargs + Separación Arquitectónica de Cuentas
+
+**Timestamp**: 17 de Marzo, 2026
+**Status**: ✅ COMPLETADO
+**Domain**: 05_UNIVERSAL_EXECUTION · 08_DATA_SOVEREIGNTY
+**Versión Sistema**: v4.4.3-beta
+**Nota**: Sprint N5 se etiquetó internamente como "E6 nueva - Estabilización Core"; la denominación es histórica (E6 ya existía como "Purga de DB Legacy"). Este sprint queda archivado como entrada cronológica independiente.
+
+| HU | Nombre | Trace_ID | Artefactos clave | Tests |
+|---|---|---|---|---|
+| **HU 5.4** | Inyección Selectiva kwargs en DataProviderManager + WARNING→DEBUG en RiskManager | `RUNTIME-FIX-COOLDOWN-KWARGS-2026-N5` | `core_brain/data_provider_manager.py` (filtro `inspect.signature`), `core_brain/risk_manager.py` (log level), `data_vault/execution_db.py` (cooldown methods) | incluido en suite |
+| **HU 8.1** | `usr_broker_accounts` — Separación Arquitectónica de Cuentas | `ARCH-USR-BROKER-ACCOUNTS-2026-N5` | `data_vault/schema.py` (DDL `usr_broker_accounts`), `data_vault/broker_accounts_db.py` (`BrokerAccountsMixin` CRUD), `data_vault/storage.py` (herencia), `tests/test_usr_broker_accounts.py`, `scripts/migrate_broker_accounts.py` | 5/5 |
+
+**Resultado operacional**: `errors=52/52` → `0` en ejecución real. Arquitectura dual confirmada: `sys_broker_accounts` (DEMO sistema) vs `usr_broker_accounts` (cuentas trader, isoladas por `user_id`). 2 cuentas reales migradas idempotentemente.
+**validate_all**: ✅ PASSED al cierre de Sprint N5
 
 ---
 

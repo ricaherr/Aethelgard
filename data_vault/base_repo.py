@@ -84,7 +84,13 @@ class BaseRepository:
             logger.error(f"Query failed on {self.db_path}: {e}")
             raise
 
-    def execute_update(self, sql: str, params: tuple[Any, ...] = ()) -> int:
+    def execute_update(
+        self,
+        sql: str,
+        params: tuple[Any, ...] = (),
+        *,
+        write_mode: str = "critical",
+    ) -> int:
         """
         Execute INSERT/UPDATE/DELETE (write operation with auto-commit).
 
@@ -96,10 +102,14 @@ class BaseRepository:
             Rows affected or last insert rowid
         """
         try:
-            return self.db_driver.execute(self.db_path, sql, params)
+            return self.db_driver.execute(self.db_path, sql, params, write_mode=write_mode)
         except Exception as e:
             logger.error(f"Update failed on {self.db_path}: {e}")
             raise
+
+    def execute_telemetry_update(self, sql: str, params: tuple[Any, ...] = ()) -> int:
+        """Route high-frequency telemetry writes through selective queue policy."""
+        return self.execute_update(sql, params, write_mode="telemetry")
 
     @contextmanager
     def transaction(self) -> Generator[sqlite3.Connection, None, None]:

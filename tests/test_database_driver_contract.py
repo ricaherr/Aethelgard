@@ -128,3 +128,22 @@ def test_driver_bulk_execute_many(sqlite_driver: SQLiteDriver, tmp_path: Path) -
     rows = sqlite_driver.fetch_all(db_path, "SELECT payload FROM bulk_demo ORDER BY id")
     assert written >= 3
     assert [row["payload"] for row in rows] == ["a", "b", "c"]
+
+
+def test_driver_execute_accepts_write_mode_keyword(sqlite_driver: SQLiteDriver, tmp_path: Path) -> None:
+    """HU 8.3: driver API should accept write_mode without breaking legacy behavior."""
+    db_path = str(tmp_path / "driver_contract_write_mode.db")
+
+    with sqlite_driver.transaction(db_path) as conn:
+        conn.execute("CREATE TABLE mode_demo (id INTEGER PRIMARY KEY, payload TEXT NOT NULL)")
+
+    inserted = sqlite_driver.execute(
+        db_path,
+        "INSERT INTO mode_demo (payload) VALUES (?)",
+        ("critical",),
+        write_mode="critical",
+    )
+
+    row = sqlite_driver.fetch_one(db_path, "SELECT payload FROM mode_demo WHERE id = ?", (inserted,))
+    assert row is not None
+    assert row["payload"] == "critical"

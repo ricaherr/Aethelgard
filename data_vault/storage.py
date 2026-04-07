@@ -4,6 +4,7 @@ import sqlite3
 import json
 import shutil
 import uuid
+from contextlib import nullcontext
 from datetime import datetime
 from typing import Optional, Dict, Any, List, Union, cast
 from pathlib import Path
@@ -89,17 +90,22 @@ class StorageManager(
         # Initialize database schema and migrations
         try:
             logger.info("Initializing database schema...")
-            with self.transaction() as conn:
-                # DDL (idempotent via CREATE TABLE IF NOT EXISTS)
-                initialize_schema(conn)
-                # Incremental migrations
-                run_migrations(conn)
-                # Default user preferences
-                seed_default_usr_preferences(conn)
-                # Symbol mapping bootstrap
-                bootstrap_symbol_mappings(conn)
-                # JSON config migration (SSOT: once on first init)
-                self._bootstrap_from_json(conn)
+            critical_context = nullcontext()
+            if hasattr(self.db_driver, "force_critical_writes"):
+                critical_context = self.db_driver.force_critical_writes()
+
+            with critical_context:
+                with self.transaction() as conn:
+                    # DDL (idempotent via CREATE TABLE IF NOT EXISTS)
+                    initialize_schema(conn)
+                    # Incremental migrations
+                    run_migrations(conn)
+                    # Default user preferences
+                    seed_default_usr_preferences(conn)
+                    # Symbol mapping bootstrap
+                    bootstrap_symbol_mappings(conn)
+                    # JSON config migration (SSOT: once on first init)
+                    self._bootstrap_from_json(conn)
 
             # Default asset profiles (required for normalization)
             self.seed_initial_assets()

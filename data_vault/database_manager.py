@@ -306,6 +306,21 @@ class DatabaseManager:
         """
         return self._pragma_config.copy()
 
+    def is_sqlite_lock_error(self, error: Exception) -> bool:
+        """Classify transient SQLite lock/busy errors in a single reusable place."""
+        message = str(error).lower()
+        return (
+            "database is locked" in message
+            or "database table is locked" in message
+            or "database is busy" in message
+            or "busy" in message
+            or "locked" in message
+        )
+
+    def observe_sqlite_concurrency_event(self, event_name: str, payload: Dict[str, Any]) -> None:
+        """Hook for SQLite concurrency observability; currently logs at debug level."""
+        logger.debug("[DatabaseManager] sqlite_concurrency_event=%s payload=%s", event_name, payload)
+
     def set_pragma_value(self, key: str, value: Any) -> None:
         """
         Update a PRAGMA value (rarely used; config should be static).

@@ -16,11 +16,25 @@ class IDatabaseDriver(ABC):
         """Return an active backend connection handle."""
 
     @abstractmethod
-    def execute(self, db_path: str, sql: str, params: tuple[Any, ...] = ()) -> int:
+    def execute(
+        self,
+        db_path: str,
+        sql: str,
+        params: tuple[Any, ...] = (),
+        *,
+        write_mode: str = "critical",
+    ) -> int:
         """Execute INSERT/UPDATE/DELETE statement and return affected count or row id."""
 
     @abstractmethod
-    def execute_many(self, db_path: str, sql: str, param_list: list[tuple[Any, ...]]) -> int:
+    def execute_many(
+        self,
+        db_path: str,
+        sql: str,
+        param_list: list[tuple[Any, ...]],
+        *,
+        write_mode: str = "critical",
+    ) -> int:
         """Execute batch statement with homogeneous parameter tuples."""
 
     @abstractmethod
