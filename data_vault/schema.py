@@ -29,7 +29,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
     """
     Create all database tables and indexes if they don't exist.
     Safe to call on every startup (idempotent via IF NOT EXISTS).
-    Uses EXCLUSIVE lock to serialize concurrent initializations.
+    Relies on SQLite WAL + busy_timeout for contention handling.
     """
     cursor = conn.cursor()
 

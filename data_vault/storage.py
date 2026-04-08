@@ -330,6 +330,7 @@ class StorageManager(
         Returns:
             User config dict or None
         """
+        conn: Optional[sqlite3.Connection] = None
         try:
             conn: sqlite3.Connection = self._get_conn()
             cursor: sqlite3.Cursor = conn.cursor()
@@ -355,7 +356,8 @@ class StorageManager(
             logger.error(f"Error getting user config for '{user_id}': {e}")
             return None
         finally:
-            self._close_conn(conn)
+            if conn is not None:
+                self._close_conn(conn)
 
     async def update_user_config(self, user_id: str, updates: Dict[str, Any]) -> None:
         """
@@ -450,6 +452,7 @@ class StorageManager(
             List of economic events sorted by time DESC (newest first)
             Empty list if table doesn't exist (graceful degradation)
         """
+        conn: Optional[sqlite3.Connection] = None
         try:
             conn: sqlite3.Connection = self._get_conn()
             cursor: sqlite3.Cursor = conn.cursor()
@@ -506,7 +509,8 @@ class StorageManager(
             logger.warning(f"[StorageManager] get_economic_calendar() failed: {e}")
             return []
         finally:
-            self._close_conn(conn)
+            if conn is not None:
+                self._close_conn(conn)
 
     def save_economic_event(self, event: Dict[str, Any]) -> str:
         """
@@ -639,6 +643,7 @@ class StorageManager(
             List of economic events in window, sorted by event_time_utc
             Empty list if economic_calendar table doesn't exist (graceful degradation)
         """
+        conn: Optional[sqlite3.Connection] = None
         try:
             # Convert datetime objects to ISO format strings if needed
             from datetime import datetime
@@ -698,7 +703,8 @@ class StorageManager(
             logger.error(f"[StorageManager] Error querying economic events by window: {str(e)}")
             return []  # Graceful degradation
         finally:
-            self._close_conn(conn)
+            if conn is not None:
+                self._close_conn(conn)
 
     def update_economic_event(self, event_id: str, updates: Dict[str, Any]) -> None:
         """

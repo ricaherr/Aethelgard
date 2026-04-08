@@ -64,7 +64,9 @@ class DatabaseManager:
             "synchronous": "NORMAL",  # Reduce unnecessary fsync
             "wal_autocheckpoint": 50000,  # 200MB before checkpoint (reduce frequent blocking)
             "temp_store": "MEMORY",  # Temp files in RAM
-            "locking_mode": "EXCLUSIVE",  # DB-level locking (faster than page-level)
+            # NORMAL avoids persistent exclusive DB locks across multiple processes
+            # (launcher + API subprocess), while WAL still guarantees write serialization.
+            "locking_mode": "NORMAL",
             "cache_size": -64000,  # 64MB cache
             "query_only": False,  # Allow writes by default
         }
