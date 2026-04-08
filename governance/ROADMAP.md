@@ -51,7 +51,8 @@
 
 | HU | Nombre | Dominio | Sprint | Estado |
 |---|---|---|---|---|
-| HU 8.4 | Fase 0 Enforcement de Persistencia (runtime + validate_all baseline) | 08 | 27 | [TODO] |
+| HU 8.4 | Enforcement de Persistencia (guard + auditoría AST + baseline 99 violaciones) | 08 | 27 | [DONE] |
+| HU 8.5 | Migración de Writes Bypass a Contrato de Driver (market_db + storage) | 08 | 27 | [DONE] |
 
 > [!NOTE]
 > El historial completo de épicas completadas se encuentra en [SYSTEM_LEDGER.md](SYSTEM_LEDGER.md).

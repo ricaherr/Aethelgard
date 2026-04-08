@@ -297,32 +297,28 @@ class StorageManager(
             event: Dict con los datos del evento
         """
         try:
-            conn: sqlite3.Connection = self._get_conn()
-            cursor: sqlite3.Cursor = conn.cursor()
-            
-            cursor.execute("""
-                INSERT INTO usr_coherence_events 
-                (signal_id, symbol, timeframe, strategy, stage, status, 
-                 incoherence_type, reason, details, connector_type)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                event.get("signal_id"),
-                event.get("symbol"),
-                event.get("timeframe"),
-                event.get("strategy"),
-                event.get("stage"),
-                event.get("status"),
-                event.get("incoherence_type"),
-                event.get("reason"),
-                event.get("details"),
-                event.get("connector_type"),
-            ))
-            
-            conn.commit()
+            with self.transaction() as conn:
+                cursor: sqlite3.Cursor = conn.cursor()
+
+                cursor.execute("""
+                    INSERT INTO usr_coherence_events 
+                    (signal_id, symbol, timeframe, strategy, stage, status, 
+                     incoherence_type, reason, details, connector_type)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    event.get("signal_id"),
+                    event.get("symbol"),
+                    event.get("timeframe"),
+                    event.get("strategy"),
+                    event.get("stage"),
+                    event.get("status"),
+                    event.get("incoherence_type"),
+                    event.get("reason"),
+                    event.get("details"),
+                    event.get("connector_type"),
+                ))
         except Exception as e:
             logger.error(f"Error saving coherence event: {e}")
-        finally:
-            self._close_conn(conn)
 
     async def get_user_config(self, user_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -370,37 +366,34 @@ class StorageManager(
             updates: Dict with updates to apply
         """
         try:
-            conn: sqlite3.Connection = self._get_conn()
-            cursor: sqlite3.Cursor = conn.cursor()
-            
-            # Get current config
-            cursor.execute(
-                "SELECT value FROM sys_config WHERE key = ?",
-                (f"user:{user_id}:config",)
-            )
-            row = cursor.fetchone()
-            
-            current: Dict[str, Any]
-            if row:
-                current = json.loads(row[0]) if isinstance(row[0], str) else row[0]
-            else:
-                current = {"user_id": user_id}
-            
-            # Merge updates
-            current.update(updates)
-            
-            # Persist
-            cursor.execute(
-                "INSERT OR REPLACE INTO sys_config (key, value) VALUES (?, ?)",
-                (f"user:{user_id}:config", json.dumps(current))
-            )
-            conn.commit()
+            with self.transaction() as conn:
+                cursor: sqlite3.Cursor = conn.cursor()
+
+                # Get current config
+                cursor.execute(
+                    "SELECT value FROM sys_config WHERE key = ?",
+                    (f"user:{user_id}:config",)
+                )
+                row = cursor.fetchone()
+
+                current: Dict[str, Any]
+                if row:
+                    current = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+                else:
+                    current = {"user_id": user_id}
+
+                # Merge updates
+                current.update(updates)
+
+                # Persist
+                cursor.execute(
+                    "INSERT OR REPLACE INTO sys_config (key, value) VALUES (?, ?)",
+                    (f"user:{user_id}:config", json.dumps(current))
+                )
             logger.info(f"User config updated for '{user_id}'")
-        
+
         except Exception as e:
             logger.error(f"Error updating user config for '{user_id}': {e}")
-        finally:
-            self._close_conn(conn)
 
     async def append_to_system_ledger(self, entry: Dict[str, Any]) -> None:
         """
@@ -410,36 +403,33 @@ class StorageManager(
             entry: Event entry to log
         """
         try:
-            conn: sqlite3.Connection = self._get_conn()
-            cursor: sqlite3.Cursor = conn.cursor()
-            
-            # Get current ledger
-            cursor.execute(
-                "SELECT value FROM sys_config WHERE key = ?",
-                ("system_ledger",)
-            )
-            row = cursor.fetchone()
-            
-            if row:
-                ledger = json.loads(row[0]) if isinstance(row[0], str) else []
-            else:
-                ledger = []
-            
-            # Append entry
-            ledger.append(entry)
-            
-            # Persist
-            cursor.execute(
-                "INSERT OR REPLACE INTO sys_config (key, value) VALUES (?, ?)",
-                ("system_ledger", json.dumps(ledger))
-            )
-            conn.commit()
+            with self.transaction() as conn:
+                cursor: sqlite3.Cursor = conn.cursor()
+
+                # Get current ledger
+                cursor.execute(
+                    "SELECT value FROM sys_config WHERE key = ?",
+                    ("system_ledger",)
+                )
+                row = cursor.fetchone()
+
+                if row:
+                    ledger = json.loads(row[0]) if isinstance(row[0], str) else []
+                else:
+                    ledger = []
+
+                # Append entry
+                ledger.append(entry)
+
+                # Persist
+                cursor.execute(
+                    "INSERT OR REPLACE INTO sys_config (key, value) VALUES (?, ?)",
+                    ("system_ledger", json.dumps(ledger))
+                )
             logger.debug(f"Ledger entry appended: {entry.get('event_type', 'UNKNOWN')}")
-        
+
         except Exception as e:
             logger.error(f"Error appending to system ledger: {e}")
-        finally:
-            self._close_conn(conn)
 
     def get_economic_calendar(
         self, 
@@ -546,67 +536,64 @@ class StorageManager(
         from core_brain.news_errors import PersistenceError
         
         try:
-            conn: sqlite3.Connection = self._get_conn()
-            cursor: sqlite3.Cursor = conn.cursor()
-            
-            # Ensure economic_calendar table exists
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS economic_calendar (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    event_id TEXT UNIQUE NOT NULL,
-                    provider_source TEXT NOT NULL,
-                    event_name TEXT NOT NULL,
-                    country TEXT NOT NULL,
-                    currency TEXT,
-                    impact_score TEXT,
-                    forecast REAL,
-                    actual REAL,
-                    previous REAL,
-                    event_time_utc TEXT NOT NULL,
-                    is_verified BOOLEAN DEFAULT 0,
-                    data_version INTEGER DEFAULT 1,
-                    created_at TEXT NOT NULL
-                )
-            """)
-            
-            # INSERT sanitized event
-            cursor.execute("""
-                INSERT INTO economic_calendar (
-                    event_id, provider_source, event_name, country, currency,
-                    impact_score, forecast, actual, previous, event_time_utc,
-                    is_verified, data_version, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                event.get("event_id"),
-                event.get("provider_source"),
-                event.get("event_name"),
-                event.get("country"),
-                event.get("currency"),
-                event.get("impact_score"),
-                event.get("forecast"),
-                event.get("actual"),
-                event.get("previous"),
-                event.get("event_time_utc"),
-                event.get("is_verified", False),
-                event.get("data_version", 1),
-                event.get("created_at"),
-            ))
-            
-            conn.commit()
+            with self.transaction() as conn:
+                cursor: sqlite3.Cursor = conn.cursor()
+
+                # Ensure economic_calendar table exists
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS economic_calendar (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        event_id TEXT UNIQUE NOT NULL,
+                        provider_source TEXT NOT NULL,
+                        event_name TEXT NOT NULL,
+                        country TEXT NOT NULL,
+                        currency TEXT,
+                        impact_score TEXT,
+                        forecast REAL,
+                        actual REAL,
+                        previous REAL,
+                        event_time_utc TEXT NOT NULL,
+                        is_verified BOOLEAN DEFAULT 0,
+                        data_version INTEGER DEFAULT 1,
+                        created_at TEXT NOT NULL
+                    )
+                """)
+
+                # INSERT sanitized event
+                cursor.execute("""
+                    INSERT INTO economic_calendar (
+                        event_id, provider_source, event_name, country, currency,
+                        impact_score, forecast, actual, previous, event_time_utc,
+                        is_verified, data_version, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    event.get("event_id"),
+                    event.get("provider_source"),
+                    event.get("event_name"),
+                    event.get("country"),
+                    event.get("currency"),
+                    event.get("impact_score"),
+                    event.get("forecast"),
+                    event.get("actual"),
+                    event.get("previous"),
+                    event.get("event_time_utc"),
+                    event.get("is_verified", False),
+                    event.get("data_version", 1),
+                    event.get("created_at"),
+                ))
+
             event_id: str = cast(str, event.get("event_id"))
-            
+
             logger.info(
                 f"[StorageManager] SAVED economic event: "
                 f"event_id={event_id}, impact={event.get('impact_score')}, "
                 f"name={event.get('event_name')}"
             )
-            
+
             return event_id
-            
+
         except Exception as e:
             raise PersistenceError(f"Failed to save economic event: {str(e)}")
-        finally:
-            self._close_conn(conn)
 
     def get_economic_events(
         self,

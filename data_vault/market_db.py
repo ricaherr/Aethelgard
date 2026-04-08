@@ -12,16 +12,12 @@ class MarketMixin(BaseRepository):
 
     def log_sys_market_pulse(self, state_data: dict[str, Any]) -> None:
         """Log market state data"""
-        conn = self._get_conn()
-        try:
+        with self.transaction() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO sys_market_pulse (symbol, data)
                 VALUES (?, ?)
             """, (state_data.get('symbol'), json.dumps(state_data)))
-            conn.commit()
-        finally:
-            self._close_conn(conn)
 
     def get_sys_market_pulse_history(self, symbol: str, limit: int = 100) -> list[dict[str, Any]]:
         """Get market state history for a symbol"""
@@ -48,38 +44,31 @@ class MarketMixin(BaseRepository):
                            strategy: Optional[str], stage: str, status: str, incoherence_type: Optional[str],
                            reason: str, details: Optional[str], connector_type: Optional[str]) -> None:
         """Log coherence monitoring event"""
-        conn = self._get_conn()
-        try:
+        with self.transaction() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO usr_coherence_events 
                 (signal_id, symbol, timeframe, strategy, stage, status, incoherence_type, reason, details, connector_type)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (signal_id, symbol, timeframe, strategy, stage, status, incoherence_type, reason, details, connector_type))
-            conn.commit()
-        finally:
-            self._close_conn(conn)
 
     def _clear_ghost_position_inline(self, symbol: str) -> None:
         """
         Clear ghost position inline (fused logic, no separate function).
         """
-        conn = self._get_conn()
         try:
-            cursor = conn.cursor()
-            cursor.execute("""
-                UPDATE sys_signals 
-                SET status = 'CLOSED', 
-                    metadata = json_set(COALESCE(metadata, '{}'), '$.exit_reason', 'REJECTED')
-                WHERE symbol = ? 
-                AND status = 'EXECUTED'
-                AND id NOT IN (SELECT signal_id FROM usr_trades WHERE signal_id IS NOT NULL)
-            """, (symbol,))
-            conn.commit()
+            with self.transaction() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE sys_signals 
+                    SET status = 'CLOSED', 
+                        metadata = json_set(COALESCE(metadata, '{}'), '$.exit_reason', 'REJECTED')
+                    WHERE symbol = ? 
+                    AND status = 'EXECUTED'
+                    AND id NOT IN (SELECT signal_id FROM usr_trades WHERE signal_id IS NOT NULL)
+                """, (symbol,))
         except Exception as e:
             logger.error(f"Error clearing ghost position for {symbol}: {e}")
-        finally:
-            self._close_conn(conn)
 
     def get_latest_heatmap_state(self) -> list[dict[str, Any]]:
         """
@@ -203,44 +192,41 @@ class MarketMixin(BaseRepository):
             limit_records: Keep only latest N records per symbol
             metadata: Additional metadata (ttl_seconds, provider, etc.)
         """
-        conn = self._get_conn()
         try:
-            cursor = conn.cursor()
-            timestamp_str = datetime.now(timezone.utc).isoformat()
-            
-            # Prepare cache entry with metadata
-            cache_entry = {
-                "timestamp": timestamp_str,
-                "symbol": symbol,
-                "record_count": len(data) if data else 0,
-                "metadata": metadata or {}
-            }
-            if data:
-                cache_entry["records"] = data
-            
-            # Insert cache entry
-            cursor.execute("""
-                INSERT INTO sys_market_pulse (symbol, data)
-                VALUES (?, ?)
-            """, (symbol, json.dumps(cache_entry)))
-            
-            # Cleanup: Keep only latest N per symbol
-            cursor.execute("""
-                DELETE FROM sys_market_pulse 
-                WHERE symbol = ? AND id NOT IN (
-                    SELECT id FROM sys_market_pulse 
-                    WHERE symbol = ? 
-                    ORDER BY timestamp DESC 
-                    LIMIT ?
-                )
-            """, (symbol, symbol, limit_records))
-            
-            conn.commit()
+            with self.transaction() as conn:
+                cursor = conn.cursor()
+                timestamp_str = datetime.now(timezone.utc).isoformat()
+
+                # Prepare cache entry with metadata
+                cache_entry = {
+                    "timestamp": timestamp_str,
+                    "symbol": symbol,
+                    "record_count": len(data) if data else 0,
+                    "metadata": metadata or {}
+                }
+                if data:
+                    cache_entry["records"] = data
+
+                # Insert cache entry
+                cursor.execute("""
+                    INSERT INTO sys_market_pulse (symbol, data)
+                    VALUES (?, ?)
+                """, (symbol, json.dumps(cache_entry)))
+
+                # Cleanup: Keep only latest N per symbol
+                cursor.execute("""
+                    DELETE FROM sys_market_pulse 
+                    WHERE symbol = ? AND id NOT IN (
+                        SELECT id FROM sys_market_pulse 
+                        WHERE symbol = ? 
+                        ORDER BY timestamp DESC 
+                        LIMIT ?
+                    )
+                """, (symbol, symbol, limit_records))
+
             logger.debug(f"[CACHE] Logged {len(data) if data else 0} records for {symbol}")
         except Exception as e:
             logger.warning(f"[CACHE] log_market_cache failed: {e}")
-        finally:
-            self._close_conn(conn)
     
     def get_market_cache(self, symbol: str, count: int = 100) -> Optional[list[dict[str, Any]]]:
         """
@@ -283,8 +269,7 @@ class MarketMixin(BaseRepository):
 
     def seed_initial_assets(self) -> None:
         """Seed initial asset profiles if table is empty."""
-        conn = self._get_conn()
-        try:
+        with self.transaction() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM usr_assets_cfg")
             if cursor.fetchone()[0] > 0:
@@ -297,14 +282,11 @@ class MarketMixin(BaseRepository):
                 ('GOLD',   'METAL', 0.01, 0.01, 100,    'USD', '08:00', '17:00'),
                 ('BTCUSD', 'CRYPTO', 0.01, 0.0001, 1,    'USD', '00:00', '23:59')
             ]
-            
+
             cursor.executemany("""
                 INSERT INTO usr_assets_cfg 
                 (symbol, asset_class, tick_size, lot_step, contract_size, currency, golden_hour_start, golden_hour_end)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, initial_assets)
-            
-            conn.commit()
+
             logger.info("Initial asset profiles seeded.")
-        finally:
-            self._close_conn(conn)

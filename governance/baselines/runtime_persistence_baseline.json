@@ -1,6 +1,6 @@
 {
   "trace_id": "DB-POLICY-RUNTIME-ENFORCEMENT-2026-04-07",
-  "generated_at_utc": "2026-04-08T00:12:51.789143+00:00",
+  "generated_at_utc": "2026-04-08T00:57:06.070690+00:00",
   "violations": [
     {
       "rule": "manual_commit_runtime_write",
@@ -226,36 +226,6 @@
     },
     {
       "rule": "manual_commit_runtime_write",
-      "file": "data_vault/market_db.py",
-      "line": 22,
-      "code": "conn.commit()"
-    },
-    {
-      "rule": "manual_commit_runtime_write",
-      "file": "data_vault/market_db.py",
-      "line": 59,
-      "code": "conn.commit()"
-    },
-    {
-      "rule": "manual_commit_runtime_write",
-      "file": "data_vault/market_db.py",
-      "line": 78,
-      "code": "conn.commit()"
-    },
-    {
-      "rule": "manual_commit_runtime_write",
-      "file": "data_vault/market_db.py",
-      "line": 238,
-      "code": "conn.commit()"
-    },
-    {
-      "rule": "manual_commit_runtime_write",
-      "file": "data_vault/market_db.py",
-      "line": 307,
-      "code": "conn.commit()"
-    },
-    {
-      "rule": "manual_commit_runtime_write",
       "file": "data_vault/schema.py",
       "line": 943,
       "code": "conn.commit()"
@@ -384,30 +354,6 @@
       "rule": "manual_commit_runtime_write",
       "file": "data_vault/signals_db.py",
       "line": 455,
-      "code": "conn.commit()"
-    },
-    {
-      "rule": "manual_commit_runtime_write",
-      "file": "data_vault/storage.py",
-      "line": 321,
-      "code": "conn.commit()"
-    },
-    {
-      "rule": "manual_commit_runtime_write",
-      "file": "data_vault/storage.py",
-      "line": 397,
-      "code": "conn.commit()"
-    },
-    {
-      "rule": "manual_commit_runtime_write",
-      "file": "data_vault/storage.py",
-      "line": 436,
-      "code": "conn.commit()"
-    },
-    {
-      "rule": "manual_commit_runtime_write",
-      "file": "data_vault/storage.py",
-      "line": 595,
       "code": "conn.commit()"
     },
     {

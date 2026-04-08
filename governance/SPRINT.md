@@ -45,12 +45,20 @@
   - Implementar endpoint REST `GET /api/portfolio/rankings` (autenticado, devuelve ranking personalizado por JWT user).
   - Dashboard React "Strategy Darwinism" con tabla de rankings dinámicos y badges de estado (SHADOW/LIVE/QUARANTINE) por trader.
 
-- [DEV] **HU 8.4: Fase 0 Enforcement de Persistencia (DB Policy Root-Fix)**
-  - Bloquear nuevas conexiones directas `sqlite3.connect(...)` en runtime mediante guard de arranque.
-  - Crear auditoría automática en `validate_all.py` para detectar:
-    - `sqlite3.connect` fuera de manager/driver.
-    - `commit` manual en rutas runtime de escritura.
-  - Emitir inventario de violaciones actuales y baseline inicial para congelar superficie.
+- [DONE] **HU 8.4: Enforcement de Persistencia (DB Policy Root-Fix)**
+  - Guard runtime instalado en `start.py`: bloquea nuevas conexiones `sqlite3.connect` fuera de rutas aprobadas (lista allowlist + legacy baseline).
+  - Auditoría AST automática `scripts/utilities/runtime_persistence_audit.py` integrada en `validate_all.py` (Domain 08).
+  - Baseline generado: 99 violaciones congeladas en `governance/baselines/runtime_persistence_baseline.json` (4 sqlite_connect + 95 manual_commit).
+  - 4/4 tests focalizados passing · `validate_all.py` 28/28 · `start.py` smoke OK · 2334/2337 global suite.
+  - Bypass pytest activo (`PYTEST_CURRENT_TEST` / `sys.modules["pytest"]`) para no bloquear suite de desarrollo.
+  - Trace_ID: `DB-POLICY-RUNTIME-ENFORCEMENT-2026-04-07`
+
+- [DONE] **HU 8.5: Migración de Writes Bypass a Contrato de Driver**
+  - Migrados 5 métodos en `data_vault/market_db.py`: `log_sys_market_pulse`, `log_coherence_event`, `_clear_ghost_position_inline`, `log_market_cache`, `seed_initial_assets` → `with self.transaction()`.
+  - Migrados 4 métodos en `data_vault/storage.py`: `save_coherence_event`, `update_user_config`, `append_to_system_ledger`, `save_economic_event` → `with self.transaction()`.
+  - 18/18 tests focalizados (test_market_db_write_contract + test_storage_write_contract) · 2352/2355 global suite · validate_all.py 28/28.
+  - Baseline reducido: 99 → 90 violaciones (9 manual_commit eliminados). Nuevo freeze generado.
+  - Trace_ID: `DB-POLICY-RUNTIME-WRITES-HU8.5-2026-04-07`
 
 ## 📊 Snapshot de Cierre
 
