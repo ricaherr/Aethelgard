@@ -108,7 +108,10 @@ class StrategyEngineFactory:
             except Exception as e:
                 # Capturar error pero continuar con otras estrategias
                 strategy_id = strategy_spec.get("class_id", "UNKNOWN")
-                logger.error(f"[FACTORY] ✗ {strategy_id}: {e}")
+                if isinstance(e, ValueError) and "readiness=LOGIC_PENDING" in str(e):
+                    logger.warning(f"[FACTORY] ⊘ {strategy_id}: {e} [expected governance block]")
+                else:
+                    logger.error(f"[FACTORY] ✗ {strategy_id}: {e}")
                 self.load_errors[strategy_id] = str(e)
         
         # Paso 3: Validar resultado

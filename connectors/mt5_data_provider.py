@@ -112,7 +112,9 @@ class MT5DataProvider(BaseConnector):
             try:
                 self.login = int(account_number)
             except (ValueError, TypeError):
-                logger.error(f"Account {self.account_id}: account_number '{account_number}' no es numérico. Fallback a None.")
+                # Non-numeric account_number is a known graceful-degradation path (e.g. AUTO-DEMO-EXEC).
+                # This is expected during bootstrap with no live MT5 account — not a fatal error.
+                logger.warning(f"Account {self.account_id}: account_number '{account_number}' is non-numeric (graceful degradation). Fallback to None.")
                 self.login = None
                 return
             

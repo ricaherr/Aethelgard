@@ -165,9 +165,11 @@ class CTraderConnector(BaseConnector):
     ) -> Dict[str, Any]:
         """Build connector config from injected credentials (sys_data_providers)."""
         if not access_token or not account_number:
-            logger.warning(
-                "[CTrader] Credentials not configured. "
-                "Set access_token and account_number in sys_data_providers.additional_config."
+            # Credentials absence is expected when cTrader is not the active provider.
+            # Downgraded to INFO to avoid false-positive ERROR noise during bootstrap.
+            logger.info(
+                "[CTrader] Credentials not configured — provider disabled. "
+                "Set access_token and account_number in sys_data_providers.additional_config to activate."
             )
             return {"enabled": False}
 

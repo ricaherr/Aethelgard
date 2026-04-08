@@ -96,6 +96,40 @@ class TestReadinessSeverity:
         assert 'SESS_EXT_0001' in factory.load_errors
         assert 'LOGIC_PENDING' in factory.load_errors['SESS_EXT_0001']
 
+    def test_logic_pending_batch_skip_logs_warning_not_error(self, factory, mock_storage):
+        """
+        GIVEN: Strategy batch with one LOGIC_PENDING strategy
+        WHEN:  instantiate_all_sys_strategies() processes the batch
+        THEN:  the expected governance block must be logged as warning, not error.
+        """
+        mock_storage.get_all_sys_strategies.return_value = [
+            {
+                'class_id': 'SESS_EXT_0001',
+                'type': 'PYTHON_CLASS',
+                'readiness': 'LOGIC_PENDING',
+                'class_file': 'usr_strategies/session_extender.py',
+                'class_name': 'SessionExtenderStrategy'
+            },
+            {
+                'class_id': 'BRK_OPEN_0001',
+                'type': 'PYTHON_CLASS',
+                'readiness': 'READY_FOR_ENGINE',
+                'class_file': 'usr_strategies/breakout_opener.py',
+                'class_name': 'BreakoutOpenerStrategy'
+            }
+        ]
+
+        with patch('core_brain.services.strategy_engine_factory.logger') as mock_log:
+            with patch('core_brain.services.strategy_engine_factory.StrategyEngineFactory._instantiate_python_strategy') as mock_instantiate:
+                mock_instantiate.return_value = MagicMock()
+                factory.instantiate_all_sys_strategies()
+
+        warning_messages = [str(call) for call in mock_log.warning.call_args_list]
+        error_messages = [str(call) for call in mock_log.error.call_args_list]
+
+        assert any('expected governance block' in msg for msg in warning_messages)
+        assert not any('SESS_EXT_0001' in msg and 'LOGIC_PENDING' in msg for msg in error_messages)
+
 
 class TestExecutionModeAwareness:
     """Test execution_mode validation and application."""

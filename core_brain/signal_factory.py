@@ -177,11 +177,11 @@ class SignalFactory:
         
         for strategy_id, engine in self.strategy_engines.items():
             try:
-                # Logging: Resumen del DataFrame antes de analizar
+                # Logging: Resumen del DataFrame antes de analizar (debug-only, no saturar consola)
                 if df is not None:
-                    logger.info(f"[DEBUG][DF][{strategy_id}] {symbol}: df.shape={getattr(df, 'shape', 'N/A')}, head=\n{df.head(2) if hasattr(df, 'head') else 'N/A'}")
+                    logger.debug(f"[DEBUG][DF][{strategy_id}] {symbol}: df.shape={getattr(df, 'shape', 'N/A')}, head=\n{df.head(2) if hasattr(df, 'head') else 'N/A'}")
                 else:
-                    logger.info(f"[DEBUG][DF][{strategy_id}] {symbol}: df=None")
+                    logger.debug(f"[DEBUG][DF][{strategy_id}] {symbol}: df=None")
 
                 # Delegar análisis al motor compilado
                 # Hay dos tipos: PYTHON_CLASS usr_strategies (con .analyze) y JSON_SCHEMA (con .execute_from_registry)
@@ -195,9 +195,9 @@ class SignalFactory:
                 elif hasattr(engine, 'analyze') and callable(getattr(engine, 'analyze', None)):
                     # PYTHON_CLASS strategy: directly call analyze()
                     raw_signal = await engine.analyze(symbol, df, regime)
-                    # Logging: Motivo si no hay señal
+                    # Logging: Motivo si no hay señal (debug-only)
                     if raw_signal is None:
-                        logger.info(f"[DEBUG][{strategy_id}] {symbol}: analyze() no generó señal (raw_signal=None)")
+                        logger.debug(f"[DEBUG][{strategy_id}] {symbol}: analyze() no generó señal (raw_signal=None)")
                     signal = StrategySignalConverter.convert_from_python_class(
                         raw_signal, symbol, strategy_id, timeframe, trace_id, provider_source
                     )
@@ -404,11 +404,11 @@ class SignalFactory:
                 symbol = data.get("symbol")  # Extraer symbol del dict
                 timeframe = data.get("timeframe")  # Extraer timeframe del dict
 
-                # Logging: Resumen del DataFrame
+                # Logging: Resumen del DataFrame (debug-only, no saturar consola)
                 if df is not None:
-                    logger.info(f"[DEBUG][DF] {symbol}|{timeframe}: df.shape={getattr(df, 'shape', 'N/A')}, columns={list(df.columns) if hasattr(df, 'columns') else 'N/A'}")
+                    logger.debug(f"[DEBUG][DF] {symbol}|{timeframe}: df.shape={getattr(df, 'shape', 'N/A')}, columns={list(df.columns) if hasattr(df, 'columns') else 'N/A'}")
                 else:
-                    logger.info(f"[DEBUG][DF] {symbol}|{timeframe}: df=None")
+                    logger.debug(f"[DEBUG][DF] {symbol}|{timeframe}: df=None")
 
                 # FASE 4: Filter by enabled assets
                 if enabled_symbols is not None and symbol not in enabled_symbols:

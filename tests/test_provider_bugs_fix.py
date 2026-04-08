@@ -207,3 +207,92 @@ class TestGetStatusReportNoReload:
 
         # Cleanup singleton
         ConnectivityOrchestrator._instance = None
+
+
+# ---------------------------------------------------------------------------
+# LOG-HARDENING-STARTUP-2026-04-08: Severity adjustments
+# ---------------------------------------------------------------------------
+
+class TestCTraderCredentialsMissingLogLevel:
+    """CTrader credentials-missing message must be INFO (not WARNING) to avoid false-positive noise."""
+
+    def test_missing_credentials_does_not_emit_warning(self) -> None:
+        """
+        GIVEN: CTraderConnector instantiated with no credentials
+        WHEN:  _build_connector_config() is called internally
+        THEN:  No WARNING must be emitted — only INFO or lower.
+        """
+        import logging
+        from connectors.ctrader_connector import CTraderConnector
+
+        with patch("connectors.ctrader_connector.logger") as mock_log:
+            connector = CTraderConnector()  # no credentials injected
+            # _build_connector_config is called in __init__ when no credentials
+            mock_log.warning.assert_not_called()
+
+    def test_missing_credentials_emits_info(self) -> None:
+        """
+        GIVEN: CTraderConnector instantiated with no credentials
+        THEN:  logger.info() must be called at least once with 'Credentials not configured'.
+        """
+        import logging
+        from connectors.ctrader_connector import CTraderConnector
+
+        with patch("connectors.ctrader_connector.logger") as mock_log:
+            connector = CTraderConnector()
+            called_with_credentials_msg = any(
+                "Credentials not configured" in str(call_args)
+                for call_args in mock_log.info.call_args_list
+            )
+            assert called_with_credentials_msg, (
+                "Expected logger.info() with 'Credentials not configured', but it was not called."
+            )
+
+
+class TestMT5DataProviderNonNumericAccountWarning:
+    """Non-numeric account_number must log WARNING (not ERROR) — it is a known graceful-degradation path."""
+
+    def _make_sparse_storage(self) -> Any:
+        storage = MagicMock()
+        storage.get_sys_broker_accounts.return_value = [
+            {
+                "account_id": "TEST_ACC",
+                "account_name": "AutoDemo",
+                "account_number": "AUTO-DEMO-EXEC",  # intentionally non-numeric
+                "login": "AUTO-DEMO-EXEC",
+                "server": "",
+                "platform_id": "mt5",  # required by _load_from_db filter
+                "enabled": True,
+                "account_role": "SYS_EXEC_DEMO_AUTO",
+            }
+        ]
+        storage.get_credentials.return_value = {"password": ""}
+        return storage
+
+    def test_non_numeric_account_number_logs_warning_not_error(self) -> None:
+        """
+        GIVEN: MT5DataProvider with account_number='AUTO-DEMO-EXEC'
+        WHEN:  Provider initialises
+        THEN:  logger.warning() is called, logger.error() is NOT called.
+        """
+        from connectors.mt5_data_provider import MT5DataProvider
+
+        storage = self._make_sparse_storage()
+        with patch("connectors.mt5_data_provider.logger") as mock_log:
+            provider = MT5DataProvider(storage=storage, account_id="TEST_ACC", init_mt5=False)
+            mock_log.error.assert_not_called()
+            assert mock_log.warning.call_count >= 1, (
+                "Expected at least one logger.warning() call for non-numeric account_number."
+            )
+
+    def test_non_numeric_account_number_warning_mentions_graceful_degradation(self) -> None:
+        """Warning message must indicate this is a graceful-degradation path, not an unexpected failure."""
+        from connectors.mt5_data_provider import MT5DataProvider
+
+        storage = self._make_sparse_storage()
+        with patch("connectors.mt5_data_provider.logger") as mock_log:
+            provider = MT5DataProvider(storage=storage, account_id="TEST_ACC", init_mt5=False)
+            all_warnings = " ".join(str(c) for c in mock_log.warning.call_args_list)
+            assert "graceful" in all_warnings.lower() or "non-numeric" in all_warnings.lower(), (
+                "Warning message should mention 'graceful' or 'non-numeric' to be self-explanatory."
+            )

@@ -57,6 +57,8 @@ class SessionLiquiditySensor:
         self.london_session_start = 8   # 08:00 GMT
         self.london_session_end = 17    # 17:00 GMT
         self.london_timezone = "GMT"
+        # Throttle: emit timezone-naive warning only once per sensor instance to avoid per-cycle spam.
+        self._tz_warned = False
         
         logger.info(f"[{self.trace_id}] SessionLiquiditySensor initialized for user {self.user_id}")
     
@@ -92,7 +94,11 @@ class SessionLiquiditySensor:
                     logger.warning(f"[{self.trace_id}] RangeIndex sin columna 'time' — sesión no calculable")
                     return None, None
             if df.index.tz is None:
-                logger.warning(f"[{self.trace_id}] DataFrame index is not timezone-aware, assuming UTC")
+                if not self._tz_warned:
+                    logger.warning(f"[{self.trace_id}] DataFrame index is not timezone-aware, assuming UTC")
+                    self._tz_warned = True
+                else:
+                    logger.debug(f"[{self.trace_id}] DataFrame index is not timezone-aware, assuming UTC (throttled)")
                 df.index = df.index.tz_localize('UTC')
             
             # Filtrar por hora (08:00-17:00)

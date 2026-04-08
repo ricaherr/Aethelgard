@@ -380,3 +380,59 @@ class TestInstrumentManagerFilter:
         calls = [call.args[0] for call in factory.generate_signal.call_args_list]
         assert "EURUSD" in calls
         assert "BTCUSD" in calls
+
+
+# ---------------------------------------------------------------------------
+# LOG-HARDENING-STARTUP-2026-04-08: DEBUG-level diagnostic messages must not
+# appear at INFO level in signal_factory.
+# ---------------------------------------------------------------------------
+
+class TestSignalFactoryDebugLogsAreDebugLevel:
+    """[DEBUG][DF] and [DEBUG][strategy] messages must be emitted at DEBUG, not INFO."""
+
+    def _make_factory(self) -> "SignalFactory":
+        # Plain MagicMock (without spec) to allow flexible attribute access during __init__
+        storage = MagicMock()
+        storage.save_signal.return_value = "sig_test"
+        storage.get_dynamic_params.return_value = {}
+        confluence = MagicMock()
+        trifecta = MagicMock()
+        with patch("core_brain.signal_factory.get_notifier", return_value=MagicMock()):
+            return SignalFactory(
+                storage_manager=storage,
+                strategy_engines={},
+                confluence_analyzer=confluence,
+                trifecta_analyzer=trifecta,
+            )
+
+    @pytest.mark.asyncio
+    async def test_generate_usr_signals_does_not_emit_debug_at_info_level(self) -> None:
+        """
+        GIVEN: SignalFactory with no strategy engines
+        WHEN:  generate_signal() is called with a valid DataFrame
+        THEN:  logger.info() must NOT be called with a '[DEBUG]' prefix.
+               '[DEBUG]'-tagged messages must only appear at logger.debug() level.
+        """
+        import logging
+
+        factory = self._make_factory()
+        df = pd.DataFrame(
+            {"open": [1.1], "high": [1.2], "low": [1.0], "close": [1.15], "volume": [100]},
+            index=pd.date_range("2026-01-10 09:00", periods=1, freq="1h", tz="UTC"),
+        )
+        regime = MagicMock()
+
+        with patch("core_brain.signal_factory.logger") as mock_log:
+            await factory.generate_signal(
+                symbol="EURUSD", df=df, regime=regime,
+                timeframe="H1", trace_id="LOG-TEST"
+            )
+            # No INFO call should contain '[DEBUG]'
+            debug_at_info = [
+                c for c in mock_log.info.call_args_list
+                if "[DEBUG]" in str(c)
+            ]
+            assert len(debug_at_info) == 0, (
+                f"Found {len(debug_at_info)} '[DEBUG]'-prefixed message(s) emitted at INFO level: "
+                f"{debug_at_info}"
+            )

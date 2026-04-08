@@ -245,6 +245,78 @@ class TestSessionLiquiditySensorLiquidityZoneMapping:
         assert 'density_indicator' in zones
 
 
+# ---------------------------------------------------------------------------
+# LOG-HARDENING-STARTUP-2026-04-08: Timezone warning throttle
+# ---------------------------------------------------------------------------
+
+class TestSessionLiquidityTimezoneWarningThrottle:
+    """The timezone-naive WARNING must fire at most once per sensor instance to avoid per-cycle spam."""
+
+    def _make_tz_naive_df(self) -> pd.DataFrame:
+        """Return a simple OHLC DataFrame with a tz-naive DatetimeIndex."""
+        idx = pd.date_range("2026-01-10 08:00:00", periods=10, freq="1h")
+        # Deliberately tz-naive
+        return pd.DataFrame(
+            {
+                "open": [1.1] * 10,
+                "high": [1.2] * 10,
+                "low": [1.0] * 10,
+                "close": [1.15] * 10,
+                "volume": [100.0] * 10,
+            },
+            index=idx,
+        )
+
+    def test_tz_warning_fires_exactly_once_on_first_call(self) -> None:
+        """
+        GIVEN: A sensor and a tz-naive DataFrame
+        WHEN:  get_london_session_high_low() is called for the first time
+        THEN:  logger.warning() is called exactly once regarding timezone.
+        """
+        from unittest.mock import patch
+
+        mock_storage = MagicMock()
+        sensor = SessionLiquiditySensor(storage=mock_storage, user_id="THROTTLE_TEST")
+        df = self._make_tz_naive_df()
+
+        with patch("core_brain.sensors.session_liquidity_sensor.logger") as mock_log:
+            sensor.get_london_session_high_low(df.copy())
+            tz_warnings = [
+                c for c in mock_log.warning.call_args_list
+                if "timezone-aware" in str(c) or "timezone" in str(c).lower()
+            ]
+            assert len(tz_warnings) == 1, (
+                f"Expected exactly 1 timezone WARNING on first call, got {len(tz_warnings)}."
+            )
+
+    def test_tz_warning_suppressed_on_subsequent_calls(self) -> None:
+        """
+        GIVEN: A sensor that has already warned about tz-naive data
+        WHEN:  get_london_session_high_low() is called again with tz-naive data
+        THEN:  No additional WARNING is emitted (throttled to DEBUG).
+        """
+        from unittest.mock import patch
+
+        mock_storage = MagicMock()
+        sensor = SessionLiquiditySensor(storage=mock_storage, user_id="THROTTLE_TEST")
+        df = self._make_tz_naive_df()
+
+        # First call — sets _tz_warned = True
+        with patch("core_brain.sensors.session_liquidity_sensor.logger"):
+            sensor.get_london_session_high_low(df.copy())
+
+        # Second call — should NOT emit warning
+        with patch("core_brain.sensors.session_liquidity_sensor.logger") as mock_log2:
+            sensor.get_london_session_high_low(df.copy())
+            tz_warnings = [
+                c for c in mock_log2.warning.call_args_list
+                if "timezone-aware" in str(c) or "timezone" in str(c).lower()
+            ]
+            assert len(tz_warnings) == 0, (
+                f"Expected 0 timezone WARNINGs on repeated call (throttled), got {len(tz_warnings)}."
+            )
+
+
 class TestSessionLiquiditySensorIntegration:
     """Test integración end-to-end del sensor."""
 
