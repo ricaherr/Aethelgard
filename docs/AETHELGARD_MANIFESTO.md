@@ -1621,6 +1621,23 @@ async def run_single_cycle(self):
 - [ ] ✅ Crear check_engine_integrity.py (Test harness) — **COMPLETADO**
 - [ ] Integrar validator en MainOrchestrator.run_single_cycle()
 - [ ] Ejecutar check_engine_integrity.py y validar 4 Pilares en vivo
+
+---
+
+## XIV. Politica Constitucional de Persistencia y Portabilidad de DB
+
+Desde 2026-04-07, la politica operativa y definitiva de gestion de datos/DB para AETHELGARD queda formalizada en:
+
+- [docs/08_DATA_SOVEREIGNTY.md](docs/08_DATA_SOVEREIGNTY.md)
+
+Mandatos constitucionales:
+
+1. Separacion estricta de temas: contrato agnostico, politica SQLite, runtime legacy, portabilidad multi-motor, observabilidad.
+2. Cualquier fix de lock especifico de SQLite debe vivir en su adapter/manager, no en logica de negocio.
+3. Toda escritura runtime debe pasar por contrato de driver; sin bypass.
+4. Cierre de incidentes de persistencia exige evidencia de carga y auditoria de logs sin errores de lock/cursor.
+
+Esta seccion es vinculante para cualquier HU relacionada con `08_DATA_SOVEREIGNTY`, `10_INFRASTRUCTURE_RESILIENCY` y evoluciones de motor de base de datos.
 - [ ] Ejecutar validate_all.py (arquit validation)
 - [ ] Ejecutar start.py (bootstrap sin errores)
 - [ ] **Actualizar ROADMAP.md (marcar completadas)**

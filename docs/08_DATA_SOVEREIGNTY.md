@@ -665,6 +665,193 @@ storage.write_sys("UPDATE sys_state SET value=0.05 WHERE key='max_daily_risk_pct
 
 **Ubicación**: Capa 1 (`data_vault/tenants/{uuid}/aethelgard.db`)
 
+---
+
+## POLITICA INTEGRAL DE GESTION DE DATOS Y BASES DE DATOS (DB-POLICY-v1.0)
+
+**Trace_ID**: `DB-POLICY-ROOT-LOCK-2026-04-07`
+**Estado**: ACTIVA (obligatoria para todo cambio de persistencia)
+**Objetivo**: resolver `DB lock` de forma definitiva sin romper la arquitectura agnostica ni la portabilidad entre motores.
+
+**Estructura obligatoria de esta politica**:
+1. Primero el marco general que aplica a cualquier motor.
+2. Luego el anexo tecnico especifico de SQLite.
+
+### 1. Alcance y Principios
+
+1. La base de datos es SSOT operacional y de configuracion.
+2. El Core Brain es agnostico al motor de persistencia.
+3. Toda operacion de datos debe pasar por contrato de driver; no se permiten bypass en runtime.
+4. Los problemas especificos de motor se resuelven en su driver/manager, nunca en logica de negocio.
+5. La portabilidad entre motores es un requisito de arquitectura, no una mejora opcional.
+
+### 2. Marco General Multi-Motor (aplica a cualquier DB)
+
+#### Tema A: Contrato Agnostico de Persistencia
+
+**Responsable**: `data_vault/drivers/interface.py` + repositorios/mixins.
+
+Reglas:
+1. Ningun modulo de runtime puede abrir conexiones directas al motor.
+2. Toda escritura usa `execute(...)` o `execute_many(...)` del driver activo.
+3. Toda transaccion usa `transaction(...)` del driver activo.
+4. Queda prohibido `conn.commit()` manual en mixins de runtime.
+5. Errores de persistencia deben normalizarse y propagarse por contrato.
+
+#### Tema B: Politica de Runtime y Mixin Legacy
+
+**Responsable**: `data_vault/*.py` (mixins), `core_brain/*` que persiste datos.
+
+Reglas:
+1. Mixin legacy puede leer por compatibilidad, pero no escribir por fuera del driver.
+2. `StorageManager` no puede contener rutas de escritura con commit manual fuera de contrato.
+3. Cualquier metodo de escritura legacy debe migrar a driver antes de cerrar sprint.
+4. Scanner, monitor, edge y auditoria deben usar la misma ruta de persistencia.
+
+#### Tema C: Portabilidad Multi-Motor (Postgres/MySQL-ready)
+
+**Responsable**: capa de driver y pruebas de contrato.
+
+Reglas:
+1. No introducir SQL/PRAGMA especifico de SQLite fuera del adapter SQLite.
+2. Definir adapter por motor con el mismo contrato `IDatabaseDriver`.
+3. Evitar suposiciones de autocommit/locking del motor en logica de negocio.
+4. Los tests de contrato deben correr contra al menos 2 motores (SQLite + target).
+
+#### Tema D: Observabilidad y Gobernanza de Persistencia
+
+**Responsable**: DatabaseManager, SQLiteDriver, OEM/monitor.
+
+Metricas obligatorias:
+1. `db_lock_retry_attempts_total`
+2. `db_lock_retry_exhausted_total`
+3. `db_write_latency_ms_p95`
+4. `db_telemetry_queue_depth`
+5. `db_transaction_failures_total` por clase de error
+
+SLO operativo:
+1. `database is locked` en runtime: objetivo 0 por ventana de 24h.
+2. `another row available` / `no more rows available`: objetivo 0 absoluto.
+3. Si hay violacion de SLO, se bloquea cierre de sprint para esa HU.
+
+### 3. Anexo Tecnico Especifico: SQLite (solo por circunstancia tecnica)
+
+**Responsable**: `data_vault/database_manager.py` + `data_vault/drivers/sqlite_driver.py`.
+
+Reglas:
+1. Conexiones por hilo para el mismo `db_path` (evitar compartir cursor entre hilos).
+2. PRAGMA base obligatorio: `journal_mode=WAL`, `busy_timeout`, `synchronous=NORMAL`, `temp_store=MEMORY`.
+3. `locking_mode=EXCLUSIVE` queda prohibido en runtime concurrente.
+4. Retry/backoff para locks transitorios con limites y telemetria.
+5. Cola selectiva solo para telemetria de alta frecuencia; rutas criticas no se degradan.
+6. Backup online debe ser no bloqueante y en ventana compatible con carga.
+
+---
+
+## PLAN DEFINITIVO DE CORRECCION DB LOCK (ROOT-FIX)
+
+### Bloque I: Correccion General (agnostica al motor)
+
+### Fase 0: Congelamiento de Superficie
+
+Objetivo: impedir nueva deuda mientras se corrige.
+
+Pasos:
+1. Bloquear nuevos `sqlite3.connect(...)` en runtime via validacion automatica.
+2. Catalogar rutas de escritura actuales (driver vs bypass).
+3. Marcar rutas de alto riesgo: scanner, auditoria, coherence, backup.
+
+Salida obligatoria:
+1. Inventario de rutas de escritura con estado `CONTRATO` o `BYPASS`.
+
+### Fase 1: Endurecimiento del Contrato Agnostico
+
+Objetivo: que toda escritura de runtime pase por driver.
+
+Pasos:
+1. Migrar writes de `market_db.py` a `execute/execute_many`.
+2. Migrar writes de `storage.py` (`save_coherence_event` y equivalentes) a driver.
+3. Eliminar commits manuales en mixins de runtime.
+4. Mantener compatibilidad de lectura legacy sin escritura directa.
+
+Salida obligatoria:
+1. Cero writes runtime fuera de contrato.
+
+### Fase 4: Portabilidad Real de Motor
+
+Objetivo: asegurar cambio de motor sin tocar core.
+
+Pasos:
+1. Definir test-suite de contrato `IDatabaseDriver`.
+2. Validar SQLite adapter y adapter target (ej. Postgres).
+3. Verificar que Core Brain y repos no dependan de comportamiento SQLite.
+
+Salida obligatoria:
+1. Pasar pruebas de contrato en 2 motores.
+
+### Fase 5: Validacion de Cierre Definitivo
+
+Objetivo: demostrar solucion de raiz en condiciones reales.
+
+Pasos:
+1. Prueba de carga de 30 minutos con scanner paralelo y tareas de fondo.
+2. `validate_all.py` al 100%.
+3. `start.py` sin errores de persistencia de lock/cursor.
+4. Auditoria de logs: 0 eventos de lock/cursor race.
+
+Criterios de aceptacion final:
+1. 0 `database is locked`.
+2. 0 `another row available`.
+3. 0 `cannot commit transaction - SQL statements in progress`.
+4. 0 writes runtime fuera del contrato de driver.
+
+### Bloque II: Correccion Especifica SQLite (adapter/manager)
+
+### Fase 2: Correccion de Concurrencia SQLite (solo adapter)
+
+Objetivo: eliminar lock y carrera de cursor en SQLite.
+
+Pasos:
+1. Implementar pool de conexion por hilo en `DatabaseManager`.
+2. Retirar `locking_mode=EXCLUSIVE` de configuracion runtime.
+3. Mantener WAL + busy_timeout + retry/backoff.
+4. Ajustar cola selectiva para no competir con writes criticos.
+
+Salida obligatoria:
+1. Cero `another row available` bajo carga paralela.
+
+### Fase 3: Aislamiento de Tareas de Mantenimiento
+
+Objetivo: que backup y mantenimiento no bloqueen pipeline operativo.
+
+Pasos:
+1. Ejecutar backups en ventana configurable de baja carga.
+2. Aplicar throttling de backup y checkpoint seguro.
+3. Exponer estado de backup y contencion en observabilidad.
+
+Salida obligatoria:
+1. Backup sin lock observable en scanner/edge/audit.
+
+---
+
+## MATRIZ DE RESPONSABILIDAD (RACI)
+
+1. Contrato agnostico: Arquitectura/Core Data.
+2. SQLite lock handling: Driver/DatabaseManager.
+3. Migracion de bypass legacy: Owners de mixins/runtime.
+4. Portabilidad multi-motor: Arquitectura + QA de persistencia.
+5. SLO y alertas DB: Operaciones/OEM.
+
+---
+
+## PROHIBICIONES EXPLICITAS (ENFORCEMENT)
+
+1. Prohibido crear fixes de lock en capas de estrategia/senal/riesgo.
+2. Prohibido introducir pragma o SQL especifico de SQLite fuera del adapter SQLite.
+3. Prohibido cerrar HUs de persistencia sin pruebas de carga y auditoria de logs.
+4. Prohibido aceptar mitigacion parcial como solucion definitiva.
+
+
 **Propósito**: Contienen información **propiedad del usuario/trader**. Soberanía total. Sin interferencia externa.
 
 **Tablas del Usuario** (actualizado 2026-03-25 — estado real DB):
