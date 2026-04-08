@@ -17,7 +17,7 @@
 **Fin**: —
 **Objetivo**: Completar la jerarquía de acceso SaaS (3 tiers + SSOT fix), implementar correlación inter-mercado para señales de alta fidelidad, el motor Shadow Reality con penalización real de latencia/slippage, y el ranking darwinista de estrategias por tenant con UI.
 **Épica**: E16 (Membresía SaaS, Correlación Multi-Mercado & Darwinismo de Portafolio) | **Trace_ID**: E16-SAAS-PORTFOLIO-DARWIN-2026
-**Dominios**: 01_IDENTITY_SECURITY · 03_ALPHA_GENERATION · 06_PORTFOLIO_INTELLIGENCE
+**Dominios**: 01_IDENTITY_SECURITY · 03_ALPHA_GENERATION · 06_PORTFOLIO_INTELLIGENCE · 08_DATA_SOVEREIGNTY
 
 ## 📋 Tareas del Sprint
 
@@ -44,6 +44,13 @@
   - Implementar `get_rankings_for_user(user_id: str)` en `StrategyRanker` que filtre rankings por estrategias activas del tenant.
   - Implementar endpoint REST `GET /api/portfolio/rankings` (autenticado, devuelve ranking personalizado por JWT user).
   - Dashboard React "Strategy Darwinism" con tabla de rankings dinámicos y badges de estado (SHADOW/LIVE/QUARANTINE) por trader.
+
+- [DEV] **HU 8.4: Fase 0 Enforcement de Persistencia (DB Policy Root-Fix)**
+  - Bloquear nuevas conexiones directas `sqlite3.connect(...)` en runtime mediante guard de arranque.
+  - Crear auditoría automática en `validate_all.py` para detectar:
+    - `sqlite3.connect` fuera de manager/driver.
+    - `commit` manual en rutas runtime de escritura.
+  - Emitir inventario de violaciones actuales y baseline inicial para congelar superficie.
 
 ## 📊 Snapshot de Cierre
 

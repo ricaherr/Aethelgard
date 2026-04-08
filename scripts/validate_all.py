@@ -177,6 +177,7 @@ async def main():
     
     # Domain 08: DATA_SOVEREIGNTY
     domain_08_data = [
+        run_audit_module("Runtime Persistence Audit", ["python", "scripts/utilities/runtime_persistence_audit.py"], workspace),
         run_audit_module("System DB", ["python", "scripts/utilities/verify_sync_fidelity.py"], workspace),
         run_audit_module("DB Integrity", ["python", "scripts/utilities/db_uniqueness_audit.py"], workspace),
     ]
@@ -257,7 +258,7 @@ async def main():
             domain_results["DOMAIN 05: Universal Execution"].append(res)
         elif res['name'] == "ISD: Signal Quality Validation":
             domain_results["INTELLIGENT SIGNAL DEDUP: Quality Validation"].append(res)
-        elif res['name'] in ["System DB", "DB Integrity"]:
+        elif res['name'] in ["Runtime Persistence Audit", "System DB", "DB Integrity"]:
             domain_results["DOMAIN 08: Data Sovereignty"].append(res)
         elif res['name'] in ["UI Quality", "UI Build"]:
             domain_results["DOMAIN 09: Institutional UI"].append(res)

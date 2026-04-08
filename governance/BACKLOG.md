@@ -90,6 +90,11 @@
 
 ## 08_DATA_SOVEREIGNTY (SSOT, Persistence)
 
+* **HU 8.4: Fase 0 Enforcement de Persistencia** `[DEV]`
+    * **Qué**: Congelar superficie de deuda en runtime con validación automática de `sqlite3.connect` y `commit` manual fuera de contrato de driver.
+    * **Para qué**: Evitar nueva deuda mientras se ejecuta el root-fix por fases de la política DB.
+    * **Criterio de salida Fase 0**: baseline inicial de violaciones + bloqueo de nuevas violaciones en `validate_all.py`.
+
 
 ---
 

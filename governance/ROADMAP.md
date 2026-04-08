@@ -43,6 +43,16 @@
 | HU 6.1 | Shadow Reality Engine (Penalty Injector) | 06 | 27 | [TODO] |
 | HU 6.2 | Multi-Tenant Strategy Ranker | 06 | 27 | [TODO] |
 
+---
+
+### E17: Data Sovereignty Enforcement Root-Fix — ACTIVA
+**Sprint**: 27 | **Trace_ID**: DB-POLICY-ROOT-LOCK-2026-04-07
+**Objetivo**: Ejecutar la política integral de gestión de datos por fases, iniciando con enforcement para congelar deuda de persistencia y eliminar bypass de contrato de driver.
+
+| HU | Nombre | Dominio | Sprint | Estado |
+|---|---|---|---|---|
+| HU 8.4 | Fase 0 Enforcement de Persistencia (runtime + validate_all baseline) | 08 | 27 | [TODO] |
+
 > [!NOTE]
 > El historial completo de épicas completadas se encuentra en [SYSTEM_LEDGER.md](SYSTEM_LEDGER.md).
 > El protocolo y último informe de auditoría están en [AUDIT_PROTOCOL.md](AUDIT_PROTOCOL.md) y [AUDITORIA_ESTADO_REAL.md](AUDITORIA_ESTADO_REAL.md).

@@ -1,0 +1,600 @@
+{
+  "trace_id": "DB-POLICY-RUNTIME-ENFORCEMENT-2026-04-07",
+  "generated_at_utc": "2026-04-08T00:12:51.789143+00:00",
+  "violations": [
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "connectors/auto_provisioning.py",
+      "line": 116,
+      "code": "self.storage._get_conn().commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "connectors/auto_provisioning.py",
+      "line": 171,
+      "code": "self.storage._get_conn().commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "connectors/auto_provisioning.py",
+      "line": 220,
+      "code": "self.storage._get_conn().commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "core_brain/adaptive/threshold_controller.py",
+      "line": 269,
+      "code": "self._conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "core_brain/alpha_hunter.py",
+      "line": 280,
+      "code": "self._conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "core_brain/backtest_orchestrator.py",
+      "line": 282,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "core_brain/backtest_orchestrator.py",
+      "line": 336,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "core_brain/backtest_orchestrator.py",
+      "line": 372,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "core_brain/backtest_orchestrator.py",
+      "line": 1163,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "core_brain/backtest_orchestrator.py",
+      "line": 1301,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "core_brain/execution_feedback.py",
+      "line": 200,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "core_brain/operational_mode_manager.py",
+      "line": 263,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "core_brain/orchestrators/_guard_suite.py",
+      "line": 79,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "core_brain/orchestrators/_guard_suite.py",
+      "line": 94,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "core_brain/orchestrators/_guard_suite.py",
+      "line": 148,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "core_brain/orchestrators/_guard_suite.py",
+      "line": 193,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "core_brain/position_manager.py",
+      "line": 1227,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "core_brain/resilience_manager.py",
+      "line": 511,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "core_brain/scenario_backtester.py",
+      "line": 466,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/accounts_db.py",
+      "line": 52,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/accounts_db.py",
+      "line": 120,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/accounts_db.py",
+      "line": 184,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/accounts_db.py",
+      "line": 286,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/accounts_db.py",
+      "line": 337,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/accounts_db.py",
+      "line": 371,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/accounts_db.py",
+      "line": 417,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/accounts_db.py",
+      "line": 437,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/accounts_db.py",
+      "line": 473,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/accounts_db.py",
+      "line": 484,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/anomalies_db.py",
+      "line": 71,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/anomalies_db.py",
+      "line": 390,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/broker_accounts_db.py",
+      "line": 172,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/broker_accounts_db.py",
+      "line": 222,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/execution_db.py",
+      "line": 63,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/execution_db.py",
+      "line": 263,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/execution_db.py",
+      "line": 317,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/execution_db.py",
+      "line": 339,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/market_db.py",
+      "line": 22,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/market_db.py",
+      "line": 59,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/market_db.py",
+      "line": 78,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/market_db.py",
+      "line": 238,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/market_db.py",
+      "line": 307,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/schema.py",
+      "line": 943,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/schema.py",
+      "line": 1083,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/schema.py",
+      "line": 1116,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/schema.py",
+      "line": 1181,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/schema.py",
+      "line": 1401,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/schema.py",
+      "line": 1412,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/schema.py",
+      "line": 1436,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/schema.py",
+      "line": 1464,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/schema.py",
+      "line": 1626,
+      "code": "global_conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/schema.py",
+      "line": 1647,
+      "code": "global_conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/schema.py",
+      "line": 1706,
+      "code": "template_conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/schema.py",
+      "line": 1716,
+      "code": "global_conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/shadow_db.py",
+      "line": 186,
+      "code": "self.conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/shadow_db.py",
+      "line": 238,
+      "code": "self.conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/shadow_db.py",
+      "line": 254,
+      "code": "self.conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/shadow_db.py",
+      "line": 314,
+      "code": "self.conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/shadow_db.py",
+      "line": 399,
+      "code": "self.conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/shadow_db.py",
+      "line": 567,
+      "code": "self.conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/shadow_db.py",
+      "line": 597,
+      "code": "self.conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/signals_db.py",
+      "line": 178,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/signals_db.py",
+      "line": 293,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/signals_db.py",
+      "line": 455,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/storage.py",
+      "line": 321,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/storage.py",
+      "line": 397,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/storage.py",
+      "line": 436,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/storage.py",
+      "line": 595,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/sys_signal_ranking_db.py",
+      "line": 43,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/sys_signal_ranking_db.py",
+      "line": 177,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/sys_signal_ranking_db.py",
+      "line": 234,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/sys_signal_ranking_db.py",
+      "line": 327,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/system_db.py",
+      "line": 30,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/system_db.py",
+      "line": 98,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/system_db.py",
+      "line": 116,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/system_db.py",
+      "line": 149,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/system_db.py",
+      "line": 234,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/system_db.py",
+      "line": 286,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/system_db.py",
+      "line": 299,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/system_db.py",
+      "line": 519,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/system_db.py",
+      "line": 576,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/system_db.py",
+      "line": 628,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/system_db.py",
+      "line": 647,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/system_db.py",
+      "line": 700,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/system_db.py",
+      "line": 796,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/system_db.py",
+      "line": 1210,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/system_db.py",
+      "line": 1239,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/system_db.py",
+      "line": 1272,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/system_db.py",
+      "line": 1298,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/trades_db.py",
+      "line": 65,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/trades_db.py",
+      "line": 363,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/trades_db.py",
+      "line": 562,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/trades_db.py",
+      "line": 605,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/trades_db.py",
+      "line": 673,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "manual_commit_runtime_write",
+      "file": "data_vault/trades_db.py",
+      "line": 746,
+      "code": "conn.commit()"
+    },
+    {
+      "rule": "sqlite_connect_outside_manager_driver",
+      "file": "core_brain/health.py",
+      "line": 63,
+      "code": "sqlite3.connect(self.db_path, check_same_thread=False, timeout=120)"
+    },
+    {
+      "rule": "sqlite_connect_outside_manager_driver",
+      "file": "core_brain/strategy_loader.py",
+      "line": 69,
+      "code": "sqlite3.connect(self.db_path, check_same_thread=False, timeout=120)"
+    },
+    {
+      "rule": "sqlite_connect_outside_manager_driver",
+      "file": "data_vault/schema.py",
+      "line": 1657,
+      "code": "sqlite3.connect(str(template_path))"
+    },
+    {
+      "rule": "sqlite_connect_outside_manager_driver",
+      "file": "data_vault/system_db.py",
+      "line": 896,
+      "code": "sqlite3.connect(backup_path)"
+    }
+  ]
+}
