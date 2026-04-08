@@ -412,7 +412,7 @@ async def main() -> None:
         # 1.5. Configuración SSOT (Regla 14)
         # Cargar configuraciones directamente desde DB (sin auto-bootstrap JSON en runtime)
         system_state = storage.get_sys_config()
-        global_config = system_state.get("global_config", {})
+        global_config = system_state.get("global_config") or {}
         dynamic_params = storage.get_dynamic_params()
 
         # === FUNCIONES AUXILIARES EDGE ===

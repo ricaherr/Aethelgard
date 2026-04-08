@@ -105,3 +105,37 @@ def test_sys_market_pulse_logging(storage: StorageManager) -> None:
     states = storage.get_sys_market_pulse_history(symbol="EURUSD", limit=10)
     assert len(states) == 1
     assert states[0]["data"]["adx"] == 30.5
+
+
+def test_get_sys_config_tolerates_legacy_null_values(storage: StorageManager) -> None:
+    """Legacy NULL values in sys_config must not crash runtime reads."""
+    storage.execute_update(
+        "INSERT OR REPLACE INTO sys_config (key, value) VALUES (?, ?)",
+        ("global_config", None),
+    )
+
+    loaded_state = storage.get_sys_config()
+
+    assert "global_config" in loaded_state
+    assert loaded_state["global_config"] is None
+
+
+def test_safe_config_getters_return_empty_dict_on_legacy_null(storage: StorageManager) -> None:
+    """Typed config getters must normalize legacy NULL rows to empty dicts."""
+    storage.execute_update(
+        "INSERT OR REPLACE INTO sys_config (key, value) VALUES (?, ?)",
+        ("dynamic_params", None),
+    )
+    storage.execute_update(
+        "INSERT OR REPLACE INTO sys_config (key, value) VALUES (?, ?)",
+        ("risk_settings", None),
+    )
+    storage.execute_update(
+        "INSERT OR REPLACE INTO sys_config (key, value) VALUES (?, ?)",
+        ("modules_config", None),
+    )
+
+    assert storage.get_dynamic_params() == {}
+    assert storage.get_risk_settings() == {}
+    assert storage.get_modules_config() == {}
+    assert storage.reload_global_config() == {}

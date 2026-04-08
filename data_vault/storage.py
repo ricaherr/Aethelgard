@@ -283,7 +283,7 @@ class StorageManager(
         """
         try:
             state: Dict[str, Any] = self.get_sys_config()
-            cfg = state.get("global_config", {})
+            cfg = state.get("global_config") or {}
             return cfg if isinstance(cfg, dict) else {}
         except Exception as e:
             logger.error(f"Error reloading global config: {e}")

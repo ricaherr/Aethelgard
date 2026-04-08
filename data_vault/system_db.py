@@ -43,10 +43,15 @@ class SystemMixin(BaseRepository):
             rows = cursor.fetchall()
             state = {}
             for row in rows:
+                raw_value = row['value']
+                if raw_value is None:
+                    logger.warning("[SYS_CONFIG] Key '%s' has NULL value in DB; returning None for compatibility", row['key'])
+                    state[row['key']] = None
+                    continue
                 try:
-                    state[row['key']] = json.loads(row['value'])
-                except json.JSONDecodeError:
-                    state[row['key']] = row['value']
+                    state[row['key']] = json.loads(raw_value)
+                except (json.JSONDecodeError, TypeError):
+                    state[row['key']] = raw_value
             return state
         finally:
             # FIX-PERSISTENT-CONN-POOL: NEVER close pooled connections
@@ -153,7 +158,7 @@ class SystemMixin(BaseRepository):
     def get_modules_config(self) -> Dict[str, Any]:
         """Get active modules configuration from system state (SSOT)."""
         state = self.get_sys_config()
-        config = state.get('modules_config', {})
+        config = state.get('modules_config') or {}
         if isinstance(config, str):
             try:
                 return cast(Dict[str, Any], json.loads(config))
@@ -662,7 +667,8 @@ class SystemMixin(BaseRepository):
         Si no existe, retorna un diccionario vacío para que el manager use defaults.
         """
         state = self.get_sys_config()
-        return cast(Dict[str, Any], state.get("risk_settings", {}))
+        risk_settings = state.get("risk_settings") or {}
+        return risk_settings if isinstance(risk_settings, dict) else {}
 
     def update_risk_settings(self, settings: Dict[str, Any]) -> None:
         """
@@ -677,7 +683,8 @@ class SystemMixin(BaseRepository):
         Obtiene los parámetros dinámicos (Auto-tune) desde el estado del sistema.
         """
         state = self.get_sys_config()
-        return cast(Dict[str, Any], state.get("dynamic_params", {}))
+        dynamic_params = state.get("dynamic_params") or {}
+        return dynamic_params if isinstance(dynamic_params, dict) else {}
 
     def update_dynamic_params(self, params: Dict[str, Any]) -> None:
         """
