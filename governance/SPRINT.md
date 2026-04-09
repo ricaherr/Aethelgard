@@ -23,8 +23,11 @@
 
 ## 📋 Tareas del Sprint
 
-- [TODO] **HU 8.8: SSOT Execution Mode Drift Fix** *(🔴 PRIORIDAD MÁXIMA — Bloqueante de todo lo demás)*
-  - Ver ETI completo más abajo.
+- [DONE] **HU 8.8: SSOT Execution Mode Drift Fix** *(🔴 PRIORIDAD MÁXIMA — Bloqueante de todo lo demás)*
+  - Implementado por ejecutor en 3 archivos de producción + 1 archivo de tests.
+  - Verificación orquestador: `pytest tests/test_ssot_execmode_drift.py -q` = 7/7 PASS.
+  - Verificación orquestador: `python scripts/validate_all.py` = 28/28 PASS.
+  - Verificación funcional: `_get_execution_mode` retorna SHADOW para MOM_BIAS_0001, LIQ_SWEEP_0001 y STRUC_SHIFT_0001.
 
 - [TODO] **HU 10.24: Shadow Pool Bootstrap Diagnostics**
   - En `core_brain/orchestrators/_discovery.py`: el branch `already_active >= variations_per_strategy` debe incrementar `skipped_count`.

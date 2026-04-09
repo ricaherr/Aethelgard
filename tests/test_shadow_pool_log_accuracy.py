@@ -1,23 +1,24 @@
-"""
-Tests TDD: initialize_shadow_pool debe distinguir skips legítimos de errores reales.
-
-Bug: skipped_count acumula tanto estrategias no-SHADOW (esperado) como excepciones
-reales. El log final dice "{skipped_count} failed" mezclando ambos casos.
-
-Fix:
-  - failed_count: solo excepciones al crear instancia.
-  - skipped_count: solo filtros de modo (not in SHADOW).
-  - Log: "{skipped_count} skipped (not SHADOW), {failed_count} failed".
-  - Retorno: {"created": N, "skipped": N, "failed": N}.
-
-RED state: falla porque skipped_count mezcla ambos casos.
-"""
+"""TDD for SHADOW pool bootstrap diagnostics counters and telemetry."""
 import asyncio
-import pytest
+import logging
 from unittest.mock import MagicMock
 
 
-def _make_orchestrator(strategies_by_mode: dict, raise_on_create: str = None):
+def _make_active_instances(*strategy_ids: str):
+    """Build minimal active-instance objects with strategy_id field."""
+    instances = []
+    for strategy_id in strategy_ids:
+        instance = MagicMock()
+        instance.strategy_id = strategy_id
+        instances.append(instance)
+    return instances
+
+
+def _make_orchestrator(
+    strategies_by_mode: dict,
+    raise_on_create: str = None,
+    active_strategy_ids=None,
+):
     """
     Crea MainOrchestrator mínimo.
     raise_on_create: strategy_id que lanza excepción al crear instancia.
@@ -33,7 +34,9 @@ def _make_orchestrator(strategies_by_mode: dict, raise_on_create: str = None):
     orc.storage = storage
 
     sm = MagicMock()
-    sm.storage.list_active_instances.return_value = []
+    sm.storage.list_active_instances.return_value = _make_active_instances(
+        *(active_strategy_ids or [])
+    )
 
     if raise_on_create:
         def _create(**kwargs):
@@ -117,3 +120,119 @@ class TestShadowPoolLogAccuracy:
         assert "failed" in result, (
             "initialize_shadow_pool debe retornar dict con clave 'failed'"
         )
+
+    def test_full_capacity_counts_as_skipped_at_capacity(self):
+        """If SHADOW strategies are already at capacity, they must be counted as skipped."""
+        orc, _ = _make_orchestrator(
+            {
+                "STRAT_A": "SHADOW",
+                "STRAT_B": "SHADOW",
+                "STRAT_C": "SHADOW",
+            },
+            active_strategy_ids=[
+                "STRAT_A",
+                "STRAT_A",
+                "STRAT_B",
+                "STRAT_B",
+                "STRAT_C",
+                "STRAT_C",
+            ],
+        )
+
+        result = asyncio.run(
+            orc.initialize_shadow_pool(
+                {
+                    "STRAT_A": MagicMock(),
+                    "STRAT_B": MagicMock(),
+                    "STRAT_C": MagicMock(),
+                },
+                account_id="DEMO_001",
+                variations_per_strategy=2,
+            )
+        )
+
+        assert result["created"] == 0
+        assert result["skipped"] == 3
+        assert result["skipped_at_capacity"] == 3
+
+    def test_not_shadow_counts_skipped_not_shadow(self):
+        """Non-SHADOW strategies must increment skipped_not_shadow."""
+        orc, _ = _make_orchestrator(
+            {
+                "STRAT_BACK": "BACKTEST",
+                "STRAT_LIVE": "LIVE",
+            }
+        )
+
+        result = asyncio.run(
+            orc.initialize_shadow_pool(
+                {
+                    "STRAT_BACK": MagicMock(),
+                    "STRAT_LIVE": MagicMock(),
+                },
+                account_id="DEMO_001",
+            )
+        )
+
+        assert result["created"] == 0
+        assert result["skipped"] == 2
+        assert result["skipped_not_shadow"] == 2
+        assert result["failed"] == 0
+
+    def test_mixed_summary_is_consistent(self):
+        """created + skipped + failed must equal evaluated strategies in mixed scenario."""
+        orc, _ = _make_orchestrator(
+            {
+                "STRAT_CREATE": "SHADOW",
+                "STRAT_CAP": "SHADOW",
+                "STRAT_FILTER": "BACKTEST",
+                "STRAT_FAIL": "SHADOW",
+            },
+            raise_on_create="STRAT_FAIL",
+            active_strategy_ids=["STRAT_CAP", "STRAT_CAP"],
+        )
+
+        result = asyncio.run(
+            orc.initialize_shadow_pool(
+                {
+                    "STRAT_CREATE": MagicMock(),
+                    "STRAT_CAP": MagicMock(),
+                    "STRAT_FILTER": MagicMock(),
+                    "STRAT_FAIL": MagicMock(),
+                },
+                account_id="DEMO_001",
+                variations_per_strategy=1,
+            )
+        )
+
+        assert result["created"] == 1
+        assert result["skipped"] == 2
+        assert result["failed"] == 1
+        assert result["skipped_not_shadow"] == 1
+        assert result["skipped_at_capacity"] == 1
+        assert (result["created"] + result["skipped"] + result["failed"]) == 4
+
+    def test_final_log_includes_skip_breakdown(self, caplog):
+        """Final bootstrap log should expose skipped breakdown by reason."""
+        orc, _ = _make_orchestrator(
+            {
+                "STRAT_FILTER": "BACKTEST",
+                "STRAT_CAP": "SHADOW",
+            },
+            active_strategy_ids=["STRAT_CAP", "STRAT_CAP"],
+        )
+
+        with caplog.at_level(logging.INFO):
+            asyncio.run(
+                orc.initialize_shadow_pool(
+                    {
+                        "STRAT_FILTER": MagicMock(),
+                        "STRAT_CAP": MagicMock(),
+                    },
+                    account_id="DEMO_001",
+                    variations_per_strategy=2,
+                )
+            )
+
+        assert "skipped_not_shadow=" in caplog.text
+        assert "skipped_at_capacity=" in caplog.text

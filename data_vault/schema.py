@@ -1398,6 +1398,44 @@ def run_migrations(conn: sqlite3.Connection) -> None:
         )
         logger.info("Migration applied: sys_config.instruments_config seeded.")
 
+    # MIGRATION (HU-8.8-SSOT-EXECMODE-DRIFT-FIX): Reconcile sys_signal_ranking.execution_mode
+    # with sys_strategies.mode when they diverge.
+    # Root cause: lazy initialization copied mode once; later changes to sys_strategies.mode
+    # were never propagated, leaving sys_signal_ranking with stale BACKTEST values.
+    # This migration realigns derived rows with the SSOT (sys_strategies).
+    # Idempotent: only updates rows where a mismatch exists. Rows already in sync are untouched.
+    # TRACE_ID: SSOT-EXECMODE-DRIFT-FIX-2026-04-09
+    try:
+        cursor.execute("""
+            UPDATE sys_signal_ranking
+            SET execution_mode = (
+                SELECT mode FROM sys_strategies
+                WHERE class_id = sys_signal_ranking.strategy_id
+            )
+            WHERE EXISTS (
+                SELECT 1 FROM sys_strategies
+                WHERE class_id = sys_signal_ranking.strategy_id
+                  AND mode != sys_signal_ranking.execution_mode
+            )
+        """)
+        reconciled = cursor.rowcount
+        if reconciled:
+            logger.info(
+                "Migration applied: sys_signal_ranking.execution_mode reconciled for "
+                "%d row(s) (HU-8.8 SSOT drift fix).",
+                reconciled,
+            )
+        else:
+            logger.debug(
+                "Migration HU-8.8: no divergent rows found in sys_signal_ranking — "
+                "no update needed."
+            )
+    except Exception as reconcile_err:
+        logger.warning(
+            "Migration HU-8.8 reconciliation failed (non-blocking): %s",
+            reconcile_err,
+        )
+
     conn.commit()
     logger.debug("Migrations completed.")
 

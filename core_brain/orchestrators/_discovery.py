@@ -139,7 +139,14 @@ async def initialize_shadow_pool_impl(
 
     if not orch.shadow_manager:
         logger.warning("[SHADOW] ShadowManager not initialized, skipping pool bootstrap")
-        return {"created": 0, "skipped": len(strategy_engines)}
+        skipped_not_shadow = len(strategy_engines)
+        return {
+            "created": 0,
+            "skipped": skipped_not_shadow,
+            "failed": 0,
+            "skipped_not_shadow": skipped_not_shadow,
+            "skipped_at_capacity": 0,
+        }
 
     param_variations = [
         {"risk_pct": 0.01, "regime_filters": ["TREND_UP", "EXPANSION"]},
@@ -150,6 +157,8 @@ async def initialize_shadow_pool_impl(
     created_count = 0
     skipped_count = 0
     failed_count = 0
+    skipped_not_shadow_count = 0
+    skipped_at_capacity_count = 0
 
     shadow_strategy_ids = orch.storage.get_shadow_mode_strategy_ids()
     existing_active = orch.shadow_manager.storage.list_active_instances()
@@ -163,6 +172,7 @@ async def initialize_shadow_pool_impl(
         if strategy_id not in shadow_strategy_ids:
             logger.debug("[SHADOW] Skipping %s — not in SHADOW mode", strategy_id)
             skipped_count += 1
+            skipped_not_shadow_count += 1
             continue
 
         already_active = active_per_strategy.get(strategy_id, 0)
@@ -170,6 +180,8 @@ async def initialize_shadow_pool_impl(
             logger.debug(
                 f"[SHADOW] Skipping {strategy_id}: {already_active} active instances exist"
             )
+            skipped_count += 1
+            skipped_at_capacity_count += 1
             continue
 
         for variation_idx, params in enumerate(param_variations):
@@ -194,9 +206,17 @@ async def initialize_shadow_pool_impl(
 
     logger.info(
         f"[SHADOW] Pool bootstrap complete: {created_count} created, "
-        f"{skipped_count} skipped, {failed_count} failed"
+        f"{skipped_count} skipped, {failed_count} failed "
+        f"(skipped_not_shadow={skipped_not_shadow_count}, "
+        f"skipped_at_capacity={skipped_at_capacity_count})"
     )
-    return {"created": created_count, "skipped": skipped_count, "failed": failed_count}
+    return {
+        "created": created_count,
+        "skipped": skipped_count,
+        "failed": failed_count,
+        "skipped_not_shadow": skipped_not_shadow_count,
+        "skipped_at_capacity": skipped_at_capacity_count,
+    }
 
 
 async def ensure_optimal_demo_accounts_impl(orch: "MainOrchestrator") -> None:

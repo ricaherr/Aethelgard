@@ -259,38 +259,34 @@ class StrategyEngineFactory:
     
     def _get_execution_mode(self, strategy_id: str) -> str:
         """
-        Obtiene execution_mode de usr_performance para una estrategia.
-        
-        Implementa LAZY INITIALIZATION: Si estrategia NO existe en usr_performance,
-        la crea automáticamente con modo SHADOW (seguro, testing).
-        
-        Idempotente: Safe to call multiple times (no duplica registros).
-        
+        Obtiene el modo de ejecución desde sys_strategies.mode (SSOT canónico).
+
+        Lee exclusivamente desde sys_strategies para evitar drift con sys_signal_ranking.
+        sys_signal_ranking.execution_mode es un dato derivado e histórico; no gobierna
+        la autorización de carga inicial.
+
         Args:
-            strategy_id: Identificador de la estrategia
-            
+            strategy_id: Identificador de la estrategia.
+
         Returns:
-            execution_mode (SHADOW | LIVE | QUARANTINE)
-            
-        Trace_ID: FACTORY-LAZY-INIT-USR-PERFORMANCE
+            execution_mode (SHADOW | LIVE | QUARANTINE | BACKTEST).
+            Retorna SHADOW si el valor es inválido o hay error de DB (safe default).
+
+        Trace_ID: SSOT-EXECMODE-DRIFT-FIX-2026-04-09
         """
         try:
-            # Intentar obtener, o crear si no existe (LAZY INIT)
-            ranking = self.storage.ensure_signal_ranking_for_strategy(strategy_id)
-            
-            if ranking and 'execution_mode' in ranking:
-                return ranking['execution_mode']
-            
-            # Fallback en error inesperado
+            mode = self.storage.get_strategy_lifecycle_mode(strategy_id)
+            if mode in ("SHADOW", "LIVE", "QUARANTINE", "BACKTEST"):
+                return mode
+            # Valor inesperado (ej: NULL migrado, bug de seed) → safe default
             logger.error(
-                f"[FACTORY] ⚠️  {strategy_id}: Unexpected state after lazy init, "
-                f"using SHADOW as safe default"
+                f"[FACTORY] ⚠️  {strategy_id}: mode='{mode}' no reconocido, "
+                f"usando SHADOW como safe default"
             )
-            return 'SHADOW'
-            
+            return "SHADOW"
         except Exception as e:
-            logger.error(f"[FACTORY] ✗ {strategy_id}: Error en lazy init: {e}")
-            return 'SHADOW'  # Safe default on error
+            logger.error(f"[FACTORY] ✗ {strategy_id}: Error leyendo sys_strategies: {e}")
+            return "SHADOW"  # Safe default on error
     
     def _instantiate_python_strategy(self, strategy_spec: Dict[str, Any]) -> Any:
         """

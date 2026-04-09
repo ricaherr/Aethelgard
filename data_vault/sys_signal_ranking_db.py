@@ -64,11 +64,54 @@ class StrategyRankingMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
+    def get_strategy_lifecycle_mode(self, strategy_id: str) -> str:
+        """
+        SSOT reader: consulta sys_strategies.mode para el routing operativo de la factory.
+
+        Este método es la ÚNICA fuente de verdad para la StrategyEngineFactory en el
+        momento de carga inicial. NO lee sys_signal_ranking.execution_mode.
+
+        Retorna 'SHADOW' como safe default conservador:
+        - Estrategia inexistente: SHADOW (el gate LOGIC_PENDING ya bloqueó antes)
+        - Error de DB: SHADOW + log (evita zombie runtime por drift silencioso)
+
+        Trace_ID: SSOT-EXECMODE-DRIFT-FIX-2026-04-09
+
+        Args:
+            strategy_id: Identificador único (class_id) de la estrategia.
+
+        Returns:
+            str: Modo de ciclo de vida (SHADOW | LIVE | QUARANTINE | BACKTEST)
+        """
+        conn: sqlite3.Connection = self._get_conn()
+        try:
+            row = conn.execute(
+                "SELECT mode FROM sys_strategies WHERE class_id = ?",
+                (strategy_id,),
+            ).fetchone()
+            if row and row[0]:
+                return cast(str, row[0])
+            logger.debug(
+                f"[SSOT] {strategy_id}: Not found in sys_strategies — returning SHADOW (safe default)"
+            )
+            return "SHADOW"
+        except Exception as e:
+            logger.error(
+                f"[SSOT] Error reading sys_strategies for {strategy_id}: {e} — returning SHADOW"
+            )
+            return "SHADOW"
+        finally:
+            self._close_conn(conn)
+
     def _get_mode_from_sys_strategies(self, strategy_id: str) -> str:
         """
         Consulta sys_strategies para obtener el mode configurado (SSOT).
+        Usado internamente por ensure_signal_ranking_for_strategy (lazy init).
+
         Retorna 'BACKTEST' si la estrategia no existe — safe default conservador
-        que evita que estrategias no registradas lleguen a producción.
+        que evita que nuevas entradas en sys_signal_ranking salten a producción.
+
+        Para routing operativo en la factory, usar get_strategy_lifecycle_mode().
         """
         conn: sqlite3.Connection = self._get_conn()
         try:
