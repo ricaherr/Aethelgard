@@ -1,6 +1,6 @@
 # AETHELGARD: SPRINT LOG
 
-**Última Actualización**: 8 de Abril, 2026 (HU 10.23 cerrada y governance sincronizada)
+**Última Actualización**: 9 de Abril, 2026 (DRY Consolidation completada, validate_all 28/28)
 
 > **📋 REGLAS DE EDICIÓN — Leer antes de modificar este documento**
 > - **Propósito**: Diario de ejecución. Cada Sprint referencia una Épica del ROADMAP y las HUs del BACKLOG que ejecuta.
@@ -99,6 +99,17 @@
   - Validación: 69/69 tests OEM focalizados · `validate_all.py` 28/28.
   - Evidencia runtime: `logs/main.log` muestra `All checks passed (warnings=6)` fuera de gracia en ciclos consecutivos (sin `Invariant violations: shadow_sync, lifecycle_coherence`).
   - Trace_ID: `OEM-POST-BOOTSTRAP-HARDENING-HU10.23-2026-04-08`
+
+- [DONE] **REFACTOR-001: DRY Consolidation — Symbol Taxonomy SSOT** *(Technical Refactoring — No HU formal)*
+  - Creado `core_brain/symbol_taxonomy_engine.py` (~200 líneas): clase `SymbolTaxonomy` con métodos estáticos puros `get_symbol_type()` e `is_index_without_volume()`.
+  - Eliminado `DataProviderManager._detect_symbol_type()` (~30 líneas) — refactorizado a usar `SymbolTaxonomy.get_symbol_type()`.
+  - Eliminado hardcoded `index_no_volume_symbols` en `MarketStructureAnalyzer` — refactorizado a usar `SymbolTaxonomy.is_index_without_volume()`.
+  - Implementado contrato de invariantes (disjunción de sets, INDICES_WITHOUT_VOLUME ⊆ INDICES, pureza funcional).
+  - Tests nuevos: `test_symbol_taxonomy_engine.py` (15/15 PASSED) — clasificación, invariantes, edge cases.
+  - Tests de regresión: `test_data_provider_manager.py` (20/20), `test_market_structure_analyzer.py` (15/15) — **CERO regresiones**.
+  - Validación: **51/51 tests** (taxonomy + regresión) · `validate_all.py` **28/28 PASSED** · `start.py` booteable sin errores críticos.
+  - **Net changesum**: Consolidación pura (SSOT closure, DRY violation eliminada, testabilidad mejorada, zero new logic).
+  - Trace_ID: `DRY-SYMBOL-TAXONOMY-SSOT-2026-04-09`
 
 ## 📊 Snapshot de Cierre
 

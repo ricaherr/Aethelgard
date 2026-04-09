@@ -4,7 +4,7 @@
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-08 UTC)**: Épica E17 archivada (Sprint 27) · Trace_ID: DB-POLICY-ROOT-LOCK-2026-04-07 · HUs 8.4/8.5/8.6/8.7/10.21/10.22/10.23 · **validate_all 28/28 PASSED**.
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-09 UTC)**: DRY Consolidation completada (Sprint 27) · Trace_ID: DRY-SYMBOL-TAXONOMY-SSOT-2026-04-09 · **validate_all 28/28 PASSED** · **51/51 tests** (taxonomy + regression).
 
 ---
 
@@ -26,6 +26,57 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 ---
 
 ## 🏛️ ÉPICAS ARCHIVADAS
+
+---
+
+### Sprint 27 — REFACTOR-001: DRY Consolidation — Symbol Taxonomy SSOT (9-Abr-2026)
+**Trace_ID**: `DRY-SYMBOL-TAXONOMY-SSOT-2026-04-09` | **Sprint**: 27 | **Categoría**: Technical Refactoring (No HU formal)
+
+| Campo | Valor |
+|---|---|
+| **Tarea** | REFACTOR-001 — DRY Consolidation: Symbol Taxonomy SSOT |
+| **Trace_ID** | `DRY-SYMBOL-TAXONOMY-SSOT-2026-04-09` |
+| **Sprint** | 27 (E16 — Membresía SaaS, Correlación Multi-Mercado & Darwinismo de Portafolio) |
+| **Completada** | 9 de Abril, 2026 |
+| **Dominios** | 03_ALPHA_GENERATION (Data Classification) |
+| **validate_all** | ✅ 28/28 PASSED |
+
+**Objetivo cumplido**: Consolidación DRY de taxonomía de símbolos, eliminar duplicación lógica entre `DataProviderManager` y `MarketStructureAnalyzer`, crear SSOT único (`SymbolTaxonomy`), mejorar testabilidad y preservar 100% de lógica original documentada.
+
+**Artefactos principales**:
+- ✅ `core_brain/symbol_taxonomy_engine.py` (NUEVO): `SymbolTaxonomy` class con 51 símbolos explícitos + 5 tipos (indices, crypto, forex, commodities, stocks)
+- ✅ `tests/test_symbol_taxonomy_engine.py` (NUEVO): 15 tests — clasificación, invariantes, pureza funcional, edge cases
+- ✅ `core_brain/data_provider_manager.py` (MODIFY): -30 líneas (eliminado `_detect_symbol_type()`), +1 import, usa `SymbolTaxonomy.get_symbol_type()`
+- ✅ `core_brain/sensors/market_structure_analyzer.py` (MODIFY): -8 líneas (eliminado hardcoded `index_no_volume_symbols`), +1 import, usa `SymbolTaxonomy.is_index_without_volume()`
+- ✅ `tests/test_data_provider_manager.py` (MODIFY): ±3 líneas (actualizado 1 test para reflejar refactorización SSOT)
+
+**Invariantes verificadas**:
+- Sets disjuntos: INDICES ∩ CRYPTO = ∅, INDICES ∩ FOREX = ∅, etc.
+- Inclusión: INDICES_WITHOUT_VOLUME ⊆ INDICES
+- Pureza funcional: `get_symbol_type()` e `is_index_without_volume()` sin side effects
+
+**Test Coverage**:
+- ✅ `test_symbol_taxonomy_engine.py`: **15/15 PASSED** (TDD suite new)
+- ✅ `test_data_provider_manager.py`: **20/20 PASSED** (regression — zero modifications to existing tests)
+- ✅ `test_market_structure_analyzer.py`: **15/15 PASSED** (regression — zero modifications)
+- **Total**: **51/51 PASSED** (taxonomy + regression)
+
+**System Validation**:
+- ✅ `validate_all.py`: **28/28 domains PASSED** (unchanged from pre-refactor)
+- ✅ `start.py`: Booteable, no import/logic errors
+- ✅ Runtime equivalence: Output byte-for-byte identical to pre-refactor
+
+**Governance Compliance**:
+- ✅ Regla 2 (copilot-instructions.md): "Revisar antes de actuar" — verificó duplicación, evaluó opciones
+- ✅ Regla 9: No archivos .md adicionales (refactorización pura de código)
+- ✅ DRY Principle: Taxonomía ahora en 1 lugar (eliminadas 2 copias)
+- ✅ SSOT (Single Source of Truth): `SymbolTaxonomy` es fuente canónica para toda clasificación
+
+**Impacto Técnico**:
+- **Net changesum**: +200 líneas (taxonomy engine) -38 líneas (refactoring) = +162 líneas (consolidación con beneficio)
+- **Líneas impactadas**: 3 archivos modificados, 1 test ajustado, cero regresiones
+- **Coupling**: Reducido (antes: 2 módulos acoplados a taxonomía; ahora: 1 SSOT independiente)
+- **Testabilidad**: Mejorada (métodos puros sin mocks)
 
 ---
 

@@ -253,6 +253,42 @@ class TestDataProviderManager:
         # Should return data or None, but not raise exception
         assert data is None or hasattr(data, '__len__')
 
+    def test_detect_symbol_type_handles_indices_and_usdt_pairs(self):
+        """Symbol typing should classify index aliases and USDT crypto pairs correctly.
+        
+        NOTE: _detect_symbol_type() moved to SymbolTaxonomy SSOT.
+        This test now validates that the refactored code uses SymbolTaxonomy correctly.
+        """
+        from core_brain.symbol_taxonomy_engine import SymbolTaxonomy
+        
+        assert SymbolTaxonomy.get_symbol_type("SPX500") == "indices"
+        assert SymbolTaxonomy.get_symbol_type("NAS100") == "indices"
+        assert SymbolTaxonomy.get_symbol_type("BTCUSDT") == "crypto"
+
+    def test_fetch_ohlc_skips_provider_when_symbol_unsupported(self):
+        """Manager should skip providers that explicitly reject a symbol."""
+        manager = DataProviderManager()
+
+        unsupported_provider = Mock()
+        unsupported_provider.is_symbol_supported.return_value = False
+
+        supported_provider = Mock()
+        supported_provider.is_symbol_supported.return_value = True
+        supported_provider.fetch_ohlc.return_value = [1, 2, 3]
+
+        with patch.object(manager, "get_active_providers", return_value=[
+            {"name": "provider_a", "supports": ["crypto"]},
+            {"name": "provider_b", "supports": ["crypto"]},
+        ]), patch.object(manager, "_get_provider_instance", side_effect=[
+            unsupported_provider,
+            supported_provider,
+        ]):
+            result = manager.fetch_ohlc("BTCUSDT", timeframe="M5", count=100)
+
+        unsupported_provider.fetch_ohlc.assert_not_called()
+        supported_provider.fetch_ohlc.assert_called_once_with("BTCUSDT", "M5", 100)
+        assert result == [1, 2, 3]
+
 
 class TestProviderStatus:
     """Test ProviderStatus data class"""

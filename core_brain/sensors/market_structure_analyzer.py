@@ -26,6 +26,8 @@ import numpy as np
 from typing import Dict, List, Optional, Any, Literal, Tuple
 from datetime import datetime
 
+from core_brain.symbol_taxonomy_engine import SymbolTaxonomy
+
 logger = logging.getLogger(__name__)
 
 
@@ -317,7 +319,7 @@ class MarketStructureAnalyzer:
             logger.debug(f"[{self.trace_id}] Canvas validation FAILED for {symbol}: Empty or None DataFrame")
             return False
             
-        # Determinar Asset Class por taxonomía del Símbolo
+        # Determinar Asset Class por taxonomía del Símbolo (SSOT)
         # Forex típicamente tiene 6 letras o formato XXX/YYY y representa monedas fiduciarias comunes.
         # Una heurística robusta para "Forex/OTC" vs "Mercado Centralizado" es requerir `volume` a menos que
         # sepamos que es Forex puro.
@@ -326,8 +328,11 @@ class MarketStructureAnalyzer:
         if len(clean_symbol) == 6 and not any(crypto in clean_symbol for crypto in ['BTC', 'ETH', 'SOL', 'USDT']):
              is_forex = True # Ej: EURUSD, GBPJPY, USDCAD
         
+        # Índices sin volumen: usar SymbolTaxonomy SSOT en lugar de hardcoded list
+        is_index_without_volume = SymbolTaxonomy.is_index_without_volume(symbol)
+
         # Polimorfismo Estructural
-        if is_forex:
+        if is_forex or is_index_without_volume:
             required_cols = {'open', 'high', 'low', 'close'}
         else:
             required_cols = {'open', 'high', 'low', 'close', 'volume'}

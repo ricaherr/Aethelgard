@@ -8,11 +8,13 @@ from __future__ import annotations
 import inspect
 import json
 import logging
+import time
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
 
+from core_brain.symbol_taxonomy_engine import SymbolTaxonomy
 from data_vault.storage import StorageManager
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -181,6 +183,7 @@ class DataProviderManager:
         self._selected_provider: Optional[Any] = None
         self._selected_provider_name: Optional[str] = None
         self._provider_selection_initialized: bool = False
+        self._no_data_warning_last_ts: Dict[str, float] = {}
         
         self._load_configuration()
 
@@ -695,8 +698,8 @@ class DataProviderManager:
     
     def get_provider_for_symbol(self, symbol: str) -> Optional[Any]:
         """Get best provider for a specific symbol type"""
-        # Detect symbol type
-        symbol_type: str = self._detect_symbol_type(symbol)
+        # Detect symbol type using SSOT
+        symbol_type: str = SymbolTaxonomy.get_symbol_type(symbol)
         
         # Get active providers that support this type
         active = self.get_active_providers()
@@ -725,25 +728,26 @@ class DataProviderManager:
         self._selected_provider_name = None
         return self.get_best_provider()
     
-    def _detect_symbol_type(self, symbol: str) -> str:
-        """Detect symbol type (stock, forex, crypto, etc.)"""
-        symbol_upper: str = symbol.upper()
-        
-        # Crypto patterns
-        if "BTC" in symbol_upper or "ETH" in symbol_upper or symbol_upper.endswith("USD"):
-            if any(crypto in symbol_upper for crypto in ["BTC", "ETH", "XRP", "LTC", "ADA"]):
-                return "crypto"
-        
-        # Forex patterns (6 chars, currency pairs)
-        if len(symbol_upper) == 6 and all(c.isalpha() for c in symbol_upper):
-            return "forex"
-        
-        # Commodities
-        if "GOLD" in symbol_upper or "SILVER" in symbol_upper or "OIL" in symbol_upper:
-            return "commodities"
-        
-        # Default to stocks
-        return "stocks"
+    # NOTE: Symbol type detection moved to SymbolTaxonomy (SSOT)
+    # Use SymbolTaxonomy.get_symbol_type() instead of local implementation
+
+    def _provider_supports_symbol(self, instance: Any, symbol: str) -> bool:
+        """
+        Return True if provider instance can handle symbol.
+
+        Providers that do not expose `is_symbol_supported` are treated as compatible
+        to preserve backward compatibility.
+        """
+        checker = getattr(instance, "is_symbol_supported", None)
+        if not callable(checker):
+            return True
+
+        try:
+            return bool(checker(symbol))
+        except Exception as exc:
+            provider_name = getattr(instance, "provider_id", instance.__class__.__name__)
+            logger.debug("Provider %s support check failed for %s: %s", provider_name, symbol, exc)
+            return False
     
     def validate_provider(self, name: str) -> bool:
         """Validate provider connection and sys_credentials"""
@@ -920,10 +924,15 @@ class DataProviderManager:
         Returns:
             OHLC data or None
         """
+        symbol_type = SymbolTaxonomy.get_symbol_type(symbol)
+
         if provider_name:
             # Use specific provider
             instance: Any | None = self._get_provider_instance(provider_name)
             if instance:
+                if not self._provider_supports_symbol(instance, symbol):
+                    logger.warning("Provider %s does not support symbol %s", provider_name, symbol)
+                    return None
                 try:
                     return instance.fetch_ohlc(symbol, timeframe, count)
                 except Exception as e:
@@ -939,9 +948,17 @@ class DataProviderManager:
         
         for provider_info in active:
             name = provider_info["name"]
+            supports = [str(asset).lower() for asset in provider_info.get("supports", [])]
+            if supports and symbol_type not in supports:
+                logger.debug("Skipping provider %s for %s: symbol_type=%s not in supports=%s", name, symbol, symbol_type, supports)
+                continue
+
             instance: Any | None = self._get_provider_instance(name)
             
             if instance:
+                if not self._provider_supports_symbol(instance, symbol):
+                    logger.debug("Skipping provider %s for %s: provider-specific unsupported symbol", name, symbol)
+                    continue
                 try:
                     data = instance.fetch_ohlc(symbol, timeframe, count)
                     if data is not None:
@@ -951,5 +968,14 @@ class DataProviderManager:
                     logger.warning(f"Provider {name} failed: {e}, trying next...")
                     continue
         
-        logger.error(f"All providers failed for symbol {symbol}")
+        # Runtime can legitimately have symbols with no current feed coverage.
+        # Log as throttled warning (not ERROR) to avoid operational noise.
+        now = time.monotonic()
+        last = self._no_data_warning_last_ts.get(symbol, 0.0)
+        if now - last >= 60.0:
+            logger.warning(
+                "[DATA-FALLBACK] Providers unavailable for symbol %s (all fallbacks exhausted)",
+                symbol,
+            )
+            self._no_data_warning_last_ts[symbol] = now
         return None

@@ -253,6 +253,14 @@ class TestMarketStructureAnalyzer(unittest.TestCase):
         
         # Datos random no deben ser válidos
         self.assertFalse(structure['is_valid'])
+
+    def test_validate_input_allows_index_without_volume(self):
+        """✓ Test: Índices CFD (US30) deben validar con OHLC aunque falte volume."""
+        index_candles = self.test_candles.drop(columns=["volume"]).copy()
+
+        is_valid = self.analyzer._validate_input_candles("US30", index_candles)
+
+        self.assertTrue(is_valid)
     
     
     def test_caching_of_structure(self):

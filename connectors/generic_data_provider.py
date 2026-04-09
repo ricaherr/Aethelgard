@@ -56,7 +56,9 @@ class GenericDataProvider(BaseConnector):
         
         # Índices
         "SPX": "^GSPC",    # S&P 500
+        "SPX500": "^GSPC", # S&P 500 CFD alias
         "NDX": "^IXIC",    # NASDAQ
+        "NAS100": "^NDX",  # Nasdaq 100 CFD alias
         "DJI": "^DJI",     # Dow Jones
         "US30": "^DJI",    # Dow Jones (alias)
         "DXY": "^DXY",     # US Dollar Index (Yahoo: ^DXY)
@@ -72,7 +74,10 @@ class GenericDataProvider(BaseConnector):
         
         # Crypto
         "BTCUSD": "BTC-USD",
+        "BTCUSDT": "BTC-USD",
         "ETHUSD": "ETH-USD",
+        "ETHUSDT": "ETH-USD",
+        "BNBUSDT": "BNB-USD",
         "SOLUSD": "SOL-USD",
     }
     
@@ -248,55 +253,24 @@ class GenericDataProvider(BaseConnector):
                 f"Período: {period}"
             )
             
-            # Descargar datos (history con fallback a download)
-            df = None
+            # Descargar datos directamente con yf.download para evitar cache sqlite de history().
             try:
                 with YFINANCE_LOCK:
-                    ticker = yf.Ticker(yf_symbol)
-                    df = ticker.history(
+                    df = yf.download(
+                        yf_symbol,
                         period=period,
                         interval=yf_interval,
+                        progress=False,
                         auto_adjust=False,
-                        actions=False,
+                        group_by='column',
+                        threads=False,
                     )
-                # Remover columnas duplicadas (puede ocurrir con yfinance)
-                df = df.loc[:,~df.columns.duplicated()]
-                # Normalizar índice de tiempo (evitar tz-naive/tz-aware conflict)
-                try:
-                    if hasattr(df.index, 'tz') and df.index.tz is not None:
-                        df.index = df.index.tz_convert(None)
-                except Exception:
-                    df.index = pd.to_datetime(df.index, errors='coerce')
-                df = df.reset_index()
-                # Si hay error de dictionary changed size, forzar copia segura
-                try:
-                    df = df.copy()
-                except Exception:
-                    pass
             except Exception as e:
-                logger.warning(
-                    f"history() falló para {symbol} ({yf_symbol}): {e}. "
-                    "Intentando yf.download()"
+                logger.error(
+                    f"Error descargando datos para {symbol} ({yf_symbol}): {e}",
+                    exc_info=True,
                 )
-
-            if df is None or df.empty:
-                try:
-                    with YFINANCE_LOCK:
-                        df = yf.download(
-                            yf_symbol,
-                            period=period,
-                            interval=yf_interval,
-                            progress=False,
-                            auto_adjust=False,
-                            group_by='column',
-                            threads=False,
-                        )
-                except Exception as e:
-                    logger.error(
-                        f"Error descargando datos para {symbol} ({yf_symbol}): {e}",
-                        exc_info=True,
-                    )
-                    return None
+                return None
 
             if df is None or df.empty:
                 logger.warning(f"No se obtuvieron datos para {symbol}")
