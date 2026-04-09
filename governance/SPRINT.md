@@ -74,6 +74,14 @@
   - Smoke test `start.py` limpio: sin `SystemError`, sin `commit returned NULL`.
   - Trace_ID: `DB-POLICY-SYSTEM-MIXIN-WRITES-HU8.6-2026-04-08`
 
+- [DONE] **HU 8.7: Eliminación de Doble-Commit en callbacks serializados**
+  - Eliminados `conn.commit()/rollback()` manuales dentro de callbacks `_execute_serialized` en `data_vault/signals_db.py`, `data_vault/execution_db.py`, `data_vault/broker_accounts_db.py`.
+  - Hardening de `DatabaseManager`: limpieza de `_tx_lock_pool` al cerrar conexión y en `shutdown` para evitar crecimiento residual.
+  - Tests nuevos de contrato en `tests/test_database_driver_contract.py` para prohibir commits manuales en callbacks serializados y validar limpieza de lock pool.
+  - Validación: 45/45 tests focalizados · `validate_all.py` 28/28 · `start.py` sin `EDGE TEST ERROR` ni `cannot commit - no transaction is active`.
+  - Baseline runtime persistence reducido: 76 → 66 violaciones (sin nuevas violaciones vs baseline).
+  - Trace_ID: `DB-POLICY-SERIALIZED-CALLBACKS-HU8.7-2026-04-08`
+
 ## 📊 Snapshot de Cierre
 
 *(Se completa cuando el sprint finaliza)*

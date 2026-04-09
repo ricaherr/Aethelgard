@@ -98,6 +98,12 @@
     * **Criterio de salida**: 13 tests regresión passing · baseline reducido 90→76 · `validate_all.py` 28/28 · `start.py` sin errores.
     * **Trace_ID**: `DB-POLICY-SYSTEM-MIXIN-WRITES-HU8.6-2026-04-08`
 
+* **HU 8.7: Eliminación de Doble-Commit en callbacks serializados** `[DONE]`
+    * **Qué**: Eliminar `conn.commit()/rollback()` manual en callbacks de `_execute_serialized` en `signals_db.py`, `execution_db.py`, `broker_accounts_db.py`; y limpiar `_tx_lock_pool` en `DatabaseManager.close_connection()/shutdown()`.
+    * **Para qué**: Evitar doble-commit en el contrato transaccional y prevenir regresión `cannot commit - no transaction is active` en hilos (EdgeMonitor y rutas concurrentes).
+    * **Criterio de salida**: tests focalizados 45/45 · `validate_all.py` 28/28 · `start.py` limpio sin `EDGE TEST ERROR` ni `cannot commit - no transaction is active` · baseline 76→66.
+    * **Trace_ID**: `DB-POLICY-SERIALIZED-CALLBACKS-HU8.7-2026-04-08`
+
 
 ---
 

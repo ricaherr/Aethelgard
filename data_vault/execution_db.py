@@ -260,7 +260,6 @@ class ExecutionMixin(BaseRepository):
                     now,
                 ),
             )
-            conn.commit()
 
         try:
             self._execute_serialized(_write)
@@ -314,7 +313,6 @@ class ExecutionMixin(BaseRepository):
                     created_at,
                 ),
             )
-            conn.commit()
 
         try:
             self._execute_serialized(_write)
@@ -336,7 +334,6 @@ class ExecutionMixin(BaseRepository):
                 "DELETE FROM sys_cooldown_tracker WHERE signal_id = ?",
                 (signal_id,),
             )
-            conn.commit()
 
         try:
             self._execute_serialized(_delete)

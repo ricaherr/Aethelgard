@@ -245,6 +245,8 @@ class DatabaseManager:
                     del self._connection_pool[db_path]
                     if db_path in self._health_timestamps:
                         del self._health_timestamps[db_path]
+                    if db_path in self._tx_lock_pool:
+                        del self._tx_lock_pool[db_path]
                     logger.info(f"[DatabaseManager] Closed connection for {db_path}")
 
     def shutdown(self) -> None:
@@ -265,6 +267,7 @@ class DatabaseManager:
                     logger.error(f"[DatabaseManager] Error shutting down {db_path}: {e}")
             self._connection_pool.clear()
             self._health_timestamps.clear()
+            self._tx_lock_pool.clear()
         logger.info("[DatabaseManager] Graceful shutdown complete")
 
     def health_check(self) -> Dict[str, Any]:

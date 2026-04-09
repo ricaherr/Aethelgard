@@ -54,6 +54,7 @@
 | HU 8.4 | Enforcement de Persistencia (guard + auditoría AST + baseline 99 violaciones) | 08 | 27 | [DONE] |
 | HU 8.5 | Migración de Writes Bypass a Contrato de Driver (market_db + storage) | 08 | 27 | [DONE] |
 | HU 8.6 | Migración de Writes Legacy SystemMixin (13 métodos → transaction contract, baseline 90→76) | 08 | 27 | [DONE] |
+| HU 8.7 | Eliminación de Doble-Commit en callbacks serializados (signals/execution/broker + tx_lock cleanup, baseline 76→66) | 08 | 27 | [DONE] |
 | HU 10.21 | Hardening de Arranque y Señales de Consola (sin ruido/errores espurios) | 10 | 27 | [DONE] |
 
 > [!NOTE]

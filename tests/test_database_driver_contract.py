@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+import inspect
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,9 @@ from data_vault.drivers.errors import (
     PersistenceTransactionError,
 )
 from data_vault.storage import StorageManager
+from data_vault.signals_db import SignalsMixin
+from data_vault.execution_db import ExecutionMixin
+from data_vault.broker_accounts_db import BrokerAccountsMixin
 
 
 @pytest.fixture
@@ -147,3 +151,35 @@ def test_driver_execute_accepts_write_mode_keyword(sqlite_driver: SQLiteDriver, 
     row = sqlite_driver.fetch_one(db_path, "SELECT payload FROM mode_demo WHERE id = ?", (inserted,))
     assert row is not None
     assert row["payload"] == "critical"
+
+
+def test_serialized_callbacks_do_not_use_manual_commit() -> None:
+    """Callbacks passed to _execute_serialized must not perform manual commit/rollback."""
+    source_blocks = [
+        inspect.getsource(SignalsMixin.save_signal),
+        inspect.getsource(SignalsMixin.update_signal_status),
+        inspect.getsource(ExecutionMixin.register_cooldown),
+        inspect.getsource(ExecutionMixin.persist_quality_assessment),
+        inspect.getsource(ExecutionMixin.clear_cooldown),
+        inspect.getsource(BrokerAccountsMixin.save_user_broker_account),
+        inspect.getsource(BrokerAccountsMixin.update_broker_account_status),
+    ]
+
+    for source in source_blocks:
+        assert "conn.commit()" not in source
+        assert "conn.rollback()" not in source
+
+
+def test_database_manager_close_connection_cleans_tx_lock_pool(tmp_path: Path) -> None:
+    """Closing a db connection must also release its transaction lock entry."""
+    db_path = str(tmp_path / "driver_contract_tx_lock_cleanup.db")
+    manager = get_database_manager()
+
+    with manager.transaction(db_path) as conn:
+        conn.execute("CREATE TABLE tx_lock_demo (id INTEGER PRIMARY KEY)")
+
+    assert db_path in manager._tx_lock_pool
+
+    manager.close_connection(db_path)
+
+    assert db_path not in manager._tx_lock_pool

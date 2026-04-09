@@ -168,8 +168,6 @@ class BrokerAccountsMixin(BaseRepository):
                 )
                 row = cursor.fetchone()
                 account_id = cast(Optional[str], row[0]) if row else None
-
-            conn.commit()
             return account_id
 
         try:
@@ -219,7 +217,6 @@ class BrokerAccountsMixin(BaseRepository):
                 """,
                 (status, datetime.now(timezone.utc).isoformat(), account_id, user_id),
             )
-            conn.commit()
             return cursor.rowcount > 0
 
         try:

@@ -175,7 +175,6 @@ class SignalsMixin(BaseRepository):
                 INSERT INTO sys_signals ({columns_str})
                 VALUES ({placeholders})
             """, values)
-            conn.commit()
         
         self._execute_serialized(_save, signal_id)
         return signal_id
@@ -290,7 +289,6 @@ class SignalsMixin(BaseRepository):
                     SET status = ?, updated_at = ?
                     WHERE id = ?
                 """, (status, now_str, signal_id))
-            conn.commit()
 
         self._execute_serialized(_update, signal_id, status, metadata_update)
 
