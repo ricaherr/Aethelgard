@@ -17,12 +17,46 @@ TRACE_ID: EXEC-ORCHESTRA-001
 """
 
 import logging
+import math
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from enum import Enum
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_structure_confidence(raw_confidence: Any) -> float:
+    """Normalize structure confidence to 0-100 for service persistence and logs."""
+    if raw_confidence is None:
+        return 0.0
+
+    try:
+        confidence = float(raw_confidence)
+    except (TypeError, ValueError):
+        logger.warning(
+            "[UI_MAPPING] Invalid confidence type (%s). Falling back to 0.0",
+            type(raw_confidence).__name__,
+        )
+        return 0.0
+
+    if not math.isfinite(confidence):
+        logger.warning("[UI_MAPPING] Non-finite confidence (%s). Falling back to 0.0", raw_confidence)
+        return 0.0
+
+    # Backward compatibility for legacy ratio scale.
+    if 0.0 <= confidence <= 1.0:
+        confidence *= 100.0
+
+    clamped_confidence = max(0.0, min(100.0, confidence))
+    if clamped_confidence != confidence:
+        logger.warning(
+            "[UI_MAPPING] Confidence out of range (%.2f) clamped to %.2f",
+            confidence,
+            clamped_confidence,
+        )
+
+    return round(clamped_confidence, 1)
 
 
 class LayerType(Enum):
@@ -551,7 +585,7 @@ class UIMappingService:
             structure_type = structure_data.get("structure_type", "UNKNOWN")
             is_valid = structure_data.get("is_valid", False)
             validation_level = structure_data.get("validation_level", "INSUFFICIENT")  # NEW
-            confidence = structure_data.get("confidence", 0.0)  # Numeric score
+            confidence = _normalize_structure_confidence(structure_data.get("confidence", 0.0))
             
             # Check if we have any pivot data
             has_pivots = any([hh_indices, hl_indices, lh_indices, ll_indices])
@@ -581,7 +615,7 @@ class UIMappingService:
                 "ll_count": len(ll_indices),
                 "valid": is_valid,
                 "validation_level": validation_level,  # NEW: STRONG/PARTIAL/UNKNOWN
-                "confidence": confidence,  # NEW: 0-100 numeric score
+                "confidence": confidence,  # Always normalized to 0-100
                 "timestamp": datetime.now().isoformat()
             }
             

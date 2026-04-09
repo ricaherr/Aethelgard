@@ -10,7 +10,7 @@
 > - **Framework completo**: `.ai_orchestration_protocol.md` Sección 4.
 
 **Versión Log**: v4.18.0-beta
-**Última Actualización**: 9 de Abril, 2026 (E18 completada y archivada)
+**Última Actualización**: 9 de Abril, 2026 (E19 activada para recuperación operativa end-to-end)
 
 ---
 
@@ -42,6 +42,19 @@
 | HU 3.3 | Multi-Market Alpha Correlator | 03 | 27 | [TODO] |
 | HU 6.1 | Shadow Reality Engine (Penalty Injector) | 06 | 27 | [TODO] |
 | HU 6.2 | Multi-Tenant Strategy Ranker | 06 | 27 | [TODO] |
+
+---
+
+### E19: Recuperación Operativa End-to-End (Señal → Ejecución) — ACTIVA
+**Sprint**: 29 | **Trace_ID**: E19-OPERATIONAL-RECOVERY-2026-04-09
+**Objetivo**: Recuperar la operación comercial completa del sistema eliminando regresiones de confidence, desbloqueando el pipeline de señales, reduciendo vetos por CPU y estabilizando cobertura de data providers.
+
+| HU | Nombre | Dominio | Sprint | Estado |
+|---|---|---|---|---|
+| HU 5.4 | Signal-to-Execution Recovery Pipeline | 05 | 29 | [TODO] |
+| HU 9.10 | Runtime Confidence Contract Recovery | 09 | 29 | [TODO] |
+| HU 10.27 | Adaptive CPU Guardrail Throttling | 10 | 29 | [TODO] |
+| HU 10.28 | Provider Coverage Reliability | 10 | 29 | [TODO] |
 
 ---
 

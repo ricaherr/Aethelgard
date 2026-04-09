@@ -1,6 +1,6 @@
 # AETHELGARD: SPRINT LOG
 
-**Última Actualización**: 9 de Abril, 2026 (SRE Audit completada — E18 iniciada)
+**Última Actualización**: 9 de Abril, 2026 (Sprint 29 abierto — E19 en preparación)
 
 > **📋 REGLAS DE EDICIÓN — Leer antes de modificar este documento**
 > - **Propósito**: Diario de ejecución. Cada Sprint referencia una Épica del ROADMAP y las HUs del BACKLOG que ejecuta.
@@ -10,6 +10,45 @@
 > - **Al cerrar Sprint**: snapshot de métricas + actualizar HUs en BACKLOG a `[DONE]` + archivar en SYSTEM_LEDGER.
 > - **PROHIBIDO**: `[x]`, `[QA]`, `[IN_PROGRESS]`, `[CERRADO]`, `[ACTIVO]`, `✅ COMPLETADA`
 > - **Framework completo**: `.ai_orchestration_protocol.md` Sección 4.
+
+---
+
+# SPRINT 29: E19 — RECUPERACIÓN OPERATIVA END-TO-END — [TODO]
+
+**Inicio**: 9 de Abril, 2026
+**Fin**: —
+**Objetivo**: Restablecer operación comercial real corrigiendo regresión de confidence runtime, desbloqueando generación de señales, reduciendo vetos por CPU y estabilizando cobertura de proveedores para cerrar el ciclo señal→trade.
+**Épica**: E19 (Recuperación Operativa End-to-End) | **Trace_ID**: E19-OPERATIONAL-RECOVERY-2026-04-09
+**Dominios**: 05_UNIVERSAL_EXECUTION · 09_INSTITUTIONAL_INTERFACE · 10_INFRASTRUCTURE_RESILIENCY
+
+## 📋 Tareas del Sprint
+
+- [TODO] **HU 9.10: Runtime Confidence Contract Recovery** *(🔴 PRIORIDAD MÁXIMA — Regresión visible en runtime)*
+  - Validar contrato único de confidence (0-100) en servicio, logs y payloads de eventos.
+  - Añadir TDD para doble escalado, clamping, formatos inválidos y consistencia de salida.
+  - Confirmar en runtime ausencia de confidence fuera de rango durante ventana de observación.
+
+- [TODO] **HU 5.4: Signal-to-Execution Recovery Pipeline** *(🔴 PRIORIDAD MÁXIMA — Bloqueo de negocio)*
+  - Instrumentar motivos de descarte en `generate_usr_signals_batch` y gates aguas abajo.
+  - Corregir condiciones que están llevando `Raw usr_signals generated: 0` de forma sostenida.
+  - Verificar transición efectiva desde señales válidas hasta ejecución de trade.
+
+- [TODO] **HU 10.27: Adaptive CPU Guardrail Throttling**
+  - Sustituir veto instantáneo por política adaptativa con presión acumulada y degradación escalonada.
+  - Exponer métrica de `cpu_veto_rate` para observabilidad operacional.
+  - Validar reducción de ciclos vetados sin degradar estabilidad del host.
+
+- [TODO] **HU 10.28: Provider Coverage Reliability**
+  - Implementar estrategia de exclusión temporal/reintento inteligente para símbolos con fallback agotado.
+  - Reducir warnings repetitivos por proveedores no servibles y mejorar cobertura efectiva por mercado.
+  - Validar estabilidad en scan cycles sin pérdida de activos críticos.
+
+## 🔒 Gate de Ejecución (obligatorio para mover a [DONE])
+
+- `validate_all.py` = 28/28 PASS
+- `start.py` operativo sin crash en ventana de observación
+- `stop.py` cierre limpio sin locks residuales
+- Evidencia runtime: señales > 0 en ventana operativa y al menos una ejecución confirmada en `usr_trades`
 
 ---
 

@@ -64,7 +64,10 @@
 ---
 
 ## 05_UNIVERSAL_EXECUTION (EMS, Conectores FIX)
-*(Sin HUs pendientes — todas archivadas en SYSTEM_LEDGER)*
+* **HU 5.4: Signal-to-Execution Recovery Pipeline** `[TODO]`
+    * **Prioridad**: Crítica de negocio
+    * **Descripción**: Recuperar el pipeline completo desde `scan_results` hasta ejecución efectiva de trades. Instrumentar causas de descarte en `SignalFactory`, verificar gates de readiness/módulos/regímenes y restablecer generación de señales operables.
+    * **🖥️ UI Representation**: Panel operativo con embudo en tiempo real (`snapshots -> raw_signals -> filtered_signals -> executable_signals -> trades`).
 
 ---
 
@@ -97,13 +100,24 @@
 
 ## 09_INSTITUTIONAL_INTERFACE (UI/UX, Terminal)
 
-*(Sin HUs pendientes activas en este dominio para este Sprint; ver SYSTEM_LEDGER/SPRINT para completadas.)*
+* **HU 9.10: Runtime Confidence Contract Recovery** `[TODO]`
+    * **Prioridad**: Crítica
+    * **Descripción**: Endurecer el contrato canónico de confidence (0-100) entre servicio, persistencia, eventos y logs para eliminar regresiones visuales/operacionales de escala y formato en UI Mapping.
+    * **🖥️ UI Representation**: Confidence estable y consistente en todos los widgets de estructura de mercado, sin overflow ni discrepancias entre vistas.
 
 
 ---
 
 ## 10_INFRASTRUCTURE_RESILIENCY (Health, Self-Healing)
-*(Sin HUs pendientes activas en este dominio para este Sprint; ver SYSTEM_LEDGER/SPRINT para completadas.)*
+* **HU 10.27: Adaptive CPU Guardrail Throttling** `[TODO]`
+    * **Prioridad**: Alta
+    * **Descripción**: Sustituir veto instantáneo por control adaptativo (promedio móvil + degradación progresiva) para minimizar ciclos saltados por picos transitorios de CPU sin comprometer estabilidad.
+    * **🖥️ UI Representation**: Indicador de presión de CPU con estado dinámico (`NORMAL`, `THROTTLED`, `VETO`) y porcentaje de ciclos vetados.
+
+* **HU 10.28: Provider Coverage Reliability** `[TODO]`
+    * **Prioridad**: Alta
+    * **Descripción**: Reducir fallbacks agotados por símbolo con estrategia de cobertura por mercado, cooldown inteligente y exclusión temporal de activos no servibles para evitar ruido operacional.
+    * **🖥️ UI Representation**: Mapa de cobertura por símbolo/proveedor con estado de salud y fallback activo.
 
 
 
