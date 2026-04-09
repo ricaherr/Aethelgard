@@ -105,15 +105,11 @@
 ---
 
 ## 10_INFRASTRUCTURE_RESILIENCY (Health, Self-Healing)
-*(HUs activas en Sprint 28 — HU 10.1 archivada en SYSTEM_LEDGER E3 + E14)*
+*(HUs activas en Sprint 28 — HU 10.1 archivada en SYSTEM_LEDGER E3 + E14 · HU 10.26 archivada en SYSTEM_LEDGER Sprint 28)*
 
 * **HU 10.24: Shadow Pool Bootstrap Diagnostics** `[TODO]`
     * **Qué**: `initialize_shadow_pool_impl` reporta `"0 created, 0 skipped, 0 failed"` engañosamente. Cuando las 3 estrategias ya tienen 2 instancias activas, el branch `already_active >= variations_per_strategy` hace `continue` sin incrementar `skipped_count`. El operador no puede distinguir entre "no hay estrategias elegibles" y "todas ya tienen instancias máximas".
     * **Archivos afectados**: `core_brain/orchestrators/_discovery.py`
-
-* **HU 10.26: Heartbeat Audit Trail Repair** `[TODO]`
-    * **Qué**: `sys_audit_logs` no recibe entradas `HEARTBEAT` desde 2026-04-06 (>82h de gap detectado en auditoría SRE). `update_module_heartbeat()` en `data_vault/system_db.py:297` escribe en `sys_config` correctamente pero la escritura canónica en `sys_audit_logs` parece vetada por el throttle `heartbeat_audit_interval_s`. Investigar si el throttle está bloqueando la escritura inicial o si hay una condición silenciada.
-    * **Archivos afectados**: `data_vault/system_db.py`, `core_brain/operational_edge_monitor.py`
 
 
 

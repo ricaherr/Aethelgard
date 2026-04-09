@@ -42,10 +42,12 @@
   - Verificación orquestador: `python scripts/validate_all.py` = 28/28 PASS.
   - Verificación runtime: `GET /health` responde HTTP 200 con payload estable y `status=ok` en arranque normal.
 
-- [TODO] **HU 10.26: Heartbeat Audit Trail Repair**
-  - Diagnosticar la condición que impide escrituras HEARTBEAT en `sys_audit_logs` desde Apr-06.
-  - Verificar si `heartbeat_audit_interval_s` > uptime en primer ciclo.
-  - Corregir para garantizar al menos 1 entrada HEARTBEAT por componente en cada arranque.
+- [DONE] **HU 10.26: Heartbeat Audit Trail Repair**
+  - Se endureció `update_module_heartbeat` para garantizar primer write auditado por arranque/componente y mantener throttle en subsiguientes writes.
+  - OEM ahora prioriza heartbeat de `sys_audit_logs` cuando es más reciente o utilizable; fallback controlado a `sys_config`.
+  - Verificación orquestador: `pytest tests/test_heartbeat_audit_trail.py tests/test_module_heartbeat_audit.py tests/test_oem_heartbeat_check.py tests/test_system_db_heartbeat_canonical.py -q` = 22/22 PASS.
+  - Verificación orquestador: `python scripts/validate_all.py` = 28/28 PASS.
+  - Verificación runtime: `python start.py` inició sin crash y mantuvo loop operacional activo durante ventana de verificación.
 
 - [TODO] **HU 9.9: UI Confidence Display Overflow Fix**
   - Confirmar el rango de retorno de `market_structure_analyzer._calculate_confidence_score_professional()` (debe ser 0-100).

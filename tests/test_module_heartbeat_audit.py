@@ -42,6 +42,7 @@ def test_update_module_heartbeat_skips_audit_when_recently_logged() -> None:
         }
     )
     dummy.log_audit_event = MagicMock()
+    dummy._heartbeat_audit_bootstrap_written = {"orchestrator"}
 
     SystemMixin.update_module_heartbeat(dummy, "orchestrator")
 

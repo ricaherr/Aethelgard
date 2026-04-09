@@ -608,28 +608,14 @@ class OperationalEdgeMonitor(threading.Thread):
     def _check_orchestrator_heartbeat(self) -> CheckResult:
         """El loop principal debe actualizar su heartbeat en menos de MAX_HEARTBEAT_GAP_FAIL_MINUTES."""
         heartbeats = self.storage.get_module_heartbeats()
-        orchestrator_ts = heartbeats.get("orchestrator")
-        source = "sys_config"
+        config_ts_raw = heartbeats.get("orchestrator")
+        config_ts = _parse_ts(config_ts_raw)
 
-        if orchestrator_ts is None and hasattr(self.storage, "get_latest_module_heartbeat_audit"):
-            orchestrator_ts = self.storage.get_latest_module_heartbeat_audit("orchestrator")
-            source = "sys_audit_logs"
-
-        if orchestrator_ts is None:
-            return CheckResult(
-                CheckStatus.WARN,
-                "Sin heartbeat registrado en sys_config ni sys_audit_logs — orchestrator puede no haber iniciado aún",
-            )
-
-        last_beat = _parse_ts(orchestrator_ts)
-        if last_beat is None:
-            return CheckResult(
-                CheckStatus.WARN,
-                f"Heartbeat con formato inválido ({source}): {orchestrator_ts}",
-            )
-
-        gap_minutes = (datetime.now(timezone.utc) - last_beat).total_seconds() / 60
-        gap_seconds = gap_minutes * 60
+        audit_ts_raw: Optional[str] = None
+        audit_ts: Optional[datetime] = None
+        if hasattr(self.storage, "get_latest_module_heartbeat_audit"):
+            audit_ts_raw = self.storage.get_latest_module_heartbeat_audit("orchestrator")
+            audit_ts = _parse_ts(audit_ts_raw)
 
         silenced_threshold_raw = self.storage.get_sys_config().get(
             "oem_silenced_component_gap_seconds",
@@ -639,6 +625,35 @@ class OperationalEdgeMonitor(threading.Thread):
             silenced_threshold_seconds = max(60, int(silenced_threshold_raw))
         except (TypeError, ValueError):
             silenced_threshold_seconds = self.SILENCED_COMPONENT_GAP_SECONDS_DEFAULT
+
+        source = "sys_config"
+        chosen_ts = config_ts
+        chosen_raw = config_ts_raw
+        if audit_ts is not None:
+            audit_age_seconds = (datetime.now(timezone.utc) - audit_ts).total_seconds()
+            if (
+                chosen_ts is None
+                or audit_ts >= chosen_ts
+                or audit_age_seconds <= silenced_threshold_seconds
+            ):
+                source = "sys_audit_logs"
+                chosen_ts = audit_ts
+                chosen_raw = audit_ts_raw
+
+        if chosen_ts is None and config_ts_raw is None and audit_ts_raw is None:
+            return CheckResult(
+                CheckStatus.WARN,
+                "Sin heartbeat registrado en sys_config ni sys_audit_logs — orchestrator puede no haber iniciado aún",
+            )
+
+        if chosen_ts is None:
+            return CheckResult(
+                CheckStatus.WARN,
+                f"Heartbeat con formato inválido ({source}): {chosen_raw}",
+            )
+
+        gap_minutes = (datetime.now(timezone.utc) - chosen_ts).total_seconds() / 60
+        gap_seconds = gap_minutes * 60
 
         if gap_seconds > silenced_threshold_seconds:
             return CheckResult(

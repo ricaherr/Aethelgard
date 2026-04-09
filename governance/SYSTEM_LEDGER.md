@@ -29,6 +29,17 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 
 ---
 
+### Sprint 28 — HU 10.26: Heartbeat Audit Trail Repair (9-Abr-2026)
+**Trace_ID**: `SRE-HEARTBEAT-AUDIT-TRAIL-HU10.26-2026-04-09` | **Épica**: E18 (Sprint activo) | **Estado**: HU completada
+
+| HU | Descripción | Artefactos clave | Tests |
+|---|---|---|---|
+| **HU 10.26** | Reparación del rastro canónico de heartbeat para observabilidad SRE. `update_module_heartbeat()` garantiza primer write auditado por arranque/componente y mantiene throttle por intervalo para evitar ruido. OEM prioriza heartbeat auditado reciente (`sys_audit_logs`) y aplica fallback controlado a `sys_config` cuando no hay audit utilizable, preservando reglas WARN/FAIL sin falsos negativos. | `data_vault/system_db.py`, `core_brain/operational_edge_monitor.py`, `tests/test_heartbeat_audit_trail.py`, `tests/test_module_heartbeat_audit.py` | 22/22 |
+
+**Validación**: tests focalizados de heartbeat/OEM **22/22 PASSED** · `validate_all.py` **28/28 PASSED** · verificación runtime en `start.py` sin regresión de arranque y con eventos `HEARTBEAT` visibles en `sys_audit_logs`.
+
+---
+
 ### Sprint 28 — HU 10.25: Health Endpoint SRE (9-Abr-2026)
 **Trace_ID**: `SRE-HEALTH-ENDPOINT-HU10.25-2026-04-09` | **Épica**: E18 (Sprint activo) | **Estado**: HU completada
 

@@ -4,7 +4,7 @@ import sqlite3
 import uuid
 from typing import Dict, List, Optional, Any, cast
 from datetime import datetime, timezone
-from utils.time_utils import to_utc
+from utils.time_utils import to_utc_datetime
 from .base_repo import BaseRepository
 
 logger = logging.getLogger(__name__)
@@ -300,9 +300,15 @@ class SystemMixin(BaseRepository):
         Also persists a HEARTBEAT event to sys_audit_logs with throttling so
         the audit trail remains queryable without flooding storage.
         """
-        now_iso = datetime.now(timezone.utc).isoformat()
+        now_dt = datetime.now(timezone.utc)
+        now_iso = now_dt.isoformat()
         self.update_sys_config({f"heartbeat_{module_name}": now_iso})
 
+        if not hasattr(self, "_heartbeat_audit_bootstrap_written"):
+            self._heartbeat_audit_bootstrap_written: set[str] = set()
+
+        last_key = f"heartbeat_audit_last_{module_name}"
+        first_heartbeat_after_boot = module_name not in self._heartbeat_audit_bootstrap_written
         try:
             sys_config = self.get_sys_config()
             interval_raw = sys_config.get("heartbeat_audit_interval_s", 120)
@@ -311,28 +317,41 @@ class SystemMixin(BaseRepository):
             except (TypeError, ValueError):
                 interval_seconds = 120
 
-            last_key = f"heartbeat_audit_last_{module_name}"
-            last_logged_raw = sys_config.get(last_key)
-            should_log = True
-            if last_logged_raw:
-                last_logged_dt = to_utc(last_logged_raw)
-                delta = datetime.now(timezone.utc) - last_logged_dt
-                should_log = delta.total_seconds() >= interval_seconds
+            should_log = first_heartbeat_after_boot
+            if not should_log:
+                last_logged_raw = sys_config.get(last_key)
+                if last_logged_raw:
+                    try:
+                        last_logged_dt = to_utc_datetime(last_logged_raw)
+                        should_log = (now_dt - last_logged_dt).total_seconds() >= interval_seconds
+                    except Exception:
+                        should_log = True
+                else:
+                    should_log = True
 
             if should_log:
                 trace_id = f"HEARTBEAT_{module_name}_{uuid.uuid4().hex[:8].upper()}"
+                reason = f"heartbeat_{module_name}"
+                if first_heartbeat_after_boot:
+                    reason = f"{reason}:first_after_boot"
+
                 self.log_audit_event(
                     user_id="SYSTEM",
                     action="HEARTBEAT",
                     resource=module_name,
                     resource_id="module",
                     status="success",
-                    reason=f"heartbeat_{module_name}",
+                    reason=reason,
                     trace_id=trace_id,
                 )
                 self.update_sys_config({last_key: now_iso})
+                self._heartbeat_audit_bootstrap_written.add(module_name)
         except Exception as exc:
-            logger.debug("[HEARTBEAT] Audit heartbeat persistence skipped: %s", exc)
+            logger.debug(
+                "[HEARTBEAT] Audit heartbeat persistence skipped for %s: %s",
+                module_name,
+                exc,
+            )
 
     def get_module_heartbeats(self) -> Dict[str, str]:
         """Get last activity timestamps for all modules"""

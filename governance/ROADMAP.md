@@ -27,7 +27,7 @@
 | HU 8.8 | SSOT Execution Mode Drift Fix | 08 | 28 | [DONE] |
 | HU 10.24 | Shadow Pool Bootstrap Diagnostics | 10 | 28 | [TODO] |
 | HU 10.25 | Health Endpoint SRE | 10 | 28 | [DONE] |
-| HU 10.26 | Heartbeat Audit Trail Repair | 10 | 28 | [TODO] |
+| HU 10.26 | Heartbeat Audit Trail Repair | 10 | 28 | [DONE] |
 | HU 9.9 | UI Confidence Display Overflow Fix | 09 | 28 | [TODO] |
 
 ---
