@@ -105,11 +105,8 @@
 ---
 
 ## 10_INFRASTRUCTURE_RESILIENCY (Health, Self-Healing)
-*(HUs activas en Sprint 28 — HU 10.1 archivada en SYSTEM_LEDGER E3 + E14 · HU 10.26 archivada en SYSTEM_LEDGER Sprint 28)*
+*(HUs activas en Sprint 28 — HU 10.1 archivada en SYSTEM_LEDGER E3 + E14 · HU 10.24 y HU 10.26 archivadas en SYSTEM_LEDGER Sprint 28)*
 
-* **HU 10.24: Shadow Pool Bootstrap Diagnostics** `[TODO]`
-    * **Qué**: `initialize_shadow_pool_impl` reporta `"0 created, 0 skipped, 0 failed"` engañosamente. Cuando las 3 estrategias ya tienen 2 instancias activas, el branch `already_active >= variations_per_strategy` hace `continue` sin incrementar `skipped_count`. El operador no puede distinguir entre "no hay estrategias elegibles" y "todas ya tienen instancias máximas".
-    * **Archivos afectados**: `core_brain/orchestrators/_discovery.py`
 
 
 

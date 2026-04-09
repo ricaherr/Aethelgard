@@ -29,6 +29,17 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 
 ---
 
+### Sprint 28 — HU 10.24: Shadow Pool Bootstrap Diagnostics (9-Abr-2026)
+**Trace_ID**: `SHADOW-POOL-DIAGNOSTICS-HU10.24-2026-04-09` | **Épica**: E18 (Sprint activo) | **Estado**: HU completada
+
+| HU | Descripción | Artefactos clave | Tests |
+|---|---|---|---|
+| **HU 10.24** | Corrección de diagnóstico de bootstrap del shadow pool: contabilización correcta de skips por causa (`not SHADOW` y `at capacity`), retorno extendido con telemetría (`skipped_not_shadow`, `skipped_at_capacity`) y log final con desglose para eliminar reportes engañosos tipo `0 skipped` en escenarios de capacidad saturada. | `core_brain/orchestrators/_discovery.py`, `tests/test_shadow_pool_log_accuracy.py`, `tests/test_shadow_pool_mode_filter.py` | 12/12 |
+
+**Validación**: tests focalizados **12/12 PASSED** · verificación runtime con log `Pool bootstrap complete: 0 created, 3 skipped, 0 failed (skipped_not_shadow=0, skipped_at_capacity=3)` · `validate_all.py` en verde sin regresión de dominios.
+
+---
+
 ### Sprint 28 — HU 10.26: Heartbeat Audit Trail Repair (9-Abr-2026)
 **Trace_ID**: `SRE-HEARTBEAT-AUDIT-TRAIL-HU10.26-2026-04-09` | **Épica**: E18 (Sprint activo) | **Estado**: HU completada
 

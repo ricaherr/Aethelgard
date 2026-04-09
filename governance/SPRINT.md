@@ -29,10 +29,11 @@
   - Verificación orquestador: `python scripts/validate_all.py` = 28/28 PASS.
   - Verificación funcional: `_get_execution_mode` retorna SHADOW para MOM_BIAS_0001, LIQ_SWEEP_0001 y STRUC_SHIFT_0001.
 
-- [TODO] **HU 10.24: Shadow Pool Bootstrap Diagnostics**
-  - En `core_brain/orchestrators/_discovery.py`: el branch `already_active >= variations_per_strategy` debe incrementar `skipped_count`.
-  - Agregar log `INFO` que diferencie "skipped: not SHADOW mode" de "skipped: already at max instances".
-  - Test: verificar que el resumen reporta correctamente cuando todas las instancias existen.
+- [DONE] **HU 10.24: Shadow Pool Bootstrap Diagnostics**
+  - Corregidos contadores de skip por causa en `initialize_shadow_pool_impl` (`skipped_not_shadow`, `skipped_at_capacity`) y retorno extendido manteniendo compatibilidad (`created`, `skipped`, `failed`).
+  - Log final enriquecido con desglose por causa de skip para observabilidad operativa.
+  - Verificación orquestador: `pytest tests/test_shadow_pool_log_accuracy.py tests/test_shadow_pool_mode_filter.py -q` = 12/12 PASS.
+  - Verificación runtime: bootstrap muestra `Pool bootstrap complete: 0 created, 3 skipped, 0 failed (skipped_not_shadow=0, skipped_at_capacity=3)`.
 
 - [DONE] **HU 10.25: Health Endpoint SRE**
   - Crear `GET /health` en el router FastAPI que retorne: `status`, `orchestrator_heartbeat_age_s`, `last_signal_at`, `last_trade_at`, `operational_mode`, `active_strategies`.
