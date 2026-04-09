@@ -90,19 +90,7 @@
 
 ## 08_DATA_SOVEREIGNTY (SSOT, Persistence)
 
-*(HU 8.4 y HU 8.5 archivadas en SYSTEM_LEDGER — ver E17)*
-
-* **HU 8.6: Migración de Writes Legacy SystemMixin** `[DONE]`
-    * **Qué**: Migrar 13 métodos de escritura en `data_vault/system_db.py` del patrón `_get_conn() + conn.commit()` al contrato `with self.transaction() as conn:`.
-    * **Para qué**: Eliminar el mismo patrón que causó el crash de EdgeMonitor (`SystemError: commit returned NULL`) en todos los métodos restantes de `SystemMixin`.
-    * **Criterio de salida**: 13 tests regresión passing · baseline reducido 90→76 · `validate_all.py` 28/28 · `start.py` sin errores.
-    * **Trace_ID**: `DB-POLICY-SYSTEM-MIXIN-WRITES-HU8.6-2026-04-08`
-
-* **HU 8.7: Eliminación de Doble-Commit en callbacks serializados** `[DONE]`
-    * **Qué**: Eliminar `conn.commit()/rollback()` manual en callbacks de `_execute_serialized` en `signals_db.py`, `execution_db.py`, `broker_accounts_db.py`; y limpiar `_tx_lock_pool` en `DatabaseManager.close_connection()/shutdown()`.
-    * **Para qué**: Evitar doble-commit en el contrato transaccional y prevenir regresión `cannot commit - no transaction is active` en hilos (EdgeMonitor y rutas concurrentes).
-    * **Criterio de salida**: tests focalizados 45/45 · `validate_all.py` 28/28 · `start.py` limpio sin `EDGE TEST ERROR` ni `cannot commit - no transaction is active` · baseline 76→66.
-    * **Trace_ID**: `DB-POLICY-SERIALIZED-CALLBACKS-HU8.7-2026-04-08`
+*(Sin HUs pendientes — E17 archivada en SYSTEM_LEDGER)*
 
 
 ---
@@ -115,22 +103,7 @@
 ## 10_INFRASTRUCTURE_RESILIENCY (Health, Self-Healing)
 *(Sin HUs pendientes — HU 10.1 archivada en SYSTEM_LEDGER E3 + E14)*
 
-* **HU 10.21: Hardening de Arranque y Señales de Consola** `[DONE]`
-    * **Qué**: Limpiar el bootstrap del servidor y recalibrar severidades/frecuencia de logs para que la consola distinga claramente entre eventos esperados, degradación controlada y fallos críticos.
-    * **Para qué**: Reducir ruido operacional, evitar falsos positivos de error y facilitar soporte/diagnóstico en producción.
-    * **Criterio de salida**: `start.py` sin errores espurios; warnings de fallback no-fatales ajustados; `pytest -q` + `validate_all.py` 100%.
-
-* **HU 10.22: Grace Window OEM para Invariantes de Bootstrap** `[DONE]`
-    * **Qué**: Introducir una ventana de gracia de arranque en `OperationalEdgeMonitor` para degradar `FAIL` a `WARN` en checks no accionables durante bootstrap (`shadow_sync`, `lifecycle_coherence`).
-    * **Para qué**: Evitar falso negativo operacional al inicio, preservando semántica estricta fuera de la ventana de gracia.
-    * **Criterio de salida**: tests OEM focalizados 62/62 · `validate_all.py` 28/28 · `start.py` con log `Startup grace active` en bootstrap sin warning temprano de invariantes objetivo.
-    * **Trace_ID**: `OEM-STARTUP-GRACE-HU10.22-2026-04-08`
-
-* **HU 10.23: Hardening OEM Post-Bootstrap (No-Accionables Reales)** `[DONE]`
-    * **Qué**: Ajustar `shadow_sync` y `lifecycle_coherence` para separar fallos accionables de estados esperados/no accionables (INCUBATING, bootstrap sin historial de trades, stale técnico no operativo).
-    * **Para qué**: Eliminar falso FAIL recurrente fuera de gracia y mantener señal operativa confiable.
-    * **Criterio de salida**: tests OEM focalizados 69/69 · `validate_all.py` 28/28 · `start.py` con ciclos post-gracia en `All checks passed` y sin `Invariant violations: shadow_sync, lifecycle_coherence`.
-    * **Trace_ID**: `OEM-POST-BOOTSTRAP-HARDENING-HU10.23-2026-04-08`
+*(Sin HUs pendientes — HU 10.21, HU 10.22 y HU 10.23 archivadas en SYSTEM_LEDGER)*
 
 
 

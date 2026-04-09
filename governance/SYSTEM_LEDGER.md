@@ -1,10 +1,10 @@
 # AETHELGARD: SYSTEM LEDGER
 
-**Version**: 4.6.0-beta
+**Version**: 4.18.0-beta
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-07 UTC)**: HU 8.3 registrada en ledger (Sprint 26) · Trace_ID: ARCH-SQLITE-HYBRID-CONCURRENCY-HU8.3-2026-04-07 · suite focalizada **14/14 PASSED** · **validate_all 27/27 PASSED**.
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-08 UTC)**: Épica E17 archivada (Sprint 27) · Trace_ID: DB-POLICY-ROOT-LOCK-2026-04-07 · HUs 8.4/8.5/8.6/8.7/10.21/10.22/10.23 · **validate_all 28/28 PASSED**.
 
 ---
 
@@ -26,6 +26,25 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 ---
 
 ## 🏛️ ÉPICAS ARCHIVADAS
+
+---
+
+### ════════════════════════════════════════════════════════════════
+### ÉPICA E17 COMPLETADA — Data Sovereignty Enforcement Root-Fix (8-Abr-2026)
+**Trace_ID**: `DB-POLICY-ROOT-LOCK-2026-04-07` | **Sprints**: 27 | **Dominios**: 08 · 10
+
+| Campo | Valor |
+|---|---|
+| **Épica** | E17 — Data Sovereignty Enforcement Root-Fix |
+| **Trace_ID** | `DB-POLICY-ROOT-LOCK-2026-04-07` |
+| **Sprints** | 27 |
+| **Completada** | 8 de Abril, 2026 |
+| **Dominios** | 08_DATA_SOVEREIGNTY · 10_INFRASTRUCTURE_RESILIENCY |
+| **HUs** | HU 8.4, HU 8.5, HU 8.6, HU 8.7, HU 10.21, HU 10.22, HU 10.23 |
+| **validate_all** | ✅ 28/28 PASSED |
+
+**Objetivo cumplido**: enforcement de persistencia en runtime, migración de writes legacy al contrato transaccional, eliminación de doble-commit serializado y hardening OEM en bootstrap y post-bootstrap para separar fallos accionables de no accionables sin regresión de arranque.
+### ════════════════════════════════════════════════════════════════
 
 ---
 
