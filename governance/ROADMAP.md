@@ -18,6 +18,20 @@
 
 > ℹ️ Solo se muestran Épicas en estado `ACTIVA` o `PENDIENTE`. Las Épicas `COMPLETADA` se archivan en [SYSTEM_LEDGER.md](SYSTEM_LEDGER.md) (sección ÉPICAS ARCHIVADAS) y se eliminan de este documento.
 
+### E18: SRE — Reparación y Estabilización Operacional — ACTIVA
+**Sprint**: 28 | **Trace_ID**: E18-SRE-OPERATIONAL-REPAIR-2026-04-09
+**Objetivo**: Reparar el pipeline de señales bloqueado por deriva SSOT entre `sys_strategies.mode` y `sys_signal_ranking.execution_mode`, restaurar Shadow trading, corregir bugs silenciados y establecer observabilidad SRE mínima viable.
+
+| HU | Nombre | Dominio | Sprint | Estado |
+|---|---|---|---|---|
+| HU 8.8 | SSOT Execution Mode Drift Fix | 08 | 28 | [TODO] |
+| HU 10.24 | Shadow Pool Bootstrap Diagnostics | 10 | 28 | [TODO] |
+| HU 10.25 | Health Endpoint SRE | 10 | 28 | [TODO] |
+| HU 10.26 | Heartbeat Audit Trail Repair | 10 | 28 | [TODO] |
+| HU 9.9 | UI Confidence Display Overflow Fix | 09 | 28 | [TODO] |
+
+---
+
 ### E5: Interfaz Fractal & Experiencia Futurista (Dominio 09) — ACTIVA
 **Sprint**: 25 | **Trace_ID**: UI-V3-FRACTAL-FUTURE-2026
 **Objetivo**: Evolucionar la terminal a una consola de alta densidad de información con navegación fractal y elementos de manipulación directa.

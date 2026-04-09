@@ -1,6 +1,6 @@
 # AETHELGARD: SPRINT LOG
 
-**Última Actualización**: 9 de Abril, 2026 (DRY Consolidation completada, validate_all 28/28)
+**Última Actualización**: 9 de Abril, 2026 (SRE Audit completada — E18 iniciada)
 
 > **📋 REGLAS DE EDICIÓN — Leer antes de modificar este documento**
 > - **Propósito**: Diario de ejecución. Cada Sprint referencia una Épica del ROADMAP y las HUs del BACKLOG que ejecuta.
@@ -13,7 +13,231 @@
 
 ---
 
-# SPRINT 27: E16 — MEMBRESÍA SAAS, CORRELACIÓN MULTI-MERCADO & DARWINISMO DE PORTAFOLIO — [DEV]
+# SPRINT 28: E18 — SRE REPARACIÓN Y ESTABILIZACIÓN OPERACIONAL — [TODO]
+
+**Inicio**: 9 de Abril, 2026
+**Fin**: —
+**Objetivo**: Reparar el pipeline operacional bloqueado. La auditoría SRE del 09-Apr confirmó que el sistema es un zombie operacional: 3 estrategias en modo SHADOW según `sys_strategies.mode` (SSOT) pero en modo BACKTEST según `sys_signal_ranking.execution_mode` (campo derivado desactualizado). Resultado: 0 señales ejecutadas, 0 shadow trades, 6 instancias shadow atrapadas en INCUBATING. Este sprint repara los 5 defectos documentados en E18.
+**Épica**: E18 (SRE — Reparación y Estabilización Operacional) | **Trace_ID**: E18-SRE-OPERATIONAL-REPAIR-2026-04-09
+**Dominios**: 08_DATA_SOVEREIGNTY · 10_INFRASTRUCTURE_RESILIENCY · 09_INSTITUTIONAL_INTERFACE
+
+## 📋 Tareas del Sprint
+
+- [TODO] **HU 8.8: SSOT Execution Mode Drift Fix** *(🔴 PRIORIDAD MÁXIMA — Bloqueante de todo lo demás)*
+  - Ver ETI completo más abajo.
+
+- [TODO] **HU 10.24: Shadow Pool Bootstrap Diagnostics**
+  - En `core_brain/orchestrators/_discovery.py`: el branch `already_active >= variations_per_strategy` debe incrementar `skipped_count`.
+  - Agregar log `INFO` que diferencie "skipped: not SHADOW mode" de "skipped: already at max instances".
+  - Test: verificar que el resumen reporta correctamente cuando todas las instancias existen.
+
+- [TODO] **HU 10.25: Health Endpoint SRE**
+  - Crear `GET /health` en el router FastAPI que retorne: `status`, `orchestrator_heartbeat_age_s`, `last_signal_at`, `last_trade_at`, `operational_mode`, `active_strategies`.
+  - Sin autenticación. Sin datos sensibles del usuario. Respuesta en <50ms.
+  - Test: `GET /health` retorna HTTP 200 con JSON válido en cualquier estado del sistema.
+
+- [TODO] **HU 10.26: Heartbeat Audit Trail Repair**
+  - Diagnosticar la condición que impide escrituras HEARTBEAT en `sys_audit_logs` desde Apr-06.
+  - Verificar si `heartbeat_audit_interval_s` > uptime en primer ciclo.
+  - Corregir para garantizar al menos 1 entrada HEARTBEAT por componente en cada arranque.
+
+- [TODO] **HU 9.9: UI Confidence Display Overflow Fix**
+  - Confirmar el rango de retorno de `market_structure_analyzer._calculate_confidence_score_professional()` (debe ser 0-100).
+  - Rastrear por qué el valor llega a `_cycle_scan.py:466` como 558 en lugar de 55.8.
+  - Corregir el punto donde ocurre la escala errónea.
+
+---
+
+## ETI SPEC — HU 8.8: SSOT Execution Mode Drift Fix
+
+**Trace_ID**: `SSOT-EXECMODE-DRIFT-FIX-2026-04-09`
+**Archivos afectados**:
+- `data_vault/sys_signal_ranking_db.py` (método `_get_mode_from_sys_strategies`, `ensure_signal_ranking_for_strategy`)
+- `core_brain/services/strategy_engine_factory.py` (método `_get_execution_mode`)
+- `data_vault/schema.py` (migración: sincronizar entradas existentes)
+- `tests/test_strategy_engine_factory.py` (nuevo archivo de test TDD)
+
+---
+
+### 1. Problema
+
+**Estado actual:**
+- `sys_strategies.mode` (SSOT canónico) = `'SHADOW'` para MOM_BIAS_0001, LIQ_SWEEP_0001, STRUC_SHIFT_0001
+- `sys_signal_ranking.execution_mode` (campo derivado) = `'BACKTEST'` para las mismas — congelado en lazy-init del 05-Apr-2026
+- `StrategyEngineFactory._get_execution_mode()` llama a `ensure_signal_ranking_for_strategy()` que retorna el registro existente de `sys_signal_ranking` con `'BACKTEST'`
+- `is_strategy_authorized_for_execution()` en `_lifecycle.py` retorna `False` para BACKTEST → ninguna estrategia ejecuta
+- Shadow pool: 6 instancias en INCUBATING, `total_trades_executed = 0`, sin movimiento
+
+**Estado deseado:**
+- `_get_execution_mode()` lee siempre de `sys_strategies.mode` (SSOT único)
+- `sys_signal_ranking.execution_mode` se actualiza solo al cambiar de modo (por ranking/promoción), no es fuente de verdad para el routing
+- `is_strategy_authorized_for_execution()` recibe `'SHADOW'` → retorna `True` → shadow trades inician
+- Entradas en `sys_signal_ranking` existentes se migran para alinear con `sys_strategies.mode`
+
+---
+
+### 2. Análisis Técnico / Decisiones de Diseño
+
+**Por qué existe el drift:**
+`_get_mode_from_sys_strategies()` se llama UNA SOLA VEZ durante el lazy-init de `ensure_signal_ranking_for_strategy()`. Una vez que la entrada existe en `sys_signal_ranking`, nunca se vuelve a sincronizar. Si `sys_strategies.mode` cambia posteriormente (de 'BACKTEST' a 'SHADOW' por una actualización manual), el drift queda silenciado.
+
+**Dos campos, un concepto — violación sutil de .ai_rules.md §2.5:**
+- `sys_strategies.mode` = estado de ciclo de vida de la estrategia (admin-configurable, SSOT)
+- `sys_signal_ranking.execution_mode` = fue concebido como "modo de ejecución en tiempo real" para el StrategyRanker, pero en la práctica es el mismo concepto. Duplicación innecesaria.
+
+**Alternativas evaluadas:**
+
+| Opción | Pros | Contras | Selección |
+|---|---|---|---|
+| A: `_get_execution_mode()` siempre lee de `sys_strategies.mode` | SSOT puro, elimina drift | Requiere cambio en factory + test | **Elegida** |
+| B: Trigger SQL que sincroniza `sys_signal_ranking` cuando cambia `sys_strategies.mode` | Automático | SQLite no soporta triggers multi-tabla bien; magia oculta | Descartada |
+| C: Eliminar `execution_mode` de `sys_signal_ranking` | Reduce campos | Breaking change mayor en StrategyRanker + schema | Deuda técnica futura, no ahora |
+
+**Decisión final**: Opción A + migración de datos existentes. La factory debe ser la única que lee `sys_strategies.mode` para routing. El campo `sys_signal_ranking.execution_mode` sigue siendo útil para el `StrategyRanker` al registrar promociones históricas, pero no es la fuente de verdad para decidir si una estrategia puede ejecutar.
+
+**Restricciones de stack:**
+- No se puede usar `ALTER TABLE DROP COLUMN` en SQLite < 3.35 — verificar versión o usar migración de rename
+- El cambio en factory es local y no rompe la interfaz pública
+- La migración debe ser aditiva y no destructiva (`.ai_rules.md §2.3`)
+
+---
+
+### 3. Solución
+
+**Parte A — Cambio en `strategy_engine_factory.py`:**
+
+```python
+def _get_execution_mode(self, strategy_id: str) -> str:
+    """
+    Reads execution mode from sys_strategies (SSOT).
+    sys_signal_ranking.execution_mode is NOT the source of truth for routing.
+    """
+    try:
+        # SSOT: sys_strategies.mode (not sys_signal_ranking)
+        mode = self.storage.get_strategy_lifecycle_mode(strategy_id)
+        if mode in ("SHADOW", "LIVE", "QUARANTINE", "BACKTEST"):
+            return mode
+        logger.warning(
+            "[FACTORY] %s: Unknown mode '%s' from sys_strategies.mode — defaulting to SHADOW",
+            strategy_id, mode
+        )
+        return "SHADOW"
+    except Exception as e:
+        logger.error("[FACTORY] %s: Error reading strategy mode: %s", strategy_id, e)
+        return "SHADOW"
+```
+
+**Parte B — Nuevo método en `sys_signal_ranking_db.py`:**
+
+```python
+def get_strategy_lifecycle_mode(self, strategy_id: str) -> str:
+    """
+    Returns sys_strategies.mode (SSOT) for a given strategy.
+    Used by StrategyEngineFactory for routing decisions.
+    Returns 'SHADOW' if not found (safe default).
+    """
+    conn = self._get_conn()
+    try:
+        row = conn.execute(
+            "SELECT mode FROM sys_strategies WHERE class_id = ?",
+            (strategy_id,)
+        ).fetchone()
+        return str(row[0]) if row and row[0] else "SHADOW"
+    except Exception as e:
+        logger.error("[DB] get_strategy_lifecycle_mode failed for %s: %s", strategy_id, e)
+        return "SHADOW"
+    finally:
+        self._close_conn(conn)
+```
+
+**Parte C — Migración de datos en `schema.py` `run_migrations()`:**
+
+```python
+# Migration: sync sys_signal_ranking.execution_mode with sys_strategies.mode (SSOT)
+# Fixes SSOT drift caused by lazy-init on 2026-04-05
+conn.execute("""
+    UPDATE sys_signal_ranking
+    SET execution_mode = (
+        SELECT s.mode FROM sys_strategies s WHERE s.class_id = sys_signal_ranking.strategy_id
+    ),
+    trace_id = 'SSOT-SYNC-MIGRATION-2026-04-09',
+    updated_at = CURRENT_TIMESTAMP
+    WHERE EXISTS (
+        SELECT 1 FROM sys_strategies s
+        WHERE s.class_id = sys_signal_ranking.strategy_id
+        AND s.mode != sys_signal_ranking.execution_mode
+    )
+""")
+```
+
+---
+
+### 4. Cambios por Archivo
+
+| Archivo | Cambio | Tipo |
+|---|---|---|
+| `core_brain/services/strategy_engine_factory.py` | `_get_execution_mode()`: reemplaza llamada a `ensure_signal_ranking_for_strategy()` por nueva `get_strategy_lifecycle_mode()` | Modificación |
+| `data_vault/sys_signal_ranking_db.py` | Agregar método `get_strategy_lifecycle_mode(strategy_id)` | Adición |
+| `data_vault/schema.py` | Agregar migración SQL idempotente en `run_migrations()` que sincroniza `sys_signal_ranking.execution_mode` desde `sys_strategies.mode` | Modificación |
+| `tests/test_ssot_execmode_drift.py` | Nuevo archivo con 5 tests TDD | Creación |
+
+**Archivos NO modificados**: `core_brain/orchestrators/_lifecycle.py`, `core_brain/orchestrators/_discovery.py`, `core_brain/shadow_manager.py` — estos consumen el modo y deben funcionar correctamente una vez que la fuente correcta sea leída.
+
+---
+
+### 5. Criterios de Aceptación
+
+1. `_get_execution_mode("MOM_BIAS_0001")` retorna `'SHADOW'` (de `sys_strategies.mode`)
+2. `_get_execution_mode("BRK_OPEN_0001")` retorna `'BACKTEST'` (sus sys_strategies.mode es BACKTEST)
+3. La migración en `run_migrations()` actualiza las 3 entradas en `sys_signal_ranking` de BACKTEST a SHADOW
+4. `initialize_shadow_pool_impl` no crea instancias extra (ya existen 2 por estrategia) — comportamiento esperado
+5. En el arranque, los logs muestran `SHADOW mode` para las 3 estrategias en lugar de `BACKTEST mode`
+6. `validate_all.py` 28/28 PASS
+7. `start.py` arranca sin regresiones
+
+---
+
+### 6. Tests TDD (archivo: `tests/test_ssot_execmode_drift.py`)
+
+```python
+# Test 1 (happy path): SHADOW strategy returns SHADOW
+# Test 2 (happy path): BACKTEST strategy returns BACKTEST
+# Test 3 (edge case): strategy not in sys_strategies returns SHADOW (safe default)
+# Test 4 (edge case): DB error in get_strategy_lifecycle_mode returns SHADOW (safe default)
+# Test 5 (migration): run_migrations() syncs divergent sys_signal_ranking.execution_mode
+```
+*(Implementar en TDD: crear los tests primero, luego el código)*
+
+---
+
+### 7. Riesgos
+
+| Riesgo | Probabilidad | Mitigación |
+|---|---|---|
+| `storage` no expone `get_strategy_lifecycle_mode` — falla en inyección | Media | Verificar herencia de StorageManager antes de implementar |
+| Migración puede sobrescribir cambios manuales recientes en `sys_signal_ranking` | Baja | La cláusula `WHERE s.mode != execution_mode` es condicional; documentar en trace_id |
+| Estrategias LOGIC_PENDING tienen `sys_strategies.mode = 'SHADOW'` — podrían activarse | Alta | Confirmar que el bloqueo por `readiness=LOGIC_PENDING` ocurre ANTES de que se evalúe el modo |
+
+**Verificación del riesgo 3**: En `_load_single_strategy()`, el check de `readiness == "LOGIC_PENDING"` ocurre en líneas 140-145, ANTES de llamar a `_get_execution_mode()` en línea ≈160. El orden es correcto — las estrategias LOGIC_PENDING nunca llegan a la lectura del modo.
+
+---
+
+### 8. Orden de Ejecución
+
+```
+1. Crear tests/test_ssot_execmode_drift.py con 5 tests (TDD — deben FALLAR primero)
+2. Agregar get_strategy_lifecycle_mode() en data_vault/sys_signal_ranking_db.py
+3. Modificar _get_execution_mode() en strategy_engine_factory.py
+4. Agregar migración en data_vault/schema.py run_migrations()
+5. Ejecutar tests → deben PASAR
+6. Ejecutar validate_all.py → 28/28
+7. Ejecutar start.py → confirmar logs muestran SHADOW mode para las 3 estrategias
+8. Confirmar sys_signal_ranking.execution_mode actualizado en DB post-arranque
+```
+
+---
+
+
 
 **Inicio**: 8 de Abril, 2026
 **Fin**: —
