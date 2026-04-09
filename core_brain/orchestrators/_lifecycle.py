@@ -38,6 +38,21 @@ def update_all_usr_strategies_heartbeat(orch: Any) -> None:
 
 def persist_session_stats_impl(orch: Any) -> None:
     """Persist current session stats to storage after each cycle."""
+    latest_funnel = getattr(orch, "_latest_signal_funnel", None)
+    recent_funnels = []
+    if latest_funnel:
+        try:
+            sys_config = orch.storage.get_sys_config() or {}
+            existing_session = sys_config.get("session_stats", {})
+            existing_recent = existing_session.get("signal_funnel_recent", [])
+            if isinstance(existing_recent, list):
+                recent_funnels = [*existing_recent, latest_funnel][-20:]
+            else:
+                recent_funnels = [latest_funnel]
+        except Exception as exc:
+            logger.debug("Could not load previous funnel snapshots: %s", exc)
+            recent_funnels = [latest_funnel]
+
     session_data = {
         "date": orch.stats.date.isoformat(),
         "usr_signals_processed": orch.stats.usr_signals_processed,
@@ -50,10 +65,18 @@ def persist_session_stats_impl(orch: Any) -> None:
         "usr_signals_vetoed": orch.stats.usr_signals_vetoed,
         "last_update": datetime.now().isoformat(),
     }
+    if latest_funnel:
+        session_data["signal_funnel_last_cycle"] = latest_funnel
+        session_data["signal_funnel_recent"] = recent_funnels
+
     orch.storage.update_sys_config({"session_stats": session_data})
 
 
-def is_strategy_authorized_for_execution(orch: Any, signal: Any) -> bool:
+def is_strategy_authorized_for_execution(
+    orch: Any,
+    signal: Any,
+    with_reason: bool = False,
+) -> Any:
     """
     Check if a signal's strategy is authorized for LIVE execution.
 
@@ -65,36 +88,36 @@ def is_strategy_authorized_for_execution(orch: Any, signal: Any) -> bool:
     """
     strategy_id = getattr(signal, "strategy", None)
     if not strategy_id:
-        return True  # legacy compatibility — no strategy tag means allow
+        return (True, "strategy_missing_allow") if with_reason else True
 
     try:
         ranking = orch.storage.get_signal_ranking(strategy_id)
         if not ranking:
             logger.debug(f"Strategy {strategy_id} not in ranking table — allowing execution")
-            return True
+            return (True, "strategy_not_ranked_allow") if with_reason else True
 
         execution_mode = ranking.get("execution_mode", "SHADOW")
         if execution_mode == "LIVE":
-            return True
+            return (True, "auth_live") if with_reason else True
         elif execution_mode == "SHADOW":
             logger.info(
                 f"Strategy {strategy_id} in SHADOW mode — routing to DEMO for paper execution"
             )
-            return True
+            return (True, "auth_shadow_demo") if with_reason else True
         elif execution_mode == "QUARANTINE":
             logger.warning(
                 f"Strategy {strategy_id} in QUARANTINE — blocked until risk metrics improve"
             )
-            return False
+            return (False, "strategy_not_authorized") if with_reason else False
         elif execution_mode == "BACKTEST":
             logger.info(f"Strategy {strategy_id} in BACKTEST mode — ignored for direct execution")
-            return False
+            return (False, "strategy_not_authorized") if with_reason else False
         else:
             logger.warning(f"Unknown execution mode for strategy {strategy_id}: {execution_mode}")
-            return False
+            return (False, "strategy_not_authorized") if with_reason else False
     except Exception as e:
         logger.error(f"Error checking strategy authorization for {strategy_id}: {e}")
-        return False  # conservative: block on error
+        return (False, "strategy_auth_error") if with_reason else False
 
 
 def register_signal_handlers(orch: Any) -> None:

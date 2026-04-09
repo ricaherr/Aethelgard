@@ -64,10 +64,7 @@
 ---
 
 ## 05_UNIVERSAL_EXECUTION (EMS, Conectores FIX)
-* **HU 5.4: Signal-to-Execution Recovery Pipeline** `[TODO]`
-    * **Prioridad**: Crítica de negocio
-    * **Descripción**: Recuperar el pipeline completo desde `scan_results` hasta ejecución efectiva de trades. Instrumentar causas de descarte en `SignalFactory`, verificar gates de readiness/módulos/regímenes y restablecer generación de señales operables.
-    * **🖥️ UI Representation**: Panel operativo con embudo en tiempo real (`snapshots -> raw_signals -> filtered_signals -> executable_signals -> trades`).
+*(Sin HUs pendientes — HU 5.4 archivada en SYSTEM_LEDGER)*
 
 ---
 

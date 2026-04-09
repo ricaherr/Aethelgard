@@ -14,6 +14,7 @@ import logging
 import asyncio
 import json
 import psutil
+from collections import Counter
 from typing import Dict, Any, Set, Optional, List
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
@@ -195,6 +196,42 @@ async def _get_anomalies_buffer(storage: StorageManager, limit: int = 25) -> Dic
         }
 
 
+async def _get_signal_funnel_summary(storage: StorageManager) -> Dict[str, Any]:
+    """
+    Return latest signal funnel snapshots from session_stats for operational visibility.
+    """
+    try:
+        sys_config = storage.get_sys_config() or {}
+        session_stats = sys_config.get("session_stats", {})
+        recent = session_stats.get("signal_funnel_recent", [])
+        if not isinstance(recent, list):
+            recent = []
+
+        reason_totals: Counter = Counter()
+        for item in recent:
+            reasons = (item or {}).get("reasons", {})
+            if isinstance(reasons, dict):
+                reason_totals.update(reasons)
+
+        return {
+            "last_cycle": session_stats.get("signal_funnel_last_cycle", {}),
+            "recent": recent[-10:],
+            "recent_count": len(recent),
+            "reason_totals": dict(reason_totals),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as exc:
+        logger.error(f"[SYNAPSE_WS] Error collecting signal funnel summary: {exc}")
+        return {
+            "last_cycle": {},
+            "recent": [],
+            "recent_count": 0,
+            "reason_totals": {},
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "error": str(exc),
+        }
+
+
 def _get_resilience_status_snapshot() -> Dict[str, Any]:
     """
     Return a lightweight resilience snapshot for the synapse heartbeat.
@@ -243,6 +280,7 @@ async def _consolidate_telemetry(tenant_id: str, storage: StorageManager) -> Dic
         "strategy_array": await _get_strategy_array(tenant_id, storage, circuit_breaker),
         "risk_buffer": await _get_risk_buffer(storage),
         "anomalies": await _get_anomalies_buffer(storage),
+        "signal_funnel": await _get_signal_funnel_summary(storage),
         "resilience_status": _get_resilience_status_snapshot(),
     }
 

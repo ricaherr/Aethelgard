@@ -31,10 +31,14 @@
   - Gate obligatorio: `python scripts/validate_all.py` = 28/28 PASS.
   - Smoke runtime: `python start.py` + `python stop.py` ejecutados con cierre limpio.
 
-- [TODO] **HU 5.4: Signal-to-Execution Recovery Pipeline** *(🔴 PRIORIDAD MÁXIMA — Bloqueo de negocio)*
+- [DONE] **HU 5.4: Signal-to-Execution Recovery Pipeline** *(🔴 PRIORIDAD MÁXIMA — Bloqueo de negocio)*
   - Instrumentar motivos de descarte en `generate_usr_signals_batch` y gates aguas abajo.
   - Corregir condiciones que están llevando `Raw usr_signals generated: 0` de forma sostenida.
   - Verificar transición efectiva desde señales válidas hasta ejecución de trade.
+  - TDD implementado: `tests/test_signal_pipeline_funnel.py`, `tests/test_cycle_trade_rejection_reasons.py`, `tests/test_strategy_authorization_reason_codes.py`.
+  - Verificación focal: `pytest tests/test_signal_pipeline_funnel.py tests/test_cycle_trade_rejection_reasons.py tests/test_strategy_authorization_reason_codes.py tests/test_orchestrator_shadow_integration.py tests/test_signal_factory_integration.py -q` = 32/32 PASS.
+  - Gate obligatorio: `python scripts/validate_all.py` = 28/28 PASS.
+  - Smoke runtime: `python start.py` + `python stop.py` ejecutados en ventana de validación con arranque y cierre operativo.
 
 - [TODO] **HU 10.27: Adaptive CPU Guardrail Throttling**
   - Sustituir veto instantáneo por política adaptativa con presión acumulada y degradación escalonada.

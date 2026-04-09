@@ -14,7 +14,7 @@ import logging
 import asyncio
 import json
 from typing import Dict, List, Optional, Any
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 import pandas as pd
 
@@ -34,6 +34,7 @@ from core_brain.signal_enricher import SignalEnricher
 from core_brain.signal_deduplicator import SignalDeduplicator
 from core_brain.signal_conflict_analyzer import SignalConflictAnalyzer
 from core_brain.signal_trifecta_optimizer import SignalTrifectaOptimizer
+from core_brain.signal_batch_pipeline import generate_usr_signals_batch_impl
 
 # Import strategies
 from core_brain.strategies.base_strategy import BaseStrategy
@@ -123,6 +124,7 @@ class SignalFactory:
         self.signal_trifecta_optimizer = SignalTrifectaOptimizer(
             trifecta_analyzer=trifecta_analyzer
         )
+        self.last_funnel_summary: Optional[Dict[str, Any]] = None
         
         if not self.notifier or not self.notifier.is_configured():
             logger.info("NotificationEngine no está configurado o no tiene canales activos.")
@@ -159,7 +161,8 @@ class SignalFactory:
 
     async def generate_signal(
         self, symbol: str, df: pd.DataFrame, regime: MarketRegime, timeframe: Optional[str] = None, 
-        trace_id: Optional[str] = None, provider_source: Optional[str] = None
+        trace_id: Optional[str] = None, provider_source: Optional[str] = None,
+        funnel_reasons: Optional[Counter] = None,
     ) -> List[Signal]:
         """
         Analiza un símbolo con TODAS las estrategias registradas.
@@ -189,6 +192,8 @@ class SignalFactory:
                 if hasattr(engine, 'execute_from_registry') and callable(getattr(engine, 'execute_from_registry', None)):
                     # JSON_SCHEMA strategy: use UniversalStrategyEngine.execute_from_registry()
                     result = await engine.execute_from_registry(strategy_id, symbol, df, regime)
+                    if result is None and funnel_reasons is not None:
+                        funnel_reasons["no_signal_generated"] += 1
                     signal = StrategySignalConverter.convert_from_universal_engine(
                         result, symbol, strategy_id, timeframe, trace_id, provider_source
                     )
@@ -198,11 +203,15 @@ class SignalFactory:
                     # Logging: Motivo si no hay señal (debug-only)
                     if raw_signal is None:
                         logger.debug(f"[DEBUG][{strategy_id}] {symbol}: analyze() no generó señal (raw_signal=None)")
+                        if funnel_reasons is not None:
+                            funnel_reasons["no_signal_generated"] += 1
                     signal = StrategySignalConverter.convert_from_python_class(
                         raw_signal, symbol, strategy_id, timeframe, trace_id, provider_source
                     )
                 else:
                     logger.warning(f"[{symbol}] Strategy engine {strategy_id} has neither analyze() nor execute_from_registry() method")
+                    if funnel_reasons is not None:
+                        funnel_reasons["no_strategy_engines"] += 1
                     continue
                 
                 if signal:
@@ -220,6 +229,8 @@ class SignalFactory:
                             f"[{symbol}] Señal {signal.signal_type} descartada: "
                             f"ya existe posición abierta o señal reciente"
                         )
+                        if funnel_reasons is not None:
+                            funnel_reasons["factory_duplicate"] += 1
                         continue
                     
                     # Procesar señal válida
@@ -259,12 +270,16 @@ class SignalFactory:
                         generated_usr_signals.append(signal)
                     else:
                         logger.debug(f"[EXEC-FEEDBACK] Signal {signal.symbol} suppressed by feedback learning")
+                        if funnel_reasons is not None:
+                            funnel_reasons["execution_feedback_suppressed"] += 1
             
             except Exception as e:
                 logger.error(
                     f"Error running strategy {strategy_id} on {symbol}: {e}", 
                     exc_info=True
                 )
+                if funnel_reasons is not None:
+                    funnel_reasons["strategy_engine_error"] += 1
 
         return generated_usr_signals
 
@@ -377,114 +392,7 @@ class SignalFactory:
             Lista plana de todas las señales generadas (con confluencia aplicada).
         """
         try:
-            logger.info(f"DEBUG: generate_usr_signals_batch called with {len(scan_results)} items")
-            tasks = []
-            
-            if not self.strategy_engines:
-                logger.error("DEBUG: No strategy engines in SignalFactory!")
-                return []
-            logger.info(f"DEBUG: Engines available: {list(self.strategy_engines.keys())}")
-
-            # FASE 4: Enabled symbol filter — SSOT via InstrumentManager (HU 3.9)
-            if self.instrument_manager is not None:
-                try:
-                    enabled_symbols = self.instrument_manager.get_enabled_symbols()
-                    logger.info(f"[FASE4] Enabled symbols (InstrumentManager): {len(enabled_symbols)}")
-                except Exception as e:
-                    logger.warning(f"[FASE4] InstrumentManager.get_enabled_symbols() failed: {e} — no filter")
-                    enabled_symbols = None
-            else:
-                enabled_symbols = None  # No filter — generate for all scanned symbols
-            
-            skipped_count = 0
-            
-            for key, data in scan_results.items():
-                regime = data.get("regime")
-                df = data.get("df")
-                symbol = data.get("symbol")  # Extraer symbol del dict
-                timeframe = data.get("timeframe")  # Extraer timeframe del dict
-
-                # Logging: Resumen del DataFrame (debug-only, no saturar consola)
-                if df is not None:
-                    logger.debug(f"[DEBUG][DF] {symbol}|{timeframe}: df.shape={getattr(df, 'shape', 'N/A')}, columns={list(df.columns) if hasattr(df, 'columns') else 'N/A'}")
-                else:
-                    logger.debug(f"[DEBUG][DF] {symbol}|{timeframe}: df=None")
-
-                # FASE 4: Filter by enabled assets
-                if enabled_symbols is not None and symbol not in enabled_symbols:
-                    logger.debug(f"[FASE4] Skipping {symbol}: not in enabled asset config")
-                    skipped_count += 1
-                    continue
-
-                if regime and df is not None and symbol:
-                    provider_source = data.get("provider_source", "UNKNOWN")
-                    tasks.append(self.generate_signal(
-                        symbol, df, regime, timeframe, trace_id, provider_source
-                    ))
-
-            if skipped_count > 0:
-                logger.info(f"[FASE4] Skipped {skipped_count} symbols not in asset configuration")
-
-            if not tasks:
-                # Diagnóstico detallado: ¿por qué no se crearon tasks?
-                empty_keys = []
-                for key, data in scan_results.items():
-                    regime = data.get("regime")
-                    df = data.get("df")
-                    symbol = data.get("symbol")
-                    timeframe = data.get("timeframe")
-                    if not regime:
-                        empty_keys.append(f"{key}: regime=None")
-                    elif df is None:
-                        empty_keys.append(f"{key}: df=None")
-                    elif not symbol:
-                        empty_keys.append(f"{key}: symbol=None")
-                logger.warning(
-                    "No tasks created: ningún instrumento elegible para señal. "
-                    f"scan_results keys: {list(scan_results.keys())}. "
-                    f"Problemas detectados: {empty_keys if empty_keys else 'Todos los datos faltan o vacíos.'}"
-                )
-                return []
-
-            # results es una lista de listas de señales: [[s1, s2], [], [s3]]
-            results = await asyncio.gather(*tasks)
-            
-            # Aplanar lista
-            all_usr_signals = []
-            for batch in results:
-                all_usr_signals.extend(batch)
-
-            logger.info(f"DEBUG: Raw usr_signals generated: {len(all_usr_signals)}")
-
-            # FASE 2.5: Apply Multi-Timeframe Confluence
-            if all_usr_signals and self.confluence_analyzer.enabled:
-                all_usr_signals = self.signal_conflict_analyzer.apply_confluence(all_usr_signals, scan_results)
-            
-            # FASE 2.6: Apply Trifecta Optimization (Oliver Velez Multi-TF)
-            if all_usr_signals:
-                all_usr_signals = self.signal_trifecta_optimizer.optimize(all_usr_signals, scan_results)
-            
-            # FASE 2.7: Apply Execution Feedback Suppression (DOMINIO-10 Auto-Healing)
-            if all_usr_signals and self.execution_feedback_collector:
-                before_suppression = len(all_usr_signals)
-                all_usr_signals = [
-                    s for s in all_usr_signals 
-                    if not self._should_suppress_signal(s)
-                ]
-                if before_suppression > len(all_usr_signals):
-                    logger.info(
-                        f"[EXEC-FEEDBACK] Suppressed {before_suppression - len(all_usr_signals)} signals "
-                        f"based on execution feedback learning"
-                    )
-
-            if all_usr_signals:
-                logger.info(
-                    f"Batch completado. {len(all_usr_signals)} señales generadas de "
-                    f"{len(scan_results)} instrumentos analizados (multi-timeframe)."
-                )
-
-            return all_usr_signals
-            
+            return await generate_usr_signals_batch_impl(self, scan_results, trace_id)
         except Exception as e:
             logger.error(f"CRITICAL ERROR in generate_usr_signals_batch: {e}", exc_info=True)
             return []

@@ -4,7 +4,7 @@
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-09 UTC)**: HU 9.10 archivada (Sprint 29) · Trace_ID: HU9.10-CONFIDENCE-CONTRACT-RUNTIME-2026-04-09 · **validate_all 28/28 PASSED** · **13/13 tests** de contrato confidence.
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-09 UTC)**: HU 5.4 archivada (Sprint 29) · Trace_ID: HU5.4-SIGNAL-TO-EXECUTION-RECOVERY-2026-04-09 · **validate_all 28/28 PASSED** · **32/32 tests focal+regresión**.
 
 ---
 
@@ -45,6 +45,17 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 
 **Objetivo cumplido**: pipeline operativo restaurado (SSOT mode drift eliminado), observabilidad SRE expuesta con health endpoint público, heartbeat canónico auditado y estable, diagnóstico de bootstrap shadow corregido y overflow de confidence UI_MAPPING eliminado.
 ### ════════════════════════════════════════════════════════════════
+
+---
+
+### Sprint 29 — HU 5.4: Signal-to-Execution Recovery Pipeline (9-Abr-2026)
+**Trace_ID**: `HU5.4-SIGNAL-TO-EXECUTION-RECOVERY-2026-04-09` | **Épica**: E19 (Sprint activo) | **Estado**: HU completada y archivada
+
+| HU | Descripción | Artefactos clave | Tests |
+|---|---|---|---|
+| **HU 5.4** | Instrumentación end-to-end del pipeline señal→ejecución con embudo operacional por etapas y reason codes normalizados sin alterar reglas de trading. Se añadió trazabilidad de rechazos en generación raw, dedup/cooldown, strategy authorization, quality gate y outcome de ejecución. Persistencia de snapshot agregado por ciclo en `session_stats` y exposición de resumen en telemetría. Incluye modularización de `SignalFactory` para cumplir límite de masa (extracción a módulo dedicado). | `core_brain/signal_factory.py`, `core_brain/signal_batch_pipeline.py`, `core_brain/orchestrators/_cycle_trade.py`, `core_brain/orchestrators/_lifecycle.py`, `core_brain/api/routers/telemetry.py`, `tests/test_signal_pipeline_funnel.py`, `tests/test_cycle_trade_rejection_reasons.py`, `tests/test_strategy_authorization_reason_codes.py` | 32/32 |
+
+**Validación**: tests focales HU 5.4 **9/9 PASSED** · regresión focal **23/23 PASSED** · `validate_all.py` **28/28 PASSED** · smoke runtime `start.py`/`stop.py` ejecutado en ventana de validación.
 
 ---
 

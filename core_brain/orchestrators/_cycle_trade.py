@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections import Counter
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, List
 
@@ -20,6 +21,39 @@ from core_brain.orchestrators._lifecycle import (
     update_all_usr_strategies_heartbeat,
 )
 logger = logging.getLogger(__name__)
+
+
+def _default_funnel(trace_id: str | None = None) -> dict:
+    return {
+        "trace_id": trace_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "stages": {
+            "STAGE_SCAN_INPUT": {"in": 0, "out": 0},
+            "STAGE_RAW_SIGNAL_GENERATION": {"in": 0, "out": 0},
+            "STAGE_DEDUP_COOLDOWN": {"in": 0, "out": 0},
+            "STAGE_STRATEGY_AUTH": {"in": 0, "out": 0},
+            "STAGE_QUALITY_GATE": {"in": 0, "out": 0},
+            "STAGE_EXECUTION_OUTCOME": {"in": 0, "out": 0},
+        },
+        "reasons": {},
+    }
+
+
+def _classify_execution_failure(reason: Any, last_rejection_reason: str) -> str:
+    value = (getattr(reason, "value", None) or str(reason or "")).upper()
+    last = (last_rejection_reason or "").lower()
+    if "RISK" in value or "LOCKDOWN" in value or "risk" in last:
+        return "executor_failed_risk"
+    if (
+        "CONNECTION" in value
+        or "ORDER_REJECTED" in value
+        or "TIMEOUT" in value
+        or "BROKER" in value
+        or "connector" in last
+        or "broker" in last
+    ):
+        return "executor_failed_broker"
+    return "executor_failed_unknown"
 
 
 async def run_execute_phase(
@@ -42,6 +76,24 @@ async def run_execute_phase(
             else "UNKNOWN"
         ),
     }
+    base_funnel = getattr(getattr(orch, "signal_factory", None), "last_funnel_summary", None)
+    funnel = dict(base_funnel) if isinstance(base_funnel, dict) else _default_funnel(bundle.trace_id)
+    funnel.setdefault("trace_id", bundle.trace_id)
+    funnel["timestamp"] = datetime.now(timezone.utc).isoformat()
+    stages = funnel.setdefault("stages", {})
+    default_stages = _default_funnel(bundle.trace_id)["stages"]
+    for stage_name, values in default_stages.items():
+        stage = stages.setdefault(stage_name, {})
+        stage.setdefault("in", values["in"])
+        stage.setdefault("out", values["out"])
+
+    reasons: Counter = Counter(funnel.get("reasons") or {})
+    stages["STAGE_DEDUP_COOLDOWN"]["in"] = len(signals)
+    dedup_passed = 0
+    auth_passed = 0
+    quality_passed = 0
+    execution_attempts = 0
+    execution_successes = 0
 
     for signal in signals:
         try:
@@ -84,6 +136,7 @@ async def run_execute_phase(
                         level="warning",
                         module="DEDUP",
                     )
+                reasons["reject_duplicate"] += 1
                 continue
 
             if dedup_decision.value == "REJECT_COOLDOWN":
@@ -99,16 +152,25 @@ async def run_execute_phase(
                         level="info",
                         module="COOLDOWN",
                     )
+                reasons["reject_cooldown"] += 1
                 continue
 
+            dedup_passed += 1
+
             # Strategy authorization (Shadow Ranking)
-            if not is_strategy_authorized_for_execution(orch, signal):
+            is_authorized, auth_reason = is_strategy_authorized_for_execution(
+                orch, signal, with_reason=True
+            )
+            if not is_authorized:
                 logger.warning(
                     f"Signal for {signal.symbol} blocked: Strategy "
                     f"{getattr(signal, 'strategy', 'unknown')} not authorized"
                 )
                 orch.stats.usr_signals_vetoed += 1
+                reasons[auth_reason or "strategy_not_authorized"] += 1
                 continue
+
+            auth_passed += 1
 
             # PHASE 4: Signal Quality Scoring
             quality_result = None
@@ -144,6 +206,7 @@ async def run_execute_phase(
                                 f"for grade {quality_result.grade.value}"
                             )
                             orch.stats.usr_signals_vetoed += 1
+                            reasons["quality_blocked"] += 1
                             continue
                         queue_reason = (
                             "B_GRADE_MODERATE_CONFIDENCE"
@@ -171,6 +234,7 @@ async def run_execute_phase(
                         else:
                             logger.warning(f"Signal {signal.symbol} review queue failed: {queue_msg}")
                         orch.stats.usr_signals_vetoed += 1
+                        reasons["quality_blocked"] += 1
                         continue
 
                     if quality_result.grade.value not in ("A+", "A"):
@@ -186,10 +250,14 @@ async def run_execute_phase(
                                 level="info",
                                 module="PHASE4",
                             )
+                        reasons["quality_blocked"] += 1
                         continue
                 except Exception as e:
                     logger.error(f"[PHASE4-QUALITY] Error assessing signal quality: {e}")
                     # Graceful degradation: proceed with execution
+
+            quality_passed += 1
+            execution_attempts += 1
 
             success = await orch.executor.execute_signal(signal)
 
@@ -204,6 +272,7 @@ async def run_execute_phase(
                     signal_id = orch.storage.save_signal(signal)
                     logger.info(f"Signal executed and persisted: {signal.symbol} (ID: {signal_id})")
                 orch.stats.usr_signals_executed += 1
+                execution_successes += 1
             else:
                 logger.warning(f"Signal execution failed: {signal.symbol}")
                 failure_reason = ExecutionFailureReason.UNKNOWN
@@ -240,6 +309,9 @@ async def run_execute_phase(
                     f"Cooldown applied for {signal.symbol}: {cooldown_result['cooldown_minutes']} min "
                     f"(retry #{cooldown_result['retry_count']})"
                 )
+                reasons[_classify_execution_failure(
+                    failure_reason, getattr(orch.executor, "last_rejection_reason", "")
+                )] += 1
                 if cooldown_result["retry_count"] >= 4 and orch.thought_callback:
                     await orch.thought_callback(
                         f"ESCALADA: Señal {signal.symbol} ha fallado "
@@ -264,6 +336,7 @@ async def run_execute_phase(
             except Exception as audit_err:
                 logger.debug(f"[AUDIT] Could not log signal error: {audit_err}")
             orch.stats.errors_count += 1
+            reasons["execution_exception"] += 1
 
     orch.storage.update_module_heartbeat("executor")
 
@@ -301,6 +374,18 @@ async def run_execute_phase(
     # Finalize cycle
     orch._active_usr_signals.clear()
     orch.stats.cycles_completed += 1
+
+    stages["STAGE_DEDUP_COOLDOWN"]["out"] = dedup_passed
+    stages["STAGE_STRATEGY_AUTH"]["in"] = dedup_passed
+    stages["STAGE_STRATEGY_AUTH"]["out"] = auth_passed
+    stages["STAGE_QUALITY_GATE"]["in"] = auth_passed
+    stages["STAGE_QUALITY_GATE"]["out"] = quality_passed
+    stages["STAGE_EXECUTION_OUTCOME"]["in"] = execution_attempts
+    stages["STAGE_EXECUTION_OUTCOME"]["out"] = execution_successes
+    funnel["reasons"] = dict(reasons)
+    orch._latest_signal_funnel = funnel
+    logger.info("[FUNNEL][CYCLE] %s", funnel)
+
     persist_session_stats_impl(orch)
 
     # Coherence monitoring

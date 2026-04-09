@@ -51,7 +51,7 @@
 
 | HU | Nombre | Dominio | Sprint | Estado |
 |---|---|---|---|---|
-| HU 5.4 | Signal-to-Execution Recovery Pipeline | 05 | 29 | [TODO] |
+| HU 5.4 | Signal-to-Execution Recovery Pipeline | 05 | 29 | [DONE] |
 | HU 9.10 | Runtime Confidence Contract Recovery | 09 | 29 | [DONE] |
 | HU 10.27 | Adaptive CPU Guardrail Throttling | 10 | 29 | [TODO] |
 | HU 10.28 | Provider Coverage Reliability | 10 | 29 | [TODO] |
