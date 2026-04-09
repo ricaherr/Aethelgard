@@ -120,6 +120,18 @@
     * **Para qué**: Reducir ruido operacional, evitar falsos positivos de error y facilitar soporte/diagnóstico en producción.
     * **Criterio de salida**: `start.py` sin errores espurios; warnings de fallback no-fatales ajustados; `pytest -q` + `validate_all.py` 100%.
 
+* **HU 10.22: Grace Window OEM para Invariantes de Bootstrap** `[DONE]`
+    * **Qué**: Introducir una ventana de gracia de arranque en `OperationalEdgeMonitor` para degradar `FAIL` a `WARN` en checks no accionables durante bootstrap (`shadow_sync`, `lifecycle_coherence`).
+    * **Para qué**: Evitar falso negativo operacional al inicio, preservando semántica estricta fuera de la ventana de gracia.
+    * **Criterio de salida**: tests OEM focalizados 62/62 · `validate_all.py` 28/28 · `start.py` con log `Startup grace active` en bootstrap sin warning temprano de invariantes objetivo.
+    * **Trace_ID**: `OEM-STARTUP-GRACE-HU10.22-2026-04-08`
+
+* **HU 10.23: Hardening OEM Post-Bootstrap (No-Accionables Reales)** `[DONE]`
+    * **Qué**: Ajustar `shadow_sync` y `lifecycle_coherence` para separar fallos accionables de estados esperados/no accionables (INCUBATING, bootstrap sin historial de trades, stale técnico no operativo).
+    * **Para qué**: Eliminar falso FAIL recurrente fuera de gracia y mantener señal operativa confiable.
+    * **Criterio de salida**: tests OEM focalizados 69/69 · `validate_all.py` 28/28 · `start.py` con ciclos post-gracia en `All checks passed` y sin `Invariant violations: shadow_sync, lifecycle_coherence`.
+    * **Trace_ID**: `OEM-POST-BOOTSTRAP-HARDENING-HU10.23-2026-04-08`
+
 
 
 

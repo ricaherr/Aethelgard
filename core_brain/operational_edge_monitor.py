@@ -65,6 +65,9 @@ class OperationalEdgeMonitor(threading.Thread):
     SILENCED_COMPONENT_GAP_SECONDS_DEFAULT = 120
     SHADOW_STAGNATION_WINDOW_HOURS_DEFAULT = 24
     SHADOW_STAGNATION_ALERTS_STATE_KEY = "oem_shadow_stagnation_alerts_daily"
+    STARTUP_INVARIANT_GRACE_SECONDS_DEFAULT = 300
+    STARTUP_GRACE_CHECKS = {"shadow_sync", "lifecycle_coherence"}
+    SHADOW_INCUBATING_MAX_HOURS_DEFAULT = 24
 
     def __init__(
         self,
@@ -81,6 +84,7 @@ class OperationalEdgeMonitor(threading.Thread):
         self.last_results: Dict[str, CheckResult] = {}
         self.last_checked_at: Optional[str] = None
         self._stagnation_alert_cache: Dict[str, str] = {}
+        self._started_at_utc = datetime.now(timezone.utc)
 
     # ── Thread interface ──────────────────────────────────────────────────────
 
@@ -96,6 +100,7 @@ class OperationalEdgeMonitor(threading.Thread):
 
             failing = [k for k, r in results.items() if r.status == CheckStatus.FAIL]
             warnings = [k for k, r in results.items() if r.status == CheckStatus.WARN]
+            failing, warnings, _ = self._apply_startup_grace(failing, warnings)
 
             # Persist snapshot to DB so the API (separate process) can read it
             try:
@@ -186,6 +191,7 @@ class OperationalEdgeMonitor(threading.Thread):
         results = self.run_checks()
         failing = [n for n, r in results.items() if r.status == CheckStatus.FAIL]
         warnings = [n for n, r in results.items() if r.status == CheckStatus.WARN]
+        failing, warnings, _ = self._apply_startup_grace(failing, warnings)
 
         # CRITICAL si >= 2 checks fallan — heartbeat es siempre crítico solo
         orchestrator_down = "orchestrator_heartbeat" in failing
@@ -245,6 +251,90 @@ class OperationalEdgeMonitor(threading.Thread):
         if flags:
             self.storage.update_sys_config(flags)
 
+    def _get_startup_invariant_grace_seconds(self) -> int:
+        """Return startup grace period for non-actionable invariant checks."""
+        try:
+            raw = self.storage.get_sys_config().get(
+                "oem_invariant_grace_seconds",
+                self.STARTUP_INVARIANT_GRACE_SECONDS_DEFAULT,
+            )
+            return max(0, int(raw))
+        except Exception:
+            return self.STARTUP_INVARIANT_GRACE_SECONDS_DEFAULT
+
+    def _get_shadow_incubating_max_hours(self) -> int:
+        """Return the maximum acceptable incubating age before escalating."""
+        try:
+            raw = self.storage.get_sys_config().get(
+                "oem_shadow_incubating_max_hours",
+                self.SHADOW_INCUBATING_MAX_HOURS_DEFAULT,
+            )
+            return max(1, int(raw))
+        except Exception:
+            return self.SHADOW_INCUBATING_MAX_HOURS_DEFAULT
+
+    def _get_sys_strategies_map(self) -> Dict[str, Dict[str, Any]]:
+        """Build strategy lookup map by class_id for non-actionable checks."""
+        try:
+            strategies = self.storage.get_all_sys_strategies()
+        except Exception:
+            return {}
+
+        mapped: Dict[str, Dict[str, Any]] = {}
+        for strategy in strategies or []:
+            class_id = strategy.get("class_id")
+            if class_id:
+                mapped[str(class_id)] = strategy
+        return mapped
+
+    @staticmethod
+    def _is_strategy_non_actionable(strategy_meta: Optional[Dict[str, Any]]) -> bool:
+        """Return True when strategy is intentionally blocked or disabled."""
+        if not strategy_meta:
+            return False
+
+        readiness = str(strategy_meta.get("readiness", "")).upper()
+        if readiness == "LOGIC_PENDING":
+            return True
+
+        enabled = strategy_meta.get("enabled")
+        if enabled in (0, False, "0", "false", "False"):
+            return True
+
+        status = str(strategy_meta.get("status", "")).upper()
+        return status in {"DISABLED", "INACTIVE", "ARCHIVED"}
+
+    def _apply_startup_grace(self, failing: List[str], warnings: List[str]) -> tuple[List[str], List[str], List[str]]:
+        """Downgrade selected FAIL checks to WARN during startup grace window."""
+        if not failing:
+            return failing, warnings, []
+
+        grace_seconds = self._get_startup_invariant_grace_seconds()
+        if grace_seconds <= 0:
+            return failing, warnings, []
+
+        elapsed = (datetime.now(timezone.utc) - self._started_at_utc).total_seconds()
+        if elapsed >= grace_seconds:
+            return failing, warnings, []
+
+        graced = [check for check in failing if check in self.STARTUP_GRACE_CHECKS]
+        if not graced:
+            return failing, warnings, []
+
+        adjusted_failing = [check for check in failing if check not in self.STARTUP_GRACE_CHECKS]
+        adjusted_warnings = list(warnings)
+        for check in graced:
+            if check not in adjusted_warnings:
+                adjusted_warnings.append(check)
+
+        remaining = max(0, int(grace_seconds - elapsed))
+        logger.info(
+            "[OPS-EDGE] Startup grace active (%ss remaining) — non-actionable checks: %s",
+            remaining,
+            ", ".join(graced),
+        )
+        return adjusted_failing, adjusted_warnings, graced
+
     # ─────────────────────────────────────────────────────────────────────────
     # Checks individuales
     # ─────────────────────────────────────────────────────────────────────────
@@ -273,25 +363,78 @@ class OperationalEdgeMonitor(threading.Thread):
         if self.shadow_storage is None:
             return CheckResult(CheckStatus.WARN, "shadow_storage no inyectado — check omitido")
 
+        strategies_map = self._get_sys_strategies_map()
+        incubating_max_hours = self._get_shadow_incubating_max_hours()
+        now_utc = datetime.now(timezone.utc)
         instances = self.shadow_storage.list_active_instances()
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=2)
+        cutoff = now_utc - timedelta(hours=2)
         mature = [i for i in instances if (_parse_ts(getattr(i, "created_at", None)) or datetime.min.replace(tzinfo=timezone.utc)) < cutoff]
 
         if not mature:
             return CheckResult(CheckStatus.OK, "Sin instancias SHADOW maduras que evaluar")
 
-        stuck = [i for i in mature if (getattr(i, "total_trades_executed", 0) or 0) == 0]
-        if stuck:
-            ids = [getattr(i, "instance_id", "?") for i in stuck[:5]]
+        actionable_stuck_ids: List[str] = []
+        non_actionable_ids: List[str] = []
+        incubating_ok_ids: List[str] = []
+        incubating_overdue_ids: List[str] = []
+
+        for instance in mature:
+            trades_executed = (getattr(instance, "total_trades_executed", 0) or 0)
+            if trades_executed > 0:
+                continue
+
+            instance_id = str(getattr(instance, "instance_id", "?"))
+            created_at = _parse_ts(getattr(instance, "created_at", None)) or datetime.min.replace(tzinfo=timezone.utc)
+            age_hours = max(0.0, (now_utc - created_at).total_seconds() / 3600)
+
+            raw_status = getattr(instance, "status", None)
+            status_value = str(getattr(raw_status, "value", raw_status or "")).upper()
+            strategy_id = str(getattr(instance, "strategy_id", ""))
+
+            if status_value == "INCUBATING":
+                if age_hours <= incubating_max_hours:
+                    incubating_ok_ids.append(instance_id)
+                else:
+                    incubating_overdue_ids.append(instance_id)
+                continue
+
+            strategy_meta = strategies_map.get(strategy_id) if strategy_id else None
+            if self._is_strategy_non_actionable(strategy_meta):
+                non_actionable_ids.append(instance_id)
+                continue
+
+            actionable_stuck_ids.append(instance_id)
+
+        if actionable_stuck_ids:
+            ids = actionable_stuck_ids[:5]
             if not self._any_session_active():
                 return CheckResult(
                     CheckStatus.WARN,
-                    f"{len(stuck)}/{len(mature)} instancias con 0 trades (mercado cerrado — esperado): {ids}",
+                    f"{len(actionable_stuck_ids)}/{len(mature)} instancias con 0 trades (mercado cerrado — esperado): {ids}",
                 )
             return CheckResult(
                 CheckStatus.FAIL,
-                f"{len(stuck)}/{len(mature)} instancias con 0 trades: {ids}",
+                f"{len(actionable_stuck_ids)}/{len(mature)} instancias con 0 trades accionables: {ids}",
             )
+
+        if non_actionable_ids:
+            return CheckResult(
+                CheckStatus.WARN,
+                f"{len(non_actionable_ids)}/{len(mature)} instancias con 0 trades no accionables (LOGIC_PENDING/disabled): {non_actionable_ids[:5]}",
+            )
+
+        if incubating_overdue_ids:
+            return CheckResult(
+                CheckStatus.WARN,
+                f"{len(incubating_overdue_ids)}/{len(mature)} instancias siguen INCUBATING con 0 trades >{incubating_max_hours}h: {incubating_overdue_ids[:5]}",
+            )
+
+        if incubating_ok_ids:
+            return CheckResult(
+                CheckStatus.OK,
+                f"{len(incubating_ok_ids)}/{len(mature)} instancias en incubación dentro de ventana ({incubating_max_hours}h)",
+            )
+
         return CheckResult(CheckStatus.OK, f"{len(mature)} instancias maduras con trades activos")
 
     def _check_backtest_quality(self) -> CheckResult:
@@ -371,25 +514,54 @@ class OperationalEdgeMonitor(threading.Thread):
         if not rankings:
             return CheckResult(CheckStatus.OK, "Sin rankings que evaluar")
 
+        strategies_map = self._get_sys_strategies_map()
         cutoff = datetime.now(timezone.utc) - timedelta(hours=self.LIFECYCLE_STALE_HOURS)
-        stale = [
-            r.get("strategy_id", "?")
-            for r in rankings
-            if r.get("execution_mode") == "BACKTEST"
-            and (_parse_ts(r.get("updated_at")) or datetime.min.replace(tzinfo=timezone.utc)) < cutoff
-        ]
+        actionable_stale: List[str] = []
+        non_actionable_stale: List[str] = []
 
-        if stale:
+        for ranking in rankings:
+            if ranking.get("execution_mode") != "BACKTEST":
+                continue
+
+            strategy_id = str(ranking.get("strategy_id", "?"))
+            freshness_ts = _parse_ts(ranking.get("last_update_utc")) or _parse_ts(ranking.get("updated_at"))
+            if (freshness_ts or datetime.min.replace(tzinfo=timezone.utc)) >= cutoff:
+                continue
+
+            strategy_meta = strategies_map.get(strategy_id)
+            zero_history_bootstrap = (
+                ("total_usr_trades" in ranking or "completed_last_50" in ranking)
+                and int(ranking.get("total_usr_trades") or 0) <= 0
+                and int(ranking.get("completed_last_50") or 0) <= 0
+            )
+
+            if zero_history_bootstrap:
+                non_actionable_stale.append(strategy_id)
+                continue
+
+            if self._is_strategy_non_actionable(strategy_meta):
+                non_actionable_stale.append(strategy_id)
+            else:
+                actionable_stale.append(strategy_id)
+
+        if actionable_stale:
             if not self._any_session_active():
                 return CheckResult(
                     CheckStatus.WARN,
-                    f"{len(stale)} estrategia(s) en BACKTEST sin actualizar >{self.LIFECYCLE_STALE_HOURS}h "
-                    f"(mercado cerrado — actualización en pausa es esperado): {stale[:5]}",
+                    f"{len(actionable_stale)} estrategia(s) en BACKTEST sin actualizar >{self.LIFECYCLE_STALE_HOURS}h "
+                    f"(mercado cerrado — actualización en pausa es esperado): {actionable_stale[:5]}",
                 )
             return CheckResult(
                 CheckStatus.FAIL,
-                f"{len(stale)} estrategia(s) en BACKTEST sin actualizar >{self.LIFECYCLE_STALE_HOURS}h: {stale[:5]}",
+                f"{len(actionable_stale)} estrategia(s) en BACKTEST sin actualizar >{self.LIFECYCLE_STALE_HOURS}h: {actionable_stale[:5]}",
             )
+
+        if non_actionable_stale:
+            return CheckResult(
+                CheckStatus.WARN,
+                f"{len(non_actionable_stale)} estrategia(s) stale no accionables (LOGIC_PENDING/disabled): {non_actionable_stale[:5]}",
+            )
+
         return CheckResult(CheckStatus.OK, "Sin estrategias atascadas en ciclo BACKTEST")
 
     def _check_rejection_rate(self) -> CheckResult:

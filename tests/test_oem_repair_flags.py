@@ -39,6 +39,7 @@ def _make_oem_with_failing(*failing_checks: str) -> tuple:
     """Retorna (oem, storage_mock) con los checks especificados en FAIL."""
     storage = _make_storage()
     oem = OperationalEdgeMonitor(storage=storage, shadow_storage=None, interval_seconds=300)
+    oem._started_at_utc = datetime.now(timezone.utc) - timedelta(hours=2)
     oem.last_checked_at = datetime.now(timezone.utc).isoformat()
 
     # Simular resultados con los checks indicados en FAIL
@@ -152,6 +153,51 @@ class TestWriteRepairFlags:
         # Debe ser un string de timestamp parseable
         assert isinstance(value, str)
         datetime.fromisoformat(value)  # no debe lanzar excepción
+
+    def test_lifecycle_coherence_fail_dentro_gracia_no_escribe_flag(self):
+        """Durante startup grace, lifecycle_coherence FAIL se degrada a WARN y no escribe flags."""
+        storage = _make_storage()
+        storage.get_sys_config.return_value = {"oem_invariant_grace_seconds": 300}
+
+        oem = OperationalEdgeMonitor(storage=storage, shadow_storage=None, interval_seconds=300)
+        oem.last_checked_at = datetime.now(timezone.utc).isoformat()
+
+        failing, warnings, graced = oem._apply_startup_grace(
+            failing=["lifecycle_coherence"],
+            warnings=[],
+        )
+        oem._write_repair_flags(failing=failing, warnings=warnings)
+
+        assert failing == []
+        assert "lifecycle_coherence" in warnings
+        assert graced == ["lifecycle_coherence"]
+        storage.update_sys_config.assert_not_called()
+
+    def test_lifecycle_coherence_fail_fuera_gracia_si_escribe_flag(self):
+        """Fuera de startup grace, lifecycle_coherence FAIL sí genera force_backtest."""
+        storage = _make_storage()
+        storage.get_sys_config.return_value = {"oem_invariant_grace_seconds": 300}
+
+        oem = OperationalEdgeMonitor(storage=storage, shadow_storage=None, interval_seconds=300)
+        oem._started_at_utc = datetime.now(timezone.utc) - timedelta(minutes=10)
+        oem.last_checked_at = datetime.now(timezone.utc).isoformat()
+
+        failing, warnings, graced = oem._apply_startup_grace(
+            failing=["lifecycle_coherence"],
+            warnings=[],
+        )
+        oem._write_repair_flags(failing=failing, warnings=warnings)
+
+        assert graced == []
+        written = storage.update_sys_config.call_args[0][0]
+        assert "oem_repair_force_backtest" in written
+
+    def test_lifecycle_coherence_warn_no_accionable_no_escribe_flag(self):
+        """Si lifecycle_coherence llega como WARN no accionable, no debe armar force_backtest."""
+        oem, storage, _ = _make_oem_with_failing()
+        oem._write_repair_flags(failing=[], warnings=["lifecycle_coherence"])
+
+        storage.update_sys_config.assert_not_called()
 
 
 # ── Tests: _consume_oem_repair_flags (MainOrchestrator) ──────────────────────

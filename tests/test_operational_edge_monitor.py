@@ -117,6 +117,75 @@ class TestCheckShadowSync:
         assert result.status == CheckStatus.WARN
         assert "mercado cerrado" in result.detail.lower()
 
+    def test_ok_when_incubating_within_window_even_with_zero_trades(self):
+        """Instancia INCUBATING dentro de ventana configurada no es FAIL accionable."""
+        inst = MagicMock()
+        inst.created_at = _ts(hours_ago=3)
+        inst.total_trades_executed = 0
+        inst.instance_id = "INST-INC-OK"
+        inst.status = "INCUBATING"
+        inst.strategy_id = "S1"
+
+        storage = _make_storage()
+        storage.get_sys_config.return_value = {"oem_shadow_incubating_max_hours": 24}
+        monitor = OperationalEdgeMonitor(
+            storage=storage,
+            shadow_storage=_make_shadow_storage([inst]),
+        )
+        with patch.object(monitor, "_any_session_active", return_value=True):
+            result = monitor._check_shadow_sync()
+
+        assert result.status == CheckStatus.OK
+        assert "incubación" in result.detail.lower()
+
+    def test_warn_when_shadow_zero_trades_but_strategy_logic_pending(self):
+        """Si estrategia está LOGIC_PENDING, shadow_sync se degrada a WARN no accionable."""
+        inst = MagicMock()
+        inst.created_at = _ts(hours_ago=3)
+        inst.total_trades_executed = 0
+        inst.instance_id = "INST-LP"
+        inst.status = "SHADOW_READY"
+        inst.strategy_id = "S_LOGIC_PENDING"
+
+        strategies = [
+            {
+                "class_id": "S_LOGIC_PENDING",
+                "readiness": "LOGIC_PENDING",
+                "mode": "BACKTEST",
+                "enabled": 1,
+            }
+        ]
+        monitor = OperationalEdgeMonitor(
+            storage=_make_storage(strategies=strategies),
+            shadow_storage=_make_shadow_storage([inst]),
+        )
+        with patch.object(monitor, "_any_session_active", return_value=True):
+            result = monitor._check_shadow_sync()
+
+        assert result.status == CheckStatus.WARN
+        assert "no accionables" in result.detail.lower()
+
+    def test_warn_when_incubating_over_window(self):
+        """Instancia INCUBATING demasiado antigua escala a WARN, no a FAIL."""
+        inst = MagicMock()
+        inst.created_at = _ts(hours_ago=30)
+        inst.total_trades_executed = 0
+        inst.instance_id = "INST-INC-OLD"
+        inst.status = "INCUBATING"
+        inst.strategy_id = "S1"
+
+        storage = _make_storage()
+        storage.get_sys_config.return_value = {"oem_shadow_incubating_max_hours": 24}
+        monitor = OperationalEdgeMonitor(
+            storage=storage,
+            shadow_storage=_make_shadow_storage([inst]),
+        )
+        with patch.object(monitor, "_any_session_active", return_value=True):
+            result = monitor._check_shadow_sync()
+
+        assert result.status == CheckStatus.WARN
+        assert "incubating" in result.detail.lower()
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 2. backtest_quality
@@ -314,6 +383,62 @@ class TestCheckLifecycleCoherence:
         result = monitor._check_lifecycle_coherence()
         assert result.status == CheckStatus.OK
 
+    def test_ok_when_last_update_utc_is_fresh_even_if_updated_at_is_stale(self):
+        """last_update_utc debe ser fuente primaria de frescura para lifecycle."""
+        rankings = [
+            {
+                "strategy_id": "S1",
+                "execution_mode": "BACKTEST",
+                "updated_at": _ts(hours_ago=72),
+                "last_update_utc": _ts(hours_ago=2),
+            },
+        ]
+        monitor = OperationalEdgeMonitor(storage=_make_storage(rankings=rankings))
+        result = monitor._check_lifecycle_coherence()
+        assert result.status == CheckStatus.OK
+
+    def test_warn_not_fail_when_stale_backtest_is_logic_pending(self):
+        """Ranking stale de estrategia LOGIC_PENDING no debe disparar FAIL accionable."""
+        rankings = [
+            {
+                "strategy_id": "S1",
+                "execution_mode": "BACKTEST",
+                "updated_at": _ts(hours_ago=60),
+            },
+        ]
+        strategies = [
+            {
+                "class_id": "S1",
+                "readiness": "LOGIC_PENDING",
+                "mode": "BACKTEST",
+                "enabled": 1,
+            }
+        ]
+        monitor = OperationalEdgeMonitor(storage=_make_storage(rankings=rankings, strategies=strategies))
+        with patch.object(monitor, "_any_session_active", return_value=True):
+            result = monitor._check_lifecycle_coherence()
+
+        assert result.status == CheckStatus.WARN
+        assert "no accionables" in result.detail.lower()
+
+    def test_warn_not_fail_when_stale_backtest_has_zero_history(self):
+        """Rankings stale con historial 0/0 (bootstrap) se degradan a WARN no accionable."""
+        rankings = [
+            {
+                "strategy_id": "S1",
+                "execution_mode": "BACKTEST",
+                "updated_at": _ts(hours_ago=60),
+                "total_usr_trades": 0,
+                "completed_last_50": 0,
+            },
+        ]
+        monitor = OperationalEdgeMonitor(storage=_make_storage(rankings=rankings))
+        with patch.object(monitor, "_any_session_active", return_value=True):
+            result = monitor._check_lifecycle_coherence()
+
+        assert result.status == CheckStatus.WARN
+        assert "no accionables" in result.detail.lower()
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 7. rejection_rate
@@ -470,6 +595,27 @@ class TestRunChecksAndSummary:
         monitor = OperationalEdgeMonitor(storage=storage)
         summary = monitor.get_health_summary()
         assert summary["status"] in ("CRITICAL", "DEGRADED")
+
+    def test_get_health_summary_grace_downgrades_shadow_and_lifecycle(self):
+        """Durante startup grace, shadow_sync/lifecycle_coherence no deben contar como FAIL accionable."""
+        inst = MagicMock()
+        inst.created_at = _ts(hours_ago=3)
+        inst.total_trades_executed = 0
+        inst.instance_id = "INST-GRACE"
+
+        rankings = [{"strategy_id": "S1", "execution_mode": "BACKTEST", "updated_at": _ts(hours_ago=60)}]
+        storage = _make_storage(rankings=rankings)
+        storage.get_sys_config.return_value = {"oem_invariant_grace_seconds": 300}
+
+        monitor = OperationalEdgeMonitor(storage=storage, shadow_storage=_make_shadow_storage([inst]))
+
+        with patch.object(monitor, "_any_session_active", return_value=True):
+            summary = monitor.get_health_summary()
+
+        assert "shadow_sync" not in summary["failing"]
+        assert "lifecycle_coherence" not in summary["failing"]
+        assert "shadow_sync" in summary["warnings"]
+        assert "lifecycle_coherence" in summary["warnings"]
 
 
 if __name__ == "__main__":

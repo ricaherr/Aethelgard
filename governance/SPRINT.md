@@ -82,6 +82,22 @@
   - Baseline runtime persistence reducido: 76 → 66 violaciones (sin nuevas violaciones vs baseline).
   - Trace_ID: `DB-POLICY-SERIALIZED-CALLBACKS-HU8.7-2026-04-08`
 
+- [DONE] **HU 10.22: Grace Window OEM para Invariantes de Bootstrap**
+  - `core_brain/operational_edge_monitor.py`: agregado `STARTUP_INVARIANT_GRACE_SECONDS_DEFAULT=300`, checks objetivo `{shadow_sync, lifecycle_coherence}` y normalización FAIL->WARN durante bootstrap.
+  - Se aplica la gracia tanto en `run()` como en `get_health_summary()` para alinear runtime y API.
+  - Tests de contrato actualizados: `tests/test_oem_repair_flags.py` y `tests/test_operational_edge_monitor.py`.
+  - Validación: 62/62 tests OEM focalizados · `validate_all.py` 28/28.
+  - Evidencia runtime: `logs/main.log` registra `Startup grace active (299s remaining)` en arranque reciente y sin `Invariant violations: shadow_sync, lifecycle_coherence` en ese bootstrap.
+  - Trace_ID: `OEM-STARTUP-GRACE-HU10.22-2026-04-08`
+
+- [DONE] **HU 10.23: Hardening OEM Post-Bootstrap (No-Accionables Reales)**
+  - `core_brain/operational_edge_monitor.py`: `shadow_sync` ahora distingue `INCUBATING` (dentro/fuera de ventana) y casos no accionables por estrategia; `lifecycle_coherence` usa `last_update_utc` como fuente primaria y degrada stale bootstrap sin historial (`total_usr_trades=0`, `completed_last_50=0`).
+  - Mantiene FAIL solo para bloqueos accionables; casos no accionables pasan a WARN/OK.
+  - TDD ampliado en `tests/test_operational_edge_monitor.py` y contrato de flags en `tests/test_oem_repair_flags.py`.
+  - Validación: 69/69 tests OEM focalizados · `validate_all.py` 28/28.
+  - Evidencia runtime: `logs/main.log` muestra `All checks passed (warnings=6)` fuera de gracia en ciclos consecutivos (sin `Invariant violations: shadow_sync, lifecycle_coherence`).
+  - Trace_ID: `OEM-POST-BOOTSTRAP-HARDENING-HU10.23-2026-04-08`
+
 ## 📊 Snapshot de Cierre
 
 *(Se completa cuando el sprint finaliza)*
