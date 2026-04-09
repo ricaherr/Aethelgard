@@ -103,11 +103,6 @@
 ---
 
 ## 10_INFRASTRUCTURE_RESILIENCY (Health, Self-Healing)
-* **HU 10.27: Adaptive CPU Guardrail Throttling** `[TODO]`
-    * **Prioridad**: Alta
-    * **Descripción**: Sustituir veto instantáneo por control adaptativo (promedio móvil + degradación progresiva) para minimizar ciclos saltados por picos transitorios de CPU sin comprometer estabilidad.
-    * **🖥️ UI Representation**: Indicador de presión de CPU con estado dinámico (`NORMAL`, `THROTTLED`, `VETO`) y porcentaje de ciclos vetados.
-
 * **HU 10.28: Provider Coverage Reliability** `[TODO]`
     * **Prioridad**: Alta
     * **Descripción**: Reducir fallbacks agotados por símbolo con estrategia de cobertura por mercado, cooldown inteligente y exclusión temporal de activos no servibles para evitar ruido operacional.

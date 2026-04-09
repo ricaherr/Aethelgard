@@ -4,7 +4,7 @@
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-09 UTC)**: HU 5.4 archivada (Sprint 29) · Trace_ID: HU5.4-SIGNAL-TO-EXECUTION-RECOVERY-2026-04-09 · **validate_all 28/28 PASSED** · **32/32 tests focal+regresión**.
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-09 UTC)**: HU 10.27 archivada (Sprint 29) · Trace_ID: HU10.27-ADAPTIVE-CPU-GUARDRAIL-2026-04-09 · **validate_all 28/28 PASSED** · **19/19 tests focal+regresión**.
 
 ---
 
@@ -67,6 +67,17 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 | **HU 9.10** | Recuperación del contrato runtime de confidence con SSOT único de normalización (0-100) entre orquestador y servicio. Se eliminó duplicación de normalizadores, se preservó compatibilidad ratio 0-1, clamp estricto [0,100], redondeo estable a 1 decimal y formato consistente de logs entre capas. | `core_brain/services/ui_mapping_service.py`, `core_brain/orchestrators/_cycle_scan.py`, `tests/test_ui_mapping_confidence_display.py` | 13/13 |
 
 **Validación**: tests focalizados **13/13 PASSED** · `validate_all.py` **28/28 PASSED** · smoke runtime con `start.py`/`stop.py` ejecutado con cierre limpio.
+
+---
+
+### Sprint 29 — HU 10.27: Adaptive CPU Guardrail Throttling (9-Abr-2026)
+**Trace_ID**: `HU10.27-ADAPTIVE-CPU-GUARDRAIL-2026-04-09` | **Épica**: E19 (Sprint activo) | **Estado**: HU completada y archivada
+
+| HU | Descripción | Artefactos clave | Tests |
+|---|---|---|---|
+| **HU 10.27** | Reemplazo del veto binario por guardrail adaptativo de presión CPU con ventana deslizante (`deque`) y tres regímenes (`NORMAL`, `THROTTLED`, `VETO`). Se añadió función `_evaluate_cpu_pressure(orch, dyn)` con lectura SSOT desde `dynamic_params` (`cpu_throttle_threshold`, `cpu_veto_threshold`, `cpu_pressure_window_size`) y persistencia de ventana en estado del orquestador. En `THROTTLED` se aplica política 1:2 (salta 1 de cada 2 ciclos); en `VETO` mantiene notificación `SYSTEM_STRESS` compatible. | `core_brain/orchestrators/_cycle_scan.py`, `tests/test_cpu_adaptive_guardrail.py` | 19/19 |
+
+**Validación**: tests HU **8/8 PASSED** · no-regresión `test_infrastructure_pulse.py` **11/11 PASSED** · `validate_all.py` **28/28 PASSED** · smoke runtime `start.py` con arranque operativo validado.
 
 ---
 

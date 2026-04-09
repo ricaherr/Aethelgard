@@ -10,7 +10,9 @@ import asyncio
 import json
 import logging
 import uuid
+from collections import deque
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from core_brain.orchestrators._types import PriceSnapshot, ScanBundle
@@ -34,6 +36,48 @@ logger = logging.getLogger(__name__)
 
 # Reuse the canonical normalizer as single SSOT for runtime confidence contract.
 _normalize_ui_structure_confidence = _normalize_structure_confidence
+
+
+class CpuPressureState(Enum):
+    NORMAL = "NORMAL"
+    THROTTLED = "THROTTLED"
+    VETO = "VETO"
+
+
+def _evaluate_cpu_pressure(orch: Any, dyn: Dict[str, Any]) -> CpuPressureState:
+    """Evaluate CPU pressure using a sliding average persisted on orchestrator state."""
+    from core_brain import main_orchestrator as main_orchestrator_module
+
+    raw_window_size = dyn.get("cpu_pressure_window_size", 5)
+    try:
+        window_size = max(1, int(raw_window_size))
+    except (TypeError, ValueError):
+        window_size = 5
+
+    existing_window = getattr(orch, "_cpu_pressure_window", None)
+    if not isinstance(existing_window, deque) or existing_window.maxlen != window_size:
+        seed_values = list(existing_window) if isinstance(existing_window, deque) else []
+        existing_window = deque(seed_values[-window_size:], maxlen=window_size)
+        orch._cpu_pressure_window = existing_window
+
+    current_cpu = float(main_orchestrator_module.psutil.cpu_percent(interval=None))
+    existing_window.append(current_cpu)
+    avg_cpu = sum(existing_window) / len(existing_window)
+
+    try:
+        throttle_threshold = float(dyn.get("cpu_throttle_threshold", 75))
+    except (TypeError, ValueError):
+        throttle_threshold = 75.0
+    try:
+        veto_threshold = float(dyn.get("cpu_veto_threshold", 90))
+    except (TypeError, ValueError):
+        veto_threshold = 90.0
+
+    if avg_cpu >= veto_threshold:
+        return CpuPressureState.VETO
+    if avg_cpu >= throttle_threshold:
+        return CpuPressureState.THROTTLED
+    return CpuPressureState.NORMAL
 
 
 def _get_phase_timeout_seconds(orch: Any, key: str, default: float) -> float:
@@ -293,27 +337,61 @@ async def run_pre_phase(orch: Any) -> bool:
         orch.stats.cycles_completed += 1
         return False
 
-    # CPU veto (HU 5.3 — The Pulse)
+    # CPU guardrail (HU 5.3 + HU 10.27)
     _dyn = orch.storage.get_dynamic_params() or {}
-    _cpu_threshold = _dyn.get("cpu_veto_threshold", 90)
-    _cpu_now = main_orchestrator_module.psutil.cpu_percent(interval=None)
-    if _cpu_now > _cpu_threshold:
+    _cpu_state = _evaluate_cpu_pressure(orch, _dyn)
+    _cpu_window = getattr(orch, "_cpu_pressure_window", deque(maxlen=1))
+    _cpu_avg = (sum(_cpu_window) / len(_cpu_window)) if len(_cpu_window) > 0 else 0.0
+    _cpu_now = _cpu_window[-1] if len(_cpu_window) > 0 else 0.0
+    _cpu_throttle_threshold = _dyn.get("cpu_throttle_threshold", 75)
+    _cpu_veto_threshold = _dyn.get("cpu_veto_threshold", 90)
+
+    if _cpu_state == CpuPressureState.VETO:
         logger.warning(
-            f"[PULSE] CPU veto: {_cpu_now:.1f}% > {_cpu_threshold}% — skipping trade scan cycle"
+            "[PULSE] CPU veto: avg=%.1f%% current=%.1f%% >= veto_threshold=%s%% — skipping trade scan cycle",
+            _cpu_avg,
+            _cpu_now,
+            _cpu_veto_threshold,
         )
         orch.storage.save_notification({
             "category": "SYSTEM_STRESS",
             "priority": "high",
             "title": "CPU Critical — Scan Cycle Vetoed",
             "message": (
-                f"CPU at {_cpu_now:.1f}% exceeds {_cpu_threshold}% threshold. "
+                f"CPU pressure avg {_cpu_avg:.1f}% exceeds veto threshold {_cpu_veto_threshold}%. "
                 "Trade scanning skipped."
             ),
-            "details": {"cpu_percent": _cpu_now, "threshold": _cpu_threshold},
+            "details": {
+                "cpu_percent": _cpu_avg,
+                "cpu_sample_percent": _cpu_now,
+                "threshold": _cpu_veto_threshold,
+                "state": CpuPressureState.VETO.value,
+            },
             "read": False,
         })
         orch.stats.cycles_completed += 1
         return False
+
+    if _cpu_state == CpuPressureState.THROTTLED:
+        _skip_counter = int(getattr(orch, "_cpu_throttle_skip_counter", 0)) + 1
+        orch._cpu_throttle_skip_counter = _skip_counter
+        if _skip_counter % 2 == 1:
+            logger.warning(
+                "[PULSE] CPU throttled: avg=%.1f%% current=%.1f%% in [%s%%, %s%%) — skipping this cycle (1/2 policy)",
+                _cpu_avg,
+                _cpu_now,
+                _cpu_throttle_threshold,
+                _cpu_veto_threshold,
+            )
+            orch.stats.cycles_completed += 1
+            return False
+        logger.info(
+            "[PULSE] CPU throttled: avg=%.1f%% current=%.1f%% — allowing this cycle (1/2 policy)",
+            _cpu_avg,
+            _cpu_now,
+        )
+    else:
+        orch._cpu_throttle_skip_counter = 0
 
     # Market session guard
     if orch._is_market_closed():  # thin wrapper — patched in tests

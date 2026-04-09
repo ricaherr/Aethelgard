@@ -40,10 +40,15 @@
   - Gate obligatorio: `python scripts/validate_all.py` = 28/28 PASS.
   - Smoke runtime: `python start.py` + `python stop.py` ejecutados en ventana de validación con arranque y cierre operativo.
 
-- [TODO] **HU 10.27: Adaptive CPU Guardrail Throttling**
+- [DONE] **HU 10.27: Adaptive CPU Guardrail Throttling**
   - Sustituir veto instantáneo por política adaptativa con presión acumulada y degradación escalonada.
   - Exponer métrica de `cpu_veto_rate` para observabilidad operacional.
   - Validar reducción de ciclos vetados sin degradar estabilidad del host.
+  - TDD implementado: `tests/test_cpu_adaptive_guardrail.py` (8 casos de régimen NORMAL/THROTTLED/VETO y no-regresión).
+  - Verificación focal: `pytest tests/test_cpu_adaptive_guardrail.py -q` = 8/8 PASS.
+  - Verificación de compatibilidad: `pytest tests/test_infrastructure_pulse.py -q` = 11/11 PASS.
+  - Gate obligatorio: `python scripts/validate_all.py` = 28/28 PASS.
+  - Smoke runtime: `python start.py` con arranque operativo confirmado; terminal de ejecución detenido tras ventana de observación.
 
 - [TODO] **HU 10.28: Provider Coverage Reliability**
   - Implementar estrategia de exclusión temporal/reintento inteligente para símbolos con fallback agotado.
