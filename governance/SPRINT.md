@@ -13,10 +13,10 @@
 
 ---
 
-# SPRINT 28: E18 — SRE REPARACIÓN Y ESTABILIZACIÓN OPERACIONAL — [TODO]
+# SPRINT 28: E18 — SRE REPARACIÓN Y ESTABILIZACIÓN OPERACIONAL — [DONE]
 
 **Inicio**: 9 de Abril, 2026
-**Fin**: —
+**Fin**: 9 de Abril, 2026
 **Objetivo**: Reparar el pipeline operacional bloqueado. La auditoría SRE del 09-Apr confirmó que el sistema es un zombie operacional: 3 estrategias en modo SHADOW según `sys_strategies.mode` (SSOT) pero en modo BACKTEST según `sys_signal_ranking.execution_mode` (campo derivado desactualizado). Resultado: 0 señales ejecutadas, 0 shadow trades, 6 instancias shadow atrapadas en INCUBATING. Este sprint repara los 5 defectos documentados en E18.
 **Épica**: E18 (SRE — Reparación y Estabilización Operacional) | **Trace_ID**: E18-SRE-OPERATIONAL-REPAIR-2026-04-09
 **Dominios**: 08_DATA_SOVEREIGNTY · 10_INFRASTRUCTURE_RESILIENCY · 09_INSTITUTIONAL_INTERFACE
@@ -50,10 +50,19 @@
   - Verificación orquestador: `python scripts/validate_all.py` = 28/28 PASS.
   - Verificación runtime: `python start.py` inició sin crash y mantuvo loop operacional activo durante ventana de verificación.
 
-- [TODO] **HU 9.9: UI Confidence Display Overflow Fix**
-  - Confirmar el rango de retorno de `market_structure_analyzer._calculate_confidence_score_professional()` (debe ser 0-100).
-  - Rastrear por qué el valor llega a `_cycle_scan.py:466` como 558 en lugar de 55.8.
-  - Corregir el punto donde ocurre la escala errónea.
+- [DONE] **HU 9.9: UI Confidence Display Overflow Fix**
+  - Contrato canónico implementado: confidence normalizado en escala 0-100 en sensor + guarda defensiva en orquestador UI.
+  - Cobertura TDD añadida para regresión de doble escalado (55.8 vs 558), clamping y manejo de None/NaN/out-of-range.
+  - Verificación orquestador: `pytest tests/test_ui_mapping_confidence_display.py tests/test_market_structure_analyzer.py -q` = 25/25 PASS.
+  - Verificación orquestador: `python scripts/validate_all.py` = 28/28 PASS.
+  - Verificación runtime: `python start.py` ejecutado en ventana de validación sin logs UI_MAPPING >100%.
+
+## 📊 Snapshot de Cierre Sprint 28
+
+- HUs completadas: 5/5 (HU 8.8 · HU 10.24 · HU 10.25 · HU 10.26 · HU 9.9)
+- Validación integral: `validate_all.py` = 28/28 PASS
+- Verificaciones focales acumuladas: 7/7 + 12/12 + 4/4 + 22/22 + 25/25 PASS
+- Runtime: `/health` y `/api/health` operativos, heartbeat auditado persistiendo en `sys_audit_logs`, UI_MAPPING sin confidence >100%
 
 ---
 

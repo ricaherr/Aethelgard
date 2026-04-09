@@ -29,6 +29,36 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 
 ---
 
+### ════════════════════════════════════════════════════════════════
+### ÉPICA E18 COMPLETADA — SRE: Reparación y Estabilización Operacional (9-Abr-2026)
+**Trace_ID**: `E18-SRE-OPERATIONAL-REPAIR-2026-04-09` | **Sprints**: 28 | **Dominios**: 08 · 09 · 10
+
+| Campo | Valor |
+|---|---|
+| **Épica** | E18 — SRE: Reparación y Estabilización Operacional |
+| **Trace_ID** | `E18-SRE-OPERATIONAL-REPAIR-2026-04-09` |
+| **Sprints** | 28 |
+| **Completada** | 9 de Abril, 2026 |
+| **Dominios** | 08_DATA_SOVEREIGNTY · 09_INSTITUTIONAL_INTERFACE · 10_INFRASTRUCTURE_RESILIENCY |
+| **HUs** | HU 8.8, HU 10.24, HU 10.25, HU 10.26, HU 9.9 |
+| **validate_all** | ✅ 28/28 PASSED |
+
+**Objetivo cumplido**: pipeline operativo restaurado (SSOT mode drift eliminado), observabilidad SRE expuesta con health endpoint público, heartbeat canónico auditado y estable, diagnóstico de bootstrap shadow corregido y overflow de confidence UI_MAPPING eliminado.
+### ════════════════════════════════════════════════════════════════
+
+---
+
+### Sprint 28 — HU 9.9: UI Confidence Display Overflow Fix (9-Abr-2026)
+**Trace_ID**: `UI-CONFIDENCE-OVERFLOW-FIX-HU9.9-2026-04-09` | **Épica**: E18 (Sprint cerrado) | **Estado**: HU completada
+
+| HU | Descripción | Artefactos clave | Tests |
+|---|---|---|---|
+| **HU 9.9** | Corrección de overflow de confidence en UI_MAPPING con contrato canónico 0-100: normalización defensiva en sensor + guarda de no doble escalado en orquestador. Incluye clamp para out-of-range y fallback para `None`/`NaN`/no finitos. | `core_brain/sensors/market_structure_analyzer.py`, `core_brain/orchestrators/_cycle_scan.py`, `tests/test_ui_mapping_confidence_display.py`, `tests/test_market_structure_analyzer.py` | 25/25 |
+
+**Validación**: tests focalizados **25/25 PASSED** · `validate_all.py` **28/28 PASSED** · runtime sin logs UI_MAPPING >100% (sin recurrencia de 447%/558%).
+
+---
+
 ### Sprint 28 — HU 10.24: Shadow Pool Bootstrap Diagnostics (9-Abr-2026)
 **Trace_ID**: `SHADOW-POOL-DIAGNOSTICS-HU10.24-2026-04-09` | **Épica**: E18 (Sprint activo) | **Estado**: HU completada
 

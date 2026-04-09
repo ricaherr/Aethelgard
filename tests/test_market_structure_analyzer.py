@@ -239,14 +239,14 @@ class TestMarketStructureAnalyzer(unittest.TestCase):
     
     def test_structure_requires_minimum_pivots(self):
         """✓ Test: Estructura requiere mínimo de pivots válidos."""
-        # Generar datos sin estructura clara (random)
+        # Dataset determinístico en rango (sin tendencia fuerte), evita flakiness.
         random_candles = pd.DataFrame({
             'datetime': pd.date_range('2026-03-01', periods=10, freq='1h'),
-            'open': np.random.uniform(1.0900, 1.1000, 10),
-            'high': np.random.uniform(1.0950, 1.1050, 10),
-            'low': np.random.uniform(1.0850, 1.0950, 10),
-            'close': np.random.uniform(1.0900, 1.1000, 10),
-            'volume': np.random.randint(500, 2000, 10)
+            'open': [1.0950, 1.0948, 1.0952, 1.0947, 1.0951, 1.0949, 1.0950, 1.0948, 1.0951, 1.0949],
+            'high': [1.0962, 1.0959, 1.0961, 1.0958, 1.0960, 1.0957, 1.0961, 1.0958, 1.0960, 1.0959],
+            'low': [1.0938, 1.0939, 1.0937, 1.0938, 1.0936, 1.0937, 1.0938, 1.0937, 1.0936, 1.0938],
+            'close': [1.0949, 1.0951, 1.0948, 1.0950, 1.0947, 1.0950, 1.0949, 1.0951, 1.0948, 1.0950],
+            'volume': [1100, 1050, 1080, 1110, 1070, 1090, 1060, 1105, 1085, 1075]
         })
         
         structure = self.analyzer.detect_market_structure("EURUSD", random_candles)
@@ -274,6 +274,21 @@ class TestMarketStructureAnalyzer(unittest.TestCase):
         # Deben ser idénticos
         self.assertEqual(struct1['type'], struct2['type'])
         self.assertEqual(struct1['hh_count'], struct2['hh_count'])
+
+    def test_normalize_confidence_from_ratio_scale(self):
+        """✓ Test: escala 0-1 se normaliza una sola vez a 0-100."""
+        normalized = self.analyzer._normalize_structure_confidence(0.558)
+        self.assertAlmostEqual(normalized, 55.8, places=1)
+
+    def test_normalize_confidence_clamps_out_of_range_values(self):
+        """✓ Test: confianza fuera de rango se clampa a límites válidos."""
+        self.assertEqual(self.analyzer._normalize_structure_confidence(-25.0), 0.0)
+        self.assertEqual(self.analyzer._normalize_structure_confidence(447.0), 100.0)
+
+    def test_normalize_confidence_handles_invalid_inputs(self):
+        """✓ Test: None/NaN deben regresar fallback seguro dentro de rango."""
+        self.assertEqual(self.analyzer._normalize_structure_confidence(None), 0.0)
+        self.assertEqual(self.analyzer._normalize_structure_confidence(float("nan")), 0.0)
     
     
     # =============== TESTS DE INTEGRACIÓN ===============

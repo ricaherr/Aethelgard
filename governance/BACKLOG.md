@@ -97,15 +97,13 @@
 
 ## 09_INSTITUTIONAL_INTERFACE (UI/UX, Terminal)
 
-* **HU 9.9: UI Confidence Display Overflow Fix** `[TODO]`
-    * **Qué**: El log muestra `[Conf: 558%]` para GBPUSD y `[Conf: 447%]` para XAGUSD en `_cycle_scan.py:466`. `market_structure_analyzer` retorna `confidence` como valor 0-100 (e.g. 55.8), pero en algún punto de la cadena se multiplica por 10x antes de llegar al formato `{:.0f}%`. Bug afecta logs de UI_MAPPING y potencialmente el widget de estructura en el front.
-    * **Archivos afectados**: `core_brain/orchestrators/_cycle_scan.py`, `core_brain/sensors/market_structure_analyzer.py`
+*(Sin HUs pendientes activas en este dominio para este Sprint; ver SYSTEM_LEDGER/SPRINT para completadas.)*
 
 
 ---
 
 ## 10_INFRASTRUCTURE_RESILIENCY (Health, Self-Healing)
-*(HUs activas en Sprint 28 — HU 10.1 archivada en SYSTEM_LEDGER E3 + E14 · HU 10.24 y HU 10.26 archivadas en SYSTEM_LEDGER Sprint 28)*
+*(Sin HUs pendientes activas en este dominio para este Sprint; ver SYSTEM_LEDGER/SPRINT para completadas.)*
 
 
 

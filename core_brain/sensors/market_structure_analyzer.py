@@ -21,6 +21,7 @@ TRACE_ID: SENSOR-MARKET-STRUCT-001
 """
 
 import logging
+import math
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional, Any, Literal, Tuple
@@ -232,7 +233,8 @@ class MarketStructureAnalyzer:
             candles: DataFrame con OHLC
             
         Returns:
-            Dict con estructura, validez, niveles de confianza y pivots
+            Dict con estructura, validez, niveles de confianza y pivots.
+            Contract: confidence is always normalized to 0-100 scale.
         """
         # PASO 1: Validación de entrada inteligente (Polimorfismo de Asset Class)
         if self._validate_input_candles(symbol, candles) is False:
@@ -259,17 +261,18 @@ class MarketStructureAnalyzer:
         
         # PASO 5: Calcular confianza profesional (método separado)
         total_pivots = len(hh) + len(hl) + len(lh) + len(ll)
-        confidence = self._calculate_confidence_score_professional(
+        raw_confidence = self._calculate_confidence_score_professional(
             len(hh), len(hl), len(lh), len(ll), 
             validation_level, structure_type
         )
+        confidence = self._normalize_structure_confidence(raw_confidence)
         
         # PASO 6: Construir resultado
         result = {
             'type': structure_type,
             'is_valid': is_valid,  # Backward compatibility
             'validation_level': validation_level,
-            'confidence': round(confidence, 1),
+            'confidence': confidence,
             'hh_count': len(hh),
             'hl_count': len(hl),
             'lh_count': len(lh),
@@ -498,8 +501,42 @@ class MarketStructureAnalyzer:
         confidence_mult = 1.0 if validation_level == "STRONG" else 0.9
         
         final_confidence = coherence * penalization_factor * confidence_mult
-        
-        return min(100.0, max(0.0, round(final_confidence, 1)))
+
+        return self._normalize_structure_confidence(final_confidence)
+
+    def _normalize_structure_confidence(self, raw_confidence: Any) -> float:
+        """Normalize confidence to canonical 0-100 scale with defensive guards."""
+        if raw_confidence is None:
+            return 0.0
+
+        try:
+            confidence = float(raw_confidence)
+        except (TypeError, ValueError):
+            logger.warning(
+                f"[{self.trace_id}] Invalid confidence type ({type(raw_confidence).__name__}) "
+                "received. Falling back to 0.0"
+            )
+            return 0.0
+
+        if not math.isfinite(confidence):
+            logger.warning(
+                f"[{self.trace_id}] Non-finite confidence ({raw_confidence}) received. "
+                "Falling back to 0.0"
+            )
+            return 0.0
+
+        # Backward compatibility: some legacy callers may provide ratio scale (0-1).
+        if 0.0 <= confidence <= 1.0:
+            confidence *= 100.0
+
+        clamped_confidence = max(0.0, min(100.0, confidence))
+        if clamped_confidence != confidence:
+            logger.warning(
+                f"[{self.trace_id}] Confidence out of range ({confidence:.2f}) clamped "
+                f"to {clamped_confidence:.2f}"
+            )
+
+        return round(clamped_confidence, 1)
     
     
     def _create_insufficient_result(
