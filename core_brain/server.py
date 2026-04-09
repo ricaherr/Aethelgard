@@ -366,6 +366,13 @@ window.addEventListener('load', function() {
 </body>
 </html>""")
 
+    @app.get("/health")
+    async def root_health() -> Dict[str, Any]:
+        """SRE liveness/readiness endpoint without auth and without /api prefix."""
+        from core_brain.api.routers.system import build_health_payload
+
+        return await build_health_payload()
+
     # ============ Micro-ETI 2 & 3: Include modular routers ============
     from core_brain.api.routers.trading import router as trading_router
     from core_brain.api.routers.risk import router as risk_router

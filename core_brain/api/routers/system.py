@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["System"])
 
+HEALTH_HEARTBEAT_STALE_S = 120
+HEALTH_READ_TIMEOUT_S = 0.040
+
 
 def _get_storage() -> StorageManager:
     """Lazy-load StorageManager to avoid import-time initialization."""
@@ -30,6 +33,151 @@ def _get_system_service() -> Any:
     """Lazy-load SystemService."""
     from core_brain.server import _get_system_service as get_system_from_server
     return get_system_from_server()
+
+
+def _parse_timestamp_utc(timestamp_raw: Any) -> Optional[datetime]:
+    """Parse heterogeneous timestamps into UTC-aware datetime safely."""
+    if timestamp_raw is None:
+        return None
+    if isinstance(timestamp_raw, datetime):
+        ts = timestamp_raw
+    elif isinstance(timestamp_raw, str):
+        raw = timestamp_raw.strip()
+        if not raw:
+            return None
+        normalized = raw.replace("Z", "+00:00")
+        try:
+            ts = datetime.fromisoformat(normalized)
+        except ValueError:
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"):
+                try:
+                    ts = datetime.strptime(normalized, fmt)
+                    break
+                except ValueError:
+                    continue
+            else:
+                return None
+    else:
+        return None
+
+    if ts.tzinfo is None:
+        return ts.replace(tzinfo=timezone.utc)
+    return ts.astimezone(timezone.utc)
+
+
+def _age_seconds(timestamp_raw: Any, now_utc: datetime) -> Optional[int]:
+    parsed = _parse_timestamp_utc(timestamp_raw)
+    if parsed is None:
+        return None
+    delta_s = int((now_utc - parsed).total_seconds())
+    return max(0, delta_s)
+
+
+async def _read_with_timeout(fn: Any, *args: Any, default: Any = None) -> Any:
+    """Run blocking DB read in worker thread with bounded wait and safe fallback."""
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(fn, *args),
+            timeout=HEALTH_READ_TIMEOUT_S,
+        )
+    except Exception:
+        return default
+
+
+def _extract_active_strategies_count(query_rows: Any) -> int:
+    if not query_rows:
+        return 0
+    first = query_rows[0]
+    if isinstance(first, dict):
+        value = first.get("count")
+    else:
+        try:
+            value = first[0]
+        except Exception:
+            value = 0
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 0
+
+
+async def build_health_payload() -> Dict[str, Any]:
+    """Build deterministic SRE health payload without exposing sensitive data."""
+    now_utc = datetime.now(timezone.utc)
+    storage = _get_storage()
+
+    sys_config = await _read_with_timeout(storage.get_sys_config, default={})
+    sys_config_failed = not isinstance(sys_config, dict)
+    if sys_config_failed:
+        sys_config = {}
+
+    signals = await _read_with_timeout(
+        storage.get_recent_sys_signals,
+        1440,
+        1,
+        default=[],
+    )
+    trades = await _read_with_timeout(storage.get_recent_usr_trades, 1, default=[])
+    active_rows = await _read_with_timeout(
+        storage.execute_query,
+        """
+        SELECT COUNT(*) AS count
+        FROM sys_strategies
+        WHERE UPPER(COALESCE(mode, 'BACKTEST')) IN ('BACKTEST', 'SHADOW', 'LIVE', 'QUARANTINE')
+        """,
+        (),
+        default=[],
+    )
+
+    orchestrator_age_s = _age_seconds(sys_config.get("heartbeat_orchestrator"), now_utc)
+    scanner_age_s = _age_seconds(sys_config.get("heartbeat_scanner"), now_utc)
+    signal_factory_age_s = _age_seconds(sys_config.get("heartbeat_signal_factory"), now_utc)
+
+    last_signal_at = None
+    if isinstance(signals, list) and signals:
+        last_signal_at = (
+            signals[0].get("timestamp")
+            or signals[0].get("created_at")
+        )
+
+    last_trade_at = None
+    if isinstance(trades, list) and trades:
+        last_trade_at = (
+            trades[0].get("created_at")
+            or trades[0].get("close_time")
+        )
+
+    operational_mode = str(sys_config.get("operational_mode") or "").upper().strip()
+    if not operational_mode:
+        operational_mode = "LOCKDOWN" if bool(sys_config.get("lockdown_mode", False)) else "NORMAL"
+
+    stale_heartbeats = [
+        age for age in (orchestrator_age_s, scanner_age_s, signal_factory_age_s)
+        if age is not None and age > HEALTH_HEARTBEAT_STALE_S
+    ]
+
+    has_any_heartbeat = any(
+        age is not None for age in (orchestrator_age_s, scanner_age_s, signal_factory_age_s)
+    )
+
+    status = "ok"
+    if sys_config_failed and not has_any_heartbeat and last_signal_at is None and last_trade_at is None:
+        status = "down"
+    elif stale_heartbeats or not has_any_heartbeat or sys_config_failed:
+        status = "degraded"
+
+    payload = {
+        "status": status,
+        "timestamp_utc": now_utc.isoformat(),
+        "orchestrator_heartbeat_age_s": orchestrator_age_s,
+        "scanner_heartbeat_age_s": scanner_age_s,
+        "signal_factory_heartbeat_age_s": signal_factory_age_s,
+        "operational_mode": operational_mode,
+        "last_signal_at": last_signal_at,
+        "last_trade_at": last_trade_at,
+        "active_strategies_count": _extract_active_strategies_count(active_rows),
+    }
+    return payload
 
 
 async def _broadcast_thought(message: str, module: str = "CORE", level: str = "info", metadata: Optional[Dict[str, Any]] = None) -> None:
@@ -118,8 +266,8 @@ async def system_status() -> Dict[str, Any]:
 
 @router.get("/health")
 async def health() -> Dict[str, Any]:
-    """Health check endpoint"""
-    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+    """Public health endpoint for SRE liveness/readiness probes."""
+    return await build_health_payload()
 
 
 @router.get("/system/telemetry")

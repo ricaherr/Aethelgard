@@ -29,6 +29,17 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 
 ---
 
+### Sprint 28 — HU 10.25: Health Endpoint SRE (9-Abr-2026)
+**Trace_ID**: `SRE-HEALTH-ENDPOINT-HU10.25-2026-04-09` | **Épica**: E18 (Sprint activo) | **Estado**: HU completada
+
+| HU | Descripción | Artefactos clave | Tests |
+|---|---|---|---|
+| **HU 10.25** | Implementación de endpoint público `GET /health` para liveness/readiness SRE con contrato estable y payload mínimo. Incluye `status` (`ok/degraded/down`), `timestamp_utc`, edades de heartbeat (`orchestrator/scanner/signal_factory`), `operational_mode`, `last_signal_at`, `last_trade_at`, `active_strategies_count`. Lecturas DB con timeout interno y fallback seguro para degradación parcial sin exponer secretos. | `core_brain/api/routers/system.py`, `core_brain/server.py`, `start.py`, `tests/test_health_endpoint.py`, `governance/BACKLOG.md` | 4/4 |
+
+**Validación**: tests focalizados **4/4 PASSED** · verificación runtime `GET /health` HTTP 200 · `validate_all.py` **28/28 PASSED**.
+
+---
+
 ### Sprint 28 — HU 8.8: SSOT Execution Mode Drift Fix (9-Abr-2026)
 **Trace_ID**: `SSOT-EXECMODE-DRIFT-FIX-2026-04-09` | **Épica**: E18 (Sprint activo) | **Estado**: HU completada
 

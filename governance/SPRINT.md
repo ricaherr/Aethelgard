@@ -34,10 +34,13 @@
   - Agregar log `INFO` que diferencie "skipped: not SHADOW mode" de "skipped: already at max instances".
   - Test: verificar que el resumen reporta correctamente cuando todas las instancias existen.
 
-- [TODO] **HU 10.25: Health Endpoint SRE**
+- [DONE] **HU 10.25: Health Endpoint SRE**
   - Crear `GET /health` en el router FastAPI que retorne: `status`, `orchestrator_heartbeat_age_s`, `last_signal_at`, `last_trade_at`, `operational_mode`, `active_strategies`.
   - Sin autenticación. Sin datos sensibles del usuario. Respuesta en <50ms.
   - Test: `GET /health` retorna HTTP 200 con JSON válido en cualquier estado del sistema.
+  - Verificación orquestador: `pytest tests/test_health_endpoint.py -q` = 4/4 PASS.
+  - Verificación orquestador: `python scripts/validate_all.py` = 28/28 PASS.
+  - Verificación runtime: `GET /health` responde HTTP 200 con payload estable y `status=ok` en arranque normal.
 
 - [TODO] **HU 10.26: Heartbeat Audit Trail Repair**
   - Diagnosticar la condición que impide escrituras HEARTBEAT en `sys_audit_logs` desde Apr-06.

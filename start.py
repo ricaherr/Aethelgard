@@ -377,6 +377,7 @@ def launch_server() -> None:
         logger.info("[OK] Cerebro lanzado en proceso independiente")
         logger.info("[LINK] Interfaz Principal: http://localhost:8000")
         logger.info("[LINK] Documentación API: http://localhost:8000/docs")
+        logger.info("[LINK] Health SRE: http://localhost:8000/health")
         # NO esperar - continuar inmediatamente
         
     except Exception as e:
