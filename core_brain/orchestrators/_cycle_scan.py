@@ -9,12 +9,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import math
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from core_brain.orchestrators._types import PriceSnapshot, ScanBundle
+from core_brain.services.ui_mapping_service import _normalize_structure_confidence
 from core_brain.orchestrators._background_tasks import (
     check_and_run_weekly_dedup_learning,
     check_and_run_weekly_shadow_evolution,
@@ -32,37 +32,8 @@ from core_brain.orchestrators._scan_methods import (
 logger = logging.getLogger(__name__)
 
 
-def _normalize_ui_structure_confidence(raw_confidence: Any) -> float:
-    """Normalize structure confidence to 0-100 for UI payloads and logs."""
-    if raw_confidence is None:
-        return 0.0
-
-    try:
-        confidence = float(raw_confidence)
-    except (TypeError, ValueError):
-        logger.warning(
-            "[UI_MAPPING] Invalid confidence type (%s). Falling back to 0.0",
-            type(raw_confidence).__name__,
-        )
-        return 0.0
-
-    if not math.isfinite(confidence):
-        logger.warning("[UI_MAPPING] Non-finite confidence (%s). Falling back to 0.0", raw_confidence)
-        return 0.0
-
-    # Backward compatibility for legacy ratio scale.
-    if 0.0 <= confidence <= 1.0:
-        confidence *= 100.0
-
-    clamped_confidence = max(0.0, min(100.0, confidence))
-    if clamped_confidence != confidence:
-        logger.warning(
-            "[UI_MAPPING] Confidence out of range (%.2f) clamped to %.2f",
-            confidence,
-            clamped_confidence,
-        )
-
-    return round(clamped_confidence, 1)
+# Reuse the canonical normalizer as single SSOT for runtime confidence contract.
+_normalize_ui_structure_confidence = _normalize_structure_confidence
 
 
 def _get_phase_timeout_seconds(orch: Any, key: str, default: float) -> float:

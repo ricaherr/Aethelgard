@@ -597,7 +597,7 @@ class UIMappingService:
             # Log the structure signal details with new validation level
             logger.debug(
                 f"[UI_MAPPING] Structure signal: {asset} {structure_type} "
-                f"(Level={validation_level}, Confidence={confidence:.0f}%, "
+                f"(Level={validation_level}, Confidence={confidence:.1f}%, "
                 f"HH={len(hh_indices)}, HL={len(hl_indices)}, "
                 f"LH={len(lh_indices)}, LL={len(ll_indices)})"
             )
@@ -620,10 +620,10 @@ class UIMappingService:
             }
             
             # Log with validation level indicator
-            level_icon = "✅" if validation_level == "STRONG" else "⚠️" if validation_level == "PARTIAL" else "❌"
+            level_icon = "[OK]" if validation_level == "STRONG" else "[WARNING]" if validation_level == "PARTIAL" else "[ERROR]"
             logger.info(
                 f"[UI_MAPPING] {level_icon} Added structure signal for {asset}: "
-                f"{structure_type} ({validation_level}) - Confidence: {confidence:.0f}%"
+                f"{structure_type} ({validation_level}) - Confidence: {confidence:.1f}%"
             )
         
         except Exception as e:

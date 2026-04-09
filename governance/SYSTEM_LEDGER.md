@@ -4,7 +4,7 @@
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-09 UTC)**: DRY Consolidation completada (Sprint 27) · Trace_ID: DRY-SYMBOL-TAXONOMY-SSOT-2026-04-09 · **validate_all 28/28 PASSED** · **51/51 tests** (taxonomy + regression).
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-09 UTC)**: HU 9.10 archivada (Sprint 29) · Trace_ID: HU9.10-CONFIDENCE-CONTRACT-RUNTIME-2026-04-09 · **validate_all 28/28 PASSED** · **13/13 tests** de contrato confidence.
 
 ---
 
@@ -45,6 +45,17 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 
 **Objetivo cumplido**: pipeline operativo restaurado (SSOT mode drift eliminado), observabilidad SRE expuesta con health endpoint público, heartbeat canónico auditado y estable, diagnóstico de bootstrap shadow corregido y overflow de confidence UI_MAPPING eliminado.
 ### ════════════════════════════════════════════════════════════════
+
+---
+
+### Sprint 29 — HU 9.10: Runtime Confidence Contract Recovery (9-Abr-2026)
+**Trace_ID**: `HU9.10-CONFIDENCE-CONTRACT-RUNTIME-2026-04-09` | **Épica**: E19 (Sprint activo) | **Estado**: HU completada y archivada
+
+| HU | Descripción | Artefactos clave | Tests |
+|---|---|---|---|
+| **HU 9.10** | Recuperación del contrato runtime de confidence con SSOT único de normalización (0-100) entre orquestador y servicio. Se eliminó duplicación de normalizadores, se preservó compatibilidad ratio 0-1, clamp estricto [0,100], redondeo estable a 1 decimal y formato consistente de logs entre capas. | `core_brain/services/ui_mapping_service.py`, `core_brain/orchestrators/_cycle_scan.py`, `tests/test_ui_mapping_confidence_display.py` | 13/13 |
+
+**Validación**: tests focalizados **13/13 PASSED** · `validate_all.py` **28/28 PASSED** · smoke runtime con `start.py`/`stop.py` ejecutado con cierre limpio.
 
 ---
 

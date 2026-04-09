@@ -23,10 +23,13 @@
 
 ## 📋 Tareas del Sprint
 
-- [TODO] **HU 9.10: Runtime Confidence Contract Recovery** *(🔴 PRIORIDAD MÁXIMA — Regresión visible en runtime)*
+- [DONE] **HU 9.10: Runtime Confidence Contract Recovery** *(🔴 PRIORIDAD MÁXIMA — Regresión visible en runtime)*
   - Validar contrato único de confidence (0-100) en servicio, logs y payloads de eventos.
   - Añadir TDD para doble escalado, clamping, formatos inválidos y consistencia de salida.
   - Confirmar en runtime ausencia de confidence fuera de rango durante ventana de observación.
+  - Verificación ejecutada: `pytest tests/test_ui_mapping_confidence_display.py -q` = 13/13 PASS.
+  - Gate obligatorio: `python scripts/validate_all.py` = 28/28 PASS.
+  - Smoke runtime: `python start.py` + `python stop.py` ejecutados con cierre limpio.
 
 - [TODO] **HU 5.4: Signal-to-Execution Recovery Pipeline** *(🔴 PRIORIDAD MÁXIMA — Bloqueo de negocio)*
   - Instrumentar motivos de descarte en `generate_usr_signals_batch` y gates aguas abajo.

@@ -100,10 +100,7 @@
 
 ## 09_INSTITUTIONAL_INTERFACE (UI/UX, Terminal)
 
-* **HU 9.10: Runtime Confidence Contract Recovery** `[TODO]`
-    * **Prioridad**: Crítica
-    * **Descripción**: Endurecer el contrato canónico de confidence (0-100) entre servicio, persistencia, eventos y logs para eliminar regresiones visuales/operacionales de escala y formato en UI Mapping.
-    * **🖥️ UI Representation**: Confidence estable y consistente en todos los widgets de estructura de mercado, sin overflow ni discrepancias entre vistas.
+*(Sin HUs pendientes — HU 9.10 archivada en SYSTEM_LEDGER)*
 
 
 ---

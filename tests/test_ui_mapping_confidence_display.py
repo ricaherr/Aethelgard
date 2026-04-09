@@ -7,7 +7,15 @@ import pandas as pd
 import pytest
 
 from core_brain.orchestrators._cycle_scan import _normalize_ui_structure_confidence, run_scan_phase
-from core_brain.services.ui_mapping_service import UIMappingService
+from core_brain.services.ui_mapping_service import (
+    UIMappingService,
+    _normalize_structure_confidence,
+)
+
+
+def test_orchestrator_confidence_normalizer_is_canonical() -> None:
+    """Orchestrator must reuse service canonical confidence normalizer (single SSOT)."""
+    assert _normalize_ui_structure_confidence is _normalize_structure_confidence
 
 
 def test_ui_mapping_keeps_percent_scale_without_double_scaling() -> None:
@@ -58,7 +66,7 @@ def test_ui_service_clamps_overflow_confidence_for_persisted_state_and_logs(capl
 
     signal = service.trader_page_state.analysis_usr_signals["EURUSD_structure"]
     assert signal["confidence"] == pytest.approx(100.0, abs=0.1)
-    assert "Confidence: 100%" in caplog.text
+    assert "Confidence: 100.0%" in caplog.text
 
 
 def test_ui_service_normalizes_legacy_ratio_confidence() -> None:
@@ -187,6 +195,9 @@ async def test_orchestrator_to_service_confidence_consistency_runtime(caplog: py
 
     assert orchestrator_match is not None
     assert service_match is not None
+
+    assert "[Conf: 100.0%]" in caplog.text
+    assert "Confidence: 100.0%" in caplog.text
 
     orchestrator_conf = float(orchestrator_match.group(1))
     service_conf = float(service_match.group(1))
