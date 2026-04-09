@@ -90,11 +90,7 @@
 
 ## 08_DATA_SOVEREIGNTY (SSOT, Persistence)
 
-* **HU 8.8: SSOT Execution Mode Drift Fix** `[DONE]` *(✅ Verificado: tests 7/7 + validate_all 28/28)*
-    * **Qué**: `sys_strategies.mode` (SSOT) = `'SHADOW'` para MOM_BIAS_0001, LIQ_SWEEP_0001 y STRUC_SHIFT_0001. Pero `sys_signal_ranking.execution_mode` = `'BACKTEST'` (congelado en lazy-init del 05-Apr). `StrategyEngineFactory._get_execution_mode()` lee el campo derivado en lugar del SSOT, lo que hace que `is_strategy_authorized_for_execution()` retorne `False` para las 3 estrategias. Ninguna señal ejecuta, ningún shadow trade ocurre — el sistema es un zombie.
-    * **Causa raíz**: SSOT violation enmascarada — hay DOS campos almacenando el modo de ejecución. La factory lee el segundario (`sys_signal_ranking.execution_mode`) que quedó desactualizado; no hay mecanismo de sincronización ni reconciliación.
-    * **Para qué**: Desbloquear el pipeline completo: señales → shadow trades → métricas → promoción.
-    * **Archivos afectados**: `data_vault/sys_signal_ranking_db.py`, `core_brain/services/strategy_engine_factory.py`
+*(Sin HUs pendientes — HU 8.8 archivada en SYSTEM_LEDGER)*
 
 
 ---

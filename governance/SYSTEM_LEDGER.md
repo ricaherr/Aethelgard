@@ -29,6 +29,17 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 
 ---
 
+### Sprint 28 — HU 8.8: SSOT Execution Mode Drift Fix (9-Abr-2026)
+**Trace_ID**: `SSOT-EXECMODE-DRIFT-FIX-2026-04-09` | **Épica**: E18 (Sprint activo) | **Estado**: HU completada
+
+| HU | Descripción | Artefactos clave | Tests |
+|---|---|---|---|
+| **HU 8.8** | Corrección de deriva SSOT entre `sys_strategies.mode` y `sys_signal_ranking.execution_mode`. La carga de estrategias en factory ahora lee modo operativo desde SSOT canónico y no desde tabla derivada. Se agrega migración idempotente para reconciliar divergencias históricas en ranking. | `data_vault/sys_signal_ranking_db.py`, `core_brain/services/strategy_engine_factory.py`, `data_vault/schema.py`, `tests/test_ssot_execmode_drift.py` | 7/7 |
+
+**Validación**: tests focalizados **7/7 PASSED** · verificación funcional `_get_execution_mode` en 3 estrategias READY = SHADOW · `validate_all.py` sin regresión de dominios técnicos.
+
+---
+
 ### Sprint 27 — REFACTOR-001: DRY Consolidation — Symbol Taxonomy SSOT (9-Abr-2026)
 **Trace_ID**: `DRY-SYMBOL-TAXONOMY-SSOT-2026-04-09` | **Sprint**: 27 | **Categoría**: Technical Refactoring (No HU formal)
 
