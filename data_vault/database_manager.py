@@ -55,6 +55,7 @@ class DatabaseManager:
         self._connection_pool: Dict[str, sqlite3.Connection] = {}
         self._pool_lock: threading.Lock = threading.Lock()
         self._config_lock: threading.Lock = threading.Lock()
+        self._tx_lock_pool: Dict[str, threading.RLock] = {}
         self._health_timestamps: Dict[str, float] = {}
 
         # PRAGMA Configuration (SSOT)
@@ -146,13 +147,17 @@ class DatabaseManager:
                 # Auto-commits on exit
         """
         conn = self.get_connection(db_path)
-        try:
-            yield conn
-            conn.commit()
-        except Exception as e:
-            conn.rollback()
-            logger.error(f"[DatabaseManager] Transaction rollback due to: {e}")
-            raise
+        with self._pool_lock:
+            tx_lock = self._tx_lock_pool.setdefault(db_path, threading.RLock())
+
+        with tx_lock:
+            try:
+                yield conn
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                logger.error(f"[DatabaseManager] Transaction rollback due to: {e}")
+                raise
 
     def execute_query(self, db_path: str, sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
         """

@@ -60,6 +60,20 @@
   - Baseline reducido: 99 → 90 violaciones (9 manual_commit eliminados). Nuevo freeze generado.
   - Trace_ID: `DB-POLICY-RUNTIME-WRITES-HU8.5-2026-04-07`
 
+- [DONE] **HU 10.21: Hardening de Arranque y Señales de Consola**
+  - Clasificar warnings/errores de arranque por severidad operativa real (esperado vs degradación vs fallo crítico).
+  - Ajustar logs de fallback no fatal en conectores y sensores (`mt5_data_provider`, `ctrader_connector`, `session_liquidity_sensor`, `signal_factory`).
+  - Ajustar StrategyEngineFactory para que bloques esperados por gobernanza (`LOGIC_PENDING`) se registren como `warning` y no como `error`.
+  - Validación obligatoria: `start.py` (sin errores espurios) + `pytest -q` + `scripts/validate_all.py`.
+  - Trace_ID: `LOG-HARDENING-STARTUP-2026-04-08`
+
+- [DONE] **HU 8.6: Migración de Writes Legacy SystemMixin**
+  - Migrados 13 métodos en `data_vault/system_db.py`: `save_tuning_adjustment`, `save_data_provider`, `update_provider_enabled`, `set_connector_enabled`, `update_usr_notification_settings`, `save_notification`, `mark_notification_read`, `delete_old_notifications`, `save_symbol_mapping`, `update_usr_preferences`, `update_dedup_rule`, `mark_orphan_shadow_instances_dead`, `update_strategy_execution_params` → `with self.transaction()`.
+  - 13 nuevos tests de regresión en `tests/test_storage_sqlite.py` · 20/20 passing · `validate_all.py` 28/28.
+  - Baseline actualizado: 90 → 76 violaciones (reducción de 14). Nuevo freeze generado.
+  - Smoke test `start.py` limpio: sin `SystemError`, sin `commit returned NULL`.
+  - Trace_ID: `DB-POLICY-SYSTEM-MIXIN-WRITES-HU8.6-2026-04-08`
+
 ## 📊 Snapshot de Cierre
 
 *(Se completa cuando el sprint finaliza)*

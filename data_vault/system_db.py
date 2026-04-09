@@ -27,7 +27,6 @@ class SystemMixin(BaseRepository):
                         INSERT OR REPLACE INTO sys_config (key, value)
                         VALUES (?, ?)
                     """, (key, json.dumps(value)))
-            conn.commit()
         
         try:
             self._execute_serialized(_update, new_state)
@@ -100,7 +99,6 @@ class SystemMixin(BaseRepository):
                 """,
                 (user_id, action, resource, resource_id, status, reason, trace_id),
             )
-            conn.commit()
 
         try:
             self._execute_serialized(_insert_audit)
@@ -111,16 +109,12 @@ class SystemMixin(BaseRepository):
 
     def save_tuning_adjustment(self, adjustment: Dict[str, Any]) -> None:
         """Save tuning adjustment to database"""
-        conn = self._get_conn()
-        try:
+        with self.transaction() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO usr_tuning_adjustments (adjustment_data)
                 VALUES (?)
             """, (json.dumps(adjustment),))
-            conn.commit()
-        finally:
-            self._close_conn(conn)
 
     def get_tuning_history(self, limit: int = 50) -> List[Dict[str, Any]]:
         """Get tuning adjustment history"""
@@ -144,16 +138,12 @@ class SystemMixin(BaseRepository):
 
     def save_edge_learning(self, detection: str, action_taken: str, learning: str, details: Optional[str] = None) -> None:
         """Save an EDGE learning event for observability."""
-        conn = self._get_conn()
-        try:
+        with self.transaction() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO usr_edge_learning (detection, action_taken, learning, details)
                 VALUES (?, ?, ?, ?)
             """, (detection, action_taken, learning, details))
-            conn.commit()
-        finally:
-            self._close_conn(conn)
 
     def get_modules_config(self) -> Dict[str, Any]:
         """Get active modules configuration from system state (SSOT)."""
@@ -200,8 +190,7 @@ class SystemMixin(BaseRepository):
 
         enabled_value = 1 if enabled is None else int(bool(enabled))
 
-        conn = self._get_conn()
-        try:
+        with self.transaction() as conn:
             cursor = conn.cursor()
             if insert_only:
                 cursor.execute("""
@@ -236,9 +225,6 @@ class SystemMixin(BaseRepository):
                     api_key, api_secret, json.dumps(additional_config), is_system,
                     connector_module, connector_class
                 ))
-            conn.commit()
-        finally:
-            self._close_conn(conn)
 
     def get_sys_data_providers(self) -> List[Dict[str, Any]]:
         """Get all data providers"""
@@ -284,26 +270,18 @@ class SystemMixin(BaseRepository):
 
     def update_provider_enabled(self, provider_id: str, enabled: bool) -> None:
         """Update data provider enabled status"""
-        conn = self._get_conn()
-        try:
+        with self.transaction() as conn:
             cursor = conn.cursor()
             cursor.execute("UPDATE sys_data_providers SET enabled = ? WHERE name = ?", (enabled, provider_id))
-            conn.commit()
-        finally:
-            self._close_conn(conn)
 
     def set_connector_enabled(self, provider_id: str, enabled: bool) -> None:
         """Set manual enable/disable status for a connector (Satellite Link)"""
-        conn = self._get_conn()
-        try:
+        with self.transaction() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT OR REPLACE INTO usr_connector_settings (provider_id, enabled, last_manual_toggle)
                 VALUES (?, ?, CURRENT_TIMESTAMP)
             """, (provider_id, 1 if enabled else 0))
-            conn.commit()
-        finally:
-            self._close_conn(conn)
 
     def get_connector_settings(self) -> Dict[str, bool]:
         """Get all connector manual settings"""
@@ -514,20 +492,17 @@ class SystemMixin(BaseRepository):
         """
         Actualiza o crea la configuración de un proveedor de notificaciones.
         """
-        conn = self._get_conn()
         try:
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT OR REPLACE INTO usr_notification_settings (provider, enabled, config, updated_at)
-                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-            """, (provider, 1 if enabled else 0, json.dumps(config)))
-            conn.commit()
+            with self.transaction() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT OR REPLACE INTO usr_notification_settings (provider, enabled, config, updated_at)
+                    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                """, (provider, 1 if enabled else 0, json.dumps(config)))
             return True
         except Exception as e:
             logger.error(f"Error updating notification settings for {provider}: {e}")
             return False
-        finally:
-            self._close_conn(conn)
 
     def get_all_usr_notification_settings(self) -> List[Dict[str, Any]]:
         """
@@ -559,32 +534,29 @@ class SystemMixin(BaseRepository):
         """
         Guarda una notificación en la base de datos.
         """
-        conn = self._get_conn()
         try:
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT OR REPLACE INTO usr_notifications 
-                (id, user_id, category, priority, title, message, details, actions, read, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                notification.get('id'),
-                notification.get('user_id', 'default'),
-                notification.get('category'),
-                notification.get('priority', 'medium'),
-                notification.get('title'),
-                notification.get('message'),
-                json.dumps(notification.get('details', {})),
-                json.dumps(notification.get('actions', [])),
-                1 if notification.get('read', False) else 0,
-                notification.get('timestamp', datetime.now().isoformat())
-            ))
-            conn.commit()
+            with self.transaction() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT OR REPLACE INTO usr_notifications 
+                    (id, user_id, category, priority, title, message, details, actions, read, timestamp)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    notification.get('id'),
+                    notification.get('user_id', 'default'),
+                    notification.get('category'),
+                    notification.get('priority', 'medium'),
+                    notification.get('title'),
+                    notification.get('message'),
+                    json.dumps(notification.get('details', {})),
+                    json.dumps(notification.get('actions', [])),
+                    1 if notification.get('read', False) else 0,
+                    notification.get('timestamp', datetime.now().isoformat())
+                ))
             return True
         except Exception as e:
             logger.error(f"Error saving notification: {e}")
             return False
-        finally:
-            self._close_conn(conn)
 
     def get_user_notifications(self, user_id: str = 'default', unread_only: bool = False, limit: int = 50) -> List[Dict[str, Any]]:
         """
@@ -626,36 +598,30 @@ class SystemMixin(BaseRepository):
         """
         Marca una notificación específica como leída.
         """
-        conn = self._get_conn()
         try:
-            cursor = conn.cursor()
-            cursor.execute("UPDATE usr_notifications SET read = 1 WHERE id = ?", (notification_id,))
-            conn.commit()
-            return cursor.rowcount > 0
+            with self.transaction() as conn:
+                cursor = conn.cursor()
+                cursor.execute("UPDATE usr_notifications SET read = 1 WHERE id = ?", (notification_id,))
+                return cursor.rowcount > 0
         except Exception as e:
             logger.error(f"Error marking notification {notification_id} as read: {e}")
             return False
-        finally:
-            self._close_conn(conn)
 
     def delete_old_notifications(self, hours: int = 48) -> int:
         """
         Elimina notificaciones más antiguas de N horas para mantener la DB limpia.
         """
-        conn = self._get_conn()
         try:
-            cursor = conn.cursor()
-            cursor.execute("""
-                DELETE FROM usr_notifications 
-                WHERE timestamp < datetime('now', '-' || ? || ' hours')
-            """, (hours,))
-            conn.commit()
-            return cursor.rowcount
+            with self.transaction() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    DELETE FROM usr_notifications 
+                    WHERE timestamp < datetime('now', '-' || ? || ' hours')
+                """, (hours,))
+                return cursor.rowcount
         except Exception as e:
             logger.error(f"Error deleting old notifications: {e}")
             return 0
-        finally:
-            self._close_conn(conn)
 
     # =========================================================================
     # CONFIGURATION SSOT (Regla 14)
@@ -697,17 +663,13 @@ class SystemMixin(BaseRepository):
 
     def save_symbol_mapping(self, internal_symbol: str, provider_id: str, provider_symbol: str, is_default: bool = False) -> None:
         """Save a symbol mapping to the database (SSOT)."""
-        conn = self._get_conn()
-        try:
+        with self.transaction() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT OR REPLACE INTO sys_symbol_mappings (internal_symbol, provider_id, provider_symbol, is_default)
                 VALUES (?, ?, ?, ?)
             """, (internal_symbol, provider_id, provider_symbol, 1 if is_default else 0))
-            conn.commit()
-            logger.debug(f"[SSOT] Saved mapping: {internal_symbol} -> {provider_symbol} ({provider_id})")
-        finally:
-            self._close_conn(conn)
+        logger.debug(f"[SSOT] Saved mapping: {internal_symbol} -> {provider_symbol} ({provider_id})")
 
     def get_symbol_map(self, provider_id: Optional[str] = None) -> Dict[str, Dict[str, str]]:
         """
@@ -774,40 +736,36 @@ class SystemMixin(BaseRepository):
 
     def update_usr_preferences(self, user_id: str, preferences: Dict[str, Any]) -> bool:
         """Actualiza las preferencias del usuario en la base de datos."""
-        conn = self._get_conn()
         try:
-            cursor = conn.cursor()
-            # Serializar campos JSON
-            for json_field in ("auto_trading_symbols", "auto_trading_usr_strategies",
-                               "auto_trading_timeframes", "active_filters"):
-                if json_field in preferences and preferences[json_field] is not None:
-                    if not isinstance(preferences[json_field], str):
-                        preferences[json_field] = json.dumps(preferences[json_field])
+            with self.transaction() as conn:
+                cursor = conn.cursor()
+                # Serializar campos JSON
+                for json_field in ("auto_trading_symbols", "auto_trading_usr_strategies",
+                                   "auto_trading_timeframes", "active_filters"):
+                    if json_field in preferences and preferences[json_field] is not None:
+                        if not isinstance(preferences[json_field], str):
+                            preferences[json_field] = json.dumps(preferences[json_field])
 
-            fields = [f"{k} = ?" for k in preferences.keys() if k != "user_id"]
-            values = [v for k, v in preferences.items() if k != "user_id"]
-            if not fields:
-                return False
+                fields = [f"{k} = ?" for k in preferences.keys() if k != "user_id"]
+                values = [v for k, v in preferences.items() if k != "user_id"]
+                if not fields:
+                    return False
 
-            fields.append("updated_at = CURRENT_TIMESTAMP")
-            query = f"UPDATE usr_preferences SET {', '.join(fields)} WHERE user_id = ?"
-            values.append(user_id)
-            cursor.execute(query, values)
+                fields.append("updated_at = CURRENT_TIMESTAMP")
+                query = f"UPDATE usr_preferences SET {', '.join(fields)} WHERE user_id = ?"
+                values.append(user_id)
+                cursor.execute(query, values)
 
-            if cursor.rowcount == 0:
-                preferences["user_id"] = user_id
-                placeholders = ", ".join(["?" for _ in preferences])
-                columns = ", ".join(preferences.keys())
-                cursor.execute(f"INSERT INTO usr_preferences ({columns}) VALUES ({placeholders})",
-                               list(preferences.values()))
-            conn.commit()
+                if cursor.rowcount == 0:
+                    preferences["user_id"] = user_id
+                    placeholders = ", ".join(["?" for _ in preferences])
+                    columns = ", ".join(preferences.keys())
+                    cursor.execute(f"INSERT INTO usr_preferences ({columns}) VALUES ({placeholders})",
+                                   list(preferences.values()))
             return True
         except Exception as exc:
             logger.error("Error updating user preferences: %s", exc)
-            conn.rollback()
             return False
-        finally:
-            self._close_conn(conn)
 
     def get_default_profile(self, profile_type: str) -> Dict[str, Any]:
         """Retorna configuración por defecto para un tipo de perfil."""
@@ -1197,24 +1155,21 @@ class SystemMixin(BaseRepository):
             learning_enabled: Allow further learning
             trace_id: Audit trace for this update
         """
-        conn = self._get_conn()
         try:
-            cursor = conn.cursor()
-            now = datetime.now(timezone.utc)
-            
-            cursor.execute("""
-                INSERT OR REPLACE INTO sys_dedup_rules
-                (symbol, timeframe, strategy, current_window_minutes, data_points_observed,
-                 learning_enabled, trace_id, last_adjusted, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                symbol, timeframe, strategy,
-                current_window_minutes, data_points_observed,
-                1 if learning_enabled else 0,
-                trace_id, now, now
-            ))
-            
-            conn.commit()
+            with self.transaction() as conn:
+                cursor = conn.cursor()
+                now = datetime.now(timezone.utc)
+                cursor.execute("""
+                    INSERT OR REPLACE INTO sys_dedup_rules
+                    (symbol, timeframe, strategy, current_window_minutes, data_points_observed,
+                     learning_enabled, trace_id, last_adjusted, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    symbol, timeframe, strategy,
+                    current_window_minutes, data_points_observed,
+                    1 if learning_enabled else 0,
+                    trace_id, now, now
+                ))
             logger.info(
                 f"[DEDUP] Rule updated: {symbol}/{timeframe}/{strategy} → "
                 f"window={current_window_minutes} min (trace={trace_id})"
@@ -1223,8 +1178,6 @@ class SystemMixin(BaseRepository):
         except Exception as e:
             logger.error(f"[DEDUP] Error updating rule: {e}")
             return False
-        finally:
-            self._close_conn(conn)
 
     # ── Backtest lifecycle helpers ─────────────────────────────────────────────
 
@@ -1243,7 +1196,6 @@ class SystemMixin(BaseRepository):
             cursor.execute(
                 "UPDATE sys_strategies SET last_backtest_at = NULL WHERE mode = 'BACKTEST'"
             )
-            conn.commit()
             logger.info(
                 "[DB] reset_backtest_cooldown_for_pending: %d strategy(ies) reset.",
                 cursor.rowcount,
@@ -1263,21 +1215,20 @@ class SystemMixin(BaseRepository):
         Returns:
             Number of instances marked DEAD.
         """
-        conn = self._get_conn()
         try:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                UPDATE sys_shadow_instances
-                SET    status = 'DEAD', updated_at = CURRENT_TIMESTAMP
-                WHERE  status = 'INCUBATING'
-                AND    strategy_id IN (
-                           SELECT class_id FROM sys_strategies WHERE mode = 'BACKTEST'
-                       )
-                """
-            )
-            conn.commit()
-            count = cursor.rowcount
+            with self.transaction() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    UPDATE sys_shadow_instances
+                    SET    status = 'DEAD', updated_at = CURRENT_TIMESTAMP
+                    WHERE  status = 'INCUBATING'
+                    AND    strategy_id IN (
+                               SELECT class_id FROM sys_strategies WHERE mode = 'BACKTEST'
+                           )
+                    """
+                )
+                count = cursor.rowcount
             if count:
                 logger.warning(
                     "[DB] mark_orphan_shadow_instances_dead: %d orphan instance(s) marked DEAD. "
@@ -1290,23 +1241,18 @@ class SystemMixin(BaseRepository):
         except Exception as exc:
             logger.error("[DB] mark_orphan_shadow_instances_dead failed: %s", exc)
             return 0
-        finally:
-            self._close_conn(conn)
 
     def update_strategy_execution_params(self, strategy_id: str, params_json: str) -> None:
         """Persist execution_params JSON for a strategy (adaptive threshold, failure counters)."""
-        conn = self._get_conn()
         try:
-            conn.execute(
-                "UPDATE sys_strategies SET execution_params = ?, updated_at = CURRENT_TIMESTAMP "
-                "WHERE class_id = ?",
-                (params_json, strategy_id),
-            )
-            conn.commit()
+            with self.transaction() as conn:
+                conn.execute(
+                    "UPDATE sys_strategies SET execution_params = ?, updated_at = CURRENT_TIMESTAMP "
+                    "WHERE class_id = ?",
+                    (params_json, strategy_id),
+                )
         except Exception as exc:
             logger.error("[DB] update_strategy_execution_params failed for %s: %s", strategy_id, exc)
-        finally:
-            self._close_conn(conn)
 
     def get_shadow_mode_strategy_ids(self) -> set[str]:
         """Return set of class_ids for strategies currently in SHADOW mode."""

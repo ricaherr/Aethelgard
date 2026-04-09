@@ -1,6 +1,6 @@
 {
   "trace_id": "DB-POLICY-RUNTIME-ENFORCEMENT-2026-04-07",
-  "generated_at_utc": "2026-04-08T00:57:06.070690+00:00",
+  "generated_at_utc": "2026-04-08T22:36:06.707717+00:00",
   "violations": [
     {
       "rule": "manual_commit_runtime_write",
@@ -389,97 +389,13 @@
     {
       "rule": "manual_commit_runtime_write",
       "file": "data_vault/system_db.py",
-      "line": 98,
+      "line": 103,
       "code": "conn.commit()"
     },
     {
       "rule": "manual_commit_runtime_write",
       "file": "data_vault/system_db.py",
-      "line": 116,
-      "code": "conn.commit()"
-    },
-    {
-      "rule": "manual_commit_runtime_write",
-      "file": "data_vault/system_db.py",
-      "line": 149,
-      "code": "conn.commit()"
-    },
-    {
-      "rule": "manual_commit_runtime_write",
-      "file": "data_vault/system_db.py",
-      "line": 234,
-      "code": "conn.commit()"
-    },
-    {
-      "rule": "manual_commit_runtime_write",
-      "file": "data_vault/system_db.py",
-      "line": 286,
-      "code": "conn.commit()"
-    },
-    {
-      "rule": "manual_commit_runtime_write",
-      "file": "data_vault/system_db.py",
-      "line": 299,
-      "code": "conn.commit()"
-    },
-    {
-      "rule": "manual_commit_runtime_write",
-      "file": "data_vault/system_db.py",
-      "line": 519,
-      "code": "conn.commit()"
-    },
-    {
-      "rule": "manual_commit_runtime_write",
-      "file": "data_vault/system_db.py",
-      "line": 576,
-      "code": "conn.commit()"
-    },
-    {
-      "rule": "manual_commit_runtime_write",
-      "file": "data_vault/system_db.py",
-      "line": 628,
-      "code": "conn.commit()"
-    },
-    {
-      "rule": "manual_commit_runtime_write",
-      "file": "data_vault/system_db.py",
-      "line": 647,
-      "code": "conn.commit()"
-    },
-    {
-      "rule": "manual_commit_runtime_write",
-      "file": "data_vault/system_db.py",
-      "line": 700,
-      "code": "conn.commit()"
-    },
-    {
-      "rule": "manual_commit_runtime_write",
-      "file": "data_vault/system_db.py",
-      "line": 796,
-      "code": "conn.commit()"
-    },
-    {
-      "rule": "manual_commit_runtime_write",
-      "file": "data_vault/system_db.py",
-      "line": 1210,
-      "code": "conn.commit()"
-    },
-    {
-      "rule": "manual_commit_runtime_write",
-      "file": "data_vault/system_db.py",
-      "line": 1239,
-      "code": "conn.commit()"
-    },
-    {
-      "rule": "manual_commit_runtime_write",
-      "file": "data_vault/system_db.py",
-      "line": 1272,
-      "code": "conn.commit()"
-    },
-    {
-      "rule": "manual_commit_runtime_write",
-      "file": "data_vault/system_db.py",
-      "line": 1298,
+      "line": 1201,
       "code": "conn.commit()"
     },
     {
@@ -539,7 +455,7 @@
     {
       "rule": "sqlite_connect_outside_manager_driver",
       "file": "data_vault/system_db.py",
-      "line": 896,
+      "line": 863,
       "code": "sqlite3.connect(backup_path)"
     }
   ]

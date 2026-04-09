@@ -139,3 +139,225 @@ def test_safe_config_getters_return_empty_dict_on_legacy_null(storage: StorageMa
     assert storage.get_risk_settings() == {}
     assert storage.get_modules_config() == {}
     assert storage.reload_global_config() == {}
+
+
+def test_save_edge_learning_persists_without_legacy_manual_commit(storage: StorageManager) -> None:
+    """save_edge_learning must persist rows through the repository transaction contract."""
+    storage.save_edge_learning(
+        detection="Sistema Iniciado",
+        action_taken="Auto-test de EDGE",
+        learning="Canal de comunicación activo",
+        details="startup smoke",
+    )
+
+    history = storage.get_edge_learning_history(limit=5)
+
+    assert len(history) == 1
+    assert history[0]["detection"] == "Sistema Iniciado"
+    assert history[0]["action_taken"] == "Auto-test de EDGE"
+    assert history[0]["learning"] == "Canal de comunicación activo"
+    assert history[0]["details"] == "startup smoke"
+
+
+# ── HU 8.6: Regression tests for SystemMixin.write migration ─────────────────
+
+
+def test_save_tuning_adjustment_persists_via_transaction_contract(storage: StorageManager) -> None:
+    """save_tuning_adjustment must persist rows through the repository transaction contract."""
+    storage.save_tuning_adjustment({"param": "ema_period", "value": 21, "reason": "test"})
+
+    history = storage.get_tuning_history(limit=5)
+
+    assert len(history) == 1
+    assert history[0]["adjustment_data"]["param"] == "ema_period"
+    assert history[0]["adjustment_data"]["value"] == 21
+
+
+def test_save_data_provider_persists_via_transaction_contract(storage: StorageManager) -> None:
+    """save_data_provider must persist rows through the repository transaction contract."""
+    storage.save_data_provider(
+        name="test_provider",
+        enabled=True,
+        priority=10,
+        provider_type="rest",
+    )
+
+    providers = storage.get_sys_data_providers()
+    names = [p["name"] for p in providers]
+
+    assert "test_provider" in names
+
+
+def test_update_provider_enabled_persists_via_transaction_contract(storage: StorageManager) -> None:
+    """update_provider_enabled must flip the enabled flag through the transaction contract."""
+    storage.save_data_provider(name="flip_provider", enabled=True, priority=20)
+    storage.update_provider_enabled("flip_provider", False)
+
+    providers = storage.get_sys_data_providers()
+    target = next(p for p in providers if p["name"] == "flip_provider")
+
+    assert target["enabled"] == 0
+
+
+def test_set_connector_enabled_persists_via_transaction_contract(storage: StorageManager) -> None:
+    """set_connector_enabled must persist the manual toggle through the transaction contract."""
+    storage.set_connector_enabled("mt5", enabled=False)
+
+    settings = storage.get_connector_settings()
+
+    assert "mt5" in settings
+    assert settings["mt5"] is False
+
+
+def test_update_usr_notification_settings_returns_true_and_persists(storage: StorageManager) -> None:
+    """update_usr_notification_settings must persist settings and return True via transaction."""
+    result = storage.update_usr_notification_settings(
+        provider="telegram",
+        enabled=True,
+        config={"chat_id": "12345", "token": "abc"},
+    )
+
+    assert result is True
+    row = storage.get_usr_notification_settings("telegram")
+    assert row is not None
+    assert row["enabled"] == 1
+    assert row["config"]["chat_id"] == "12345"
+
+
+def test_save_notification_returns_true_and_persists(storage: StorageManager) -> None:
+    """save_notification must persist the notification and return True via transaction."""
+    notification = {
+        "id": "notif-001",
+        "user_id": "default",
+        "category": "RISK",
+        "priority": "high",
+        "title": "Lockdown Activated",
+        "message": "3 consecutive losses triggered lockdown.",
+    }
+
+    result = storage.save_notification(notification)
+
+    assert result is True
+    notifications = storage.get_user_notifications("default", limit=5)
+    assert len(notifications) == 1
+    assert notifications[0]["title"] == "Lockdown Activated"
+
+
+def test_mark_notification_read_marks_and_returns_true(storage: StorageManager) -> None:
+    """mark_notification_read must flip read=1 and return True via transaction."""
+    storage.save_notification({
+        "id": "notif-read-test",
+        "user_id": "default",
+        "category": "SIGNAL",
+        "priority": "low",
+        "title": "New Signal",
+        "message": "EURUSD BUY",
+    })
+
+    result = storage.mark_notification_read("notif-read-test")
+
+    assert result is True
+    unread = storage.get_user_notifications("default", unread_only=True, limit=5)
+    assert len(unread) == 0
+
+
+def test_delete_old_notifications_returns_count_via_transaction(storage: StorageManager) -> None:
+    """delete_old_notifications must delete stale rows and return count via transaction."""
+    storage.execute_update(
+        """INSERT INTO usr_notifications
+           (id, user_id, category, priority, title, message, timestamp)
+           VALUES (?, ?, ?, ?, ?, ?, datetime('now', '-3 days'))""",
+        ("old-notif-001", "default", "SYSTEM", "low", "Old alert", "Old message"),
+    )
+
+    deleted = storage.delete_old_notifications(hours=48)
+
+    assert deleted == 1
+    remaining = storage.get_user_notifications("default", limit=10)
+    assert not any(n["id"] == "old-notif-001" for n in remaining)
+
+
+def test_save_symbol_mapping_persists_via_transaction_contract(storage: StorageManager) -> None:
+    """save_symbol_mapping must persist the mapping row through the transaction contract."""
+    storage.save_symbol_mapping(
+        internal_symbol="EURUSD",
+        provider_id="mt5",
+        provider_symbol="EURUSD",
+        is_default=True,
+    )
+
+    symbol_map = storage.get_symbol_map()
+
+    assert "EURUSD" in symbol_map
+    assert "mt5" in symbol_map["EURUSD"]
+    assert symbol_map["EURUSD"]["mt5"] == "EURUSD"
+
+
+def test_update_usr_preferences_persists_via_transaction_contract(storage: StorageManager) -> None:
+    """update_usr_preferences must persist user prefs (upsert) through the transaction contract."""
+    result = storage.update_usr_preferences(
+        user_id="default",
+        preferences={"auto_trading_enabled": True, "notify_usr_signals": False},
+    )
+
+    assert result is True
+    prefs = storage.get_usr_preferences("default")
+    assert prefs is not None
+    assert prefs["auto_trading_enabled"] == 1
+
+
+async def test_update_dedup_rule_persists_via_transaction_contract(storage: StorageManager) -> None:
+    """update_dedup_rule must persist the learned window through the transaction contract."""
+    success = await storage.update_dedup_rule(
+        symbol="EURUSD",
+        timeframe="M15",
+        strategy="EMA_CROSS",
+        current_window_minutes=30,
+        data_points_observed=100,
+        learning_enabled=True,
+        trace_id="HU8.6-TEST",
+    )
+
+    assert success is True
+    rule = await storage.get_dedup_rule("EURUSD", "M15", "EMA_CROSS")
+    assert rule is not None
+    assert rule["current_window_minutes"] == 30
+    assert rule["data_points_observed"] == 100
+
+
+def test_mark_orphan_shadow_instances_dead_updates_incubating_status(storage: StorageManager) -> None:
+    """mark_orphan_shadow_instances_dead must mark INCUBATING instances DEAD via transaction."""
+    storage.execute_update(
+        "INSERT INTO sys_strategies (class_id, mnemonic, mode) VALUES (?, ?, ?)",
+        ("strat-bt-001", "EMA_CROSS_v1", "BACKTEST"),
+    )
+    storage.execute_update(
+        """INSERT INTO sys_shadow_instances
+           (instance_id, strategy_id, account_id, account_type, status)
+           VALUES (?, ?, ?, ?, ?)""",
+        ("inst-001", "strat-bt-001", "demo_acct", "DEMO", "INCUBATING"),
+    )
+
+    count = storage.mark_orphan_shadow_instances_dead()
+
+    assert count == 1
+    rows = storage.execute_query(
+        "SELECT status FROM sys_shadow_instances WHERE instance_id = ?", ("inst-001",)
+    )
+    assert rows[0]["status"] == "DEAD"
+
+
+def test_update_strategy_execution_params_persists_via_transaction_contract(storage: StorageManager) -> None:
+    """update_strategy_execution_params must persist JSON params through the transaction contract."""
+    storage.execute_update(
+        "INSERT INTO sys_strategies (class_id, mnemonic, mode) VALUES (?, ?, ?)",
+        ("strat-exec-001", "RSI_TREND_v1", "BACKTEST"),
+    )
+    params_json = '{"adaptive_threshold": 0.75, "failure_count": 0}'
+
+    storage.update_strategy_execution_params("strat-exec-001", params_json)
+
+    rows = storage.execute_query(
+        "SELECT execution_params FROM sys_strategies WHERE class_id = ?", ("strat-exec-001",)
+    )
+    assert rows[0]["execution_params"] == params_json

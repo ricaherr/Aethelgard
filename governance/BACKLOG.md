@@ -92,6 +92,12 @@
 
 *(HU 8.4 y HU 8.5 archivadas en SYSTEM_LEDGER — ver E17)*
 
+* **HU 8.6: Migración de Writes Legacy SystemMixin** `[DONE]`
+    * **Qué**: Migrar 13 métodos de escritura en `data_vault/system_db.py` del patrón `_get_conn() + conn.commit()` al contrato `with self.transaction() as conn:`.
+    * **Para qué**: Eliminar el mismo patrón que causó el crash de EdgeMonitor (`SystemError: commit returned NULL`) en todos los métodos restantes de `SystemMixin`.
+    * **Criterio de salida**: 13 tests regresión passing · baseline reducido 90→76 · `validate_all.py` 28/28 · `start.py` sin errores.
+    * **Trace_ID**: `DB-POLICY-SYSTEM-MIXIN-WRITES-HU8.6-2026-04-08`
+
 
 ---
 
@@ -102,6 +108,11 @@
 
 ## 10_INFRASTRUCTURE_RESILIENCY (Health, Self-Healing)
 *(Sin HUs pendientes — HU 10.1 archivada en SYSTEM_LEDGER E3 + E14)*
+
+* **HU 10.21: Hardening de Arranque y Señales de Consola** `[DONE]`
+    * **Qué**: Limpiar el bootstrap del servidor y recalibrar severidades/frecuencia de logs para que la consola distinga claramente entre eventos esperados, degradación controlada y fallos críticos.
+    * **Para qué**: Reducir ruido operacional, evitar falsos positivos de error y facilitar soporte/diagnóstico en producción.
+    * **Criterio de salida**: `start.py` sin errores espurios; warnings de fallback no-fatales ajustados; `pytest -q` + `validate_all.py` 100%.
 
 
 
