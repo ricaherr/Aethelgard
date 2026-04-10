@@ -52,3 +52,27 @@ El ciclo de vida del aprendizaje se materializa post-trade, permitiendo que el s
 - [ ] Optimización de la memoria contextual adaptativa (mayor alcance de histórico asimétrico).
 - [ ] Meta-aprendizaje avanzado sobre la asimilación del slippage en ejecución real latente.
 - [ ] Automatización integral de umbrales escalonada dictaminada estrictamente por microestructura de volatilidad en tiempo real.
+
+## 💡 Submódulo de Generación de Ideas (Alpha Engine)
+
+Este submódulo garantiza la generación constante de oportunidades de inversión mediante el escaneo proactivo de patrones institucionales y la ponderación dinámica de señales.
+
+### Componentes Críticos
+*   **Scanner Proactivo**: Escaneo multi-timeframe de alta eficiencia que busca ineficiencias de mercado.
+*   **Technical Analyzer**: Fuente única de verdad para indicadores vectorizados y métricas de volatilidad.
+*   **Liquidity Service**: Detección micro-estructural de Fair Value Gaps (FVG) y Order Blocks mediante análisis de absorción de volumen.
+*   **Signal Factory**: Generador de señales con scoring dinámico basado en confluencia y riesgo/beneficio.
+*   **Strategy Jury**: Mecanismo de decisión darwinista que evalúa la probabilidad de éxito de una señal antes de su ejecución.
+
+### Firmas Operativas Validadas
+
+Cada firma sigue el **Protocolo Quanter** con los 4 Pilares (Sensorial, Régimen, Coherencia, Multi-tenant).
+
+**Ejemplo: Market Open Gap - EUR/USD (Premium)**
+- **Pilar Sensorial**: FVG (60 min pre), RSI, MA (20, 50), Order Block, ATR.
+- **Pilar de Régimen**: TREND_UP, EXPANSION, ANOMALY.
+- **Pilar de Coherencia**: CoherenceScore >= 75% (Shadow vs Live).
+- **Pilar Multi-tenant**: Disponible para Premium+.
+
+### Signal Deduplication & Confluence
+Para evitar sobre-exposición, el motor implementa algoritmos restrictivos de deduplicación de señales (SignalDeduplicator) y análisis de confluencia (SignalConflictAnalyzer) que ajustan el *score* de la oportunidad basándose en la temporalidad macro, y ejecutan filtros de agresión dinámica en las entradas.
