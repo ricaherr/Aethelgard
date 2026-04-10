@@ -103,10 +103,7 @@
 ---
 
 ## 10_INFRASTRUCTURE_RESILIENCY (Health, Self-Healing)
-* **HU 10.28: Provider Coverage Reliability** `[DEV]`
-    * **Prioridad**: Alta
-    * **Descripción**: Reducir fallbacks agotados por símbolo con estrategia de cobertura por mercado, cooldown inteligente y exclusión temporal de activos no servibles para evitar ruido operacional.
-    * **🖥️ UI Representation**: Mapa de cobertura por símbolo/proveedor con estado de salud y fallback activo.
+*(Sin HUs pendientes — HU 10.28 archivada en SYSTEM_LEDGER)*
 
 
 

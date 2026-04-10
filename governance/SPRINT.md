@@ -50,10 +50,14 @@
   - Gate obligatorio: `python scripts/validate_all.py` = 28/28 PASS.
   - Smoke runtime: `python start.py` con arranque operativo confirmado; terminal de ejecución detenido tras ventana de observación.
 
-- [DEV] **HU 10.28: Provider Coverage Reliability**
-  - Implementar estrategia de exclusión temporal/reintento inteligente para símbolos con fallback agotado.
-  - Reducir warnings repetitivos por proveedores no servibles y mejorar cobertura efectiva por mercado.
-  - Validar estabilidad en scan cycles sin pérdida de activos críticos.
+- [DONE] **HU 10.28: Provider Coverage Reliability**
+  - Nuevo módulo `core_brain/symbol_coverage_policy.py` con `SymbolCoveragePolicy`: estado por símbolo, exclusión temporal con backoff exponencial, reset por éxito y warning throttled.
+  - Integración mínima en `data_provider_manager.py`: pre-check de exclusion en `fetch_ohlc`, registro success/failure, método `get_provider_coverage_snapshot()`.
+  - Extracción modular justificada por Regla de Masa (DPM ya excedía 30KB/937 líneas).
+  - Suite TDD creada: `tests/test_provider_coverage_reliability.py` (8 casos cubren AC-1 a AC-8).
+  - Verificación focal: `pytest tests/test_provider_coverage_reliability.py -q` = 8/8 PASS.
+  - No-regresión: `pytest tests/test_data_provider_manager.py -q` = 21/21 PASS.
+  - Gate obligatorio: `python scripts/validate_all.py` = 28/28 PASS.
 
 - [DONE] **HU 10.29: SQLite Contention Hotfix** *(🔴 PRIORIDAD MÁXIMA — Estabilidad de persistencia)*
   - Serializar lecturas `execute_query` con el mismo lock por `db_path` usado por transacciones para evitar cursores activos durante commits.

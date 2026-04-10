@@ -4,7 +4,7 @@
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-09 UTC)**: HU 10.27 archivada (Sprint 29) · Trace_ID: HU10.27-ADAPTIVE-CPU-GUARDRAIL-2026-04-09 · **validate_all 28/28 PASSED** · **19/19 tests focal+regresión**.
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-09 UTC)**: HU 10.28 archivada (Sprint 29) · Trace_ID: HU10.28-PROVIDER-COVERAGE-RELIABILITY-2026-04-09 · **validate_all 28/28 PASSED** · **8/8 tests focal + 21/21 no-regresión**.
 
 ---
 
@@ -78,6 +78,17 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 | **HU 9.10** | Recuperación del contrato runtime de confidence con SSOT único de normalización (0-100) entre orquestador y servicio. Se eliminó duplicación de normalizadores, se preservó compatibilidad ratio 0-1, clamp estricto [0,100], redondeo estable a 1 decimal y formato consistente de logs entre capas. | `core_brain/services/ui_mapping_service.py`, `core_brain/orchestrators/_cycle_scan.py`, `tests/test_ui_mapping_confidence_display.py` | 13/13 |
 
 **Validación**: tests focalizados **13/13 PASSED** · `validate_all.py` **28/28 PASSED** · smoke runtime con `start.py`/`stop.py` ejecutado con cierre limpio.
+
+---
+
+### Sprint 29 — HU 10.28: Provider Coverage Reliability (9-Abr-2026)
+**Trace_ID**: `HU10.28-PROVIDER-COVERAGE-RELIABILITY-2026-04-09` | **Épica**: E19 (Sprint activo) | **Estado**: HU completada y archivada
+
+| HU | Descripción | Artefactos clave | Tests |
+|---|---|---|-|
+| **HU 10.28** | Política de cobertura por símbolo en `DataProviderManager`: estado in-memory por símbolo (`consecutive_failures`, `exclusion_until_monotonic`, `last_success_utc`, `last_provider_used`, `last_failure_reason`), backoff exponencial capado al alcanzar `provider_symbol_failure_threshold` (default 3), exclusion temporal con TTL, reintento automático al expirar, warning throttled. Extraído a `core_brain/symbol_coverage_policy.py` por Regla de Masa (DPM >30KB). Parámetros leídos de `dynamic_params` vía StorageManager con defaults seguros. Sin nuevas tablas ni archivos JSON/ENV (SSOT preservado). | `core_brain/symbol_coverage_policy.py` (nuevo), `core_brain/data_provider_manager.py` (integración), `tests/test_provider_coverage_reliability.py` (nuevo) | 8/8 |
+
+**Validación**: tests HU **8/8 PASSED** · no-regresión `test_data_provider_manager.py` **21/21 PASSED** · `validate_all.py` **28/28 PASSED**.
 
 ---
 

@@ -14,6 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
 
+from core_brain.symbol_coverage_policy import SymbolCoveragePolicy
 from core_brain.symbol_taxonomy_engine import SymbolTaxonomy
 from data_vault.storage import StorageManager
 
@@ -183,8 +184,8 @@ class DataProviderManager:
         self._selected_provider: Optional[Any] = None
         self._selected_provider_name: Optional[str] = None
         self._provider_selection_initialized: bool = False
-        self._no_data_warning_last_ts: Dict[str, float] = {}
-        
+        self._coverage_policy: SymbolCoveragePolicy = SymbolCoveragePolicy(storage=self.storage)
+
         self._load_configuration()
 
     def register_provider_instance(self, name: str, instance: Any) -> None:
@@ -927,7 +928,7 @@ class DataProviderManager:
         symbol_type = SymbolTaxonomy.get_symbol_type(symbol)
 
         if provider_name:
-            # Use specific provider
+            # Use specific provider (bypass coverage policy for explicit requests)
             instance: Any | None = self._get_provider_instance(provider_name)
             if instance:
                 if not self._provider_supports_symbol(instance, symbol):
@@ -938,7 +939,15 @@ class DataProviderManager:
                 except Exception as e:
                     logger.error(f"Error fetching from {provider_name}: {e}")
                     return None
-        
+
+        # --- Coverage policy pre-check: skip iteration for excluded symbols ---
+        if self._coverage_policy.is_temporarily_excluded(symbol):
+            logger.debug(
+                "[COVERAGE-POLICY] Skipping %s: symbol is temporarily excluded (cooldown active)",
+                symbol,
+            )
+            return None
+
         # Try providers in priority order with fallback
         active = self.get_active_providers()
         
@@ -963,19 +972,29 @@ class DataProviderManager:
                     data = instance.fetch_ohlc(symbol, timeframe, count)
                     if data is not None:
                         logger.debug(f"Successfully fetched data from {name}")
+                        # --- Coverage policy: reset failure state on success ---
+                        self._coverage_policy.register_success(symbol, provider_name=name)
                         return data
                 except Exception as e:
                     logger.warning(f"Provider {name} failed: {e}, trying next...")
                     continue
-        
-        # Runtime can legitimately have symbols with no current feed coverage.
-        # Log as throttled warning (not ERROR) to avoid operational noise.
-        now = time.monotonic()
-        last = self._no_data_warning_last_ts.get(symbol, 0.0)
-        if now - last >= 60.0:
+
+        # All fallbacks exhausted — register failure and conditionally log warning.
+        # Coverage policy tracks backoff; warning is throttled to avoid operational noise.
+        exclusion_triggered = self._coverage_policy.register_failure(
+            symbol, reason_code="all_fallbacks_exhausted"
+        )
+        if self._coverage_policy.should_emit_warning(symbol):
             logger.warning(
-                "[DATA-FALLBACK] Providers unavailable for symbol %s (all fallbacks exhausted)",
+                "[DATA-FALLBACK] Providers unavailable for symbol %s (all fallbacks exhausted)%s",
                 symbol,
+                " — exclusion activated" if exclusion_triggered else "",
             )
-            self._no_data_warning_last_ts[symbol] = now
         return None
+
+    def get_provider_coverage_snapshot(self) -> Dict[str, Any]:
+        """
+        Read-only snapshot of current per-symbol coverage state.
+        Intended for operational observability (health endpoints, dashboards).
+        """
+        return self._coverage_policy.get_snapshot()
