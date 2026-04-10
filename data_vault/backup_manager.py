@@ -41,6 +41,8 @@ class DatabaseBackupManager:
         if self._thread and self._thread.is_alive():
             return
         self._stop_event.clear()
+        # Respect configured interval before first backup cycle after startup.
+        self._last_backup_ts = time.time()
         self._thread = threading.Thread(target=self._run, daemon=True, name="db-backup-manager")
         self._thread.start()
         logger.info("DatabaseBackupManager started.")

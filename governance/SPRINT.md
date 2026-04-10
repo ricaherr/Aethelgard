@@ -50,10 +50,18 @@
   - Gate obligatorio: `python scripts/validate_all.py` = 28/28 PASS.
   - Smoke runtime: `python start.py` con arranque operativo confirmado; terminal de ejecución detenido tras ventana de observación.
 
-- [TODO] **HU 10.28: Provider Coverage Reliability**
+- [DEV] **HU 10.28: Provider Coverage Reliability**
   - Implementar estrategia de exclusión temporal/reintento inteligente para símbolos con fallback agotado.
   - Reducir warnings repetitivos por proveedores no servibles y mejorar cobertura efectiva por mercado.
   - Validar estabilidad en scan cycles sin pérdida de activos críticos.
+
+- [DONE] **HU 10.29: SQLite Contention Hotfix** *(🔴 PRIORIDAD MÁXIMA — Estabilidad de persistencia)*
+  - Serializar lecturas `execute_query` con el mismo lock por `db_path` usado por transacciones para evitar cursores activos durante commits.
+  - Ejecutar `create_db_backup` sobre conexión dedicada aislada del handle compartido de operación.
+  - Evitar backup inmediato al iniciar `DatabaseBackupManager`; respetar intervalo configurado desde el arranque.
+  - Suite TDD de regresión creada en `tests/test_sqlite_contention_hotfix.py`.
+  - Verificación focal: `pytest tests/test_sqlite_contention_hotfix.py -q` = 6/6 PASS.
+  - Gate obligatorio: `python scripts/validate_all.py` = 28/28 PASS.
 
 ## 🔒 Gate de Ejecución (obligatorio para mover a [DONE])
 

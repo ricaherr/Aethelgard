@@ -48,6 +48,17 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 
 ---
 
+### Sprint 29 — HU 10.29: SQLite Contention Hotfix (9-Abr-2026)
+**Trace_ID**: `HU10.29-SQLITE-CONTENTION-HOTFIX-2026-04-09` | **Épica**: E19 (Sprint activo) | **Estado**: HU completada y archivada
+
+| HU | Descripción | Artefactos clave | Tests |
+|---|---|---|---------|
+| **HU 10.29** | Hotfix de contención SQLite bajo carga concurrente del scanner y backup. Se aplicaron tres cambios mínimos sin romper contratos existentes: (1) `execute_query` en `DatabaseManager` serializado con el mismo `RLock` por `db_path` usado por transacciones, con cierre explícito de cursor en `finally`; (2) `create_db_backup` en `SystemMixin` migrado a conexión dedicada read-only creada vía nuevo método `create_dedicated_read_connection()` en `DatabaseManager` (no viola Runtime Persistence Audit); (3) `DatabaseBackupManager.start()` inicializa `_last_backup_ts = time.time()` para respetar el intervalo configurado antes del primer backup, eliminando ejecución inmediata al arranque. | `data_vault/database_manager.py`, `data_vault/system_db.py`, `data_vault/backup_manager.py`, `tests/test_sqlite_contention_hotfix.py` | 6/6 |
+
+**Validación**: tests focales **6/6 PASSED** · `validate_all.py` **28/28 PASSED** (incluyendo Runtime Persistence Audit en PASS tras corregir violación de conexión en módulo no autorizado).
+
+---
+
 ### Sprint 29 — HU 5.4: Signal-to-Execution Recovery Pipeline (9-Abr-2026)
 **Trace_ID**: `HU5.4-SIGNAL-TO-EXECUTION-RECOVERY-2026-04-09` | **Épica**: E19 (Sprint activo) | **Estado**: HU completada y archivada
 

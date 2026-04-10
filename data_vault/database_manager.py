@@ -134,6 +134,23 @@ class DatabaseManager:
             logger.debug(f"[DatabaseManager] Connection health check failed: {e}")
             return False
 
+    def create_dedicated_read_connection(self, db_path: str) -> sqlite3.Connection:
+        """
+        Create an isolated read-only connection for maintenance operations.
+
+        This connection is NOT part of the shared pool and must be closed
+        explicitly by the caller. It avoids contention with the operational
+        shared handle used by application reads/writes.
+        """
+        conn = sqlite3.connect(
+            f"file:{db_path}?mode=ro",
+            uri=True,
+            check_same_thread=False,
+            timeout=120,
+        )
+        conn.row_factory = sqlite3.Row
+        return conn
+
     @contextmanager
     def transaction(self, db_path: str) -> Generator[sqlite3.Connection, None, None]:
         """
@@ -173,14 +190,25 @@ class DatabaseManager:
             List of dictionaries (via row_factory)
         """
         conn = self.get_connection(db_path)
-        try:
-            cursor = conn.cursor()
-            cursor.execute(sql, params)
-            rows = cursor.fetchall()
-            return [dict(row) for row in rows]
-        except Exception as e:
-            logger.error(f"[DatabaseManager] Query execution failed: {e}")
-            raise
+        with self._pool_lock:
+            tx_lock = self._tx_lock_pool.setdefault(db_path, threading.RLock())
+
+        cursor: sqlite3.Cursor | None = None
+        with tx_lock:
+            try:
+                cursor = conn.cursor()
+                cursor.execute(sql, params)
+                rows = cursor.fetchall()
+                return [dict(row) for row in rows]
+            except Exception as e:
+                logger.error(f"[DatabaseManager] Query execution failed: {e}")
+                raise
+            finally:
+                if cursor is not None:
+                    try:
+                        cursor.close()
+                    except Exception:
+                        logger.debug("[DatabaseManager] Failed to close query cursor", exc_info=True)
 
     def execute_update(self, db_path: str, sql: str, params: tuple[Any, ...] = ()) -> int:
         """

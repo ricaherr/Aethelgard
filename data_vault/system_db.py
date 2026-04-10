@@ -870,18 +870,17 @@ class SystemMixin(BaseRepository):
         backup_path = os.path.join(backup_dir, backup_filename)
 
         start_time = time.time()
-        conn = self.get_connection()
+        source_conn: Optional[sqlite3.Connection] = None
+        backup_conn: Optional[sqlite3.Connection] = None
         try:
-            # FIX-SHADOW-CONTENTION-002: Checkpoint PASSIVE before backup
-            # This clears WAL without blocking other writers (PASSIVE doesn't acquire WRITER lock)
-            conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
-            logger.debug("[BACKUP] WAL checkpoint (PASSIVE) completed before backup")
+            from .database_manager import get_database_manager
+
+            source_conn = get_database_manager().create_dedicated_read_connection(self.db_path)
 
             backup_conn = sqlite3.connect(backup_path)
             # Reduce pages per iteration (from 250 to 50) to allow interspersed read/write
             # This makes backup more granular and less likely to block other operations
-            conn.backup(backup_conn, pages=50, sleep=0.05)
-            backup_conn.close()
+            source_conn.backup(backup_conn, pages=50, sleep=0.05)
 
             file_size_mb = os.path.getsize(backup_path) / (1024 * 1024)
             elapsed = time.time() - start_time
@@ -898,6 +897,17 @@ class SystemMixin(BaseRepository):
                 try: os.remove(backup_path)
                 except: pass
             return None
+        finally:
+            if backup_conn is not None:
+                try:
+                    backup_conn.close()
+                except Exception:
+                    logger.debug("[BACKUP] Failed to close backup connection", exc_info=True)
+            if source_conn is not None:
+                try:
+                    source_conn.close()
+                except Exception:
+                    logger.debug("[BACKUP] Failed to close source connection", exc_info=True)
 
     def _cleanup_old_backups(self, backup_dir: str, retention_count: int) -> None:
         """Keep only the N most recent backups."""
