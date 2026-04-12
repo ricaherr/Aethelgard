@@ -2,7 +2,7 @@
 """
 Auditoría de Compliance para Test Files
 ============================================
-Verifica cumplimiento con .ai_rules.md y DEVELOPMENT_GUIDELINES.md
+Verifica cumplimiento con .ai_rules.md y AETHELGARD_MANIFESTO.md
 """
 import re
 from pathlib import Path

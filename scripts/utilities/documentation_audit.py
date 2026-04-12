@@ -31,7 +31,6 @@ def _check_file_presence(workspace_root: Path) -> list[str]:
         "governance/ROADMAP.md",
         "governance/SPRINT.md",
         "docs/AETHELGARD_MANIFESTO.md",
-        "docs/DEVELOPMENT_GUIDELINES.md",
         "governance/SYSTEM_LEDGER.md",
     ]
 

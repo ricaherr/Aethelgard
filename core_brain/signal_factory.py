@@ -35,6 +35,7 @@ from core_brain.signal_deduplicator import SignalDeduplicator
 from core_brain.signal_conflict_analyzer import SignalConflictAnalyzer
 from core_brain.signal_trifecta_optimizer import SignalTrifectaOptimizer
 from core_brain.signal_batch_pipeline import generate_usr_signals_batch_impl
+from core_brain.strategy_validator_quanter import StrategySignalValidator
 
 # Import strategies
 from core_brain.strategies.base_strategy import BaseStrategy
@@ -65,6 +66,7 @@ class SignalFactory:
         fundamental_guard: Optional[FundamentalGuardService] = None,
         execution_feedback_collector: Optional[Any] = None,
         instrument_manager: Optional[Any] = None,
+        signal_validator: Optional[StrategySignalValidator] = None,
     ):
         """
         Inicializa la SignalFactory con inyección de dependencias estricta.
@@ -78,6 +80,7 @@ class SignalFactory:
             mt5_connector: Opcional MT5 connector para reconciliación.
             fundamental_guard: Opcional FundamentalGuardService para veto por noticias.
             execution_feedback_collector: Opcional ExecutionFeedbackCollector para autonomous learning (DOMINIO-10).
+            signal_validator: Opcional StrategySignalValidator (4 Pilares). Si None, se omite validación.
         """
         self.storage_manager = storage_manager
         self.notifier: Optional[NotificationEngine] = get_notifier()
@@ -124,6 +127,7 @@ class SignalFactory:
         self.signal_trifecta_optimizer = SignalTrifectaOptimizer(
             trifecta_analyzer=trifecta_analyzer
         )
+        self.signal_validator: Optional[StrategySignalValidator] = signal_validator
         self.last_funnel_summary: Optional[Dict[str, Any]] = None
         
         if not self.notifier or not self.notifier.is_configured():
@@ -232,7 +236,34 @@ class SignalFactory:
                         if funnel_reasons is not None:
                             funnel_reasons["factory_duplicate"] += 1
                         continue
-                    
+
+                    # ── ETI-01/GAP-01: Validación 4 Pilares ──────────────────
+                    if self.signal_validator is not None:
+                        _strategy_id = signal.metadata.get("strategy_id", strategy_id)
+                        _trace_id = signal.trace_id or trace_id or ""
+                        # Confidence con default seguro (pass-through si no está en metadata)
+                        signal_data = {
+                            **signal.metadata,
+                            "confidence": signal.metadata.get("confidence", 1.0),
+                            "confluence_elements": signal.metadata.get("confluence_elements", []),
+                        }
+                        report = await self.signal_validator.validate(
+                            strategy_id=_strategy_id,
+                            symbol=symbol,
+                            signal_data=signal_data,
+                            trace_id=_trace_id,
+                        )
+                        logger.info(
+                            f"[VALIDATOR] {_strategy_id}/{symbol} trace={_trace_id} "
+                            f"status={report.overall_status.value} "
+                            f"confidence={report.overall_confidence:.2f}"
+                        )
+                        if not report.is_approved():
+                            if funnel_reasons is not None:
+                                funnel_reasons["validator_rejected"] += 1
+                            continue
+                    # ─────────────────────────────────────────────────────────
+
                     # Procesar señal válida
                     await self._process_valid_signal(signal)
                     

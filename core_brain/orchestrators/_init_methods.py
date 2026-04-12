@@ -65,6 +65,7 @@ def load_dynamic_usr_strategies(orch: "MainOrchestrator") -> None:
         from core_brain.signal_factory import SignalFactory
         from core_brain.confluence import MultiTimeframeConfluenceAnalyzer
         from core_brain.strategies.trifecta_logic import TrifectaAnalyzer
+        from core_brain.strategy_validator_quanter import StrategySignalValidator
 
         logger.info("[STRATEGIES] Initiating dynamic loading from BD (SSOT)...")
 
@@ -85,12 +86,15 @@ def load_dynamic_usr_strategies(orch: "MainOrchestrator") -> None:
         active_engines = strategy_factory.instantiate_all_sys_strategies()
         stats = strategy_factory.get_stats()
 
+        signal_validator = StrategySignalValidator(storage_manager=orch.storage)
+
         orch.signal_factory = SignalFactory(
             storage_manager=orch.storage,
             strategy_engines=active_engines,
             confluence_analyzer=confluence_analyzer,
             trifecta_analyzer=trifecta_analyzer,
             execution_feedback_collector=orch.execution_feedback_collector,
+            signal_validator=signal_validator,
         )
         logger.info(
             f"[STRATEGIES] Dynamic loading complete: "

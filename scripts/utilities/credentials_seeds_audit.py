@@ -3,7 +3,7 @@
 CREDENTIALS & SEEDS AUDIT - Validación automática de seguridad
 Verifica que seeds NO contengan credenciales operativas, solo DEMO públicas
 Ejecutado como parte de validate_all.py
-DEVELOPMENT_GUIDELINES SEC 5.4
+MANIFESTO security and credentials governance section
 """
 import sys
 import json
@@ -25,7 +25,7 @@ class CredentialsSedsAudit:
     def run_audit(self) -> int:
         """Main audit entry point - returns 0 if all OK, 1 if failures"""
         print("="*70)
-        print("CREDENTIALS & SEEDS AUDIT (SEC 5.4 DEVELOPMENT_GUIDELINES)")
+        print("CREDENTIALS & SEEDS AUDIT (MANIFESTO GOVERNANCE)")
         print("="*70)
         print()
         

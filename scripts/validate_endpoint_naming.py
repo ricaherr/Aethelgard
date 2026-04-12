@@ -10,7 +10,7 @@ Responsibility:
     3. Mismatches between frontend expectations and backend routes
     4. Documentation gaps (route exists but not in MANIFESTO section XI)
 
-Rule (from DEVELOPMENT_GUIDELINES.md 1.8 & MANIFESTO XI):
+Rule (from AETHELGARD_MANIFESTO.md and API governance conventions):
     - Database naming: sys_*, usr_* (internal)
     - API naming: semantic names WITHOUT prefixes (public)
     - PROHIBIDO: /sys_regime_configs, /usr_positions in router endpoints
@@ -150,7 +150,7 @@ def validate_naming() -> int:
         return 0
     else:
         print(f"{Colors.RED}{Colors.BOLD}[FAIL] {errors} naming violations detected{Colors.RESET}")
-        print(f"{Colors.YELLOW}See DEVELOPMENT_GUIDELINES.md §1.8 & MANIFESTO XI for guidance{Colors.RESET}\n")
+        print(f"{Colors.YELLOW}See docs/AETHELGARD_MANIFESTO.md for guidance{Colors.RESET}\n")
         return 1
 
 
