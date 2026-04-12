@@ -522,7 +522,7 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 **Suite total**: 1749/1749 PASSED · 0 regresiones · +108 tests nuevos
 **Impacto medido en producción**: `MOM_BIAS 0.5543→0.0` · `LIQ_SWEEP 0.0→0.4667` · `SESS_EXT 0.5543→0.3612` · `STRUC_SHIFT 0.0→0.2962` — scores ahora reflejan lógica real de cada estrategia.
 **DB actualizada**: columnas HU 7.8 presentes en `data_vault/global/aethelgard.db` · `sys_audit_logs` recibe `MODE_TRANSITION` con `user_id='SYSTEM'`.
-**Documentación**: `docs/DATABASE_SCHEMA.md` → v3.1 con secciones `sys_strategies` y `sys_audit_logs`.
+**Documentación**: `docs/04_DATA_SOVEREIGNTY_INFRA.md` → v3.1 con secciones `sys_strategies` y `sys_audit_logs`.
 
 ---
 
@@ -877,7 +877,7 @@ Auditoría forense `docs/AUDITORIA_ESTADO_REAL.md` detectó 4 violaciones críti
 
 - ✅ `ROADMAP.md` — Nivel 0 marcado como COMPLETADO
 - ✅ `governance/BACKLOG.md` — Sprint saneamiento N0-N2 registrado
-- ✅ `docs/DATABASE_SCHEMA.md` — Tablas actualizadas, `usr_performance` deprecada
+- ✅ `docs/04_DATA_SOVEREIGNTY_INFRA.md` — Tablas actualizadas, `usr_performance` deprecada
 - ✅ `docs/SYSTEM_LEDGER.md` — Este registro
 
 ---
@@ -946,7 +946,7 @@ Grados:
 1. ✅ `governance/BACKLOG.md` — HU 3.6, 3.7, 3.8 marcadas [x] DONE
 2. ✅ `ROADMAP.md` — Versión → 4.3.0-beta, Phase 4 ✅ COMPLETADA
 3. ✅ `docs/AETHELGARD_MANIFESTO.md` — Sección XII (PHASE 4 INTELLIGENCE)
-4. ✅ `docs/INTERFACE_CONTRACTS.md` — Contract 3 (FailurePatternRegistry)
+4. ✅ `docs/04_DATA_SOVEREIGNTY_INFRA.md` — Contract 3 (FailurePatternRegistry)
 5. ✅ `docs/SYSTEM_LEDGER.md` — Este registro
 
 ---
@@ -1041,7 +1041,7 @@ async def analyze(self, symbol: str, trader_id: str) -> Optional[OutputSignal]:
    - Prohibición de redundancia
    - Tabla de acceso por rol
 
-2. ✅ **`docs/INTERFACE_CONTRACTS.md`** — Versión 2.0
+2. ✅ **`docs/04_DATA_SOVEREIGNTY_INFRA.md`** — Versión 2.0
    - Diseñado para tablas `sys_*` específicamente
    - Tres contratos: Economic Calendar, Risk Manager Limits, Signal Generation
    - Validation checklist con prefijo como requisito
@@ -3300,9 +3300,9 @@ La emisión de datos vía `emit_trader_page_update()` y `emit_monitor_update()` 
    - Method signature matched exactly as required
 
 3. **Documentation Refactoring**:
-   - ✅ Created: `docs/operations/economic_module.md` (200+ lines)
+   - ✅ Created: `docs/02_EXECUTOR_GOVERNANCE.md` (200+ lines)
    - ✅ Deleted: `ECONOMIC_CALENDAR_GUIDE.md` (root level removed)
-   - ✅ Updated: `docs/INTERFACE_CONTRACTS.md` - Contract 2 latency SLA: 100ms → 50ms
+   - ✅ Updated: `docs/04_DATA_SOVEREIGNTY_INFRA.md` - Contract 2 latency SLA: 100ms → 50ms
 
 #### Validación de Integración
 
@@ -3357,8 +3357,8 @@ MainOrchestrator.heartbeat()
 | main_orchestrator.py | ✅ | 1767 | +14 lines for lockdown integration |
 | storage.py | ✅ | 701 | NEW: get_economic_events_by_window() |
 | economic_veto_interface test | ✅ | 17/17 PASSED | All test categories passed |
-| docs/operations/economic_module.md | ✅ | 300+ | Complete operational manual |
-| INTERFACE_CONTRACTS.md | ✅ | 302 | SLA updated: 100ms → 50ms |
+| docs/02_EXECUTOR_GOVERNANCE.md | ✅ | 300+ | Complete operational manual |
+| 04_DATA_SOVEREIGNTY_INFRA.md | ✅ | 302 | SLA updated: 100ms → 50ms |
 | **PHASE 8 Overall** | **✅ PRODUCTION READY** | **+4K LOC** | **Fully integrated** |
 
 #### Decisiones de Arquitectura
@@ -3409,4 +3409,5 @@ MainOrchestrator.heartbeat()
 | **Backend v4.2.0** | **✅** | **+120 líneas** | **Production-Ready** |
 | **Frontend (React)** | **🟡** | **N/A** | **BLOQUEADO - Auditoría pendiente** |
 | **validate_all.py** | **✅** | **14/14** | **PASSED (11.94s)** |
+
 

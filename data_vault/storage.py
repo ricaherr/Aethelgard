@@ -516,7 +516,7 @@ class StorageManager(
         """
         Persist a sanitized economic event to economic_calendar table.
         
-        INTERFACE_CONTRACTS.md Compliance:
+        04_DATA_SOVEREIGNTY_INFRA.md Compliance:
         - Accepts ONLY sanitized events (from NewsSanitizer)
         - Assigns generated event_id (not from provider)
         - Enforces immutability: no updates allowed post-persistence
@@ -710,7 +710,7 @@ class StorageManager(
         """
         IMMUTABILITY ENFORCEMENT: Updates to economic records are PROHIBITED.
         
-        INTERFACE_CONTRACTS.md Pilar 3:
+        04_DATA_SOVEREIGNTY_INFRA.md Pilar 3:
         - Once persisted, economic_calendar records are READ-ONLY
         - Corrections must be new INSERTs with new event_id
         - This method ALWAYS raises ImmutabilityViolation
@@ -730,4 +730,5 @@ class StorageManager(
             f"POST-PERSISTENCE UPDATES ARE FORBIDDEN. "
             f"Corrections must be new INSERTs with new event_id."
         )
+
 

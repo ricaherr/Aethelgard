@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """
 INTERFACE CONTRACTS VALIDATOR
-Verifies that NewsSanitizer implements all 3 pillars from INTERFACE_CONTRACTS.md
+Verifies that NewsSanitizer implements all 3 pillars from 04_DATA_SOVEREIGNTY_INFRA.md
 """
 import sys
 import re
@@ -11,7 +11,7 @@ from typing import Dict, Any
 
 def validate_news_sanitizer_pillars() -> bool:
     """
-    Verify NewsSanitizer has all 3 pillars from INTERFACE_CONTRACTS.md:
+    Verify NewsSanitizer has all 3 pillars from 04_DATA_SOVEREIGNTY_INFRA.md:
     - Pilar 1: Schema Validation (_validate_schema)
     - Pilar 2: Latency Validation (_validate_latency)
     - Pilar 3: Immutability Enforcement (validate_immutability)
@@ -179,3 +179,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
