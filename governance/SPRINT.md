@@ -93,6 +93,54 @@
 
 ---
 
+## 📋 GATE 2 — IMPLEMENTACIÓN vs. DOCUMENTACIÓN — [DONE]
+
+**Fecha**: 11 de Abril, 2026 | **Trace_ID**: GATE2-IMPL-AUDIT-2026-04-11
+**Alcance**: Verificación cruzada de cada componente descrito en `docs/` contra su implementación real en `core_brain/`, `data_vault/` y `connectors/`.
+
+### Dominio 01 — CORE_ADAPTIVE_BRAIN
+- [DONE] ✅ **EdgeTuner**: `core_brain/edge_tuner.py` — operativo, cableado vía DI en `_lifecycle.py` y `_init_methods.py`.
+- [DONE] ✅ **ThresholdOptimizer**: `core_brain/threshold_optimizer.py` — operativo, instanciado junto a `TradeClosureListener`.
+- [DONE] ✅ **TradeClosureListener (Bucle Delta Feedback)**: `core_brain/trade_closure_listener.py` — invocado desde `_background_tasks.py:120`.
+- [DONE] ✅ **RegimeClassifier + Scanner**: verificados sesión anterior, operativos en producción.
+- [DONE] ❌ **GAP-01 (Alto)**: `StrategySignalValidator` (Strategy Jury) — clase en `strategy_validator_quanter.py:406`. NO cableado en `signal_factory.py`. Gap heredado de Gate 1.
+
+### Dominio 02 — EXECUTOR_GOVERNANCE
+- [DONE] ✅ **SlippageController**: `core_brain/services/slippage_controller.py` — cableado en `executor.py:101`.
+- [DONE] ✅ **Spread Validation**: `ExecutionFailureReason.VETO_SPREAD` en `execution_service.py:515` — veto aplicado durante intento de ejecución.
+- [DONE] ✅ **AnomalySentinel (Volatility Z-Score)**: `services/anomaly_sentinel.py` + `anomaly_detectors.py` — Z-Score threshold=3.0, emit `EXTREME_VOLATILITY`.
+- [DONE] ✅ **Estados NORMAL/CAUTION/DEGRADED/STRESSED**: confirmados vía `ResilienceManager`.
+- [DONE] ✅ **CooldownManager + `sys_cooldown_tracker`**: operativo, tabla en schema.
+
+### Dominio 03 — PERFORMANCE_DARWINISM
+- [DONE] ✅ **StrategyRanker**: `core_brain/strategy_ranker.py:28` — cableado en `_init_methods.py:49`, llamado en `_cycle_trade.py:352`.
+- [DONE] ✅ **CoherenceService**: `services/coherence_service.py` — cableado en `main_orchestrator.py:228` y `risk_manager.py:77`.
+- [DONE] ✅ **`evaluate_all_instances()` (STUB resuelto)**: ya **NO** es stub. Implementado con 3 Pilares, persistencia a `sys_shadow_performance_history` y EdgeTuner overrides (`shadow_manager.py:496-700`). CRÍTICO-1 de auditoría Mar-23 cerrado.
+- [DONE] ❌ **GAP-02 (Medio)**: **Shadow Reality Engine (Penalty Injector)** — doc 03 describe inyección activa de slippage estimado y penalidades de latencia sobre instancias SHADOW. En código **NO existe** un inyector explícito de fricción simulada. La evaluación usa métricas de trades reales, no degradadas artificialmente. Es la HU 6.1 marcada `[TODO]` en E16 (ROADMAP).
+
+### Dominio 04 — DATA_SOVEREIGNTY_INFRA
+- [DONE] ✅ **StorageManager SSOT**: operativo.
+- [DONE] ✅ **TenantDBFactory**: `data_vault/tenant_factory.py:31` — exportado desde `data_vault/__init__.py`.
+- [DONE] ✅ **ResilienceManager + niveles L0-L3**: operativo, verificado sesión anterior.
+- [DONE] ✅ **Migrations (run_migrations)**: política aditiva en `schema.py`.
+- [DONE] ⚠️ **GAP-03 (Bajo / Nomenclatura)**: Doc 01 menciona tabla `sys_parameter_overrides`. En código es columna JSON `parameter_overrides` dentro de `sys_shadow_instances` (`schema.py:839`). No es un defecto funcional; es imprecisión de nomenclatura en doc 01.
+
+### Dominio 05 — IDENTITY_SECURITY
+- [DONE] ✅ **JWT Auth**: `services/auth_service.py` con `decode_token()` y `verify_token()`.
+- [DONE] ✅ **RBAC decorators**: `api/dependencies/rbac.py` — `require_admin()` y `require_trader()` activos en todos los routers.
+- [DONE] ✅ **TenantDBFactory + aislamiento físico**: verificado, `data_vault/tenants/{id}/` activo.
+- [DONE] ✅ **Tenant Isolation Scanner**: `scripts/tenant_isolation_audit.py` existe y referenciado en `validate_all.py`.
+
+### Resumen de Gaps para Gate 3
+
+| ID | Severidad | Componente | Estado en Código | Referencia |
+|---|---|---|---|---|
+| GAP-01 | 🔴 Alto | Strategy Jury (`StrategySignalValidator`) | Clase existe, sin cablear en `signal_factory.py` | E16 / HU pendiente |
+| GAP-02 | 🟡 Medio | Shadow Reality Engine (Penalty Injector) | No existe inyector de fricción. Evaluación usa trades reales | E16 / HU 6.1 `[TODO]` |
+| GAP-03 | 🟢 Bajo | Nomenclatura `sys_parameter_overrides` | Columna JSON en `sys_shadow_instances`, no tabla separada | Doc 01 — corregir texto |
+
+---
+
 # SPRINT 28: E18 — SRE REPARACIÓN Y ESTABILIZACIÓN OPERACIONAL — [DONE]
 
 **Inicio**: 9 de Abril, 2026

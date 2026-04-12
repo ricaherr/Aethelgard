@@ -36,7 +36,7 @@ El ciclo de vida del aprendizaje se materializa post-trade, permitiendo que el s
 3. **Retroalimentación**:
    * Si el *Delta* sobrepasa ciertos rangos de tolerancia, el **EdgeTuner** actualiza el sesgo y peso ponderado del régimen.
    * Dependiendo de la estructura de las últimas ejecuciones evaluadas en la tabla de registro, el **ThresholdOptimizer** decide si endurece o relaja el `confidence_threshold` dinámico.
-4. **Persistencia Limpia (SSOT)**: Las readaptaciones se registran mediante inserciones auditadas en el esquema de sistema (ej. `sys_parameter_overrides` y `sys_dedup_events`), garantizando que la fuente de verdad siempre emita parámetros ajustados en función del mercado sin intervención humana.
+4. **Persistencia Limpia (SSOT)**: Las readaptaciones se registran mediante inserciones auditadas en el esquema de sistema. Los overrides de parámetros se persisten en la columna `parameter_overrides` (JSON) de `sys_shadow_instances`; los eventos de deduplicación en la tabla `sys_dedup_events`. La fuente de verdad siempre emite parámetros ajustados en función del mercado sin intervención humana.
 
 ## 📈 Roadmap del Dominio
 
