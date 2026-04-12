@@ -547,13 +547,18 @@ class ShadowManager:
         # 3. Evaluate each instance
         for instance in instances:
             try:
-                # FIX-BACKTEST-QUALITY-ZERO-SCORE-2026-03-30:
-                # Use fresh metrics from sys_trades, NOT the stale cache in
-                # sys_shadow_instances (which is 0 at creation and never updated).
-                # Without this, all instances evaluate with 0 trades → score=0 forever.
+                # ETI-02/GAP-02: Fuente de métricas con fallback a shadow sintético.
+                # Primaria: sys_trades (ejecución real DEMO con execution_mode='SHADOW').
+                # Fallback: calculate_instance_metrics_from_shadow_history() que lee
+                # los trades sintéticos escritos por ShadowPenaltyInjector cuando
+                # la instancia aún no tiene ejecución real pero sí señales simuladas.
                 metrics = self.storage.calculate_instance_metrics_from_sys_trades(
                     instance.instance_id
                 )
+                if metrics.total_trades_executed == 0:
+                    metrics = self.storage.calculate_instance_metrics_from_shadow_history(
+                        instance.instance_id
+                    )
                 instance.metrics = metrics
                 trace_id = self.generate_trace_id(instance.instance_id, "HEALTH")
 

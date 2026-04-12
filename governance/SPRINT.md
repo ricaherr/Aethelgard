@@ -103,7 +103,7 @@
 - [DONE] ✅ **ThresholdOptimizer**: `core_brain/threshold_optimizer.py` — operativo, instanciado junto a `TradeClosureListener`.
 - [DONE] ✅ **TradeClosureListener (Bucle Delta Feedback)**: `core_brain/trade_closure_listener.py` — invocado desde `_background_tasks.py:120`.
 - [DONE] ✅ **RegimeClassifier + Scanner**: verificados sesión anterior, operativos en producción.
-- [DONE] ❌ **GAP-01 (Alto)**: `StrategySignalValidator` (Strategy Jury) — clase en `strategy_validator_quanter.py:406`. NO cableado en `signal_factory.py`. Gap heredado de Gate 1.
+- [DONE] ✅ **GAP-01 CERRADO (ETI-01)**: `StrategySignalValidator` quedó cableado en `signal_factory.py` con DI desde `_init_methods.py`, funnel reason `validator_rejected` y suite TDD `tests/test_signal_factory_validator_wiring.py` en verde (3/3).
 
 ### Dominio 02 — EXECUTOR_GOVERNANCE
 - [DONE] ✅ **SlippageController**: `core_brain/services/slippage_controller.py` — cableado en `executor.py:101`.
@@ -116,7 +116,7 @@
 - [DONE] ✅ **StrategyRanker**: `core_brain/strategy_ranker.py:28` — cableado en `_init_methods.py:49`, llamado en `_cycle_trade.py:352`.
 - [DONE] ✅ **CoherenceService**: `services/coherence_service.py` — cableado en `main_orchestrator.py:228` y `risk_manager.py:77`.
 - [DONE] ✅ **`evaluate_all_instances()` (STUB resuelto)**: ya **NO** es stub. Implementado con 3 Pilares, persistencia a `sys_shadow_performance_history` y EdgeTuner overrides (`shadow_manager.py:496-700`). CRÍTICO-1 de auditoría Mar-23 cerrado.
-- [DONE] ❌ **GAP-02 (Medio)**: **Shadow Reality Engine (Penalty Injector)** — doc 03 describe inyección activa de slippage estimado y penalidades de latencia sobre instancias SHADOW. En código **NO existe** un inyector explícito de fricción simulada. La evaluación usa métricas de trades reales, no degradadas artificialmente. Es la HU 6.1 marcada `[TODO]` en E16 (ROADMAP).
+- [DONE] ✅ **GAP-02 CERRADO (ETI-02)**: Implementado `ShadowPenaltyInjector` en `core_brain/services/shadow_penalty_injector.py`, integrado en `signal_factory.py` para `origin_mode='SHADOW'` y fallback de métricas en `shadow_manager.py` vía `calculate_instance_metrics_from_shadow_history()`. Suite TDD `tests/test_shadow_penalty_injector.py` en verde (4/4).
 
 ### Dominio 04 — DATA_SOVEREIGNTY_INFRA
 - [DONE] ✅ **StorageManager SSOT**: operativo.
@@ -135,9 +135,11 @@
 
 | ID | Severidad | Componente | Estado en Código | Referencia |
 |---|---|---|---|---|
-| GAP-01 | 🔴 Alto | Strategy Jury (`StrategySignalValidator`) | Clase existe, sin cablear en `signal_factory.py` | E16 / HU pendiente |
-| GAP-02 | 🟡 Medio | Shadow Reality Engine (Penalty Injector) | No existe inyector de fricción. Evaluación usa trades reales | E16 / HU 6.1 `[TODO]` |
-| GAP-03 | 🟢 Bajo | Nomenclatura `sys_parameter_overrides` | Columna JSON en `sys_shadow_instances`, no tabla separada | Doc 01 — corregir texto |
+| GAP-01 | ✅ Cerrado | Strategy Jury (`StrategySignalValidator`) | Cableado en `signal_factory.py` + DI en `_init_methods.py` | ETI-01 |
+| GAP-02 | ✅ Cerrado | Shadow Reality Engine (Penalty Injector) | Inyector activo + fallback de métricas SHADOW en `shadow_manager.py` | ETI-02 |
+| GAP-03 | ✅ Cerrado | Nomenclatura `sys_parameter_overrides` | Corregido en documentación de Dominio 01 | Gate 1 C3 |
+
+**Estado Gate 3**: Sin gaps abiertos de implementación/documentación derivados de Gate 2.
 
 ---
 

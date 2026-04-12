@@ -538,6 +538,24 @@ class ShadowStorageManager:
             consecutive_losses_max=max_consec,
         )
 
+    def calculate_instance_metrics_from_shadow_history(
+        self, instance_id: str
+    ) -> ShadowMetrics:
+        """
+        Calcula métricas de 3 Pilares a partir de trades SHADOW simulados en sys_trades.
+
+        ETI-02/GAP-02 — Shadow Reality Engine:
+        Usado como fuente de métricas cuando una instancia SHADOW aún no tiene
+        trades reales de ejecución DEMO, pero sí tiene registros sintéticos
+        escritos por ShadowPenaltyInjector.
+
+        Args:
+            instance_id: Instancia SHADOW a evaluar.
+        Returns:
+            ShadowMetrics calculadas desde sys_trades[execution_mode='SHADOW'].
+        """
+        return self.calculate_instance_metrics_from_sys_trades(instance_id)
+
     def update_strategy_score_shadow(self, strategy_id: str, score_shadow: float) -> None:
         """
         Persist score_shadow to sys_strategies for the Darwinian scoring formula.

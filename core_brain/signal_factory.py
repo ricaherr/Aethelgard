@@ -36,6 +36,7 @@ from core_brain.signal_conflict_analyzer import SignalConflictAnalyzer
 from core_brain.signal_trifecta_optimizer import SignalTrifectaOptimizer
 from core_brain.signal_batch_pipeline import generate_usr_signals_batch_impl
 from core_brain.strategy_validator_quanter import StrategySignalValidator
+from core_brain.services.shadow_penalty_injector import ShadowPenaltyInjector
 
 # Import strategies
 from core_brain.strategies.base_strategy import BaseStrategy
@@ -67,6 +68,7 @@ class SignalFactory:
         execution_feedback_collector: Optional[Any] = None,
         instrument_manager: Optional[Any] = None,
         signal_validator: Optional[StrategySignalValidator] = None,
+        shadow_penalty_injector: Optional[ShadowPenaltyInjector] = None,
     ):
         """
         Inicializa la SignalFactory con inyección de dependencias estricta.
@@ -81,6 +83,7 @@ class SignalFactory:
             fundamental_guard: Opcional FundamentalGuardService para veto por noticias.
             execution_feedback_collector: Opcional ExecutionFeedbackCollector para autonomous learning (DOMINIO-10).
             signal_validator: Opcional StrategySignalValidator (4 Pilares). Si None, se omite validación.
+            shadow_penalty_injector: Opcional ShadowPenaltyInjector. Si None, se omite simulación SHADOW.
         """
         self.storage_manager = storage_manager
         self.notifier: Optional[NotificationEngine] = get_notifier()
@@ -128,6 +131,7 @@ class SignalFactory:
             trifecta_analyzer=trifecta_analyzer
         )
         self.signal_validator: Optional[StrategySignalValidator] = signal_validator
+        self.shadow_penalty_injector: Optional[ShadowPenaltyInjector] = shadow_penalty_injector
         self.last_funnel_summary: Optional[Dict[str, Any]] = None
         
         if not self.notifier or not self.notifier.is_configured():
@@ -345,6 +349,16 @@ class SignalFactory:
                 except Exception as e:
                     logger.warning(f"Failed to determine execution_mode for {strategy_id}: {e}")
             
+            # ETI-02/GAP-02: Registrar trade simulado para instancias SHADOW
+            if origin_mode == "SHADOW" and self.shadow_penalty_injector is not None:
+                try:
+                    await self.shadow_penalty_injector.simulate_and_record(signal)
+                except Exception as _spi_err:
+                    logger.warning(
+                        f"[SHADOW-PENALTY] simulate_and_record falló para "
+                        f"{signal.symbol}: {_spi_err}"
+                    )
+
             # 1. Persistencia (guarda con status='PENDING' y origin_mode=SHADOW/LIVE)
             signal_id = self.storage_manager.save_signal(signal, origin_mode=origin_mode)
             
