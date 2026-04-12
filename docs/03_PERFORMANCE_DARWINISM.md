@@ -61,5 +61,5 @@ El `Strategy Ranker` es el árbitro final de estado, utilizando métricas cruzad
 
 Auditoría inmutable para análisis algorítmico:
 
-*   `sys_strategy_ranker`: Almacena permanentemente el *score*, el *Profit Factor*, y el *Drawdown* de cada versión de estrategia, determinando quién recibe capital (`status: LIVE|SHADOW|QUARANTINE`).
+*   `sys_signal_ranking`: Almacena permanentemente el *score*, el *Profit Factor*, y el *Drawdown* de cada versión de estrategia, determinando quién recibe capital (`status: LIVE|SHADOW|QUARANTINE`).
 *   `sys_coherence_logs` (`coherence_events` / `execution_shadow_logs`): Trazabilidad de la divergencia, guardando el precio teórico vs. el precio real de llenado, la latencia (ms) de ida y vuelta, y el respectivo dictamen (*COHERENT / INCOHERENT*), referenciado con un `trace_id` único para auditoría transparente.

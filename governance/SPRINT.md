@@ -76,6 +76,23 @@
 
 ---
 
+## 📋 GATE 1 — AUDITORÍA DE DOCUMENTACIÓN — [DONE]
+
+**Fecha**: 11 de Abril, 2026 | **Trace_ID**: GATE1-DOC-AUDIT-2026-04-11
+**Alcance**: Validación formal de todos los documentos en `docs/` previo a trabajo de Gate 2 (implementación vs. documentación).
+
+- [DONE] `AETHELGARD_MANIFESTO.md` — 🟢 VIGENTE. Nueva estructura de 5 pilares correcta y sin claims falsos.
+- [DONE] `01_CORE_ADAPTIVE_BRAIN.md` — 🟡 CORREGIDO. Strategy Jury marcado como *Objetivo Arquitectónico Pendiente* (C3-OpciónA).
+- [DONE] `02_EXECUTOR_GOVERNANCE.md` — 🟡 CORREGIDO. Referencia `dynamic_params.json` actualizada a `sys_config` (SSOT DB).
+- [DONE] `03_PERFORMANCE_DARWINISM.md` — 🔴 CORREGIDO. Tabla renombrada `sys_strategy_ranker` → `sys_signal_ranking` (tabla real en schema).
+- [DONE] `04_DATA_SOVEREIGNTY_INFRA.md` — 🟢 VIGENTE. Schema 46 tablas y niveles L0-L3 alineados con código.
+- [DONE] `05_IDENTITY_SECURITY.md` — 🟢 VIGENTE. 4 anillos de seguridad y `tenant_isolation_audit.py` verificados.
+
+**Gaps registrados para Gate 2**:
+- `StrategySignalValidator` (Strategy Jury) existe en `core_brain/strategy_validator_quanter.py` pero NO está cableado en `signal_factory.py`.
+
+---
+
 # SPRINT 28: E18 — SRE REPARACIÓN Y ESTABILIZACIÓN OPERACIONAL — [DONE]
 
 **Inicio**: 9 de Abril, 2026

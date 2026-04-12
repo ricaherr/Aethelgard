@@ -62,7 +62,7 @@ Este submódulo garantiza la generación constante de oportunidades de inversió
 *   **Technical Analyzer**: Fuente única de verdad para indicadores vectorizados y métricas de volatilidad.
 *   **Liquidity Service**: Detección micro-estructural de Fair Value Gaps (FVG) y Order Blocks mediante análisis de absorción de volumen.
 *   **Signal Factory**: Generador de señales con scoring dinámico basado en confluencia y riesgo/beneficio.
-*   **Strategy Jury**: Mecanismo de decisión darwinista que evalúa la probabilidad de éxito de una señal antes de su ejecución.
+*   **Strategy Jury** *(Objetivo Arquitectónico — Pendiente de integración)*: Mecanismo de decisión darwinista (`StrategySignalValidator`) que evaluará la probabilidad de éxito de una señal antes de su ejecución mediante 4 Pilares (Sensorial, Régimen, Coherencia, Multi-tenant). Clase implementada en `core_brain/strategy_validator_quanter.py`; pendiente de cableado en `signal_factory.py`.
 
 ### Firmas Operativas Validadas
 

@@ -37,7 +37,7 @@ El paso entre la generación de la señal y la ejecución real está protegido p
 El sistema actúa con autonomía preventiva ante eventos macroeconómicos adversos (Cisnes Negros) a través del **Anomaly Sentinel**.
 
 ### Umbrales y Reacciones
-Basado en parámetros dinámicos (`dynamic_params.json`):
+Basado en parámetros dinámicos persistidos en `sys_config` (SSOT DB). El archivo `config/dynamic_params.json` actúa únicamente como semilla de bootstrap en la primera ejecución:
 *   **Flash Crash**: Caídas abruptas (ej. `< -2.0%` en una sola vela).
 *   **Volatility Spike**: Z-Score de volatilidad extrema persistente (mínimo 3 velas).
 *   **Volume Spike**: Volumen transaccional por encima del percentil 90 histórico.
