@@ -4,7 +4,7 @@
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-09 UTC)**: HU 10.28 archivada (Sprint 29) · Trace_ID: HU10.28-PROVIDER-COVERAGE-RELIABILITY-2026-04-09 · **validate_all 28/28 PASSED** · **8/8 tests focal + 21/21 no-regresión**.
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-12 UTC)**: Saneamiento Documental Global (DOC-SYNC-2026-04-12) · **Soberanía Documental SSOT Alcanzada**.
 
 ---
 
@@ -28,6 +28,21 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 ## 🏛️ ÉPICAS ARCHIVADAS
 
 ---
+
+---
+
+## 📅 Registro: 2026-04-12 — SANEAMIENTO DOCUMENTAL GLOBAL (TRACE_ID: DOC-SYNC-2026-04-12)
+
+### ✅ HITO COMPLETADO: Soberanía Documental SSOT (Purga y Consolidación)
+
+| Campo | Detalle |
+|---|---|
+| **Regla** | §9 Documentación Única (SSOT) — La verdad reside en el MANIFESTO y sus pilares modulares |
+| **Dominios** | 04_DATA_SOVEREIGNTY_INFRA · 02_EXECUTOR_GOVERNANCE |
+| **Acción 1** | Absorción del `DATABASE_SCHEMA.md` (46 tablas) y `INTERFACE_CONTRACTS.md` dentro del Dominio 04 como anexos estructurales. Sincronización de nomenclatura (`economic_calendar` → `sys_economic_calendar`). |
+| **Acción 2** | Migración de lógica de Trading Decision y Buffers desde `economic_module.md` hacia el Dominio 02. Traducción topológica a diagramas puros Mermaid.js. |
+| **Acción 3** | Purga irreversible de archivos huérfanos (`DATABASE_SCHEMA.md`, `INTERFACE_CONTRACTS.md`, `/operations`) y corrección de hipervínculos regex en todo el ecosistema. |
+| **Estado** | 🟢 Ecosistema documental inmaculado, coherente y modular. Cero deuda documental flotante. |
 
 ### ════════════════════════════════════════════════════════════════
 ### ÉPICA E18 COMPLETADA — SRE: Reparación y Estabilización Operacional (9-Abr-2026)
@@ -3409,5 +3424,3 @@ MainOrchestrator.heartbeat()
 | **Backend v4.2.0** | **✅** | **+120 líneas** | **Production-Ready** |
 | **Frontend (React)** | **🟡** | **N/A** | **BLOQUEADO - Auditoría pendiente** |
 | **validate_all.py** | **✅** | **14/14** | **PASSED (11.94s)** |
-
-

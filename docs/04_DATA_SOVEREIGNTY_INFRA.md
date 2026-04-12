@@ -57,7 +57,7 @@ La infraestructura técnica adopta el principio de **Degradación Elegante**. Un
 
 ## Anexo: Mapa de Tablas Multi-Tenant y Globales
 
-# Aethelgard Database Schema v3.2 (ARCH-SSOT-2026-010)
+### Aethelgard Database Schema v3.2 (ARCH-SSOT-2026-010)
 
 ## Overview
 
@@ -784,7 +784,7 @@ El sistema mantiene una **plantilla maestra** en `data_vault/templates/usr_templ
 
 ## Anexo: Contratos de Integración Segura
 
-# INTERFACE CONTRACTS - Aethelgard Data Integration
+### INTERFACE CONTRACTS - Aethelgard Data Integration
 
 **Version**: 2.0  
 **Status**: ACTIVE (2026-03-07)  
@@ -804,7 +804,7 @@ Todas las integraciones externas **DEBEN** cumplir con la convención de nombres
 
 ---
 
-## 🚪 Contract 1: Economic Calendar Injection Gate (Global Data)
+### 🚪 Contract 1: Economic Calendar Injection Gate (Global Data)
 
 **Purpose**: Guarantee data integrity for economic events before persistence to **`sys_calendar`** table (renamed from economic_calendar).
 
@@ -898,7 +898,7 @@ Todas las integraciones externas **DEBEN** cumplir con la convención de nombres
 
 ---
 
-## 2️⃣ Contract 2: Risk Manager Global Limits vs User Overrides
+### 2️⃣ Contract 2: Risk Manager Global Limits vs User Overrides
 
 **Purpose**: Enforce **global hard-stops** (`sys_state`) while allowing trader customization (`usr_strategy_params`).
 
@@ -936,7 +936,7 @@ def evaluate_signal(self, signal: OutputSignal, trader_id: str) -> RiskResult:
 
 ---
 
-## 3️⃣ Contract 3: Failure Pattern Registry Learning Loop
+### 3️⃣ Contract 3: Failure Pattern Registry Learning Loop
 
 **Purpose**: Guarantee that execution failures feed back into signal quality scoring. Autonomous learning without human intervention.
 
@@ -1056,7 +1056,7 @@ if should_trigger_learning():
 
 ---
 
-## 3️⃣ Contract 3: Signal Generation with sys_ Knowledge + usr_ Filtering
+### 4️⃣ Contract 4: Signal Generation with sys_ Knowledge + usr_ Filtering
 
 **Purpose**: UniversalEngine genera señales basado en datos globales, pero filtra por configuración personal.
 
@@ -1102,7 +1102,7 @@ async def generate_signals(self, trader_id: str) -> List[OutputSignal]:
 
 ---
 
-## ✅ Validation Checklist (Para cada integración externa)
+### ✅ Validation Checklist (Para cada integración externa)
 
 - [ ] **Tabla destino usa prefijo correcto** (sys_* o usr_*?)
 - [ ] **SCHEMA VALIDATION** ejecutado (mandatory fields presentes y válidos)
@@ -1117,7 +1117,7 @@ async def generate_signals(self, trader_id: str) -> List[OutputSignal]:
 
 ---
 
-## 📊 Workflow: Raw Data → Persistence
+### 📊 Workflow: Raw Data → Persistence
 
 | Step | Component | Input | Validation | Output | Failure Action |
 |------|-----------|-------|-----------|--------|-----------------|
@@ -1130,7 +1130,7 @@ async def generate_signals(self, trader_id: str) -> List[OutputSignal]:
 
 ---
 
-## ⚠️ Error Categories
+### ⚠️ Error Categories
 
 | Error Type | Cause | Log Level | Action |
 |-----------|-------|-----------|--------|
@@ -1147,7 +1147,7 @@ async def generate_signals(self, trader_id: str) -> List[OutputSignal]:
 
 ---
 
-## 🧪 Testing Requirements
+### 🧪 Testing Requirements
 
 **Mandatory Test Coverage**:
 
@@ -1182,7 +1182,7 @@ async def generate_signals(self, trader_id: str) -> List[OutputSignal]:
 
 ---
 
-## 🔒 Security & Data Governance
+### 🔒 Security & Data Governance
 
 **Agnosis Principle**: NewsSanitizer must NOT assume provider format.
 - Transforms to standard internal format
@@ -1201,7 +1201,7 @@ async def generate_signals(self, trader_id: str) -> List[OutputSignal]:
 
 ---
 
-## 📌 Implementation Prerequisites
+### 📌 Implementation Prerequisites
 
 Before Executor implements NewsSanitizer:
 
@@ -1214,7 +1214,7 @@ Before Executor implements NewsSanitizer:
 
 ---
 
-## 🎯 Success Criteria
+### 🎯 Success Criteria
 
 | Criterion | Measurement |
 |-----------|-------------|
@@ -1227,7 +1227,7 @@ Before Executor implements NewsSanitizer:
 
 ---
 
-## � Contract 2: Economic Veto Interface (NEWS BUFFER GATE)
+### 5️⃣ Contract 5: Economic Veto Interface (NEWS BUFFER GATE)
 
 **Purpose**: Provide trading system (MainOrchestrator) with single source of truth about whether it's safe to trade a given symbol, considering economic calendar events.
 
@@ -1305,7 +1305,7 @@ Economic events affect currencies. Mapping:
 
 ---
 
-## 📍 References
+### 📍 References
 
 - **DEVELOPMENT_GUIDELINES.md**: Section 3 (Data Sanitization Rules)
 - **AETHELGARD_MANIFESTO.md**: Section IV.A (Gestión de Credenciales — applies immutability principle) + Section VIII (Veto por Calendario)
@@ -1316,5 +1316,3 @@ Economic events affect currencies. Mapping:
 ---
 
 **End of Contracts v1.0**
-
-
