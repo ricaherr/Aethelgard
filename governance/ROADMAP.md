@@ -10,7 +10,7 @@
 > - **Framework completo**: `.ai_orchestration_protocol.md` Sección 4.
 
 **Versión Log**: v4.18.0-beta
-**Última Actualización**: 13 de Abril, 2026 (HU 8.9 registrada en Sprint 29 para cierre SSOT snapshot + governance)
+**Última Actualización**: 13 de Abril, 2026 (HU 8.9 completada y archivada en SYSTEM_LEDGER)
 
 ---
 
@@ -52,7 +52,7 @@
 | HU | Nombre | Dominio | Sprint | Estado |
 |---|---|---|---|---|
 | HU 5.4 | Signal-to-Execution Recovery Pipeline | 05 | 29 | [DONE] |
-| HU 8.9 | Strategy SSOT Snapshot Sync & Governance Closure | 08 | 29 | [DEV] |
+| HU 8.9 | Strategy SSOT Snapshot Sync & Governance Closure | 08 | 29 | [DONE] |
 | HU 9.10 | Runtime Confidence Contract Recovery | 09 | 29 | [DONE] |
 | HU 10.27 | Adaptive CPU Guardrail Throttling | 10 | 29 | [DONE] |
 | HU 10.28 | Provider Coverage Reliability | 10 | 29 | [DONE] |

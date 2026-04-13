@@ -49,6 +49,7 @@ from core_brain.data_provider_manager import DataProviderManager
 from core_brain.notificator import get_notifier
 from core_brain.multi_timeframe_limiter import MultiTimeframeLimiter
 from core_brain.coherence_monitor import CoherenceMonitor
+from core_brain.strategy_gatekeeper import StrategyGatekeeper
 from core_brain.signal_expiration_manager import SignalExpirationManager
 from core_brain.regime import RegimeClassifier
 from core_brain.trade_closure_listener import TradeClosureListener
@@ -636,6 +637,7 @@ async def main() -> None:
         # STEP 1: Create MainOrchestrator WITHOUT signal_factory (signal_factory=None)
         # This ensures __init__ doesn't try to load strategies yet
         # Use agnóstico connectors dict instead of hardcoded mt5_connector
+        strategy_gatekeeper = StrategyGatekeeper(storage=storage)
         orchestrator = MainOrchestrator(
             scanner=scanner,
             signal_factory=None,  # OPTION 4: Defer factory injection
@@ -647,6 +649,7 @@ async def main() -> None:
             coherence_monitor=coherence_monitor,
             expiration_manager=expiration_manager,
             regime_classifier=regime_classifier,
+            strategy_gatekeeper=strategy_gatekeeper,
             thought_callback=broadcast_thought
         )
         
@@ -669,6 +672,9 @@ async def main() -> None:
                 user_id=storage.user_id  # Multi-user context for strategy initialization
             )
             active_engines = strategy_factory.instantiate_all_sys_strategies()
+            # Mantener coherencia entre filtro pre-tick y snapshot analyze() con metadata SSOT.
+            strategy_specs = storage.get_all_sys_strategies()
+            strategy_gatekeeper.sync_from_strategy_specs(strategy_specs)
             logger.info(f"[INIT] ✓ {len(active_engines)} estrategias cargadas (con sensores listos)")
         except Exception as e:
             logger.warning(f"[INIT] Error cargando estrategias: {e}. SignalFactory operará con Dict vacío")

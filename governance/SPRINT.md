@@ -1,6 +1,6 @@
 # AETHELGARD: SPRINT LOG
 
-**Última Actualización**: 13 de Abril, 2026 (HU 8.9 registrada en [DEV] con pendientes de cierre)
+**Última Actualización**: 13 de Abril, 2026 (HU 8.9 completada con validate_all 28/28)
 
 > **📋 REGLAS DE EDICIÓN — Leer antes de modificar este documento**
 > - **Propósito**: Diario de ejecución. Cada Sprint referencia una Épica del ROADMAP y las HUs del BACKLOG que ejecuta.
@@ -40,12 +40,13 @@
   - Gate obligatorio: `python scripts/validate_all.py` = 28/28 PASS.
   - Smoke runtime: `python start.py` + `python stop.py` ejecutados en ventana de validación con arranque y cierre operativo.
 
-- [DEV] **HU 8.9: Strategy SSOT Snapshot Sync & Governance Closure** *(Trace_ID: EDGE-STRATEGY-SSOT-SYNC-2026-04-13)*
+- [DONE] **HU 8.9: Strategy SSOT Snapshot Sync & Governance Closure** *(Trace_ID: EDGE-STRATEGY-SSOT-SYNC-2026-04-13)*
   - Estado auditado: snapshot DB-backed inyectado en `StrategyEngineFactory` y consumido por `MOM_BIAS_0001`, `LIQ_SWEEP_0001`, `STRUC_SHIFT_0001`.
   - Estado auditado: documentación técnica actualizada en `AETHELGARD_MANIFESTO.md`, `01_CORE_ADAPTIVE_BRAIN.md`, `03_PERFORMANCE_DARWINISM.md`, `04_DATA_SOVEREIGNTY_INFRA.md`.
-  - Pendiente de cierre 1: cablear `StrategyGatekeeper.sync_from_strategy_specs()` en flujo runtime para alinear ambas capas de filtrado.
-  - Pendiente de cierre 2: resolver inconsistencia docs vs código en `promotion_threshold` (docs describen floor mínimo; `backtest_orchestrator.py` aún no lo aplica).
-  - Pendiente de cierre 3: evidencia final de gate obligatorio (`python scripts/validate_all.py`) y registro de archivado en `SYSTEM_LEDGER.md`.
+  - Implementado: cableado `StrategyGatekeeper.sync_from_strategy_specs()` en `start.py` tras carga de estrategias desde DB.
+  - Implementado: floor real de `promotion_threshold` en `backtest_orchestrator.py` + cobertura TDD (`test_threshold_floor_prevents_zero_or_absurd_values`).
+  - Verificación focal: `pytest tests/test_backtest_adaptive_promotion.py tests/test_strategy_engine_factory.py -q` = 10/10 PASS.
+  - Gate obligatorio: `python scripts/validate_all.py` = 28/28 PASS.
 
 - [DONE] **HU 10.27: Adaptive CPU Guardrail Throttling**
   - Sustituir veto instantáneo por política adaptativa con presión acumulada y degradación escalonada.

@@ -375,10 +375,19 @@ class BacktestOrchestrator:
             ep_dict = json.loads((strategy.get("execution_params") or "{}") or "{}")
             consecutive_failures = int(ep_dict.get("consecutive_failures", 0))
             base_threshold = float(ep_dict.get("promotion_threshold", self.backtester.MIN_REGIME_SCORE))
+            # Safety floor prevents persisting absurd thresholds (e.g. 0.0) after repeated relaxation.
+            threshold_floor = float(
+                ep_dict.get(
+                    "promotion_threshold_floor",
+                    self._cfg.get("promotion_threshold_floor", 0.15),
+                )
+            )
+            if threshold_floor < 0.01:
+                threshold_floor = 0.01
 
             # Relax threshold 5% per 3-failure block (EDGE: unblock stuck strategies)
             relax_factor = 0.95 ** (consecutive_failures // 3)
-            effective_threshold = round(base_threshold * relax_factor, 4)
+            effective_threshold = round(max(base_threshold * relax_factor, threshold_floor), 4)
 
             passes = aggregate_score >= effective_threshold
             if passes:
@@ -389,6 +398,7 @@ class BacktestOrchestrator:
 
             # Always persist threshold and failure count so next run uses updated state
             ep_dict["promotion_threshold"] = effective_threshold
+            ep_dict["promotion_threshold_floor"] = threshold_floor
             self.storage.update_strategy_execution_params(strategy_id, json.dumps(ep_dict))
 
             # Return a representative matrix (first evaluated pair) with updated aggregate score

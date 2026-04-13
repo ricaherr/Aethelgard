@@ -140,3 +140,22 @@ class TestBacktestAdaptivePromotion:
         assert saved_params.get("promotion_threshold", 0.75) < 0.75, (
             "El threshold debe haberse reducido tras 3 failures consecutivos"
         )
+
+    def test_threshold_floor_prevents_zero_or_absurd_values(self):
+        """Si el threshold base llega a 0.0, debe aplicarse floor mínimo configurable."""
+        orc, strategy = _make_orchestrator_with_params(
+            {"promotion_threshold": 0.0, "consecutive_failures": 9},
+            overall_score=0.02,
+        )
+        # floor default from orchestrator config path in production code
+        orc._cfg["promotion_threshold_floor"] = 0.15
+
+        asyncio.run(orc._execute_backtest(strategy))
+
+        saved_params = json.loads(
+            orc.storage.update_strategy_execution_params.call_args[0][1]
+        )
+        assert saved_params.get("promotion_threshold", 0.0) >= 0.15, (
+            "promotion_threshold no debe persistirse por debajo del floor mínimo"
+        )
+        assert saved_params.get("promotion_threshold_floor") == 0.15

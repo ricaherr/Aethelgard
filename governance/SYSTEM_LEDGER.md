@@ -85,6 +85,17 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 
 ---
 
+### Sprint 29 — HU 8.9: Strategy SSOT Snapshot Sync & Governance Closure (13-Abr-2026)
+**Trace_ID**: `EDGE-STRATEGY-SSOT-SYNC-2026-04-13` | **Épica**: E19 (Sprint activo) | **Estado**: HU completada y archivada
+
+| HU | Descripción | Artefactos clave | Tests |
+|---|---|---|---|
+| **HU 8.9** | Cierre de drift SSOT en estrategias `PYTHON_CLASS`: inyección de snapshot DB-backed en factory (`affinity_scores`, `market_whitelist`, `execution_params`) y consumo runtime por estrategias activas. Se cableó sincronización de whitelists del `StrategyGatekeeper` desde `sys_strategies` en bootstrap para alinear filtros pre-tick con `analyze()`. Se implementó floor real para `promotion_threshold` adaptativo en `BacktestOrchestrator` para evitar persistir valores absurdos (0.0), con persistencia explícita de `promotion_threshold_floor`. Governance actualizado en ROADMAP/BACKLOG/SPRINT conforme a framework SCRUM. | `core_brain/services/strategy_engine_factory.py`, `core_brain/strategies/mom_bias_0001.py`, `core_brain/strategies/liq_sweep_0001.py`, `core_brain/strategies/struc_shift_0001.py`, `core_brain/strategy_gatekeeper.py`, `start.py`, `core_brain/backtest_orchestrator.py`, `tests/test_strategy_engine_factory.py`, `tests/test_backtest_adaptive_promotion.py` | 10/10 + 28/28 |
+
+**Validación**: tests focales **10/10 PASSED** · `validate_all.py` **28/28 PASSED**.
+
+---
+
 ### Sprint 29 — HU 9.10: Runtime Confidence Contract Recovery (9-Abr-2026)
 **Trace_ID**: `HU9.10-CONFIDENCE-CONTRACT-RUNTIME-2026-04-09` | **Épica**: E19 (Sprint activo) | **Estado**: HU completada y archivada
 
