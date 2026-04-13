@@ -47,6 +47,39 @@ Cuando `analyze()` retorna `None`, el motivo debe quedar diferenciado en logs:
 
 ---
 
+## I.B Contrato de Confianza Operativa (Evidencia Obligatoria)
+
+**Vigente desde:** 2026-04-13 | Trace_ID: E19-RUNTIME-CONTRACT-HARDENING-2026-04-13
+
+### Regla de Oro
+
+La confianza del sistema se declara solo con evidencia reproducible. Ningún cambio runtime se considera cerrado por narrativa o resultado aislado.
+
+### Fuente Canónica de Confianza
+
+- La matriz oficial reside en `governance/AUDITORIA_ESTADO_REAL.md`.
+- Debe actualizarse en cada HU que toque estrategias, pipeline de señales, riesgo o salud operacional.
+
+### Estructura mínima de la matriz
+
+| Campo | Requisito |
+|---|---|
+| Componente | Nombre técnico del módulo auditado |
+| Esperado | Comportamiento contractual |
+| Observado | Comportamiento runtime real |
+| Estado | OK / PARCIAL / CRÍTICO |
+| Evidencia | logs, DB, tests con referencia concreta |
+| Acción | corrección o seguimiento obligatorio |
+
+### Criterio de Cierre de HU
+
+Una HU runtime no puede declararse `[DONE]` sin:
+1. `validate_all.py` en verde.
+2. Matriz de confianza actualizada.
+3. Ventana de monitoreo con evidencia de operación real.
+
+---
+
 ## II. Mapa de los 5 Pilares (Dominios Consolidados)
 
 | Dominio | Descripción | Documento |
