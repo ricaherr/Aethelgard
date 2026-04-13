@@ -195,7 +195,8 @@ class TestMainOrchestrator:
         )
 
         # Execute one cycle
-        await orchestrator.run_single_cycle()
+        with patch("core_brain.main_orchestrator.psutil.cpu_percent", return_value=0.0):
+            await orchestrator.run_single_cycle()
 
         # Verify the complete chain was executed (may be called twice if data not ready)
         mock_scanner.get_scan_results_with_data.assert_called()
@@ -235,7 +236,8 @@ class TestMainOrchestrator:
         )
         
         # Run a cycle to update the regime
-        await orchestrator.run_single_cycle()
+        with patch("core_brain.main_orchestrator.psutil.cpu_percent", return_value=0.0):
+            await orchestrator.run_single_cycle()
         
         # Get interval for TREND regime
         interval = orchestrator._get_sleep_interval()
@@ -334,7 +336,8 @@ class TestMainOrchestrator:
         )
         
         # Run single cycle
-        await orchestrator.run_single_cycle()
+        with patch("core_brain.main_orchestrator.psutil.cpu_percent", return_value=0.0):
+            await orchestrator.run_single_cycle()
         
         # Scanner and signal factory should run (may be called twice due to UI_MAPPING re-fetch)
         mock_scanner.get_scan_results_with_data.assert_called()

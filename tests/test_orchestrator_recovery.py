@@ -330,7 +330,8 @@ async def test_orchestrator_persistence_after_execution(storage):
     )
 
     # Run one cycle
-    await orchestrator.run_single_cycle()
+    with patch("core_brain.main_orchestrator.psutil.cpu_percent", return_value=0.0):
+        await orchestrator.run_single_cycle()
 
     # Verify signal was persisted
     executed_count = storage.count_executed_usr_signals(date.today())
@@ -369,8 +370,9 @@ async def test_orchestrator_recovery_after_crash(storage):
     )
 
     # Execute 2 cycles
-    await orchestrator1.run_single_cycle()
-    await orchestrator1.run_single_cycle()
+    with patch("core_brain.main_orchestrator.psutil.cpu_percent", return_value=0.0):
+        await orchestrator1.run_single_cycle()
+        await orchestrator1.run_single_cycle()
     
     initial_executed = orchestrator1.stats.usr_signals_executed
     assert initial_executed == 2
