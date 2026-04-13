@@ -48,10 +48,17 @@ class StrategyGatekeeper:
         
         # Load initial affinity scores from DB
         try:
-            self.asset_scores = self.storage.get_strategy_affinity_scores() or {}
-            logger.info(f"[GATEKEEPER] Loaded {len(self.asset_scores)} asset scores into memory cache.")
+            if hasattr(self.storage, "get_strategy_affinity_scores"):
+                self.asset_scores = self.storage.get_strategy_affinity_scores() or {}
+                logger.info(f"[GATEKEEPER] Loaded {len(self.asset_scores)} asset scores into memory cache.")
+            else:
+                self.asset_scores = {}
+                logger.info(
+                    "[GATEKEEPER] Storage has no get_strategy_affinity_scores(); "
+                    "starting with empty cache."
+                )
         except Exception as e:
-            logger.error(f"[GATEKEEPER] Failed to load initial scores: {e}")
+            logger.warning(f"[GATEKEEPER] Failed to load initial scores: {e}")
             self.asset_scores = {}
 
     # ── Pre-Tick Validation (Core Function) ────────────────────────────────────

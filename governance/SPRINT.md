@@ -47,6 +47,14 @@
   - Implementado: floor real de `promotion_threshold` en `backtest_orchestrator.py` + cobertura TDD (`test_threshold_floor_prevents_zero_or_absurd_values`).
   - Verificación focal: `pytest tests/test_backtest_adaptive_promotion.py tests/test_strategy_engine_factory.py -q` = 10/10 PASS.
   - Gate obligatorio: `python scripts/validate_all.py` = 28/28 PASS.
+  - Smoke runtime: `python start.py` arranque exitoso + `python stop.py` cierre limpio (2 procesos terminados, puerto 8000 liberado, lockfile eliminado, DB WAL checkpoints OK).
+  - Monitoreo continuo (13-Abr-2026):
+    - Hallazgo previo resuelto: error de arranque `StrategyGatekeeper` por método faltante en `StorageManager`.
+      - Fix aplicado: `get_strategy_affinity_scores()` agregado en `StrategiesMixin` + init tolerante en `StrategyGatekeeper`.
+      - Evidencia: arranque posterior sin error, log `Loaded 4 asset scores into memory cache`.
+    - Hallazgo nuevo detectado/corregido: cambio de severidad `LOGIC_PENDING` a `INFO` rompió contrato de test (`test_strategy_engine_factory_phase3` esperaba warning). Se revirtió a `WARNING` y se validó suite completa.
+    - Hallazgos activos (operacionales, no defecto de arranque): OEM mantiene warnings por `signal_flow`, `score_stale`, `shadow_stagnation`, `backtest_quality`, `shadow_sync` mientras no haya flujo de señales/trades suficiente.
+    - Validación final posterior a correcciones de monitoreo: `python scripts/validate_all.py` = 28/28 PASS.
 
 - [DONE] **HU 10.27: Adaptive CPU Guardrail Throttling**
   - Sustituir veto instantáneo por política adaptativa con presión acumulada y degradación escalonada.

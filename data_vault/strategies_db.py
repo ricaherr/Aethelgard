@@ -24,6 +24,58 @@ logger = logging.getLogger(__name__)
 class StrategiesMixin(BaseRepository):
     """Mixin for strategy metadata and affinity score database operations."""
 
+    def get_strategy_affinity_scores(self) -> Dict[str, float]:
+        """
+        Return aggregated asset affinity scores from sys_strategies (SSOT).
+
+        Aggregation rule:
+        - Parse each strategy's affinity_scores JSON.
+        - Accept numeric values directly or nested dicts with effective_score/raw_score.
+        - Keep the highest score per asset across strategies (best empirical evidence).
+
+        Returns:
+            Dict[str, float]: {asset_symbol: score_0_to_1}
+
+        Trace_ID: EDGE-STRATEGY-SSOT-SYNC-2026-04-13
+        """
+        aggregated: Dict[str, float] = {}
+        try:
+            rows = self.execute_query("SELECT affinity_scores FROM sys_strategies")
+            for row in rows:
+                raw = row.get("affinity_scores")
+                if not raw:
+                    continue
+                try:
+                    scores_obj = raw if isinstance(raw, dict) else json.loads(raw)
+                except Exception:
+                    continue
+
+                if not isinstance(scores_obj, dict):
+                    continue
+
+                for asset, value in scores_obj.items():
+                    score: float
+                    if isinstance(value, (int, float)):
+                        score = float(value)
+                    elif isinstance(value, dict):
+                        score = float(value.get("effective_score", value.get("raw_score", 0.0)) or 0.0)
+                    else:
+                        continue
+
+                    if score < 0.0:
+                        score = 0.0
+                    if score > 1.0:
+                        score = 1.0
+
+                    current = aggregated.get(asset, 0.0)
+                    if score > current:
+                        aggregated[asset] = score
+
+            return aggregated
+        except Exception as e:
+            logger.error(f"[STRATEGIES] Error aggregating strategy affinity scores: {e}")
+            return {}
+
     def create_strategy(
         self,
         class_id: str,
