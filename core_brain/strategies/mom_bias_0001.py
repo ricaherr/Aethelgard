@@ -132,6 +132,27 @@ class MomentumBias0001Strategy(BaseStrategy):
             f"whitelist={self._market_whitelist}"
         )
 
+    def _resolve_affinity_score(self, symbol: str) -> float:
+        """
+        Normaliza affinity score desde snapshot SSOT (float legacy o dict enriquecido).
+        """
+        raw_value = self._affinity_scores.get(symbol, 0.0)
+
+        if isinstance(raw_value, (int, float)):
+            return float(raw_value)
+
+        if isinstance(raw_value, dict):
+            if isinstance(raw_value.get("effective_score"), (int, float)):
+                return float(raw_value["effective_score"])
+            if isinstance(raw_value.get("raw_score"), (int, float)):
+                return float(raw_value["raw_score"])
+
+        logger.warning(
+            f"[{self.trace_id}] {symbol}: affinity inválida ({type(raw_value).__name__}); "
+            f"usando 0.0 como fallback seguro"
+        )
+        return 0.0
+
     @property
     def strategy_id(self) -> str:
         """Retorna el identificador único de la estrategia."""
@@ -171,7 +192,7 @@ class MomentumBias0001Strategy(BaseStrategy):
                 )
                 return None
 
-            affinity_score = self._affinity_scores[symbol]
+            affinity_score = self._resolve_affinity_score(symbol)
             
             # Validaciones de datos
             if df is None or len(df) < 20:

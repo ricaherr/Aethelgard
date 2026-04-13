@@ -96,6 +96,17 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 
 ---
 
+### Sprint 29 — HU 10.30: Runtime Contract Hardening & Confidence Matrix (13-Abr-2026)
+**Trace_ID**: `E19-RUNTIME-CONTRACT-HARDENING-2026-04-13` | **Épica**: E19 (Sprint activo) | **Estado**: HU completada y archivada
+
+| HU | Descripción | Artefactos clave | Tests |
+|---|---|---|---|
+| **HU 10.30** | Hardening del contrato runtime de `affinity_scores` para estrategias activas en modo SHADOW (`MOM_BIAS_0001`, `LIQ_SWEEP_0001`, `STRUC_SHIFT_0001`). Se normalizó metadata SSOT enriquecida (dict con `effective_score`/`raw_score`) a valor numérico seguro para evitar regresiones por tipo (`dict` vs `float`) en filtros y payload de señal. Incluye matriz de confianza operativa documentada en governance con evidencia por componente y acciones de recuperación. | `core_brain/strategies/mom_bias_0001.py`, `core_brain/strategies/liq_sweep_0001.py`, `core_brain/strategies/struc_shift_0001.py`, `tests/test_mom_bias_0001.py`, `tests/test_liq_sweep_0001.py`, `tests/test_struc_shift_ssot.py`, `governance/AUDITORIA_ESTADO_REAL.md` | 17/17 + 28/28 |
+
+**Validación**: tests focales **17/17 PASSED** · `validate_all.py` **28/28 PASSED** · smoke runtime `start.py`/`stop.py` ejecutado sin recurrencia del `TypeError` en estrategias activas.
+
+---
+
 ### Sprint 29 — HU 9.10: Runtime Confidence Contract Recovery (9-Abr-2026)
 **Trace_ID**: `HU9.10-CONFIDENCE-CONTRACT-RUNTIME-2026-04-09` | **Épica**: E19 (Sprint activo) | **Estado**: HU completada y archivada
 

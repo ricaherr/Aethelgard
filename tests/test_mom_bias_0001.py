@@ -148,6 +148,35 @@ class TestMomBiasSnapshotOverridesClassConstants:
         # El flujo debe llegar al detector (GBPJPY está en clase hardcodeada)
         mock_el.validate_ignition.assert_called_once()
 
+    def test_mom_bias_accepts_enriched_affinity_dict(self):
+        """
+        DADO un snapshot con affinity enriquecida (dict con effective_score),
+        CUANDO analyze recibe el símbolo,
+        ENTONCES no debe romper por tipo y debe llegar al detector.
+        """
+        strat = _make_strategy()
+        strat.apply_metadata_snapshot({
+            "affinity_scores": {
+                "EURUSD": {
+                    "effective_score": 0.84,
+                    "raw_score": 0.90,
+                    "confidence": 0.66,
+                }
+            },
+            "market_whitelist": [],
+            "execution_params": {},
+        })
+
+        df = _make_df()
+        with patch.object(strat, "elephant_candle_detector") as mock_el:
+            mock_el.validate_ignition.return_value = None
+            result = asyncio.run(strat.analyze("EURUSD", df, MarketRegime.TREND))
+
+        assert result is None
+        mock_el.validate_ignition.assert_called_once(), (
+            "Affinity enriquecida debe normalizarse y continuar sin crash"
+        )
+
 
 class TestMomBiasBlockedReasonTraceability:
     """

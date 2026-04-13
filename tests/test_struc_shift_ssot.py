@@ -157,6 +157,35 @@ class TestStrucShiftSnapshotOverridesClassConstants:
             "Whitelist vacía en snapshot no debe bloquear ningún símbolo"
         )
 
+    def test_struc_shift_accepts_enriched_affinity_dict(self):
+        """
+        DADO affinity enriquecida (dict con effective_score),
+        CUANDO analyze procesa símbolo permitido,
+        ENTONCES no debe romper por tipo y debe llegar al analyzer.
+        """
+        analyzer = _make_analyzer(valid=False)
+        strat = _make_strategy(analyzer=analyzer)
+
+        strat.apply_metadata_snapshot({
+            "affinity_scores": {
+                "EURUSD": {
+                    "effective_score": 0.81,
+                    "raw_score": 0.88,
+                    "confidence": 0.62,
+                }
+            },
+            "market_whitelist": ["EURUSD"],
+            "execution_params": {},
+        })
+
+        df = _make_df()
+        result = asyncio.run(strat.analyze("EURUSD", df, MarketRegime.TREND))
+
+        assert result is None
+        analyzer.detect_market_structure.assert_called_once(), (
+            "Affinity enriquecida debe normalizarse sin afectar el flujo"
+        )
+
 
 class TestStrucShiftBlockReasonTraceability:
     """

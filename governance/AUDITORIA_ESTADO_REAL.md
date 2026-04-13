@@ -20,6 +20,30 @@
 
 ---
 
+## MATRIZ DE CONFIANZA OPERATIVA (13-Abr-2026)
+
+**Trace_ID**: `E19-RUNTIME-CONTRACT-HARDENING-2026-04-13`
+**Fuente de evidencia**: `logs/main.log` + `sys_strategies` + `oem_health_snapshot` + `session_stats`.
+
+| Componente | Esperado | Observado | Estado | Evidencia | Acción |
+|---|---|---|---|---|---|
+| Scanner | Ejecutar barrido y entregar snapshots | Ciclo activo, 23 solicitados, 18 resultados válidos | 🟡 PARCIAL | `main.log` (`[EXECUTE_SCAN] ✓ Completed: 18 results cached`) | Recuperar cobertura de providers faltantes |
+| Data Providers | Cobertura estable multi-activo | Fallback agotado para BNBUSDT, BTCUSDT, ETHUSDT, NAS100, SPX500 | 🟡 PARCIAL | `main.log` (`[DATA-FALLBACK] Providers unavailable`) | Ajustar política de cobertura/backoff y conectividad proveedor |
+| Signal Factory | Generar señales raw sin excepciones | Funnel 18→0 en etapa RAW | 🔴 CRÍTICO | `main.log` (`STAGE_RAW_SIGNAL_GENERATION out=0`) | Corregir contrato de affinity en estrategias activas |
+| LIQ_SWEEP_0001 | Evaluar setup con affinity SSOT | Excepción `TypeError` dict vs float en runtime | 🔴 CRÍTICO | `main.log` (`liq_sweep_0001.py`, línea 184) | Hardening de normalización de score enriquecido |
+| MOM_BIAS_0001 | Consumir snapshot SSOT sin ambigüedad | DB entrega affinity enriquecida (dict), estrategia asume float | 🟠 ALTO-RIESGO | `sys_strategies.affinity_scores` (`MOM_BIAS_0001`) | Endurecer normalización defensiva |
+| STRUC_SHIFT_0001 | Emitir señal con metadata affinity coherente | DB entrega affinity enriquecida (dict), riesgo de metadata inconsistente | 🟠 ALTO-RIESGO | `sys_strategies.affinity_scores` (`STRUC_SHIFT_0001`) | Endurecer normalización defensiva |
+| Strategy Gatekeeper | Cargar cache y aplicar veto por score | Carga de scores correcta, sin crash de init | 🟢 OK | `main.log` (`Loaded 4 asset scores into memory cache`) | Mantener monitoreo |
+| SHADOW Loop | Evaluar, promover o monitorizar por desempeño | 6 instancias en MONITOR, 0 promociones | 🟡 DEGRADADO | `main.log` (`Trades Executed 0 < 5`) | Resolver flujo de señales/trades primero |
+| OEM | Invariantes de negocio dentro de umbral | Estado `DEGRADED` con 5 warnings, `failing=[]` | 🟡 DEGRADADO CONTROLADO | `oem_health_snapshot` | Reducir warnings atacando signal_flow/score_stale |
+| API Health | Endpoint estable y responsivo | Respuestas intermitentes (`response ended prematurely`) | 🟠 INESTABLE | llamadas `/health` fallidas durante monitoreo | Revisar lifecycle de proceso UI/API detached |
+
+**Lectura ejecutiva**:
+- El núcleo no está caído; la regresión principal está en contrato runtime de estrategias con metadata SSOT enriquecida.
+- La confianza operativa actual se desbloquea corrigiendo contrato + validación end-to-end, no agregando nuevas features.
+
+---
+
 ## 🔴 HALLAZGO CRÍTICO
 
 ### CRÍTICO-1: `evaluate_all_instances()` — STUB declarado como DONE

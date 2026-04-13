@@ -83,6 +83,89 @@
   - Verificación focal: `pytest tests/test_sqlite_contention_hotfix.py -q` = 6/6 PASS.
   - Gate obligatorio: `python scripts/validate_all.py` = 28/28 PASS.
 
+- [DONE] **HU 10.30: Runtime Contract Hardening & Confidence Matrix** *(🔴 PRIORIDAD MÁXIMA — Estabilización y confianza verificable)*
+  - Corregir contrato de `affinity_scores` en estrategias activas (`MOM_BIAS_0001`, `LIQ_SWEEP_0001`, `STRUC_SHIFT_0001`) para aceptar payload SSOT tipado (float o dict enriquecido con `effective_score`).
+  - Añadir TDD de regresión para snapshots DB con score enriquecido evitando `TypeError` en runtime.
+  - Actualizar matriz de confianza en `governance/AUDITORIA_ESTADO_REAL.md` con evidencia por componente.
+  - Verificación focal ejecutada: `pytest tests/test_mom_bias_0001.py tests/test_liq_sweep_0001.py tests/test_struc_shift_ssot.py -q` = 17/17 PASS.
+  - Gate obligatorio ejecutado: `python scripts/validate_all.py` = 28/28 PASS.
+  - Smoke runtime ejecutado: `python start.py` arranque operativo sin `TypeError` de afinidad en estrategias activas + `python stop.py` cierre limpio.
+
+## ETI SPEC — HU 10.30: Runtime Contract Hardening & Confidence Matrix
+
+**Trace_ID**: `E19-RUNTIME-CONTRACT-HARDENING-2026-04-13`
+**Archivos afectados**:
+- `core_brain/strategies/mom_bias_0001.py`
+- `core_brain/strategies/liq_sweep_0001.py`
+- `core_brain/strategies/struc_shift_0001.py`
+- `tests/test_mom_bias_0001.py`
+- `tests/test_liq_sweep_0001.py`
+- `tests/test_struc_shift_ssot.py`
+- `governance/AUDITORIA_ESTADO_REAL.md`
+
+### 1. Problema
+
+El runtime presenta regresión crítica en generación de señales por inconsistencia de contrato en `affinity_scores`: la SSOT devuelve valores enriquecidos (dict con `effective_score`) y las estrategias activas asumen `float`. Resultado observado: `TypeError` en comparaciones y caída del funnel a `STAGE_RAW_SIGNAL_GENERATION=0`.
+
+### 2. Análisis Técnico / Decisiones de Diseño
+
+Alternativas evaluadas:
+- Normalizar en Factory únicamente: reduce duplicación, pero no protege estrategias instanciadas fuera de factory (tests/herramientas).
+- Normalizar en cada estrategia: mayor robustez local, respeta bajo acoplamiento y evita dependencia de una única ruta de inicialización.
+
+Se elige normalización defensiva en cada estrategia activa para fail-fast controlado y compatibilidad regresiva con snapshots legacy.
+
+### 3. Solución
+
+Agregar helper privado por estrategia para resolver score numérico:
+- Input soportado: `float | int | dict`.
+- Si dict: usar `effective_score`, fallback `raw_score`, fallback `0.0`.
+- Si tipo inválido: log warning y devolver `0.0`.
+
+Usar valor normalizado en filtros y en payload de señal para mantener consistencia.
+
+### 4. Cambios por Archivo
+
+- `core_brain/strategies/mom_bias_0001.py` → normalización de affinity previo a lógica y generación de señal.
+- `core_brain/strategies/liq_sweep_0001.py` → normalización de affinity para eliminar `TypeError` en `< min_affinity`.
+- `core_brain/strategies/struc_shift_0001.py` → normalización de affinity al construir señal.
+- `tests/test_mom_bias_0001.py` → test de snapshot con score enriquecido (dict) sin crash.
+- `tests/test_liq_sweep_0001.py` → test de snapshot con score enriquecido (dict) sin crash.
+- `tests/test_struc_shift_ssot.py` → test de affinity enriquecida en metadata de señal.
+- `governance/AUDITORIA_ESTADO_REAL.md` → matriz de confianza operativa 2026-04-13.
+
+### 5. Criterios de Aceptación (AC)
+
+1. Dado snapshot con `affinity_scores` enriquecidos, cuando `analyze()` corre, entonces no se lanza `TypeError` por comparación de tipos.
+2. Dado score dict sin `effective_score`, cuando se evalúa affinity, entonces usa fallback seguro y mantiene ejecución.
+3. Dado score inválido, cuando se evalúa affinity, entonces se registra warning y no se rompe el ciclo.
+4. Dado ejecución de tests focales, cuando finalizan, entonces pasan 100%.
+5. Dado auditoría de confianza, cuando se revisa governance, entonces existe matriz actualizada con estado/evidencia/acción.
+
+### 6. Tests (TDD)
+
+| Test | Escenario cubierto |
+|---|---|
+| `test_liq_sweep_accepts_enriched_affinity_dict` | dict con `effective_score` en LIQ |
+| `test_mom_bias_accepts_enriched_affinity_dict` | dict con `effective_score` en MOM |
+| `test_struc_shift_affinity_metadata_uses_numeric_score_from_dict` | señal STRUC usa valor numérico normalizado |
+
+### 7. Riesgos
+
+| Riesgo | Mitigación |
+|---|---|
+| Cambio semántico de confidence/affinity | Limitar normalización a extracción numérica conservando thresholds existentes |
+| Falso positivo en tests por mocks débiles | Validar además con smoke runtime y logs de error críticos |
+| Divergencia entre estrategias | Aplicar patrón homogéneo en las 3 activas |
+
+### 8. Orden de Ejecución
+
+1. Añadir tests de regresión (fallo esperado previo).
+2. Implementar normalización en estrategias activas.
+3. Ejecutar pytest focal de 3 suites.
+4. Ejecutar `python scripts/validate_all.py`.
+5. Actualizar snapshot final del sprint/estado según resultados.
+
 ## 🔒 Gate de Ejecución (obligatorio para mover a [DONE])
 
 - `validate_all.py` = 28/28 PASS

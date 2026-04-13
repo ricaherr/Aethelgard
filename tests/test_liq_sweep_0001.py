@@ -155,3 +155,31 @@ class TestLiqSweepSnapshotOverridesClassConstants:
         strat.session_liquidity_sensor.analyze_session_liquidity.assert_not_called(), (
             "USDJPY con affinity 0.50 < min_affinity 0.75 debe bloquearse"
         )
+
+    def test_liq_sweep_accepts_enriched_affinity_dict(self):
+        """
+        DADO un snapshot con affinity enriquecida (dict con effective_score),
+        CUANDO analyze recibe el símbolo,
+        ENTONCES no debe lanzar TypeError y debe llegar al sensor de sesión.
+        """
+        strat = _make_strategy()
+
+        strat.apply_metadata_snapshot({
+            "affinity_scores": {
+                "EURUSD": {
+                    "effective_score": 0.91,
+                    "raw_score": 0.95,
+                    "confidence": 0.7,
+                }
+            },
+            "market_whitelist": [],
+            "execution_params": {},
+        })
+
+        df = _make_df()
+        result = asyncio.run(strat.analyze("EURUSD", df, MarketRegime.TREND))
+
+        assert result is None
+        strat.session_liquidity_sensor.analyze_session_liquidity.assert_called_once(), (
+            "Affinity enriquecida debe normalizarse y permitir flujo sin crash"
+        )

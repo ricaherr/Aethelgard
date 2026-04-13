@@ -162,6 +162,27 @@ class StructureShift0001Strategy(BaseStrategy):
             f"whitelist={self._market_whitelist}"
         )
 
+    def _resolve_affinity_score(self, symbol: str) -> float:
+        """
+        Normaliza affinity score desde snapshot SSOT (float legacy o dict enriquecido).
+        """
+        raw_value = self._affinity_scores.get(symbol, 0.0)
+
+        if isinstance(raw_value, (int, float)):
+            return float(raw_value)
+
+        if isinstance(raw_value, dict):
+            if isinstance(raw_value.get("effective_score"), (int, float)):
+                return float(raw_value["effective_score"])
+            if isinstance(raw_value.get("raw_score"), (int, float)):
+                return float(raw_value["raw_score"])
+
+        logger.warning(
+            f"[{self.trace_id}] {symbol}: affinity inválida ({type(raw_value).__name__}); "
+            f"usando 0.0 como fallback seguro"
+        )
+        return 0.0
+
     @property
     def strategy_id(self) -> str:
         """Retorna el identificador único de la estrategia."""
@@ -308,7 +329,7 @@ class StructureShift0001Strategy(BaseStrategy):
                 tp2 = entry + (risk * self.tp2_ratio)
             
             # 8. Construir señal
-            affinity = self._affinity_scores.get(symbol, 0.0)
+            affinity = self._resolve_affinity_score(symbol)
             confidence = min(0.95, 0.70 + (bos['strength'] / 100) * 0.25)  # Confidence 70-95%
             
             signal = Signal(

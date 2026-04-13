@@ -140,6 +140,31 @@ class LiquiditySweep0001Strategy(BaseStrategy):
             f"whitelist={self._market_whitelist}"
         )
 
+    def _resolve_affinity_score(self, symbol: str) -> float:
+        """
+        Normaliza affinity score desde snapshot SSOT (float legacy o dict enriquecido).
+
+        Soporta payloads tipo:
+        - 0.82
+        - {"effective_score": 0.82, "raw_score": 0.91, ...}
+        """
+        raw_value = self._affinity_scores.get(symbol, 0.0)
+
+        if isinstance(raw_value, (int, float)):
+            return float(raw_value)
+
+        if isinstance(raw_value, dict):
+            if isinstance(raw_value.get("effective_score"), (int, float)):
+                return float(raw_value["effective_score"])
+            if isinstance(raw_value.get("raw_score"), (int, float)):
+                return float(raw_value["raw_score"])
+
+        logger.warning(
+            f"[{self.trace_id}] {symbol}: affinity inválida ({type(raw_value).__name__}); "
+            f"usando 0.0 como fallback seguro"
+        )
+        return 0.0
+
     @property
     def strategy_id(self) -> str:
         """Retorna el identificador único de la estrategia."""
@@ -180,7 +205,7 @@ class LiquiditySweep0001Strategy(BaseStrategy):
                 )
                 return None
 
-            affinity_score = self._affinity_scores[symbol]
+            affinity_score = self._resolve_affinity_score(symbol)
             if affinity_score < self.min_affinity:
                 logger.debug(
                     f"[{self.trace_id}] {symbol} affinity {affinity_score:.2f} < "
