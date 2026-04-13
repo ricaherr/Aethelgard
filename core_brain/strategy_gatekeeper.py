@@ -188,6 +188,45 @@ class StrategyGatekeeper:
             logger.error(f"[GATEKEEPER] Error logging performance: {e}")
             return False
 
+    # ── Sync from Strategy Specs (Alignment with analyze() snapshot) ────────────
+
+    def sync_from_strategy_specs(
+        self,
+        strategy_specs: List[Dict[str, Any]]
+    ) -> None:
+        """
+        Sincroniza market_whitelists con los datos de sys_strategies (SSOT).
+
+        Garantiza que las whitelists del Gatekeeper sean coherentes con las que
+        analyze() recibe vía snapshot DB-backed, eliminando el riesgo de
+        contradicción entre las dos capas de filtrado.
+
+        Debe llamarse después de cargar estrategias desde la factory para que
+        ambas capas (analyze snapshot y Gatekeeper) usen la misma noción de
+        whitelist por estrategia.
+
+        Args:
+            strategy_specs: Lista de dicts de sys_strategies con market_whitelist.
+
+        Trace_ID: EDGE-STRATEGY-SSOT-SYNC-2026-04-13
+        """
+        synced = 0
+        for spec in strategy_specs:
+            strategy_id = spec.get("class_id") or spec.get("strategy_id")
+            whitelist = spec.get("market_whitelist")
+            if not strategy_id:
+                continue
+            if whitelist:
+                self.market_whitelists[strategy_id] = list(whitelist)
+                synced += 1
+            elif strategy_id in self.market_whitelists:
+                # Lista vacía en DB = sin restricción → limpiar whitelist del gatekeeper
+                del self.market_whitelists[strategy_id]
+                synced += 1
+        logger.info(
+            f"[GATEKEEPER] Whitelists sincronizadas con sys_strategies: {synced} estrategias"
+        )
+
     # ── Cache Refresh (Reload from DB) ──────────────────────────────────────────
 
     def refresh_affinity_scores(self) -> bool:

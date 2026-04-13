@@ -33,6 +33,12 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
     """
     cursor = conn.cursor()
 
+    # Belt-and-suspenders: ensure WAL mode and busy_timeout are active on this
+    # connection regardless of how it was created (DatabaseManager pool, raw
+    # sqlite3.connect, or test fixtures).  Idempotent — safe to call multiple times.
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=120000")
+
     # ── 0. Identity & Authentication (SSOT - Single Database) ──────────────────
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS sys_users (

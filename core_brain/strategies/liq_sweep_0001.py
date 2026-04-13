@@ -76,14 +76,20 @@ class LiquiditySweep0001Strategy(BaseStrategy):
             trace_id: ID único de traza
         """
         super().__init__(config or {})
-        
+
         self.storage_manager = storage_manager
         self.session_liquidity_sensor = session_liquidity_sensor
         self.liquidity_sweep_detector = liquidity_sweep_detector
         self.fundamental_guard = fundamental_guard
         self.user_id = user_id
         self.trace_id = trace_id or f"STRAT-LIQ-SWEEP-0001-{user_id}"
-        
+
+        # Snapshot DB-backed de metadata estratégica (SSOT).
+        # Fallback a constantes de clase para compatibilidad regresiva.
+        self._affinity_scores: Dict[str, float] = dict(self.AFFINITY_SCORES)
+        self._market_whitelist: List[str] = []
+        self._execution_params: Dict[str, Any] = {}
+
         # Parámetros dinámicos
         self._load_parameters()
         
@@ -112,12 +118,34 @@ class LiquiditySweep0001Strategy(BaseStrategy):
             self.allowed_sessions = ['LONDON']
     
     
+    def apply_metadata_snapshot(self, snapshot: Dict[str, Any]) -> None:
+        """
+        Inyecta snapshot DB-backed de metadata estratégica desde sys_strategies (SSOT).
+
+        Args:
+            snapshot: Dict con claves affinity_scores, market_whitelist, execution_params.
+
+        Trace_ID: EDGE-STRATEGY-SSOT-SYNC-2026-04-13
+        """
+        if snapshot.get("affinity_scores"):
+            self._affinity_scores = dict(snapshot["affinity_scores"])
+        if "market_whitelist" in snapshot:
+            self._market_whitelist = list(snapshot["market_whitelist"])
+        if snapshot.get("execution_params"):
+            self._execution_params = dict(snapshot["execution_params"])
+
+        logger.debug(
+            f"[{self.trace_id}] Metadata snapshot aplicado: "
+            f"assets={list(self._affinity_scores.keys())}, "
+            f"whitelist={self._market_whitelist}"
+        )
+
     @property
     def strategy_id(self) -> str:
         """Retorna el identificador único de la estrategia."""
         return self.STRATEGY_ID
-    
-    
+
+
     async def analyze(
         self,
         symbol: str,
@@ -144,17 +172,19 @@ class LiquiditySweep0001Strategy(BaseStrategy):
             Signal con entrada, SL, TP, o None si no hay señal
         """
         try:
-            # Step 1: Validar affinity score
-            if symbol not in self.AFFINITY_SCORES:
+            # Step 1: Validar affinity score (snapshot DB-backed; fallback a constante de clase)
+            if symbol not in self._affinity_scores:
                 logger.debug(
-                    f"[{self.trace_id}] {symbol} no en affinity scores. Skipping LIQ_SWEEP_0001"
+                    f"[{self.trace_id}] {symbol} no en affinity scores (snapshot). "
+                    f"Skipping LIQ_SWEEP_0001. Razón: symbol_not_in_affinity"
                 )
                 return None
-            
-            affinity_score = self.AFFINITY_SCORES[symbol]
+
+            affinity_score = self._affinity_scores[symbol]
             if affinity_score < self.min_affinity:
                 logger.debug(
-                    f"[{self.trace_id}] {symbol} affinity {affinity_score:.2f} < {self.min_affinity:.2f}"
+                    f"[{self.trace_id}] {symbol} affinity {affinity_score:.2f} < "
+                    f"min_affinity {self.min_affinity:.2f}. Razón: affinity_below_threshold"
                 )
                 return None
             

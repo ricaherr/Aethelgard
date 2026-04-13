@@ -70,12 +70,19 @@ class MomentumBias0001Strategy(BaseStrategy):
             trace_id: ID de traza para auditoría
         """
         super().__init__(config or {})
-        
+
         self.storage_manager = storage_manager
         self.elephant_candle_detector = elephant_candle_detector
         self.moving_average_sensor = moving_average_sensor
         self.trace_id = trace_id or "STRAT-MOM-BIAS-0001"
-        
+
+        # Snapshot DB-backed de metadata estratégica (SSOT).
+        # Inicializa con constantes de clase como fallback para compatibilidad regresiva.
+        # Se sobreescribe con apply_metadata_snapshot() al cargar desde factory.
+        self._affinity_scores: Dict[str, float] = dict(self.AFFINITY_SCORES)
+        self._market_whitelist: List[str] = []
+        self._execution_params: Dict[str, Any] = {}
+
         # Cargar parámetros dinámicos
         self._load_parameters()
         
@@ -99,12 +106,38 @@ class MomentumBias0001Strategy(BaseStrategy):
             self.enabled_symbols = list(self.AFFINITY_SCORES.keys())
     
     
+    def apply_metadata_snapshot(self, snapshot: Dict[str, Any]) -> None:
+        """
+        Inyecta snapshot DB-backed de metadata estratégica desde sys_strategies (SSOT).
+
+        Reemplaza los valores operativos de filtro (affinity_scores, market_whitelist)
+        con los persistidos en DB. analyze() usará estos valores en lugar de las
+        constantes de clase hardcodeadas.
+
+        Args:
+            snapshot: Dict con claves affinity_scores, market_whitelist, execution_params.
+
+        Trace_ID: EDGE-STRATEGY-SSOT-SYNC-2026-04-13
+        """
+        if snapshot.get("affinity_scores"):
+            self._affinity_scores = dict(snapshot["affinity_scores"])
+        if "market_whitelist" in snapshot:
+            self._market_whitelist = list(snapshot["market_whitelist"])
+        if snapshot.get("execution_params"):
+            self._execution_params = dict(snapshot["execution_params"])
+
+        logger.debug(
+            f"[{self.trace_id}] Metadata snapshot aplicado: "
+            f"assets={list(self._affinity_scores.keys())}, "
+            f"whitelist={self._market_whitelist}"
+        )
+
     @property
     def strategy_id(self) -> str:
         """Retorna el identificador único de la estrategia."""
         return self.STRATEGY_ID
-    
-    
+
+
     async def analyze(
         self,
         symbol: str,
@@ -130,14 +163,15 @@ class MomentumBias0001Strategy(BaseStrategy):
             Signal con stop_loss = OPEN, o None si no hay señal
         """
         try:
-            # Step 1: Filtrar por símbolo habilitado (affinity score)
-            if symbol not in self.AFFINITY_SCORES:
+            # Step 1: Filtrar por affinity score (snapshot DB-backed; fallback a constante de clase)
+            if symbol not in self._affinity_scores:
                 logger.debug(
-                    f"[{self.trace_id}] {symbol} no en affinity scores. Skipping MOM_BIAS_0001"
+                    f"[{self.trace_id}] {symbol} no en affinity scores (snapshot). "
+                    f"Skipping MOM_BIAS_0001. Razón: symbol_not_in_affinity"
                 )
                 return None
-            
-            affinity_score = self.AFFINITY_SCORES[symbol]
+
+            affinity_score = self._affinity_scores[symbol]
             
             # Validaciones de datos
             if df is None or len(df) < 20:

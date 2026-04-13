@@ -90,7 +90,10 @@
 
 ## 08_DATA_SOVEREIGNTY (SSOT, Persistence)
 
-*(Sin HUs pendientes — HU 8.8 archivada en SYSTEM_LEDGER)*
+* **HU 8.9: Strategy SSOT Snapshot Sync & Governance Closure** `[DEV]`
+    * **Descripción**: Unificar ejecución PYTHON_CLASS con metadata DB-backed (`affinity_scores`, `market_whitelist`, `execution_params`) vía snapshot en memoria y cierre formal de governance.
+    * **Estado actual**: Inyección snapshot en factory + consumo en estrategias reportado como implementado. Pendientes para cierre: (1) cablear `StrategyGatekeeper.sync_from_strategy_specs()` en flujo runtime; (2) resolver inconsistencia docs vs código sobre floor mínimo de `promotion_threshold`; (3) completar registro de cierre en governance (SPRINT + SYSTEM_LEDGER con evidencia de validación).
+    * **🖥️ UI/Operación**: Mejora de trazabilidad operacional en `no_signal_generated` con reason codes diferenciados por whitelist/affinity.
 
 
 ---

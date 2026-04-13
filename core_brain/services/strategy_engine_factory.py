@@ -186,6 +186,8 @@ class StrategyEngineFactory:
         # Paso 4: Instanciar según tipo
         if strategy_type == "PYTHON_CLASS":
             engine = self._instantiate_python_strategy(strategy_spec)
+            # Inyectar snapshot DB-backed de metadata estratégica (SSOT)
+            self._inject_metadata_snapshot(engine, strategy_spec)
         elif strategy_type == "JSON_SCHEMA":
             engine = self._instantiate_json_schema_strategy(strategy_spec)
         else:
@@ -438,6 +440,61 @@ class StrategyEngineFactory:
         except Exception as e:
             raise Exception(f"Error creating UniversalStrategyEngine for {strategy_id}: {e}")
     
+    def _inject_metadata_snapshot(
+        self,
+        instance: Any,
+        strategy_spec: Dict[str, Any]
+    ) -> None:
+        """
+        Inyecta snapshot de metadata estratégica DB-backed en una instancia PYTHON_CLASS.
+
+        Construye un snapshot inmutable con affinity_scores, market_whitelist y
+        execution_params leídos desde sys_strategies (SSOT). Lo entrega mediante
+        apply_metadata_snapshot() si la instancia lo implementa.
+
+        Estrategias que no implementen el método siguen funcionando con sus
+        constantes locales (compatibilidad regresiva, sin excepción).
+
+        Args:
+            instance: Instancia de BaseStrategy recién creada.
+            strategy_spec: Dict de sys_strategies con metadata ya parseada.
+
+        Trace_ID: EDGE-STRATEGY-SSOT-SYNC-2026-04-13
+        """
+        if not hasattr(instance, "apply_metadata_snapshot"):
+            return
+
+        strategy_id = strategy_spec.get("class_id", "UNKNOWN")
+
+        # Parsear execution_params desde JSON si llega como string
+        raw_exec = strategy_spec.get("execution_params") or "{}"
+        if isinstance(raw_exec, str):
+            try:
+                execution_params: Dict[str, Any] = json.loads(raw_exec)
+            except Exception:
+                execution_params = {}
+        else:
+            execution_params = raw_exec if isinstance(raw_exec, dict) else {}
+
+        snapshot: Dict[str, Any] = {
+            "affinity_scores":  strategy_spec.get("affinity_scores") or {},
+            "market_whitelist": strategy_spec.get("market_whitelist") or [],
+            "execution_params": execution_params,
+        }
+
+        try:
+            instance.apply_metadata_snapshot(snapshot)
+            logger.debug(
+                f"[FACTORY] ✓ {strategy_id}: metadata snapshot inyectado "
+                f"(assets={list(snapshot['affinity_scores'].keys())}, "
+                f"whitelist={snapshot['market_whitelist']})"
+            )
+        except Exception as e:
+            logger.warning(
+                f"[FACTORY] ⚠ {strategy_id}: apply_metadata_snapshot falló: {e}. "
+                f"La estrategia operará con sus constantes locales."
+            )
+
     def get_engine(self, strategy_id: str) -> Optional[Any]:
         """
         Obtiene una estrategia compilada del cache.

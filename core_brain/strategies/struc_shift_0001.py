@@ -81,13 +81,19 @@ class StructureShift0001Strategy(BaseStrategy):
             reasoning_event_callback: Callback para emitir eventos de razonamiento
         """
         super().__init__(config or {})
-        
+
         self.storage_manager = storage_manager
         self.market_structure_analyzer = market_structure_analyzer
         self.user_id = user_id
         self.trace_id = trace_id or f"STRAT-STRUC-SHIFT-0001-{user_id}"
         self.reasoning_event_callback = reasoning_event_callback
-        
+
+        # Snapshot DB-backed de metadata estratégica (SSOT).
+        # Fallback a constantes de clase para compatibilidad regresiva.
+        self._affinity_scores: Dict[str, float] = dict(self.AFFINITY_SCORES)
+        self._market_whitelist: List[str] = list(self.MARKET_WHITELIST)
+        self._execution_params: Dict[str, Any] = {}
+
         # Parámetros dinámicos
         self._load_parameters()
         
@@ -127,14 +133,40 @@ class StructureShift0001Strategy(BaseStrategy):
             self.sl_buffer_pips = 10
             self.min_structure_strength = 3
             self.min_bos_strength = 2.0
-    
-    
-    
+    def apply_metadata_snapshot(self, snapshot: Dict[str, Any]) -> None:
+        """
+        Inyecta snapshot DB-backed de metadata estratégica desde sys_strategies (SSOT).
+
+        Reemplaza market_whitelist y affinity_scores operativos con los valores
+        persistidos en DB. analyze() usará estos valores en lugar de las constantes
+        de clase hardcodeadas (MARKET_WHITELIST, AFFINITY_SCORES).
+
+        Regla: whitelist vacía en snapshot = sin restricción de activos.
+
+        Args:
+            snapshot: Dict con claves affinity_scores, market_whitelist, execution_params.
+
+        Trace_ID: EDGE-STRATEGY-SSOT-SYNC-2026-04-13
+        """
+        if snapshot.get("affinity_scores"):
+            self._affinity_scores = dict(snapshot["affinity_scores"])
+        # market_whitelist siempre se actualiza (lista vacía = sin restricción)
+        if "market_whitelist" in snapshot:
+            self._market_whitelist = list(snapshot["market_whitelist"])
+        if snapshot.get("execution_params"):
+            self._execution_params = dict(snapshot["execution_params"])
+
+        logger.debug(
+            f"[{self.trace_id}] Metadata snapshot aplicado: "
+            f"assets={list(self._affinity_scores.keys())}, "
+            f"whitelist={self._market_whitelist}"
+        )
+
     @property
     def strategy_id(self) -> str:
         """Retorna el identificador único de la estrategia."""
         return self.STRATEGY_ID
-    
+
     async def analyze(
         self,
         symbol: str,
@@ -162,9 +194,13 @@ class StructureShift0001Strategy(BaseStrategy):
         """
         
         try:
-            # Validar que el símbolo está en el whitelist
-            if symbol not in self.MARKET_WHITELIST:
-                logger.debug(f"[{self.trace_id}] {symbol} no está en market whitelist for {self.STRATEGY_ID}")
+            # Validar que el símbolo está en el whitelist (snapshot DB-backed; fallback a clase)
+            # Regla: whitelist vacía = sin restricción (todos los símbolos pasan)
+            if self._market_whitelist and symbol not in self._market_whitelist:
+                logger.debug(
+                    f"[{self.trace_id}] {symbol} no está en market whitelist (snapshot) "
+                    f"para {self.STRATEGY_ID}. Razón: symbol_not_in_market_whitelist"
+                )
                 return None
             
             # Recolectar suficientes datos históricos
@@ -272,7 +308,7 @@ class StructureShift0001Strategy(BaseStrategy):
                 tp2 = entry + (risk * self.tp2_ratio)
             
             # 8. Construir señal
-            affinity = self.AFFINITY_SCORES.get(symbol, 0.0)
+            affinity = self._affinity_scores.get(symbol, 0.0)
             confidence = min(0.95, 0.70 + (bos['strength'] / 100) * 0.25)  # Confidence 70-95%
             
             signal = Signal(

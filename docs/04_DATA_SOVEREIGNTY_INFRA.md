@@ -227,7 +227,40 @@ session_tokens       - Tokens de sesión (auth — NIVEL0 SSOT)
 
 **Score Formula**: `score = score_live × 0.50 + score_shadow × 0.30 + score_backtest × 0.20`
 
-**Lifecycle**: `BACKTEST ──(score ≥ 0.75)──→ SHADOW ──(3 Pilares pass)──→ LIVE`
+**Lifecycle**: `BACKTEST ──(promotion_threshold adaptativo en execution_params)──→ SHADOW ──(3 Pilares pass)──→ LIVE`
+
+> ⚠️ **Corrección 2026-04-13 (EDGE-STRATEGY-SSOT-SYNC):** El threshold de promoción NO es fijo en 0.75. Es el valor de `execution_params['promotion_threshold']`, que inicia en 0.75 y evoluciona adaptativamente. Ver `03_PERFORMANCE_DARWINISM.md §Ciclo BACKTEST → SHADOW`.
+
+### Contrato de Runtime para Estrategias PYTHON_CLASS
+
+**Vigente desde:** 2026-04-13 | Trace_ID: EDGE-STRATEGY-SSOT-SYNC-2026-04-13
+
+Los campos `affinity_scores`, `market_whitelist` y `execution_params` de `sys_strategies` son la fuente de verdad para filtrado operativo. Las reglas de uso son:
+
+| Regla | Descripción |
+|---|---|
+| **DB como SSOT** | `affinity_scores` y `market_whitelist` en DB gobiernan qué activos analiza cada estrategia |
+| **Snapshot en memoria** | La factory (`StrategyEngineFactory`) inyecta estos valores al instanciar, via `apply_metadata_snapshot()` |
+| **Sin lecturas por tick** | `analyze()` usa solo el snapshot en memoria; cero queries a DB durante ejecución |
+| **JSON no es runtime source** | Los archivos JSON en `data_vault/seed/` son semillas de bootstrap, no fuente de runtime |
+| **Constantes de clase = fallback** | `AFFINITY_SCORES` y `MARKET_WHITELIST` en clases Python son fallback de compatibilidad, no SSOT |
+| **Refresh = restart** | Cambios en DB se reflejan en el siguiente startup del motor, no mid-runtime |
+
+### execution_params (campos estándar para estrategias)
+
+El campo `execution_params` (JSON) puede contener:
+
+```json
+{
+  "promotion_threshold": 0.68,
+  "consecutive_failures": 2,
+  "confidence_threshold": 0.75,
+  "risk_reward": 2.0
+}
+```
+
+- `promotion_threshold`: Umbral adaptativo para BACKTEST → SHADOW
+- `consecutive_failures`: Contador de runs sin superar el threshold (feed de relajación)
 
 ---
 

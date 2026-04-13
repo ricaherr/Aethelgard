@@ -12,6 +12,41 @@ Aethelgard es un ecosistema autónomo, proactivo y matemáticamente agnóstico d
 
 ---
 
+## I.A Contrato Arquitectónico: DB como SSOT + Snapshot en Memoria
+
+**Vigente desde:** 2026-04-13 | Trace_ID: EDGE-STRATEGY-SSOT-SYNC-2026-04-13
+
+### Regla de Oro: Metadata Estratégica
+
+Toda metadata operativa de una estrategia (`affinity_scores`, `market_whitelist`, `execution_params`) reside exclusivamente en `sys_strategies` (SSOT). Las estrategias PYTHON_CLASS **no pueden usar constantes de clase hardcodeadas como fuente de filtrado operativo**.
+
+### Contrato de Runtime
+
+| Capa | Rol | Fuente de datos |
+|---|---|---|
+| `sys_strategies` | Fuente única de verdad | SQLite — DB |
+| `StrategyEngineFactory._inject_metadata_snapshot()` | Carga snapshot al instanciar | Lee `sys_strategies` en startup |
+| `strategy._affinity_scores` / `_market_whitelist` | Runtime operativo | Snapshot en memoria (inmutable por ciclo) |
+| `StrategyGatekeeper` | Pre-tick post-análisis | `usr_strategy_logs` (scores aprendidos) |
+
+### Prohibición Explícita
+
+Las clases PYTHON_CLASS (`MOM_BIAS_0001`, `LIQ_SWEEP_0001`, `STRUC_SHIFT_0001`, etc.) **no deben usar `self.AFFINITY_SCORES` ni `self.MARKET_WHITELIST` como fuente operativa de filtrado**. Esas constantes de clase existen únicamente como documentación semántica y fallback de compatibilidad regresiva para entornos sin factory.
+
+### Refresh Controlado
+
+El snapshot se carga **una sola vez por startup** (compilación única). Si `sys_strategies` cambia en DB, la estrategia toma el nuevo valor en el **siguiente reinicio del motor**, no en el siguiente tick. No se realizan lecturas a DB durante `analyze()`.
+
+### Trazabilidad de No-Señal
+
+Cuando `analyze()` retorna `None`, el motivo debe quedar diferenciado en logs:
+- `symbol_not_in_affinity` → símbolo no en snapshot
+- `affinity_below_threshold` → score insuficiente
+- `symbol_not_in_market_whitelist` → whitelist activa lo excluye
+- `insuficiente` / `insufficient` → datos OHLC insuficientes
+
+---
+
 ## II. Mapa de los 5 Pilares (Dominios Consolidados)
 
 | Dominio | Descripción | Documento |

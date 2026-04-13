@@ -1,6 +1,6 @@
 # AETHELGARD: SPRINT LOG
 
-**Última Actualización**: 9 de Abril, 2026 (Sprint 29 abierto — E19 en preparación)
+**Última Actualización**: 13 de Abril, 2026 (HU 8.9 registrada en [DEV] con pendientes de cierre)
 
 > **📋 REGLAS DE EDICIÓN — Leer antes de modificar este documento**
 > - **Propósito**: Diario de ejecución. Cada Sprint referencia una Épica del ROADMAP y las HUs del BACKLOG que ejecuta.
@@ -39,6 +39,13 @@
   - Verificación focal: `pytest tests/test_signal_pipeline_funnel.py tests/test_cycle_trade_rejection_reasons.py tests/test_strategy_authorization_reason_codes.py tests/test_orchestrator_shadow_integration.py tests/test_signal_factory_integration.py -q` = 32/32 PASS.
   - Gate obligatorio: `python scripts/validate_all.py` = 28/28 PASS.
   - Smoke runtime: `python start.py` + `python stop.py` ejecutados en ventana de validación con arranque y cierre operativo.
+
+- [DEV] **HU 8.9: Strategy SSOT Snapshot Sync & Governance Closure** *(Trace_ID: EDGE-STRATEGY-SSOT-SYNC-2026-04-13)*
+  - Estado auditado: snapshot DB-backed inyectado en `StrategyEngineFactory` y consumido por `MOM_BIAS_0001`, `LIQ_SWEEP_0001`, `STRUC_SHIFT_0001`.
+  - Estado auditado: documentación técnica actualizada en `AETHELGARD_MANIFESTO.md`, `01_CORE_ADAPTIVE_BRAIN.md`, `03_PERFORMANCE_DARWINISM.md`, `04_DATA_SOVEREIGNTY_INFRA.md`.
+  - Pendiente de cierre 1: cablear `StrategyGatekeeper.sync_from_strategy_specs()` en flujo runtime para alinear ambas capas de filtrado.
+  - Pendiente de cierre 2: resolver inconsistencia docs vs código en `promotion_threshold` (docs describen floor mínimo; `backtest_orchestrator.py` aún no lo aplica).
+  - Pendiente de cierre 3: evidencia final de gate obligatorio (`python scripts/validate_all.py`) y registro de archivado en `SYSTEM_LEDGER.md`.
 
 - [DONE] **HU 10.27: Adaptive CPU Guardrail Throttling**
   - Sustituir veto instantáneo por política adaptativa con presión acumulada y degradación escalonada.

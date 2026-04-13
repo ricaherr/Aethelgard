@@ -3,6 +3,7 @@ import os
 import sqlite3
 import json
 import shutil
+import time
 import uuid
 from contextlib import nullcontext
 from datetime import datetime
@@ -88,30 +89,46 @@ class StorageManager(
             self._ensure_tenant_db_exists()
         
         # Initialize database schema and migrations
-        try:
-            logger.info("Initializing database schema...")
-            critical_context = nullcontext()
-            if hasattr(self.db_driver, "force_critical_writes"):
-                critical_context = self.db_driver.force_critical_writes()
+        # Retry loop handles transient "database is locked" errors that can occur
+        # when multiple processes start simultaneously (e.g., scripts + main app).
+        # initialize_schema() sets PRAGMA busy_timeout=120000 as belt-and-suspenders,
+        # but a Python-level retry provides a second layer of resilience.
+        logger.info("Initializing database schema...")
+        critical_context = nullcontext()
+        if hasattr(self.db_driver, "force_critical_writes"):
+            critical_context = self.db_driver.force_critical_writes()
 
-            with critical_context:
-                with self.transaction() as conn:
-                    # DDL (idempotent via CREATE TABLE IF NOT EXISTS)
-                    initialize_schema(conn)
-                    # Incremental migrations
-                    run_migrations(conn)
-                    # Default user preferences
-                    seed_default_usr_preferences(conn)
-                    # Symbol mapping bootstrap
-                    bootstrap_symbol_mappings(conn)
-                    # JSON config migration (SSOT: once on first init)
-                    self._bootstrap_from_json(conn)
+        _max_schema_attempts = 5
+        for _attempt in range(_max_schema_attempts):
+            try:
+                with critical_context:
+                    with self.transaction() as conn:
+                        # DDL (idempotent via CREATE TABLE IF NOT EXISTS)
+                        initialize_schema(conn)
+                        # Incremental migrations
+                        run_migrations(conn)
+                        # Default user preferences
+                        seed_default_usr_preferences(conn)
+                        # Symbol mapping bootstrap
+                        bootstrap_symbol_mappings(conn)
+                        # JSON config migration (SSOT: once on first init)
+                        self._bootstrap_from_json(conn)
+                break  # success — exit retry loop
+            except Exception as e:
+                _is_lock_error = "locked" in str(e).lower() or "busy" in str(e).lower()
+                if _is_lock_error and _attempt < _max_schema_attempts - 1:
+                    _backoff = 0.5 * (2 ** _attempt)  # 0.5 → 1 → 2 → 4 s
+                    logger.warning(
+                        f"[StorageManager] Schema init locked (attempt {_attempt + 1}/{_max_schema_attempts}), "
+                        f"retrying in {_backoff:.1f}s: {e}"
+                    )
+                    time.sleep(_backoff)
+                else:
+                    logger.error(f"Error during schema initialization: {e}")
+                    raise
 
-            # Default asset profiles (required for normalization)
-            self.seed_initial_assets()
-        except Exception as e:
-            logger.error(f"Error during schema initialization: {e}")
-            raise
+        # Default asset profiles (required for normalization)
+        self.seed_initial_assets()
 
     @staticmethod
     def _resolve_db_path(user_id: Optional[str]) -> str:

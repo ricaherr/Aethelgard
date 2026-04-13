@@ -38,6 +38,39 @@ El ciclo de vida del aprendizaje se materializa post-trade, permitiendo que el s
    * Dependiendo de la estructura de las últimas ejecuciones evaluadas en la tabla de registro, el **ThresholdOptimizer** decide si endurece o relaja el `confidence_threshold` dinámico.
 4. **Persistencia Limpia (SSOT)**: Las readaptaciones se registran mediante inserciones auditadas en el esquema de sistema. Los overrides de parámetros se persisten en la columna `parameter_overrides` (JSON) de `sys_shadow_instances`; los eventos de deduplicación en la tabla `sys_dedup_events`. La fuente de verdad siempre emite parámetros ajustados en función del mercado sin intervención humana.
 
+## 🔗 Flujo EDGE: Aprendizaje en Backtest → Ejecución Runtime
+
+**Vigente desde:** 2026-04-13 | Trace_ID: EDGE-STRATEGY-SSOT-SYNC-2026-04-13
+
+El sistema aprende durante el backtest y persiste ese aprendizaje en `sys_strategies`. La ejecución lo consume vía snapshot, sin lecturas DB por tick.
+
+### Paso a paso
+
+1. **Backtest** (`BacktestOrchestrator._execute_backtest()`):
+   - Corre `ScenarioBacktester` sobre datos reales.
+   - Calcula `overall_score`.
+   - Persiste `affinity_scores` por activo/timeframe en `sys_strategies`.
+   - Persiste `execution_params` con `promotion_threshold` (umbral adaptativo) y `consecutive_failures`.
+
+2. **Startup del Motor** (`StrategyEngineFactory.instantiate_all_sys_strategies()`):
+   - Lee `sys_strategies` completo desde DB.
+   - Para cada `PYTHON_CLASS`, llama `_inject_metadata_snapshot()`.
+   - La instancia recibe `affinity_scores`, `market_whitelist`, `execution_params` como snapshot en memoria.
+
+3. **Tick de Ejecución** (`strategy.analyze()`):
+   - Usa `self._affinity_scores` y `self._market_whitelist` del snapshot.
+   - **Cero lecturas a DB** por tick.
+   - El aprendizaje de backtest guía qué activos analizar sin costo de IO.
+
+### Promoción BACKTEST → SHADOW (umbral adaptativo)
+
+El umbral de promoción NO es fijo en `0.75`. Es el valor de `execution_params['promotion_threshold']` persistido en DB:
+
+- **Bootstrap:** Si no existe, usa `backtester.MIN_REGIME_SCORE` (0.75) como valor inicial.
+- **Persistencia:** Tras cada run exitoso, el threshold efectivo se persiste en `execution_params`.
+- **Relajación:** Si la estrategia lleva `consecutive_failures` runs sin superar el umbral, el threshold se reduce un 5% (factor 0.95) para evitar bloqueo permanente.
+- **Floor mínimo:** No se persisten valores absurdamente bajos (0.0). La relajación opera sobre el historial real, no fuerza valores sin base empírica.
+
 ## 📈 Roadmap del Dominio
 
 **Hitos Completados:**

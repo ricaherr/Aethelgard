@@ -57,6 +57,39 @@ El `Strategy Ranker` es el árbitro final de estado, utilizando métricas cruzad
 
 ---
 
+## 🎯 Ciclo BACKTEST → SHADOW: Umbral Adaptativo (Estado Real)
+
+**Vigente desde:** 2026-04-13 | Trace_ID: EDGE-STRATEGY-SSOT-SYNC-2026-04-13
+
+> La documentación anterior indicaba que la promoción BACKTEST → SHADOW usaba un threshold fijo de 0.75. **Esta sección corrige ese dato.**
+
+### Umbral de Promoción (promotion_threshold)
+
+El threshold de promoción es **adaptativo y persistido por estrategia** en `sys_strategies.execution_params`:
+
+```json
+{
+  "promotion_threshold": 0.68,
+  "consecutive_failures": 2
+}
+```
+
+| Campo | Significado |
+|---|---|
+| `promotion_threshold` | Umbral actual para promover a SHADOW. Inicia en `MIN_REGIME_SCORE` (0.75) |
+| `consecutive_failures` | Número de backtests sin superar el threshold (relajación progresiva) |
+
+### Reglas de evolución
+
+- **Bootstrap:** Si no existe `promotion_threshold` en `execution_params`, se usa `backtester.MIN_REGIME_SCORE` (0.75).
+- **Persistencia:** Tras cada run del `BacktestOrchestrator`, el threshold efectivo se guarda en `execution_params`.
+- **Relajación:** Con `consecutive_failures >= 3`, el threshold baja un 5% (`threshold × 0.95`) para desbloquear estrategias bloqueadas crónicamente.
+- **No se permite floor de 0.0:** La relajación progresiva no persiste valores sin base empírica.
+
+### Fuente de verdad
+
+`sys_strategies.execution_params` es el SSOT del threshold. No existe valor fijo en código.
+
 ## 🗄️ Data Schema (SSOT)
 
 Auditoría inmutable para análisis algorítmico:
