@@ -4,7 +4,7 @@
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-12 UTC)**: Saneamiento Documental Global (DOC-SYNC-2026-04-12) · **Soberanía Documental SSOT Alcanzada**.
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-13 UTC)**: Unificación de Sesiones Forex UTC/DST (SESS-UTC-UNIFY-2026-04-13) · **Session Clock Canónico alineado entre servicio, sensor y MARKET GUARD**.
 
 ---
 
@@ -27,6 +27,22 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 
 ## 🏛️ ÉPICAS ARCHIVADAS
 
+### E21 — Canonical Forex Session Clock UTC/DST
+| Campo | Valor |
+|---|---|
+| **Épica** | E21 — Canonical Forex Session Clock UTC/DST |
+| **Trace_ID** | `SESS-UTC-UNIFY-2026-04-13` |
+| **Sprints** | 31 |
+| **Completada** | 13 de Abril, 2026 |
+| **Dominios** | 02_CONTEXT_INTELLIGENCE · 10_INFRASTRUCTURE_RESILIENCY |
+| **Objetivo** | Unificar el reloj de sesiones Forex con DST real por fecha para eliminar falsos cierres de MARKET GUARD y deriva de etiquetado entre módulos. |
+| **HUs** | HU 2.4 |
+| **Validate_all** | ✅ 28/28 PASSED |
+
+**Resumen ejecutivo**: Se sustituyeron offsets UTC fijos por zonas IANA en `MarketSessionService`, se expuso `get_active_sessions_utc()` como fuente canónica, `SessionStateDetector` pasó a delegar en ese motor manteniendo compatibilidad de salida y `is_market_closed_impl()` consumió la misma fuente unificada. Validado con 34/34 tests focales, `validate_all.py` en verde y smoke runtime (`start.py`/`stop.py`) sin falso cierre de sesión.
+
+---
+
 ### E20 — SRE Lock Cascade & Heartbeat Recovery
 | Campo | Valor |
 |---|---|
@@ -40,6 +56,17 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 | **Validate_all** | ✅ 28/28 PASSED |
 
 **Resumen ejecutivo**: Se implementó write-path estricto por `db_path`, métricas de latencia transaccional con guard de backpressure en `scan_request`, watchdog OEM con checks heartbeat por componente y corte de fallback runtime a tablas legacy no prefijadas para heartbeat audit. Cierre validado con suites focales (21/21 + 13/13), `validate_all.py` en verde y smoke runtime (`start.py`/`stop.py`) sin errores críticos.
+
+---
+
+### Sprint 31 — HU 2.4: Forex Session UTC/DST Unification (13-Abr-2026)
+**Trace_ID**: `SESS-UTC-UNIFY-2026-04-13` | **Épica**: E21 (archivada) | **Estado**: HU completada y archivada
+
+| HU | Descripción | Artefactos clave | Tests |
+|---|---|---|---|
+| **HU 2.4** | Unificación del reloj de sesiones Forex en una fuente canónica con zonas IANA y cálculo UTC dependiente de fecha para corregir deriva entre servicio, sensor y MARKET GUARD. `MarketSessionService` ahora calcula ventanas locales reales por ciudad, `SessionStateDetector` delega manteniendo el contrato de salida y `is_market_closed_impl()` usa `get_active_sessions_utc()` para evitar falsos cierres durante ventanas válidas. | `core_brain/services/market_session_service.py`, `core_brain/sensors/session_state_detector.py`, `core_brain/orchestrators/_init_methods.py`, `tests/test_market_session_service.py`, `tests/test_session_state_detector.py`, `tests/test_session_overlap_fix.py`, `governance/AUDITORIA_ESTADO_REAL.md` | 34/34 + 28/28 |
+
+**Validación**: tests focales **34/34 PASSED** · `validate_all.py` **28/28 PASSED** · smoke runtime `start.py`/`stop.py` ejecutado con arranque/cierre limpio.
 
 ---
 

@@ -45,7 +45,7 @@
 ---
 
 ## 02_CONTEXT_INTELLIGENCE (Regime, Multi-Scale)
-*(Sin HUs pendientes — ver SYSTEM_LEDGER E2: Trace_ID SAAS-GENESIS-2026-001)*
+*(Sin HUs pendientes — ver SYSTEM_LEDGER E21: Trace_ID SESS-UTC-UNIFY-2026-04-13)*
 
 ---
 

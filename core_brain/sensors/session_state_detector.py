@@ -15,8 +15,9 @@ TRACE_ID: SENSOR-SESSION-STATE-001
 """
 import logging
 from typing import Optional, Dict, Any
-from datetime import datetime, time
-import pytz
+from datetime import datetime, timezone
+
+from core_brain.services.market_session_service import MarketSessionService
 
 logger = logging.getLogger(__name__)
 
@@ -32,12 +33,12 @@ class SessionStateDetector:
     - Analizar volatilidad esperada por sesión
     """
     
-    # Horarios de sesiones (UTC)
-    SESSIONS = {
-        "LONDON": {"open": time(8, 0), "close": time(16, 0)},
-        "NEW_YORK": {"open": time(13, 0), "close": time(21, 0)},
-        "ASIA": {"open": time(0, 0), "close": time(9, 0)},
-        "SYDNEY": {"open": time(22, 0), "close": time(7, 0)},  # Cruza medianoche
+    SESSION_PRIORITY = ["london", "ny", "tokyo", "sydney"]
+    SESSION_LABELS = {
+        "london": "LONDON",
+        "ny": "NEW_YORK",
+        "tokyo": "ASIA",
+        "sydney": "SYDNEY",
     }
     
     # Volatilidad relativa por sesión (escala 0-100)
@@ -56,46 +57,47 @@ class SessionStateDetector:
             storage: StorageManager para persistencia
         """
         self.storage = storage
+        self.market_session_service = MarketSessionService(storage=storage)
         self.current_session = None
         self.session_start_time = None
         logger.info("[SENSOR-SESSION-STATE-001] SessionStateDetector initialized")
+
+    def _resolve_utc_time(self, utc_time: Optional[datetime]) -> datetime:
+        """Obtiene el instante UTC a evaluar, usando reloj real si no se inyecta."""
+        if utc_time is None:
+            return datetime.now(timezone.utc)
+        if utc_time.tzinfo is None:
+            return utc_time.replace(tzinfo=timezone.utc)
+        return utc_time.astimezone(timezone.utc)
+
+    def _get_active_sessions(self, utc_time: Optional[datetime] = None) -> Dict[str, bool]:
+        """Retorna snapshot de sesiones activas usando la fuente canónica unificada."""
+        resolved_utc_time = self._resolve_utc_time(utc_time)
+        active_sessions = set(
+            self.market_session_service.get_active_sessions_utc(resolved_utc_time)
+        )
+
+        return {
+            session_name: session_name in active_sessions
+            for session_name in self.SESSION_LABELS.keys()
+        }
     
-    def detect_current_session(self) -> str:
+    def detect_current_session(self, utc_time: Optional[datetime] = None) -> str:
         """
         Detecta la sesión actual basada en horas UTC.
         
         Returns:
             Nombre de la sesión: "LONDON", "NEW_YORK", "ASIA", "SYDNEY"
         """
-        now_utc = datetime.now(pytz.UTC).time()
-        
-        # Verificar LONDON
-        london_open = time(8, 0)
-        london_close = time(16, 0)
-        if london_open <= now_utc < london_close:
-            return "LONDON"
-        
-        # Verificar NEW_YORK
-        ny_open = time(13, 0)
-        ny_close = time(21, 0)
-        if ny_open <= now_utc < ny_close:
-            return "NEW_YORK"
-        
-        # Verificar ASIA (0:00 - 9:00 UTC)
-        asia_open = time(0, 0)
-        asia_close = time(9, 0)
-        if asia_open <= now_utc < asia_close:
-            return "ASIA"
-        
-        # SYDNEY (22:00 - 7:00 cruza medianoche)
-        sydney_open = time(22, 0)
-        if now_utc >= sydney_open or now_utc < time(7, 0):
-            return "SYDNEY"
-        
-        # Default: ASIA (mercados cerrados)
+        active_sessions = self._get_active_sessions(utc_time)
+
+        for session_name in self.SESSION_PRIORITY:
+            if active_sessions.get(session_name):
+                return self.SESSION_LABELS[session_name]
+
         return "CLOSED"
     
-    def is_session_overlap(self) -> bool:
+    def is_session_overlap(self, utc_time: Optional[datetime] = None) -> bool:
         """
         Detecta si hay solapamiento significativo entre sesiones comerciales.
         
@@ -111,26 +113,11 @@ class SessionStateDetector:
         Returns:
             True si hay solapamiento significativo, False en caso contrario
         """
-        now_utc = datetime.now(pytz.UTC).time()
-        
-        # Helper: Verificar si un momento está dentro de un rango
-        def is_in_range(current_time: time, open_time: time, close_time: time) -> bool:
-            """
-            Verifica si current_time está en [open_time, close_time).
-            Maneja rangos que cruzan medianoche (open_time > close_time).
-            """
-            if open_time <= close_time:
-                # Rango normal (no cruza medianoche)
-                return open_time <= current_time < close_time
-            else:
-                # Rango que cruza medianoche (ej. 22:00-07:00)
-                return current_time >= open_time or current_time < close_time
-        
-        # Define sesiones (UTC)
-        london_active = is_in_range(now_utc, time(8, 0), time(16, 0))
-        ny_active = is_in_range(now_utc, time(13, 0), time(21, 0))
-        asia_active = is_in_range(now_utc, time(0, 0), time(9, 0))
-        sydney_active = is_in_range(now_utc, time(22, 0), time(7, 0))
+        active_sessions = self._get_active_sessions(utc_time)
+        london_active = active_sessions.get("london", False)
+        ny_active = active_sessions.get("ny", False)
+        asia_active = active_sessions.get("tokyo", False)
+        sydney_active = active_sessions.get("sydney", False)
         
         # Overlap #1: LONDON-NEW_YORK (máxima volatilidad)
         if london_active and ny_active:
@@ -144,7 +131,9 @@ class SessionStateDetector:
         
         return False
     
-    def get_session_volatility(self, session: Optional[str] = None) -> int:
+    def get_session_volatility(
+        self, session: Optional[str] = None, utc_time: Optional[datetime] = None
+    ) -> int:
         """
         Retorna volatilidad esperada para sesión.
         
@@ -155,29 +144,32 @@ class SessionStateDetector:
             Volatilidad en escala 0-100
         """
         if session is None:
-            session = self.detect_current_session()
+            session = self.detect_current_session(utc_time=utc_time)
         
         return self.SESSION_VOLATILITY.get(session, 50)
     
-    def get_session_stats(self) -> Dict[str, Any]:
+    def get_session_stats(self, utc_time: Optional[datetime] = None) -> Dict[str, Any]:
         """
         Retorna estadísticas de sesión actual.
         
         Returns:
             Dict con session, is_overlap, volatility
         """
-        session = self.detect_current_session()
-        is_overlap = self.is_session_overlap()
-        volatility = self.get_session_volatility(session)
+        resolved_utc_time = self._resolve_utc_time(utc_time)
+        session = self.detect_current_session(utc_time=resolved_utc_time)
+        is_overlap = self.is_session_overlap(utc_time=resolved_utc_time)
+        volatility = self.get_session_volatility(session, utc_time=resolved_utc_time)
         
         return {
             "session": session,
             "is_overlap": is_overlap,
             "volatility": volatility,
-            "timestamp": datetime.now(pytz.UTC).isoformat(),
+            "timestamp": resolved_utc_time.isoformat(),
         }
     
-    def analyze(self, symbol: str, df: Any) -> Dict[str, Any]:
+    def analyze(
+        self, symbol: str, df: Any, utc_time: Optional[datetime] = None
+    ) -> Dict[str, Any]:
         """
         Análisis completo de estado de sesión.
         
@@ -188,9 +180,12 @@ class SessionStateDetector:
         Returns:
             Dict con análisis de sesión
         """
-        current_session = self.detect_current_session()
-        is_overlap = self.is_session_overlap()
-        volatility = self.get_session_volatility(current_session)
+        resolved_utc_time = self._resolve_utc_time(utc_time)
+        current_session = self.detect_current_session(utc_time=resolved_utc_time)
+        is_overlap = self.is_session_overlap(utc_time=resolved_utc_time)
+        volatility = self.get_session_volatility(
+            current_session, utc_time=resolved_utc_time
+        )
         
         result = {
             "symbol": symbol,

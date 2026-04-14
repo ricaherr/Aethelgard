@@ -161,11 +161,8 @@ def is_market_closed_impl(orch: "MainOrchestrator") -> bool:
         if _weekday == 5 or (_weekday == 6 and _utc_now.hour < 22):
             return True
         from core_brain.services.market_session_service import MarketSessionService
-        _active_sessions = [
-            s
-            for s in ("sydney", "tokyo", "london", "ny")
-            if MarketSessionService(orch.storage).is_session_active(s, _utc_now)
-        ]
+
+        _active_sessions = MarketSessionService(orch.storage).get_active_sessions_utc(_utc_now)
         return not _active_sessions
     except Exception:
         return False  # fail-open

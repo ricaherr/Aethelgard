@@ -15,7 +15,7 @@ Arquitectura:
 import logging
 import uuid
 from typing import Dict, Optional, List, Any, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone, time
 from zoneinfo import ZoneInfo
 
 from data_vault.storage import StorageManager
@@ -34,30 +34,30 @@ class MarketSessionService:
     4. Sincronizar estado en ledger
     """
     
-    # Definición de sesiones (UTC offset, hora apertura, hora cierre en zona local)
+    # Definición canónica de sesiones (hora local de mercado + timezone IANA)
     SESSION_CONFIG = {
         "sydney": {
-            "utc_offset_hours": 11,  # AEDT
-            "open_time": "23:00",     # Hora local (día anterior)
-            "close_time": "07:00",    # Hora local
+            "timezone": "Australia/Sydney",
+            "local_open": "07:00",
+            "local_close": "16:00",
             "name_display": "Sydney"
         },
         "tokyo": {
-            "utc_offset_hours": 9,
-            "open_time": "00:00",
-            "close_time": "09:00",
+            "timezone": "Asia/Tokyo",
+            "local_open": "09:00",
+            "local_close": "18:00",
             "name_display": "Tokyo"
         },
         "london": {
-            "utc_offset_hours": 0,
-            "open_time": "08:00",
-            "close_time": "17:00",
+            "timezone": "Europe/London",
+            "local_open": "08:00",
+            "local_close": "17:00",
             "name_display": "London"
         },
         "ny": {
-            "utc_offset_hours": -5,
-            "open_time": "13:30",
-            "close_time": "21:00",
+            "timezone": "America/New_York",
+            "local_open": "08:00",
+            "local_close": "17:00",
             "name_display": "New York"
         }
     }
@@ -94,13 +94,37 @@ class MarketSessionService:
             Diccionario con configuración de todas las sesiones
         """
         try:
-            params = self.storage.get_dynamic_params()
+            params = self.storage.get_dynamic_params() if self.storage else {}
             if isinstance(params, dict) and "market_sessions" in params:
-                return params["market_sessions"]
+                return self._normalize_session_config(params["market_sessions"])
         except Exception as e:
             logger.debug(f"Could not load session config from storage: {e}")
         
-        return self.SESSION_CONFIG
+        return self._normalize_session_config(self.SESSION_CONFIG)
+
+    def _normalize_session_config(
+        self, raw_config: Dict[str, Dict[str, Any]]
+    ) -> Dict[str, Dict[str, Any]]:
+        """Normaliza configuraciones legacy a la forma canónica timezone/local_open/local_close."""
+        normalized: Dict[str, Dict[str, Any]] = {}
+
+        for session_name, default_config in self.SESSION_CONFIG.items():
+            source = raw_config.get(session_name, {}) if isinstance(raw_config, dict) else {}
+
+            normalized[session_name] = {
+                "timezone": source.get("timezone", default_config["timezone"]),
+                "local_open": source.get(
+                    "local_open",
+                    source.get("open_time", source.get("open", default_config["local_open"])),
+                ),
+                "local_close": source.get(
+                    "local_close",
+                    source.get("close_time", source.get("close", default_config["local_close"])),
+                ),
+                "name_display": source.get("name_display", default_config["name_display"]),
+            }
+
+        return normalized
     
     def _parse_time(self, time_str: str) -> Tuple[int, int]:
         """
@@ -115,29 +139,51 @@ class MarketSessionService:
         parts = time_str.split(":")
         return int(parts[0]), int(parts[1])
     
-    def _utc_time_from_local(self, local_hour: int, local_minute: int, 
-                             utc_offset: int) -> Tuple[int, int]:
-        """
-        Convierte hora local a hora UTC considerando offset.
-        
-        Args:
-            local_hour: Hora en zona local
-            local_minute: Minuto en zona local
-            utc_offset: Offset UTC (ej. -5 para NY)
-            
-        Returns:
-            Tupla (utc_hour, utc_minute)
-        """
-        total_minutes = local_hour * 60 + local_minute
-        total_minutes -= (utc_offset * 60)  # Restar offset para obtener UTC
-        
-        # Normalizar a rango 0-1440 minutos (24 horas)
-        while total_minutes < 0:
-            total_minutes += 1440
-        while total_minutes >= 1440:
-            total_minutes -= 1440
-        
-        return total_minutes // 60, total_minutes % 60
+    def _ensure_utc_datetime(self, utc_time: datetime) -> datetime:
+        """Garantiza un datetime aware en UTC."""
+        if utc_time.tzinfo is None:
+            return utc_time.replace(tzinfo=timezone.utc)
+        return utc_time.astimezone(timezone.utc)
+
+    def _build_session_window_utc(
+        self, session_config: Dict[str, Any], local_date: datetime.date
+    ) -> Tuple[datetime, datetime]:
+        """Construye una ventana local de sesión y la convierte a UTC."""
+        session_tz = ZoneInfo(session_config["timezone"])
+        open_hour, open_minute = self._parse_time(session_config["local_open"])
+        close_hour, close_minute = self._parse_time(session_config["local_close"])
+
+        session_open_local = datetime.combine(
+            local_date,
+            time(open_hour, open_minute),
+            tzinfo=session_tz,
+        )
+
+        session_close_date = local_date
+        if (close_hour, close_minute) <= (open_hour, open_minute):
+            session_close_date += timedelta(days=1)
+
+        session_close_local = datetime.combine(
+            session_close_date,
+            time(close_hour, close_minute),
+            tzinfo=session_tz,
+        )
+
+        return (
+            session_open_local.astimezone(timezone.utc),
+            session_close_local.astimezone(timezone.utc),
+        )
+
+    def get_active_sessions_utc(self, utc_time: datetime) -> List[str]:
+        """Retorna la lista de sesiones activas en un instante UTC concreto."""
+        utc_time = self._ensure_utc_datetime(utc_time)
+        session_config = self._load_session_config()
+
+        return [
+            session_name
+            for session_name in session_config.keys()
+            if self.is_session_active(session_name, utc_time)
+        ]
     
     def is_session_active(self, session_name: str, utc_time: datetime) -> bool:
         """
@@ -150,41 +196,24 @@ class MarketSessionService:
         Returns:
             True si la sesión está activa, False en caso contrario
         """
-        if session_name not in self.SESSION_CONFIG:
+        session_config = self._load_session_config()
+
+        if session_name not in session_config:
             return False
-        
-        config = self.SESSION_CONFIG[session_name]
-        offset = config["utc_offset_hours"]
-        
-        open_str = config["open_time"]
-        close_str = config["close_time"]
-        
-        open_hour, open_minute = self._parse_time(open_str)
-        close_hour, close_minute = self._parse_time(close_str)
-        
-        # Convertir horarios de apertura/cierre a UTC
-        open_utc_hour, open_utc_minute = self._utc_time_from_local(
-            open_hour, open_minute, offset
-        )
-        close_utc_hour, close_utc_minute = self._utc_time_from_local(
-            close_hour, close_minute, offset
-        )
-        
-        current_hour = utc_time.hour
-        current_minute = utc_time.minute
-        
-        # Calcular minutos desde inicio del día
-        current_total = current_hour * 60 + current_minute
-        open_total = open_utc_hour * 60 + open_utc_minute
-        close_total = close_utc_hour * 60 + close_utc_minute
-        
-        # Manejar sesiones que cruzan medianoche (por ejemplo, Tokyo)
-        if open_total > close_total:
-            # Sesión cruza medianoche
-            return current_total >= open_total or current_total < close_total
-        else:
-            # Sesión normal
-            return open_total <= current_total < close_total
+
+        utc_time = self._ensure_utc_datetime(utc_time)
+        config = session_config[session_name]
+        local_dt = utc_time.astimezone(ZoneInfo(config["timezone"]))
+
+        for day_offset in (0, -1):
+            candidate_date = local_dt.date() + timedelta(days=day_offset)
+            session_open_utc, session_close_utc = self._build_session_window_utc(
+                config, candidate_date
+            )
+            if session_open_utc <= utc_time < session_close_utc:
+                return True
+
+        return False
     
     def get_pre_market_range(self, utc_time: datetime) -> Optional[Dict[str, Any]]:
         """
@@ -211,29 +240,22 @@ class MarketSessionService:
         except:
             buffer_minutes = 30
         
-        config = self.SESSION_CONFIG["ny"]
-        offset = config["utc_offset_hours"]
-        
-        # NY abre a 13:30 EST
-        open_str = config["open_time"]
-        open_hour, open_minute = self._parse_time(open_str)
-        
-        # Convertir a UTC
-        open_utc_hour, open_utc_minute = self._utc_time_from_local(
-            open_hour, open_minute, offset
+        utc_time = self._ensure_utc_datetime(utc_time)
+        config = self._load_session_config()["ny"]
+        ny_timezone = ZoneInfo(config["timezone"])
+        open_hour, open_minute = self._parse_time(config["local_open"])
+        local_now = utc_time.astimezone(ny_timezone)
+
+        ny_open_local = datetime.combine(
+            local_now.date(),
+            time(open_hour, open_minute),
+            tzinfo=ny_timezone,
         )
-        
-        # Crear datetime de apertura NY (hoy o mañana)
-        ny_open_today_utc = utc_time.replace(
-            hour=open_utc_hour, 
-            minute=open_utc_minute, 
-            second=0, 
-            microsecond=0
-        )
-        
-        # Si la apertura programada de hoy ya pasó, ajustar a mañana
-        if ny_open_today_utc < utc_time:
-            ny_open_today_utc += timedelta(days=1)
+
+        if local_now >= ny_open_local:
+            ny_open_local += timedelta(days=1)
+
+        ny_open_today_utc = ny_open_local.astimezone(timezone.utc)
         
         # Calcular inicio del rango pre-market
         pre_market_start = ny_open_today_utc - timedelta(minutes=buffer_minutes)
@@ -270,14 +292,21 @@ class MarketSessionService:
             return {}
         
         profile = self.SESSION_PROFILES[session_name]
-        config = self.SESSION_CONFIG.get(session_name, {})
+        config = self._load_session_config().get(session_name, {})
+        timezone_name = config.get("timezone", "UTC")
+        offset_hours = (
+            datetime.now(ZoneInfo(timezone_name)).utcoffset().total_seconds() / 3600
+            if config
+            else 0
+        )
         
         return {
             "session_name": session_name,
             "display_name": config.get("name_display", "Unknown"),
             "pip_volatility_expected": profile["pip_volatility_avg"],
             "volume_profile": profile["volume_profile"],
-            "timezone_offset": config.get("utc_offset_hours", 0),
+            "timezone": timezone_name,
+            "timezone_offset": offset_hours,
             "trace_id": self.trace_id
         }
     
@@ -293,9 +322,11 @@ class MarketSessionService:
             Dict con estado activo de cada sesión
         """
         result = {}
-        
-        for session_name in self.SESSION_CONFIG.keys():
-            is_active = self.is_session_active(session_name, utc_time)
+        session_config = self._load_session_config()
+        active_sessions = set(self.get_active_sessions_utc(utc_time))
+
+        for session_name in session_config.keys():
+            is_active = session_name in active_sessions
             metrics = self.get_session_liquidity_metrics(session_name)
             
             result[session_name] = {
@@ -315,13 +346,9 @@ class MarketSessionService:
         Returns:
             Dict con resultado de sincronización
         """
-        active_sessions = []
+        active_sessions = self.get_active_sessions_utc(utc_time)
         pre_market = self.get_pre_market_range(utc_time)
-        
-        for session_name in self.SESSION_CONFIG.keys():
-            if self.is_session_active(session_name, utc_time):
-                active_sessions.append(session_name)
-        
+
         state = {
             "timestamp": utc_time.isoformat(),
             "active_sessions": active_sessions,
@@ -347,6 +374,9 @@ class MarketSessionService:
         Returns:
             Tupla (nombre_sesión, datetime_apertura_utc)
         """
+        utc_time = self._ensure_utc_datetime(utc_time)
+        session_config = self._load_session_config()
+
         # Orden de sesiones por apertura (Sydney → Tokyo → London → NY)
         session_order = ["ny", "sydney", "tokyo", "london"]
         
@@ -354,25 +384,21 @@ class MarketSessionService:
         next_time = None
         
         for session_name in session_order:
-            config = self.SESSION_CONFIG[session_name]
-            offset = config["utc_offset_hours"]
-            open_str = config["open_time"]
-            
-            open_hour, open_minute = self._parse_time(open_str)
-            open_utc_hour, open_utc_minute = self._utc_time_from_local(
-                open_hour, open_minute, offset
+            config = session_config[session_name]
+            session_tz = ZoneInfo(config["timezone"])
+            open_hour, open_minute = self._parse_time(config["local_open"])
+            local_now = utc_time.astimezone(session_tz)
+
+            session_open_local = datetime.combine(
+                local_now.date(),
+                time(open_hour, open_minute),
+                tzinfo=session_tz,
             )
-            
-            session_open = utc_time.replace(
-                hour=open_utc_hour, 
-                minute=open_utc_minute, 
-                second=0, 
-                microsecond=0
-            )
-            
-            # Si ya pasó hoy, calcular para mañana
-            if session_open <= utc_time:
-                session_open += timedelta(days=1)
+
+            if session_open_local <= local_now:
+                session_open_local += timedelta(days=1)
+
+            session_open = session_open_local.astimezone(timezone.utc)
             
             if next_time is None or session_open < next_time:
                 next_session = session_name

@@ -13,6 +13,26 @@
 
 ---
 
+# SPRINT 31: E21 — CANONICAL FOREX SESSION CLOCK UTC/DST — [DONE]
+
+**Inicio**: 13 de Abril, 2026
+**Fin**: —
+**Objetivo**: Unificar la lógica de sesiones Forex en un solo motor canónico con DST real por fecha para corregir falsos cierres de MARKET GUARD y eliminar deriva entre sensores de sesión.
+**Épica**: E21 (Canonical Forex Session Clock UTC/DST) | **Trace_ID**: SESS-UTC-UNIFY-2026-04-13
+**Dominios**: 02_CONTEXT_INTELLIGENCE · 10_INFRASTRUCTURE_RESILIENCY
+
+## 📋 Tareas del Sprint
+
+- [DONE] **HU 2.4: Forex Session UTC/DST Unification** *(Trace_ID: SESS-UTC-UNIFY-2026-04-13)*
+  - `MarketSessionService` quedó como motor canónico con zonas IANA (`Australia/Sydney`, `Asia/Tokyo`, `Europe/London`, `America/New_York`) y cálculo UTC dinámico por fecha vía `ZoneInfo`.
+  - Se expuso `get_active_sessions_utc(utc_time)` y se eliminó la deriva entre `MarketSessionService`, `SessionStateDetector` e `is_market_closed_impl()`.
+  - `SessionStateDetector` ahora delega en la fuente canónica y preserva el contrato de salida (`LONDON`, `NEW_YORK`, `ASIA`, `SYDNEY`, `CLOSED`) con overlap real por fecha.
+  - Suites focales ejecutadas: `pytest tests/test_market_session_service.py tests/test_session_state_detector.py tests/test_session_overlap_fix.py -q` = 34/34 PASS.
+  - Gate obligatorio: `python scripts/validate_all.py` = 28/28 PASS.
+  - Smoke runtime: `python start.py` + `python stop.py` ejecutados; arranque y cierre limpios sin falso cerrado atribuible a MARKET GUARD.
+
+---
+
 # SPRINT 30: E20 — SRE LOCK CASCADE & HEARTBEAT RECOVERY — [TODO]
 
 **Inicio**: 13 de Abril, 2026
