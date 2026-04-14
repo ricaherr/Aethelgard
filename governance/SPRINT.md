@@ -13,6 +13,31 @@
 
 ---
 
+# SPRINT 30: E20 — SRE LOCK CASCADE & HEARTBEAT RECOVERY — [TODO]
+
+**Inicio**: 13 de Abril, 2026
+**Fin**: —
+**Objetivo**: Estabilizar la persistencia crítica scanner/system_db/audit con serialización estricta y backpressure, restaurar watchdog heartbeat `<120s` por componente y endurecer observabilidad canónica para evitar snapshots ambiguos.
+**Épica**: E20 (SRE Lock Cascade & Heartbeat Recovery) | **Trace_ID**: E20-SRE-LOCK-CASCADE-2026-04-13
+**Dominios**: 10_INFRASTRUCTURE_RESILIENCY · 08_DATA_SOVEREIGNTY
+
+## 📋 Tareas del Sprint
+
+- [DONE] **HU 10.31: SQLite Lock Cascade Recovery & Canonical Heartbeat SLA** *(🔴 PRIORIDAD MÁXIMA — Bloqueante Operacional)*
+  - Implementar write-path único por `db_path` para scanner+audit+sys_config con serialización estricta y cierre seguro de cursores.
+  - Añadir backpressure por latencia transaccional para pausar `scan_request` cuando supere umbral, evitando timeouts en cascada.
+  - Forzar watchdog heartbeat OEM hard-fail `<120s` por componente y marcación de `Componente Silenciado`.
+  - Cortar fallback runtime a tablas legacy no prefijadas en heartbeat/audit (dejar compatibilidad acotada a migración).
+  - Instrumentar KPI Scanner→Signal por ciclo y motivo de descarte.
+  - Añadir test de resiliencia concurrente para `transaction + audit insert + state update`.
+  - Ejecutar `python scripts/validate_all.py` y `python start.py` como gate obligatorio antes de mover a `[DONE]`.
+  - Verificación focal: `pytest tests/test_oem_heartbeat_check.py tests/test_system_db_heartbeat_canonical.py tests/test_orchestrator_timeout_guards.py tests/test_sre_lock_cascade_resilience.py -q` = 21/21 PASS.
+  - Regresión adicional: `pytest tests/test_sqlite_contention_hotfix.py tests/test_heartbeat_audit_trail.py -q` = 13/13 PASS.
+  - Gate obligatorio: `python scripts/validate_all.py` = 28/28 PASS.
+  - Smoke runtime: `python start.py` arranque operativo + `python stop.py` cierre limpio (3 procesos detenidos, lockfile eliminado, WAL checkpoints OK).
+
+---
+
 # SPRINT 29: E19 — RECUPERACIÓN OPERATIVA END-TO-END — [TODO]
 
 **Inicio**: 9 de Abril, 2026

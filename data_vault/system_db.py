@@ -372,19 +372,17 @@ class SystemMixin(BaseRepository):
                 """
                 SELECT name
                 FROM sqlite_master
-                WHERE type='table' AND name IN ('sys_audit_logs', 'system_audit_logs')
-                ORDER BY CASE name WHEN 'sys_audit_logs' THEN 0 ELSE 1 END
+                WHERE type='table' AND name='sys_audit_logs'
                 LIMIT 1
                 """
             )
             table_row = cursor.fetchone()
             if not table_row:
                 return None
-            table_name = table_row[0] if isinstance(table_row, tuple) else table_row["name"]
             cursor.execute(
-                f"""
+                """
                 SELECT timestamp
-                FROM {table_name}
+                FROM sys_audit_logs
                 WHERE action = 'HEARTBEAT' AND resource = ?
                 ORDER BY timestamp DESC
                 LIMIT 1

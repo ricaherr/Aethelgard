@@ -13,7 +13,7 @@ Checks:
     lifecycle_coherence      — Sin estrategias con rankings vencidos >48h
     rejection_rate           — Tasa de rechazo de señales < 95%
     score_stale              — Rankings actualizados en las últimas 72h
-    orchestrator_heartbeat   — Loop principal sin bloqueos (heartbeat < 20 min)
+    orchestrator_heartbeat   — Loop principal sin bloqueos (heartbeat < 120s)
     shadow_stagnation        — Instancias SHADOW activas sin trades recientes
 """
 import json
@@ -60,8 +60,8 @@ class OperationalEdgeMonitor(threading.Thread):
     LIFECYCLE_STALE_HOURS = 48
     MAX_REJECTION_RATE = 0.95
     MIN_ADX_NONZERO_RATIO = 0.10
-    MAX_HEARTBEAT_GAP_WARN_MINUTES = 10
-    MAX_HEARTBEAT_GAP_FAIL_MINUTES = 20
+    HEARTBEAT_WARN_GAP_SECONDS_DEFAULT = 90
+    HEARTBEAT_FAIL_GAP_SECONDS_DEFAULT = 120
     SILENCED_COMPONENT_GAP_SECONDS_DEFAULT = 120
     SHADOW_STAGNATION_WINDOW_HOURS_DEFAULT = 24
     SHADOW_STAGNATION_ALERTS_STATE_KEY = "oem_shadow_stagnation_alerts_daily"
@@ -104,8 +104,8 @@ class OperationalEdgeMonitor(threading.Thread):
 
             # Persist snapshot to DB so the API (separate process) can read it
             try:
-                orchestrator_down = "orchestrator_heartbeat" in failing
-                if len(failing) >= 2 or orchestrator_down:
+                heartbeat_failed = any(name.endswith("_heartbeat") for name in failing)
+                if len(failing) >= 2 or heartbeat_failed:
                     overall = "CRITICAL"
                 elif failing:
                     overall = "DEGRADED"
@@ -165,6 +165,10 @@ class OperationalEdgeMonitor(threading.Thread):
             "rejection_rate": self._check_rejection_rate,
             "score_stale": self._check_score_stale,
             "orchestrator_heartbeat": self._check_orchestrator_heartbeat,
+            "scanner_heartbeat": lambda: self._check_component_heartbeat("scanner"),
+            "signal_factory_heartbeat": lambda: self._check_component_heartbeat("signal_factory"),
+            "executor_heartbeat": lambda: self._check_component_heartbeat("executor"),
+            "risk_manager_heartbeat": lambda: self._check_component_heartbeat("risk_manager"),
             "shadow_stagnation": self._check_shadow_stagnation,
         }
         results = {}
@@ -193,9 +197,9 @@ class OperationalEdgeMonitor(threading.Thread):
         warnings = [n for n, r in results.items() if r.status == CheckStatus.WARN]
         failing, warnings, _ = self._apply_startup_grace(failing, warnings)
 
-        # CRITICAL si >= 2 checks fallan — heartbeat es siempre crítico solo
-        orchestrator_down = "orchestrator_heartbeat" in failing
-        if len(failing) >= 2 or orchestrator_down:
+        # CRITICAL si >= 2 checks fallan o cualquier heartbeat falla.
+        heartbeat_failed = any(name.endswith("_heartbeat") for name in failing)
+        if len(failing) >= 2 or heartbeat_failed:
             overall = "CRITICAL"
         elif failing:
             overall = "DEGRADED"
@@ -606,25 +610,46 @@ class OperationalEdgeMonitor(threading.Thread):
         return CheckResult(CheckStatus.OK, f"Todos los {len(rankings)} rankings actualizados en <{self.STALE_SCORE_HOURS}h")
 
     def _check_orchestrator_heartbeat(self) -> CheckResult:
-        """El loop principal debe actualizar su heartbeat en menos de MAX_HEARTBEAT_GAP_FAIL_MINUTES."""
+        """El loop principal debe actualizar su heartbeat dentro del SLA hard-fail."""
+        return self._check_component_heartbeat("orchestrator")
+
+    def _check_component_heartbeat(self, component_name: str) -> CheckResult:
+        """Evaluate heartbeat freshness for a component using strict SLA in seconds."""
         heartbeats = self.storage.get_module_heartbeats()
-        config_ts_raw = heartbeats.get("orchestrator")
+        config_ts_raw = heartbeats.get(component_name)
         config_ts = _parse_ts(config_ts_raw)
 
         audit_ts_raw: Optional[str] = None
         audit_ts: Optional[datetime] = None
         if hasattr(self.storage, "get_latest_module_heartbeat_audit"):
-            audit_ts_raw = self.storage.get_latest_module_heartbeat_audit("orchestrator")
+            audit_ts_raw = self.storage.get_latest_module_heartbeat_audit(component_name)
             audit_ts = _parse_ts(audit_ts_raw)
 
-        silenced_threshold_raw = self.storage.get_sys_config().get(
+        sys_config = self.storage.get_sys_config()
+        silenced_threshold_raw = sys_config.get(
             "oem_silenced_component_gap_seconds",
-            self.MAX_HEARTBEAT_GAP_FAIL_MINUTES * 60,
+            self.HEARTBEAT_FAIL_GAP_SECONDS_DEFAULT,
+        )
+        warn_threshold_raw = sys_config.get(
+            "oem_heartbeat_warn_gap_seconds",
+            self.HEARTBEAT_WARN_GAP_SECONDS_DEFAULT,
+        )
+        fail_threshold_raw = sys_config.get(
+            "oem_heartbeat_fail_gap_seconds",
+            self.HEARTBEAT_FAIL_GAP_SECONDS_DEFAULT,
         )
         try:
             silenced_threshold_seconds = max(60, int(silenced_threshold_raw))
         except (TypeError, ValueError):
             silenced_threshold_seconds = self.SILENCED_COMPONENT_GAP_SECONDS_DEFAULT
+        try:
+            warn_threshold_seconds = max(30, int(warn_threshold_raw))
+        except (TypeError, ValueError):
+            warn_threshold_seconds = self.HEARTBEAT_WARN_GAP_SECONDS_DEFAULT
+        try:
+            fail_threshold_seconds = max(warn_threshold_seconds + 1, int(fail_threshold_raw))
+        except (TypeError, ValueError):
+            fail_threshold_seconds = self.HEARTBEAT_FAIL_GAP_SECONDS_DEFAULT
 
         source = "sys_config"
         chosen_ts = config_ts
@@ -643,39 +668,39 @@ class OperationalEdgeMonitor(threading.Thread):
         if chosen_ts is None and config_ts_raw is None and audit_ts_raw is None:
             return CheckResult(
                 CheckStatus.WARN,
-                "Sin heartbeat registrado en sys_config ni sys_audit_logs — orchestrator puede no haber iniciado aún",
+                f"Sin heartbeat registrado en sys_config ni sys_audit_logs — {component_name} puede no haber iniciado aún",
             )
 
         if chosen_ts is None:
             return CheckResult(
                 CheckStatus.WARN,
-                f"Heartbeat con formato inválido ({source}): {chosen_raw}",
+                f"Heartbeat con formato inválido ({component_name}, {source}): {chosen_raw}",
             )
 
-        gap_minutes = (datetime.now(timezone.utc) - chosen_ts).total_seconds() / 60
-        gap_seconds = gap_minutes * 60
+        gap_seconds = (datetime.now(timezone.utc) - chosen_ts).total_seconds()
 
         if gap_seconds > silenced_threshold_seconds:
             return CheckResult(
                 CheckStatus.FAIL,
-                f"Componente Silenciado: sin HEARTBEAT hace {gap_seconds:.0f}s "
+                f"Componente Silenciado: {component_name} sin HEARTBEAT hace {gap_seconds:.0f}s "
                 f"(umbral: {silenced_threshold_seconds}s, source={source})",
             )
 
-        if gap_minutes > self.MAX_HEARTBEAT_GAP_FAIL_MINUTES:
+        if gap_seconds > fail_threshold_seconds:
             return CheckResult(
                 CheckStatus.FAIL,
-                f"Loop principal sin heartbeat hace {gap_minutes:.1f} min "
-                f"(umbral: {self.MAX_HEARTBEAT_GAP_FAIL_MINUTES} min, source={source}) — posible bloqueo",
+                f"{component_name} sin heartbeat hace {gap_seconds:.0f}s "
+                f"(umbral fail: {fail_threshold_seconds}s, source={source})",
             )
-        if gap_minutes > self.MAX_HEARTBEAT_GAP_WARN_MINUTES:
+        if gap_seconds > warn_threshold_seconds:
             return CheckResult(
                 CheckStatus.WARN,
-                f"Heartbeat tardío: {gap_minutes:.1f} min (umbral warn: {self.MAX_HEARTBEAT_GAP_WARN_MINUTES} min, source={source})",
+                f"Heartbeat tardío: {component_name} {gap_seconds:.0f}s "
+                f"(umbral warn: {warn_threshold_seconds}s, source={source})",
             )
         return CheckResult(
             CheckStatus.OK,
-            f"Loop principal activo (heartbeat hace {gap_minutes:.1f} min, source={source})",
+            f"{component_name} activo (heartbeat hace {gap_seconds:.0f}s, source={source})",
         )
 
     def _check_shadow_stagnation(self) -> CheckResult:

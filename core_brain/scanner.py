@@ -175,6 +175,12 @@ class ScannerEngine:
         # OPTION A: Cache for LATEST scan results (accessed by MainOrchestrator)
         # MainOrchestrator orchestrates when to scan, ScannerEngine just caches results
         self.last_results: Dict[str, Dict[str, Any]] = {}
+        self.last_scan_funnel: Dict[str, Any] = {
+            "requested": 0,
+            "completed": 0,
+            "discarded": 0,
+            "discard_reasons": {},
+        }
 
     def _init_classifiers(self) -> None:
         """Factory for RegimeClassifiers per asset/timeframe."""
@@ -341,6 +347,10 @@ class ScannerEngine:
             Dict mapping "symbol|timeframe" -> {regime, metrics, df, provider, ...}
         """
         results = {}
+        discard_reasons: Dict[str, int] = {
+            "scan_failed_or_no_data": 0,
+            "scan_thread_exception": 0,
+        }
         
         if not assets_to_scan:
             logger.debug("[EXECUTE_SCAN] No assets to scan")
@@ -378,12 +388,25 @@ class ScannerEngine:
 
                         # Also persist using _process_scan_result() for compatibility
                         self._process_scan_result(res)
+                    else:
+                        discard_reasons["scan_failed_or_no_data"] += 1
                 except Exception as e:
                     sym, tf = futs[fut]
                     logger.warning(f"[EXECUTE_SCAN] Exception in scan thread for {sym}[{tf}]: {e}")
+                    discard_reasons["scan_thread_exception"] += 1
         
         # Update cache
         self.last_results.update(results)
+        requested = len(assets_to_scan)
+        completed = len(results)
+        self.last_scan_funnel = {
+            "requested": requested,
+            "completed": completed,
+            "discarded": max(0, requested - completed),
+            "discard_reasons": {
+                key: value for key, value in discard_reasons.items() if value > 0
+            },
+        }
         logger.info(f"[EXECUTE_SCAN] ✓ Completed: {len(results)} results cached")
         
         return results

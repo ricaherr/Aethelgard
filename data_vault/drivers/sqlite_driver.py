@@ -54,6 +54,8 @@ class SQLiteDriver(IDatabaseDriver):
         self._policy_cache_by_db_path: dict[str, tuple[float, SQLiteConcurrencyPolicy]] = {}
         self._policy_ttl_seconds: float = 5.0
         self._queue_lock = threading.Lock()
+        self._write_lock_pool_guard = threading.Lock()
+        self._write_lock_pool: dict[str, threading.RLock] = {}
         self._telemetry_queue: Deque[tuple[str, str, tuple[Any, ...], bool]] = deque()
         self._last_flush_ts: float = time.time()
         self._force_critical_writes = threading.local()
@@ -83,10 +85,12 @@ class SQLiteDriver(IDatabaseDriver):
         try:
             effective_mode: WriteMode = self._resolve_write_mode(write_mode)
             if effective_mode == "telemetry":
-                self._enqueue_telemetry_write(db_path, sql, params)
-                self._flush_telemetry_queue_if_due(db_path)
+                with self._get_write_lock(db_path):
+                    self._enqueue_telemetry_write(db_path, sql, params)
+                    self._flush_telemetry_queue_if_due(db_path)
                 return 1
-            return self._execute_update_with_retry(db_path, sql, params)
+            with self._get_write_lock(db_path):
+                return self._execute_update_with_retry(db_path, sql, params)
         except Exception as error:
             raise normalize_persistence_error(error) from error
 
@@ -104,11 +108,13 @@ class SQLiteDriver(IDatabaseDriver):
 
             effective_mode: WriteMode = self._resolve_write_mode(write_mode)
             if effective_mode == "telemetry":
-                for params in param_list:
-                    self._enqueue_telemetry_write(db_path, sql, params, is_many=True)
-                self._flush_telemetry_queue_if_due(db_path)
+                with self._get_write_lock(db_path):
+                    for params in param_list:
+                        self._enqueue_telemetry_write(db_path, sql, params, is_many=True)
+                    self._flush_telemetry_queue_if_due(db_path)
                 return len(param_list)
-            return self._execute_many_with_retry(db_path, sql, param_list)
+            with self._get_write_lock(db_path):
+                return self._execute_many_with_retry(db_path, sql, param_list)
         except Exception as error:
             raise normalize_persistence_error(error) from error
 
@@ -116,11 +122,17 @@ class SQLiteDriver(IDatabaseDriver):
         try:
             conn = self.database_manager.get_connection(db_path)
             cursor = conn.cursor()
-            cursor.execute(sql, params)
-            row = cursor.fetchone()
-            if row is None:
-                return None
-            return dict(row)
+            try:
+                cursor.execute(sql, params)
+                row = cursor.fetchone()
+                if row is None:
+                    return None
+                return dict(row)
+            finally:
+                try:
+                    cursor.close()
+                except Exception:
+                    logger.debug("[SQLiteDriver] Failed to close fetch_one cursor", exc_info=True)
         except Exception as error:
             raise normalize_persistence_error(error) from error
 
@@ -177,12 +189,13 @@ class SQLiteDriver(IDatabaseDriver):
         flushed = 0
         for queued_db_path, sql, params, is_many in items:
             target_db_path = queued_db_path or db_path
-            if is_many:
-                self._execute_many_with_retry(target_db_path, sql, [params])
-                flushed += 1
-            else:
-                self._execute_update_with_retry(target_db_path, sql, params)
-                flushed += 1
+            with self._get_write_lock(target_db_path):
+                if is_many:
+                    self._execute_many_with_retry(target_db_path, sql, [params])
+                    flushed += 1
+                else:
+                    self._execute_update_with_retry(target_db_path, sql, params)
+                    flushed += 1
 
         self._metrics["telemetry_flushed"] = int(self._metrics["telemetry_flushed"]) + flushed
         latency_ms = int((time.perf_counter() - started_at) * 1000)
@@ -379,3 +392,11 @@ class SQLiteDriver(IDatabaseDriver):
             except Exception:
                 pass
         logger.debug("[SQLiteDriver] %s %s", event_name, payload)
+
+    def _get_write_lock(self, db_path: str) -> threading.RLock:
+        with self._write_lock_pool_guard:
+            lock = self._write_lock_pool.get(db_path)
+            if lock is None:
+                lock = threading.RLock()
+                self._write_lock_pool[db_path] = lock
+            return lock

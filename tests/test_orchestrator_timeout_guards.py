@@ -150,3 +150,71 @@ async def test_scan_timeout_falls_back_to_cached_results() -> None:
         if c.kwargs.get("action") == "PHASE_TIMEOUT"
     ]
     assert "scan_request" in timed_out_resources
+
+
+@pytest.mark.asyncio
+async def test_scan_backpressure_pauses_request_when_db_latency_is_high() -> None:
+    orch = _make_base_orchestrator()
+    orch.storage.get_sys_config.return_value = {
+        "phase_timeout_scan_s": 1.0,
+        "scan_backpressure_latency_ms": 200,
+    }
+    orch.storage.get_db_transaction_metrics.return_value = {
+        "global": {"avg_ms": 250.0, "last_ms": 260.0, "count": 12}
+    }
+    orch._get_scan_schedule = MagicMock(return_value={"EURUSD|M5": 10.0})
+    orch._should_scan_now = MagicMock(return_value=[("EURUSD", "M5")])
+    orch._request_scan = AsyncMock(return_value={})
+    orch._update_regime_from_scan = MagicMock()
+    orch._persist_scan_telemetry = MagicMock()
+    orch.scanner.last_results = {
+        "EURUSD|M5": {
+            "symbol": "EURUSD",
+            "timeframe": "M5",
+            "regime": "RANGE",
+            "provider_source": "cache",
+            "metrics": {"adx": 20},
+            "df": None,
+        }
+    }
+
+    bundle = await run_scan_phase(orch)
+
+    assert bundle is not None
+    orch._request_scan.assert_not_called()
+    backpressure_events = [
+        c.kwargs for c in orch.storage.log_audit_event.call_args_list
+        if c.kwargs.get("action") == "SCAN_BACKPRESSURE"
+    ]
+    assert backpressure_events
+
+
+@pytest.mark.asyncio
+async def test_scan_backpressure_allows_request_when_latency_is_healthy() -> None:
+    orch = _make_base_orchestrator()
+    orch.storage.get_sys_config.return_value = {
+        "phase_timeout_scan_s": 1.0,
+        "scan_backpressure_latency_ms": 200,
+    }
+    orch.storage.get_db_transaction_metrics.return_value = {
+        "global": {"avg_ms": 80.0, "last_ms": 75.0, "count": 12}
+    }
+    orch._get_scan_schedule = MagicMock(return_value={"EURUSD|M5": 10.0})
+    orch._should_scan_now = MagicMock(return_value=[("EURUSD", "M5")])
+    orch._request_scan = AsyncMock(return_value={})
+    orch._update_regime_from_scan = MagicMock()
+    orch._persist_scan_telemetry = MagicMock()
+    orch.scanner.last_results = {
+        "EURUSD|M5": {
+            "symbol": "EURUSD",
+            "timeframe": "M5",
+            "regime": "RANGE",
+            "provider_source": "cache",
+            "metrics": {"adx": 20},
+            "df": None,
+        }
+    }
+
+    await run_scan_phase(orch)
+
+    orch._request_scan.assert_called_once()

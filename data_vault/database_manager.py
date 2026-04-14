@@ -21,6 +21,7 @@ import threading
 import sqlite3
 import logging
 import time
+from collections import deque
 from typing import Optional, Dict, Any, Generator
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -57,6 +58,10 @@ class DatabaseManager:
         self._config_lock: threading.Lock = threading.Lock()
         self._tx_lock_pool: Dict[str, threading.RLock] = {}
         self._health_timestamps: Dict[str, float] = {}
+        self._tx_metrics_lock: threading.Lock = threading.Lock()
+        self._tx_latency_samples: Dict[str, deque[float]] = {}
+        self._tx_last_latency_ms: Dict[str, float] = {}
+        self._tx_metrics_window_size: int = 120
 
         # PRAGMA Configuration (SSOT)
         self._pragma_config: Dict[str, Any] = {
@@ -195,6 +200,7 @@ class DatabaseManager:
             tx_lock = self._tx_lock_pool.setdefault(db_path, threading.RLock())
 
         with tx_lock:
+            started = time.perf_counter()
             try:
                 yield conn
                 conn.commit()
@@ -202,6 +208,9 @@ class DatabaseManager:
                 conn.rollback()
                 logger.error(f"[DatabaseManager] Transaction rollback due to: {e}")
                 raise
+            finally:
+                elapsed_ms = (time.perf_counter() - started) * 1000.0
+                self._record_transaction_latency(db_path, elapsed_ms)
 
     def execute_query(self, db_path: str, sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
         """
@@ -385,6 +394,52 @@ class DatabaseManager:
     def observe_sqlite_concurrency_event(self, event_name: str, payload: Dict[str, Any]) -> None:
         """Hook for SQLite concurrency observability; currently logs at debug level."""
         logger.debug("[DatabaseManager] sqlite_concurrency_event=%s payload=%s", event_name, payload)
+
+    def _record_transaction_latency(self, db_path: str, latency_ms: float) -> None:
+        """Store rolling transaction latency metrics per database path."""
+        bounded_latency = max(0.0, float(latency_ms))
+        with self._tx_metrics_lock:
+            bucket = self._tx_latency_samples.get(db_path)
+            if bucket is None:
+                bucket = deque(maxlen=self._tx_metrics_window_size)
+                self._tx_latency_samples[db_path] = bucket
+            bucket.append(bounded_latency)
+            self._tx_last_latency_ms[db_path] = bounded_latency
+
+    def get_transaction_metrics(self, db_path: Optional[str] = None) -> Dict[str, Any]:
+        """Return rolling transaction latency metrics for observability/backpressure."""
+
+        def _build_metrics(samples: list[float], last_ms: float) -> Dict[str, Any]:
+            if not samples:
+                return {"count": 0, "avg_ms": 0.0, "p95_ms": 0.0, "last_ms": last_ms}
+            ordered = sorted(samples)
+            idx = max(0, int(len(ordered) * 0.95) - 1)
+            return {
+                "count": len(samples),
+                "avg_ms": round(sum(samples) / len(samples), 3),
+                "p95_ms": round(ordered[idx], 3),
+                "last_ms": round(last_ms, 3),
+            }
+
+        with self._tx_metrics_lock:
+            if db_path is not None:
+                bucket = list(self._tx_latency_samples.get(db_path, deque()))
+                last = float(self._tx_last_latency_ms.get(db_path, 0.0))
+                return {db_path: _build_metrics(bucket, last)}
+
+            global_samples: list[float] = []
+            for bucket in self._tx_latency_samples.values():
+                global_samples.extend(list(bucket))
+            last_global = max(self._tx_last_latency_ms.values()) if self._tx_last_latency_ms else 0.0
+
+            result: Dict[str, Any] = {
+                "global": _build_metrics(global_samples, float(last_global)),
+                "by_db_path": {},
+            }
+            for path, bucket in self._tx_latency_samples.items():
+                last = float(self._tx_last_latency_ms.get(path, 0.0))
+                result["by_db_path"][path] = _build_metrics(list(bucket), last)
+            return result
 
     def set_pragma_value(self, key: str, value: Any) -> None:
         """

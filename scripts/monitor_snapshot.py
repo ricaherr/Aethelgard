@@ -31,10 +31,27 @@ def get_db_snapshot():
             cursor.execute("SELECT key, value, updated_at FROM sys_config ORDER BY updated_at DESC LIMIT 10")
             snapshot["sys_config_tail"] = [dict(row) for row in cursor.fetchall()]
         
-        # 3. AUDITORÍA DE ANOMALÍAS (Basado en Dominio 04 + señales transversales UI)
+        # 3. EVIDENCIA CANÓNICA OEM (sys_audit_logs, UTC)
         if "sys_audit_logs" in snapshot["active_tables"]:
-            cursor.execute("SELECT * FROM sys_audit_logs ORDER BY timestamp DESC LIMIT 5")
-            snapshot["recent_audit"] = [dict(row) for row in cursor.fetchall()]
+            cursor.execute(
+                """
+                SELECT timestamp, action, resource, status, reason, trace_id
+                FROM sys_audit_logs
+                WHERE action IN ('HEARTBEAT', 'SCAN_BACKPRESSURE', 'PHASE_TIMEOUT')
+                ORDER BY timestamp DESC
+                LIMIT 30
+                """
+            )
+            recent_rows = [dict(row) for row in cursor.fetchall()]
+            latest_by_component = {}
+            for row in recent_rows:
+                component = row.get("resource") or "unknown"
+                if component not in latest_by_component:
+                    latest_by_component[component] = row
+
+            snapshot["audit_source"] = "sys_audit_logs_canonical_utc"
+            snapshot["recent_audit"] = recent_rows[:10]
+            snapshot["component_evidence"] = latest_by_component
 
         conn.close()
         return snapshot

@@ -61,6 +61,16 @@
 
 ---
 
+### E20: SRE Lock Cascade & Heartbeat Recovery — ACTIVA
+**Sprint**: 30 | **Trace_ID**: E20-SRE-LOCK-CASCADE-2026-04-13
+**Objetivo**: Eliminar contención SQLite en la ruta crítica scanner/system_db/audit, restaurar watchdog heartbeat hard-fail <120s por componente y endurecer observabilidad canónica para operación estable.
+
+| HU | Nombre | Dominio | Sprint | Estado |
+|---|---|---|---|---|
+| HU 10.31 | SQLite Lock Cascade Recovery & Canonical Heartbeat SLA | 04 | 30 | [DONE] |
+
+---
+
 > [!NOTE]
 > El historial completo de épicas completadas se encuentra en [SYSTEM_LEDGER.md](SYSTEM_LEDGER.md).
 > El protocolo y último informe de auditoría están en [AUDIT_PROTOCOL.md](AUDIT_PROTOCOL.md) y [AUDITORIA_ESTADO_REAL.md](AUDITORIA_ESTADO_REAL.md).

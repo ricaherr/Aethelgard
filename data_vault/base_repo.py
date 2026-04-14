@@ -183,3 +183,15 @@ class BaseRepository:
         """
         with self.transaction() as conn:
             return func(conn, *args, **kwargs)
+
+    def get_db_transaction_metrics(self) -> Dict[str, Any]:
+        """Expose DB transaction latency metrics for observability/backpressure guards."""
+        if self.db_manager is None:
+            return {}
+        getter = getattr(self.db_manager, "get_transaction_metrics", None)
+        if callable(getter):
+            try:
+                return getter()
+            except Exception:
+                return {}
+        return {}

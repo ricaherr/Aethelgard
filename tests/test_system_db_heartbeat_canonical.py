@@ -56,7 +56,7 @@ def test_get_latest_module_heartbeat_audit_prefers_sys_audit_logs() -> None:
     assert ts == "2026-04-05 10:00:00"
 
 
-def test_get_latest_module_heartbeat_audit_falls_back_to_system_audit_logs() -> None:
+def test_get_latest_module_heartbeat_audit_does_not_fallback_to_legacy_runtime() -> None:
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
@@ -77,4 +77,4 @@ def test_get_latest_module_heartbeat_audit_falls_back_to_system_audit_logs() -> 
 
     repo = _SystemRepoForTest(conn)
     ts = repo.get_latest_module_heartbeat_audit("orchestrator")
-    assert ts == "2026-04-05 12:00:00"
+    assert ts is None

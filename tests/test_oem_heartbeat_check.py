@@ -1,17 +1,4 @@
-"""
-test_oem_heartbeat_check.py — HU 10.11
-
-Verifica el comportamiento del check _check_orchestrator_heartbeat:
-  - OK si heartbeat reciente (< 10 min)
-  - WARN si heartbeat tardío (10-20 min)
-  - FAIL si heartbeat ausente por > 20 min (posible bloqueo del loop)
-  - WARN si no existe heartbeat registrado aún
-
-También verifica que get_health_summary() clasifica CRITICAL cuando
-orchestrator_heartbeat falla (regla: un solo FAIL de heartbeat = CRITICAL).
-
-TDD: estos tests deben estar en GREEN con la implementación de HU 10.11.
-"""
+"""Tests OEM heartbeat with hard-fail SLA <120s per component."""
 from datetime import datetime, timezone, timedelta
 from unittest.mock import MagicMock
 
@@ -41,9 +28,9 @@ def oem_with_storage():
     return oem, storage
 
 
-def _ts(minutes_ago: float) -> str:
-    """Genera un timestamp ISO en UTC con N minutos de antigüedad."""
-    return (datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)).isoformat()
+def _ts(seconds_ago: float) -> str:
+    """Genera un timestamp ISO en UTC con N segundos de antigüedad."""
+    return (datetime.now(timezone.utc) - timedelta(seconds=seconds_ago)).isoformat()
 
 
 # ── Tests del check ───────────────────────────────────────────────────────────
@@ -51,9 +38,9 @@ def _ts(minutes_ago: float) -> str:
 class TestOrchestratorHeartbeatCheck:
 
     def test_ok_si_heartbeat_reciente(self, oem_with_storage):
-        """Heartbeat hace 3 minutos → OK."""
+        """Heartbeat hace 20s → OK."""
         oem, storage = oem_with_storage
-        storage.get_module_heartbeats.return_value = {"orchestrator": _ts(3)}
+        storage.get_module_heartbeats.return_value = {"orchestrator": _ts(20)}
 
         result = oem._check_orchestrator_heartbeat()
 
@@ -61,9 +48,9 @@ class TestOrchestratorHeartbeatCheck:
         assert "3" in result.detail or "activo" in result.detail.lower()
 
     def test_warn_si_heartbeat_tardio(self, oem_with_storage):
-        """Heartbeat hace 15 minutos → WARN (entre 10 y 20 min)."""
+        """Heartbeat hace 95s → WARN (previo al hard-fail de 120s)."""
         oem, storage = oem_with_storage
-        storage.get_module_heartbeats.return_value = {"orchestrator": _ts(15)}
+        storage.get_module_heartbeats.return_value = {"orchestrator": _ts(95)}
 
         result = oem._check_orchestrator_heartbeat()
 
@@ -72,7 +59,7 @@ class TestOrchestratorHeartbeatCheck:
     def test_fail_si_componente_silenciado_por_umbral_configurado(self, oem_with_storage):
         """Con umbral explícito de 120s, heartbeat de 3 min se marca como componente silenciado."""
         oem, storage = oem_with_storage
-        storage.get_module_heartbeats.return_value = {"orchestrator": _ts(3)}
+        storage.get_module_heartbeats.return_value = {"orchestrator": _ts(180)}
         storage.get_sys_config.return_value = {"oem_silenced_component_gap_seconds": 120}
 
         result = oem._check_orchestrator_heartbeat()
@@ -81,9 +68,9 @@ class TestOrchestratorHeartbeatCheck:
         assert "Componente Silenciado" in result.detail
 
     def test_fail_si_heartbeat_ausente_mucho_tiempo(self, oem_with_storage):
-        """Heartbeat hace 25 minutos → FAIL (posible bloqueo del loop)."""
+        """Heartbeat hace 200s → FAIL (posible bloqueo del loop)."""
         oem, storage = oem_with_storage
-        storage.get_module_heartbeats.return_value = {"orchestrator": _ts(25)}
+        storage.get_module_heartbeats.return_value = {"orchestrator": _ts(200)}
 
         result = oem._check_orchestrator_heartbeat()
 
@@ -109,7 +96,7 @@ class TestOrchestratorHeartbeatCheck:
         """Si sys_config no trae heartbeat, OEM usa fallback desde sys_audit_logs."""
         oem, storage = oem_with_storage
         storage.get_module_heartbeats.return_value = {}
-        storage.get_latest_module_heartbeat_audit.return_value = _ts(2)
+        storage.get_latest_module_heartbeat_audit.return_value = _ts(10)
 
         result = oem._check_orchestrator_heartbeat()
 
@@ -126,18 +113,18 @@ class TestOrchestratorHeartbeatCheck:
         assert result.status == CheckStatus.WARN
 
     def test_umbral_exacto_warn_a_fail(self, oem_with_storage):
-        """En el umbral exacto de 20 min → FAIL."""
+        """En el umbral exacto de 120s → FAIL."""
         oem, storage = oem_with_storage
-        storage.get_module_heartbeats.return_value = {"orchestrator": _ts(20.1)}
+        storage.get_module_heartbeats.return_value = {"orchestrator": _ts(121)}
 
         result = oem._check_orchestrator_heartbeat()
 
         assert result.status == CheckStatus.FAIL
 
     def test_umbral_exacto_ok_a_warn(self, oem_with_storage):
-        """En el umbral exacto de 10 min → WARN."""
+        """En el umbral exacto de 90s → WARN."""
         oem, storage = oem_with_storage
-        storage.get_module_heartbeats.return_value = {"orchestrator": _ts(10.1)}
+        storage.get_module_heartbeats.return_value = {"orchestrator": _ts(91)}
 
         result = oem._check_orchestrator_heartbeat()
 
@@ -146,12 +133,20 @@ class TestOrchestratorHeartbeatCheck:
     def test_check_presente_en_run_checks(self, oem_with_storage):
         """orchestrator_heartbeat debe estar en los resultados de run_checks()."""
         oem, storage = oem_with_storage
-        storage.get_module_heartbeats.return_value = {"orchestrator": _ts(2)}
+        storage.get_module_heartbeats.return_value = {
+            "orchestrator": _ts(10),
+            "scanner": _ts(10),
+            "signal_factory": _ts(10),
+            "executor": _ts(10),
+            "risk_manager": _ts(10),
+        }
 
         results = oem.run_checks()
 
         assert "orchestrator_heartbeat" in results
         assert results["orchestrator_heartbeat"].status == CheckStatus.OK
+        assert "scanner_heartbeat" in results
+        assert "signal_factory_heartbeat" in results
 
 
 # ── Tests de get_health_summary con heartbeat ─────────────────────────────────
@@ -162,10 +157,16 @@ class TestHealthSummaryHeartbeatIntegration:
         """Un solo FAIL en orchestrator_heartbeat → CRITICAL (regla especial)."""
         oem, storage = oem_with_storage
         # Hacer que solo el heartbeat falle: resto OK
-        storage.get_module_heartbeats.return_value = {"orchestrator": _ts(25)}
+        storage.get_module_heartbeats.return_value = {
+            "orchestrator": _ts(200),
+            "scanner": _ts(10),
+            "signal_factory": _ts(10),
+            "executor": _ts(10),
+            "risk_manager": _ts(10),
+        }
         storage.get_all_signal_rankings.return_value = [
             {"strategy_id": "s1", "score_backtest": 0.8, "execution_mode": "LIVE",
-             "updated_at": _ts(1)}
+             "updated_at": _ts(10)}
         ]
         storage.get_sys_broker_accounts.return_value = [
             {"supports_exec": 1, "enabled": 1}
@@ -183,10 +184,16 @@ class TestHealthSummaryHeartbeatIntegration:
     def test_ok_cuando_heartbeat_y_todos_checks_pasan(self, oem_with_storage):
         """Todo OK → status global OK."""
         oem, storage = oem_with_storage
-        storage.get_module_heartbeats.return_value = {"orchestrator": _ts(2)}
+        storage.get_module_heartbeats.return_value = {
+            "orchestrator": _ts(10),
+            "scanner": _ts(10),
+            "signal_factory": _ts(10),
+            "executor": _ts(10),
+            "risk_manager": _ts(10),
+        }
         storage.get_all_signal_rankings.return_value = [
             {"strategy_id": "s1", "score_backtest": 0.8, "execution_mode": "LIVE",
-             "updated_at": _ts(1)}
+             "updated_at": _ts(10)}
         ]
         storage.get_sys_broker_accounts.return_value = [
             {"supports_exec": 1, "enabled": 1}
@@ -205,7 +212,13 @@ class TestHealthSummaryHeartbeatIntegration:
     def test_degraded_si_solo_warn_en_heartbeat(self, oem_with_storage):
         """Heartbeat tardío (WARN) → DEGRADED, no CRITICAL."""
         oem, storage = oem_with_storage
-        storage.get_module_heartbeats.return_value = {"orchestrator": _ts(15)}
+        storage.get_module_heartbeats.return_value = {
+            "orchestrator": _ts(100),
+            "scanner": _ts(10),
+            "signal_factory": _ts(10),
+            "executor": _ts(10),
+            "risk_manager": _ts(10),
+        }
 
         summary = oem.get_health_summary()
 

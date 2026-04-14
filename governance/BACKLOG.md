@@ -103,7 +103,7 @@
 ---
 
 ## 10_INFRASTRUCTURE_RESILIENCY (Health, Self-Healing)
-*(Sin HUs pendientes — HU 10.30 archivada en SYSTEM_LEDGER)*
+*(Sin HUs pendientes — ver historial en SYSTEM_LEDGER)*
 
 
 

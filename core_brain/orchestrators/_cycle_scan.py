@@ -126,6 +126,56 @@ def _record_phase_timeout(orch: Any, phase: str, timeout_s: float) -> None:
         logger.debug("[TIMEOUT] Could not persist timeout payload to sys_config: %s", exc)
 
 
+def _db_backpressure_state(orch: Any) -> Dict[str, Any]:
+    """Evaluate DB transaction latency and decide whether scan_request should pause."""
+    default_threshold_ms = 200.0
+    try:
+        sys_config = orch.storage.get_sys_config() or {}
+    except Exception:
+        sys_config = {}
+
+    try:
+        threshold_ms = float(sys_config.get("scan_backpressure_latency_ms", default_threshold_ms))
+    except (TypeError, ValueError):
+        threshold_ms = default_threshold_ms
+
+    metrics: Dict[str, Any] = {}
+    if hasattr(orch.storage, "get_db_transaction_metrics"):
+        try:
+            metrics = orch.storage.get_db_transaction_metrics() or {}
+        except Exception:
+            metrics = {}
+
+    global_metrics = metrics.get("global") if isinstance(metrics, dict) else None
+    if not isinstance(global_metrics, dict):
+        return {
+            "active": False,
+            "threshold_ms": threshold_ms,
+            "observed_ms": 0.0,
+            "count": 0,
+        }
+
+    avg_ms = float(global_metrics.get("avg_ms", 0.0) or 0.0)
+    last_ms = float(global_metrics.get("last_ms", 0.0) or 0.0)
+    count = int(global_metrics.get("count", 0) or 0)
+    observed = max(avg_ms, last_ms)
+
+    return {
+        "active": count > 0 and observed >= threshold_ms,
+        "threshold_ms": threshold_ms,
+        "observed_ms": observed,
+        "count": count,
+    }
+
+
+def _persist_scan_funnel_kpi(orch: Any, payload: Dict[str, Any]) -> None:
+    """Persist scanner funnel KPIs for operational observability."""
+    try:
+        orch.storage.update_sys_config({"scanner_signal_funnel_last_cycle": payload})
+    except Exception as exc:
+        logger.debug("[SCAN_KPI] Could not persist funnel KPI payload: %s", exc)
+
+
 async def _run_with_timeout(orch: Any, phase: str, awaitable: Any, timeout_s: float) -> bool:
     """Run awaitable with timeout; return False on timeout/error and keep cycle alive."""
     try:
@@ -421,24 +471,52 @@ async def run_scan_phase(orch: Any) -> Optional[ScanBundle]:
     logger.debug(f"[OPTION-A] Built scan schedule: {len(scan_schedule)} symbol|timeframe pairs")
 
     assets_to_scan = orch._should_scan_now(scan_schedule)
+    discard_reasons: Dict[str, int] = {}
     if assets_to_scan:
         logger.info(
             f"[OPTION-A] {len(assets_to_scan)} assets due: "
             f"{', '.join([f'{s}|{tf}' for s, tf in assets_to_scan[:5]])}{'...' if len(assets_to_scan) > 5 else ''}"
         )
-        scan_timeout_s = _get_phase_timeout_seconds(
-            orch,
-            key="phase_timeout_scan_s",
-            default=120.0,
-        )
-        try:
-            new_scan_results = await asyncio.wait_for(
-                orch._request_scan(assets_to_scan),
-                timeout=scan_timeout_s,
+        backpressure = _db_backpressure_state(orch)
+        if backpressure.get("active"):
+            discard_reasons["backpressure_db_latency"] = len(assets_to_scan)
+            logger.warning(
+                "[SCAN_BACKPRESSURE] scan_request paused due DB latency %.1fms >= %.1fms (count=%s)",
+                backpressure.get("observed_ms", 0.0),
+                backpressure.get("threshold_ms", 0.0),
+                backpressure.get("count", 0),
             )
-        except asyncio.TimeoutError:
-            _record_phase_timeout(orch, "scan_request", scan_timeout_s)
+            try:
+                orch.storage.log_audit_event(
+                    user_id="SYSTEM",
+                    action="SCAN_BACKPRESSURE",
+                    resource="scan_request",
+                    resource_id="db_latency",
+                    status="warning",
+                    reason=(
+                        f"paused: observed_ms={backpressure.get('observed_ms', 0.0):.2f} "
+                        f"threshold_ms={backpressure.get('threshold_ms', 0.0):.2f}"
+                    ),
+                    trace_id=f"SCAN_BACKPRESSURE_{uuid.uuid4().hex[:8].upper()}",
+                )
+            except Exception as exc:
+                logger.debug("[SCAN_BACKPRESSURE] Could not write audit event: %s", exc)
             new_scan_results = {}
+        else:
+            scan_timeout_s = _get_phase_timeout_seconds(
+                orch,
+                key="phase_timeout_scan_s",
+                default=120.0,
+            )
+            try:
+                new_scan_results = await asyncio.wait_for(
+                    orch._request_scan(assets_to_scan),
+                    timeout=scan_timeout_s,
+                )
+            except asyncio.TimeoutError:
+                _record_phase_timeout(orch, "scan_request", scan_timeout_s)
+                discard_reasons["scan_timeout"] = len(assets_to_scan)
+                new_scan_results = {}
     else:
         logger.debug("[OPTION-A] No assets due — using cached results")
         new_scan_results = {}
@@ -461,6 +539,18 @@ async def run_scan_phase(orch: Any) -> Optional[ScanBundle]:
 
     if not scan_results_with_data:
         logger.warning("No scan results available yet (first cycle or all offline)")
+        _persist_scan_funnel_kpi(
+            orch,
+            {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "scheduled_pairs": len(scan_schedule),
+                "due_pairs": len(assets_to_scan),
+                "new_results": len(new_scan_results),
+                "active_results": 0,
+                "completion_rate": 0.0,
+                "discard_reasons": discard_reasons or {"no_scan_results": len(assets_to_scan)},
+            },
+        )
         return None
 
     orch.stats.scans_total += len(scan_results_with_data)
@@ -481,6 +571,21 @@ async def run_scan_phase(orch: Any) -> Optional[ScanBundle]:
     logger.info(
         f"[PRICE_SNAPSHOT] Built {len(price_snapshots)} atomic snapshots. "
         f"Providers: {set(s.provider_source for s in price_snapshots.values())}"
+    )
+
+    completion_rate = (len(scan_results_with_data) / len(scan_schedule) * 100.0) if scan_schedule else 0.0
+    _persist_scan_funnel_kpi(
+        orch,
+        {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "scheduled_pairs": len(scan_schedule),
+            "due_pairs": len(assets_to_scan),
+            "new_results": len(new_scan_results),
+            "active_results": len(scan_results_with_data),
+            "completion_rate": round(completion_rate, 2),
+            "discard_reasons": discard_reasons,
+            "scan_sources": sorted({s.provider_source for s in price_snapshots.values()}),
+        },
     )
 
     # Feed AnomalySentinel (EDGE-IGNITION-PHASE-2)
