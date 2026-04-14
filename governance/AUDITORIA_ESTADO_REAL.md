@@ -42,6 +42,22 @@
 - El núcleo no está caído; la regresión principal está en contrato runtime de estrategias con metadata SSOT enriquecida.
 - La confianza operativa actual se desbloquea corrigiendo contrato + validación end-to-end, no agregando nuevas features.
 
+### Ventana de Monitoreo Extendida — 13-Abr-2026 (post-hardening)
+
+**Duración efectiva observada**: múltiples ciclos consecutivos (>= 20 ciclos en sesión) con scanner y funnel activos.
+
+**Resultados**:
+- ✅ Regresión crítica corregida: no se observaron errores `TypeError` de `liq_sweep_0001` por comparación dict/float.
+- ✅ Estabilidad de ciclo: `scanner_completed=23` y `funnel_events=23` en la ventana analizada de log.
+- ✅ Guardrail CPU estable: `cpu_veto=0`, `cpu_throttled=0` en la misma ventana.
+- ✅ Salud HTTP estable: endpoint `/health` respondió `status=ok` con heartbeat reciente.
+- ⚠️ Flujo de negocio aún bloqueado: `raw_zero=23` (señales raw continúan en 0 por lógica/filtros, no por excepción runtime).
+- ⚠️ OEM sigue `DEGRADED` con warnings de negocio (`shadow_sync`, `backtest_quality`, `signal_flow`, `score_stale`, `shadow_stagnation`).
+
+**Conclusión operativa del monitoreo**:
+- El hotfix eliminó la regresión técnica de tipo y devolvió estabilidad al loop.
+- El siguiente cuello de botella ya no es crash técnico; es generación de señales de negocio (lógica/filtros/calidad).
+
 ---
 
 ## 🔴 HALLAZGO CRÍTICO

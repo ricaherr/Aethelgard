@@ -18,17 +18,17 @@
 
 > ℹ️ Solo se muestran Épicas en estado `ACTIVA` o `PENDIENTE`. Las Épicas `COMPLETADA` se archivan en [SYSTEM_LEDGER.md](SYSTEM_LEDGER.md) (sección ÉPICAS ARCHIVADAS) y se eliminan de este documento.
 
-### E5: Interfaz Fractal & Experiencia Futurista (Dominio 09) — ACTIVA
+### E5: Interfaz Fractal & Experiencia Futurista (Ámbito Transversal UI) — ACTIVA
 **Sprint**: 25 | **Trace_ID**: UI-V3-FRACTAL-FUTURE-2026
 **Objetivo**: Evolucionar la terminal a una consola de alta densidad de información con navegación fractal y elementos de manipulación directa.
 
 | HU | Nombre | Dominio | Sprint | Estado |
 |---|---|---|---|---|
-| HU 9.4 | Unified Telemetry Stream (The Synapse) | 09 | 25 | [DONE] |
-| HU 9.5 | Fractal Zoom Engine | 09 | — | [TODO] |
-| HU 9.6 | Direct Manipulation (Drag & Drop) | 09 | — | [TODO] |
-| HU 9.7 | Sci-Fi Component Library (HUDs) | 09 | — | [TODO] |
-| HU 9.8 | Event Soldering (ANOMALY + REASONING) | 09 | — | [TODO] |
+| HU 9.4 | Unified Telemetry Stream (The Synapse) | TRANSVERSAL_UI | 25 | [DONE] |
+| HU 9.5 | Fractal Zoom Engine | TRANSVERSAL_UI | — | [TODO] |
+| HU 9.6 | Direct Manipulation (Drag & Drop) | TRANSVERSAL_UI | — | [TODO] |
+| HU 9.7 | Sci-Fi Component Library (HUDs) | TRANSVERSAL_UI | — | [TODO] |
+| HU 9.8 | Event Soldering (ANOMALY + REASONING) | TRANSVERSAL_UI | — | [TODO] |
 
 ---
 
@@ -40,8 +40,8 @@
 |---|---|---|---|---|
 | HU 1.3 | User Role & Membership Level (Deuda Técnica) | 01 | 27 | [TODO] |
 | HU 3.3 | Multi-Market Alpha Correlator | 03 | 27 | [TODO] |
-| HU 6.1 | Shadow Reality Engine (Penalty Injector) | 06 | 27 | [TODO] |
-| HU 6.2 | Multi-Tenant Strategy Ranker | 06 | 27 | [TODO] |
+| HU 6.1 | Shadow Reality Engine (Penalty Injector) | 03 | 27 | [TODO] |
+| HU 6.2 | Multi-Tenant Strategy Ranker | 03 | 27 | [TODO] |
 
 ---
 
@@ -52,12 +52,12 @@
 | HU | Nombre | Dominio | Sprint | Estado |
 |---|---|---|---|---|
 | HU 5.4 | Signal-to-Execution Recovery Pipeline | 05 | 29 | [DONE] |
-| HU 8.9 | Strategy SSOT Snapshot Sync & Governance Closure | 08 | 29 | [DONE] |
-| HU 9.10 | Runtime Confidence Contract Recovery | 09 | 29 | [DONE] |
-| HU 10.27 | Adaptive CPU Guardrail Throttling | 10 | 29 | [DONE] |
-| HU 10.28 | Provider Coverage Reliability | 10 | 29 | [DONE] |
-| HU 10.29 | SQLite Contention Hotfix | 10 | 29 | [DONE] |
-| HU 10.30 | Runtime Contract Hardening & Confidence Matrix | 10 | 29 | [DONE] |
+| HU 8.9 | Strategy SSOT Snapshot Sync & Governance Closure | 04 | 29 | [DONE] |
+| HU 9.10 | Runtime Confidence Contract Recovery | TRANSVERSAL_UI | 29 | [DONE] |
+| HU 10.27 | Adaptive CPU Guardrail Throttling | 04 | 29 | [DONE] |
+| HU 10.28 | Provider Coverage Reliability | 04 | 29 | [DONE] |
+| HU 10.29 | SQLite Contention Hotfix | 04 | 29 | [DONE] |
+| HU 10.30 | Runtime Contract Hardening & Confidence Matrix | 04 | 29 | [DONE] |
 
 ---
 

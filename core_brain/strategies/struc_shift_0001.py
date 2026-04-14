@@ -75,7 +75,7 @@ class StructureShift0001Strategy(BaseStrategy):
         Args:
             storage_manager: Gestor de persistencia
             market_structure_analyzer: Sensor de estructura de mercado
-            user_id: ID del usuario/tenant para trazabilidad (multi-tenancy). Ver Dominio 01,08.
+            user_id: ID del usuario/tenant para trazabilidad (multi-tenancy). Ver Dominio 01,04.
             config: Configuración adicional
             trace_id: ID único de traza
             reasoning_event_callback: Callback para emitir eventos de razonamiento

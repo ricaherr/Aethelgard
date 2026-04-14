@@ -175,14 +175,14 @@ async def main():
         run_audit_module("ISD: Signal Quality Validation", ["python", "-m", "pytest", "tests/test_signal_quality_scorer_phase4.py", "-v"], workspace),
     ]
     
-    # Domain 08: DATA_SOVEREIGNTY
+    # Domain 04: DATA_SOVEREIGNTY_INFRA
     domain_08_data = [
         run_audit_module("Runtime Persistence Audit", ["python", "scripts/utilities/runtime_persistence_audit.py"], workspace),
         run_audit_module("System DB", ["python", "scripts/utilities/verify_sync_fidelity.py"], workspace),
         run_audit_module("DB Integrity", ["python", "scripts/utilities/db_uniqueness_audit.py"], workspace),
     ]
     
-    # Domain 09: INSTITUTIONAL_UI
+    # UI checks moved to transversal (5-domain model)
     domain_09_ui = [
         run_audit_module("UI Quality", ["python", "scripts/utilities/ui_health_check.py"], workspace),
         run_audit_module("UI Build", ["npm.cmd", "run", "build"], workspace / "ui"),
@@ -234,13 +234,11 @@ async def main():
     # Categorizar resultados por dominio
     domain_results = {
         "CROSS-CUTTING (Governance & Quality)": [],
-        "DOMAIN 01: Identity & Security": [],
-        "DOMAIN 02-03: Context Intelligence & Signal Generation": [],
-        "DOMAIN 04: Risk Governance": [],
-        "DOMAIN 05: Universal Execution": [],
-        "INTELLIGENT SIGNAL DEDUP: Quality Validation": [],
-        "DOMAIN 08: Data Sovereignty": [],
-        "DOMAIN 09: Institutional UI": [],
+        "DOMAIN 01: Core Adaptive Brain": [],
+        "DOMAIN 02: Executor Governance": [],
+        "DOMAIN 03: Performance Darwinism": [],
+        "DOMAIN 04: Data Sovereignty Infra": [],
+        "DOMAIN 05: Identity & Security": [],
         "SPECIALIZED (Multidomain Integration)": [],
     }
     
@@ -249,19 +247,19 @@ async def main():
         if res['name'] in ["Architecture", "QA Guard", "Code Quality", "Manifesto", "Patterns", "Duplicate Methods", "Interface Contracts", "Documentation"]:
             domain_results["CROSS-CUTTING (Governance & Quality)"].append(res)
         elif res['name'] in ["Tenant Isolation Scanner", "Credentials & Seeds", "User Management Quality"]:
-            domain_results["DOMAIN 01: Identity & Security"].append(res)
+            domain_results["DOMAIN 05: Identity & Security"].append(res)
         elif res['name'] == "Core Tests":
-            domain_results["DOMAIN 02-03: Context Intelligence & Signal Generation"].append(res)
+            domain_results["DOMAIN 01: Core Adaptive Brain"].append(res)
         elif res['name'] == "FASE B: NewsValidator":
-            domain_results["DOMAIN 04: Risk Governance"].append(res)
+            domain_results["DOMAIN 02: Executor Governance"].append(res)
         elif res['name'] in ["SPRINT S007", "Integration", "Cooldown Manager", "Data Provider Manager"]:
-            domain_results["DOMAIN 05: Universal Execution"].append(res)
+            domain_results["DOMAIN 02: Executor Governance"].append(res)
         elif res['name'] == "ISD: Signal Quality Validation":
-            domain_results["INTELLIGENT SIGNAL DEDUP: Quality Validation"].append(res)
+            domain_results["DOMAIN 03: Performance Darwinism"].append(res)
         elif res['name'] in ["Runtime Persistence Audit", "System DB", "DB Integrity"]:
-            domain_results["DOMAIN 08: Data Sovereignty"].append(res)
+            domain_results["DOMAIN 04: Data Sovereignty Infra"].append(res)
         elif res['name'] in ["UI Quality", "UI Build"]:
-            domain_results["DOMAIN 09: Institutional UI"].append(res)
+            domain_results["CROSS-CUTTING (Governance & Quality)"].append(res)
         else:
             domain_results["SPECIALIZED (Multidomain Integration)"].append(res)
     

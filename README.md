@@ -10,15 +10,15 @@
 
 ---
 
-## 🏛️ Arquitectura Modular (Financial Domains)
+## 🏛️ Arquitectura Modular (5 Dominios Vigentes)
 
-El sistema se organiza en dominios especializados para garantizar la escalabilidad y el aislamiento de responsabilidades:
+El sistema se organiza en 5 dominios especializados para garantizar escalabilidad y aislamiento de responsabilidades:
 
-1.  **[01 ALPHA ENGINE](docs/01_ALPHA_ENGINE.md)**: Generación de Alpha, gestión de estrategias y motor de escaneo proactivo.
-2.  **[02 RISK CONTROL](docs/02_RISK_CONTROL.md)**: Gestión de riesgo, compliance técnico y controles de exposición/drawdown.
-3.  **[03 EXECUTION EMS](docs/03_EXECUTION_EMS.md)**: Execution Management System (EMS), enrutamiento de órdenes y fidelidad de fuente.
-4.  **[04 PORTFOLIO MANAGEMENT](docs/04_PORTFOLIO_MANAGEMENT.md)**: Gestión de portafolio y posiciones, monitor de trades y aprendizaje EDGE.
-5.  **[05 INFRASTRUCTURE](docs/05_INFRASTRUCTURE.md)**: Capa de persistencia (SSOT), orquestación resiliente y servicios de API.
+1.  **[01 CORE_ADAPTIVE_BRAIN](docs/01_CORE_ADAPTIVE_BRAIN.md)**: Generación de contexto de mercado, regímenes y aprendizaje adaptativo del EDGE.
+2.  **[02 EXECUTOR_GOVERNANCE](docs/02_EXECUTOR_GOVERNANCE.md)**: Gobernanza de riesgo y ejecución agnóstica con vetos operativos.
+3.  **[03 PERFORMANCE_DARWINISM](docs/03_PERFORMANCE_DARWINISM.md)**: Ciclo SHADOW/LIVE, coherencia matemática y ranking darwinista.
+4.  **[04 DATA_SOVEREIGNTY_INFRA](docs/04_DATA_SOVEREIGNTY_INFRA.md)**: SSOT, persistencia multi-tenant y resiliencia de infraestructura.
+5.  **[05 IDENTITY_SECURITY](docs/05_IDENTITY_SECURITY.md)**: Gatekeeper de identidad, RBAC y aislamiento SaaS.
 
 ---
 

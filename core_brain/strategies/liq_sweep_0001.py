@@ -71,7 +71,7 @@ class LiquiditySweep0001Strategy(BaseStrategy):
             session_liquidity_sensor: Detector de Session High/Low
             liquidity_sweep_detector: Detector de breakout falso
             fundamental_guard: Servicio de veto por noticias
-            user_id: ID del usuario/tenant para trazabilidad (multi-tenancy). Ver Dominio 01,08.
+            user_id: ID del usuario/tenant para trazabilidad (multi-tenancy). Ver Dominio 01,04.
             config: Configuración adicional
             trace_id: ID único de traza
         """

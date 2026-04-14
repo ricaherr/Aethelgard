@@ -101,17 +101,44 @@ class DatabaseManager:
             ):
                 return self._connection_pool[db_path]
 
-            # Create and configure connection
-            conn = sqlite3.connect(db_path, check_same_thread=False, timeout=120)
-            conn.row_factory = sqlite3.Row
+            # Create and configure connection with bounded retries to absorb
+            # transient startup races from sibling processes touching the same DB.
+            conn: sqlite3.Connection | None = None
+            last_error: Exception | None = None
+            for attempt in range(1, 4):
+                try:
+                    conn = sqlite3.connect(db_path, check_same_thread=False, timeout=120)
+                    conn.row_factory = sqlite3.Row
 
-            # Apply SSOT PRAGMA configuration
-            for pragma_key, pragma_value in self._pragma_config.items():
-                if pragma_key == "query_only":
-                    # query_only is special (boolean)
-                    conn.execute(f"PRAGMA query_only={1 if pragma_value else 0}")
-                else:
-                    conn.execute(f"PRAGMA {pragma_key}={pragma_value}")
+                    # Apply SSOT PRAGMA configuration
+                    for pragma_key, pragma_value in self._pragma_config.items():
+                        if pragma_key == "query_only":
+                            # query_only is special (boolean)
+                            conn.execute(f"PRAGMA query_only={1 if pragma_value else 0}")
+                        else:
+                            conn.execute(f"PRAGMA {pragma_key}={pragma_value}")
+                    break
+                except sqlite3.OperationalError as e:
+                    last_error = e
+                    if conn is not None:
+                        try:
+                            conn.close()
+                        except Exception:
+                            logger.debug("[DatabaseManager] Failed to close transient connection", exc_info=True)
+                    if attempt >= 3:
+                        raise
+                    logger.warning(
+                        "[DatabaseManager] Connection init retry %s/3 for %s due to OperationalError: %s",
+                        attempt,
+                        db_path,
+                        e,
+                    )
+                    time.sleep(0.2 * attempt)
+
+            if conn is None:
+                if last_error is not None:
+                    raise last_error
+                raise sqlite3.OperationalError("Failed to initialize SQLite connection")
 
             self._connection_pool[db_path] = conn
             self._health_timestamps[db_path] = time.time()

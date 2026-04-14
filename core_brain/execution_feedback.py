@@ -5,7 +5,7 @@ Purpose:
 - Collects execution failures/vetoes from ExecutionService
 - Analyzes failure patterns (by symbol, strategy, time, reason)
 - Provides data to SignalFactory for intelligent signal suppression
-- Implements Dominio 10 (INFRA_RESILIENCY): Feedback integration for self-healing
+- Implements Dominio 04 (DATA_SOVEREIGNTY_INFRA): Feedback integration for self-healing
 
 Architecture:
 - SSOT: Persists in DB (sys_execution_feedback table)
@@ -13,7 +13,7 @@ Architecture:
 - Time-Windowed: Forgets old failures (>30 min)
 
 Compliance:
-- Dominio 10 (INFRA_RESILIENCY): Auto-Healing feedback loop
+- Dominio 04 (DATA_SOVEREIGNTY_INFRA): Auto-Healing feedback loop
 - Dominio 03 (ALPHA_GENERATION): Signal retraction on repeated failures
 - DEVELOPMENT_GUIDELINES Rule 1.6: Service Layer pattern
 - DEVELOPMENT_GUIDELINES Rule 1.5: sys_* naming (global feedback, not per-tenant)

@@ -520,7 +520,7 @@ conn.execute("""
 
 - [DONE] **HU 8.4: Enforcement de Persistencia (DB Policy Root-Fix)**
   - Guard runtime instalado en `start.py`: bloquea nuevas conexiones `sqlite3.connect` fuera de rutas aprobadas (lista allowlist + legacy baseline).
-  - Auditoría AST automática `scripts/utilities/runtime_persistence_audit.py` integrada en `validate_all.py` (Domain 08).
+  - Auditoría AST automática `scripts/utilities/runtime_persistence_audit.py` integrada en `validate_all.py` (Domain 04).
   - Baseline generado: 99 violaciones congeladas en `governance/baselines/runtime_persistence_baseline.json` (4 sqlite_connect + 95 manual_commit).
   - 4/4 tests focalizados passing · `validate_all.py` 28/28 · `start.py` smoke OK · 2334/2337 global suite.
   - Bypass pytest activo (`PYTEST_CURRENT_TEST` / `sys.modules["pytest"]`) para no bloquear suite de desarrollo.
@@ -682,7 +682,7 @@ conn.execute("""
   - `tests/test_veto_reasoner.py`: 2 tests — endpoint 503 si manager no inicializado + serialización de postura/narrativa/exclusiones
   - `ui/src/__tests__/components/ResilienceConsole.test.ts`: 2 tests — contrato endpoint v3 + render narrativo condicional
   - `docs/10_INFRA_RESILIENCY.md`: sección "Manual Overrides" añadida (contrato de endpoints + UI)
-  - Glassmorphism + bordes 0.5px + animaciones stagger 100ms (Dominio 09)
+  - Glassmorphism + bordes 0.5px + animaciones stagger 100ms (Ámbito transversal UI)
 
 - [DONE] **HU 10.16: Self-Healing & Correlation Engine** (Trace_ID: ARCH-RESILIENCE-ENGINE-V1-C | 2026-03-31)
   - `core_brain/resilience_manager.py` actualizado con tres nuevos sub-sistemas:
@@ -810,7 +810,7 @@ conn.execute("""
   - `core_brain/services/coherence_service.py` — 3 nuevos métodos:
     - `calculate_slippage_monitor(symbol, n_trades=5)`: ratio `real_price / signal_price` sobre últimos 5 trades; alerta si slippage > 2 pips **o** desviación de precio > 0.02%.
     - `calculate_profit_factor_drift(strategy_id)`: compara PF teórico (mejor `sys_shadow_instances.profit_factor`) vs. real (`sys_signal_ranking.profit_factor`); desviación > 30% → estado `COHERENCE_LOW`.
-    - `check_coherence_veto(strategy_id, symbol=None)`: **Veto_Method** (Dominio 06, HU 6.3); retorna `True` si `coherence_score < 0.60` **o** si PF drift > 30% AND score < 0.70. Fail-open en caso de error (no bloquea trading).
+    - `check_coherence_veto(strategy_id, symbol=None)`: **Veto_Method** (Dominio 03, HU 6.3); retorna `True` si `coherence_score < 0.60` **o** si PF drift > 30% AND score < 0.70. Fail-open en caso de error (no bloquea trading).
   - `core_brain/main_orchestrator.py` — integración EDGE-IGNITION-PHASE-3:
     - Import `CoherenceService`; instancia como `self.coherence_service = CoherenceService(storage=self.storage)` (bloque #15 en `__init__`).
     - **Coherence Gate** en el `while` del loop principal, como 3er check tras INTEGRITY y ANOMALY, antes de `run_single_cycle()`.

@@ -94,13 +94,15 @@ class StorageManager(
         # initialize_schema() sets PRAGMA busy_timeout=120000 as belt-and-suspenders,
         # but a Python-level retry provides a second layer of resilience.
         logger.info("Initializing database schema...")
-        critical_context = nullcontext()
-        if hasattr(self.db_driver, "force_critical_writes"):
-            critical_context = self.db_driver.force_critical_writes()
-
         _max_schema_attempts = 5
         for _attempt in range(_max_schema_attempts):
             try:
+                critical_context = nullcontext()
+                if hasattr(self.db_driver, "force_critical_writes"):
+                    # IMPORTANT: Build a fresh context manager per retry attempt.
+                    # Reusing a consumed _GeneratorContextManager triggers
+                    # "AttributeError: ... has no attribute 'args'" on re-entry.
+                    critical_context = self.db_driver.force_critical_writes()
                 with critical_context:
                     with self.transaction() as conn:
                         # DDL (idempotent via CREATE TABLE IF NOT EXISTS)

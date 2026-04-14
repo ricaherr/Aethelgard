@@ -62,7 +62,7 @@ class StrategyEngineFactory:
         Inicializa el factory.
         
         Args:
-            storage: StorageManager instance (inyectada) - implementa SSOT (Dominio 08)
+            storage: StorageManager instance (inyectada) - implementa SSOT (Dominio 04)
             config: Configuración dinámica (dynamic_params)
             available_sensors: Dict de sensores disponibles en MainOrchestrator {name: instance}
             user_id: User identifier para multi-tenancy (inyección a estrategias). Ver Dominio 01.

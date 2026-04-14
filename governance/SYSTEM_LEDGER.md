@@ -563,7 +563,7 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 
 ---
 
-### E8 — SHADOW Activation: Bucle de Evolución Darwiniana (Dominio 06_PORTFOLIO_INTELLIGENCE)
+### E8 — SHADOW Activation: Bucle de Evolución Darwiniana (Dominio 03_PERFORMANCE_DARWINISM)
 | Campo | Valor |
 |---|---|
 | **Trace_ID** | `EXEC-V4-SHADOW-INTEGRATION` |
@@ -1542,7 +1542,7 @@ Implementación de la **capa de filtrado de eficiencia de activos** que valida l
 - ~550 líneas (único documento de referencia para esta funcionalidad)
 
 **7. Actualización de BACKLOG.md y SPRINT.md**
-- **BACKLOG.md**: Agregar HU 7.2 bajo Dominio 07_ADAPTIVE_LEARNING con estado [DONE]
+- **BACKLOG.md**: Agregar HU 7.2 bajo Dominio 03_PERFORMANCE_DARWINISM con estado [DONE]
 - **SPRINT.md**: Agregar tarea bajo SPRINT 3 con checkbox marcado ✅
 
 #### Flujo Operacional Completo
@@ -1807,7 +1807,7 @@ Implementación del **CoherenceService** (HU 6.3): Detector autónomo de diverge
 - **Estado**: 14/14 PASSED ✅
 
 **5. Documentación Completa (`docs/06_STRATEGY_COHERENCE.md`)**
-- Dominio 06 (SSOT para Strategy Coherence)
+- Dominio 03 (SSOT para Strategy Coherence)
 - Secciones técnicas:
   - Executive Summary & Mission
   - Core Responsibilities (4 puntos)
@@ -3069,7 +3069,7 @@ Reconciliación documental final de la HU 4.6 (Anomaly Sentinel - Antifragility 
 | SYSTEM_LEDGER.md | Milestone Entry | ✅ Este registro |
 
 **Coherencia Técnica Confirmada**:
-- 🔗 Dominio 04 (Risk Governance) ↔ Dominio 10 (Infrastructure Resiliency) coordinados
+- 🔗 Dominio 02 (Executor Governance) ↔ Dominio 04 (Data Sovereignty Infra) coordinados
 - 🔗 AnomalyService (detección) ↔ HealthService (transiciones) integrados
 - 🔗 Persistencia (anomaly_events + system_health_history) SSOT
 - 🔗 UI/UX (Thought Console + Status Badge) sincronizado

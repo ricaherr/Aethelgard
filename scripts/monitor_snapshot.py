@@ -31,7 +31,7 @@ def get_db_snapshot():
             cursor.execute("SELECT key, value, updated_at FROM sys_config ORDER BY updated_at DESC LIMIT 10")
             snapshot["sys_config_tail"] = [dict(row) for row in cursor.fetchall()]
         
-        # 3. AUDITORÍA DE ANOMALÍAS (Basado en Dominio 04/09)
+        # 3. AUDITORÍA DE ANOMALÍAS (Basado en Dominio 04 + señales transversales UI)
         if "sys_audit_logs" in snapshot["active_tables"]:
             cursor.execute("SELECT * FROM sys_audit_logs ORDER BY timestamp DESC LIMIT 5")
             snapshot["recent_audit"] = [dict(row) for row in cursor.fetchall()]

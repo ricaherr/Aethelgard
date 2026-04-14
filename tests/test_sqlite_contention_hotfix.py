@@ -202,3 +202,75 @@ def test_no_regression_fetch_all_contract(tmp_path: Path, db_manager: DatabaseMa
     assert all(isinstance(row, dict) for row in rows)
     assert rows[0]["value"] == "a"
     assert rows[1]["value"] == "b"
+
+
+def test_connection_init_retries_on_transient_operational_error(
+    monkeypatch: pytest.MonkeyPatch,
+    db_manager: DatabaseManager,
+) -> None:
+    """DatabaseManager should retry connection init when PRAGMA setup fails transiently."""
+
+    class FakeConn:
+        def __init__(self, fail_once: bool = False) -> None:
+            self.fail_once = fail_once
+            self.closed = False
+            self.row_factory = None
+
+        def execute(self, _sql: str) -> None:
+            if self.fail_once:
+                self.fail_once = False
+                raise sqlite3.OperationalError("disk I/O error")
+
+        def close(self) -> None:
+            self.closed = True
+
+    attempts: list[FakeConn] = []
+
+    def fake_connect(*_args: Any, **_kwargs: Any) -> FakeConn:
+        conn = FakeConn(fail_once=(len(attempts) == 0))
+        attempts.append(conn)
+        return conn
+
+    monkeypatch.setattr("data_vault.database_manager.sqlite3.connect", fake_connect)
+
+    db_path = "transient_retry.db"
+    conn = db_manager.get_connection(db_path)
+
+    assert conn is attempts[-1]
+    assert len(attempts) == 2
+    assert attempts[0].closed is True
+    assert attempts[1].closed is False
+    assert db_path in db_manager._connection_pool
+
+
+def test_connection_init_raises_after_retry_exhaustion(
+    monkeypatch: pytest.MonkeyPatch,
+    db_manager: DatabaseManager,
+) -> None:
+    """DatabaseManager should raise when all initialization retries fail."""
+
+    class AlwaysFailConn:
+        def __init__(self) -> None:
+            self.closed = False
+            self.row_factory = None
+
+        def execute(self, _sql: str) -> None:
+            raise sqlite3.OperationalError("disk I/O error")
+
+        def close(self) -> None:
+            self.closed = True
+
+    attempts: list[AlwaysFailConn] = []
+
+    def fake_connect(*_args: Any, **_kwargs: Any) -> AlwaysFailConn:
+        conn = AlwaysFailConn()
+        attempts.append(conn)
+        return conn
+
+    monkeypatch.setattr("data_vault.database_manager.sqlite3.connect", fake_connect)
+
+    with pytest.raises(sqlite3.OperationalError, match="disk I/O error"):
+        db_manager.get_connection("always_fail_retry.db")
+
+    assert len(attempts) == 3
+    assert all(conn.closed for conn in attempts)

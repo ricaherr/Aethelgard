@@ -764,7 +764,7 @@ class CoherenceService:
         """
         Veto_Method: Retorna True (VETO) si el Coherence Score < 0.60.
 
-        Basado en Dominio 06, HU 6.3. Umbral de 0.60 permite operar con
+        Basado en Dominio 03, HU 6.3. Umbral de 0.60 permite operar con
         degradación moderada sin paralizar estrategias por ruido estadístico.
 
         Lógica compuesta:
@@ -775,7 +775,7 @@ class CoherenceService:
         Args:
             strategy_id: Estrategia a evaluar
             symbol: Símbolo opcional para análisis de ejecución
-            veto_threshold: Score mínimo (default: 0.60, Dominio 06)
+            veto_threshold: Score mínimo (default: 0.60, Dominio 03)
 
         Returns:
             bool: True si se debe aplicar VETO a esta estrategia
