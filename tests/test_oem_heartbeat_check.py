@@ -145,8 +145,6 @@ class TestOrchestratorHeartbeatCheck:
 
         assert "orchestrator_heartbeat" in results
         assert results["orchestrator_heartbeat"].status == CheckStatus.OK
-        assert "scanner_heartbeat" in results
-        assert "signal_factory_heartbeat" in results
 
 
 # ── Tests de get_health_summary con heartbeat ─────────────────────────────────

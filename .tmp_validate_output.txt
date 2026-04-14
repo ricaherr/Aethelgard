@@ -1,0 +1,121 @@
+
+[1m[96mAETHELGARD SYSTEM INTEGRITY AUDIT - PARALLEL EVOLUTION[0m
+[94m================================================================================[0m
+
+[94m[INFO][0m Desplegando agentes de integridad en paralelo...
+STAGE_START:QA Guard
+STAGE_START:Code Quality
+STAGE_START:Manifesto
+STAGE_START:Patterns
+STAGE_START:Duplicate Methods
+STAGE_START:Interface Contracts
+STAGE_START:Connectivity
+STAGE_START:Documentation
+STAGE_START:Architecture
+STAGE_START:Tenant Isolation Scanner
+STAGE_START:Credentials & Seeds
+STAGE_START:User Management Quality
+STAGE_START:Core Tests
+STAGE_START:FASE B: NewsValidator
+STAGE_START:SPRINT S007
+STAGE_START:Integration
+STAGE_START:Cooldown Manager
+STAGE_START:Data Provider Manager
+STAGE_START:ISD: Signal Quality Validation
+STAGE_START:Runtime Persistence Audit
+STAGE_START:System DB
+STAGE_START:DB Integrity
+STAGE_START:UI Quality
+STAGE_START:UI Build
+STAGE_START:Economic Veto Filter
+STAGE_START:FASE 5: Tenant-Aware
+STAGE_START:Tenant Security
+STAGE_START:Seeds Tests
+STAGE_END:Duplicate Methods:OK:0.39
+STAGE_END:Interface Contracts:OK:0.44
+STAGE_END:Documentation:OK:0.42
+STAGE_END:Tenant Isolation Scanner:OK:0.63
+STAGE_END:Credentials & Seeds:OK:0.70
+STAGE_END:User Management Quality:OK:0.69
+STAGE_END:Architecture:OK:1.12
+DEBUG_FAIL:DB Integrity:'charmap' codec can't encode character '\ufffd' in position 62: character maps to <undefined>
+STAGE_END:DB Integrity:FAIL:2.25
+STAGE_END:UI Quality:OK:3.42
+STAGE_END:Manifesto:OK:3.78
+STAGE_END:Patterns:OK:4.27
+STAGE_END:Cooldown Manager:OK:5.87
+STAGE_END:Seeds Tests:OK:5.81
+STAGE_END:Economic Veto Filter:OK:6.27
+STAGE_END:Tenant Security:OK:6.35
+STAGE_END:FASE B: NewsValidator:OK:7.02
+STAGE_END:System DB:OK:7.03
+STAGE_END:Integration:OK:7.15
+STAGE_END:Connectivity:OK:7.98
+STAGE_END:FASE 5: Tenant-Aware:OK:7.96
+STAGE_END:ISD: Signal Quality Validation:OK:8.14
+STAGE_END:SPRINT S007:OK:9.04
+STAGE_END:Core Tests:OK:9.31
+STAGE_END:QA Guard:OK:11.26
+STAGE_END:Runtime Persistence Audit:OK:14.35
+STAGE_END:Data Provider Manager:OK:15.18
+STAGE_END:UI Build:OK:15.52
+STAGE_END:Code Quality:OK:28.96
+
+[1m[96mAETHELGARD: DOMAIN-BY-DOMAIN INTEGRITY REPORT[0m
+[94m====================================================================================================[0m
+
+[1m[92m[10/10] CROSS-CUTTING (Governance & Quality)[0m
+[94m----------------------------------------------------------------------------------------------------[0m
+  [92mQA Guard                                 [PASS]    [0m [11.26s]
+  [92mCode Quality                             [PASS]    [0m [28.96s]
+  [92mManifesto                                [PASS]    [0m [3.78s]
+  [92mPatterns                                 [PASS]    [0m [4.27s]
+  [92mDuplicate Methods                        [PASS]    [0m [0.39s]
+  [92mInterface Contracts                      [PASS]    [0m [0.44s]
+  [92mDocumentation                            [PASS]    [0m [0.42s]
+  [92mArchitecture                             [PASS]    [0m [1.12s]
+  [92mUI Quality                               [PASS]    [0m [3.42s]
+  [92mUI Build                                 [PASS]    [0m [15.52s]
+
+[1m[92m[1/1] DOMAIN 01: Core Adaptive Brain[0m
+[94m----------------------------------------------------------------------------------------------------[0m
+  [92mCore Tests                               [PASS]    [0m [9.31s]
+
+[1m[92m[5/5] DOMAIN 02: Executor Governance[0m
+[94m----------------------------------------------------------------------------------------------------[0m
+  [92mFASE B: NewsValidator                    [PASS]    [0m [7.02s]
+  [92mSPRINT S007                              [PASS]    [0m [9.04s]
+  [92mIntegration                              [PASS]    [0m [7.15s]
+  [92mCooldown Manager                         [PASS]    [0m [5.87s]
+  [92mData Provider Manager                    [PASS]    [0m [15.18s]
+
+[1m[92m[1/1] DOMAIN 03: Performance Darwinism[0m
+[94m----------------------------------------------------------------------------------------------------[0m
+  [92mISD: Signal Quality Validation           [PASS]    [0m [8.14s]
+
+[1m[93m[2/3] DOMAIN 04: Data Sovereignty Infra[0m
+[94m----------------------------------------------------------------------------------------------------[0m
+  [92mRuntime Persistence Audit                [PASS]    [0m [14.35s]
+  [92mSystem DB                                [PASS]    [0m [7.03s]
+  [91mDB Integrity                             [FAIL]    [0m [2.25s]
+
+[1m[92m[3/3] DOMAIN 05: Identity & Security[0m
+[94m----------------------------------------------------------------------------------------------------[0m
+  [92mTenant Isolation Scanner                 [PASS]    [0m [0.63s]
+  [92mCredentials & Seeds                      [PASS]    [0m [0.70s]
+  [92mUser Management Quality                  [PASS]    [0m [0.69s]
+
+[1m[92m[5/5] SPECIALIZED (Multidomain Integration)[0m
+[94m----------------------------------------------------------------------------------------------------[0m
+  [92mConnectivity                             [PASS]    [0m [7.98s]
+  [92mEconomic Veto Filter                     [PASS]    [0m [6.27s]
+  [92mFASE 5: Tenant-Aware                     [PASS]    [0m [7.96s]
+  [92mTenant Security                          [PASS]    [0m [6.35s]
+  [92mSeeds Tests                              [PASS]    [0m [5.81s]
+
+[94m====================================================================================================[0m
+[1mTOTAL EXECUTION TIME: 28.97s | TOTAL: 27/28 PASSED[0m
+
+[91m[1m====================================================================================================
+[FAIL] 1 TEST(S) FAILED - REVIEW LOGS AND FIX BEFORE DEPLOYING
+====================================================================================================[0m

@@ -96,6 +96,7 @@ class StructureShift0001Strategy(BaseStrategy):
 
         # Parámetros dinámicos
         self._load_parameters()
+        self.last_rejection_reason: Optional[str] = None
         
         logger.info(
             f"[{self.trace_id}] StructureShift0001Strategy initialized for user {self.user_id}. "
@@ -188,6 +189,10 @@ class StructureShift0001Strategy(BaseStrategy):
         """Retorna el identificador único de la estrategia."""
         return self.STRATEGY_ID
 
+    def _reject(self, reason: str) -> None:
+        """Store latest rejection reason for funnel instrumentation."""
+        self.last_rejection_reason = reason
+
     async def analyze(
         self,
         symbol: str,
@@ -215,6 +220,7 @@ class StructureShift0001Strategy(BaseStrategy):
         """
         
         try:
+            self.last_rejection_reason = None
             # Validar que el símbolo está en el whitelist (snapshot DB-backed; fallback a clase)
             # Regla: whitelist vacía = sin restricción (todos los símbolos pasan)
             if self._market_whitelist and symbol not in self._market_whitelist:
@@ -222,11 +228,13 @@ class StructureShift0001Strategy(BaseStrategy):
                     f"[{self.trace_id}] {symbol} no está en market whitelist (snapshot) "
                     f"para {self.STRATEGY_ID}. Razón: symbol_not_in_market_whitelist"
                 )
+                self._reject("symbol_not_in_market_whitelist")
                 return None
             
             # Recolectar suficientes datos históricos
             if len(df) < 20:
                 logger.debug(f"[{self.trace_id}] Insuficientes velas ({len(df)} < 20)")
+                self._reject("insufficient_candles")
                 return None
             
             # 1. Detectar estructura
@@ -234,9 +242,11 @@ class StructureShift0001Strategy(BaseStrategy):
             
             if not structure['is_valid']:
                 logger.debug(f"[{self.trace_id}] Estructura no válida en {symbol}")
+                self._reject("invalid_structure")
                 return None
             
             if structure['type'] not in ['UPTREND', 'DOWNTREND']:
+                self._reject("unsupported_structure_type")
                 return None
             
             # 🔔 EMIT: Estructura detectada
@@ -253,6 +263,7 @@ class StructureShift0001Strategy(BaseStrategy):
             breaker = self.market_structure_analyzer.calculate_breaker_block(structure, df)
             
             if not breaker or breaker['range_pips'] == 0:
+                self._reject("breaker_block_unavailable")
                 return None
             
             # 3. Validar fuerza de estructura
@@ -262,6 +273,7 @@ class StructureShift0001Strategy(BaseStrategy):
                     f"[{self.trace_id}] Estructura débil en {symbol} "
                     f"({structure_strength} < {self.min_structure_strength})"
                 )
+                self._reject("structure_strength_below_threshold")
                 return None
             
             # 4. Obtener última vela para detectar BOS
@@ -279,6 +291,7 @@ class StructureShift0001Strategy(BaseStrategy):
             
             if not bos['is_break']:
                 logger.debug(f"[{self.trace_id}] Sin BOS detectado en {symbol}")
+                self._reject("bos_not_detected")
                 return None
             
             # 🔔 EMIT: Break of Structure confirmado
@@ -297,10 +310,12 @@ class StructureShift0001Strategy(BaseStrategy):
                 self.reasoning_event_callback(event)
             
             # 6. Validar fuerza de ruptura
-            if bos['strength'] < 25:  # Penetración > 25% del Breaker
+            if bos['strength'] < self.min_bos_strength:
                 logger.debug(
-                    f"[{self.trace_id}] BOS débil en {symbol} ({bos['strength']:.1f}% < 25%)"
+                    f"[{self.trace_id}] BOS débil en {symbol} "
+                    f"({bos['strength']:.1f}% < {self.min_bos_strength:.1f}%)"
                 )
+                self._reject("bos_strength_below_threshold")
                 return None
             
             # 7. Calcular zonas de entrada y TP
@@ -382,6 +397,7 @@ class StructureShift0001Strategy(BaseStrategy):
             
         except Exception as e:
             logger.error(f"[{self.trace_id}] Exception in analyze(): {e}", exc_info=True)
+            self._reject("analyze_exception")
             return None
 
     def evaluate_on_history(self, df: pd.DataFrame, params: Dict) -> List[TradeResult]:

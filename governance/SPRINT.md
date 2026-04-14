@@ -1,6 +1,6 @@
 # AETHELGARD: SPRINT LOG
 
-**Última Actualización**: 13 de Abril, 2026 (HU 8.9 completada con validate_all 28/28)
+**Última Actualización**: 13 de Abril, 2026 (ETI-SRE-001 completada con validate_all 28/28)
 
 > **📋 REGLAS DE EDICIÓN — Leer antes de modificar este documento**
 > - **Propósito**: Diario de ejecución. Cada Sprint referencia una Épica del ROADMAP y las HUs del BACKLOG que ejecuta.
@@ -22,6 +22,14 @@
 **Dominios**: 10_INFRASTRUCTURE_RESILIENCY · 08_DATA_SOVEREIGNTY
 
 ## 📋 Tareas del Sprint
+
+- [DONE] **HU 10.32: Shadow Pool Stale Instance Expiration** *(Trace_ID: ETI-SRE-001)*
+  - Se agregó `expire_stale_shadow_instances(max_age_hours=48)` en `SystemMixin` para marcar instancias `INCUBATING` antiguas como `DEAD` preservando audit trail (`updated_at` actualizado).
+  - Se integró llamada en startup dentro de `run_main_loop` justo después de `mark_orphan_shadow_instances_dead`, con umbral configurable vía `sys_config.shadow_stale_max_age_hours` (fallback 48h).
+  - Suite TDD nueva: `tests/test_shadow_pool_expiration.py`.
+  - Verificación focal: `pytest tests/test_shadow_pool_expiration.py -q` = 3/3 PASS.
+  - Gate obligatorio: `python scripts/validate_all.py` = 28/28 PASS.
+  - Smoke runtime: `python start.py` + `python stop.py` ejecutados; cierre limpio y sin regresión atribuible al cambio ETI-SRE-001.
 
 - [DONE] **HU 10.31: SQLite Lock Cascade Recovery & Canonical Heartbeat SLA** *(🔴 PRIORIDAD MÁXIMA — Bloqueante Operacional)*
   - Implementar write-path único por `db_path` para scanner+audit+sys_config con serialización estricta y cierre seguro de cursores.

@@ -85,6 +85,7 @@ class MomentumBias0001Strategy(BaseStrategy):
 
         # Cargar parámetros dinámicos
         self._load_parameters()
+        self.last_rejection_reason: Optional[str] = None
         
         logger.info(
             f"[{self.trace_id}] MomentumBias0001Strategy initialized. "
@@ -158,6 +159,10 @@ class MomentumBias0001Strategy(BaseStrategy):
         """Retorna el identificador único de la estrategia."""
         return self.STRATEGY_ID
 
+    def _reject(self, reason: str) -> None:
+        """Store latest rejection reason for funnel instrumentation."""
+        self.last_rejection_reason = reason
+
 
     async def analyze(
         self,
@@ -184,12 +189,14 @@ class MomentumBias0001Strategy(BaseStrategy):
             Signal con stop_loss = OPEN, o None si no hay señal
         """
         try:
+            self.last_rejection_reason = None
             # Step 1: Filtrar por affinity score (snapshot DB-backed; fallback a constante de clase)
             if symbol not in self._affinity_scores:
                 logger.debug(
                     f"[{self.trace_id}] {symbol} no en affinity scores (snapshot). "
                     f"Skipping MOM_BIAS_0001. Razón: symbol_not_in_affinity"
                 )
+                self._reject("symbol_not_in_affinity")
                 return None
 
             affinity_score = self._resolve_affinity_score(symbol)
@@ -197,10 +204,12 @@ class MomentumBias0001Strategy(BaseStrategy):
             # Validaciones de datos
             if df is None or len(df) < 20:
                 logger.debug(f"[{self.trace_id}] {symbol}: Datos insuficientes")
+                self._reject("insufficient_candles")
                 return None
             
             if 'close' not in df.columns or 'open' not in df.columns:
                 logger.warning(f"[{self.trace_id}] {symbol}: Columnas OHLC faltantes")
+                self._reject("missing_ohlc_columns")
                 return None
             
             # Step 2: Calcular SMA20 y SMA200
@@ -211,10 +220,12 @@ class MomentumBias0001Strategy(BaseStrategy):
                 sma200 = float(sma200_series.iloc[-1]) if not pd.isna(sma200_series.iloc[-1]) else None
             except Exception as sma_err:
                 logger.warning(f"[{self.trace_id}] {symbol}: Error calculando SMAs: {sma_err}")
+                self._reject("sma_calculation_error")
                 return None
 
             if sma20 is None or sma200 is None:
                 logger.debug(f"[{self.trace_id}] {symbol}: SMAs no disponibles")
+                self._reject("sma_unavailable")
                 return None
             
             # Step 3: Obtener vela actual y previas
@@ -251,6 +262,7 @@ class MomentumBias0001Strategy(BaseStrategy):
             
             if not ignition_result:
                 logger.debug(f"[{self.trace_id}] {symbol}: No hay ignición de momentum válida")
+                self._reject("no_momentum_ignition")
                 return None
             
             # Step 5: Generar Signal con SL = OPEN (regla de ORO MOM_BIAS_0001)
@@ -275,6 +287,7 @@ class MomentumBias0001Strategy(BaseStrategy):
                 f"[{self.trace_id}] Error analyzing {symbol}: {e}",
                 exc_info=True
             )
+            self._reject("analyze_exception")
             return None
     
     

@@ -155,6 +155,27 @@ async def run_main_loop(orch: Any) -> None:
     except Exception as exc:
         logger.warning("[STARTUP] mark_orphan_shadow_instances_dead failed (non-fatal): %s", exc)
 
+    # Expire stale INCUBATING shadow rows so startup capacity counters are accurate.
+    try:
+        sys_config = orch.storage.get_sys_config()
+        stale_max_age_raw = sys_config.get("shadow_stale_max_age_hours", 48)
+        try:
+            stale_max_age_hours = int(stale_max_age_raw)
+        except (TypeError, ValueError):
+            stale_max_age_hours = 48
+
+        if stale_max_age_hours <= 0:
+            stale_max_age_hours = 48
+
+        expired = orch.storage.expire_stale_shadow_instances(stale_max_age_hours)
+        if expired:
+            logger.warning(
+                "[STARTUP] %d stale shadow instance(s) expired.",
+                expired,
+            )
+    except Exception as exc:
+        logger.warning("[STARTUP] expire_stale_shadow_instances failed (non-fatal): %s", exc)
+
     register_signal_handlers(orch)
 
     # WARMUP PHASE: wait for scanner to have data ready

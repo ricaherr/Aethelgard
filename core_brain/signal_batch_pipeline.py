@@ -140,7 +140,12 @@ async def generate_usr_signals_batch_impl(
     for batch in results:
         all_usr_signals.extend(batch)
 
-    logger.info(f"DEBUG: Raw usr_signals generated: {len(all_usr_signals)}")
+    raw_generated_count = len(all_usr_signals)
+    logger.info(
+        "[FUNNEL][RAW] trace_id=%s raw_usr_signals_generated=%d",
+        trace_id,
+        raw_generated_count,
+    )
 
     if all_usr_signals and factory.confluence_analyzer.enabled:
         all_usr_signals = factory.signal_conflict_analyzer.apply_confluence(
@@ -174,11 +179,21 @@ async def generate_usr_signals_batch_impl(
             "STAGE_SCAN_INPUT": {"in": stage_scan_in, "out": stage_scan_out},
             "STAGE_RAW_SIGNAL_GENERATION": {
                 "in": stage_scan_out,
+                "out": raw_generated_count,
+            },
+            "STAGE_POST_PROCESSING": {
+                "in": raw_generated_count,
                 "out": len(all_usr_signals),
             },
         },
         "reasons": dict(funnel_reasons),
     }
+    if funnel_reasons:
+        logger.info(
+            "[FUNNEL][REASONS] trace_id=%s distribution=%s",
+            trace_id,
+            dict(sorted(funnel_reasons.items(), key=lambda item: item[1], reverse=True)),
+        )
     logger.info("[FUNNEL][SIGNAL_FACTORY] %s", factory.last_funnel_summary)
 
     return all_usr_signals

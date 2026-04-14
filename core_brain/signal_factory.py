@@ -210,9 +210,16 @@ class SignalFactory:
                     raw_signal = await engine.analyze(symbol, df, regime)
                     # Logging: Motivo si no hay señal (debug-only)
                     if raw_signal is None:
-                        logger.debug(f"[DEBUG][{strategy_id}] {symbol}: analyze() no generó señal (raw_signal=None)")
+                        rejection_reason = getattr(engine, "last_rejection_reason", None) or "no_signal_generated"
+                        logger.info(
+                            "[FUNNEL][REJECT] trace_id=%s strategy=%s symbol=%s cause=%s",
+                            trace_id,
+                            strategy_id,
+                            symbol,
+                            rejection_reason,
+                        )
                         if funnel_reasons is not None:
-                            funnel_reasons["no_signal_generated"] += 1
+                            funnel_reasons[rejection_reason] += 1
                     signal = StrategySignalConverter.convert_from_python_class(
                         raw_signal, symbol, strategy_id, timeframe, trace_id, provider_source
                     )

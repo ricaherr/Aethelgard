@@ -92,6 +92,7 @@ class LiquiditySweep0001Strategy(BaseStrategy):
 
         # Parámetros dinámicos
         self._load_parameters()
+        self.last_rejection_reason: Optional[str] = None
         
         logger.info(
             f"[{self.trace_id}] LiquiditySweep0001Strategy initialized for user {self.user_id}. "
@@ -170,6 +171,10 @@ class LiquiditySweep0001Strategy(BaseStrategy):
         """Retorna el identificador único de la estrategia."""
         return self.STRATEGY_ID
 
+    def _reject(self, reason: str) -> None:
+        """Store latest rejection reason for funnel instrumentation."""
+        self.last_rejection_reason = reason
+
 
     async def analyze(
         self,
@@ -197,12 +202,14 @@ class LiquiditySweep0001Strategy(BaseStrategy):
             Signal con entrada, SL, TP, o None si no hay señal
         """
         try:
+            self.last_rejection_reason = None
             # Step 1: Validar affinity score (snapshot DB-backed; fallback a constante de clase)
             if symbol not in self._affinity_scores:
                 logger.debug(
                     f"[{self.trace_id}] {symbol} no en affinity scores (snapshot). "
                     f"Skipping LIQ_SWEEP_0001. Razón: symbol_not_in_affinity"
                 )
+                self._reject("symbol_not_in_affinity")
                 return None
 
             affinity_score = self._resolve_affinity_score(symbol)
@@ -211,15 +218,18 @@ class LiquiditySweep0001Strategy(BaseStrategy):
                     f"[{self.trace_id}] {symbol} affinity {affinity_score:.2f} < "
                     f"min_affinity {self.min_affinity:.2f}. Razón: affinity_below_threshold"
                 )
+                self._reject("affinity_below_threshold")
                 return None
             
             # Step 2: Validar datos
             if df is None or len(df) < 3:
                 logger.debug(f"[{self.trace_id}] {symbol}: Datos insuficientes (< 3 velas)")
+                self._reject("insufficient_candles")
                 return None
             
             if 'close' not in df.columns or 'high' not in df.columns or 'low' not in df.columns:
                 logger.warning(f"[{self.trace_id}] {symbol}: Columnas OHLC faltantes")
+                self._reject("missing_ohlc_columns")
                 return None
             
             # Step 3: Consultar FundamentalGuardService
@@ -228,6 +238,7 @@ class LiquiditySweep0001Strategy(BaseStrategy):
                 logger.debug(
                     f"[{self.trace_id}] {symbol}: Mercado no seguro - {fundamental_reason}"
                 )
+                self._reject("fundamental_veto")
                 return None
             
             # Step 4: Calcular Session High/Low de Londres
@@ -237,6 +248,7 @@ class LiquiditySweep0001Strategy(BaseStrategy):
             
             if london_high is None or london_low is None:
                 logger.debug(f"[{self.trace_id}] {symbol}: No hay datos de sesión Londres")
+                self._reject("london_levels_unavailable")
                 return None
             
             # Step 5: Vela actual y previas
@@ -309,6 +321,7 @@ class LiquiditySweep0001Strategy(BaseStrategy):
                 return signal
             
             # No hay breakout falso válido
+            self._reject("no_false_breakout_reversal")
             return None
             
         except Exception as e:
@@ -316,6 +329,7 @@ class LiquiditySweep0001Strategy(BaseStrategy):
                 f"[{self.trace_id}] Error analyzing {symbol}: {e}",
                 exc_info=True
             )
+            self._reject("analyze_exception")
             return None
     
     

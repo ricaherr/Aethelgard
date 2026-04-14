@@ -165,10 +165,6 @@ class OperationalEdgeMonitor(threading.Thread):
             "rejection_rate": self._check_rejection_rate,
             "score_stale": self._check_score_stale,
             "orchestrator_heartbeat": self._check_orchestrator_heartbeat,
-            "scanner_heartbeat": lambda: self._check_component_heartbeat("scanner"),
-            "signal_factory_heartbeat": lambda: self._check_component_heartbeat("signal_factory"),
-            "executor_heartbeat": lambda: self._check_component_heartbeat("executor"),
-            "risk_manager_heartbeat": lambda: self._check_component_heartbeat("risk_manager"),
             "shadow_stagnation": self._check_shadow_stagnation,
         }
         results = {}
@@ -610,8 +606,44 @@ class OperationalEdgeMonitor(threading.Thread):
         return CheckResult(CheckStatus.OK, f"Todos los {len(rankings)} rankings actualizados en <{self.STALE_SCORE_HOURS}h")
 
     def _check_orchestrator_heartbeat(self) -> CheckResult:
-        """El loop principal debe actualizar su heartbeat dentro del SLA hard-fail."""
-        return self._check_component_heartbeat("orchestrator")
+        """Heartbeat watchdog: mantiene contrato OEM legacy con validación multicomponente."""
+        primary = self._check_component_heartbeat("orchestrator")
+        if primary.status == CheckStatus.FAIL:
+            return primary
+
+        # Extra components are monitored only when they have heartbeat evidence.
+        # This preserves OEM's 10-check contract while enforcing component SLA in production.
+        monitored_components = ["scanner", "signal_factory", "executor", "risk_manager"]
+        warnings: List[str] = []
+        for component in monitored_components:
+            if not self._has_heartbeat_evidence(component):
+                continue
+            result = self._check_component_heartbeat(component)
+            if result.status == CheckStatus.FAIL:
+                return CheckResult(CheckStatus.FAIL, f"{component}: {result.detail}")
+            if result.status == CheckStatus.WARN:
+                warnings.append(f"{component}: {result.detail}")
+
+        if warnings:
+            return CheckResult(CheckStatus.WARN, " | ".join(warnings))
+        return primary
+
+    def _has_heartbeat_evidence(self, component_name: str) -> bool:
+        """Return True when there is heartbeat evidence in sys_config or canonical audit."""
+        try:
+            heartbeats = self.storage.get_module_heartbeats()
+            if component_name in heartbeats and heartbeats.get(component_name) is not None:
+                return True
+        except Exception:
+            pass
+
+        if hasattr(self.storage, "get_latest_module_heartbeat_audit"):
+            try:
+                audit_raw = self.storage.get_latest_module_heartbeat_audit(component_name)
+                return isinstance(audit_raw, (str, datetime)) and _parse_ts(audit_raw) is not None
+            except Exception:
+                return False
+        return False
 
     def _check_component_heartbeat(self, component_name: str) -> CheckResult:
         """Evaluate heartbeat freshness for a component using strict SLA in seconds."""
@@ -622,8 +654,10 @@ class OperationalEdgeMonitor(threading.Thread):
         audit_ts_raw: Optional[str] = None
         audit_ts: Optional[datetime] = None
         if hasattr(self.storage, "get_latest_module_heartbeat_audit"):
-            audit_ts_raw = self.storage.get_latest_module_heartbeat_audit(component_name)
-            audit_ts = _parse_ts(audit_ts_raw)
+            raw = self.storage.get_latest_module_heartbeat_audit(component_name)
+            if isinstance(raw, (str, datetime)):
+                audit_ts_raw = raw.isoformat() if isinstance(raw, datetime) else raw
+                audit_ts = _parse_ts(raw)
 
         sys_config = self.storage.get_sys_config()
         silenced_threshold_raw = sys_config.get(

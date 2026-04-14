@@ -349,6 +349,39 @@ def _bind_signal_factory_reconciliation_connector(
             logger.warning("[WARN] No se pudo obtener balance del proveedor activo: %s", e)
 
 
+def _expire_stale_shadow_instances_before_pool_bootstrap(storage: "StorageManager") -> int:
+    """Expire stale SHADOW instances before bootstrap to avoid false capacity saturation."""
+    try:
+        sys_config = storage.get_sys_config()
+        stale_max_age_raw = sys_config.get("shadow_stale_max_age_hours", 48)
+        try:
+            stale_max_age_hours = int(stale_max_age_raw)
+        except (TypeError, ValueError):
+            stale_max_age_hours = 48
+
+        if stale_max_age_hours <= 0:
+            stale_max_age_hours = 48
+
+        expired = storage.expire_stale_shadow_instances(stale_max_age_hours)
+        if expired:
+            logger.warning(
+                "[STARTUP] %d stale shadow instance(s) expired before SHADOW pool bootstrap.",
+                expired,
+            )
+        else:
+            logger.info(
+                "[STARTUP] No stale shadow instances expired before SHADOW pool bootstrap (max_age_hours=%d).",
+                stale_max_age_hours,
+            )
+        return expired
+    except Exception as exc:
+        logger.warning(
+            "[STARTUP] expire_stale_shadow_instances pre-bootstrap failed (non-fatal): %s",
+            exc,
+        )
+        return 0
+
+
 # launch_dashboard eliminada - UI unificada en puerto 8000
 
 def launch_server() -> None:
@@ -694,7 +727,10 @@ async def main() -> None:
         orchestrator.set_signal_factory(signal_factory)
         logger.info("[INIT] ✓ Orquestador listo con SignalFactory")
         
-        # STEP 4.5: Bootstrap SHADOW pool (auto-create instances for Darwinian selection)
+        # STEP 4.5: Pre-bootstrap stale cleanup + SHADOW pool bootstrap.
+        _expire_stale_shadow_instances_before_pool_bootstrap(storage)
+
+        # Bootstrap SHADOW pool (auto-create instances for Darwinian selection)
         logger.info("[INIT] Inicializando SHADOW pool (instancias automáticas)...")
         if active_engines:
             shadow_stats = await orchestrator.initialize_shadow_pool(

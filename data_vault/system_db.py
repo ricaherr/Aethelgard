@@ -1269,6 +1269,57 @@ class SystemMixin(BaseRepository):
             logger.error("[DB] mark_orphan_shadow_instances_dead failed: %s", exc)
             return 0
 
+    def expire_stale_shadow_instances(self, max_age_hours: int = 48) -> int:
+        """Mark old INCUBATING shadow instances as DEAD based on creation age.
+
+        Preserves rows for audit trail and only updates status/updated_at.
+
+        Args:
+            max_age_hours: Maximum allowed age for INCUBATING instances.
+
+        Returns:
+            Number of stale instances marked DEAD.
+        """
+        if max_age_hours <= 0:
+            logger.warning(
+                "[DB] expire_stale_shadow_instances received non-positive max_age_hours=%s; using 48",
+                max_age_hours,
+            )
+            max_age_hours = 48
+
+        try:
+            with self.transaction() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    UPDATE sys_shadow_instances
+                    SET    status = 'DEAD', updated_at = CURRENT_TIMESTAMP
+                    WHERE  status = 'INCUBATING'
+                    AND    created_at IS NOT NULL
+                    AND    datetime(created_at) <= datetime('now', ?)
+                    """,
+                    (f"-{max_age_hours} hours",),
+                )
+                count = cursor.rowcount
+
+            if count:
+                logger.warning(
+                    "[DB] expire_stale_shadow_instances: %d stale INCUBATING instance(s) marked DEAD "
+                    "(max_age_hours=%d)",
+                    count,
+                    max_age_hours,
+                )
+            else:
+                logger.info(
+                    "[DB] expire_stale_shadow_instances: no stale INCUBATING instances found "
+                    "(max_age_hours=%d)",
+                    max_age_hours,
+                )
+            return count
+        except Exception as exc:
+            logger.error("[DB] expire_stale_shadow_instances failed: %s", exc)
+            return 0
+
     def update_strategy_execution_params(self, strategy_id: str, params_json: str) -> None:
         """Persist execution_params JSON for a strategy (adaptive threshold, failure counters)."""
         try:

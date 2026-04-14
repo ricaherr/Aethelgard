@@ -27,6 +27,20 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 
 ## 🏛️ ÉPICAS ARCHIVADAS
 
+### E20 — SRE Lock Cascade & Heartbeat Recovery
+| Campo | Valor |
+|---|---|
+| **Épica** | E20 — SRE Lock Cascade & Heartbeat Recovery |
+| **Trace_ID** | `E20-SRE-LOCK-CASCADE-2026-04-13` |
+| **Sprints** | 30 |
+| **Completada** | 13 de Abril, 2026 |
+| **Dominios** | 04_DATA_SOVEREIGNTY_INFRA · 10_INFRASTRUCTURE_RESILIENCY |
+| **Objetivo** | Estabilizar la ruta crítica scanner/system_db/audit con serialización estricta y backpressure, restaurando heartbeat hard-fail `<120s` por componente y observabilidad canónica. |
+| **HUs** | HU 10.31 |
+| **Validate_all** | ✅ 28/28 PASSED |
+
+**Resumen ejecutivo**: Se implementó write-path estricto por `db_path`, métricas de latencia transaccional con guard de backpressure en `scan_request`, watchdog OEM con checks heartbeat por componente y corte de fallback runtime a tablas legacy no prefijadas para heartbeat audit. Cierre validado con suites focales (21/21 + 13/13), `validate_all.py` en verde y smoke runtime (`start.py`/`stop.py`) sin errores críticos.
+
 ---
 
 ---
@@ -104,6 +118,17 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 | **HU 10.30** | Hardening del contrato runtime de `affinity_scores` para estrategias activas en modo SHADOW (`MOM_BIAS_0001`, `LIQ_SWEEP_0001`, `STRUC_SHIFT_0001`). Se normalizó metadata SSOT enriquecida (dict con `effective_score`/`raw_score`) a valor numérico seguro para evitar regresiones por tipo (`dict` vs `float`) en filtros y payload de señal. Incluye matriz de confianza operativa documentada en governance con evidencia por componente y acciones de recuperación. | `core_brain/strategies/mom_bias_0001.py`, `core_brain/strategies/liq_sweep_0001.py`, `core_brain/strategies/struc_shift_0001.py`, `tests/test_mom_bias_0001.py`, `tests/test_liq_sweep_0001.py`, `tests/test_struc_shift_ssot.py`, `governance/AUDITORIA_ESTADO_REAL.md` | 17/17 + 28/28 |
 
 **Validación**: tests focales **17/17 PASSED** · `validate_all.py` **28/28 PASSED** · smoke runtime `start.py`/`stop.py` ejecutado sin recurrencia del `TypeError` en estrategias activas.
+
+---
+
+### Sprint 30 — HU 10.32: Shadow Pool Stale Instance Expiration (13-Abr-2026)
+**Trace_ID**: `ETI-SRE-001` | **Épica**: E20 (archivada) | **Estado**: HU completada y archivada
+
+| HU | Descripción | Artefactos clave | Tests |
+|---|---|---|---|
+| **HU 10.32** | Expiración automática de instancias SHADOW `INCUBATING` obsoletas para evitar saturación falsa del pool al arranque. Se añadió método de storage `expire_stale_shadow_instances(max_age_hours)` para marcar `DEAD` por antigüedad sin borrar histórico. Integración en startup después de limpieza de huérfanas con umbral configurable vía `sys_config.shadow_stale_max_age_hours` (fallback 48h). | `data_vault/system_db.py`, `core_brain/orchestrators/_lifecycle.py`, `tests/test_shadow_pool_expiration.py` | 3/3 + 28/28 |
+
+**Validación**: suite TDD nueva **3/3 PASSED** · `validate_all.py` **28/28 PASSED** · smoke runtime `start.py`/`stop.py` ejecutado con cierre limpio.
 
 ---
 
