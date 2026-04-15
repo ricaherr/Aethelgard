@@ -210,16 +210,21 @@ def test_connection_init_retries_on_transient_operational_error(
 ) -> None:
     """DatabaseManager should retry connection init when PRAGMA setup fails transiently."""
 
+    class FakeCursor:
+        def fetchall(self) -> list:
+            return []
+
     class FakeConn:
         def __init__(self, fail_once: bool = False) -> None:
             self.fail_once = fail_once
             self.closed = False
             self.row_factory = None
 
-        def execute(self, _sql: str) -> None:
+        def execute(self, _sql: str) -> "FakeCursor":
             if self.fail_once:
                 self.fail_once = False
                 raise sqlite3.OperationalError("disk I/O error")
+            return FakeCursor()
 
         def close(self) -> None:
             self.closed = True

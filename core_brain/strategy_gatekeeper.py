@@ -24,6 +24,11 @@ from datetime import datetime, timezone
 logger = logging.getLogger(__name__)
 
 
+def _normalize_symbol(symbol: str) -> str:
+    """Normalize asset symbol to broker format (no slash). EUR/USD → EURUSD."""
+    return symbol.replace("/", "").upper()
+
+
 class StrategyGatekeeper:
     """
     In-memory asset efficiency validator.
@@ -83,13 +88,14 @@ class StrategyGatekeeper:
             True if execution allowed, False if blocked (veto)
         """
         # Check market whitelist first (if defined for this strategy)
+        normalized_asset = _normalize_symbol(asset)
         if strategy_id in self.market_whitelists:
-            if asset not in self.market_whitelists[strategy_id]:
+            if normalized_asset not in self.market_whitelists[strategy_id]:
                 logger.debug(f"[GATEKEEPER] Veto: {asset} not in whitelist for {strategy_id}")
                 return False
-        
+
         # Check affinity score
-        asset_score = self.asset_scores.get(asset, 0.0)
+        asset_score = self.asset_scores.get(normalized_asset, self.asset_scores.get(asset, 0.0))
         
         if asset_score < min_threshold:
             logger.debug(
@@ -117,12 +123,13 @@ class StrategyGatekeeper:
         Returns:
             Tuple (allowed: bool, reason_code: str)
         """
+        normalized_asset = _normalize_symbol(asset)
         if strategy_id in self.market_whitelists:
-            if asset not in self.market_whitelists[strategy_id]:
+            if normalized_asset not in self.market_whitelists[strategy_id]:
                 logger.debug("[GATEKEEPER] Veto: %s not in whitelist for %s", asset, strategy_id)
                 return False, "gk_whitelist_reject"
 
-        asset_score = self.asset_scores.get(asset, 0.0)
+        asset_score = self.asset_scores.get(normalized_asset, self.asset_scores.get(asset, 0.0))
         if asset_score < min_threshold:
             logger.debug(
                 "[GATEKEEPER] Veto: %s score %.2f < threshold %.2f",
@@ -167,8 +174,8 @@ class StrategyGatekeeper:
             strategy_id: Strategy class_id
             whitelist: List of allowed asset symbols
         """
-        self.market_whitelists[strategy_id] = whitelist
-        logger.info(f"[GATEKEEPER] Whitelist set for {strategy_id}: {whitelist}")
+        self.market_whitelists[strategy_id] = [_normalize_symbol(s) for s in whitelist]
+        logger.info(f"[GATEKEEPER] Whitelist set for {strategy_id}: {self.market_whitelists[strategy_id]}")
 
     def get_market_whitelist(self, strategy_id: str) -> List[str]:
         """Retrieve market whitelist for a strategy."""
@@ -259,7 +266,7 @@ class StrategyGatekeeper:
             if not strategy_id:
                 continue
             if whitelist:
-                self.market_whitelists[strategy_id] = list(whitelist)
+                self.market_whitelists[strategy_id] = [_normalize_symbol(s) for s in whitelist]
                 synced += 1
             elif strategy_id in self.market_whitelists:
                 # Lista vacía en DB = sin restricción → limpiar whitelist del gatekeeper

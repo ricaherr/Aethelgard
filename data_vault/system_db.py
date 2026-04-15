@@ -157,14 +157,18 @@ class SystemMixin(BaseRepository):
             trace_id = f"{action}_{uuid.uuid4().hex[:8]}"
 
         def _insert_audit(conn: sqlite3.Connection) -> None:
-            conn.execute(
-                """
-                INSERT INTO sys_audit_logs
-                    (user_id, action, resource, resource_id, status, reason, trace_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (user_id, action, resource, resource_id, status, reason, trace_id),
-            )
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    """
+                    INSERT INTO sys_audit_logs
+                        (user_id, action, resource, resource_id, status, reason, trace_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (user_id, action, resource, resource_id, status, reason, trace_id),
+                )
+            finally:
+                cursor.close()
 
         try:
             self._execute_serialized(_insert_audit)
@@ -1390,11 +1394,15 @@ class SystemMixin(BaseRepository):
         """Persist execution_params JSON for a strategy (adaptive threshold, failure counters)."""
         try:
             with self.transaction() as conn:
-                conn.execute(
-                    "UPDATE sys_strategies SET execution_params = ?, updated_at = CURRENT_TIMESTAMP "
-                    "WHERE class_id = ?",
-                    (params_json, strategy_id),
-                )
+                cursor = conn.cursor()
+                try:
+                    cursor.execute(
+                        "UPDATE sys_strategies SET execution_params = ?, updated_at = CURRENT_TIMESTAMP "
+                        "WHERE class_id = ?",
+                        (params_json, strategy_id),
+                    )
+                finally:
+                    cursor.close()
         except Exception as exc:
             logger.error("[DB] update_strategy_execution_params failed for %s: %s", strategy_id, exc)
 

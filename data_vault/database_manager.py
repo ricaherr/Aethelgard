@@ -122,12 +122,16 @@ class DatabaseManager:
                     conn.row_factory = sqlite3.Row
 
                     # Apply SSOT PRAGMA configuration
+                    # NOTE: .fetchall() is required on Python 3.14+ — Connection.execute()
+                    # uses a shared implicit cursor; unconsumed rows from PRAGMA calls
+                    # (e.g. journal_mode, locking_mode) leave it dirty and cause
+                    # "another row available" on the next conn.execute() call.
                     for pragma_key, pragma_value in self._pragma_config.items():
                         if pragma_key == "query_only":
                             # query_only is special (boolean)
-                            conn.execute(f"PRAGMA query_only={1 if pragma_value else 0}")
+                            conn.execute(f"PRAGMA query_only={1 if pragma_value else 0}").fetchall()
                         else:
-                            conn.execute(f"PRAGMA {pragma_key}={pragma_value}")
+                            conn.execute(f"PRAGMA {pragma_key}={pragma_value}").fetchall()
                     break
                 except sqlite3.OperationalError as e:
                     last_error = e
@@ -163,6 +167,7 @@ class DatabaseManager:
         Check if connection is still operational.
         Performs lightweight health check (SELECT 1).
         """
+        cursor = None
         try:
             cursor = conn.cursor()
             cursor.execute("SELECT 1")
@@ -171,6 +176,12 @@ class DatabaseManager:
         except (sqlite3.ProgrammingError, sqlite3.OperationalError) as e:
             logger.debug(f"[DatabaseManager] Connection health check failed: {e}")
             return False
+        finally:
+            if cursor is not None:
+                try:
+                    cursor.close()
+                except Exception:
+                    pass
 
     def create_dedicated_read_connection(self, db_path: str) -> sqlite3.Connection:
         """
@@ -323,7 +334,7 @@ class DatabaseManager:
                 try:
                     # Checkpoint WAL before closing (graceful)
                     conn = self._connection_pool[db_path]
-                    conn.execute("PRAGMA wal_checkpoint(RESTART)")
+                    conn.execute("PRAGMA wal_checkpoint(RESTART)").fetchall()
                     conn.close()
                 except Exception as e:
                     logger.error(f"[DatabaseManager] Error closing {db_path}: {e}")
@@ -346,7 +357,7 @@ class DatabaseManager:
                 try:
                     conn = self._connection_pool[db_path]
                     # Final checkpoint before closing
-                    conn.execute("PRAGMA wal_checkpoint(RESTART)")
+                    conn.execute("PRAGMA wal_checkpoint(RESTART)").fetchall()
                     conn.close()
                     logger.info(f"[DatabaseManager] Closed: {db_path}")
                 except Exception as e:
