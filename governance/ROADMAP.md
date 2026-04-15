@@ -45,18 +45,5 @@
 
 ---
 
-### E22: Canonical Persistence & Runtime Funnel Recovery — ACTIVA
-**Sprint**: 32 | **Trace_ID**: E22-CANONICAL-PERSISTENCE-FUNNEL-2026-04-14
-**Objetivo**: Cerrar la deriva estructural detectada por auditoría SRE 14-Abr-2026 canonizando tablas legacy sin prefijo, alineando observabilidad heartbeat con una fuente única y reabriendo el embudo Scanner → Raw Signals sobre SSOT consistente.
-
-| HU | Nombre | Dominio | Sprint | Estado |
-|---|---|---|---|---|
-| HU 8.10 | Legacy Table Canonicalization & Prefix Compliance | 08 | 32 | [DONE] |
-| HU 10.33 | Canonical Heartbeat Observability Alignment | 10 | 32 | [DONE] |
-| HU 5.5 | Runtime Funnel Recovery from SSOT Strategy Filters | 05 | 32 | [TODO] |
-
----
-
-> [!NOTE]
 > El historial completo de épicas completadas se encuentra en [SYSTEM_LEDGER.md](SYSTEM_LEDGER.md).
 > El protocolo y último informe de auditoría están en [AUDIT_PROTOCOL.md](AUDIT_PROTOCOL.md) y [AUDITORIA_ESTADO_REAL.md](AUDITORIA_ESTADO_REAL.md).

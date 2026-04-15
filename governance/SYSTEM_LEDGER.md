@@ -27,6 +27,18 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 
 ## 🏛️ ÉPICAS ARCHIVADAS
 
+### E22 — Canonical Persistence & Runtime Funnel Recovery
+| Campo | Valor |
+|---|---|
+| **Épica** | E22 — Canonical Persistence & Runtime Funnel Recovery |
+| **Trace_ID** | E22-CANONICAL-PERSISTENCE-FUNNEL-2026-04-14 |
+| **Sprints** | 32 |
+| **Completada** | 14 de Abril, 2026 |
+| **Dominios** | 08_LEGACY_DATA · 10_INFRASTRUCTURE_RESILIENCY · 05_UNIVERSAL_EXECUTION |
+| **Objetivo** | Canonizar tablas legacy, alinear heartbeat y recuperar funnel Scanner→Raw Signals sobre SSOT consistente |
+| **HUs** | HU 8.10 · HU 10.33 · HU 5.5 |
+| **Validate_all** | ✅ 32/32 PASSED |
+
 ### E21 — Canonical Forex Session Clock UTC/DST
 | Campo | Valor |
 |---|---|

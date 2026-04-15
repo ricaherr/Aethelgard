@@ -17,6 +17,7 @@
 | 🔴 CRÍTICO | 1 | Componente declarado DONE que es un STUB sin efecto real |
 | 🟡 MEDIO   | 2 | Inconsistencias de gobernanza (estados de épicas, texto de planificación obsoleto) |
 | ✅ RESUELTO | Todos los críticos anteriores | CRÍTICO-1/2/3 y ALTO-1/2/4/6 del informe Mar-14 fueron resueltos |
+| ✅ HU 5.5  | CERRADO | ETI-HU5.5-RUNTIME-FUNNEL-SSOT-2026-04-14 — Funnel observability contractual implementada |
 
 ---
 
@@ -42,6 +43,31 @@
 - Las tablas legacy (`session_tokens`, `position_metadata`) siguen en el esquema como compatibilidad transitoria, clasificadas explícitamente por `monitor_snapshot.py`.
 - El snapshot SRE ya no puede emitir estados ambiguos para las tablas involucradas en HU 8.10.
 - Desbloqueante para HU 10.33 y HU 5.5 según el gate del Sprint 32.
+
+---
+
+## MATRIZ DE CONFIANZA OPERATIVA (14-Abr-2026) — HU 5.5 Funnel Observability
+
+**Trace_ID**: `ETI-HU5.5-RUNTIME-FUNNEL-SSOT-2026-04-14`
+**Fuente de evidencia**: `pytest tests/test_signal_pipeline_funnel.py tests/test_strategy_authorization_reason_codes.py` → 15/15 · `scripts/validate_all.py` → 28/28 · inspección estática de `signal_batch_pipeline.py` + `strategy_gatekeeper.py` + `storage.py`.
+
+| Componente | Esperado | Observado | Estado | Evidencia | Acción |
+|---|---|---|---|---|---|
+| `raw_zero_cause_category` en funnel | INFRA / INFRA_FAILURE / LEGIT_SSOT / DATA_QUALITY clasificados canónicamente | `_classify_raw_zero_cause()` implementado en `signal_batch_pipeline.py`; emitido en los tres paths de retorno | 🟢 OK | `test_funnel_distinguishes_legit_ssot_filters_from_infra_failures` PASS (3 casos) | Sin acción |
+| Reason codes por etapa raw | Cada causa de descarte raw tiene código determinístico en `funnel_summary.reasons` | `last_rejection_reason` del engine propagado a `funnel_reasons` Counter; `affinity_below_threshold` capturado | 🟢 OK | `test_funnel_reason_codes_are_emitted_for_raw_stage` PASS | Sin acción |
+| `StrategyGatekeeper.can_execute_on_tick_with_reason()` | Codes: `gk_approved` / `gk_whitelist_reject` / `gk_score_below_threshold` | Método nuevo implementado; 5 casos paramétricos en verde | 🟢 OK | `test_strategy_gatekeeper_rejections_keep_deterministic_codes` 5/5 PASS | Sin acción |
+| Gatekeeper codes propagados al funnel | `gk_whitelist_reject` / `gk_score_below_threshold` visibles en `funnel["reasons"]` al final del ciclo | `orch._gk_veto_reasons` propagado desde `_cycle_exec.py` y mergeado en `_cycle_trade.py` | 🟢 OK | Inspección estática + patrón validado por test de gatekeeper | Monitorear en runtime |
+| `persist_funnel_snapshot()` + `get_latest_funnel_snapshot()` | Snapshot almacenado y recuperable por ciclo desde `sys_config` SSOT | Implementados en `storage.py`; usan `update_sys_config` / rolling buffer 50 entradas | 🟢 OK | `test_cycle_snapshot_persist_and_retrieve` PASS | Sin acción |
+| Clasificación bloqueo legítimo vs falla infra | `affinity_below_threshold`, `symbol_not_in_market_whitelist`, `no_signal_generated` → LEGIT_SSOT; `strategy_engine_error` → INFRA_FAILURE | Tablas `_INFRA_FAILURE_CODES` / `_LEGIT_SSOT_CODES` en `signal_batch_pipeline.py` | 🟢 OK | `test_funnel_distinguishes_legit_ssot_filters_from_infra_failures` PASS | Sin acción |
+| Regresiones validate_all | 28/28 sin regresión post-HU5.5 | 28/28 PASS en 26.37s | 🟢 OK | `SYSTEM INTEGRITY GUARANTEED` | Sin acción |
+| Masa crítica `storage.py` | < 30 KB | 31 KB (ya excedía antes de HU 5.5; método agregado mínimo ~30 líneas) | 🟡 ATENCIÓN | `wc -c data_vault/storage.py` = 32 KB post-HU5.5 | Planificar split de `StorageManager` en sprint posterior (ETI-MODULARIZE-STORAGE) |
+
+**Lectura ejecutiva HU 5.5**:
+- La causa de `STAGE_RAW_SIGNAL_GENERATION=0` es ahora contractualmente observable: el campo `raw_zero_cause_category` distingue silencio de negocio (LEGIT_SSOT), dato faltante (DATA_QUALITY), crash de motor (INFRA_FAILURE) e infra bloqueante (INFRA).
+- Los filtros de afinidad/whitelist/threshold quedan marcados como `LEGIT_SSOT` — no son errores a corregir.
+- El `StrategyGatekeeper` emite reason codes determinísticos que fluyen al snapshot del ciclo.
+- El funnel se persiste en `sys_config` SSOT cada ciclo, no solo en memoria de sesión.
+- Único pendiente estructural: modularización de `storage.py` (ya sobre masa crítica antes de este sprint).
 
 ---
 

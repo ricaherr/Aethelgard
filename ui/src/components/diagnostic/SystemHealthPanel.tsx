@@ -120,7 +120,7 @@ const CHECK_ORDER = [
 /**
  * SystemHealthPanel
  *
- * Muestra el estado de los 9 checks del OperationalEdgeMonitor en tiempo real.
+ * Muestra el estado de los checks del OperationalEdgeMonitor en tiempo real.
  * Cada card indica: componente auditado, status (OK/WARN/FAIL) y detalle del check.
  * Se actualiza por polling HTTP cada 15 s via useOemHealth.
  */
@@ -268,7 +268,7 @@ export const SystemHealthPanel = () => {
             </div>
           )}
           <div className="ml-auto text-[8px] text-white/20 font-mono">
-            OEM · 9 checks · 5 min interval
+            OEM · 11 checks · 5 min interval
           </div>
         </div>
       )}

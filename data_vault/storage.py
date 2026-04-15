@@ -725,6 +725,38 @@ class StorageManager(
             if conn is not None:
                 self._close_conn(conn)
 
+    # ── HU 5.5 — Funnel Snapshot Persistence ─────────────────────────────────
+
+    def persist_funnel_snapshot(self, snapshot: Dict[str, Any]) -> None:
+        """
+        Persist a signal funnel snapshot for the current cycle.
+
+        Stores the snapshot as both the latest-cycle entry and appends it to
+        a rolling buffer (max 50) in sys_config.  Supersedes the ad-hoc
+        session_stats embedding used before HU 5.5.
+
+        Args:
+            snapshot: Funnel dict produced by signal_batch_pipeline / _cycle_trade.
+        """
+        current = self.get_sys_config().get("session_stats") or {}
+        recent: list = current.get("signal_funnel_recent", [])
+        recent.append(snapshot)
+        if len(recent) > 50:
+            recent = recent[-50:]
+        current["signal_funnel_last_cycle"] = snapshot
+        current["signal_funnel_recent"] = recent
+        self.update_sys_config({"session_stats": current})
+
+    def get_latest_funnel_snapshot(self) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve the most recent cycle funnel snapshot.
+
+        Returns:
+            The last persisted funnel dict, or None if no snapshot exists yet.
+        """
+        session_stats = self.get_sys_config().get("session_stats") or {}
+        return session_stats.get("signal_funnel_last_cycle")
+
     def update_economic_event(self, event_id: str, updates: Dict[str, Any]) -> None:
         """
         IMMUTABILITY ENFORCEMENT: Updates to economic records are PROHIBITED.

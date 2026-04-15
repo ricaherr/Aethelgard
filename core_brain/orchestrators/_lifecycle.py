@@ -37,22 +37,15 @@ def update_all_usr_strategies_heartbeat(orch: Any) -> None:
 
 
 def persist_session_stats_impl(orch: Any) -> None:
-    """Persist current session stats to storage after each cycle."""
-    latest_funnel = getattr(orch, "_latest_signal_funnel", None)
-    recent_funnels = []
-    if latest_funnel:
-        try:
-            sys_config = orch.storage.get_sys_config() or {}
-            existing_session = sys_config.get("session_stats", {})
-            existing_recent = existing_session.get("signal_funnel_recent", [])
-            if isinstance(existing_recent, list):
-                recent_funnels = [*existing_recent, latest_funnel][-20:]
-            else:
-                recent_funnels = [latest_funnel]
-        except Exception as exc:
-            logger.debug("Could not load previous funnel snapshots: %s", exc)
-            recent_funnels = [latest_funnel]
+    """
+    Persist current cycle KPI stats to storage.
 
+    HU 5.5 — Single-writer contract:
+      Funnel snapshot data (signal_funnel_last_cycle, signal_funnel_recent) is
+      owned exclusively by StorageManager.persist_funnel_snapshot().
+      This function preserves those keys unchanged to avoid clobbering the
+      rolling buffer (max 50) maintained by persist_funnel_snapshot.
+    """
     session_data = {
         "date": orch.stats.date.isoformat(),
         "usr_signals_processed": orch.stats.usr_signals_processed,
@@ -65,9 +58,15 @@ def persist_session_stats_impl(orch: Any) -> None:
         "usr_signals_vetoed": orch.stats.usr_signals_vetoed,
         "last_update": datetime.now().isoformat(),
     }
-    if latest_funnel:
-        session_data["signal_funnel_last_cycle"] = latest_funnel
-        session_data["signal_funnel_recent"] = recent_funnels
+
+    # Preserve funnel keys written by persist_funnel_snapshot (single-writer contract)
+    try:
+        existing_session = orch.storage.get_sys_config().get("session_stats") or {}
+        for funnel_key in ("signal_funnel_last_cycle", "signal_funnel_recent"):
+            if funnel_key in existing_session:
+                session_data[funnel_key] = existing_session[funnel_key]
+    except Exception as exc:
+        logger.debug("Could not preserve funnel keys in session_stats: %s", exc)
 
     orch.storage.update_sys_config({"session_stats": session_data})
 

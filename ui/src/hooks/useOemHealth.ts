@@ -21,7 +21,7 @@ const POLL_INTERVAL_MS = 15_000;
 
 /**
  * Polls GET /api/system/health/edge every 15 s.
- * Returns the 9-check OEM health summary for display in the diagnostic UI.
+ * Returns the OEM health summary (11 checks) for display in the diagnostic UI.
  */
 export const useOemHealth = () => {
   const [health, setHealth] = useState<OemHealth | null>(null);

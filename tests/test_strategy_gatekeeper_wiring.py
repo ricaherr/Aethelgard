@@ -136,9 +136,9 @@ class TestStrategyGatekeeperWiring(unittest.TestCase):
     # ------------------------------------------------------------------
 
     def test_run_single_cycle_calls_gatekeeper_for_each_signal(self):
-        """Gatekeeper.can_execute_on_tick must be called once per approved signal."""
+        """Gatekeeper.can_execute_on_tick_with_reason must be called once per approved signal."""
         mock_gatekeeper = MagicMock()
-        mock_gatekeeper.can_execute_on_tick.return_value = True  # permit all
+        mock_gatekeeper.can_execute_on_tick_with_reason.return_value = (True, "gk_approved")  # permit all
 
         orchestrator, mock_storage, mock_risk, _ = _make_orchestrator(gatekeeper=mock_gatekeeper)
 
@@ -169,7 +169,7 @@ class TestStrategyGatekeeperWiring(unittest.TestCase):
 
         asyncio.run(orchestrator.run_single_cycle())
 
-        gatekeeper_calls = mock_gatekeeper.can_execute_on_tick.call_count
+        gatekeeper_calls = mock_gatekeeper.can_execute_on_tick_with_reason.call_count
         self.assertEqual(
             gatekeeper_calls, len(signals),
             f"Expected {len(signals)} gatekeeper calls, got {gatekeeper_calls}"
@@ -182,7 +182,7 @@ class TestStrategyGatekeeperWiring(unittest.TestCase):
     def test_vetoed_signal_does_not_reach_executor(self):
         """Signal vetoed by gatekeeper must NOT be sent to executor.submit."""
         mock_gatekeeper = MagicMock()
-        mock_gatekeeper.can_execute_on_tick.return_value = False  # veto ALL
+        mock_gatekeeper.can_execute_on_tick_with_reason.return_value = (False, "gk_whitelist_reject")  # veto ALL
 
         orchestrator, mock_storage, mock_risk, mock_executor = _make_orchestrator(gatekeeper=mock_gatekeeper)
 
@@ -214,7 +214,7 @@ class TestStrategyGatekeeperWiring(unittest.TestCase):
     def test_vetoed_signal_increments_vetoed_counter(self):
         """Signals vetoed by gatekeeper must increment stats.usr_signals_vetoed."""
         mock_gatekeeper = MagicMock()
-        mock_gatekeeper.can_execute_on_tick.return_value = False  # veto ALL
+        mock_gatekeeper.can_execute_on_tick_with_reason.return_value = (False, "gk_whitelist_reject")  # veto ALL
 
         orchestrator, mock_storage, mock_risk, mock_executor = _make_orchestrator(gatekeeper=mock_gatekeeper)
 

@@ -2,6 +2,13 @@
 Signal batch pipeline helpers extracted from SignalFactory.
 
 Keeps SignalFactory lean while preserving the same behavior for batch signal generation.
+
+HU 5.5 — FUNNEL OBSERVABILITY
+  raw_zero_cause_category classifies WHY STAGE_RAW_SIGNAL_GENERATION == 0:
+    INFRA          — upstream infra_skip_reason blocked the scan entirely
+    INFRA_FAILURE  — strategy engine exceptions or system-level errors
+    LEGIT_SSOT     — business/SSOT filters (affinity, whitelist, no setup, etc.)
+    DATA_QUALITY   — missing regime/df/symbol in scan results
 """
 
 import asyncio
@@ -15,6 +22,61 @@ if TYPE_CHECKING:
     from models.signal import Signal
 
 logger = logging.getLogger(__name__)
+
+# ── Cause classification sets (HU 5.5) ───────────────────────────────────────
+# Taxonomy decision (HU 5.5 review fix):
+#   strategy_engine_error  → runtime exception in an engine  → INFRA_FAILURE
+#   no_strategy_engines    → engines dict empty at start     → LEGIT_SSOT
+#     (empty dict is a known configuration state, not a runtime crash;
+#      the system is behaving correctly by not generating signals)
+_INFRA_FAILURE_CODES = frozenset({
+    "strategy_engine_error",
+})
+_DATA_QUALITY_CODES = frozenset({
+    "regime_missing",
+    "df_missing",
+    "symbol_missing",
+})
+_LEGIT_SSOT_CODES = frozenset({
+    "no_signal_generated",
+    "affinity_below_threshold",
+    "symbol_not_in_affinity",
+    "symbol_not_in_market_whitelist",
+    "asset_disabled",
+    "factory_duplicate",
+    "execution_feedback_suppressed",
+    "validator_rejected",
+    "no_strategy_engines",  # empty engines dict = config state, not runtime crash
+})
+
+
+def _classify_raw_zero_cause(
+    funnel_reasons: Counter,
+    infra_skip_reason: Optional[str],
+) -> str:
+    """
+    Return a canonical category explaining why STAGE_RAW_SIGNAL_GENERATION == 0.
+
+    Priority (highest → lowest):
+      1. INFRA          — infra_skip_reason present (upstream infra blocked the scan)
+      2. INFRA_FAILURE  — any strategy_engine_error or similar runtime crash
+      3. DATA_QUALITY   — scan inputs were missing/malformed (regime/df/symbol)
+      4. LEGIT_SSOT     — all remaining: business/SSOT filters behaved correctly
+
+    Returns one of: "INFRA" | "INFRA_FAILURE" | "DATA_QUALITY" | "LEGIT_SSOT"
+    """
+    if infra_skip_reason:
+        return "INFRA"
+
+    present_codes = set(funnel_reasons.keys())
+
+    if present_codes & _INFRA_FAILURE_CODES:
+        return "INFRA_FAILURE"
+
+    if present_codes & _DATA_QUALITY_CODES:
+        return "DATA_QUALITY"
+
+    return "LEGIT_SSOT"
 
 
 async def generate_usr_signals_batch_impl(
@@ -37,6 +99,7 @@ async def generate_usr_signals_batch_impl(
 
     if not factory.strategy_engines:
         logger.error("DEBUG: No strategy engines in SignalFactory!")
+        _no_engine_reasons: Counter = Counter({"no_strategy_engines": stage_scan_in})
         factory.last_funnel_summary = {
             "trace_id": trace_id,
             "timestamp": pd.Timestamp.utcnow().isoformat(),
@@ -44,8 +107,9 @@ async def generate_usr_signals_batch_impl(
                 "STAGE_SCAN_INPUT": {"in": stage_scan_in, "out": 0},
                 "STAGE_RAW_SIGNAL_GENERATION": {"in": 0, "out": 0},
             },
-            "reasons": {"no_strategy_engines": stage_scan_in},
+            "reasons": dict(_no_engine_reasons),
             "infra_skip_reason": infra_skip_reason,
+            "raw_zero_cause_category": _classify_raw_zero_cause(_no_engine_reasons, infra_skip_reason),
         }
         return []
     logger.info(f"DEBUG: Engines available: {list(factory.strategy_engines.keys())}")
@@ -121,17 +185,22 @@ async def generate_usr_signals_batch_impl(
             elif not symbol:
                 empty_keys.append(f"{key}: symbol=None")
 
+        raw_zero_cat = _classify_raw_zero_cause(funnel_reasons, infra_skip_reason)
         if infra_skip_reason:
             logger.warning(
-                "[INFRA_CAUSE] STAGE_RAW_SIGNAL_GENERATION=0 — infra_skip_reason=%s. "
-                "Ciclo silenciado por infra, no por lógica de negocio.",
+                "[INFRA_CAUSE] STAGE_RAW_SIGNAL_GENERATION=0 — infra_skip_reason=%s "
+                "cause_category=%s. Ciclo silenciado por infra, no por lógica de negocio.",
                 infra_skip_reason,
+                raw_zero_cat,
             )
         else:
             logger.warning(
+                "[FUNNEL][RAW_ZERO] cause_category=%s. "
                 "No tasks created: ningún instrumento elegible para señal. "
-                f"scan_results keys: {list(scan_results.keys())}. "
-                f"Problemas detectados: {empty_keys if empty_keys else 'Todos los datos faltan o vacíos.'}"
+                "scan_results keys: %s. Problemas: %s",
+                raw_zero_cat,
+                list(scan_results.keys()),
+                empty_keys if empty_keys else "Todos los datos faltan o vacíos.",
             )
         factory.last_funnel_summary = {
             "trace_id": trace_id,
@@ -142,6 +211,7 @@ async def generate_usr_signals_batch_impl(
             },
             "reasons": dict(funnel_reasons),
             "infra_skip_reason": infra_skip_reason,
+            "raw_zero_cause_category": raw_zero_cat,
         }
         return []
 
@@ -183,6 +253,13 @@ async def generate_usr_signals_batch_impl(
             f"{len(scan_results)} instrumentos analizados (multi-timeframe)."
         )
 
+    # Classify cause even when signals were generated (partial zero stages may exist)
+    final_raw_zero_cat = (
+        _classify_raw_zero_cause(funnel_reasons, infra_skip_reason)
+        if raw_generated_count == 0
+        else None
+    )
+
     factory.last_funnel_summary = {
         "trace_id": trace_id,
         "timestamp": pd.Timestamp.utcnow().isoformat(),
@@ -199,6 +276,7 @@ async def generate_usr_signals_batch_impl(
         },
         "reasons": dict(funnel_reasons),
         "infra_skip_reason": infra_skip_reason,
+        "raw_zero_cause_category": final_raw_zero_cat,
     }
     if funnel_reasons:
         logger.info(

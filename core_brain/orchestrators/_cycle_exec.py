@@ -124,6 +124,11 @@ async def run_signal_filter(
     Returns a list of validated signals, or None (with cycles_completed incremented)
     to abort the cycle before execution.
     """
+    # HU 5.5 — Defensive reset: clear GK veto reasons at start of every filter phase
+    # so early-return paths (risk, lockdown, econ-veto) never bleed reasons into the
+    # next cycle's funnel (fixes stale-state bug when execute phase is skipped).
+    orch._gk_veto_reasons = {}
+
     scan_results_with_data = bundle.scan_results_with_data
     trace_id = bundle.trace_id
 
@@ -277,20 +282,32 @@ async def run_signal_filter(
     if orch.strategy_gatekeeper is not None:
         _gk_min = orch.config.get("gatekeeper_min_threshold", 0.0)
         gatekeeper_passed: List[Any] = []
+        gk_veto_reasons: dict = {}
         for signal in validated:
             strategy_id = getattr(signal, "strategy_id", None) or "default"
-            if orch.strategy_gatekeeper.can_execute_on_tick(
+            allowed, gk_reason = orch.strategy_gatekeeper.can_execute_on_tick_with_reason(
                 asset=signal.symbol,
                 min_threshold=_gk_min,
                 strategy_id=strategy_id,
-            ):
+            )
+            if allowed:
                 gatekeeper_passed.append(signal)
             else:
-                logger.info("[GATEKEEPER] Signal vetoed: %s (strategy=%s)", signal.symbol, strategy_id)
+                logger.info(
+                    "[GATEKEEPER] Signal vetoed: %s strategy=%s reason=%s",
+                    signal.symbol,
+                    strategy_id,
+                    gk_reason,
+                )
                 orch.stats.usr_signals_vetoed += 1
+                gk_veto_reasons[gk_reason] = gk_veto_reasons.get(gk_reason, 0) + 1
+
         vetoed_count = len(validated) - len(gatekeeper_passed)
         if vetoed_count:
-            logger.info("[GATEKEEPER] %d signal(s) vetoed", vetoed_count)
+            logger.info("[GATEKEEPER] %d signal(s) vetoed reasons=%s", vetoed_count, gk_veto_reasons)
+
+        # Propagate gatekeeper reason codes so _cycle_trade can merge them into funnel
+        orch._gk_veto_reasons = gk_veto_reasons
         validated = gatekeeper_passed
 
     if not validated:

@@ -99,6 +99,41 @@ class StrategyGatekeeper:
         
         return True
 
+    def can_execute_on_tick_with_reason(
+        self,
+        asset: str,
+        min_threshold: float,
+        strategy_id: str,
+    ) -> tuple[bool, str]:
+        """
+        Fast path validation identical to can_execute_on_tick() but returns a
+        deterministic reason code alongside the boolean decision.
+
+        Reason codes (canonical — HU 5.5):
+          - ``gk_approved``              — all checks passed
+          - ``gk_whitelist_reject``      — asset not in strategy whitelist (SSOT-legit)
+          - ``gk_score_below_threshold`` — affinity score below minimum (SSOT-legit)
+
+        Returns:
+            Tuple (allowed: bool, reason_code: str)
+        """
+        if strategy_id in self.market_whitelists:
+            if asset not in self.market_whitelists[strategy_id]:
+                logger.debug("[GATEKEEPER] Veto: %s not in whitelist for %s", asset, strategy_id)
+                return False, "gk_whitelist_reject"
+
+        asset_score = self.asset_scores.get(asset, 0.0)
+        if asset_score < min_threshold:
+            logger.debug(
+                "[GATEKEEPER] Veto: %s score %.2f < threshold %.2f",
+                asset,
+                asset_score,
+                min_threshold,
+            )
+            return False, "gk_score_below_threshold"
+
+        return True, "gk_approved"
+
     def validate_asset_score(
         self,
         asset: str,
@@ -107,12 +142,12 @@ class StrategyGatekeeper:
     ) -> bool:
         """
         Explicit score validation (same as can_execute_on_tick but clearer naming).
-        
+
         Args:
             asset: Asset symbol
             min_threshold: Minimum score required (0-1)
             strategy_id: Strategy identifier
-            
+
         Returns:
             True if score passes, False otherwise
         """

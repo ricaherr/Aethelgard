@@ -382,9 +382,21 @@ async def run_execute_phase(
     stages["STAGE_QUALITY_GATE"]["out"] = quality_passed
     stages["STAGE_EXECUTION_OUTCOME"]["in"] = execution_attempts
     stages["STAGE_EXECUTION_OUTCOME"]["out"] = execution_successes
+    # Merge gatekeeper veto reasons propagated from _cycle_exec
+    gk_veto_reasons: dict = getattr(orch, "_gk_veto_reasons", {})
+    for code, count in gk_veto_reasons.items():
+        reasons[code] += count
+    orch._gk_veto_reasons = {}  # reset for next cycle
+
     funnel["reasons"] = dict(reasons)
     orch._latest_signal_funnel = funnel
     logger.info("[FUNNEL][CYCLE] %s", funnel)
+
+    # HU 5.5: persist snapshot contractually (storage is SSOT, not just session_stats)
+    try:
+        orch.storage.persist_funnel_snapshot(funnel)
+    except Exception as _snap_err:
+        logger.warning("[FUNNEL][SNAPSHOT] persist_funnel_snapshot failed: %s", _snap_err)
 
     persist_session_stats_impl(orch)
 
