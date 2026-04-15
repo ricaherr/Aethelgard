@@ -127,7 +127,17 @@ def _record_phase_timeout(orch: Any, phase: str, timeout_s: float) -> None:
 
 
 def _db_backpressure_state(orch: Any) -> Dict[str, Any]:
-    """Evaluate DB transaction latency and decide whether scan_request should pause."""
+    """
+    Evaluate DB transaction latency and decide whether scan_request should pause.
+
+    Returns a dict with:
+        active        — True when backpressure guard should engage
+        threshold_ms  — configured threshold
+        observed_ms   — max(avg_ms, last_ms, p95_ms) from the rolling window
+        p95_ms        — 95th-percentile latency from the rolling window
+        count         — total samples in the window
+        by_operation  — per-origin breakdown dict (empty if unavailable)
+    """
     default_threshold_ms = 200.0
     try:
         sys_config = orch.storage.get_sys_config() or {}
@@ -152,20 +162,107 @@ def _db_backpressure_state(orch: Any) -> Dict[str, Any]:
             "active": False,
             "threshold_ms": threshold_ms,
             "observed_ms": 0.0,
+            "p95_ms": 0.0,
             "count": 0,
+            "by_operation": {},
         }
 
     avg_ms = float(global_metrics.get("avg_ms", 0.0) or 0.0)
     last_ms = float(global_metrics.get("last_ms", 0.0) or 0.0)
+    p95_ms = float(global_metrics.get("p95_ms", 0.0) or 0.0)
     count = int(global_metrics.get("count", 0) or 0)
-    observed = max(avg_ms, last_ms)
+    # Use the most conservative signal: whichever of avg/last/p95 is highest
+    observed = max(avg_ms, last_ms, p95_ms)
+
+    by_operation: Dict[str, Any] = {}
+    if isinstance(metrics.get("by_operation"), dict):
+        by_operation = metrics["by_operation"]
 
     return {
         "active": count > 0 and observed >= threshold_ms,
         "threshold_ms": threshold_ms,
         "observed_ms": observed,
+        "p95_ms": p95_ms,
         "count": count,
+        "by_operation": by_operation,
     }
+
+
+def _handle_consecutive_backpressure(orch: Any, backpressure: Dict[str, Any]) -> None:
+    """
+    Track consecutive scan_backpressure activations and escalate to CRITICAL when
+    the configurable threshold is reached.  Writes:
+      - orch._consecutive_scan_backpressure (int counter, reset on clear)
+      - sys_config["oem_scan_backpressure_consecutive"] — read by OEM check
+    Fires a SYSTEM_STRESS notification on first CRITICAL crossing only.
+    """
+    try:
+        sys_config = orch.storage.get_sys_config() or {}
+    except Exception:
+        sys_config = {}
+
+    try:
+        crit_threshold = int(sys_config.get("scan_backpressure_critical_threshold", 3))
+    except (TypeError, ValueError):
+        crit_threshold = 3
+
+    counter = int(getattr(orch, "_consecutive_scan_backpressure", 0))
+
+    if backpressure.get("active"):
+        counter += 1
+        orch._consecutive_scan_backpressure = counter
+        logger.info(
+            "[SCAN_BACKPRESSURE] Consecutive activations: %d (critical_threshold=%d)",
+            counter,
+            crit_threshold,
+        )
+        try:
+            orch.storage.update_sys_config({"oem_scan_backpressure_consecutive": counter})
+        except Exception as exc:
+            logger.debug("[SCAN_BACKPRESSURE] Could not persist consecutive counter: %s", exc)
+
+        if counter == crit_threshold:
+            logger.critical(
+                "[SCAN_BACKPRESSURE] CRITICAL threshold reached (%d consecutive activations). "
+                "DB observed_ms=%.1f p95_ms=%.1f threshold_ms=%.1f",
+                counter,
+                backpressure.get("observed_ms", 0.0),
+                backpressure.get("p95_ms", 0.0),
+                backpressure.get("threshold_ms", 0.0),
+            )
+            try:
+                orch.storage.save_notification({
+                    "category": "SYSTEM_STRESS",
+                    "priority": "critical",
+                    "title": "DB Backpressure — CRITICAL: scan paused consecutively",
+                    "message": (
+                        f"Scan paused {counter}x consecutively due to DB latency. "
+                        f"observed_ms={backpressure.get('observed_ms', 0.0):.1f} "
+                        f"p95_ms={backpressure.get('p95_ms', 0.0):.1f} "
+                        f"threshold_ms={backpressure.get('threshold_ms', 0.0):.1f}. "
+                        "Investigate DB I/O or increase scan_backpressure_latency_ms."
+                    ),
+                    "details": {
+                        "consecutive": counter,
+                        "observed_ms": backpressure.get("observed_ms", 0.0),
+                        "p95_ms": backpressure.get("p95_ms", 0.0),
+                        "threshold_ms": backpressure.get("threshold_ms", 0.0),
+                        "by_operation": backpressure.get("by_operation", {}),
+                    },
+                    "read": False,
+                })
+            except Exception as exc:
+                logger.debug("[SCAN_BACKPRESSURE] Could not save critical notification: %s", exc)
+    else:
+        if counter > 0:
+            logger.info(
+                "[SCAN_BACKPRESSURE] Cleared after %d consecutive activation(s)", counter
+            )
+            orch._consecutive_scan_backpressure = 0
+            try:
+                orch.storage.update_sys_config({"oem_scan_backpressure_consecutive": 0})
+            except Exception as exc:
+                logger.debug("[SCAN_BACKPRESSURE] Could not reset consecutive counter: %s", exc)
 
 
 def _persist_scan_funnel_kpi(orch: Any, payload: Dict[str, Any]) -> None:
@@ -472,20 +569,38 @@ async def run_scan_phase(orch: Any) -> Optional[ScanBundle]:
 
     assets_to_scan = orch._should_scan_now(scan_schedule)
     discard_reasons: Dict[str, int] = {}
+    infra_skip_reason: Optional[str] = None
     if assets_to_scan:
         logger.info(
             f"[OPTION-A] {len(assets_to_scan)} assets due: "
             f"{', '.join([f'{s}|{tf}' for s, tf in assets_to_scan[:5]])}{'...' if len(assets_to_scan) > 5 else ''}"
         )
         backpressure = _db_backpressure_state(orch)
+        _handle_consecutive_backpressure(orch, backpressure)
         if backpressure.get("active"):
             discard_reasons["backpressure_db_latency"] = len(assets_to_scan)
             logger.warning(
-                "[SCAN_BACKPRESSURE] scan_request paused due DB latency %.1fms >= %.1fms (count=%s)",
+                "[SCAN_BACKPRESSURE] scan_request paused — "
+                "observed_ms=%.1f p95_ms=%.1f threshold_ms=%.1f count=%s",
                 backpressure.get("observed_ms", 0.0),
+                backpressure.get("p95_ms", 0.0),
                 backpressure.get("threshold_ms", 0.0),
                 backpressure.get("count", 0),
             )
+            top_ops = sorted(
+                backpressure.get("by_operation", {}).items(),
+                key=lambda kv: kv[1].get("p95_ms", 0.0) if isinstance(kv[1], dict) else 0.0,
+                reverse=True,
+            )[:3]
+            if top_ops:
+                logger.warning(
+                    "[SCAN_BACKPRESSURE] Top-3 slowest operations: %s",
+                    ", ".join(
+                        f"{op}(p95={m.get('p95_ms', 0.0):.1f}ms avg={m.get('avg_ms', 0.0):.1f}ms)"
+                        for op, m in top_ops
+                        if isinstance(m, dict)
+                    ),
+                )
             try:
                 orch.storage.log_audit_event(
                     user_id="SYSTEM",
@@ -495,12 +610,14 @@ async def run_scan_phase(orch: Any) -> Optional[ScanBundle]:
                     status="warning",
                     reason=(
                         f"paused: observed_ms={backpressure.get('observed_ms', 0.0):.2f} "
+                        f"p95_ms={backpressure.get('p95_ms', 0.0):.2f} "
                         f"threshold_ms={backpressure.get('threshold_ms', 0.0):.2f}"
                     ),
                     trace_id=f"SCAN_BACKPRESSURE_{uuid.uuid4().hex[:8].upper()}",
                 )
             except Exception as exc:
                 logger.debug("[SCAN_BACKPRESSURE] Could not write audit event: %s", exc)
+            infra_skip_reason = "backpressure_db_latency"
             new_scan_results = {}
         else:
             scan_timeout_s = _get_phase_timeout_seconds(
@@ -516,6 +633,7 @@ async def run_scan_phase(orch: Any) -> Optional[ScanBundle]:
             except asyncio.TimeoutError:
                 _record_phase_timeout(orch, "scan_request", scan_timeout_s)
                 discard_reasons["scan_timeout"] = len(assets_to_scan)
+                infra_skip_reason = "scan_timeout"
                 new_scan_results = {}
     else:
         logger.debug("[OPTION-A] No assets due — using cached results")
@@ -538,7 +656,14 @@ async def run_scan_phase(orch: Any) -> Optional[ScanBundle]:
             logger.debug("[OPTION-A] Fallback to get_scan_results_with_data() succeeded")
 
     if not scan_results_with_data:
-        logger.warning("No scan results available yet (first cycle or all offline)")
+        if infra_skip_reason:
+            logger.warning(
+                "[SCAN_INFRA_FALLBACK] No cached scan results and scan was blocked by infra cause=%s. "
+                "STAGE_RAW_SIGNAL_GENERATION will be 0 this cycle (infra-driven silence, not business logic).",
+                infra_skip_reason,
+            )
+        else:
+            logger.warning("No scan results available yet (first cycle or all offline)")
         _persist_scan_funnel_kpi(
             orch,
             {
@@ -549,6 +674,7 @@ async def run_scan_phase(orch: Any) -> Optional[ScanBundle]:
                 "active_results": 0,
                 "completion_rate": 0.0,
                 "discard_reasons": discard_reasons or {"no_scan_results": len(assets_to_scan)},
+                "infra_skip_reason": infra_skip_reason,
             },
         )
         return None
@@ -585,6 +711,7 @@ async def run_scan_phase(orch: Any) -> Optional[ScanBundle]:
             "completion_rate": round(completion_rate, 2),
             "discard_reasons": discard_reasons,
             "scan_sources": sorted({s.provider_source for s in price_snapshots.values()}),
+            "infra_skip_reason": infra_skip_reason,
         },
     )
 
@@ -702,4 +829,5 @@ async def run_scan_phase(orch: Any) -> Optional[ScanBundle]:
         price_snapshots=price_snapshots,
         scan_results=scan_results,
         trace_id=trace_id,
+        infra_skip_reason=infra_skip_reason,
     )

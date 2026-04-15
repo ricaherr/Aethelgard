@@ -64,7 +64,12 @@
 ---
 
 ## 05_UNIVERSAL_EXECUTION (EMS, Conectores FIX)
-*(Sin HUs pendientes — HU 5.4 archivada en SYSTEM_LEDGER)*
+
+* **HU 5.5: Runtime Funnel Recovery from SSOT Strategy Filters** `[TODO]`
+    * **Prioridad**: Alta
+    * **Descripción**: Reabrir el embudo Scanner → Signal Factory → señales raw sobre configuración SSOT real. La auditoría del 14-Abr-2026 confirmó `STAGE_RAW_SIGNAL_GENERATION=0` con scanner sano; las causas activas son filtros `symbol_not_in_affinity`, `symbol_not_in_market_whitelist`, `affinity_below_threshold` y `factory_duplicate`.
+    * **Para qué**: Separar configuración legítima de bloqueo funcional y recuperar generación operable sin romper reglas de trading.
+    * **🖥️ UI Representation**: Telemetría de funnel con motivos de descarte y tasa de conversión por ciclo.
 
 ---
 
@@ -90,8 +95,7 @@
 
 ## 08_DATA_SOVEREIGNTY (SSOT, Persistence)
 
-*(Sin HUs pendientes — HU 8.8 y HU 8.9 archivadas en SYSTEM_LEDGER)*
-
+*(HU 8.10 completada — archivada en SYSTEM_LEDGER Sprint 32)*
 
 ---
 
@@ -103,7 +107,10 @@
 ---
 
 ## 10_INFRASTRUCTURE_RESILIENCY (Health, Self-Healing)
-*(Sin HUs pendientes — ver historial en SYSTEM_LEDGER)*
+
+*(HU 10.33 completada — archivada en SYSTEM_LEDGER Sprint 32)*
+
+---
 
 
 

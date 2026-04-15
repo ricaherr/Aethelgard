@@ -38,3 +38,7 @@ class ScanBundle:
     price_snapshots: Dict[str, PriceSnapshot]  # keyed by "symbol|timeframe"
     scan_results: Dict[str, Any]  # {symbol: MarketRegime}
     trace_id: str
+    # Infra-cause hint: populated when backpressure or timeout forced scan skip.
+    # Downstream consumers (signal pipeline, OEM) use this to distinguish
+    # infra-caused silence from business-logic silence.
+    infra_skip_reason: Optional[str] = None  # e.g. "backpressure_db_latency", "scan_timeout"

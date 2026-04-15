@@ -127,9 +127,11 @@ async def run_signal_filter(
     scan_results_with_data = bundle.scan_results_with_data
     trace_id = bundle.trace_id
 
-    # Generate signals
+    # Generate signals — propagate infra cause from scan phase for funnel observability
     usr_signals = await orch.signal_factory.generate_usr_signals_batch(
-        scan_results_with_data, trace_id
+        scan_results_with_data,
+        trace_id,
+        infra_skip_reason=getattr(bundle, "infra_skip_reason", None),
     )
     orch.storage.update_module_heartbeat("signal_factory")
 

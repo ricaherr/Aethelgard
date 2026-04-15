@@ -90,7 +90,7 @@ class OperationalEdgeMonitor(threading.Thread):
 
     def run(self) -> None:
         logger.info(
-            "[OPS-EDGE] Operational invariant monitor started (interval=%ds, checks=10)",
+            "[OPS-EDGE] Operational invariant monitor started (interval=%ds, checks=11)",
             self.interval_seconds,
         )
         while self.running:
@@ -166,6 +166,7 @@ class OperationalEdgeMonitor(threading.Thread):
             "score_stale": self._check_score_stale,
             "orchestrator_heartbeat": self._check_orchestrator_heartbeat,
             "shadow_stagnation": self._check_shadow_stagnation,
+            "scan_backpressure_health": self._check_scan_backpressure_health,
         }
         results = {}
         for name, fn in checks.items():
@@ -857,6 +858,73 @@ class OperationalEdgeMonitor(threading.Thread):
             state = {}
         state[instance_id] = day_key
         self.storage.update_sys_config({self.SHADOW_STAGNATION_ALERTS_STATE_KEY: state})
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Check: scan_backpressure_health
+    # ─────────────────────────────────────────────────────────────────────────
+
+    SCAN_BACKPRESSURE_WARN_THRESHOLD_DEFAULT = 2
+    SCAN_BACKPRESSURE_FAIL_THRESHOLD_DEFAULT = 3
+
+    def _check_scan_backpressure_health(self) -> CheckResult:
+        """
+        Detecta degradación silenciosa por backpressure de DB en el ciclo de scan.
+
+        Lee oem_scan_backpressure_consecutive de sys_config (escrito por _cycle_scan.py).
+        FAIL cuando el contador supera el umbral crítico.
+        WARN cuando supera el umbral de advertencia.
+        """
+        try:
+            cfg = self.storage.get_sys_config() or {}
+        except Exception:
+            return CheckResult(CheckStatus.WARN, "No se pudo leer sys_config para backpressure check")
+
+        try:
+            consecutive = int(cfg.get("oem_scan_backpressure_consecutive", 0) or 0)
+        except (TypeError, ValueError):
+            consecutive = 0
+
+        try:
+            warn_threshold = int(
+                cfg.get(
+                    "scan_backpressure_warn_threshold",
+                    self.SCAN_BACKPRESSURE_WARN_THRESHOLD_DEFAULT,
+                )
+            )
+        except (TypeError, ValueError):
+            warn_threshold = self.SCAN_BACKPRESSURE_WARN_THRESHOLD_DEFAULT
+
+        try:
+            fail_threshold = int(
+                cfg.get(
+                    "scan_backpressure_critical_threshold",
+                    self.SCAN_BACKPRESSURE_FAIL_THRESHOLD_DEFAULT,
+                )
+            )
+        except (TypeError, ValueError):
+            fail_threshold = self.SCAN_BACKPRESSURE_FAIL_THRESHOLD_DEFAULT
+
+        if consecutive == 0:
+            return CheckResult(CheckStatus.OK, "Sin backpressure de DB activo en ciclos recientes")
+
+        if consecutive >= fail_threshold:
+            return CheckResult(
+                CheckStatus.FAIL,
+                f"DB backpressure activo {consecutive} ciclos consecutivos "
+                f"(umbral CRITICAL={fail_threshold}) — scan_request pausado de forma sostenida",
+            )
+
+        if consecutive >= warn_threshold:
+            return CheckResult(
+                CheckStatus.WARN,
+                f"DB backpressure activo {consecutive} ciclos consecutivos "
+                f"(umbral WARN={warn_threshold}) — monitor DB I/O",
+            )
+
+        return CheckResult(
+            CheckStatus.OK,
+            f"DB backpressure: {consecutive} ciclo(s) reciente(s) — dentro del rango aceptable",
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -551,13 +551,14 @@ class TestCheckScoreStale:
 
 class TestRunChecksAndSummary:
     def test_run_checks_returns_all_10_keys(self):
-        """run_checks() debe retornar exactamente los 10 checks conocidos."""
+        """run_checks() debe retornar exactamente los checks conocidos (incluye scan_backpressure_health)."""
         monitor = OperationalEdgeMonitor(storage=_make_storage())
         results = monitor.run_checks()
         expected_keys = {
             "shadow_sync", "backtest_quality", "connector_exec", "signal_flow",
             "adx_sanity", "lifecycle_coherence", "rejection_rate", "score_stale",
             "orchestrator_heartbeat", "shadow_stagnation",
+            "scan_backpressure_health",
         }
         assert set(results.keys()) == expected_keys
 
@@ -616,6 +617,89 @@ class TestRunChecksAndSummary:
         assert "lifecycle_coherence" not in summary["failing"]
         assert "shadow_sync" in summary["warnings"]
         assert "lifecycle_coherence" in summary["warnings"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HU 10.33 — AC-6: Heartbeat canónico evaluado desde sys_audit_logs
+# Trace_ID: ETI-SRE-OEM-CANONICAL-HEARTBEAT-2026-04-14
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestOemHeartbeatCanonicalAuditSource:
+    def test_oem_heartbeat_uses_canonical_audit_source_only(self):
+        """
+        Cuando get_latest_module_heartbeat_audit devuelve timestamp fresco,
+        _check_component_heartbeat debe:
+          - Reportar status=OK (heartbeat reciente)
+          - Identificar 'sys_audit_logs' como fuente en el detalle
+        Sin depender de tablas no canónicas (position_metadata, session_tokens, etc.).
+
+        Trace_ID: ETI-SRE-OEM-CANONICAL-HEARTBEAT-2026-04-14 / AC-6
+        """
+        storage = _make_storage()
+        storage.get_module_heartbeats.return_value = {}  # Sin dato en sys_config
+        storage.get_sys_config.return_value = {}
+
+        # Timestamp fresco en sys_audit_logs (30 segundos atrás)
+        fresh_ts = (datetime.now(timezone.utc) - timedelta(seconds=30)).isoformat()
+        storage.get_latest_module_heartbeat_audit.return_value = fresh_ts
+
+        monitor = OperationalEdgeMonitor(storage=storage)
+        result = monitor._check_component_heartbeat("orchestrator")
+
+        assert result.status == CheckStatus.OK, (
+            f"Con audit timestamp fresco debería ser OK. "
+            f"Status={result.status}, detail={result.detail}"
+        )
+        assert "sys_audit_logs" in result.detail, (
+            "El resultado debe identificar sys_audit_logs como fuente canónica del heartbeat. "
+            f"Detail recibido: {result.detail!r}"
+        )
+
+    def test_oem_heartbeat_prefers_audit_over_config_when_audit_is_newer(self):
+        """
+        Cuando sys_audit_logs tiene timestamp MÁS RECIENTE que sys_config,
+        el heartbeat debe reportar source=sys_audit_logs.
+        """
+        storage = _make_storage()
+        old_config_ts = (datetime.now(timezone.utc) - timedelta(seconds=200)).isoformat()
+        fresh_audit_ts = (datetime.now(timezone.utc) - timedelta(seconds=30)).isoformat()
+
+        storage.get_module_heartbeats.return_value = {"orchestrator": old_config_ts}
+        storage.get_sys_config.return_value = {}
+        storage.get_latest_module_heartbeat_audit.return_value = fresh_audit_ts
+
+        monitor = OperationalEdgeMonitor(storage=storage)
+        result = monitor._check_component_heartbeat("orchestrator")
+
+        assert result.status == CheckStatus.OK
+        assert "sys_audit_logs" in result.detail, (
+            "Cuando audit es más reciente que sys_config, la fuente canónica debe ser sys_audit_logs"
+        )
+
+    def test_oem_heartbeat_warns_when_no_canonical_source_has_data(self):
+        """
+        Sin heartbeat en sys_config ni en sys_audit_logs → WARN (componente puede no haber iniciado).
+        No debe evaluar tablas no canónicas como fallback.
+        """
+        storage = _make_storage()
+        storage.get_module_heartbeats.return_value = {}
+        storage.get_sys_config.return_value = {}
+        storage.get_latest_module_heartbeat_audit.return_value = None
+
+        monitor = OperationalEdgeMonitor(storage=storage)
+        result = monitor._check_component_heartbeat("scanner")
+
+        assert result.status == CheckStatus.WARN, (
+            f"Sin datos canónicos debería ser WARN. Status={result.status}"
+        )
+        # El detalle no debe mencionar tablas no canónicas como fuente
+        detail_lower = result.detail.lower()
+        assert "position_metadata" not in detail_lower, (
+            "El detalle no debe mencionar position_metadata como fuente de heartbeat"
+        )
+        assert "session_tokens" not in detail_lower, (
+            "El detalle no debe mencionar session_tokens como fuente de heartbeat"
+        )
 
 
 if __name__ == "__main__":

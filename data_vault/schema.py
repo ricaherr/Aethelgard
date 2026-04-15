@@ -79,8 +79,12 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_audit_logs_action ON sys_audit_logs (action)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_audit_logs_timestamp ON sys_audit_logs (timestamp DESC)")
 
-    # ── 0.1. Session Tokens (API Auth — SSOT) ────────────────────────────────
-    # TRACE_ID: ARCH-SSOT-NIVEL0-2026-03-14 | Moved from session_manager.py._ensure_schema()
+    # ── 0.1. Session Tokens ───────────────────────────────────────────────────
+    # LEGACY TABLE — mantenida solo para compatibilidad durante migración aditiva.
+    # TRACE_ID: ARCH-SSOT-NIVEL0-2026-03-14 | ETI-SRE-CANONICAL-PERSISTENCE-2026-04-14
+    # AUTORIDAD CANÓNICA: sys_session_tokens (ver abajo).
+    # PROHIBIDO: nuevas escrituras/lecturas operativas sobre esta tabla desde session_manager.py.
+    # PLAN DE RETIRO: eliminar en HU posterior una vez que sys_session_tokens sea la única fuente.
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS session_tokens (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -99,7 +103,9 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_session_tokens_user_id ON session_tokens (user_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_session_tokens_expires_at ON session_tokens (expires_at)")
 
-    # Canonical prefixed table (SSOT naming). Keep legacy table for compatibility.
+    # CANONICAL TABLE — Autoridad SSOT de sesiones a partir de HU 8.10.
+    # Trace_ID: ETI-SRE-CANONICAL-PERSISTENCE-2026-04-14
+    # Toda lectura/escritura operativa de sesiones DEBE apuntar aquí.
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS sys_session_tokens (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -281,8 +287,12 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
         )
     """)
 
-    # ── 3.1. Position Metadata (Open Position Monitoring — SSOT) ─────────────
-    # TRACE_ID: ARCH-SSOT-NIVEL0-2026-03-14 | Moved from trades_db.py.update_position_metadata()
+    # ── 3.1. Position Metadata ───────────────────────────────────────────────
+    # LEGACY TABLE — mantenida solo para compatibilidad durante migración aditiva.
+    # TRACE_ID: ARCH-SSOT-NIVEL0-2026-03-14 | ETI-SRE-CANONICAL-PERSISTENCE-2026-04-14
+    # AUTORIDAD CANÓNICA: sys_position_metadata (ver abajo).
+    # PROHIBIDO: nuevas escrituras/lecturas operativas sobre esta tabla desde trades_db.py.
+    # PLAN DE RETIRO: eliminar en HU posterior una vez que sys_position_metadata sea la única fuente.
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS position_metadata (
             ticket INTEGER PRIMARY KEY,
@@ -303,7 +313,9 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_position_metadata_symbol ON position_metadata (symbol)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_position_metadata_entry_time ON position_metadata (entry_time DESC)")
 
-    # Canonical prefixed table (SSOT naming). Keep legacy table for compatibility.
+    # CANONICAL TABLE — Autoridad SSOT de position metadata a partir de HU 8.10.
+    # Trace_ID: ETI-SRE-CANONICAL-PERSISTENCE-2026-04-14
+    # Toda lectura/escritura operativa de position metadata DEBE apuntar aquí.
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS sys_position_metadata (
             ticket INTEGER PRIMARY KEY,

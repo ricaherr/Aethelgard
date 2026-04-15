@@ -20,6 +20,31 @@
 
 ---
 
+## MATRIZ DE CONFIANZA OPERATIVA (14-Abr-2026) — HU 8.10 Canonical Persistence
+
+**Trace_ID**: `ETI-SRE-CANONICAL-PERSISTENCE-2026-04-14`
+**Fuente de evidencia**: `pytest tests/test_canonical_persistence_hu8_10.py` · `validate_all.py` 28/28 · inspección estática de `session_manager.py` + `trades_db.py`.
+
+| Componente | Esperado | Observado | Estado | Evidencia | Acción |
+|---|---|---|---|---|---|
+| sys_session_tokens | Tabla canónica presente tras initialize_schema | Creada por schema.py, datos migrados desde session_tokens via INSERT OR IGNORE | 🟢 OK | `test_schema_exposes_prefixed_session_and_position_tables_as_canonical` PASS | Mantener — retiro de `session_tokens` en HU posterior |
+| sys_position_metadata | Tabla canónica presente tras initialize_schema | Creada por schema.py, datos migrados desde position_metadata via INSERT OR IGNORE | 🟢 OK | `test_schema_canonical_tables_have_expected_columns` PASS | Mantener — retiro de `position_metadata` en HU posterior |
+| session_manager.py | Escrituras/lecturas de sesión sobre tabla canónica | Todas las queries apuntan a `sys_session_tokens` (7 sitios migrados) | 🟢 OK | grep `FROM session_tokens` = sin resultados · 8/8 tests focales PASS | Sin acción |
+| trades_db.py | Escrituras/lecturas de position metadata sobre tabla canónica | `get_position_metadata` y `update_position_metadata` apuntan a `sys_position_metadata` | 🟢 OK | grep `INTO position_metadata` = sin resultados · `test_executor_metadata_integration.py` intacto | Sin acción |
+| monitor_snapshot.py classify_tables | Clasificar tablas en tres estados explícitos | `classify_tables()` retorna canonical/legacy_compatible/violations sin ambigüedad | 🟢 OK | 5 tests de clasificación PASS (incluyendo unknown_table→violations, session_tokens→legacy_compatible) | Sin acción |
+| session_tokens (legacy) | Legacy conocida en monitor_snapshot | Clasificada como legacy_compatible, NO como violation | 🟢 OK | `test_monitor_snapshot_reports_legacy_session_tokens_explicitly` PASS | Retiro progresivo en HU posterior |
+| position_metadata (legacy) | Legacy conocida en monitor_snapshot | Clasificada como legacy_compatible, NO como violation | 🟢 OK | `test_monitor_snapshot_reports_legacy_session_tokens_explicitly` PASS | Retiro progresivo en HU posterior |
+| notifications (tenant residual) | Tabla sin prefijo en tenant → visible como violation | Clasificada como violation por classify_tables | 🟢 OK | `test_tenant_db_legacy_tables_are_flagged_not_silently_accepted` PASS | Sin acción; remediación en HU de tenant cleanup |
+| validate_all.py | 28/28 PASS sin regresiones | 28/28 PASS en 26.82s | 🟢 OK | STAGE_END todos en OK · `SYSTEM INTEGRITY GUARANTEED` | Sin acción |
+
+**Lectura ejecutiva**:
+- La deriva estructural SSOT/prefijos está corregida operativamente: `session_manager.py` y `trades_db.py` ya no escriben en tablas legacy.
+- Las tablas legacy (`session_tokens`, `position_metadata`) siguen en el esquema como compatibilidad transitoria, clasificadas explícitamente por `monitor_snapshot.py`.
+- El snapshot SRE ya no puede emitir estados ambiguos para las tablas involucradas en HU 8.10.
+- Desbloqueante para HU 10.33 y HU 5.5 según el gate del Sprint 32.
+
+---
+
 ## MATRIZ DE CONFIANZA OPERATIVA (13-Abr-2026)
 
 **Trace_ID**: `E19-RUNTIME-CONTRACT-HARDENING-2026-04-13`
@@ -58,6 +83,36 @@
 **Conclusión operativa del monitoreo**:
 - El hotfix eliminó la regresión técnica de tipo y devolvió estabilidad al loop.
 - El siguiente cuello de botella ya no es crash técnico; es generación de señales de negocio (lógica/filtros/calidad).
+
+---
+
+## MATRIZ DE CONFIANZA OPERATIVA (14-Abr-2026 — Auditoría SRE de Integridad)
+
+**Trace_ID**: `SRE-INTEGRITY-AUDIT-2026-04-14`
+**Fuente de evidencia**: `scripts/monitor_snapshot.py` + `logs/main.log` (últimas 200 líneas) + `data_vault/schema.py` + DB global/tenant real.
+
+| Componente | Esperado | Observado | Estado | Evidencia | Acción |
+|---|---|---|---|---|---|
+| Scanner | Ejecutar barrido con ADX válido y snapshots consistentes | 18 resultados completados; ADX reciente > 0 en activos auditados | 🟢 OK | `main.log` (`[EXECUTE_SCAN] ✓ Completed: 18 results cached`, `Scanner ... ADX=26.17/38.66/...`) | Mantener monitoreo |
+| Flujo Scanner → Evaluador | Scanner debe alimentar análisis y generación raw | Scanner y UI mapping sanos, pero `STAGE_RAW_SIGNAL_GENERATION out=0` en ciclos recientes | 🔴 CRÍTICO | `main.log` (`[FUNNEL][RAW] ... raw_usr_signals_generated=0`) | Reauditar filtros SSOT de estrategias tras canonizar persistencia |
+| Strategy Filters SSOT | Afinidad/whitelist deben bloquear solo por regla válida, no por deriva | Motivos dominantes: `symbol_not_in_affinity`, `symbol_not_in_market_whitelist`, `affinity_below_threshold`, `factory_duplicate` | 🟠 ALTO-RIESGO | `main.log` (`[FUNNEL][REASONS] distribution=...`) | Abrir HU de recuperación de funnel |
+| Persistencia Global | Todas las tablas operativas deben cumplir prefijo `sys_*` / `usr_*` | DB global alineada con schema, pero conserva `session_tokens` y `position_metadata` sin prefijo | 🔴 CRÍTICO | `schema.py` + inspección DB real 14-Abr-2026 | Canonizar tablas legacy y cortar autoridad operativa legacy |
+| Persistencia Tenant | Sin residuos fuera del esquema actual | Tenant auditado conserva `notifications` y `usr_performance` como extras legacy | 🟠 ALTO-RIESGO | inspección DB tenant real 14-Abr-2026 | Reportar y remediar residuos por migración controlada |
+| OEM / Heartbeat | Heartbeats consultables desde una fuente única y canónica | `sys_audit_logs` contiene latidos frescos (<30s), pero `system_audit_logs` no existe | 🟡 PARCIAL | DB global real (`HEARTBEAT_orchestrator`, `scanner`, `signal_factory`) | Alinear snapshot, OEM y docs a `sys_audit_logs` |
+| Masa Crítica | Ningún archivo >30KB o >500 líneas | Múltiples violaciones activas (`schema.py`, `system_db.py`, `operational_edge_monitor.py`, `mt5_connector.py`, etc.) | 🔴 CRÍTICO | `monitor_snapshot.py` + auditoría local de tamaño/líneas | Plan de modularización posterior al P0 de canonicidad |
+
+**Lectura ejecutiva**:
+- El sistema está vivo, pero no cumple SLA arquitectónico/SRE por deriva de persistencia, observabilidad ambigua y funnel raw en cero.
+- El primer punto de ejecución correcto no es tocar filtros de estrategia; es canonizar la base estructural SSOT para que el siguiente diagnóstico de funnel sea confiable.
+
+### Decisión de Priorización — 14-Abr-2026
+
+**Primer punto a ejecutar**: `HU 8.10 — Legacy Table Canonicalization & Prefix Compliance`.
+
+**Justificación**:
+- Desbloquea dos hallazgos de mayor alcance: persistencia fuera de convención y observabilidad heartbeat ambigua.
+- Evita diagnosticar el funnel con una capa SSOT todavía inconsistente.
+- Reduce deuda estructural ya visible aunque `validate_all.py` siga en verde.
 
 ---
 

@@ -2,10 +2,67 @@ import os
 import sqlite3
 import json
 from datetime import datetime
+from typing import Dict, List
 
 # Configuración de rutas según .ai_rules.md
 GLOBAL_DB = "data_vault/global/aethelgard.db"
 LOG_DIR = "logs/"
+
+# ── Tabla de legacies CONOCIDAS con plan de migración explícito ───────────────
+# Estas tablas NO tienen prefijo sys_/usr_ pero son legacy-compatible durante
+# la transición canónica. NO deben clasificarse como "violation".
+# Trace_ID: ETI-SRE-CANONICAL-PERSISTENCE-2026-04-14
+KNOWN_LEGACY_TABLES: frozenset[str] = frozenset({
+    "session_tokens",     # → canónica: sys_session_tokens  (HU 8.10)
+    "position_metadata",  # → canónica: sys_position_metadata (HU 8.10)
+})
+
+# Tablas internas de SQLite — nunca son violations de negocio.
+# sqlite_sequence aparece cuando alguna tabla usa AUTOINCREMENT.
+_SQLITE_INTERNAL_TABLES: frozenset[str] = frozenset({
+    "sqlite_sequence",
+    "sqlite_stat1",
+    "sqlite_stat2",
+    "sqlite_stat3",
+    "sqlite_stat4",
+})
+
+
+def classify_tables(table_names: List[str]) -> Dict[str, List[str]]:
+    """
+    Clasifica una lista de nombres de tablas SQLite en tres categorías SRE:
+
+    - canonical       : tienen prefijo sys_  o usr_  (conforme a SSOT)
+    - legacy_compatible: legacy conocidas con plan de migración (sin prefijo, permitidas transitoriamente)
+    - violations      : sin prefijo y sin plan registrado → requieren remediación
+
+    Args:
+        table_names: Lista de nombres de tablas (e.g. de sqlite_master)
+
+    Returns:
+        Dict con listas separadas por categoría.
+    """
+    canonical: List[str] = []
+    legacy_compatible: List[str] = []
+    violations: List[str] = []
+
+    for table in table_names:
+        if table in _SQLITE_INTERNAL_TABLES:
+            # SQLite internals are invisible to SRE classification — skip silently.
+            continue
+        if table.startswith("sys_") or table.startswith("usr_"):
+            canonical.append(table)
+        elif table in KNOWN_LEGACY_TABLES:
+            legacy_compatible.append(table)
+        else:
+            violations.append(table)
+
+    return {
+        "canonical": canonical,
+        "legacy_compatible": legacy_compatible,
+        "violations": violations,
+    }
+
 
 def get_db_snapshot():
     """
@@ -23,7 +80,12 @@ def get_db_snapshot():
         
         # 1. VERIFICACIÓN DE TABLAS REALES (Anti-Alucinación)
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-        snapshot["active_tables"] = [row["name"] for row in cursor.fetchall()]
+        all_tables = [row["name"] for row in cursor.fetchall()]
+        snapshot["active_tables"] = all_tables
+
+        # 1.1 CLASIFICACIÓN SRE — canonical / legacy_compatible / violations
+        # Trace_ID: ETI-SRE-CANONICAL-PERSISTENCE-2026-04-14
+        snapshot["table_classification"] = classify_tables(all_tables)
         
         # 2. ÚLTIMOS ESTADOS DEL SISTEMA (sys_config)
         # Verificamos si la tabla existe antes de consultar para evitar crash

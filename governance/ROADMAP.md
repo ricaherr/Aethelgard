@@ -9,8 +9,8 @@
 > - **NO agregar aquí**: listas de archivos modificados, métricas de tests, detalles de implementación (eso va en SPRINT.md).
 > - **Framework completo**: `.ai_orchestration_protocol.md` Sección 4.
 
-**Versión Log**: v4.18.0-beta
-**Última Actualización**: 13 de Abril, 2026 (HU 8.9 completada y archivada en SYSTEM_LEDGER)
+**Versión Log**: v4.19.0-beta
+**Última Actualización**: 14 de Abril, 2026 (ETI-SRE-DB-BACKPRESSURE-CHAIN-2026-04-14 completado)
 
 ---
 
@@ -45,19 +45,15 @@
 
 ---
 
-### E19: Recuperación Operativa End-to-End (Señal → Ejecución) — ACTIVA
-**Sprint**: 29 | **Trace_ID**: E19-OPERATIONAL-RECOVERY-2026-04-09
-**Objetivo**: Recuperar la operación comercial completa del sistema eliminando regresiones de confidence, desbloqueando el pipeline de señales, reduciendo vetos por CPU y estabilizando cobertura de data providers.
+### E22: Canonical Persistence & Runtime Funnel Recovery — ACTIVA
+**Sprint**: 32 | **Trace_ID**: E22-CANONICAL-PERSISTENCE-FUNNEL-2026-04-14
+**Objetivo**: Cerrar la deriva estructural detectada por auditoría SRE 14-Abr-2026 canonizando tablas legacy sin prefijo, alineando observabilidad heartbeat con una fuente única y reabriendo el embudo Scanner → Raw Signals sobre SSOT consistente.
 
 | HU | Nombre | Dominio | Sprint | Estado |
 |---|---|---|---|---|
-| HU 5.4 | Signal-to-Execution Recovery Pipeline | 05 | 29 | [DONE] |
-| HU 8.9 | Strategy SSOT Snapshot Sync & Governance Closure | 04 | 29 | [DONE] |
-| HU 9.10 | Runtime Confidence Contract Recovery | TRANSVERSAL_UI | 29 | [DONE] |
-| HU 10.27 | Adaptive CPU Guardrail Throttling | 04 | 29 | [DONE] |
-| HU 10.28 | Provider Coverage Reliability | 04 | 29 | [DONE] |
-| HU 10.29 | SQLite Contention Hotfix | 04 | 29 | [DONE] |
-| HU 10.30 | Runtime Contract Hardening & Confidence Matrix | 04 | 29 | [DONE] |
+| HU 8.10 | Legacy Table Canonicalization & Prefix Compliance | 08 | 32 | [DONE] |
+| HU 10.33 | Canonical Heartbeat Observability Alignment | 10 | 32 | [DONE] |
+| HU 5.5 | Runtime Funnel Recovery from SSOT Strategy Filters | 05 | 32 | [TODO] |
 
 ---
 

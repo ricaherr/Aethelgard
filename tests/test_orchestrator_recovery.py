@@ -98,7 +98,7 @@ class MockSignalFactory:
         self.should_generate = should_generate
         self.storage = storage
     
-    async def generate_usr_signals_batch(self, scan_results_with_data, trace_id=None):
+    async def generate_usr_signals_batch(self, scan_results_with_data, trace_id=None, **kwargs):
         """Nuevo método para generar señales desde scan_results con DataFrames"""
         if not self.should_generate:
             return []

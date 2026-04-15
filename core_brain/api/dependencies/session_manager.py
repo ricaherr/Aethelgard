@@ -54,8 +54,9 @@ class SessionManager:
     3. Token expires: Refresh token rotates automatically
     4. User logout: revoke_session() invalidates server-side
     
-    Database schema required (auto-created):
-    - session_tokens(token_hash, user_id, token_type, expires_at, revoked, created_at)
+    Database schema required (managed by data_vault/schema.py):
+    - sys_session_tokens(token_hash, user_id, token_type, expires_at, revoked, created_at)
+    Trace_ID: ETI-SRE-CANONICAL-PERSISTENCE-2026-04-14
     """
     
     def __init__(self, storage: StorageManager):
@@ -69,7 +70,7 @@ class SessionManager:
         self._ensure_schema()
     
     def _ensure_schema(self) -> None:
-        """No-op: session_tokens DDL managed by data_vault/schema.py (ARCH-SSOT-NIVEL0-2026-03-14)."""
+        """No-op: sys_session_tokens DDL managed by data_vault/schema.py (ETI-SRE-CANONICAL-PERSISTENCE-2026-04-14)."""
         pass
     
     def create_session(
@@ -101,7 +102,7 @@ class SessionManager:
         try:
             self.storage.execute_query(
                 """
-                INSERT INTO session_tokens 
+                INSERT INTO sys_session_tokens
                 (token_hash, user_id, token_type, expires_at, user_agent, ip_address)
                 VALUES (?, ?, 'access', ?, ?, ?)
                 """,
@@ -118,7 +119,7 @@ class SessionManager:
         try:
             self.storage.execute_query(
                 """
-                INSERT INTO session_tokens 
+                INSERT INTO sys_session_tokens
                 (token_hash, user_id, token_type, expires_at, user_agent, ip_address)
                 VALUES (?, ?, 'refresh', ?, ?, ?)
                 """,
@@ -173,7 +174,7 @@ class SessionManager:
         try:
             # Mark token as revoked (soft delete for audit trail)
             self.storage.execute_query(
-                "UPDATE session_tokens SET revoked = 1 WHERE token_hash = ?",
+                "UPDATE sys_session_tokens SET revoked = 1 WHERE token_hash = ?",
                 (token_hash,)
             )
         except Exception as e:
@@ -213,7 +214,7 @@ class SessionManager:
         try:
             rows = self.storage.execute_query(
                 """
-                SELECT revoked, expires_at FROM session_tokens 
+                SELECT revoked, expires_at FROM sys_session_tokens
                 WHERE token_hash = ? LIMIT 1
                 """,
                 (token_hash,)
@@ -264,7 +265,7 @@ class SessionManager:
             # Store new token
             self.storage.execute_query(
                 """
-                INSERT INTO session_tokens 
+                INSERT INTO sys_session_tokens
                 (token_hash, user_id, token_type, expires_at, user_agent, ip_address)
                 VALUES (?, ?, 'access', ?, ?, ?)
                 """,
@@ -274,7 +275,7 @@ class SessionManager:
             # Update last_used_at for refresh token tracking
             self.storage.execute_query(
                 """
-                UPDATE session_tokens 
+                UPDATE sys_session_tokens
                 SET last_used_at = ? 
                 WHERE user_id = ? AND token_type = 'refresh' AND revoked = 0
                 """,
@@ -310,7 +311,7 @@ class SessionManager:
             rows = self.storage.execute_query(
                 """
                 SELECT id, token_type, expires_at, created_at, ip_address, user_agent
-                FROM session_tokens 
+                FROM sys_session_tokens
                 WHERE user_id = ? AND revoked = 0 AND expires_at > datetime('now')
                 ORDER BY created_at DESC
                 """,
@@ -331,7 +332,7 @@ class SessionManager:
         """
         try:
             self.storage.execute_query(
-                "UPDATE session_tokens SET revoked = 1 WHERE user_id = ?",
+                "UPDATE sys_session_tokens SET revoked = 1 WHERE user_id = ?",
                 (user_id,)
             )
         except Exception as e:

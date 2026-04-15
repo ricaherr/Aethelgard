@@ -4,7 +4,7 @@
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-13 UTC)**: Unificación de Sesiones Forex UTC/DST (SESS-UTC-UNIFY-2026-04-13) · **Session Clock Canónico alineado entre servicio, sensor y MARKET GUARD**.
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-14 UTC)**: DB Backpressure Chain completo (ETI-SRE-DB-BACKPRESSURE-CHAIN-2026-04-14) · EÉPICA E19 cerrada y archivada · Sprint 29 y Sprint 30 cerrados con validate_all 28/28.
 
 ---
 
@@ -49,13 +49,62 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 | **Épica** | E20 — SRE Lock Cascade & Heartbeat Recovery |
 | **Trace_ID** | `E20-SRE-LOCK-CASCADE-2026-04-13` |
 | **Sprints** | 30 |
-| **Completada** | 13 de Abril, 2026 |
+| **Completada** | 14 de Abril, 2026 (extendida desde 13-Abr con ETI-SRE-DB-BACKPRESSURE-CHAIN-2026-04-14) |
 | **Dominios** | 04_DATA_SOVEREIGNTY_INFRA · 10_INFRASTRUCTURE_RESILIENCY |
 | **Objetivo** | Estabilizar la ruta crítica scanner/system_db/audit con serialización estricta y backpressure, restaurando heartbeat hard-fail `<120s` por componente y observabilidad canónica. |
-| **HUs** | HU 10.31 |
+| **HUs** | HU 10.31, HU 10.32 |
 | **Validate_all** | ✅ 28/28 PASSED |
 
-**Resumen ejecutivo**: Se implementó write-path estricto por `db_path`, métricas de latencia transaccional con guard de backpressure en `scan_request`, watchdog OEM con checks heartbeat por componente y corte de fallback runtime a tablas legacy no prefijadas para heartbeat audit. Cierre validado con suites focales (21/21 + 13/13), `validate_all.py` en verde y smoke runtime (`start.py`/`stop.py`) sin errores críticos.
+**Resumen ejecutivo**: Se implementó write-path estricto por `db_path`, métricas de latencia transaccional con guard de backpressure en `scan_request`, watchdog OEM con checks heartbeat por componente y corte de fallback runtime a tablas legacy no prefijadas para heartbeat audit. Extendido el 14-Abr-2026 con: `operation_tag` en `DatabaseManager.transaction()` para trazas por operación lógica (`by_operation` en `get_transaction_metrics()`), nuevo invariante OEM `scan_backpressure_health` (11.º check), `ScanBundle.infra_skip_reason` carrier a través del pipeline, log distinguido INFRA vs negocio en `STAGE_RAW_SIGNAL_GENERATION=0`, y caché TTL-10s en `get_sys_config()`. Cierre validado con suites focales, `validate_all.py` 28/28 y smoke runtime limpios.
+
+---
+
+### E19 — Recuperación Operativa End-to-End (Señal → Ejecución)
+| Campo | Valor |
+|---|---|
+| **Épica** | E19 — Recuperación Operativa End-to-End |
+| **Trace_ID** | `E19-OPERATIONAL-RECOVERY-2026-04-09` |
+| **Sprints** | 29, 30 |
+| **Completada** | 14 de Abril, 2026 |
+| **Dominios** | 05_UNIVERSAL_EXECUTION · 09_INSTITUTIONAL_INTERFACE · 10_INFRASTRUCTURE_RESILIENCY |
+| **Objetivo** | Recuperar la operación comercial completa eliminando regresiones de confidence, desbloqueando el pipeline de señales, reduciendo vetos por CPU y estabilizando cobertura de data providers. |
+| **HUs** | HU 5.4, HU 8.9, HU 9.10, HU 10.27, HU 10.28, HU 10.29, HU 10.30, HU 10.31 |
+| **Validate_all** | ✅ 28/28 PASSED |
+
+**Resumen ejecutivo**: Ocho HUs completadas en Sprints 29-30 restaurando la cadena señal→ejecución: funnel operacional instrumentado con reason codes (HU 5.4), snapshot SSOT DB-backed en estrategias activas (HU 8.9), contrato confidence 0-100 unificado (HU 9.10), guardrail CPU adaptativo (HU 10.27), cobertura de providers por símbolo con backoff (HU 10.28), hotfix contensión SQLite (HU 10.29), hardening contratos runtime (HU 10.30) y cadena backpressure DB con trazas `operation_tag` + OEM `scan_backpressure_health` + `infra_skip_reason` en pipeline (HU 10.31). Sistema validado con 28/28 tests y smoke runtime.
+
+---
+
+### Sprint 30 — HU 10.31: DB Backpressure Chain — Trazas, OEM CRITICAL & Fallback Infra (14-Abr-2026)
+**Trace_ID**: `ETI-SRE-DB-BACKPRESSURE-CHAIN-2026-04-14` | **Épica**: E19 (archivada) | **Estado**: HU completada y archivada
+
+| HU | Descripción | Artefactos clave | Tests |
+|---|---|---|---|
+| **HU 10.31** | Cadena completa de observabilidad y resiliencia ante backpressure de DB en ciclo de scan. (1) `DatabaseManager.transaction()` + `execute_update()` + `execute_many()` reciben `operation_tag` opcional para registrar latencia por operación lógica; `get_transaction_metrics()` retorna `by_operation: {tag: {count, avg_ms, p95_ms, last_ms}}`. (2) `_db_backpressure_state()` evalúa `max(avg_ms, last_ms, p95_ms)` y retorna desglose por operación; `_handle_consecutive_backpressure()` incrementa contador en `sys_config["oem_scan_backpressure_consecutive"]` y emite notificación `SYSTEM_STRESS CRITICAL` con top-3 operaciones lentas al cruzar umbral. (3) OEM: nuevo invariante `scan_backpressure_health` (11.º check) que lee el contador y falla con umbrales configurables. (4) `ScanBundle.infra_skip_reason` carrier infra a través del pipeline; logs distinguen claramente causa INFRA vs causa negocio en `STAGE_RAW_SIGNAL_GENERATION=0`. (5) `get_sys_config()` con caché TTL-10s e invalidación explícita. | `data_vault/database_manager.py`, `core_brain/orchestrators/_cycle_scan.py`, `core_brain/orchestrators/_types.py`, `core_brain/operational_edge_monitor.py`, `core_brain/signal_factory.py`, `core_brain/signal_batch_pipeline.py`, `data_vault/system_db.py`, `tests/test_oem_production_integration.py`, `tests/test_operational_edge_monitor.py`, `tests/test_orchestrator_timeout_guards.py` | cobertura scan_backpressure_health + 28/28 |
+
+**Validación**: cobertura tests focales scan_backpressure_health y infra_skip_reason confirmada · `validate_all.py` **28/28 PASSED** · smoke runtime `start.py`/`stop.py` ejecutado sin errores críticos.
+
+---
+
+### Sprint 32 — HU 8.10: Legacy Table Canonicalization & Prefix Compliance (14-Abr-2026)
+**Trace_ID**: `ETI-SRE-CANONICAL-PERSISTENCE-2026-04-14` | **Épica**: E22 | **Estado**: HU completada y archivada
+
+| HU | Descripción | Artefactos clave | Tests |
+|---|---|---|---|
+| **HU 8.10** | Canonización progresiva de tablas legacy sin prefijo y endurecimiento del snapshot SRE. (1) `data_vault/schema.py`: comentarios CANONICAL/LEGACY explícitos en las dos parejas de tablas; `sys_session_tokens` y `sys_position_metadata` declaradas como SSOT operativo con plan de retiro de sus legacy. (2) `core_brain/api/dependencies/session_manager.py`: 7 sitios de SQL migrados de `session_tokens` → `sys_session_tokens`; docstrings y `_ensure_schema` actualizados. (3) `data_vault/trades_db.py`: `get_position_metadata` y `update_position_metadata` migradas de `position_metadata` → `sys_position_metadata`. (4) `scripts/monitor_snapshot.py`: nuevo `classify_tables()` con tres categorías explícitas (canonical / legacy_compatible / violations) y constante `KNOWN_LEGACY_TABLES`; `get_db_snapshot()` incorpora `table_classification` en el snapshot. | `data_vault/schema.py`, `core_brain/api/dependencies/session_manager.py`, `data_vault/trades_db.py`, `scripts/monitor_snapshot.py`, `tests/test_canonical_persistence_hu8_10.py` | 8/8 focal + 28/28 |
+
+**Validación**: suite focal **8/8 PASSED** (canonicidad de tablas, classify_tables con 5 escenarios, residuos tenant) · `validate_all.py` **28/28 PASSED** · sin regresión en auth/session/metadata confirmado por test_executor_metadata_integration.py y test_auth_gateway.py intactos.
+
+---
+
+### Sprint 32 — HU 10.33: Canonical Heartbeat Observability Alignment (14-Abr-2026)
+**Trace_ID**: `ETI-SRE-OEM-CANONICAL-HEARTBEAT-2026-04-14` | **Épica**: E22 | **Estado**: HU completada y archivada
+
+| HU | Descripción | Artefactos clave | Tests |
+|---|---|---|---|
+| **HU 10.33** | Alineación canónica de observabilidad heartbeat y hardening anti-falsos positivos. (1) `scripts/monitor_snapshot.py` ignora tablas internas `sqlite_*` en `classify_tables` para eliminar violaciones espurias (`sqlite_sequence` y `sqlite_stat*`). (2) `core_brain/position_manager.py` confirma DELETE de metadata corrupta sobre `sys_position_metadata` (canónica), sin escrituras residuales a tabla legacy. (3) OEM heartbeat validado sobre fuentes canónicas (`sys_audit_logs`/`sys_config`) con precedencia de audit cuando es más fresco y estado WARN cuando no hay fuente canónica disponible. | `scripts/monitor_snapshot.py`, `core_brain/position_manager.py`, `core_brain/operational_edge_monitor.py`, `tests/test_canonical_persistence_hu8_10.py`, `tests/test_operational_edge_monitor.py`, `governance/SPRINT.md` | 5/5 focal + 28/28 |
+
+**Validación**: tests focales HU 10.33 **5/5 PASSED** (`test_monitor_snapshot_ignores_sqlite_internal_tables`, `test_position_manager_deletes_metadata_in_canonical_table`, `test_oem_heartbeat_uses_canonical_audit_source_only`, `test_oem_heartbeat_prefers_audit_over_config_when_audit_is_newer`, `test_oem_heartbeat_warns_when_no_canonical_source_has_data`) · `validate_all.py` **28/28 PASSED** · dependencia de `HU 5.5` actualizada a estado desbloqueado en Sprint 32.
 
 ---
 

@@ -21,6 +21,7 @@ async def generate_usr_signals_batch_impl(
     factory: Any,
     scan_results: Dict[str, Dict],
     trace_id: Optional[str] = None,
+    infra_skip_reason: Optional[str] = None,
 ) -> List["Signal"]:
     """
     Process scanner batch data and return flattened generated signals.
@@ -44,6 +45,7 @@ async def generate_usr_signals_batch_impl(
                 "STAGE_RAW_SIGNAL_GENERATION": {"in": 0, "out": 0},
             },
             "reasons": {"no_strategy_engines": stage_scan_in},
+            "infra_skip_reason": infra_skip_reason,
         }
         return []
     logger.info(f"DEBUG: Engines available: {list(factory.strategy_engines.keys())}")
@@ -118,11 +120,19 @@ async def generate_usr_signals_batch_impl(
                 empty_keys.append(f"{key}: df=None")
             elif not symbol:
                 empty_keys.append(f"{key}: symbol=None")
-        logger.warning(
-            "No tasks created: ningún instrumento elegible para señal. "
-            f"scan_results keys: {list(scan_results.keys())}. "
-            f"Problemas detectados: {empty_keys if empty_keys else 'Todos los datos faltan o vacíos.'}"
-        )
+
+        if infra_skip_reason:
+            logger.warning(
+                "[INFRA_CAUSE] STAGE_RAW_SIGNAL_GENERATION=0 — infra_skip_reason=%s. "
+                "Ciclo silenciado por infra, no por lógica de negocio.",
+                infra_skip_reason,
+            )
+        else:
+            logger.warning(
+                "No tasks created: ningún instrumento elegible para señal. "
+                f"scan_results keys: {list(scan_results.keys())}. "
+                f"Problemas detectados: {empty_keys if empty_keys else 'Todos los datos faltan o vacíos.'}"
+            )
         factory.last_funnel_summary = {
             "trace_id": trace_id,
             "timestamp": pd.Timestamp.utcnow().isoformat(),
@@ -131,6 +141,7 @@ async def generate_usr_signals_batch_impl(
                 "STAGE_RAW_SIGNAL_GENERATION": {"in": stage_scan_out, "out": 0},
             },
             "reasons": dict(funnel_reasons),
+            "infra_skip_reason": infra_skip_reason,
         }
         return []
 
@@ -187,6 +198,7 @@ async def generate_usr_signals_batch_impl(
             },
         },
         "reasons": dict(funnel_reasons),
+        "infra_skip_reason": infra_skip_reason,
     }
     if funnel_reasons:
         logger.info(

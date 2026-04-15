@@ -1,6 +1,6 @@
 # AETHELGARD: SPRINT LOG
 
-**Última Actualización**: 13 de Abril, 2026 (ETI-SRE-001 completada con validate_all 28/28)
+**Última Actualización**: 14 de Abril, 2026 (ETI-SRE-DB-BACKPRESSURE-CHAIN-2026-04-14 completada; Sprint 30 cerrado con validate_all 28/28)
 
 > **📋 REGLAS DE EDICIÓN — Leer antes de modificar este documento**
 > - **Propósito**: Diario de ejecución. Cada Sprint referencia una Épica del ROADMAP y las HUs del BACKLOG que ejecuta.
@@ -10,6 +10,113 @@
 > - **Al cerrar Sprint**: snapshot de métricas + actualizar HUs en BACKLOG a `[DONE]` + archivar en SYSTEM_LEDGER.
 > - **PROHIBIDO**: `[x]`, `[QA]`, `[IN_PROGRESS]`, `[CERRADO]`, `[ACTIVO]`, `✅ COMPLETADA`
 > - **Framework completo**: `.ai_orchestration_protocol.md` Sección 4.
+
+---
+
+# SPRINT 32: E22 — CANONICAL PERSISTENCE & RUNTIME FUNNEL RECOVERY — [TODO]
+
+**Inicio**: 14 de Abril, 2026
+**Fin**: —
+**Objetivo**: Ejecutar el primer bloque P0 derivado de la auditoría SRE del 14-Abr-2026: canonizar tablas legacy sin prefijo, alinear heartbeat observability a fuente única y dejar el funnel runtime preparado para una segunda corrección enfocada en filtros de estrategia.
+**Épica**: E22 (Canonical Persistence & Runtime Funnel Recovery) | **Trace_ID**: E22-CANONICAL-PERSISTENCE-FUNNEL-2026-04-14
+**Dominios**: 08_DATA_SOVEREIGNTY · 10_INFRASTRUCTURE_RESILIENCY · 05_UNIVERSAL_EXECUTION
+
+## 📋 Tareas del Sprint
+
+- [DONE] **HU 8.10: Legacy Table Canonicalization & Prefix Compliance** *(🔴 PRIORIDAD MÁXIMA — Desbloqueante estructural)*
+  - Cortar uso operativo de `session_tokens` y `position_metadata` como tablas canónicas, preservando migración aditiva hacia `sys_session_tokens` y `sys_position_metadata`.
+  - Auditar y reportar tablas extra legacy en tenants (`notifications`, `usr_performance` u otras) sin destruir evidencia histórica.
+  - Endurecer `scripts/monitor_snapshot.py` para distinguir explícitamente: canónico, legacy compatible y violación de convención.
+  - Añadir TDD para: esquema canónico global, detección de tablas extra tenant y snapshot SRE sin falsos `ESTADO DESCONOCIDO` por tablas legacy.
+  - Gate obligatorio: `python scripts/validate_all.py` = 100% PASS.
+  - Smoke obligatorio: `python start.py` + `python stop.py` sin regresión de auth/session/metadata.
+
+- [DONE] **HU 10.33: Canonical Heartbeat Observability Alignment** *(Trace_ID: ETI-SRE-OEM-CANONICAL-HEARTBEAT-2026-04-14)*
+  - `monitor_snapshot.py`: `classify_tables` filtra `sqlite_*` vía `_SQLITE_INTERNAL_TABLES` — sin falsos positivos de violation.
+  - `position_manager.py`: DELETE de metadata corrupta opera sobre `sys_position_metadata` (canónico). Sin operaciones residuales contra `position_metadata` legacy.
+  - `operational_edge_monitor.py`: `_check_component_heartbeat` evalúa heartbeat exclusivamente desde `sys_audit_logs` / `sys_config` — fuentes canónicas confirmadas.
+  - Tests nuevos: `test_monitor_snapshot_ignores_sqlite_internal_tables`, `test_position_manager_deletes_metadata_in_canonical_table`, `test_oem_heartbeat_uses_canonical_audit_source_only` (+ 2 variantes). Todos PASS.
+  - Gate: `validate_all.py` 28/28 PASS.
+
+- [TODO] **HU 5.5: Runtime Funnel Recovery from SSOT Strategy Filters** *(Desbloqueado — HU 10.33 DONE)*
+  - Reauditar `sys_strategies.affinity_scores`, `market_whitelist` y símbolos habilitados una vez estabilizada la capa SSOT.
+  - Separar bloqueo por configuración legítima versus regresión funcional del pipeline.
+
+## ETI SPEC — HU 8.10: Legacy Table Canonicalization & Prefix Compliance
+
+**Trace_ID**: `ETI-SRE-CANONICAL-PERSISTENCE-2026-04-14`
+**Archivos afectados**:
+- `data_vault/schema.py`
+- `data_vault/system_db.py`
+- `scripts/monitor_snapshot.py`
+- `tests/` (suite nueva focal para migración/snapshot)
+
+### 1. Problema
+
+La auditoría SRE del 14-Abr-2026 confirmó incumplimiento real de la convención SSOT de prefijos `sys_*`/`usr_*`: el esquema y la DB global siguen exponiendo `session_tokens` y `position_metadata` como tablas legacy sin prefijo, mientras que tenants mantienen residuos adicionales (`notifications`, `usr_performance`). El sistema valida en verde, pero governance y observabilidad siguen ambiguos.
+
+### 2. Análisis Técnico / Decisiones de Diseño
+
+Alternativas evaluadas:
+- Eliminar tablas legacy inmediatamente: riesgoso, puede romper compatibilidad runtime o migraciones existentes.
+- Mantenerlas indefinidamente como compatibles silenciosas: preserva funcionamiento pero perpetúa deriva y auditorías ambiguas.
+- Canonización progresiva con compatibilidad explícita: migrar a tablas prefijadas, cortar nuevas escrituras/lecturas operativas sobre legacy, y conservar detección/reporting durante transición.
+
+Se elige canonización progresiva porque corrige la raíz sin introducir una ruptura brusca del runtime.
+
+### 3. Solución
+
+1. Consolidar `sys_session_tokens` y `sys_position_metadata` como autoridad canónica.
+2. Mantener migración aditiva desde tablas legacy solo como bootstrap de compatibilidad.
+3. Hacer que snapshot y utilidades SRE reporten claramente tres estados: canónico, legacy-compatible y violación.
+4. Detectar residuos tenant fuera del esquema actual y dejarlos visibles en auditoría para remediación controlada.
+
+### 4. Cambios por Archivo
+
+- `data_vault/schema.py` → endurecer inicialización/migración para declarar las tablas prefijadas como canónicas y acotar el rol de legacy.
+- `data_vault/system_db.py` → revisar lecturas/escrituras de heartbeat/session/position metadata para usar tablas canónicas.
+- `scripts/monitor_snapshot.py` → añadir clasificación explícita de tablas legacy y discrepancias schema-vs-db.
+- `tests/...` → nuevos tests para migración canónica y snapshot audit-friendly.
+
+### 5. Criterios de Aceptación (AC)
+
+1. Dado un arranque sobre DB existente, cuando corran schema + migraciones, entonces `sys_session_tokens` y `sys_position_metadata` quedan presentes y pobladas sin pérdida de datos.
+2. Dado un snapshot SRE, cuando inspecciona la DB global y tenants, entonces reporta tablas legacy como compatibilidad o violación explícita, no como estado ambiguo.
+3. Dado runtime normal, cuando se consultan rutas de session/metadata, entonces no dependen de tablas legacy como autoridad principal.
+4. Dado `validate_all.py`, cuando termina, entonces mantiene 100% PASS.
+5. Dado `start.py` y `stop.py`, cuando se ejecutan, entonces no aparece regresión en auth/session/open-position metadata.
+
+### 6. Tests (TDD)
+
+| Test | Escenario cubierto |
+|---|---|
+| `test_schema_exposes_prefixed_session_and_position_tables_as_canonical` | canonicidad de tablas prefijadas |
+| `test_monitor_snapshot_reports_legacy_tables_explicitly` | snapshot sin ambigüedad SRE |
+| `test_tenant_db_legacy_tables_are_flagged_not_silently_accepted` | residuos tenant visibles en auditoría |
+
+### 7. Riesgos
+
+| Riesgo | Mitigación |
+|---|---|
+| Ruptura de compatibilidad con rutas legacy aún activas | transición progresiva + tests focales sobre session y position metadata |
+| Falsos positivos en auditoría tenant | clasificar explícitamente legacy conocido vs tabla desconocida |
+| Cambios parciales que dejen snapshot y runtime desalineados | incluir `monitor_snapshot.py` en la misma HU y validar start/stop |
+
+### 8. Orden de Ejecución
+
+1. Crear tests focales de migración/snapshot.
+2. Endurecer `schema.py` y `system_db.py` hacia canonicidad prefijada.
+3. Actualizar `monitor_snapshot.py` con clasificación explícita.
+4. Ejecutar pytest focal.
+5. Ejecutar `python scripts/validate_all.py`.
+6. Ejecutar `python start.py` + `python stop.py`.
+
+## 🔒 Gate de Ejecución (obligatorio para mover a [DONE])
+
+- `validate_all.py` = 100% PASS
+- `start.py` operativo sin regresión de sesiones/metadata
+- `stop.py` cierre limpio sin locks residuales
+- Snapshot posterior confirma reducción de ambigüedad y clasificación explícita de legacy
 
 ---
 
@@ -33,7 +140,7 @@
 
 ---
 
-# SPRINT 30: E20 — SRE LOCK CASCADE & HEARTBEAT RECOVERY — [TODO]
+# SPRINT 30: E20 — SRE LOCK CASCADE & HEARTBEAT RECOVERY — [DONE]
 
 **Inicio**: 13 de Abril, 2026
 **Fin**: —
@@ -63,10 +170,12 @@
   - Regresión adicional: `pytest tests/test_sqlite_contention_hotfix.py tests/test_heartbeat_audit_trail.py -q` = 13/13 PASS.
   - Gate obligatorio: `python scripts/validate_all.py` = 28/28 PASS.
   - Smoke runtime: `python start.py` arranque operativo + `python stop.py` cierre limpio (3 procesos detenidos, lockfile eliminado, WAL checkpoints OK).
+  - **Trace_ID ETI (14-Abr-2026)**: `ETI-SRE-DB-BACKPRESSURE-CHAIN-2026-04-14` — Extensión: trazas `operation_tag` en `DatabaseManager`, check OEM `scan_backpressure_health` (11.u00ba invariante), `infra_skip_reason` en `ScanBundle`/pipeline, caché TTL-10s en `get_sys_config()`.
+  - Verificación focal extensión: `pytest tests/test_oem_production_integration.py tests/test_operational_edge_monitor.py tests/test_orchestrator_timeout_guards.py -q` = cobertura scan_backpressure_health confirmada; `python scripts/validate_all.py` = 28/28 PASS.
 
 ---
 
-# SPRINT 29: E19 — RECUPERACIÓN OPERATIVA END-TO-END — [TODO]
+# SPRINT 29: E19 — RECUPERACIÓN OPERATIVA END-TO-END — [DONE]
 
 **Inicio**: 9 de Abril, 2026
 **Fin**: —

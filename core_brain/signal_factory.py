@@ -429,22 +429,30 @@ class SignalFactory:
             logger.error(f"Error processing valid signal for {signal.symbol}: {e}")
 
     async def generate_usr_signals_batch(
-        self, scan_results: Dict[str, Dict], trace_id: Optional[str] = None
+        self,
+        scan_results: Dict[str, Dict],
+        trace_id: Optional[str] = None,
+        infra_skip_reason: Optional[str] = None,
     ) -> List[Signal]:
         """
         Procesa un lote de resultados del ScannerEngine y genera señales.
-        
+
         FASE 2.5: Aplica confluencia multi-timeframe para reforzar/penalizar señales.
         FASE 4: Filtra signals por usr_assets_cfg (solo genera para assets habilitados).
 
         Args:
-            scan_results: Dict con "symbol|timeframe" -> {"regime": MarketRegime, "df": DataFrame, "symbol": str, "timeframe": str}
+            scan_results:      Dict "symbol|timeframe" -> {regime, df, symbol, timeframe}
+            trace_id:          Trazabilidad de ciclo.
+            infra_skip_reason: Causa infra que bloqueó el scan (p. ej. "backpressure_db_latency").
+                               Cuando presente, el funnel distingue silencio infra de silencio negocio.
 
         Returns:
             Lista plana de todas las señales generadas (con confluencia aplicada).
         """
         try:
-            return await generate_usr_signals_batch_impl(self, scan_results, trace_id)
+            return await generate_usr_signals_batch_impl(
+                self, scan_results, trace_id, infra_skip_reason
+            )
         except Exception as e:
             logger.error(f"CRITICAL ERROR in generate_usr_signals_batch: {e}", exc_info=True)
             return []

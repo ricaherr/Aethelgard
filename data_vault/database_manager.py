@@ -26,6 +26,9 @@ from typing import Optional, Dict, Any, Generator
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
+# Sentinel value for "no operation tag" — avoids None ambiguity in metrics dicts.
+_NO_TAG = "__untagged__"
+
 logger = logging.getLogger(__name__)
 
 
@@ -62,6 +65,9 @@ class DatabaseManager:
         self._tx_latency_samples: Dict[str, deque[float]] = {}
         self._tx_last_latency_ms: Dict[str, float] = {}
         self._tx_metrics_window_size: int = 120
+        # Per-operation-tag latency samples — key: operation_tag
+        self._op_latency_samples: Dict[str, deque[float]] = {}
+        self._op_last_latency_ms: Dict[str, float] = {}
 
         # PRAGMA Configuration (SSOT)
         self._pragma_config: Dict[str, Any] = {
@@ -184,16 +190,22 @@ class DatabaseManager:
         return conn
 
     @contextmanager
-    def transaction(self, db_path: str) -> Generator[sqlite3.Connection, None, None]:
+    def transaction(
+        self, db_path: str, operation_tag: str = _NO_TAG
+    ) -> Generator[sqlite3.Connection, None, None]:
         """
-        Context manager for transactions.
-        Handles commit/rollback automatically.
+        Context manager for transactions with optional origin tagging.
+
+        Args:
+            db_path:       Target database path.
+            operation_tag: Logical operation name for latency tracing
+                           (e.g. "update_sys_config", "log_audit_event").
+                           Defaults to "__untagged__" when not supplied.
 
         Usage:
-            with db_manager.transaction(db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute("INSERT ...")
-                # Auto-commits on exit
+            with db_manager.transaction(db_path, operation_tag="persist_scan_kpi") as conn:
+                conn.cursor().execute("INSERT ...")
+                # Auto-commits on exit, latency recorded under the tag.
         """
         conn = self.get_connection(db_path)
         with self._pool_lock:
@@ -210,7 +222,7 @@ class DatabaseManager:
                 raise
             finally:
                 elapsed_ms = (time.perf_counter() - started) * 1000.0
-                self._record_transaction_latency(db_path, elapsed_ms)
+                self._record_transaction_latency(db_path, elapsed_ms, operation_tag)
 
     def execute_query(self, db_path: str, sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
         """
@@ -246,20 +258,23 @@ class DatabaseManager:
                     except Exception:
                         logger.debug("[DatabaseManager] Failed to close query cursor", exc_info=True)
 
-    def execute_update(self, db_path: str, sql: str, params: tuple[Any, ...] = ()) -> int:
+    def execute_update(
+        self, db_path: str, sql: str, params: tuple[Any, ...] = (), operation_tag: str = _NO_TAG
+    ) -> int:
         """
         Execute INSERT/UPDATE/DELETE (write operation).
         Auto-commits.
 
         Args:
-            db_path: Database path
-            sql: SQL statement
-            params: Parameters
+            db_path:       Database path
+            sql:           SQL statement
+            params:        Parameters
+            operation_tag: Logical operation name for latency tracing.
 
         Returns:
             rows_affected (for UPDATE/DELETE) or last_insert_rowid() (for INSERT)
         """
-        with self.transaction(db_path) as conn:
+        with self.transaction(db_path, operation_tag=operation_tag) as conn:
             cursor = conn.cursor()
             cursor.execute(sql, params)
             # Return affected rows for UPDATE/DELETE, or last insert id
@@ -268,14 +283,21 @@ class DatabaseManager:
             else:
                 return cursor.rowcount if cursor.rowcount is not None else 0
 
-    def execute_many(self, db_path: str, sql: str, param_list: list[tuple[Any, ...]]) -> int:
+    def execute_many(
+        self,
+        db_path: str,
+        sql: str,
+        param_list: list[tuple[Any, ...]],
+        operation_tag: str = _NO_TAG,
+    ) -> int:
         """
         Execute batch INSERT/UPDATE/DELETE statements in a single transaction.
 
         Args:
-            db_path: Database path
-            sql: SQL statement
-            param_list: List of parameter tuples
+            db_path:       Database path
+            sql:           SQL statement
+            param_list:    List of parameter tuples
+            operation_tag: Logical operation name for latency tracing.
 
         Returns:
             Number of rows affected (best effort from sqlite cursor.rowcount)
@@ -283,7 +305,7 @@ class DatabaseManager:
         if not param_list:
             return 0
 
-        with self.transaction(db_path) as conn:
+        with self.transaction(db_path, operation_tag=operation_tag) as conn:
             cursor = conn.cursor()
             cursor.executemany(sql, param_list)
             return cursor.rowcount if cursor.rowcount is not None else 0
@@ -395,10 +417,13 @@ class DatabaseManager:
         """Hook for SQLite concurrency observability; currently logs at debug level."""
         logger.debug("[DatabaseManager] sqlite_concurrency_event=%s payload=%s", event_name, payload)
 
-    def _record_transaction_latency(self, db_path: str, latency_ms: float) -> None:
-        """Store rolling transaction latency metrics per database path."""
+    def _record_transaction_latency(
+        self, db_path: str, latency_ms: float, operation_tag: str = _NO_TAG
+    ) -> None:
+        """Store rolling transaction latency metrics per db_path and per operation_tag."""
         bounded_latency = max(0.0, float(latency_ms))
         with self._tx_metrics_lock:
+            # Per-db-path bucket
             bucket = self._tx_latency_samples.get(db_path)
             if bucket is None:
                 bucket = deque(maxlen=self._tx_metrics_window_size)
@@ -406,8 +431,26 @@ class DatabaseManager:
             bucket.append(bounded_latency)
             self._tx_last_latency_ms[db_path] = bounded_latency
 
+            # Per-operation-tag bucket (origin tracing)
+            tag = operation_tag or _NO_TAG
+            op_bucket = self._op_latency_samples.get(tag)
+            if op_bucket is None:
+                op_bucket = deque(maxlen=self._tx_metrics_window_size)
+                self._op_latency_samples[tag] = op_bucket
+            op_bucket.append(bounded_latency)
+            self._op_last_latency_ms[tag] = bounded_latency
+
     def get_transaction_metrics(self, db_path: Optional[str] = None) -> Dict[str, Any]:
-        """Return rolling transaction latency metrics for observability/backpressure."""
+        """
+        Return rolling transaction latency metrics for observability/backpressure.
+
+        Shape:
+            {
+                "global":      {"count": N, "avg_ms": X, "p95_ms": Y, "last_ms": Z},
+                "by_db_path":  {path: {...}},
+                "by_operation": {tag: {"count": N, "avg_ms": X, "p95_ms": Y, "last_ms": Z}},
+            }
+        """
 
         def _build_metrics(samples: list[float], last_ms: float) -> Dict[str, Any]:
             if not samples:
@@ -435,10 +478,14 @@ class DatabaseManager:
             result: Dict[str, Any] = {
                 "global": _build_metrics(global_samples, float(last_global)),
                 "by_db_path": {},
+                "by_operation": {},
             }
             for path, bucket in self._tx_latency_samples.items():
                 last = float(self._tx_last_latency_ms.get(path, 0.0))
                 result["by_db_path"][path] = _build_metrics(list(bucket), last)
+            for tag, op_bucket in self._op_latency_samples.items():
+                last = float(self._op_last_latency_ms.get(tag, 0.0))
+                result["by_operation"][tag] = _build_metrics(list(op_bucket), last)
             return result
 
     def set_pragma_value(self, key: str, value: Any) -> None:

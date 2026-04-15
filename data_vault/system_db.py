@@ -1,6 +1,7 @@
 import json
 import logging
 import sqlite3
+import time
 import uuid
 from typing import Dict, List, Optional, Any, cast
 from datetime import datetime, timezone
@@ -9,11 +10,54 @@ from .base_repo import BaseRepository
 
 logger = logging.getLogger(__name__)
 
+# TTL for the in-process sys_config read cache.
+# A cycle runs in 1–30 s; 10 s is short enough to stay fresh and long enough
+# to collapse the 3–5 redundant SELECT-all reads that happen each cycle.
+_SYS_CONFIG_CACHE_TTL_SECONDS: float = 10.0
+
+
 class SystemMixin(BaseRepository):
-    """Mixin for System State, Stats, Data Providers and Learning operations."""
+    """
+    Mixin for System State, Stats, Data Providers and Learning operations.
+
+    ## Table inventory & migration status
+    ─────────────────────────────────────────────────────────────────────
+    ACTIVE (canonical, SSOT):
+        sys_config            — key/value store; hot path, accessed every cycle.
+        sys_audit_logs        — append-only audit/error journal.
+        sys_data_providers    — broker/feed connector registry.
+        sys_broker_accounts   — execution account registry.
+        sys_strategies        — strategy metadata + backtest scores.
+        sys_signal_ranking    — live ranking scores per strategy.
+        sys_market_pulses     — latest market regime snapshot per symbol|tf.
+        sys_signals           — generated signal log (legacy name retained for compat).
+
+    LEGACY / RETIREMENT CANDIDATES:
+        usr_tuning_adjustments — manual tuning history; superseded by AI Gateway
+                                 recommendations. No active writer since Sprint 5.
+                                 Migration plan: archive to JSON export and DROP.
+        usr_edge_learning      — free-form learning text; superseded by structured
+                                 sys_audit_logs + OEM repair flags.
+                                 Migration plan: read-only retention 90 days, then DROP.
+        sys_notifications      — notifications currently read by the React UI.
+                                 Will be replaced by a proper event bus (ETI-EVENTS-001).
+                                 DO NOT DROP until React migration is complete.
+    ─────────────────────────────────────────────────────────────────────
+    """
+
+    # ── sys_config read-cache (process-local, short TTL) ──────────────────────
+    # Avoids 3–5 redundant full-table SELECTs within a single orchestrator cycle.
+    # Invalidated immediately on every update_sys_config() call.
+    _sys_config_cache: Optional[Dict[str, Any]] = None
+    _sys_config_cache_ts: float = 0.0
+
+    def _invalidate_sys_config_cache(self) -> None:
+        """Invalidate the in-process sys_config cache."""
+        self._sys_config_cache = None
+        self._sys_config_cache_ts = 0.0
 
     def update_sys_config(self, new_state: dict[str, Any]) -> None:
-        """Update system state in database"""
+        """Update system state in database and invalidate the read cache."""
         def _update(conn: sqlite3.Connection, new_state: dict[str, Any]) -> None:
             cursor = conn.cursor()
             for key, value in new_state.items():
@@ -27,20 +71,39 @@ class SystemMixin(BaseRepository):
                         INSERT OR REPLACE INTO sys_config (key, value)
                         VALUES (?, ?)
                     """, (key, json.dumps(value)))
-        
+
         try:
             self._execute_serialized(_update, new_state)
+            self._invalidate_sys_config_cache()
         except Exception as e:
             logger.error(f"Error updating system state: {e}")
 
-    def get_sys_config(self) -> Dict[str, Any]:
-        """Get current system state from database"""
+    def get_sys_config(self, bypass_cache: bool = False) -> Dict[str, Any]:
+        """
+        Get current system state from database.
+
+        Uses a short-TTL in-process cache to avoid redundant full-table reads
+        within the same orchestrator cycle.  The cache is invalidated on every
+        successful update_sys_config() write.
+
+        Args:
+            bypass_cache: When True, always reads from DB (e.g. for health checks
+                          or external-process scenarios).
+        """
+        now = time.monotonic()
+        if (
+            not bypass_cache
+            and self._sys_config_cache is not None
+            and (now - self._sys_config_cache_ts) < _SYS_CONFIG_CACHE_TTL_SECONDS
+        ):
+            return self._sys_config_cache
+
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
             cursor.execute("SELECT key, value FROM sys_config")
             rows = cursor.fetchall()
-            state = {}
+            state: Dict[str, Any] = {}
             for row in rows:
                 raw_value = row['value']
                 if raw_value is None:
@@ -51,6 +114,9 @@ class SystemMixin(BaseRepository):
                     state[row['key']] = json.loads(raw_value)
                 except (json.JSONDecodeError, TypeError):
                     state[row['key']] = raw_value
+            # Populate cache
+            self._sys_config_cache = state
+            self._sys_config_cache_ts = now
             return state
         finally:
             # FIX-PERSISTENT-CONN-POOL: NEVER close pooled connections

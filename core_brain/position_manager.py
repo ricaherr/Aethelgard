@@ -1223,7 +1223,7 @@ class PositionManager:
                 try:
                     conn = self.storage._get_conn()
                     cursor = conn.cursor()
-                    cursor.execute("DELETE FROM position_metadata WHERE ticket = ?", (ticket,))
+                    cursor.execute("DELETE FROM sys_position_metadata WHERE ticket = ?", (ticket,))
                     conn.commit()
                     self.storage._close_conn(conn)
                     logger.info(f"Deleted corrupted metadata for position {ticket}")

@@ -509,16 +509,19 @@ class TradesMixin(BaseRepository):
     # ── Position Metadata ─────────────────────────────────────────────────────
 
     def get_position_metadata(self, ticket: int) -> Optional[Dict[str, Any]]:
-        """Get metadata for a specific position/trade by ticket. Returns None if not found."""
+        """Get metadata for a specific position/trade by ticket. Returns None if not found.
+
+        Reads from sys_position_metadata (canonical). Trace_ID: ETI-SRE-CANONICAL-PERSISTENCE-2026-04-14
+        """
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='position_metadata'"
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='sys_position_metadata'"
             )
             if not cursor.fetchone():
                 return None
-            cursor.execute("SELECT * FROM position_metadata WHERE ticket = ?", (ticket,))
+            cursor.execute("SELECT * FROM sys_position_metadata WHERE ticket = ?", (ticket,))
             row = cursor.fetchone()
             if not row:
                 return None
@@ -534,7 +537,10 @@ class TradesMixin(BaseRepository):
             self._close_conn(conn)
 
     def update_position_metadata(self, ticket: int, metadata: Dict[str, Any]) -> bool:
-        """Save or update position metadata for monitoring. Merges with existing data."""
+        """Save or update position metadata for monitoring. Merges with existing data.
+
+        Writes to sys_position_metadata (canonical). Trace_ID: ETI-SRE-CANONICAL-PERSISTENCE-2026-04-14
+        """
         import json as _json
 
         conn = self._get_conn()
@@ -544,7 +550,7 @@ class TradesMixin(BaseRepository):
             merged = {**(existing or {}), **metadata, "ticket": ticket}
 
             cursor.execute("""
-                REPLACE INTO position_metadata
+                REPLACE INTO sys_position_metadata
                 (ticket, symbol, entry_price, entry_time, direction, sl, tp, volume,
                  initial_risk_usd, entry_regime, timeframe, strategy, data)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
