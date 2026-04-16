@@ -45,11 +45,20 @@ EXCLUDED_PARTS = {
 ALLOWED_CONNECT_FILES = {
     "data_vault/database_manager.py",
     "data_vault/drivers/sqlite_driver.py",
+    # Schema provisioning files manage DB lifecycle, not runtime write paths.
+    "data_vault/schema_provision.py",
 }
 
 ALLOWED_COMMIT_FILES = {
     "data_vault/database_manager.py",
     "data_vault/drivers/sqlite_driver.py",
+    # Schema provisioning/DDL/migration files manage their own transaction boundaries
+    # during DB setup — they are not runtime write paths and legitimately need
+    # direct commit control (e.g. intermediate commits for SQLite table recreations).
+    "data_vault/schema_ddl.py",
+    "data_vault/schema_migrations.py",
+    "data_vault/schema_seeds.py",
+    "data_vault/schema_provision.py",
 }
 
 DEFAULT_BASELINE = Path("governance/baselines/runtime_persistence_baseline.json")

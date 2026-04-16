@@ -118,9 +118,10 @@ def bootstrap_tenant_template(global_conn: sqlite3.Connection, mode: str = "manu
     try:
         logger.info("[TEMPLATE] Creating tenant template DB...")
         template_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Create new template DB
-        template_conn = sqlite3.connect(str(template_path))
+
+        # Use DatabaseManager so all connections go through the pool (SSOT).
+        from .database_manager import get_database_manager
+        template_conn = get_database_manager().get_connection(str(template_path))
         template_cursor = template_conn.cursor()
         
         # Get list of usr_* tables from global DB
@@ -133,7 +134,6 @@ def bootstrap_tenant_template(global_conn: sqlite3.Connection, mode: str = "manu
         
         if not usr_tables:
             logger.warning("[TEMPLATE] No usr_* tables found in global DB")
-            template_conn.close()
             return False
         
         logger.info(f"[TEMPLATE] Copying {len(usr_tables)} usr_* tables to template...")
@@ -170,8 +170,8 @@ def bootstrap_tenant_template(global_conn: sqlite3.Connection, mode: str = "manu
             logger.debug(f"[TEMPLATE] Copied {table_name}: {len(rows)} rows")
         
         template_conn.commit()
-        template_conn.close()
-        
+        # NOTE: DO NOT close template_conn — DatabaseManager owns the lifecycle.
+
         # Mark as done in global config
         if mode == "manual":
             cursor.execute(
