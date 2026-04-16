@@ -4,7 +4,7 @@
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-14 UTC)**: DB Backpressure Chain completo (ETI-SRE-DB-BACKPRESSURE-CHAIN-2026-04-14) · EÉPICA E19 cerrada y archivada · Sprint 29 y Sprint 30 cerrados con validate_all 28/28.
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-16 UTC)**: ETI-2 EDGE Resilience Improvements completo · Auto-tuning de busy_timeout (DBPolicyTuner) · Fallback read-only automático ante degradación · Sistema de alertas multi-canal (AlertingService) · Check OEM db_lock_rate_anomaly · **37/37 tests nuevos PASSED · 26/26 tests de regresión PASSED**.
 
 ---
 
@@ -26,6 +26,22 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 ---
 
 ## 🏛️ ÉPICAS ARCHIVADAS
+
+### E23 — DB Lock Recovery Refactor
+| Campo | Valor |
+|---|---|
+| **Épica** | E23 — DB Lock Recovery Refactor |
+| **Trace_ID** | `DBLock_Recovery_Refactor_2026-04-16` |
+| **Sprints** | 33 |
+| **Completada** | 16 de Abril, 2026 |
+| **Dominios** | 04_DATA_SOVEREIGNTY_INFRA · 10_INFRASTRUCTURE_RESILIENCY |
+| **Objetivo** | Desacoplar la lógica de recovery de locks del driver y centralizar la orquestación en DatabaseManager vía patrones Strategy + Facade |
+| **HUs** | ETI DBLock_Recovery_Refactor_2026-04-16 |
+| **Validate_all** | ✅ 16/16 tests focales PASSED · contrato driver_contract 9/9 PASSED |
+
+**Resumen ejecutivo**: Se definió el protocolo `IDatabaseRecoveryStrategy` (+ `RecoveryContext` / `RecoveryResult`) en `data_vault/drivers/interface.py`. `SQLiteDriver` implementa la interfaz con estrategia de dos fases: WAL checkpoint → reconnect, auto-registrándose en `DatabaseManager` al inicializarse. `DatabaseManager` expone `recover_from_lock()` (orquestación, métricas, degradación), `register_recovery_strategy()`, `is_degraded()`, `clear_degraded()` y `get_recovery_metrics()`. El método `_with_retry()` del driver invoca recovery automáticamente al agotar reintentos y ejecuta un intento post-recovery antes de propagar el error. Tests TDD cubren: clasificación de errores, checkpoint exitoso, fallback reconnect, degradación controlada, métricas, idempotencia de degradación y concurrencia de 10 threads.
+
+---
 
 ### E22 — Canonical Persistence & Runtime Funnel Recovery
 | Campo | Valor |

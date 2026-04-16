@@ -26,6 +26,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from data_vault.storage import StorageManager
+from utils.alerting import Alert, AlertingService, AlertSeverity
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,8 @@ class OperationalEdgeMonitor(threading.Thread):
         storage: StorageManager,
         shadow_storage: Optional[Any] = None,
         interval_seconds: int = 300,
+        alerting_service: Optional[AlertingService] = None,
+        database_manager: Optional[Any] = None,
     ) -> None:
         super().__init__(daemon=True)
         self.storage = storage
@@ -85,6 +88,10 @@ class OperationalEdgeMonitor(threading.Thread):
         self.last_checked_at: Optional[str] = None
         self._stagnation_alert_cache: Dict[str, str] = {}
         self._started_at_utc = datetime.now(timezone.utc)
+        # ETI: sistema de alertas proactivas (opcional, usa LOG_ONLY si no se inyecta)
+        self._alerting: AlertingService = alerting_service or AlertingService()
+        # ETI: DatabaseManager inyectado para evitar acoplamiento al singleton global
+        self._database_manager: Optional[Any] = database_manager
 
     # ── Thread interface ──────────────────────────────────────────────────────
 
@@ -137,6 +144,8 @@ class OperationalEdgeMonitor(threading.Thread):
                     )
                 except Exception as exc:
                     logger.error("[OPS-EDGE] Could not persist violation record: %s", exc)
+                # ETI: despachar alertas proactivas ante eventos críticos
+                self._dispatch_critical_alerts(failing, warnings, results)
             else:
                 logger.info(
                     "[OPS-EDGE] All checks passed (warnings=%d): %s",
@@ -167,6 +176,7 @@ class OperationalEdgeMonitor(threading.Thread):
             "orchestrator_heartbeat": self._check_orchestrator_heartbeat,
             "shadow_stagnation": self._check_shadow_stagnation,
             "scan_backpressure_health": self._check_scan_backpressure_health,
+            "db_lock_rate_anomaly": self._check_db_lock_rate_anomaly,
         }
         results = {}
         for name, fn in checks.items():
@@ -925,6 +935,112 @@ class OperationalEdgeMonitor(threading.Thread):
             CheckStatus.OK,
             f"DB backpressure: {consecutive} ciclo(s) reciente(s) — dentro del rango aceptable",
         )
+
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # ETI: Check db_lock_rate_anomaly
+    # ─────────────────────────────────────────────────────────────────────────
+
+    DB_LOCK_RATE_WARN_PER_MIN: float = 5.0
+    DB_LOCK_RATE_FAIL_PER_MIN: float = 15.0
+
+    def _check_db_lock_rate_anomaly(self) -> CheckResult:
+        """
+        Detecta tasa anómala de eventos de lock/busy en el DatabaseManager.
+
+        Lee la tasa desde el auto-tuner del DatabaseManager cuando está disponible.
+        Usa el DatabaseManager inyectado en __init__; si no se inyectó, usa el singleton.
+        FAIL cuando supera el umbral crítico.
+        WARN cuando supera el umbral de advertencia.
+        """
+        try:
+            mgr = self._database_manager
+            if mgr is None:
+                from data_vault.database_manager import get_database_manager
+                mgr = get_database_manager()
+            tune_status = mgr.get_auto_tune_status()
+        except Exception as exc:
+            return CheckResult(CheckStatus.WARN, f"No se pudo leer estado del tuner: {exc}")
+
+        rates: Dict[str, float] = tune_status.get("lock_rates_per_min", {})  # type: ignore[assignment]
+        read_only_dbs: List[str] = tune_status.get("read_only_dbs", [])  # type: ignore[assignment]
+
+        if read_only_dbs:
+            return CheckResult(
+                CheckStatus.FAIL,
+                f"BDs en modo SOLO-LECTURA por recovery fallido: {read_only_dbs}",
+            )
+
+        if not rates:
+            return CheckResult(CheckStatus.OK, "Sin historial de eventos de lock registrados")
+
+        max_rate_db = max(rates, key=lambda k: rates[k])
+        max_rate = rates[max_rate_db]
+
+        if max_rate >= self.DB_LOCK_RATE_FAIL_PER_MIN:
+            return CheckResult(
+                CheckStatus.FAIL,
+                f"Tasa de lock crítica: {max_rate:.1f} eventos/min en {max_rate_db} "
+                f"(umbral={self.DB_LOCK_RATE_FAIL_PER_MIN})",
+            )
+        if max_rate >= self.DB_LOCK_RATE_WARN_PER_MIN:
+            return CheckResult(
+                CheckStatus.WARN,
+                f"Tasa de lock elevada: {max_rate:.1f} eventos/min en {max_rate_db} "
+                f"(umbral warn={self.DB_LOCK_RATE_WARN_PER_MIN})",
+            )
+        return CheckResult(
+            CheckStatus.OK,
+            f"Tasa de lock normal: {max_rate:.1f} eventos/min en {max_rate_db}",
+        )
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # ETI: Despacho de alertas proactivas
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # Checks que generan alerta CRITICAL (no solo log)
+    _CRITICAL_ALERT_CHECKS = {"orchestrator_heartbeat", "db_lock_rate_anomaly"}
+
+    def _dispatch_critical_alerts(
+        self,
+        failing: List[str],
+        warnings: List[str],
+        results: Dict[str, CheckResult],
+    ) -> None:
+        """
+        Despacha alertas a través del AlertingService para checks críticos.
+
+        Severity CRITICAL: si >= 2 checks fallan o es un heartbeat/lock anomaly.
+        Severity WARNING: resto de checks fallando individualmente.
+        """
+        overall_critical = (
+            len(failing) >= 2
+            or any(c in self._CRITICAL_ALERT_CHECKS for c in failing)
+        )
+        severity = AlertSeverity.CRITICAL if overall_critical else AlertSeverity.WARNING
+
+        if failing:
+            details = "; ".join(
+                f"{c}={results[c].detail}" for c in failing if c in results
+            )
+            self._alerting.send_alert(Alert(
+                severity=severity,
+                key=f"oem_failing:{','.join(sorted(failing))}",
+                title=f"OEM {severity.value}: {len(failing)} checks fallando",
+                message=f"Checks FAIL: {', '.join(failing)}\n\nDetalles: {details}",
+                component="OperationalEdgeMonitor",
+            ))
+
+        # Alerta específica si hay BDs degradadas
+        if "db_lock_rate_anomaly" in failing and results.get("db_lock_rate_anomaly"):
+            detail = results["db_lock_rate_anomaly"].detail
+            self._alerting.send_alert(Alert(
+                severity=AlertSeverity.CRITICAL,
+                key="oem_db_degraded",
+                title="BD Degradada — Modo Solo-Lectura Activado",
+                message=detail,
+                component="DatabaseManager",
+            ))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

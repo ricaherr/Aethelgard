@@ -14,7 +14,7 @@ from .errors import (
     PersistenceTransactionError,
     normalize_persistence_error,
 )
-from .interface import IDatabaseDriver
+from .interface import IDatabaseDriver, IDatabaseRecoveryStrategy, RecoveryContext, RecoveryResult
 from .sqlite_driver import SQLiteDriver
 
 _driver_instance: Optional[IDatabaseDriver] = None
@@ -30,6 +30,9 @@ def get_database_driver() -> IDatabaseDriver:
 
 __all__ = [
     "IDatabaseDriver",
+    "IDatabaseRecoveryStrategy",
+    "RecoveryContext",
+    "RecoveryResult",
     "SQLiteDriver",
     "get_database_driver",
     "PersistenceError",

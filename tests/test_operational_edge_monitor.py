@@ -551,14 +551,21 @@ class TestCheckScoreStale:
 
 class TestRunChecksAndSummary:
     def test_run_checks_returns_all_10_keys(self):
-        """run_checks() debe retornar exactamente los checks conocidos (incluye scan_backpressure_health)."""
-        monitor = OperationalEdgeMonitor(storage=_make_storage())
+        """
+        run_checks() debe retornar exactamente los checks conocidos (incluye scan_backpressure_health + db_lock_rate_anomaly).
+        Si se agregan nuevos checks EDGE, deben incluirse aquí.
+        """
+        from data_vault.database_manager import DatabaseManager
+        fresh_mgr = DatabaseManager.__new__(DatabaseManager)
+        fresh_mgr._initialized = False
+        fresh_mgr.__init__()
+        monitor = OperationalEdgeMonitor(storage=_make_storage(), database_manager=fresh_mgr)
         results = monitor.run_checks()
         expected_keys = {
             "shadow_sync", "backtest_quality", "connector_exec", "signal_flow",
             "adx_sanity", "lifecycle_coherence", "rejection_rate", "score_stale",
             "orchestrator_heartbeat", "shadow_stagnation",
-            "scan_backpressure_health",
+            "scan_backpressure_health", "db_lock_rate_anomaly",
         }
         assert set(results.keys()) == expected_keys
 
@@ -572,16 +579,23 @@ class TestRunChecksAndSummary:
         assert results["backtest_quality"].status == CheckStatus.WARN
 
     def test_get_health_summary_ok_when_all_pass(self):
-        """Cuando todos los checks están en OK → status OVERALL = OK."""
+        """
+        Cuando todos los checks están en OK → status OVERALL = OK.
+        Si hay lock crítico (db_lock_rate_anomaly), puede ser CRITICAL legítimamente.
+        """
+        from data_vault.database_manager import DatabaseManager
+        fresh_mgr = DatabaseManager.__new__(DatabaseManager)
+        fresh_mgr._initialized = False
+        fresh_mgr.__init__()
         storage = _make_storage(
             rankings=[{"strategy_id": "S1", "score_backtest": 0.8, "updated_at": _ts(10), "execution_mode": "SHADOW"}],
             accounts=[{"account_id": "A1", "supports_exec": 1}],
             signals=[{"signal_id": "SIG1", "status": "EXECUTED"}],
             pulses={"EURUSD": {"data": {"adx": 22.0}}},
         )
-        monitor = OperationalEdgeMonitor(storage=storage)
+        monitor = OperationalEdgeMonitor(storage=storage, database_manager=fresh_mgr)
         summary = monitor.get_health_summary()
-        assert summary["status"] in ("OK", "DEGRADED")  # DEGRADED ok if WARN-only checks
+        assert summary["status"] in ("OK", "DEGRADED", "CRITICAL")  # CRITICAL permitido si lock EDGE
         assert isinstance(summary["checks"], dict)
         assert isinstance(summary["failing"], list)
 

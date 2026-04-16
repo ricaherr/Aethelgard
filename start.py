@@ -31,6 +31,8 @@ from pathlib import Path
 from datetime import datetime
 import webbrowser
 
+from utils.logging_utils import setup_logging
+
 from core_brain.main_orchestrator import MainOrchestrator
 from core_brain.scanner import ScannerEngine
 from core_brain.signal_factory import SignalFactory
@@ -55,13 +57,6 @@ from core_brain.regime import RegimeClassifier
 from core_brain.trade_closure_listener import TradeClosureListener
 from core_brain.position_manager import PositionManager
 
-# Configurar logging
-from logging.handlers import TimedRotatingFileHandler
-
-# Asegurar carpeta de logs
-Path("logs").mkdir(exist_ok=True)
-
-
 def _rotate_stale_log(log_path: str = "logs/main.log") -> None:
     """
     Startup checkpoint: rotate log file if it belongs to a previous day.
@@ -82,21 +77,7 @@ def _rotate_stale_log(log_path: str = "logs/main.log") -> None:
 
 
 _rotate_stale_log()
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        TimedRotatingFileHandler(
-            filename='logs/main.log',
-            when='midnight',
-            interval=1,
-            backupCount=15,
-            encoding='utf-8'
-        ),
-        logging.StreamHandler()
-    ]
-)
+setup_logging(level=logging.INFO, log_file="logs/main.log")
 
 logger = logging.getLogger(__name__)
 

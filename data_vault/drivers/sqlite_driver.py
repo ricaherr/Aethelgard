@@ -15,7 +15,7 @@ from typing import Any, Callable, Deque, Generator, Literal
 from data_vault.database_manager import DatabaseManager
 
 from .errors import PersistenceTransactionError, normalize_persistence_error
-from .interface import IDatabaseDriver
+from .interface import IDatabaseDriver, IDatabaseRecoveryStrategy, RecoveryContext, RecoveryResult
 
 logger = logging.getLogger(__name__)
 
@@ -45,11 +45,19 @@ class SQLiteConcurrencyPolicy:
         )
 
 
-class SQLiteDriver(IDatabaseDriver):
-    """Adapter that delegates SQLite operations to DatabaseManager."""
+class SQLiteDriver(IDatabaseDriver, IDatabaseRecoveryStrategy):
+    """
+    Adapter that delegates SQLite operations to DatabaseManager.
+
+    Also implements IDatabaseRecoveryStrategy so that DatabaseManager can
+    invoke WAL-checkpoint-based recovery without knowing SQLite internals.
+    """
 
     def __init__(self, database_manager: DatabaseManager) -> None:
         self.database_manager = database_manager
+        # Self-register as the recovery strategy so DatabaseManager can
+        # delegate lock recovery without a separate wiring step.
+        self.database_manager.register_recovery_strategy(self)
         self._policy_override: SQLiteConcurrencyPolicy | None = None
         self._policy_cache_by_db_path: dict[str, tuple[float, SQLiteConcurrencyPolicy]] = {}
         self._policy_ttl_seconds: float = 5.0
@@ -310,6 +318,19 @@ class SQLiteDriver(IDatabaseDriver):
                 if not self._is_lock_or_busy_error(error):
                     raise
                 if attempt >= policy.retry_max_attempts:
+                    # All retries exhausted — ask DatabaseManager to attempt recovery
+                    context = RecoveryContext(
+                        db_path=db_path,
+                        error=error,
+                        attempt_number=attempt,
+                    )
+                    recovery = self.database_manager.recover_from_lock(context)
+                    if recovery.recovered:
+                        # One post-recovery attempt before surfacing failure
+                        try:
+                            return operation()
+                        except Exception:
+                            pass
                     self._metrics["retry_exhausted"] = int(self._metrics["retry_exhausted"]) + 1
                     self._observe("retry_exhausted", db_path=db_path, attempts=attempt, error=str(error))
                     raise
@@ -325,6 +346,58 @@ class SQLiteDriver(IDatabaseDriver):
                 )
                 time.sleep(backoff_seconds)
                 attempt += 1
+
+    # ------------------------------------------------------------------ #
+    # IDatabaseRecoveryStrategy implementation                           #
+    # ------------------------------------------------------------------ #
+
+    def is_lock_error(self, error: Exception) -> bool:
+        """Classify *error* as a SQLite lock/busy condition."""
+        return self.database_manager.is_sqlite_lock_error(error)
+
+    def attempt_recovery(self, context: RecoveryContext) -> RecoveryResult:
+        """
+        Attempt WAL checkpoint to flush pending lock contention.
+
+        If the checkpoint fails (connection broken), falls back to a full
+        reconnect.  Marks the DB for degradation only when both strategies
+        are exhausted.
+
+        Args:
+            context: Describes the failing db_path, original error, and attempt count.
+
+        Returns:
+            RecoveryResult with the action taken and whether recovery succeeded.
+        """
+        db_path = context.db_path
+        try:
+            conn = self.database_manager.get_connection(db_path)
+            conn.execute("PRAGMA wal_checkpoint(RESTART)").fetchall()
+            logger.info("[SQLiteDriver] WAL checkpoint succeeded for %s", db_path)
+            return RecoveryResult(recovered=True, action_taken="wal_checkpoint")
+        except Exception as checkpoint_error:
+            logger.warning(
+                "[SQLiteDriver] WAL checkpoint failed for %s (%s) — attempting reconnect",
+                db_path,
+                checkpoint_error,
+            )
+
+        # Fallback: force a fresh connection
+        try:
+            self.database_manager.close_connection(db_path)
+            self.database_manager.get_connection(db_path)
+            logger.info("[SQLiteDriver] Reconnect succeeded for %s", db_path)
+            return RecoveryResult(recovered=True, action_taken="reconnect")
+        except Exception as reconnect_error:
+            logger.error(
+                "[SQLiteDriver] Reconnect also failed for %s: %s", db_path, reconnect_error
+            )
+            return RecoveryResult(
+                recovered=False,
+                action_taken="reconnect_failed",
+                should_degrade=True,
+                error=str(reconnect_error),
+            )
 
     def _is_lock_or_busy_error(self, error: Exception) -> bool:
         classifier = getattr(self.database_manager, "is_sqlite_lock_error", None)

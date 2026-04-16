@@ -45,6 +45,13 @@ class FakeDatabaseManager:
     def observe_sqlite_concurrency_event(self, event_name: str, payload: dict[str, object]) -> None:
         return None
 
+    def register_recovery_strategy(self, strategy: object) -> None:
+        pass
+
+    def recover_from_lock(self, context: object) -> object:
+        from data_vault.drivers.interface import RecoveryResult
+        return RecoveryResult(recovered=False, action_taken="no_strategy")
+
 
 @pytest.fixture
 def sqlite_driver() -> SQLiteDriver:

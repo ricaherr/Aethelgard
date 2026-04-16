@@ -105,3 +105,56 @@ El ecosistema expone su cerebro y métricas a través de una "Intelligence Termi
 5. **SATELLITE LINK**: Centro de operaciones de conectividad (MT5, FIX, cTrader).
 6. **MONITOR**: Audita recursos técnicos. Rastrea carga de CPU, la fidelidad de base de datos Multi-tenant.
 7. **SETTINGS**: Configuración integral de símbolos, notificaciones por Telegram, RBAC y Auto-Trading globales.
+
+---
+
+## IV. EDGE Resilience Architecture (ETI-2 — 2026-04-16)
+
+**Trace_ID**: EDGE_Resilience_Improvements-2026-04-16
+
+### Principio
+
+El sistema debe autoajustarse y degradar de forma controlada ante locks SQLite persistentes, sin intervención manual del operador.
+
+### Componentes
+
+| Componente | Responsabilidad |
+|---|---|
+| `data_vault/db_policy_tuner.py` | Auto-tuning de `busy_timeout`; fallback read-only; tracking de lock events |
+| `data_vault/database_manager.py` | Integra `DBPolicyTuner`; activa read-only en degradación; registra lock events |
+| `utils/alerting.py` | Despacho multi-canal (LOG_ONLY · EMAIL · TELEGRAM) con rate-limiting 5 min |
+| `core_brain/operational_edge_monitor.py` | Check `db_lock_rate_anomaly`; alerta proactiva via `AlertingService` |
+
+### Contrato de Auto-Tuning
+
+```
+p95_ms ≥ P95_CRITICAL_MS (2000ms)  → busy_timeout += 2 × STEP (30s)
+p95_ms ≥ P95_WARN_MS (500ms)       → busy_timeout += 1 × STEP (15s)
+lock_rate ≥ 15 eventos/min          → igual que P95_CRITICAL
+lock_rate ≥ 5 eventos/min           → igual que P95_WARN
+p95_ms < 250ms y lock_rate < 2.5/m → busy_timeout -= STEP (recovery)
+
+Límites: [30s, 300s]   Throttle: 1 evaluación cada 30s por db_path
+```
+
+### Contrato de Fallback Read-Only
+
+Cuando `recover_from_lock()` retorna `should_degrade=True`:
+1. `DatabaseManager` marca la BD como degradada (`_degraded_dbs`).
+2. `DBPolicyTuner.apply_read_only_mode()` aplica `PRAGMA query_only=1`.
+3. Todo intento de `transaction()` lanza `OperationalError("SOLO-LECTURA")`.
+4. Las lecturas via `execute_query()` continúan operando normalmente.
+5. **Restauración manual**: `clear_degraded(db_path)` revierte ambos estados.
+
+### Contrato de Alertas
+
+- Canal por defecto: `LOG_ONLY` (sin config).
+- Config vía variables de entorno (`ALERT_CHANNELS`, `ALERT_SMTP_*`, `ALERT_TELEGRAM_*`).
+- Rate-limiting: máximo 1 alerta por `(canal, key)` cada 300 segundos.
+- Severity CRITICAL: ≥ 2 checks OEM fallando, o `orchestrator_heartbeat` / `db_lock_rate_anomaly`.
+
+### Reglas Operativas
+
+- `DBPolicyTuner` es instanciado exclusivamente por `DatabaseManager` — nunca instanciar directamente.
+- `AlertingService` debe inyectarse en `OperationalEdgeMonitor`; si se omite, usa `LOG_ONLY`.
+- Los umbrales (`P95_WARN_MS`, `LOCK_RATE_WARN_PER_MIN`, etc.) son constantes en `db_policy_tuner.py` — no duplicar en otro módulo.
