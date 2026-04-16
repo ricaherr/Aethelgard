@@ -24,9 +24,10 @@ import math
 import statistics
 import uuid
 from collections import deque
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,19 @@ class DefenseProtocol(str, Enum):
     NONE = "NONE"
     WARNING = "WARNING"
     LOCKDOWN = "LOCKDOWN"
+
+
+@dataclass
+class VolatilityEvent:
+    """Evento emitido por AnomalySentinel cuando detecta una anomalía de mercado."""
+
+    trace_id: str
+    protocol: DefenseProtocol
+    z_score: Optional[float]
+    spread_ratio: Optional[float]
+    timestamp: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
 
 
 class AnomalySentinel:
@@ -99,6 +113,10 @@ class AnomalySentinel:
         self._spreads: deque = deque(maxlen=tick_window)
         self.last_trace_id: str = ""
         self._last_protocol: DefenseProtocol = DefenseProtocol.NONE
+        # ETI: Event emission support
+        self._listeners: List[Callable[[VolatilityEvent], None]] = []
+        self._last_z_score: Optional[float] = None
+        self._last_spread_ratio: Optional[float] = None
 
         logger.info(
             "[ANOMALY_SENTINEL] Initialized. Z-Score threshold=%.1f, "
@@ -144,33 +162,65 @@ class AnomalySentinel:
             spread = tick.get("spread", 0.0)
             self.push_tick(float(price), float(spread))
 
+    def register_listener(self, callback: Callable[["VolatilityEvent"], None]) -> None:
+        """
+        Registra un callback que será invocado con un VolatilityEvent
+        cada vez que se detecte una anomalía (WARNING o LOCKDOWN).
+
+        Args:
+            callback: Función que recibe un VolatilityEvent. Las excepciones
+                      en el callback son capturadas y logueadas sin propagarse.
+        """
+        self._listeners.append(callback)
+
+    def _emit_event(self, protocol: DefenseProtocol) -> None:
+        """Construye y despacha un VolatilityEvent a todos los listeners registrados."""
+        if not self._listeners:
+            return
+        event = VolatilityEvent(
+            trace_id=self.last_trace_id,
+            protocol=protocol,
+            z_score=self._last_z_score,
+            spread_ratio=self._last_spread_ratio,
+        )
+        for listener in self._listeners:
+            try:
+                listener(event)
+            except Exception as exc:
+                logger.warning("[ANOMALY_SENTINEL] Listener error: %s", exc)
+
     def get_defense_protocol(self) -> DefenseProtocol:
         """
         Evalúa las condiciones actuales de mercado y retorna el protocolo defensivo.
 
         Prioridad:
           1. LOCKDOWN — Flash Crash detectado (Z-Score ≥ threshold)
-          2. WARNING  — Spread anómalo (ratio ≥ spread_ratio_threshold)
+          2. WARNING  — Spread anómalo o Z-Score elevado (≥ threshold × 0.7)
           3. NONE     — Condiciones normales
+
+        Emite un VolatilityEvent a todos los listeners registrados cuando el
+        protocolo resultante es distinto de NONE.
 
         Returns:
             DefenseProtocol: NONE, WARNING o LOCKDOWN.
         """
         trace_id = f"SEN-{uuid.uuid4().hex[:8].upper()}"
         self.last_trace_id = trace_id
+        protocol = self._resolve_protocol(trace_id)
+        self._last_protocol = protocol
+        if protocol != DefenseProtocol.NONE:
+            self._emit_event(protocol)
+        return protocol
 
-        crash_protocol = self._detect_flash_crash(trace_id)
-        if crash_protocol == DefenseProtocol.LOCKDOWN:
-            self._last_protocol = DefenseProtocol.LOCKDOWN
+    def _resolve_protocol(self, trace_id: str) -> DefenseProtocol:
+        """Determina el protocolo resultante combinando crash y spread."""
+        crash = self._detect_flash_crash(trace_id)
+        if crash == DefenseProtocol.LOCKDOWN:
             return DefenseProtocol.LOCKDOWN
-
-        spread_protocol = self._detect_spread_anomaly(trace_id)
-        if spread_protocol != DefenseProtocol.NONE:
-            self._last_protocol = spread_protocol
-            return spread_protocol
-
-        self._last_protocol = DefenseProtocol.NONE
-        return DefenseProtocol.NONE
+        spread = self._detect_spread_anomaly(trace_id)
+        if spread != DefenseProtocol.NONE:
+            return spread
+        return crash  # NONE o WARNING de crash cuando spread es NONE
 
     # ── Detectores internos ──────────────────────────────────────────────────
 
@@ -215,6 +265,7 @@ class AnomalySentinel:
         z_score = (last_return - mean_ret) / stdev_ret
 
         if abs(z_score) >= self.zscore_threshold:
+            self._last_z_score = z_score
             logger.critical(
                 "[ANOMALY_SENTINEL] FLASH_CRASH detected. "
                 "Z-Score=%.2f (threshold=%.1f), last_return=%.4f%%. "
@@ -227,6 +278,7 @@ class AnomalySentinel:
             return DefenseProtocol.LOCKDOWN
 
         if abs(z_score) >= self.zscore_threshold * 0.7:
+            self._last_z_score = z_score
             logger.warning(
                 "[ANOMALY_SENTINEL] Elevated volatility. Z-Score=%.2f. Trace_ID: %s",
                 z_score,
@@ -260,6 +312,7 @@ class AnomalySentinel:
         ratio = current_spread / avg_spread
 
         if ratio >= self.spread_ratio_threshold:
+            self._last_spread_ratio = ratio
             logger.warning(
                 "[ANOMALY_SENTINEL] SPREAD_ANOMALY detected. "
                 "Current=%.5f, Avg=%.5f, Ratio=%.1f× (threshold=%.1f×). "

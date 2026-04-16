@@ -77,6 +77,7 @@ class OperationalEdgeMonitor(threading.Thread):
         interval_seconds: int = 300,
         alerting_service: Optional[AlertingService] = None,
         database_manager: Optional[Any] = None,
+        sentinel: Optional[Any] = None,
     ) -> None:
         super().__init__(daemon=True)
         self.storage = storage
@@ -92,6 +93,9 @@ class OperationalEdgeMonitor(threading.Thread):
         self._alerting: AlertingService = alerting_service or AlertingService()
         # ETI: DatabaseManager inyectado para evitar acoplamiento al singleton global
         self._database_manager: Optional[Any] = database_manager
+        # ETI: EDGE Volatility Response — suscripción a AnomalySentinel
+        self._sentinel = sentinel
+        self._vrm: Optional[Any] = self._init_vrm(sentinel)
 
     # ── Thread interface ──────────────────────────────────────────────────────
 
@@ -152,11 +156,30 @@ class OperationalEdgeMonitor(threading.Thread):
                     len(warnings),
                     ", ".join(warnings) if warnings else "none",
                 )
+            # ETI: EDGE Volatility Response — verificar auto-reversión
+            if self._vrm is not None:
+                self._vrm.check_auto_reversal(self._sentinel)
             time.sleep(self.interval_seconds)
 
     def stop(self) -> None:
         self.running = False
         logger.info("[OPS-EDGE] Operational invariant monitor stopped")
+
+    def _init_vrm(self, sentinel: Optional[Any]) -> Optional[Any]:
+        """
+        Inicializa el VolatilityResponseManager y lo suscribe al sentinel.
+        Retorna None si no se inyectó sentinel.
+        """
+        if sentinel is None:
+            return None
+        from core_brain.services.edge_volatility_responder import VolatilityResponseManager
+        vrm = VolatilityResponseManager(
+            storage=self.storage,
+            alerting_service=self._alerting,
+        )
+        sentinel.register_listener(vrm.on_volatility_event)
+        logger.info("[OPS-EDGE] VolatilityResponseManager registrado en AnomalySentinel")
+        return vrm
 
     # ─────────────────────────────────────────────────────────────────────────
     # Interfaz pública

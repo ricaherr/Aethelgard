@@ -158,3 +158,48 @@ Cuando `recover_from_lock()` retorna `should_degrade=True`:
 - `DBPolicyTuner` es instanciado exclusivamente por `DatabaseManager` — nunca instanciar directamente.
 - `AlertingService` debe inyectarse en `OperationalEdgeMonitor`; si se omite, usa `LOG_ONLY`.
 - Los umbrales (`P95_WARN_MS`, `LOCK_RATE_WARN_PER_MIN`, etc.) son constantes en `db_policy_tuner.py` — no duplicar en otro módulo.
+
+---
+
+## IV. Contrato de Respuesta EDGE ante Volatilidad Extrema
+
+**Vigente desde:** 2026-04-16 | ETI_ID: EDGE_Volatility_Response_2026-04-16
+
+### Problema
+
+El `AnomalySentinel` detectaba eventos de volatilidad extrema (Z-Score fuera de rango, spread anómalo) pero solo los logueaba como WARNING, sin respuesta operativa automática.
+
+### Solución Implementada
+
+Patrón Observer entre `AnomalySentinel` (emisor) y `VolatilityResponseManager` (suscriptor), orquestado opcionalmente por `OperationalEdgeMonitor`.
+
+### Componentes
+
+| Componente | Archivo | Rol |
+|---|---|---|
+| `VolatilityEvent` | `core_brain/services/anomaly_sentinel.py` | Dataclass del evento (trace_id, protocol, z_score, spread_ratio, timestamp) |
+| `AnomalySentinel.register_listener()` | `core_brain/services/anomaly_sentinel.py` | Registra callbacks; emite tras cada `get_defense_protocol()` no-NONE |
+| `VolatilityResponseManager` | `core_brain/services/edge_volatility_responder.py` | Mantiene estado, aplica acciones, auto-revierte |
+| `OperationalEdgeMonitor._init_vrm()` | `core_brain/operational_edge_monitor.py` | Wire-up: crea VRM y lo suscribe al sentinel inyectado |
+
+### Estados del VRM
+
+| Estado | Trigger | Acciones |
+|---|---|---|
+| `NORMAL` | Inicio o auto-reversión | Factor de riesgo = 1.0 |
+| `ELEVATED` | `DefenseProtocol.WARNING` | Alerta WARNING, log, auditoría |
+| `LOCKDOWN` | `DefenseProtocol.LOCKDOWN` | Alerta CRITICAL, factor de riesgo = 0.5 (configurable), auditoría |
+
+### Auto-Reversión
+
+El `OperationalEdgeMonitor` llama `vrm.check_auto_reversal(sentinel)` en cada ciclo de monitoreo. Tras `auto_revert_consecutive` (default: 3) lecturas consecutivas con `DefenseProtocol.NONE`, el VRM revierte a `NORMAL` y restaura el factor de riesgo a 1.0.
+
+### Trazabilidad
+
+Cada acción persiste en `sys_config` (`edge_volatility_state`, `edge_volatility_last_trace_id`, `edge_volatility_risk_factor`) y en `sys_audit_logs` con el mismo `Trace_ID` del evento detectado por el sentinel.
+
+### Reglas Operativas
+
+- `VolatilityResponseManager` se inyecta en `OperationalEdgeMonitor` vía parámetro `sentinel`; sin sentinel, el VRM no se crea (comportamiento legacy preservado).
+- No instanciar `VolatilityResponseManager` directamente desde el orquestador — siempre vía `OperationalEdgeMonitor`.
+- El factor de riesgo reducido (`edge_volatility_risk_factor`) debe ser leído por el ejecutor antes de calcular el tamaño de posición.
