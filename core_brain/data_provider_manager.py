@@ -992,6 +992,101 @@ class DataProviderManager:
             )
         return None
 
+    def get_provider_instance(self, name: str) -> Optional[Any]:
+        """
+        Retorna la instancia de un proveedor específico **solo si está habilitado en BD**.
+
+        Diferencia con ``_get_provider_instance`` (privado): este método comprueba
+        primero el estado ``enabled`` en ``sys_data_providers`` antes de instanciar.
+        Si el proveedor está deshabilitado en BD, retorna ``None`` — respeta SSOT.
+
+        Args:
+            name: Nombre del proveedor (ej. ``"alphavantage"``, ``"twelvedata"``).
+
+        Returns:
+            Instancia del proveedor o ``None`` si no habilitado o no disponible.
+        """
+        if not self.is_provider_enabled(name):
+            logger.debug(
+                "[SSOT] get_provider_instance('%s'): deshabilitado en sys_data_providers — retorna None",
+                name,
+            )
+            return None
+        return self._get_provider_instance(name)
+
+    def get_active_data_provider(self, force_db_reload: bool = False) -> Optional[Any]:
+        """
+        SSOT: punto de entrada centralizado para obtener el proveedor de datos activo.
+
+        La selección proviene **exclusivamente** de ``sys_data_providers`` en BD
+        (cargada en ``_load_configuration``).  Incluye lógica EDGE de fallback
+        y recuperación automática ante fallos OEM.
+
+        Args:
+            force_db_reload: Si ``True``, descarta la selección cacheada y
+                recarga la configuración desde BD antes de seleccionar.
+
+        Returns:
+            Instancia del proveedor activo o ``None`` en degradación total.
+        """
+        if force_db_reload:
+            self._provider_selection_initialized = False
+            self._selected_provider = None
+            self._selected_provider_name = None
+            self._load_configuration()
+
+        provider = self.get_best_provider()
+
+        if provider is None:
+            return None
+
+        # EDGE: verificar disponibilidad y activar fallback si el proveedor falló
+        if hasattr(provider, "is_available"):
+            try:
+                if not provider.is_available():
+                    logger.warning(
+                        "[EDGE] Provider '%s' reporta no disponible — iniciando fallback automático",
+                        self._selected_provider_name,
+                    )
+                    provider = self._edge_fallback_and_recover()
+            except Exception as exc:
+                logger.warning(
+                    "[EDGE] is_available() lanzó excepción (%s) — iniciando fallback automático", exc
+                )
+                provider = self._edge_fallback_and_recover()
+
+        return provider
+
+    def _edge_fallback_and_recover(self) -> Optional[Any]:
+        """
+        EDGE: fallback y recuperación autónoma ante fallo OEM.
+
+        1. Registra el proveedor fallido.
+        2. Fuerza reselección desde BD (siguiente prioridad).
+        3. Si todos fallan, entra en degradación segura y lo notifica.
+
+        Returns:
+            Nuevo proveedor activo, o ``None`` si todos los fallbacks se agotaron.
+        """
+        failed_name = self._selected_provider_name
+
+        new_provider = self.force_reselect_provider()
+
+        if new_provider is not None:
+            logger.info(
+                "[EDGE-RECOVERY] Fallback exitoso: '%s' → '%s'",
+                failed_name,
+                self._selected_provider_name,
+            )
+            return new_provider
+
+        logger.error(
+            "[EDGE-DEGRADATION] Todos los proveedores agotados tras fallo OEM de '%s'. "
+            "Sistema en modo degradado — sin datos de mercado disponibles.",
+            failed_name,
+        )
+        return None
+
     def get_provider_coverage_snapshot(self) -> Dict[str, Any]:
         """
         Read-only snapshot of current per-symbol coverage state.

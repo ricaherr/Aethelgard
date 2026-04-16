@@ -13,24 +13,32 @@ class ChartService:
     def __init__(self, storage=None, user_id: str = "default"):
         """
         Inicializa ChartService.
-        
+
+        El proveedor de datos NO se fija en construcción: se resuelve en
+        cada llamada a ``get_chart_data()`` a través de
+        ``provider_manager.get_active_data_provider()``, garantizando que
+        la selección provenga siempre de ``sys_data_providers`` en BD (SSOT).
+
         Args:
             storage: StorageManager inyectado (DI pattern)
-            user_id: ID del usuario (para isolación multi-usuario)
+            user_id: ID del usuario (para aislación multi-usuario)
         """
         self.user_id = user_id
+        self.storage = storage
         try:
             self.provider_manager = DataProviderManager(storage=storage)
-            self.data_provider = self.provider_manager.get_best_provider()
         except Exception as e:
-            logger.warning(f"[ChartService] Failed to initialize provider: {e}")
-            self.data_provider = None
+            logger.warning(f"[ChartService] Failed to initialize provider manager: {e}")
+            self.provider_manager = None
 
     def get_chart_data(self, symbol: str, timeframe: str = "M5", count: int = 500) -> Dict[str, Any]:
         """
         Retorna datos de OHLC + indicadores para un símbolo y timeframe.
         Implementa graceful degradation: nunca lanza excepciones (500).
-        
+
+        El proveedor se resuelve en tiempo de llamada desde ``sys_data_providers``
+        (SSOT), incluyendo fallback EDGE automático si el proveedor falla.
+
         Returns:
             Dict con estructura: {symbol, timeframe, candles, indicators, metadata}
         """
@@ -38,14 +46,21 @@ class ChartService:
             # Validar inputs
             if not symbol or not isinstance(symbol, str):
                 return self._empty_response(symbol or "UNKNOWN", timeframe)
-            
-            if not self.data_provider:
+
+            # Resolución SSOT: proveedor activo desde BD en tiempo de llamada
+            data_provider = (
+                self.provider_manager.get_active_data_provider()
+                if self.provider_manager is not None
+                else None
+            )
+
+            if not data_provider:
                 logger.warning(f"[ChartService] No data provider available for {symbol}")
                 return self._empty_response(symbol, timeframe, reason="No data provider")
-            
+
             # Obtener datos OHLC
             try:
-                df = self.data_provider.fetch_ohlc(symbol, timeframe, count)
+                df = data_provider.fetch_ohlc(symbol, timeframe, count)
             except Exception as e:
                 logger.warning(f"[ChartService] Failed to fetch OHLC for {symbol}/{timeframe}: {e}")
                 return self._empty_response(symbol, timeframe, reason="Data fetch failed")

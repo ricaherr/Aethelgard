@@ -347,7 +347,7 @@ async def main() -> None:
 
     storage = StorageManager()
     provider_manager = DataProviderManager(storage=storage)
-    data_provider = provider_manager.get_best_provider()
+    data_provider = provider_manager.get_active_data_provider()
     if not data_provider:
         print("[CRITICAL] No data provider available. Aborting.")
         return

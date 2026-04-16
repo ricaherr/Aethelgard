@@ -7,12 +7,11 @@ DXY (USD Dollar Index) Service - Multi-Source Data Fetcher with Automatic Fallba
 - Type Hints: 100% coverage
 - Clean Code: Métodos pequeños, responsabilidad única
 
-Fallback Chain (5 niveles):
-1. DataProviderManager (auto-selecciona mejor provider)
-2. Alpha Vantage (si habilitado)
-3. Twelve Data (si habilitado)
-4. CCXT USD proxy (creative fallback)
-5. StorageManager cache (SSOT, último recurso)
+Fallback Chain (SSOT — todos los intentos respetan sys_data_providers en BD):
+1. DataProviderManager.get_active_data_provider() — prioridad más alta habilitada en BD
+2. Alpha Vantage — solo si enabled=True en sys_data_providers
+3. Twelve Data  — solo si enabled=True en sys_data_providers
+4. StorageManager cache (último recurso)
 
 Integración:
 - MainOrchestrator: self.dxy_service.fetch_dxy()
@@ -120,112 +119,85 @@ class DXYService:
         timeframe: str,
         count: int
     ) -> Optional[List[Dict[str, Any]]]:
-        """Try providers in priority order"""
-        # Try #1: DataProviderManager (auto-selection)
+        """
+        Intenta obtener datos DXY desde los proveedores habilitados en BD (SSOT).
+
+        Cadena de fallback — todos los intentos pasan por DataProviderManager
+        que lee exclusivamente de ``sys_data_providers``:
+
+        1. Auto-selección por símbolo (prioridad más alta habilitada en BD)
+        2. Alpha Vantage (solo si habilitado en BD)
+        3. Twelve Data (solo si habilitado en BD)
+        """
+        # Try #1: Auto-selección SSOT — DataProviderManager elige por prioridad en BD
         data = await self._try_provider_manager(timeframe, count)
         if data:
             return data
-        
-        # Try #2: Direct GenericDataProvider
-        data = await self._try_generic_provider(timeframe, count)
+
+        # Try #2: Alpha Vantage (consulta BD via get_provider_instance)
+        data = await self._try_named_provider("alphavantage", timeframe, count)
         if data:
             return data
-        
-        # Try #3: Alpha Vantage (if enabled)
-        data = await self._try_alphavantage(timeframe, count)
+
+        # Try #3: Twelve Data (consulta BD via get_provider_instance)
+        data = await self._try_named_provider("twelvedata", timeframe, count)
         if data:
             return data
-        
-        # Try #4: Twelve Data (if enabled)
-        data = await self._try_twelvedata(timeframe, count)
-        if data:
-            return data
-        
+
         return None
-    
+
     async def _try_provider_manager(
         self,
         timeframe: str,
         count: int
     ) -> Optional[List[Dict[str, Any]]]:
-        """Try DataProviderManager auto-selection"""
+        """
+        Selección automática SSOT: DataProviderManager elige el mejor proveedor
+        disponible según ``sys_data_providers`` (prioridad + enabled en BD).
+        """
         try:
             if self.data_provider_manager is None:
                 return None
-            
-            provider = self.data_provider_manager.get_provider_for_symbol("DXY")
-            if provider is None:
-                provider = self.data_provider_manager.get_best_provider()
-            
+
+            # get_active_data_provider() incluye fallback EDGE automático
+            provider = self.data_provider_manager.get_active_data_provider()
             if provider is None:
                 return None
-            
+
             df = provider.fetch_ohlc("DXY", timeframe, count)
             return self._convert_to_dict_list(df) if df is not None else None
         except Exception as e:
             logger.debug(f"[DXYService] Provider manager failed: {e}")
             return None
-    
-    async def _try_generic_provider(
+
+    async def _try_named_provider(
         self,
+        name: str,
         timeframe: str,
         count: int
     ) -> Optional[List[Dict[str, Any]]]:
-        """Try GenericDataProvider (Yahoo Finance)"""
-        try:
-            from connectors.generic_data_provider import get_provider
-            
-            provider = get_provider()
-            df = provider.fetch_ohlc("DXY", timeframe, count)
-            return self._convert_to_dict_list(df) if df is not None else None
-        except Exception as e:
-            logger.debug(f"[DXYService] Generic provider failed: {e}")
-            return None
-    
-    async def _try_alphavantage(
-        self,
-        timeframe: str,
-        count: int
-    ) -> Optional[List[Dict[str, Any]]]:
-        """Try Alpha Vantage (if enabled)"""
+        """
+        Intenta un proveedor específico **solo si está habilitado en BD** (SSOT).
+
+        Usa ``get_provider_instance(name)`` que comprueba ``sys_data_providers.enabled``
+        antes de instanciar — nunca bypasea la BD.
+
+        Args:
+            name: Nombre del proveedor (ej. ``"alphavantage"``).
+        """
         try:
             if self.data_provider_manager is None:
                 return None
-            
-            if not self.data_provider_manager.is_provider_enabled("alphavantage"):
-                return None
-            
-            provider = self.data_provider_manager.get_provider("alphavantage")
+
+            # SSOT: retorna None si el proveedor está deshabilitado en BD
+            provider = self.data_provider_manager.get_provider_instance(name)
             if provider is None:
                 return None
-            
+
             df = provider.fetch_ohlc("DXY", timeframe, count)
             return self._convert_to_dict_list(df) if df is not None else None
         except Exception as e:
-            logger.debug(f"[DXYService] Alpha Vantage failed: {e}")
-            return None
-    
-    async def _try_twelvedata(
-        self,
-        timeframe: str,
-        count: int
-    ) -> Optional[List[Dict[str, Any]]]:
-        """Try Twelve Data (if enabled)"""
-        try:
-            if self.data_provider_manager is None:
-                return None
-            
-            if not self.data_provider_manager.is_provider_enabled("twelvedata"):
-                return None
-            
-            provider = self.data_provider_manager.get_provider("twelvedata")
-            if provider is None:
-                return None
-            
-            df = provider.fetch_ohlc("DXY", timeframe, count)
-            return self._convert_to_dict_list(df) if df is not None else None
-        except Exception as e:
-            logger.debug(f"[DXYService] Twelve Data failed: {e}")
+            logger.debug(f"[DXYService] {name} failed: {e}")
             return None
     
     def _convert_to_dict_list(self, df: Any) -> Optional[List[Dict[str, Any]]]:

@@ -166,7 +166,7 @@ async def get_predator_radar(
                 base_ohlcv = None
 
         provider_manager = DataProviderManager(storage=storage)
-        provider = provider_manager.get_best_provider()
+        provider = provider_manager.get_active_data_provider()
         
         if provider is None:
             logger.warning(f"[PREDATOR_RADAR] No data provider available for {symbol}")
