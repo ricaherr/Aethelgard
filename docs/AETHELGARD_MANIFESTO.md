@@ -202,4 +202,58 @@ Cada acción persiste en `sys_config` (`edge_volatility_state`, `edge_volatility
 
 - `VolatilityResponseManager` se inyecta en `OperationalEdgeMonitor` vía parámetro `sentinel`; sin sentinel, el VRM no se crea (comportamiento legacy preservado).
 - No instanciar `VolatilityResponseManager` directamente desde el orquestador — siempre vía `OperationalEdgeMonitor`.
+
+---
+
+## VII. Respuesta EDGE a Stale Connection
+
+**ETI_ID**: `EDGE_StaleConnection_Response_2026-04-16`
+**Trace_ID**: `EDGE_StaleConnection_Response_2026-04-16`
+**Archivos**: `data_vault/database_manager.py`, `core_brain/operational_edge_monitor.py`, `tests/test_edge_stale_connection.py`
+
+### Problema
+
+`DatabaseManager` detecta y recrea conexiones "stale" silenciosamente. Sin monitoreo de frecuencia, una degradación sostenida de infraestructura podía pasar desapercibida.
+
+### Solución
+
+**DatabaseManager** emite un evento por cada reconexión stale:
+
+- Nuevo método `register_stale_hook(callback)` — registra listeners `(db_path, trace_id) -> None`.
+- `_emit_stale_event(db_path, trace_id)` — despacha a todos los hooks; excepciones en callbacks son contenidas.
+- Cada evento incluye un `trace_id` prefijado `STALE-` para trazabilidad.
+
+**OperationalEdgeMonitor** se suscribe automáticamente al inicializar:
+
+- `_register_stale_hook()` — registra `_on_stale_connection` en el DatabaseManager inyectado (o singleton).
+- `_on_stale_connection(db_path, trace_id)` — registra el evento en un `deque` deslizante de 500 entradas.
+- Evalúa la tasa en la ventana activa (`STALE_CONN_WINDOW_SECONDS = 60`):
+  - `≥ STALE_CONN_WARN_PER_MIN (3/min)` → alerta `WARNING`.
+  - `≥ STALE_CONN_FAIL_PER_MIN (8/min)` → alerta `CRITICAL`.
+  - `≥ STALE_CONN_DEGRADE_THRESHOLD (20 eventos)` → activa modo solo-lectura vía `DBPolicyTuner`.
+- Nuevo check `stale_connection_anomaly` en `run_checks()`.
+- `get_stale_event_summary()` — observable para API y diagnóstico.
+- `clear_stale_degraded(db_path)` — revierte degradación y limpia historial. **Acción reversible.**
+
+### Umbrales (configurables como constantes de clase)
+
+| Constante | Default | Significado |
+|---|---|---|
+| `STALE_CONN_WARN_PER_MIN` | 3.0 | Tasa que activa alerta WARNING |
+| `STALE_CONN_FAIL_PER_MIN` | 8.0 | Tasa que activa alerta CRITICAL |
+| `STALE_CONN_WINDOW_SECONDS` | 60 | Ventana de medición |
+| `STALE_CONN_DEGRADE_THRESHOLD` | 20 | Eventos en ventana → modo solo-lectura |
+
+### Trazabilidad
+
+Cada evento stale tiene `trace_id = STALE-XXXXXXXX`. Las alertas y degradaciones se registran en `AlertingService` con `key=stale_conn_warn:{db_path}` / `stale_conn_critical:{db_path}` / `stale_conn_degraded:{db_path}`.
+
+### Tests
+
+`tests/test_edge_stale_connection.py` — 24 tests, 5 clases:
+- `TestDatabaseManagerStaleHook` — registro, emisión, aislamiento de excepciones, integración real.
+- `TestOemOnStaleConnection` — registro de evento, alertas por umbral, degradación.
+- `TestOemCheckStaleConnectionAnomaly` — lógica del check OEM.
+- `TestOemClearStaleDegraded` — reversión completa y limpieza de historial.
+- `TestOemStaleEventSummary` — resumen observable.
 - El factor de riesgo reducido (`edge_volatility_risk_factor`) debe ser leído por el ejecutor antes de calcular el tamaño de posición.

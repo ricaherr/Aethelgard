@@ -25,8 +25,9 @@ import threading
 import sqlite3
 import logging
 import time
+import uuid
 from collections import deque
-from typing import TYPE_CHECKING, Optional, Dict, Any, Generator, Set
+from typing import TYPE_CHECKING, Optional, Dict, Any, Generator, Set, List, Callable
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
@@ -111,6 +112,10 @@ class DatabaseManager:
         # ETI: auto-tuning de política y fallback read-only (delegado a DBPolicyTuner)
         self._policy_tuner: DBPolicyTuner = DBPolicyTuner()
 
+        # ETI: hooks para eventos de stale connection (EDGE_StaleConnection_Response_2026-04-16)
+        self._stale_hooks: List[Callable[[str, str], None]] = []
+        self._stale_hooks_lock: threading.Lock = threading.Lock()
+
         self._initialized = True
         logger.info("[DatabaseManager] Singleton initialized with SSOT PRAGMA configuration")
 
@@ -128,9 +133,15 @@ class DatabaseManager:
             if self._is_connection_healthy(conn):
                 return conn
             else:
-                logger.warning(f"[DatabaseManager] Stale connection detected for {db_path}, recreating...")
+                trace_id = f"STALE-{uuid.uuid4().hex[:8].upper()}"
+                logger.warning(
+                    "[DatabaseManager] Stale connection detected for %s, recreating... trace_id=%s",
+                    db_path,
+                    trace_id,
+                )
                 with self._pool_lock:
                     del self._connection_pool[db_path]
+                self._emit_stale_event(db_path, trace_id)
 
         # Slow path: create new connection
         with self._pool_lock:
@@ -726,6 +737,30 @@ class DatabaseManager:
         """
         with self._recovery_lock:
             return dict(self._recovery_metrics)
+
+    def register_stale_hook(self, callback: Callable[[str, str], None]) -> None:
+        """
+        Registra un callback que se invoca cuando se detecta y recrea una conexión stale.
+
+        El callback recibe (db_path: str, trace_id: str).
+        Las excepciones en el callback son capturadas y logueadas sin propagarse.
+
+        Args:
+            callback: Función con firma (db_path, trace_id) -> None.
+        """
+        with self._stale_hooks_lock:
+            self._stale_hooks.append(callback)
+        logger.debug("[DatabaseManager] Stale hook registered: %s", getattr(callback, "__qualname__", repr(callback)))
+
+    def _emit_stale_event(self, db_path: str, trace_id: str) -> None:
+        """Despacha el evento de stale connection a todos los hooks registrados."""
+        with self._stale_hooks_lock:
+            hooks = list(self._stale_hooks)
+        for hook in hooks:
+            try:
+                hook(db_path, trace_id)
+            except Exception as exc:
+                logger.warning("[DatabaseManager] Stale hook raised an exception: %s", exc)
 
     def set_pragma_value(self, key: str, value: Any) -> None:
         """

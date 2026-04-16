@@ -565,7 +565,7 @@ class TestRunChecksAndSummary:
             "shadow_sync", "backtest_quality", "connector_exec", "signal_flow",
             "adx_sanity", "lifecycle_coherence", "rejection_rate", "score_stale",
             "orchestrator_heartbeat", "shadow_stagnation",
-            "scan_backpressure_health", "db_lock_rate_anomaly",
+            "scan_backpressure_health", "db_lock_rate_anomaly", "stale_connection_anomaly",
         }
         assert set(results.keys()) == expected_keys
 

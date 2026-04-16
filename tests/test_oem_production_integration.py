@@ -141,8 +141,8 @@ class TestOemProductionIntegration:
         # run_checks() no actualiza last_results — eso lo hace run()
         # pero podemos llamar manualmente para verificar el recuento actual
         results = oem.run_checks()
-        # 10 checks originales + scan_backpressure_health + db_lock_rate_anomaly = 12
-        assert len(results) == 12
+        # 10 checks originales + scan_backpressure_health + db_lock_rate_anomaly + stale_connection_anomaly = 13
+        assert len(results) == 13
         assert "orchestrator_heartbeat" in results
         assert "shadow_sync" in results
         assert "shadow_stagnation" in results
@@ -171,7 +171,7 @@ class TestOemProductionIntegration:
 
         oem.stop()
         assert oem.last_checked_at is not None
-        assert len(oem.last_results) == 12  # 10 originales + scan_backpressure_health + db_lock_rate_anomaly
+        assert len(oem.last_results) == 13  # 10 originales + scan_backpressure_health + db_lock_rate_anomaly + stale_connection_anomaly
 
     def test_get_health_summary_incluye_last_checked_at_en_none_inicial(self, mock_storage):
         """get_health_summary() funciona aunque last_checked_at sea None."""

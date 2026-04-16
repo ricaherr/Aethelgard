@@ -20,10 +20,11 @@ import json
 import logging
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Deque, Dict, List, Optional, Tuple
 
 from data_vault.storage import StorageManager
 from utils.alerting import Alert, AlertingService, AlertSeverity
@@ -93,9 +94,22 @@ class OperationalEdgeMonitor(threading.Thread):
         self._alerting: AlertingService = alerting_service or AlertingService()
         # ETI: DatabaseManager inyectado para evitar acoplamiento al singleton global
         self._database_manager: Optional[Any] = database_manager
+
+        # ETI: EDGE_StaleConnection_Response_2026-04-16
+        # Buffer deslizante de eventos stale: (timestamp_monotonic, db_path, trace_id)
+        self._stale_event_log: Deque[Tuple[float, str, str]] = deque(maxlen=500)
+        self._stale_log_lock: threading.Lock = threading.Lock()
+        self._stale_degraded_dbs: set = set()
+        self._register_stale_hook()
         # ETI: EDGE Volatility Response — suscripción a AnomalySentinel
         self._sentinel = sentinel
         self._vrm: Optional[Any] = self._init_vrm(sentinel)
+
+    # ETI: umbrales para anomalía de stale connection
+    STALE_CONN_WARN_PER_MIN: float = 3.0
+    STALE_CONN_FAIL_PER_MIN: float = 8.0
+    STALE_CONN_WINDOW_SECONDS: int = 60
+    STALE_CONN_DEGRADE_THRESHOLD: int = 20  # Eventos en ventana → modo solo-lectura
 
     # ── Thread interface ──────────────────────────────────────────────────────
 
@@ -200,6 +214,7 @@ class OperationalEdgeMonitor(threading.Thread):
             "shadow_stagnation": self._check_shadow_stagnation,
             "scan_backpressure_health": self._check_scan_backpressure_health,
             "db_lock_rate_anomaly": self._check_db_lock_rate_anomaly,
+            "stale_connection_anomaly": self._check_stale_connection_anomaly,
         }
         results = {}
         for name, fn in checks.items():
@@ -961,6 +976,179 @@ class OperationalEdgeMonitor(threading.Thread):
 
 
     # ─────────────────────────────────────────────────────────────────────────
+    # ETI: EDGE_StaleConnection_Response_2026-04-16
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _register_stale_hook(self) -> None:
+        """Registra el callback en el DatabaseManager si está disponible."""
+        try:
+            mgr = self._database_manager
+            if mgr is None:
+                from data_vault.database_manager import get_database_manager
+                mgr = get_database_manager()
+            mgr.register_stale_hook(self._on_stale_connection)
+            logger.info("[OEM] Stale connection hook registrado en DatabaseManager")
+        except Exception as exc:
+            logger.warning("[OEM] No se pudo registrar stale hook: %s", exc)
+
+    def _on_stale_connection(self, db_path: str, trace_id: str) -> None:
+        """
+        Callback invocado por DatabaseManager cada vez que recrea una conexión stale.
+
+        Registra el evento, evalúa la frecuencia y dispara alerta o degradación
+        si se supera el umbral configurado.
+        """
+        now = time.monotonic()
+        with self._stale_log_lock:
+            self._stale_event_log.append((now, db_path, trace_id))
+
+        logger.info(
+            "[OEM] Stale connection event registrado: db=%s trace_id=%s",
+            db_path,
+            trace_id,
+        )
+
+        rate = self._count_stale_events_per_min(db_path)
+        event_count = self._count_stale_events_in_window(db_path)
+
+        if event_count >= self.STALE_CONN_DEGRADE_THRESHOLD:
+            self._handle_stale_degradation(db_path, trace_id, rate, event_count)
+        elif rate >= self.STALE_CONN_FAIL_PER_MIN:
+            self._alerting.send_alert(Alert(
+                severity=AlertSeverity.CRITICAL,
+                key=f"stale_conn_critical:{db_path}",
+                title="Stale Connection Rate CRÍTICA",
+                message=(
+                    f"DatabaseManager recrea conexión stale a {rate:.1f}/min en '{db_path}'. "
+                    f"trace_id={trace_id} — posible corrupción o fallo de infraestructura."
+                ),
+                db_path=db_path,
+                component="DatabaseManager",
+                extra={"trace_id": trace_id, "rate_per_min": rate},
+            ))
+        elif rate >= self.STALE_CONN_WARN_PER_MIN:
+            self._alerting.send_alert(Alert(
+                severity=AlertSeverity.WARNING,
+                key=f"stale_conn_warn:{db_path}",
+                title="Stale Connection Rate elevada",
+                message=(
+                    f"DatabaseManager recrea conexión stale a {rate:.1f}/min en '{db_path}'. "
+                    f"trace_id={trace_id}"
+                ),
+                db_path=db_path,
+                component="DatabaseManager",
+                extra={"trace_id": trace_id, "rate_per_min": rate},
+            ))
+
+    def _handle_stale_degradation(
+        self, db_path: str, trace_id: str, rate: float, event_count: int
+    ) -> None:
+        """Activa modo solo-lectura cuando el patrón de stale es crítico y sostenido."""
+        if db_path in self._stale_degraded_dbs:
+            return
+
+        self._stale_degraded_dbs.add(db_path)
+        logger.error(
+            "[OEM] DEGRADACIÓN activada por stale connection sostenida: db=%s "
+            "eventos=%d rate=%.1f/min trace_id=%s",
+            db_path,
+            event_count,
+            rate,
+            trace_id,
+        )
+
+        try:
+            mgr = self._database_manager
+            if mgr is None:
+                from data_vault.database_manager import get_database_manager
+                mgr = get_database_manager()
+            if hasattr(mgr, "_policy_tuner"):
+                mgr._policy_tuner.apply_read_only_mode(
+                    db_path, mgr._connection_pool
+                )
+        except Exception as exc:
+            logger.error("[OEM] No se pudo activar modo solo-lectura: %s", exc)
+
+        self._alerting.send_alert(Alert(
+            severity=AlertSeverity.CRITICAL,
+            key=f"stale_conn_degraded:{db_path}",
+            title="BD Degradada por Stale Connection Sostenida",
+            message=(
+                f"'{db_path}' degradada a modo SOLO-LECTURA tras {event_count} eventos "
+                f"de stale connection ({rate:.1f}/min). trace_id={trace_id}. "
+                "Requiere inspección manual. Llame a clear_stale_degraded() tras reparación."
+            ),
+            db_path=db_path,
+            component="DatabaseManager",
+            extra={"trace_id": trace_id, "event_count": event_count, "rate_per_min": rate},
+        ))
+
+    def clear_stale_degraded(self, db_path: str) -> None:
+        """
+        Revierte la degradación por stale connection para db_path.
+
+        Debe llamarse tras reparación manual confirmada. También limpia
+        el modo solo-lectura en el DatabaseManager si está disponible.
+        """
+        self._stale_degraded_dbs.discard(db_path)
+        with self._stale_log_lock:
+            # Limpiar historial para que la tasa vuelva a cero
+            filtered = [(ts, p, tid) for ts, p, tid in self._stale_event_log if p != db_path]
+            self._stale_event_log = deque(filtered, maxlen=500)
+        try:
+            mgr = self._database_manager
+            if mgr is None:
+                from data_vault.database_manager import get_database_manager
+                mgr = get_database_manager()
+            if hasattr(mgr, "clear_degraded"):
+                mgr.clear_degraded(db_path)
+        except Exception as exc:
+            logger.warning("[OEM] clear_stale_degraded: error limpiando DatabaseManager: %s", exc)
+        logger.info("[OEM] Degradación stale revertida para %s", db_path)
+
+    def _count_stale_events_per_min(self, db_path: str) -> float:
+        """Calcula la tasa de eventos stale por minuto para db_path en la ventana activa."""
+        count = self._count_stale_events_in_window(db_path)
+        return (count / self.STALE_CONN_WINDOW_SECONDS) * 60.0
+
+    def _count_stale_events_in_window(self, db_path: str) -> int:
+        """Cuenta eventos stale de db_path dentro de la ventana de tiempo configurada."""
+        cutoff = time.monotonic() - self.STALE_CONN_WINDOW_SECONDS
+        with self._stale_log_lock:
+            return sum(
+                1 for ts, p, _ in self._stale_event_log
+                if p == db_path and ts >= cutoff
+            )
+
+    def get_stale_event_summary(self) -> Dict[str, Any]:
+        """
+        Retorna un resumen observable de los eventos stale registrados.
+
+        Returns:
+            {
+                "total_events": int,
+                "degraded_dbs": [db_path, ...],
+                "rates_per_min": {db_path: float},
+            }
+        """
+        cutoff = time.monotonic() - self.STALE_CONN_WINDOW_SECONDS
+        with self._stale_log_lock:
+            recent = [(ts, p, tid) for ts, p, tid in self._stale_event_log if ts >= cutoff]
+
+        db_counts: Dict[str, int] = {}
+        for _, p, _ in recent:
+            db_counts[p] = db_counts.get(p, 0) + 1
+
+        return {
+            "total_events": len(recent),
+            "degraded_dbs": list(self._stale_degraded_dbs),
+            "rates_per_min": {
+                p: round((cnt / self.STALE_CONN_WINDOW_SECONDS) * 60.0, 2)
+                for p, cnt in db_counts.items()
+            },
+        }
+
+    # ─────────────────────────────────────────────────────────────────────────
     # ETI: Check db_lock_rate_anomaly
     # ─────────────────────────────────────────────────────────────────────────
 
@@ -1017,12 +1205,57 @@ class OperationalEdgeMonitor(threading.Thread):
             f"Tasa de lock normal: {max_rate:.1f} eventos/min en {max_rate_db}",
         )
 
+    def _check_stale_connection_anomaly(self) -> CheckResult:
+        """
+        Detecta patrones anómalos de stale connection registrados vía hook en DatabaseManager.
+
+        FAIL  — tasa supera umbral crítico o DB degradada.
+        WARN  — tasa supera umbral de advertencia.
+        OK    — sin eventos o tasa dentro del rango normal.
+        """
+        summary = self.get_stale_event_summary()
+        degraded: List[str] = summary.get("degraded_dbs", [])
+        rates: Dict[str, float] = summary.get("rates_per_min", {})
+
+        if degraded:
+            return CheckResult(
+                CheckStatus.FAIL,
+                f"BDs degradadas por stale connection sostenida: {degraded}",
+            )
+
+        if not rates:
+            return CheckResult(CheckStatus.OK, "Sin eventos de stale connection recientes")
+
+        max_db = max(rates, key=lambda k: rates[k])
+        max_rate = rates[max_db]
+
+        if max_rate >= self.STALE_CONN_FAIL_PER_MIN:
+            return CheckResult(
+                CheckStatus.FAIL,
+                f"Stale connection rate crítica: {max_rate:.1f}/min en '{max_db}' "
+                f"(umbral={self.STALE_CONN_FAIL_PER_MIN})",
+            )
+        if max_rate >= self.STALE_CONN_WARN_PER_MIN:
+            return CheckResult(
+                CheckStatus.WARN,
+                f"Stale connection rate elevada: {max_rate:.1f}/min en '{max_db}' "
+                f"(umbral warn={self.STALE_CONN_WARN_PER_MIN})",
+            )
+        return CheckResult(
+            CheckStatus.OK,
+            f"Stale connection rate normal: {max_rate:.1f}/min en '{max_db}'",
+        )
+
     # ─────────────────────────────────────────────────────────────────────────
     # ETI: Despacho de alertas proactivas
     # ─────────────────────────────────────────────────────────────────────────
 
     # Checks que generan alerta CRITICAL (no solo log)
-    _CRITICAL_ALERT_CHECKS = {"orchestrator_heartbeat", "db_lock_rate_anomaly"}
+    _CRITICAL_ALERT_CHECKS = {
+        "orchestrator_heartbeat",
+        "db_lock_rate_anomaly",
+        "stale_connection_anomaly",
+    }
 
     def _dispatch_critical_alerts(
         self,
