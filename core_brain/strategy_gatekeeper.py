@@ -50,7 +50,12 @@ class StrategyGatekeeper:
         self.storage = storage
         self.asset_scores: Dict[str, float] = {}
         self.market_whitelists: Dict[str, List[str]] = {}
-        
+
+        # Exploración adaptativa (solo DEMO)
+        self._exploration_scores: Dict[str, Dict[str, float]] = {}  # strategy_id → {asset: score}
+        self._frozen_exploration: Dict[str, set] = {}               # strategy_id → {asset}
+        self._exploration_pf: Dict[str, Dict[str, float]] = {}      # strategy_id → {asset: PF}
+
         # Load initial affinity scores from DB
         try:
             if hasattr(self.storage, "get_strategy_affinity_scores"):
@@ -115,31 +120,41 @@ class StrategyGatekeeper:
         Fast path validation identical to can_execute_on_tick() but returns a
         deterministic reason code alongside the boolean decision.
 
-        Reason codes (canonical — HU 5.5):
+        Reason codes (canonical — HU 5.5 + exploración):
           - ``gk_approved``              — all checks passed
-          - ``gk_whitelist_reject``      — asset not in strategy whitelist (SSOT-legit)
-          - ``gk_score_below_threshold`` — affinity score below minimum (SSOT-legit)
+          - ``gk_approved_exploration``  — aprobado vía exploración adaptativa
+          - ``gk_whitelist_reject``      — asset not in strategy whitelist
+          - ``gk_score_below_threshold`` — affinity score below minimum
+          - ``gk_frozen_exploration``    — activo congelado por bajo PF en exploración
 
         Returns:
             Tuple (allowed: bool, reason_code: str)
         """
         normalized_asset = _normalize_symbol(asset)
+
         if strategy_id in self.market_whitelists:
             if normalized_asset not in self.market_whitelists[strategy_id]:
                 logger.debug("[GATEKEEPER] Veto: %s not in whitelist for %s", asset, strategy_id)
                 return False, "gk_whitelist_reject"
 
         asset_score = self.asset_scores.get(normalized_asset, self.asset_scores.get(asset, 0.0))
-        if asset_score < min_threshold:
-            logger.debug(
-                "[GATEKEEPER] Veto: %s score %.2f < threshold %.2f",
-                asset,
-                asset_score,
-                min_threshold,
-            )
-            return False, "gk_score_below_threshold"
+        if asset_score >= min_threshold:
+            return True, "gk_approved"
 
-        return True, "gk_approved"
+        # Fallback: verificar activos en exploración adaptativa
+        exploration = self._exploration_scores.get(strategy_id, {})
+        if normalized_asset in exploration:
+            frozen = self._frozen_exploration.get(strategy_id, set())
+            if normalized_asset in frozen:
+                logger.debug("[GATEKEEPER] Frozen exploration asset: %s", asset)
+                return False, "gk_frozen_exploration"
+            logger.debug("[GATEKEEPER] Approved via exploration: %s", asset)
+            return True, "gk_approved_exploration"
+
+        logger.debug(
+            "[GATEKEEPER] Veto: %s score %.2f < threshold %.2f", asset, asset_score, min_threshold
+        )
+        return False, "gk_score_below_threshold"
 
     def validate_asset_score(
         self,
@@ -314,6 +329,71 @@ class StrategyGatekeeper:
             'whitelisted_usr_strategies': len(self.market_whitelists),
             'total_whitelist_entries': sum(len(v) for v in self.market_whitelists.values())
         }
+
+    # ── Exploración Adaptativa (solo DEMO) ──────────────────────────────────────
+
+    def enable_exploration_for_asset(
+        self, strategy_id: str, asset: str, temp_score: float = 0.6
+    ) -> None:
+        """Añade un activo al pool de exploración con score temporal relajado."""
+        normalized = _normalize_symbol(asset)
+        self._exploration_scores.setdefault(strategy_id, {})[normalized] = temp_score
+        logger.info(
+            "[GATEKEEPER] Exploración habilitada: %s@%s (score=%.2f)",
+            strategy_id, normalized, temp_score,
+        )
+
+    def disable_exploration_for_asset(self, strategy_id: str, asset: str) -> None:
+        """Elimina un activo del pool de exploración."""
+        normalized = _normalize_symbol(asset)
+        scores = self._exploration_scores.get(strategy_id, {})
+        scores.pop(normalized, None)
+        self._frozen_exploration.get(strategy_id, set()).discard(normalized)
+        self._exploration_pf.get(strategy_id, {}).pop(normalized, None)
+        logger.info("[GATEKEEPER] Exploración deshabilitada: %s@%s", strategy_id, normalized)
+
+    def is_exploration_active(self, strategy_id: str) -> bool:
+        """Retorna True si la estrategia tiene activos en exploración."""
+        return bool(self._exploration_scores.get(strategy_id))
+
+    def freeze_exploration_asset(self, strategy_id: str, asset: str) -> None:
+        """Congela un activo en exploración: bloquea ejecuciones futuras."""
+        normalized = _normalize_symbol(asset)
+        self._frozen_exploration.setdefault(strategy_id, set()).add(normalized)
+        logger.info("[GATEKEEPER] Activo congelado (bajo PF): %s@%s", strategy_id, normalized)
+
+    def update_exploration_profit_factor(
+        self, strategy_id: str, asset: str, pf: float
+    ) -> None:
+        """Registra o actualiza el Profit Factor de un activo en exploración."""
+        normalized = _normalize_symbol(asset)
+        self._exploration_pf.setdefault(strategy_id, {})[normalized] = pf
+
+    def rollback_low_pf_exploration_assets(
+        self, strategy_id: str, pf_threshold: float = 1.2
+    ) -> List[str]:
+        """
+        Elimina activos en exploración cuyo PF no supera el umbral.
+        Retorna la lista de activos eliminados.
+        """
+        pf_map = self._exploration_pf.get(strategy_id, {})
+        exploration = self._exploration_scores.get(strategy_id, {})
+        removed: List[str] = []
+
+        for asset in list(exploration.keys()):
+            asset_pf = pf_map.get(asset, 0.0)
+            if asset_pf < pf_threshold:
+                self.disable_exploration_for_asset(strategy_id, asset)
+                removed.append(asset)
+                logger.info(
+                    "[GATEKEEPER] Rollback exploración: %s eliminado (PF=%.2f < %.2f)",
+                    asset, asset_pf, pf_threshold,
+                )
+        return removed
+
+    def get_exploration_assets(self, strategy_id: str) -> List[str]:
+        """Retorna los activos activos de exploración para la estrategia."""
+        return list(self._exploration_scores.get(strategy_id, {}).keys())
 
     def log_state(self) -> None:
         """Log current state (for debugging)."""

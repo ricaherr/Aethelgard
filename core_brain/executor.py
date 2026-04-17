@@ -716,6 +716,31 @@ class OrderExecutor:
             logger.error(f"Error during position reconciliation: {e}")
             return False
     
+    # ── Exploración Adaptativa (Handshake DEMO) ───────────────────────────────
+
+    def _log_exploration_handshake(
+        self, asset: str, strategy_id: str, account_mode: str
+    ) -> None:
+        """
+        Registra el evento de handshake cuando un activo en exploración ejecuta.
+        Solo persiste en modo DEMO — silent en LIVE/SHADOW.
+        """
+        if account_mode != "DEMO":
+            return
+        trace_id = f"HANDSHAKE-EXPLORE-{asset}-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        self.storage.log_strategy_state_change(
+            strategy_id=strategy_id,
+            old_mode="EXPLORATION_ON",
+            new_mode="EXPLORATION_EXECUTING",
+            trace_id=trace_id,
+            reason=f"Exploration handshake: {asset} executing in DEMO",
+            metrics={"asset": asset, "account_mode": account_mode},
+        )
+        logger.info(
+            "[EXECUTOR] Exploration handshake registered: %s@%s (trace=%s)",
+            asset, strategy_id, trace_id,
+        )
+
     def get_status(self) -> Dict:
         """Get current executor status."""
         return {

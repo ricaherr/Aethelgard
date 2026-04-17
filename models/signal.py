@@ -3,6 +3,9 @@ from typing import Optional, Any, Dict
 from datetime import datetime
 from pydantic import BaseModel, Field
 
+# Flag que identifica señales generadas bajo modo de exploración adaptativa (solo DEMO).
+EXPLORATION_ON: str = "exploration_mode"
+
 class ConnectorType(Enum):
     """Define los tipos de conectores o fuentes de datos."""
     WEBHOOK = "WEBHOOK"

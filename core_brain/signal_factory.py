@@ -41,6 +41,7 @@ from core_brain.services.shadow_penalty_injector import ShadowPenaltyInjector
 # Import strategies
 from core_brain.strategies.base_strategy import BaseStrategy
 from core_brain.strategies.oliver_velez import OliverVelezStrategy
+from models.signal import EXPLORATION_ON
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,7 @@ class SignalFactory:
         instrument_manager: Optional[Any] = None,
         signal_validator: Optional[StrategySignalValidator] = None,
         shadow_penalty_injector: Optional[ShadowPenaltyInjector] = None,
+        gatekeeper: Optional[Any] = None,
     ):
         """
         Inicializa la SignalFactory con inyección de dependencias estricta.
@@ -132,6 +134,7 @@ class SignalFactory:
         )
         self.signal_validator: Optional[StrategySignalValidator] = signal_validator
         self.shadow_penalty_injector: Optional[ShadowPenaltyInjector] = shadow_penalty_injector
+        self.gatekeeper: Optional[Any] = gatekeeper
         self.last_funnel_summary: Optional[Dict[str, Any]] = None
         
         if not self.notifier or not self.notifier.is_configured():
@@ -274,6 +277,18 @@ class SignalFactory:
                                 funnel_reasons["validator_rejected"] += 1
                             continue
                     # ─────────────────────────────────────────────────────────
+
+                    # Tagging EXPLORATION_ON si el activo está en modo exploración (solo DEMO)
+                    if self.gatekeeper and self.gatekeeper.is_exploration_active(strategy_id):
+                        _, reason = self.gatekeeper.can_execute_on_tick_with_reason(
+                            signal.symbol, 0.75, strategy_id
+                        )
+                        if reason == "gk_approved_exploration":
+                            signal.metadata[EXPLORATION_ON] = True
+                            logger.info(
+                                "[SIGNAL_FACTORY] %s/%s tagged EXPLORATION_ON",
+                                strategy_id, signal.symbol,
+                            )
 
                     # Procesar señal válida
                     await self._process_valid_signal(signal)

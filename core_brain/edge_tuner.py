@@ -9,12 +9,19 @@ Delta = Actual Result - Predicted Score (Confidence)
 import logging
 from typing import Dict, List, Optional, Any
 import numpy as np
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 
 from data_vault.storage import StorageManager
 from models.signal import MarketRegime
 
 logger = logging.getLogger(__name__)
+
+# ── Constantes de exploración adaptativa (DEMO) ────────────────────────────────
+STARVATION_THRESHOLD: int = 50          # Velas sin señal antes de activar exploración
+MAX_EXPLORATION_ASSETS_PER_DAY: int = 3  # Máximo de activos nuevos en 24h
+EXPLORATION_AFFINITY_SCORE: float = 0.60  # Score temporal para activos explorados
+EXPLORATION_FLAG: str = "EXPLORATION_ON"  # Identificador del modo exploración
+
 
 class EdgeTuner:
     """
@@ -38,7 +45,102 @@ class EdgeTuner:
             storage: StorageManager for accessing trade results and configs (SSOT)
         """
         self.storage = storage
-    
+        self._starvation_counters: Dict[str, int] = {}
+        self._exploration_budget: Dict[str, int] = {}   # date_str → assets added
+        self._exploration_assets: Dict[str, List[str]] = {}  # strategy_id → [assets]
+
+    # ── Starvation Tracking ────────────────────────────────────────────────────
+
+    def record_candle_without_signal(self, symbol: str, timeframe: str) -> None:
+        """Incrementa el contador de inactividad para símbolo+timeframe."""
+        key = f"{symbol}:{timeframe}"
+        self._starvation_counters[key] = self._starvation_counters.get(key, 0) + 1
+
+    def get_starvation_count(self, symbol: str, timeframe: str) -> int:
+        """Retorna el contador actual de starvation para símbolo+timeframe."""
+        return self._starvation_counters.get(f"{symbol}:{timeframe}", 0)
+
+    def check_starvation(self, symbol: str, timeframe: str) -> bool:
+        """Retorna True si el contador supera el umbral de starvation."""
+        return self.get_starvation_count(symbol, timeframe) >= STARVATION_THRESHOLD
+
+    def reset_starvation_counter(self, symbol: str, timeframe: str) -> None:
+        """Reinicia el contador cuando se genera una señal válida."""
+        self._starvation_counters[f"{symbol}:{timeframe}"] = 0
+
+    # ── Relax Constraints ──────────────────────────────────────────────────────
+
+    def relax_constraints(
+        self,
+        strategy_id: str,
+        current_threshold: float = 0.75,
+        account_mode: str = "DEMO",
+    ) -> Dict[str, Any]:
+        """
+        Relaja el umbral de affinity para explorar nuevos activos.
+        Solo opera en modo DEMO — en LIVE/SHADOW retorna sin efecto.
+        """
+        if account_mode != "DEMO":
+            logger.info(
+                "[EDGE_TUNER] relax_constraints ignorado fuera de DEMO (mode=%s)", account_mode
+            )
+            return {"exploration_active": False, "strategy_id": strategy_id, "reason": "not_demo"}
+
+        relaxed = max(EXPLORATION_AFFINITY_SCORE, current_threshold * 0.70)
+        logger.info(
+            "[EDGE_TUNER] EXPLORATION_ON activado para %s: threshold %.2f→%.2f",
+            strategy_id, current_threshold, relaxed,
+        )
+        self.storage.log_strategy_state_change(
+            strategy_id=strategy_id,
+            old_mode="NORMAL",
+            new_mode=EXPLORATION_FLAG,
+            trace_id=f"EXPLORE-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
+            reason=f"Starvation detected. Relaxing threshold {current_threshold:.2f}→{relaxed:.2f}",
+            metrics={"current_threshold": current_threshold, "relaxed_threshold": relaxed},
+        )
+        return {
+            "exploration_active": True,
+            "strategy_id": strategy_id,
+            "relaxed_threshold": relaxed,
+            "flag": EXPLORATION_FLAG,
+        }
+
+    # ── Exploration Budget ─────────────────────────────────────────────────────
+
+    def add_exploration_asset(self, strategy_id: str, asset: str) -> bool:
+        """
+        Añade un activo al pool de exploración si el budget diario lo permite.
+        Retorna False si el budget está agotado o el activo ya existe.
+        """
+        today = date.today().isoformat()
+        used_today = self._exploration_budget.get(today, 0)
+        existing = self._exploration_assets.get(strategy_id, [])
+
+        if asset in existing:
+            return True  # Ya contabilizado, no gasta budget
+
+        if used_today >= MAX_EXPLORATION_ASSETS_PER_DAY:
+            logger.warning(
+                "[EDGE_TUNER] Budget de exploración agotado para hoy (%d/%d)",
+                used_today, MAX_EXPLORATION_ASSETS_PER_DAY,
+            )
+            return False
+
+        self._exploration_budget[today] = used_today + 1
+        self._exploration_assets.setdefault(strategy_id, []).append(asset)
+        logger.info("[EDGE_TUNER] Activo en exploración añadido: %s → %s", strategy_id, asset)
+        return True
+
+    def get_remaining_exploration_budget(self) -> int:
+        """Retorna cuántos activos más se pueden añadir hoy."""
+        today = date.today().isoformat()
+        return MAX_EXPLORATION_ASSETS_PER_DAY - self._exploration_budget.get(today, 0)
+
+    def get_exploration_assets(self, strategy_id: str) -> List[str]:
+        """Retorna la lista de activos actualmente en exploración para la estrategia."""
+        return list(self._exploration_assets.get(strategy_id, []))
+
     # --- Weight Adjustment (Feedback Loop Logic) ---
 
     def process_trade_feedback(self, trade_result: Dict[str, Any], predicted_score: float, regime: str) -> Dict[str, Any]:
