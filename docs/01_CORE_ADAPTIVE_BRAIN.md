@@ -16,7 +16,7 @@ El sistema comprende la estructura del mercado clasificando cada `asset` en cuat
 
 Para garantizar su perpetuidad y eficiencia, el sistema evoluciona de forma autónoma procesando el resultado histórico y reciente para recalibrar su toma de decisiones.
 
-*   **EdgeTuner**: Motor de calibración paramétrica en tiempo real. Evalúa los resultados de cada ejecución para reajustar los pesos de relevancia (`regime_configs`) basándose en el historial empírico.
+*   **EdgeTuner**: Motor de calibración paramétrica en tiempo real. Evalúa los resultados de cada ejecución para reajustar los pesos de relevancia (`regime_configs`) basándose en el historial empírico. En modo DEMO, activa el ciclo EDGE DEMO autoajustable y exploración evolutiva (ver MANIFESTO §VIII), permitiendo expansión radial, freeze/rollback y tagging EXPLORATION_ON para aprendizaje incremental sin side effects.
 *   **ThresholdOptimizer**: Controlador central del riesgo dinámico. Modula automáticamente la exigencia del sistema ajustando el `confidence_threshold`. Observa el desempeño (win_rate, drawdown continuo y pérdidas consecutivas) para elevar la precisión ante rachas negativas o permitir una mayor exploración algorítmica cuando la equidad es alcista.
 
 ### Métricas Sensoriales

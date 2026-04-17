@@ -25,7 +25,23 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 
 ---
 
+
 ## 🏛️ ÉPICAS ARCHIVADAS
+
+### E24 — EDGE DEMO Autoajustable & Exploración Evolutiva
+| Campo | Valor |
+|---|---|
+| **Épica** | E24 — EDGE DEMO Autoajustable & Exploración Evolutiva |
+| **Trace_ID** | `EDGE_DEMO_EXPLORATION_2026-04-17` |
+| **Sprints** | 34 |
+| **Completada** | 17 de Abril, 2026 |
+| **Dominios** | 01_CORE_ADAPTIVE_BRAIN · 03_PERFORMANCE_DARWINISM |
+| **Objetivo** | Implementar ciclo de exploración evolutiva autoajustable en DEMO, con expansión radial, freeze/rollback y tagging EXPLORATION_ON |
+| **HUs** | HU 10.34 · HU 10.35 · HU 10.36 |
+| **Validate_all** | ✅ 29/29 tests focales PASSED · validate_all.py 100% |
+
+**Resumen ejecutivo**: Se implementó y validó el ciclo EDGE DEMO autoajustable, permitiendo exploración incremental y reversible de activos fuera de whitelist bajo control de budget y tagging EXPLORATION_ON. El sistema evita bloqueos por afinidad, ejecuta freeze/rollback automático ante bajo Profit Factor y documenta cada ciclo vía handshake Ejecutor. Evidencia: logs de expansión, rollback, freeze y generación de señales exploratorias en modo DEMO. Sin side effects en modo REAL. Tests TDD y validate_all.py en verde.
+
 
 ### E23 — DB Lock Recovery Refactor
 | Campo | Valor |

@@ -205,6 +205,47 @@ Cada acción persiste en `sys_config` (`edge_volatility_state`, `edge_volatility
 
 ---
 
+
+## VIII. EDGE DEMO Autoajustable y Exploración Evolutiva
+
+**Vigente desde:** 2026-04-17 | Trace_ID: EDGE_DEMO_EXPLORATION_2026-04-17
+
+### Principio
+
+El sistema Aethelgard en modo DEMO implementa un ciclo de exploración evolutiva autoajustable (EDGE DEMO), permitiendo la expansión radial de activos y estrategias bajo control, evitando la asfixia por filtros restrictivos (affinity/whitelist) y maximizando el aprendizaje real sin comprometer la robustez.
+
+### Componentes Clave
+
+| Componente | Responsabilidad |
+|---|---|
+| `EdgeTuner` | Detecta starvation, ajusta constraints, activa exploración y budget |
+| `StrategyGatekeeper` | Permite ejecución exploratoria, gestiona freeze y rollback de activos |
+| `SignalFactory` | Tagging automático EXPLORATION_ON, integración con Gatekeeper |
+| `Executor` | Handshake de exploración, logging, freeze/rollback |
+
+### Lógica de Exploración
+
+- **Starvation Counter**: Detecta bloqueo por afinidad/whitelist y activa modo exploración.
+- **Exploration Budget**: Limita el número de activos explorados simultáneamente.
+- **Expansión Radial**: Selección incremental de activos fuera de whitelist para testeo controlado.
+- **Freeze/Rollback**: Si el Profit Factor de exploración es bajo, los activos se congelan y se revierte la expansión.
+- **Tagging**: Todas las señales exploratorias llevan flag EXPLORATION_ON para trazabilidad.
+- **Handshake Ejecutor**: Cada ciclo de exploración queda logueado y auditable.
+
+### Seguridad y Evidencia
+
+- Solo se activa en modo DEMO.
+- Tests TDD: 29 tests en `tests/test_edge_demo_exploration.py` cubriendo todos los criterios de aceptación.
+- Validación: `validate_all.py` 100% OK, logs de handshake y rollback/freeze operativos.
+- Evidencia: generación de señales exploratorias, logs de expansión, rollback y freeze, sin side effects en modo REAL.
+
+### Criterios de Éxito
+
+- El sistema nunca queda bloqueado por afinidad/whitelist en DEMO.
+- La exploración es incremental, reversible y auditable.
+- No hay side effects en modo REAL.
+
+---
 ## VII. Respuesta EDGE a Stale Connection
 
 **ETI_ID**: `EDGE_StaleConnection_Response_2026-04-16`
