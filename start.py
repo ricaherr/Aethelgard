@@ -731,7 +731,8 @@ async def main() -> None:
         # (potencialmente horas atrás si el sistema estuvo inactivo) y emite FAIL
         # aunque el orchestrator esté a punto de arrancar.
         storage.update_module_heartbeat("orchestrator")
-        logger.info("[INIT] Heartbeat inicial del orchestrator escrito (previene falso FAIL en OEM)")
+        storage.update_module_heartbeat("executor")
+        logger.info("[INIT] Heartbeats iniciales escritos (orchestrator + executor) — previene falso FAIL en OEM")
 
         from core_brain.operational_edge_monitor import OperationalEdgeMonitor
         from data_vault.shadow_db import create_shadow_manager

@@ -203,18 +203,15 @@ class EdgeMonitor(threading.Thread):
     
     def _was_external_operation_reported_recently(self, ticket: int) -> bool:
         """Verificar si una operación externa ya fue reportada recientemente"""
-        conn = self.storage._get_conn()
-        try:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT COUNT(*) FROM usr_edge_learning 
-                WHERE detection LIKE ? 
-                AND timestamp >= datetime('now', '-24 hours')
-            """, (f"Operación manual externa detectada (Ticket: #{ticket})%",))
-            count = cursor.fetchone()[0]
-            return count > 0
-        finally:
-            self.storage._close_conn(conn)
+        rows = self.storage.execute_query(
+            """
+            SELECT COUNT(*) AS cnt FROM usr_edge_learning
+            WHERE detection LIKE ?
+            AND timestamp >= datetime('now', '-24 hours')
+            """,
+            (f"Operación manual externa detectada (Ticket: #{ticket})%",),
+        )
+        return bool(rows and rows[0].get("cnt", 0) > 0)
     
     def _report_external_operation(self, ticket: int) -> None:
         """Reportar operación externa detectada"""
@@ -274,19 +271,14 @@ class EdgeMonitor(threading.Thread):
     
     def _get_recent_pending_sys_signals(self) -> List[Dict]:
         """Obtener señales recientes que deberían haber sido ejecutadas"""
-        conn = self.storage._get_conn()
-        try:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT * FROM sys_signals 
-                WHERE status = 'PENDING' 
-                AND timestamp >= datetime('now', '-300 seconds')  -- Últimos 5 minutos
-                ORDER BY timestamp DESC
-            """)
-            rows = cursor.fetchall()
-            return [dict(row) for row in rows]
-        finally:
-            self.storage._close_conn(conn)
+        return self.storage.execute_query(
+            """
+            SELECT * FROM sys_signals
+            WHERE status = 'PENDING'
+            AND timestamp >= datetime('now', '-300 seconds')
+            ORDER BY timestamp DESC
+            """,
+        )
     
     def _find_mt5_matching_order(self, mt5_connector: Any, symbol: str, signal: Dict) -> bool:
         """
@@ -433,30 +425,17 @@ class EdgeMonitor(threading.Thread):
     
     def _count_recent_usr_signals(self) -> int:
         """Contar señales generadas en los últimos 60s"""
-        conn = self.storage._get_conn()
-        try:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT COUNT(*) FROM sys_signals 
-                WHERE timestamp >= datetime('now', '-60 seconds')
-            """)
-            return cursor.fetchone()[0]
-        finally:
-            self.storage._close_conn(conn)
-    
+        rows = self.storage.execute_query(
+            "SELECT COUNT(*) AS cnt FROM sys_signals WHERE timestamp >= datetime('now', '-60 seconds')"
+        )
+        return int(rows[0]["cnt"]) if rows else 0
+
     def _count_recent_executed_usr_signals(self) -> int:
         """Contar señales ejecutadas en los últimos 60s"""
-        conn = self.storage._get_conn()
-        try:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT COUNT(*) FROM sys_signals 
-                WHERE status = 'EXECUTED' 
-                AND timestamp >= datetime('now', '-60 seconds')
-            """)
-            return cursor.fetchone()[0]
-        finally:
-            self.storage._close_conn(conn)
+        rows = self.storage.execute_query(
+            "SELECT COUNT(*) AS cnt FROM sys_signals WHERE status = 'EXECUTED' AND timestamp >= datetime('now', '-60 seconds')"
+        )
+        return int(rows[0]["cnt"]) if rows else 0
     
     def _investigate_inconsistency(self, generated: int, executed: int) -> None:
         """Investigar inconsistencia y generar informe"""

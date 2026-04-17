@@ -1,29 +1,70 @@
-import { ChevronRight, ArrowUpRight, ArrowDownRight, Info, Power, Settings, AlertCircle, CheckCircle2, PauseCircle } from 'lucide-react';
-import { Signal } from '../../types/aethelgard';
+import { ChevronRight, ArrowUpRight, ArrowDownRight, Info, Power, Settings, AlertCircle, CheckCircle2, PauseCircle, Search, Filter } from 'lucide-react';
+import { Signal, RejectionReason } from '../../types/aethelgard';
 import { GlassPanel } from '../common/GlassPanel';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { cn } from '../../utils/cn';
 import { useSignalDragDrop } from '../../hooks/useSignalDragDrop';
 
 interface AlphaSignalsProps {
     signals: Signal[];
+    demoMode?: boolean;
 }
 
-export function AlphaSignals({ signals, modulesStatus }: AlphaSignalsProps & { modulesStatus?: any }) {
+const REJECTION_LABELS: Record<RejectionReason, { label: string; color: string }> = {
+    affinity:  { label: 'Affinity',  color: 'text-purple-400' },
+    whitelist: { label: 'Whitelist', color: 'text-blue-400'   },
+    budget:    { label: 'Budget',    color: 'text-orange-400' },
+    freeze:    { label: 'Freeze',    color: 'text-cyan-400'   },
+    rollback:  { label: 'Rollback',  color: 'text-yellow-400' },
+    quality:   { label: 'Quality',   color: 'text-red-400'    },
+    other:     { label: 'Other',     color: 'text-white/40'   },
+};
+
+export function AlphaSignals({ signals, modulesStatus, demoMode }: AlphaSignalsProps & { modulesStatus?: any }) {
     const scannerEnabled = modulesStatus?.modules?.scanner ?? true;
     const { onDragStart } = useSignalDragDrop();
+    const [filterExploratory, setFilterExploratory] = useState(false);
+
+    const exploratoryCount = signals.filter(s => s.is_exploratory).length;
+
+    const visibleSignals = filterExploratory
+        ? signals.filter(s => s.is_exploratory)
+        : signals;
 
     return (
         <GlassPanel className="flex-1 flex flex-col border-white/5">
             <div className="flex items-center justify-between mb-6">
                 <div>
-                    <h3 className="text-white/90 font-outfit font-bold tracking-tight text-lg">Opportunity Stream</h3>
+                    <h3 className="text-white/90 font-outfit font-bold tracking-tight text-lg flex items-center gap-2">
+                        Opportunity Stream
+                        {demoMode && (
+                            <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-aethelgard-gold/10 text-aethelgard-gold border border-aethelgard-gold/20 tracking-widest">
+                                DEMO
+                            </span>
+                        )}
+                    </h3>
                     <p className="text-white/50 text-[10px] uppercase tracking-[0.2em] mt-1">Real-time Alpha Generation (Darwinismo Algorítmico)</p>
                 </div>
-                <div className="flex gap-3">
+                <div className="flex gap-2 flex-wrap justify-end">
+                    {/* Filter: Exploratory */}
+                    {exploratoryCount > 0 && (
+                        <button
+                            onClick={() => setFilterExploratory(v => !v)}
+                            title="Mostrar solo señales con tag EXPLORATION_ON"
+                            className={cn(
+                                'flex items-center gap-1.5 px-3 py-1 rounded border text-[10px] font-bold uppercase tracking-widest transition-colors',
+                                filterExploratory
+                                    ? 'bg-aethelgard-gold/15 border-aethelgard-gold/30 text-aethelgard-gold'
+                                    : 'bg-white/5 border-white/10 text-white/50 hover:text-white/80',
+                            )}
+                        >
+                            <Search size={10} />
+                            Explore ({exploratoryCount})
+                        </button>
+                    )}
                     <div className="flex items-center gap-1.5 px-3 py-1 rounded bg-white/5 border border-white/10">
-                        <span className="text-[10px] font-bold text-white/60 uppercase">Filter:</span>
+                        <Filter size={10} className="text-white/40" />
                         <span className="text-[10px] font-bold text-aethelgard-green uppercase">All Symbols</span>
                     </div>
                     <button className="px-3 py-1 rounded bg-aethelgard-gold/10 text-aethelgard-gold border border-aethelgard-gold/20 text-[10px] font-bold uppercase tracking-widest hover:bg-aethelgard-gold/20 transition-colors">
@@ -34,10 +75,10 @@ export function AlphaSignals({ signals, modulesStatus }: AlphaSignalsProps & { m
 
             <div className="flex-1 space-y-3 overflow-y-auto scrollbar-hide pr-1">
                 <AnimatePresence initial={false}>
-                    {signals.length === 0 ? (
-                        <EmptyState scannerEnabled={scannerEnabled} />
+                    {visibleSignals.length === 0 ? (
+                        <EmptyState scannerEnabled={scannerEnabled} filterActive={filterExploratory} />
                     ) : (
-                        signals.map((signal) => (
+                        visibleSignals.map((signal) => (
                             <SignalItem key={signal.id} signal={signal} onDragStart={onDragStart} />
                         ))
                     )}
@@ -47,7 +88,21 @@ export function AlphaSignals({ signals, modulesStatus }: AlphaSignalsProps & { m
     );
 }
 
-function EmptyState({ scannerEnabled }: { scannerEnabled: boolean }) {
+function EmptyState({ scannerEnabled, filterActive }: { scannerEnabled: boolean; filterActive?: boolean }) {
+    if (filterActive) {
+        return (
+            <div className="h-full flex flex-col items-center justify-center py-20 opacity-50">
+                <Search size={48} className="mb-4 text-aethelgard-gold/50" />
+                <p className="text-sm font-outfit font-bold text-aethelgard-gold/80 uppercase tracking-widest mb-2">
+                    Sin señales exploratorias
+                </p>
+                <p className="text-xs text-white/40 text-center max-w-md">
+                    No hay señales con tag EXPLORATION_ON activas en este momento.
+                </p>
+            </div>
+        );
+    }
+
     if (!scannerEnabled) {
         return (
             <div className="h-full flex flex-col items-center justify-center py-20">
@@ -77,10 +132,9 @@ function EmptyState({ scannerEnabled }: { scannerEnabled: boolean }) {
 function SignalItem({ signal, onDragStart }: { signal: Signal; onDragStart?: (signal: Signal, sourceZone: string) => void }) {
     const isBuy = signal.side === 'BUY';
     const executionMode = signal.execution_mode || 'LIVE';
-    const rankingScore = signal.ranking_score || signal.score * 20; // Fallback a score si no existe ranking_score
+    const rankingScore = signal.ranking_score || signal.score * 20;
     const [isDragging, setIsDragging] = useState(false);
 
-    // Mapeo de estilos para execution_mode
     const executionModeConfig = {
         'LIVE': {
             bgColor: 'bg-aethelgard-green/20',
@@ -107,10 +161,11 @@ function SignalItem({ signal, onDragStart }: { signal: Signal; onDragStart?: (si
 
     const modeConfig = executionModeConfig[executionMode as keyof typeof executionModeConfig] || executionModeConfig['LIVE'];
 
+    const rejectionInfo = signal.rejection_reason ? REJECTION_LABELS[signal.rejection_reason] : null;
+
     const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
         setIsDragging(true);
-        
-        // Set drag image (signal card preview)
+
         const dragPreview = document.createElement('div');
         dragPreview.textContent = `${signal.symbol} ${signal.side}`;
         dragPreview.style.position = 'absolute';
@@ -121,21 +176,16 @@ function SignalItem({ signal, onDragStart }: { signal: Signal; onDragStart?: (si
         dragPreview.style.borderRadius = '4px';
         dragPreview.style.fontWeight = 'bold';
         document.body.appendChild(dragPreview);
-        
+
         e.dataTransfer.setDragImage(dragPreview, 0, 0);
         e.dataTransfer.effectAllowed = 'copy';
-        
-        // Store signal data in drag transfer
         e.dataTransfer.setData('application/json', JSON.stringify({
             signal,
             sourceZone: 'alpha-signals',
             timestamp: Date.now()
         }));
-        
-        // Call hook handler
+
         onDragStart?.(signal, 'alpha-signals');
-        
-        // Clean up
         setTimeout(() => document.body.removeChild(dragPreview), 0);
     };
 
@@ -152,7 +202,9 @@ function SignalItem({ signal, onDragStart }: { signal: Signal; onDragStart?: (si
                 'p-4 rounded-xl border flex flex-col lg:flex-row items-start lg:items-center justify-between transition-all group gap-4 lg:gap-0 cursor-grab active:cursor-grabbing',
                 isDragging
                     ? 'opacity-50 bg-white/5 border-aethelgard-blue/50 shadow-lg shadow-aethelgard-blue/30'
-                    : 'border-white/5 bg-white/[0.01]'
+                    : signal.is_exploratory
+                        ? 'border-aethelgard-gold/20 bg-aethelgard-gold/[0.02] hover:border-aethelgard-gold/30'
+                        : 'border-white/5 bg-white/[0.01]'
             )}
             title="Drag to analyze or drop into a widget"
         >
@@ -161,6 +213,10 @@ function SignalItem({ signal, onDragStart }: { signal: Signal; onDragStart?: (si
                 <div className="w-24">
                     <div className="text-[9px] text-white/50 uppercase font-bold tracking-widest mb-1">Symbol</div>
                     <div className="text-base font-outfit font-bold text-white/90 tracking-tight">{signal.symbol}</div>
+                    {/* DEMO badge per signal */}
+                    {signal.demo_mode && (
+                        <span className="text-[7px] font-bold uppercase text-aethelgard-gold/70">DEMO</span>
+                    )}
                 </div>
 
                 <div className="w-16">
@@ -187,8 +243,34 @@ function SignalItem({ signal, onDragStart }: { signal: Signal; onDragStart?: (si
                 </div>
             </div>
 
-            {/* Right: Execution Mode + Ranking Score + Status */}
+            {/* Right: Exploration + Execution Mode + Ranking Score + Status */}
             <div className="flex items-center gap-4 lg:gap-6 flex-wrap lg:flex-nowrap justify-end w-full lg:w-auto">
+                {/* EXPLORATION_ON badge */}
+                {signal.is_exploratory && (
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        title="Señal generada por el ciclo EDGE DEMO de exploración evolutiva"
+                        className="flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[8px] font-black uppercase tracking-widest bg-aethelgard-gold/10 text-aethelgard-gold border-aethelgard-gold/30"
+                    >
+                        <Search size={9} />
+                        EXPLORATION_ON
+                    </motion.div>
+                )}
+
+                {/* Rejection reason (si aplica) */}
+                {rejectionInfo && (
+                    <span
+                        title={`Motivo de rechazo: ${rejectionInfo.label}`}
+                        className={cn(
+                            'hidden sm:flex items-center gap-1 text-[8px] font-bold uppercase tracking-widest bg-white/5 px-2 py-0.5 rounded border border-white/10',
+                            rejectionInfo.color,
+                        )}
+                    >
+                        ✕ {rejectionInfo.label}
+                    </span>
+                )}
+
                 {/* Execution Mode Badge */}
                 <motion.div
                     initial={{ opacity: 0, scale: 0.9 }}

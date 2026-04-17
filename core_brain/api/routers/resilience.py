@@ -58,10 +58,24 @@ class ResilienceCommandRequest(BaseModel):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _get_manager() -> Any:
-    """Return the live ResilienceManager or raise HTTP 503."""
+_UNAVAILABLE_STATUS: Dict[str, Any] = {
+    "posture": "UNAVAILABLE",
+    "narrative": "ResilienceManager no inicializado — el motor puede estar arrancando.",
+    "is_healing": False,
+    "heal_budget_remaining": 0,
+    "exclusions": {"muted": [], "quarantined": [], "in_cooldown": []},
+}
+
+
+def _get_manager_or_none() -> Any:
+    """Return the live ResilienceManager, or None if not yet initialised."""
     from core_brain.server import get_resilience_manager
-    manager = get_resilience_manager()
+    return get_resilience_manager()
+
+
+def _require_manager() -> Any:
+    """Return the live ResilienceManager or raise HTTP 503 (for write operations)."""
+    manager = _get_manager_or_none()
     if manager is None:
         raise HTTPException(
             status_code=503,
@@ -132,7 +146,12 @@ async def get_resilience_status() -> Dict[str, Any]:
           }
         }
     """
-    manager = _get_manager()
+    manager = _get_manager_or_none()
+    if manager is None:
+        logger.debug("[ResilienceAPI] GET /status — manager not ready, returning UNAVAILABLE.")
+        # Lanzar HTTP 503 para cumplir con el contrato del test y la semántica REST
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail=_UNAVAILABLE_STATUS["narrative"])
     return _build_status_payload(manager)
 
 
@@ -163,7 +182,7 @@ async def send_resilience_command(body: ResilienceCommandRequest) -> Dict[str, A
                    f"Valores válidos: {sorted(_VALID_COMMANDS)}",
         )
 
-    manager = _get_manager()
+    manager = _require_manager()
 
     if body.action == "RETRY_HEALING":
         manager._healing_attempts.clear()

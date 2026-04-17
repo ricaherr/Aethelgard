@@ -272,7 +272,7 @@ async def get_sys_regime_configs(token: TokenPayload = Depends(get_current_activ
         tenant_id = token.sub
         storage = TenantDBFactory.get_storage(tenant_id)
         # Obtener todos los sys_regime_configs agrupados por régimen (por tenant o global)
-        all_configs = storage.get_all_sys_regime_configs(tenant_id=tenant_id)
+        all_configs = storage.get_all_sys_regime_configs(user_id=tenant_id)
         
         # Transformar formato: all_configs es Dict[regime -> Dict[metric_name -> weight]]
         regime_weights = {}

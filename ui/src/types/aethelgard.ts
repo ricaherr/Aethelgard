@@ -1,6 +1,7 @@
 export type MarketRegime = 'TREND' | 'RANGE' | 'VOLATILE' | 'SHOCK' | 'BULL' | 'BEAR' | 'CRASH' | 'NORMAL';
 export type AssetType = 'forex' | 'metal' | 'crypto' | 'index';
 export type ExecutionMode = 'LIVE' | 'SHADOW' | 'QUARANTINE';
+export type RejectionReason = 'affinity' | 'whitelist' | 'budget' | 'freeze' | 'rollback' | 'quality' | 'other';
 
 export interface Signal {
     id: string;
@@ -15,6 +16,9 @@ export interface Signal {
     asset_type?: AssetType;         // Asset classification (NEW)
     execution_mode?: ExecutionMode; // LIVE | SHADOW | QUARANTINE (Darwinismo Algorítmico)
     ranking_score?: number;         // 0-100 score justifying signal quality/mode (Milestone 5)
+    is_exploratory?: boolean;       // Tagged EXPLORATION_ON (generated in EDGE DEMO exploration cycle)
+    rejection_reason?: RejectionReason; // Why the signal was rejected/quarantined
+    demo_mode?: boolean;            // Signal generated in DEMO account mode
 }
 
 // Position metadata with risk calculation (NEW)
@@ -142,6 +146,18 @@ export type HealthStatus = 'HEALTHY' | 'DEAD' | 'QUARANTINED' | 'MONITOR' | 'INC
 export type ShadowStatus = 'INCUBATING' | 'SHADOW_READY' | 'PROMOTED_TO_REAL' | 'DEAD' | 'QUARANTINED';
 export type PillarStatus = 'PASS' | 'FAIL' | 'UNKNOWN';
 
+export interface ExplorationState {
+    active: boolean;
+    assets_in_exploration: string[];
+    budget_remaining: number;
+    frozen_assets: string[];
+    rollback_count: number;
+    exploratory_pf: number;
+    exploration_on_count: number;
+    last_handshake?: string;
+    handshake_logs?: string[];
+}
+
 export interface ShadowMetrics {
     // PILAR 1: PROFITABILIDAD
     profit_factor: number;
@@ -182,20 +198,24 @@ export interface ShadowInstance {
     pilar1_status: PillarStatus;
     pilar2_status: PillarStatus;
     pilar3_status: PillarStatus;
+    has_exploratory_signals?: boolean;
+    exploratory_pf?: number;
+    normal_pf?: number;
+    edge_demo_frozen?: boolean;
 }
 
 export interface ActionEvent {
     id: string;
     timestamp: string;
     instance_id: string;
-    action: 'PROMOTION' | 'DEMOTION' | 'QUARANTINE' | 'MONITOR';
+    action: 'PROMOTION' | 'DEMOTION' | 'QUARANTINE' | 'MONITOR' | 'FREEZE' | 'ROLLBACK';
     trace_id: string;
     message: string;
     metrics_snapshot: Partial<ShadowMetrics>;
 }
 
 export interface WebSocketShadowEvent {
-    event_type: 'SHADOW_STATUS_UPDATE' | 'SHADOW_CONNECTION_ESTABLISHED';
+    event_type: 'SHADOW_STATUS_UPDATE' | 'SHADOW_CONNECTION_ESTABLISHED' | 'EDGE_EXPLORATION_UPDATE';
     instance_id?: string;
     health_status?: HealthStatus;
     pilar1_status?: PillarStatus;
@@ -213,5 +233,8 @@ export interface WebSocketShadowEvent {
     tenant_id?: string;
     timestamp?: string;
     message?: string;
+    has_exploratory_signals?: boolean;
+    edge_demo_frozen?: boolean;
+    exploration_state?: ExplorationState;
 }
 

@@ -319,6 +319,8 @@ async def run_pre_phase(orch: Any) -> bool:
     )
 
     orch.storage.update_module_heartbeat("orchestrator")
+    # executor heartbeat: updated here so idle cycles (no signals) don't trigger false FAIL
+    orch.storage.update_module_heartbeat("executor")
 
     # DISC-001: Process timed-out review queue entries (auto-execution marker)
     review_manager = getattr(orch, "signal_review_manager", None)

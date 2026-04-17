@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { ExplorationState } from '../types/aethelgard';
 
 export type CheckStatus = 'OK' | 'WARN' | 'FAIL';
 export type OverallStatus = 'OK' | 'DEGRADED' | 'CRITICAL' | 'UNAVAILABLE';
@@ -6,6 +7,7 @@ export type OverallStatus = 'OK' | 'DEGRADED' | 'CRITICAL' | 'UNAVAILABLE';
 export interface OemCheckResult {
   status: CheckStatus;
   detail: string;
+  metadata?: Record<string, any>;
 }
 
 export interface OemHealth {
@@ -15,6 +17,8 @@ export interface OemHealth {
   failing: string[];
   warnings: string[];
   last_checked_at: string | null;
+  demo_mode?: boolean;
+  exploration?: ExplorationState;
 }
 
 const POLL_INTERVAL_MS = 15_000;
