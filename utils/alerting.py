@@ -49,6 +49,14 @@ class AlertChannel(str, Enum):
     TELEGRAM = "telegram"
 
 
+class AlertEventType(str, Enum):
+    """Tipos de eventos EDGE para trazabilidad de degradación granular."""
+    EDGE_MODULE_DEGRADED = "EDGE_MODULE_DEGRADED"
+    EDGE_MODULE_RESTORED = "EDGE_MODULE_RESTORED"
+    EDGE_CLOSE_ONLY_ACTIVATED = "EDGE_CLOSE_ONLY_ACTIVATED"
+    EDGE_CLOSE_ONLY_DEACTIVATED = "EDGE_CLOSE_ONLY_DEACTIVATED"
+
+
 @dataclass
 class Alert:
     """Representa un evento de alerta a despachar."""
@@ -307,3 +315,41 @@ class AlertingService:
             key: max(0.0, RATE_LIMIT_SECONDS - (now - ts))
             for key, ts in self._rate_limit_cache.items()
         }
+
+    def send_edge_event(
+        self,
+        event_type: AlertEventType,
+        module: str,
+        message: str,
+        component: str = "ResilienceManager",
+    ) -> Dict[str, bool]:
+        """
+        Despacha una alerta de evento EDGE de degradación/restauración.
+
+        Convenience wrapper sobre send_alert para eventos ResilienceManager.
+
+        Args:
+            event_type: Tipo de evento (degradación, restauración, close-only).
+            module: Nombre del módulo afectado (ej. "SignalFactory").
+            message: Descripción humana del evento.
+            component: Componente que origina el evento.
+
+        Returns:
+            Dict canal → bool, igual que send_alert.
+        """
+        severity = (
+            AlertSeverity.CRITICAL
+            if event_type in (
+                AlertEventType.EDGE_MODULE_DEGRADED,
+                AlertEventType.EDGE_CLOSE_ONLY_ACTIVATED,
+            )
+            else AlertSeverity.WARNING
+        )
+        alert = Alert(
+            severity=severity,
+            key=f"{event_type.value}:{module}",
+            title=f"[EDGE] {event_type.value} — {module}",
+            message=message,
+            component=component,
+        )
+        return self.send_alert(alert)

@@ -21,6 +21,7 @@ from models.signal import MarketRegime
 from utils.market_ops import normalize_price, calculate_pip_size
 from core_brain.instrument_manager import InstrumentManager
 from core_brain.notificator import get_notifier
+from core_brain.close_only_guard import CloseOnlyGuard
 
 logger = logging.getLogger(__name__)
 
@@ -43,21 +44,25 @@ class PositionManager:
         storage,
         connector,
         regime_classifier,
-        config: Dict[str, Any]
+        config: Dict[str, Any],
+        close_only_guard: Optional[CloseOnlyGuard] = None,
     ):
         """
         Initialize PositionManager with injected dependencies.
-        
+
         Args:
             storage: StorageManager instance
             connector: Broker connector (MT5Connector, PaperConnector, etc.)
             regime_classifier: RegimeClassifier instance
             config: Configuration dict from StorageManager SSOT ['position_management']
+            close_only_guard: Optional CloseOnlyGuard (injected by ResilienceManager).
+                When active, new position openings are rejected; closures are unaffected.
         """
         self.storage = storage
         self.connector = connector
         self.regime_classifier = regime_classifier
         self.config = config
+        self._close_only_guard: Optional[CloseOnlyGuard] = close_only_guard
         
         # Extract configuration
         self.max_drawdown_multiplier = config.get('max_drawdown_multiplier', 2.0)
@@ -97,7 +102,14 @@ class PositionManager:
             except Exception as e:
                 logger.debug("InstrumentManager(storage=...) fallback due to invalid storage mock: %s", e)
         return InstrumentManager()
-    
+
+    @property
+    def is_close_only(self) -> bool:
+        """True when the injected CloseOnlyGuard is active (EDGE STRESSED posture)."""
+        if self._close_only_guard is None:
+            return False
+        return self._close_only_guard.is_active
+
     def monitor_usr_positions(self, connector: Optional[Any] = None) -> Dict[str, Any]:
         """
         Main monitoring loop - checks all open usr_positions and applies necessary adjustments.

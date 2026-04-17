@@ -18,6 +18,21 @@
 
 > ℹ️ Solo se muestran Épicas en estado `ACTIVA` o `PENDIENTE`. Las Épicas `COMPLETADA` se archivan en [SYSTEM_LEDGER.md](SYSTEM_LEDGER.md) (sección ÉPICAS ARCHIVADAS) y se eliminan de este documento.
 
+### ETI-EDGE-LOCKDOWN-DEGRADATION: Degradación Granular LOCKDOWN — COMPLETADA ✅
+**Sprint**: 28 | **Trace_ID**: EDGE_Lockdown_Degradation_Granular_2026-04-16 | **Fecha**: 2026-04-17
+**Objetivo**: Reemplazar el protocolo de LOCKDOWN total por degradación granular con close-only mode, preservando la gestión de posiciones abiertas durante crisis.
+- `core_brain/close_only_guard.py` — nuevo: CloseOnlyGuard thread-safe con auto-reversión
+- `core_brain/services/order_gate.py` — nuevo: OrderGate (bloquea BUY/SELL, permite CLOSE)
+- `core_brain/resilience_manager.py` — degradación por módulo, auto-reversión, close-only protocol
+- `core_brain/orchestrators/_guard_suite.py` — LOCKDOWN activa close-only, elimina cancel_all
+- `core_brain/position_manager.py` — integra CloseOnlyGuard (DI)
+- `core_brain/executor.py` — integra OrderGate (DI), check pre-lockdown
+- `utils/alerting.py` — AlertEventType EDGE + send_edge_event()
+- `tests/test_edge_lockdown_degradation.py` — 36/36 TDD GREEN
+**Criterios AC**: todos cumplidos. Tests: 36/36 nuevos + 2701/2701 regresión = 0 fallos.
+
+---
+
 ### E5: Interfaz Fractal & Experiencia Futurista (Ámbito Transversal UI) — ACTIVA
 **Sprint**: 25 | **Trace_ID**: UI-V3-FRACTAL-FUTURE-2026
 **Objetivo**: Evolucionar la terminal a una consola de alta densidad de información con navegación fractal y elementos de manipulación directa.

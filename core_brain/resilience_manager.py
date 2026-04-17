@@ -45,6 +45,7 @@ from core_brain.resilience import (
     ResilienceLevel,
     SystemPosture,
 )
+from core_brain.close_only_guard import CloseOnlyGuard
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +73,21 @@ _POSTURE_ORDER = [
     SystemPosture.DEGRADED,
     SystemPosture.STRESSED,
 ]
+
+# Modules degraded automatically on LOCKDOWN — non-critical, can be paused.
+_LOCKDOWN_DEGRADED_MODULES: frozenset[str] = frozenset({
+    "SignalFactory",
+    "Scanner",
+    "Backtest",
+    "StrategyEngine",
+})
+
+# Modules NEVER degraded — critical for position management.
+_PROTECTED_MODULES: frozenset[str] = frozenset({
+    "PositionManager",
+    "RiskManager",
+    "Executor",
+})
 
 
 class ResilienceManager:
@@ -118,6 +134,7 @@ class ResilienceManager:
         storage: Any,
         reconnect_provider_fn: Optional[Callable[[], bool]] = None,
         clear_db_cache_fn: Optional[Callable[[], None]] = None,
+        close_only_guard: Optional[CloseOnlyGuard] = None,
     ) -> None:
         self._storage = storage
         self._current_posture: SystemPosture = SystemPosture.NORMAL
@@ -144,6 +161,11 @@ class ResilienceManager:
         self._clear_db_cache_fn: Callable[[], None] = (
             clear_db_cache_fn or (lambda: None)
         )
+
+        # ── Granular Degradation state ────────────────────────────────────────
+        # Set of module names currently in degraded state.
+        self._degraded_modules: set[str] = set()
+        self._close_only_guard: Optional[CloseOnlyGuard] = close_only_guard
 
     # ── Public interface ──────────────────────────────────────────────────────
 
@@ -195,6 +217,8 @@ class ResilienceManager:
                 report.trace_id,
             )
             self._current_posture = target_posture
+            if target_posture == SystemPosture.STRESSED:
+                self.activate_close_only_protocol()
 
         self._persist_audit(report)
         return self._current_posture
@@ -234,6 +258,95 @@ class ResilienceManager:
         if end_time is None:
             return False
         return time.monotonic() < end_time
+
+    # ── Granular Degradation public API ──────────────────────────────────────
+
+    @property
+    def close_only_mode(self) -> bool:
+        """True when close-only mode is active (no new positions allowed)."""
+        if self._close_only_guard is None:
+            return False
+        return self._close_only_guard.is_active
+
+    def degrade_module(self, module_name: str) -> None:
+        """
+        Mark a module as degraded.
+
+        Protected modules (PositionManager, RiskManager, Executor) are silently
+        ignored — they must never be degraded.
+
+        Args:
+            module_name: Logical name of the module (e.g. "SignalFactory").
+        """
+        if module_name in _PROTECTED_MODULES:
+            logger.warning(
+                "[ResilienceManager] Intento de degradar módulo protegido '%s' — ignorado.",
+                module_name,
+            )
+            return
+        if module_name not in self._degraded_modules:
+            self._degraded_modules.add(module_name)
+            logger.warning(
+                "[ResilienceManager][Degradation] Módulo '%s' marcado como DEGRADADO.",
+                module_name,
+            )
+
+    def restore_module(self, module_name: str) -> None:
+        """
+        Remove a module from the degraded registry.
+
+        Args:
+            module_name: Logical name of the module to restore.
+        """
+        if module_name in self._degraded_modules:
+            self._degraded_modules.discard(module_name)
+            logger.info(
+                "[ResilienceManager][Degradation] Módulo '%s' RESTAURADO.",
+                module_name,
+            )
+
+    def is_module_degraded(self, module_name: str) -> bool:
+        """Return True if the module is currently in the degraded registry."""
+        return module_name in self._degraded_modules
+
+    def activate_close_only_protocol(self) -> None:
+        """
+        Activate close-only mode and degrade all non-critical modules.
+
+        Called automatically when a LOCKDOWN event is processed.
+        Protected modules (PositionManager, RiskManager, Executor) are preserved.
+        """
+        if self._close_only_guard is not None:
+            self._close_only_guard.activate()
+        for module in _LOCKDOWN_DEGRADED_MODULES:
+            self.degrade_module(module)
+        logger.warning(
+            "[ResilienceManager] Protocolo close-only activado. "
+            "Módulos degradados: %s. Protegidos: %s.",
+            sorted(_LOCKDOWN_DEGRADED_MODULES),
+            sorted(_PROTECTED_MODULES),
+        )
+
+    def try_auto_revert(self) -> bool:
+        """
+        Attempt to auto-revert close-only mode and restore degraded modules.
+
+        Delegates the condition check to CloseOnlyGuard.check_auto_revert().
+        If reversion occurs, all currently degraded modules are restored.
+
+        Returns:
+            True if reversion occurred, False otherwise.
+        """
+        if self._close_only_guard is None:
+            return False
+        reverted = self._close_only_guard.check_auto_revert()
+        if reverted:
+            for module in list(self._degraded_modules):
+                self.restore_module(module)
+            logger.info(
+                "[ResilienceManager] Auto-reversión completa — todos los módulos restaurados."
+            )
+        return reverted
 
     # ── Correlation Engine ────────────────────────────────────────────────────
 

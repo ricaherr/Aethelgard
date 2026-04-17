@@ -20,6 +20,8 @@ from core_brain.services.execution_service import ExecutionService
 from core_brain.services.slippage_controller import SlippageController
 from core_brain.services.circuit_breaker_gate import CircuitBreakerGate
 from core_brain.services.signal_lifecycle_manager import SignalLifecycleManager
+from core_brain.services.order_gate import OrderGate
+from core_brain.close_only_guard import CloseOnlyGuard
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +51,8 @@ class OrderExecutor:
         connectors: Optional[Dict[ConnectorType, Any]] = None,
         execution_service: Optional[ExecutionService] = None,
         circuit_breaker_gate: Optional[CircuitBreakerGate] = None,
-        lifecycle_manager: Optional[SignalLifecycleManager] = None
+        lifecycle_manager: Optional[SignalLifecycleManager] = None,
+        close_only_guard: Optional[CloseOnlyGuard] = None,
     ):
         """
         Initialize OrderExecutor with Dependency Injection.
@@ -122,12 +125,16 @@ class OrderExecutor:
             self.lifecycle_manager = lifecycle_manager
             
         self.persists_usr_signals = True
-        
+
+        # OrderGate: gates new entries in close-only mode while allowing CLOSE signals.
+        _guard = close_only_guard or CloseOnlyGuard()
+        self.order_gate = OrderGate(close_only_guard=_guard)
+
         logger.info(
             f"OrderExecutor initialized with {len(self.connectors)} injected connectors: "
             f"{[ct.value for ct in self.connectors.keys()]}"
         )
-        
+
         # Track last rejection reason for better error reporting
         self.last_rejection_reason = None
         # Track last execution response for failure reason extraction (DOMINIO-10 feedback)
@@ -213,6 +220,14 @@ class OrderExecutor:
             except Exception as e:
                 logger.warning(f"[SHADOW_ACCOUNT_INJECTOR] Error injecting DEMO account type: {e}")
         
+
+        # Step 1.4: Close-only mode gate (EDGE STRESSED posture).
+        # CLOSE signals always pass; BUY/SELL are blocked when close-only is active.
+        gate_allowed, gate_reason = self.order_gate.is_allowed(signal)
+        if not gate_allowed:
+            self.last_rejection_reason = gate_reason
+            self._register_failed_signal(signal, "REJECTED_CLOSE_ONLY")
+            return False
 
         # Step 1.5: Legacy lockdown check (backward compatibility with existing tests)
         if hasattr(self.risk_manager, "is_locked") and self.risk_manager.is_locked():

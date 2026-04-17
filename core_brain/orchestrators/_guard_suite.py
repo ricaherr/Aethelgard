@@ -159,18 +159,42 @@ def write_integrity_veto(orch: "MainOrchestrator", trace_id: str, checks: list) 
 
 
 async def write_anomaly_lockdown(orch: "MainOrchestrator", trace_id: str) -> None:
-    """Persist AnomalySentinel LOCKDOWN and cancel pending orders."""
+    """
+    Persist AnomalySentinel LOCKDOWN and activate granular degradation protocol.
+
+    Changed from ETI EDGE_Lockdown_Degradation_Granular_2026-04-16:
+    - NO longer calls cancel_all_pending_orders() — that stopped position management.
+    - Instead activates close-only mode via ResilienceManager: new entries blocked,
+      existing positions continue to be managed (PositionManager + Executor preserved).
+    - Only SignalFactory, Scanner, Backtest are degraded.
+    """
     logger.critical(
-        "[ANOMALY_SENTINEL] LOCKDOWN activado — ciclo de trading detenido. trace_id=%s",
+        "[ANOMALY_SENTINEL] LOCKDOWN activado — "
+        "activando protocolo de degradación granular. trace_id=%s",
         trace_id,
     )
 
-    if hasattr(orch, "executor") and hasattr(orch.executor, "cancel_all_pending_orders"):
+    # Activate close-only mode + granular module degradation (not a full stop).
+    if hasattr(orch, "resilience_manager"):
         try:
-            await orch.executor.cancel_all_pending_orders()
-            logger.info("[ANOMALY_SENTINEL] Órdenes pendientes canceladas. trace_id=%s", trace_id)
+            orch.resilience_manager.activate_close_only_protocol()
+            logger.info(
+                "[ANOMALY_SENTINEL] Close-only protocol activado. "
+                "Gestión de posiciones abiertas preservada. trace_id=%s",
+                trace_id,
+            )
         except Exception as exc:
-            logger.error("[ANOMALY_SENTINEL] Error cancelando órdenes: %s", exc)
+            logger.error(
+                "[ANOMALY_SENTINEL] Error activando close-only protocol: %s — "
+                "continuando con registro de auditoría.",
+                exc,
+            )
+    else:
+        logger.warning(
+            "[ANOMALY_SENTINEL] orch.resilience_manager no disponible — "
+            "close-only protocol no pudo activarse. trace_id=%s",
+            trace_id,
+        )
 
     try:
         conn = orch.storage._get_conn()
@@ -186,7 +210,7 @@ async def write_anomaly_lockdown(orch: "MainOrchestrator", trace_id: str) -> Non
                 "AnomalySentinel",
                 "main_orchestrator",
                 "failure",
-                "Flash Crash o anomalía sistémica detectada por AnomalySentinel",
+                "Flash Crash o anomalía sistémica — close-only mode activado, posiciones preservadas",
                 trace_id,
             ),
         )
