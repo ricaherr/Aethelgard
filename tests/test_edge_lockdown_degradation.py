@@ -367,18 +367,28 @@ class TestGuardSuiteLockdown:
 
     @pytest.mark.asyncio
     async def test_guard_suite_lockdown_activa_close_only(self):
-        """[AC-3] write_anomaly_lockdown → resilience_manager.activate_close_only_protocol() llamado."""
+        """
+        [AC-3] Close-only mode se activa vía ResilienceManager.process_report() al recibir
+        LOCKDOWN — no mediante una llamada directa desde write_anomaly_lockdown (que causaba
+        duplicación). El guard suite solo loguea y persiste el registro de auditoría.
+        """
         from core_brain.orchestrators._guard_suite import write_anomaly_lockdown
 
         guard = CloseOnlyGuard()
         mgr = ResilienceManager(storage=_make_storage(), close_only_guard=guard)
 
+        # Simula el flujo real: process_report activa close-only ANTES de que
+        # _guard_suite sea invocado.
+        mgr.process_report(_make_lockdown_report())
+        assert guard.is_active is True  # activado por process_report, no por guard suite
+
         orch = MagicMock()
         orch.storage = _make_storage()
         orch.resilience_manager = mgr
 
+        # write_anomaly_lockdown ya no reactiva el protocolo (evita duplicación).
+        # El guard sigue activo después de la llamada.
         await write_anomaly_lockdown(orch, trace_id="TEST-TRACE-001")
-
         assert guard.is_active is True
 
     @pytest.mark.asyncio

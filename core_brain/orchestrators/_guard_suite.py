@@ -168,39 +168,21 @@ async def write_anomaly_lockdown(orch: "MainOrchestrator", trace_id: str) -> Non
       existing positions continue to be managed (PositionManager + Executor preserved).
     - Only SignalFactory, Scanner, Backtest are degraded.
     """
+    # close-only protocol is already activated by ResilienceManager.process_report()
+    # when it reaches STRESSED posture. No duplicate call needed here.
     logger.critical(
-        "[ANOMALY_SENTINEL] LOCKDOWN activado — "
-        "activando protocolo de degradación granular. trace_id=%s",
+        "[ANOMALY_SENTINEL] LOCKDOWN activado — close-only mode activo vía ResilienceManager. "
+        "Gestión de posiciones abiertas preservada. trace_id=%s",
         trace_id,
     )
 
-    # Activate close-only mode + granular module degradation (not a full stop).
-    if hasattr(orch, "resilience_manager"):
-        try:
-            orch.resilience_manager.activate_close_only_protocol()
-            logger.info(
-                "[ANOMALY_SENTINEL] Close-only protocol activado. "
-                "Gestión de posiciones abiertas preservada. trace_id=%s",
-                trace_id,
-            )
-        except Exception as exc:
-            logger.error(
-                "[ANOMALY_SENTINEL] Error activando close-only protocol: %s — "
-                "continuando con registro de auditoría.",
-                exc,
-            )
-    else:
-        logger.warning(
-            "[ANOMALY_SENTINEL] orch.resilience_manager no disponible — "
-            "close-only protocol no pudo activarse. trace_id=%s",
-            trace_id,
-        )
-
+    # INSERT OR IGNORE: ResilienceManager._persist_audit() may have already inserted
+    # this trace_id. We write a complementary ANOMALY_LOCKDOWN record only if absent.
     try:
         conn = orch.storage._get_conn()
         conn.execute(
             """
-            INSERT INTO sys_audit_logs
+            INSERT OR IGNORE INTO sys_audit_logs
                 (user_id, action, resource, resource_id, status, reason, trace_id)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
@@ -211,7 +193,7 @@ async def write_anomaly_lockdown(orch: "MainOrchestrator", trace_id: str) -> Non
                 "main_orchestrator",
                 "failure",
                 "Flash Crash o anomalía sistémica — close-only mode activado, posiciones preservadas",
-                trace_id,
+                f"GS-{trace_id}",
             ),
         )
         conn.commit()

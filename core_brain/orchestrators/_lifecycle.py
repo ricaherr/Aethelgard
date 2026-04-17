@@ -211,14 +211,16 @@ async def run_main_loop(orch: Any) -> None:
 
     try:
         while not orch._shutdown_requested:
-            # RESILIENCE: STRESSED posture halts loop
+            # RESILIENCE: STRESSED posture → close-only mode (loop continues).
+            # ETI EDGE_Lockdown_Degradation_Granular_2026-04-16:
+            # STRESSED no detiene el loop — preserva gestión de posiciones abiertas.
+            # _cycle_scan bloquea generación de señales; PositionManager y Executor continúan.
             if orch.resilience_manager.current_posture == SystemPosture.STRESSED:
-                logger.critical(
-                    "[ResilienceManager] Posture STRESSED — deteniendo loop. Narrative: %s",
+                logger.warning(
+                    "[ResilienceManager] Posture STRESSED — close-only mode activo. "
+                    "Gestión de posiciones preservada. Narrative: %s",
                     orch.resilience_manager.get_current_status_narrative(),
                 )
-                orch._shutdown_requested = True
-                break
 
             # EDGE-IGNITION-PHASE-1: Integrity Gate
             health = orch.integrity_guard.check_health()
