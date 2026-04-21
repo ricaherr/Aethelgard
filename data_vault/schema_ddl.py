@@ -508,6 +508,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             adjustment_data TEXT
         )
     """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_usr_tuning_adjustments_timestamp ON usr_tuning_adjustments (timestamp DESC)")
 
     # ── 7. Signal Pipeline Tracking (Auditoría de señales) ──────────────────
     cursor.execute("""

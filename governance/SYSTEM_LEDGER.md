@@ -4,7 +4,7 @@
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-16 UTC)**: ETI-2 EDGE Resilience Improvements completo · Auto-tuning de busy_timeout (DBPolicyTuner) · Fallback read-only automático ante degradación · Sistema de alertas multi-canal (AlertingService) · Check OEM db_lock_rate_anomaly · **37/37 tests nuevos PASSED · 26/26 tests de regresión PASSED**.
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-21 UTC)**: HU 7.5 E12 Auto-Calibración EDGE · Migración `usr_tuning_adjustments` aplicada · Índice `idx_usr_tuning_adjustments_timestamp` creado · **4/4 tests TDD PASSED** · `save_tuning_adjustment` y `get_tuning_history` validados end-to-end.
 
 ---
 

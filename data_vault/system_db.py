@@ -32,10 +32,13 @@ class SystemMixin(BaseRepository):
         sys_market_pulses     — latest market regime snapshot per symbol|tf.
         sys_signals           — generated signal log (legacy name retained for compat).
 
-    LEGACY / RETIREMENT CANDIDATES:
-        usr_tuning_adjustments — manual tuning history; superseded by AI Gateway
-                                 recommendations. No active writer since Sprint 5.
-                                 Migration plan: archive to JSON export and DROP.
+    ACTIVE (secondary — auditoría de auto-calibración):
+        usr_tuning_adjustments — historial de ajustes autónomos generados por EdgeTuner.
+                                 Writer: EdgeTuner.adjust_parameters() vía trade_closure_listener
+                                 (cada 5 trades o consecutive_losses >= 3).
+                                 Readers: GET /api/tuning-history · GET /api/learning-history
+                                 · RiskManager (risk_mode inference).
+                                 Migración E12/HU-7.5: índice timestamp añadido 2026-04-21.
         usr_edge_learning      — free-form learning text; superseded by structured
                                  sys_audit_logs + OEM repair flags.
                                  Migration plan: read-only retention 90 days, then DROP.
