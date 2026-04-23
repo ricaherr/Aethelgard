@@ -1,10 +1,10 @@
 # AETHELGARD: SYSTEM LEDGER
 
-**Version**: 4.18.0-beta
+**Version**: 4.20.0-beta
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-21 UTC)**: HU 7.5 E12 Auto-Calibración EDGE · Migración `usr_tuning_adjustments` aplicada · Índice `idx_usr_tuning_adjustments_timestamp` creado · **4/4 tests TDD PASSED** · `save_tuning_adjustment` y `get_tuning_history` validados end-to-end.
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-22 UTC)**: HU 4.1 E4 Autoajuste Dinámico de Resiliencia · `ResilienceAutoTuner` implementado · Integración en `ResilienceManager` (min_stability_cycles, record_recovery, params dinámicos) · `get_resilience_params` / `save_resilience_params` en Storage · **25/25 tests TDD PASSED** · 30/30 regresión PASSED.
 
 ---
 
@@ -27,6 +27,25 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 
 
 ## 🏛️ ÉPICAS ARCHIVADAS
+
+### E4/HU 4.1 — Autoajuste Dinámico de Resiliencia (ETI)
+| Campo | Valor |
+|---|---|
+| **Épica** | E4 — Resiliencia Adaptativa y EDGE Dinámico |
+| **HU** | HU 4.1 — Autoajuste de parámetros de resiliencia y recuperación LOCKDOWN |
+| **Trace_ID** | `ARCH-RESILIENCE-AUTOTUNE-V1` |
+| **Completada** | 22 de Abril, 2026 |
+| **Sprints** | 33 |
+| **Dominios** | 10_INFRASTRUCTURE_RESILIENCY · 08_DATA_SOVEREIGNTY |
+| **Tests** | 25 nuevos GREEN (`test_resilience_autotune.py`) + 30 regresión = 55/55 |
+| **Cambios** | `core_brain/resilience_autotune.py` — nuevo: `ResilienceAutoTuner` (SOFTEN/HARDEN, PARAM_BOUNDS, persistencia SSOT) |
+| | `core_brain/resilience_manager.py` — integración AutoTuner: params dinámicos en todos los umbrales, `min_stability_cycles`, `record_recovery()` post-revert |
+| | `data_vault/storage.py` — `get_resilience_params()` + `save_resilience_params()` |
+| | `docs/02_EXECUTOR_GOVERNANCE.md` — sección ResilienciaAdaptativa con tabla de parámetros y lógica |
+| | `docs/AETHELGARD_MANIFESTO.md` — Pilar I.0 Resiliencia Adaptativa |
+| **Criterios AC** | Ajuste automático tras LOCKDOWN. Auditoría en `sys_audit_logs`. EDGE preservado (bounds duros). Tests TDD cubren: falso positivo, erosión EDGE, persistencia, auditoría, integración. |
+
+---
 
 ### E2/HU 2.1 — Executor Productivo en Cuenta DEMO (ETI)
 | Campo | Valor |

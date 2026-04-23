@@ -9,14 +9,25 @@
 > - **NO agregar aquí**: listas de archivos modificados, métricas de tests, detalles de implementación (eso va en SPRINT.md).
 > - **Framework completo**: `.ai_orchestration_protocol.md` Sección 4.
 
-**Versión Log**: v4.19.0-beta
-**Última Actualización**: 14 de Abril, 2026 (ETI-SRE-DB-BACKPRESSURE-CHAIN-2026-04-14 completado)
+**Versión Log**: v4.20.0-beta
+**Última Actualización**: 22 de Abril, 2026 (ETI Autoajuste Dinámico de Resiliencia — HU 4.1 completado)
 
 ---
 
 ## 📈 ÉPICAS ESTRATÉGICAS
 
 > ℹ️ Solo se muestran Épicas en estado `ACTIVA` o `PENDIENTE`. Las Épicas `COMPLETADA` se archivan en [SYSTEM_LEDGER.md](SYSTEM_LEDGER.md) (sección ÉPICAS ARCHIVADAS) y se eliminan de este documento.
+
+### E4/HU 4.1 — Autoajuste Dinámico de Resiliencia — COMPLETADA ✅
+**Sprint**: 33 | **Trace_ID**: ARCH-RESILIENCE-AUTOTUNE-V1 | **Fecha**: 2026-04-22
+**Objetivo**: Calibración incremental y auditada de umbrales de LOCKDOWN/STRESSED. El sistema aprende de recuperaciones reales para preservar el EDGE.
+- `core_brain/resilience_autotune.py` — nuevo: `ResilienceAutoTuner` (SOFTEN/HARDEN + SSOT)
+- `core_brain/resilience_manager.py` — integración AutoTuner (params dinámicos, min_stability_cycles, record_recovery)
+- `data_vault/storage.py` — `get_resilience_params()` / `save_resilience_params()`
+- `tests/test_resilience_autotune.py` — 25/25 TDD GREEN
+**Criterios AC**: todos cumplidos. 25 nuevos + 30 regresión = 55/55 PASSED.
+
+---
 
 ### ETI-EDGE-LOCKDOWN-DEGRADATION: Degradación Granular LOCKDOWN — COMPLETADA ✅
 **Sprint**: 28 | **Trace_ID**: EDGE_Lockdown_Degradation_Granular_2026-04-16 | **Fecha**: 2026-04-17

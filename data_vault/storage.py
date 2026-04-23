@@ -782,4 +782,73 @@ class StorageManager(
             f"Corrections must be new INSERTs with new event_id."
         )
 
+    # ── Resilience AutoTune — HU 4.1 ─────────────────────────────────────────
+
+    def get_resilience_params(self) -> Dict[str, Any]:
+        """
+        Carga los parámetros dinámicos de resiliencia desde sys_config.
+
+        Returns:
+            Dict con los parámetros persistidos, o {} si no existen.
+        """
+        try:
+            with self.transaction() as conn:
+                row = conn.execute(
+                    "SELECT value FROM sys_config WHERE key = ?",
+                    ("resilience:params",),
+                ).fetchone()
+            if row and row[0]:
+                return json.loads(row[0])
+        except Exception as exc:
+            logger.warning("[Storage] get_resilience_params falló: %s", exc)
+        return {}
+
+    def save_resilience_params(
+        self,
+        params: Dict[str, Any],
+        trace_id: str = "",
+        reason: str = "",
+    ) -> None:
+        """
+        Persiste los parámetros de resiliencia en sys_config y registra el ajuste
+        en sys_audit_logs y usr_tuning_adjustments (fire-and-forget).
+
+        Args:
+            params:   Dict completo de parámetros a guardar.
+            trace_id: Trace ID para trazabilidad del ajuste.
+            reason:   Justificación del cambio (para auditoría).
+        """
+        payload = json.dumps(params)
+        audit_data = json.dumps({"params": params, "reason": reason, "trace_id": trace_id})
+        try:
+            with self.transaction() as conn:
+                conn.execute(
+                    """INSERT OR REPLACE INTO sys_config (key, value, updated_at)
+                       VALUES (?, ?, CURRENT_TIMESTAMP)""",
+                    ("resilience:params", payload),
+                )
+                conn.execute(
+                    """INSERT INTO sys_audit_logs
+                           (user_id, action, resource, status, reason, trace_id)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (
+                        "system",
+                        "RESILIENCE_AUTOTUNE",
+                        "ResilienceAutoTuner",
+                        "success",
+                        reason[:1000],
+                        trace_id or str(uuid.uuid4()),
+                    ),
+                )
+            try:
+                with self.transaction() as conn:
+                    conn.execute(
+                        "INSERT INTO usr_tuning_adjustments (adjustment_data) VALUES (?)",
+                        (audit_data,),
+                    )
+            except Exception:
+                pass  # tabla usr_* puede no existir en DB global — es aceptable
+        except Exception as exc:
+            logger.warning("[Storage] save_resilience_params falló: %s", exc)
+
 

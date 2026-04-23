@@ -51,6 +51,46 @@ Basado en parámetros dinámicos persistidos en `sys_config` (SSOT DB). El archi
    * Ajuste sistemático de *Stop Losses* a *Breakeven* para proteger el balance.
    * Registro del evento anómalo trazado (Trace_ID único `BLACK-SWAN-{UUID}`).
 
+## 🧠 Resiliencia Adaptativa: AutoTune de Parámetros (HU 4.1)
+
+**Vigente desde:** 2026-04-22 | Trace_ID: ARCH-RESILIENCE-AUTOTUNE-V1 | Épica: E4
+
+El motor de resiliencia deja de operar con umbrales fijos. `ResilienceAutoTuner`
+calibra de forma incremental los parámetros de escalación y recuperación basándose
+en el historial real de eventos LOCKDOWN/STRESSED.
+
+### Lógica de Decisión
+
+| Condición | Resultado | Parámetros afectados |
+|---|---|---|
+| `cycles < min_stability_cycles` y sin erosión | Suavizado (-10%) | `l0_caution_threshold`, `l0_degraded_threshold`, `min_stability_cycles` |
+| `edge_eroded = True` | Endurecimiento (+15%) | Anteriores + `spread_cooldown_seconds` |
+| Recuperación correcta | Sin cambio | — |
+
+### Parámetros Dinámicos (SSOT: `sys_config["resilience:params"]`)
+
+| Parámetro | Default | Rango permitido |
+|---|---|---|
+| `l0_caution_threshold` | 3 | [2, 8] |
+| `l0_degraded_threshold` | 6 | [4, 12] |
+| `correlation_window_seconds` | 60.0 | [30, 180] |
+| `correlation_l0_threshold` | 3 | [2, 6] |
+| `max_heal_retries` | 3 | [1, 6] |
+| `spread_cooldown_seconds` | 300.0 | [120, 900] |
+| `min_stability_cycles` | 3 | [1, 10] |
+
+### Auditoría
+
+Cada ajuste genera una fila en `sys_audit_logs` (`action="RESILIENCE_AUTOTUNE"`)
+y en `usr_tuning_adjustments` con `{params, reason, trace_id}` en JSON.
+
+### Integración
+
+`ResilienceAutoTuner` se inyecta opcionalemente en `ResilienceManager(auto_tuner=...)`.
+Sin él, el comportamiento es idéntico al legacy (umbrales constantes).
+
+---
+
 ## 🔁 Cooldown Management: Resiliencia de Ejecución
 
 Ante fallos durante el enrutamiento o confirmación del broker, Aethelgard nunca aplica fuerza bruta. 

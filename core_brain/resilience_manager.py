@@ -46,6 +46,7 @@ from core_brain.resilience import (
     SystemPosture,
 )
 from core_brain.close_only_guard import CloseOnlyGuard
+from core_brain.resilience_autotune import ResilienceAutoTuner
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +136,7 @@ class ResilienceManager:
         reconnect_provider_fn: Optional[Callable[[], bool]] = None,
         clear_db_cache_fn: Optional[Callable[[], None]] = None,
         close_only_guard: Optional[CloseOnlyGuard] = None,
+        auto_tuner: Optional[ResilienceAutoTuner] = None,
     ) -> None:
         self._storage = storage
         self._current_posture: SystemPosture = SystemPosture.NORMAL
@@ -166,6 +168,11 @@ class ResilienceManager:
         # Set of module names currently in degraded state.
         self._degraded_modules: set[str] = set()
         self._close_only_guard: Optional[CloseOnlyGuard] = close_only_guard
+
+        # ── AutoTune — HU 4.1 ────────────────────────────────────────────────
+        self._auto_tuner: Optional[ResilienceAutoTuner] = auto_tuner
+        # Nº de veces que try_auto_revert() fue invocado desde la entrada a STRESSED.
+        self._revert_attempt_count: int = 0
 
     # ── Public interface ──────────────────────────────────────────────────────
 
@@ -218,6 +225,7 @@ class ResilienceManager:
             )
             self._current_posture = target_posture
             if target_posture == SystemPosture.STRESSED:
+                self._revert_attempt_count = 0
                 self.activate_close_only_protocol()
 
         self._persist_audit(report)
@@ -327,18 +335,40 @@ class ResilienceManager:
             sorted(_PROTECTED_MODULES),
         )
 
-    def try_auto_revert(self) -> bool:
+    def try_auto_revert(self, edge_eroded: bool = False) -> bool:
         """
         Attempt to auto-revert close-only mode and restore degraded modules.
 
-        Delegates the condition check to CloseOnlyGuard.check_auto_revert().
-        If reversion occurs, all currently degraded modules are restored.
+        Respects the dynamic min_stability_cycles threshold: if fewer cycles
+        have elapsed since STRESSED was entered, reversion is blocked.
+        On successful revert, notifies the AutoTuner for incremental calibration.
+
+        Args:
+            edge_eroded: True if execution quality degraded post-recovery.
+                         Passed to the AutoTuner to decide whether to harden params.
 
         Returns:
             True if reversion occurred, False otherwise.
         """
         if self._close_only_guard is None:
             return False
+
+        self._revert_attempt_count += 1
+
+        min_cycles = (
+            int(self._auto_tuner.get_param("min_stability_cycles"))
+            if self._auto_tuner is not None
+            else 0
+        )
+        if self._revert_attempt_count < min_cycles:
+            logger.info(
+                "[ResilienceManager] Reversión bloqueada por AutoTune "
+                "(cycles=%d/%d mínimos requeridos).",
+                self._revert_attempt_count,
+                min_cycles,
+            )
+            return False
+
         reverted = self._close_only_guard.check_auto_revert()
         if reverted:
             for module in list(self._degraded_modules):
@@ -346,6 +376,15 @@ class ResilienceManager:
             logger.info(
                 "[ResilienceManager] Auto-reversión completa — todos los módulos restaurados."
             )
+            if self._auto_tuner is not None:
+                trace_id = (
+                    self._last_report.trace_id if self._last_report else ""
+                )
+                self._auto_tuner.record_recovery(
+                    stability_cycles=self._revert_attempt_count,
+                    edge_eroded=edge_eroded,
+                    trace_id=trace_id,
+                )
         return reverted
 
     # ── Correlation Engine ────────────────────────────────────────────────────
@@ -353,19 +392,32 @@ class ResilienceManager:
     def _run_correlation_engine(self, report: EdgeEventReport) -> None:
         """
         Track temporal clusters of L0 MUTE events across distinct assets.
-        Triggers a synthetic LOCKDOWN if ≥3 distinct assets mute in 60s.
+        Triggers a synthetic LOCKDOWN if ≥correlation_l0_threshold distinct
+        assets mute within correlation_window_seconds.
+        Uses dynamic thresholds from AutoTuner when available.
         """
         if report.action != EdgeAction.MUTE:
             return
 
+        window_secs = (
+            float(self._auto_tuner.get_param("correlation_window_seconds"))
+            if self._auto_tuner is not None
+            else _CORRELATION_WINDOW_SECONDS
+        )
+        corr_threshold = (
+            int(self._auto_tuner.get_param("correlation_l0_threshold"))
+            if self._auto_tuner is not None
+            else _CORRELATION_L0_THRESHOLD
+        )
+
         now = time.monotonic()
-        cutoff = now - _CORRELATION_WINDOW_SECONDS
+        cutoff = now - window_secs
         self._l0_mute_window = [
             (ts, sc) for ts, sc in self._l0_mute_window if ts >= cutoff
         ]
         self._l0_mute_window.append((now, report.scope))
         distinct = {sc for _, sc in self._l0_mute_window}
-        if len(distinct) >= _CORRELATION_L0_THRESHOLD:
+        if len(distinct) >= corr_threshold:
             self._trigger_correlation_cascade(distinct)
 
     def _trigger_correlation_cascade(self, distinct_assets: set[str]) -> None:
@@ -449,14 +501,20 @@ class ResilienceManager:
             self._heal_database(report.scope)
 
     def _apply_spread_cooldown(self, scope: str) -> None:
-        """Register a 5-minute cooldown on the asset after a spread anomaly."""
-        end_time = time.monotonic() + _SPREAD_COOLDOWN_SECONDS
+        """Register a cooldown on the asset after a spread anomaly.
+        Duration is dynamic (spread_cooldown_seconds from AutoTuner)."""
+        cooldown_secs = (
+            float(self._auto_tuner.get_param("spread_cooldown_seconds"))
+            if self._auto_tuner is not None
+            else _SPREAD_COOLDOWN_SECONDS
+        )
+        end_time = time.monotonic() + cooldown_secs
         self._cooldowns[scope] = end_time
         logger.info(
             "[AUTO-HEAL] Spread_Anomaly cooldown registered for %s — "
             "re-evaluation blocked for %ss.",
             scope,
-            _SPREAD_COOLDOWN_SECONDS,
+            cooldown_secs,
         )
 
     def _heal_data_coherence(self, scope: str) -> None:
@@ -478,7 +536,12 @@ class ResilienceManager:
             logger.info("[AUTO-HEAL] reconnect_provider succeeded for %s", scope)
             self._healing_attempts[key] = 0
             return
-        if attempt >= _MAX_HEAL_RETRIES:
+        max_retries = (
+            int(self._auto_tuner.get_param("max_heal_retries"))
+            if self._auto_tuner is not None
+            else _MAX_HEAL_RETRIES
+        )
+        if attempt >= max_retries:
             self._escalate_after_exhaustion(scope, "reconnect_provider")
 
     def _heal_database(self, scope: str) -> None:
@@ -500,7 +563,12 @@ class ResilienceManager:
             logger.info("[AUTO-HEAL] DB heal succeeded for %s", scope)
             self._healing_attempts[key] = 0
             return
-        if attempt >= _MAX_HEAL_RETRIES:
+        max_retries = (
+            int(self._auto_tuner.get_param("max_heal_retries"))
+            if self._auto_tuner is not None
+            else _MAX_HEAL_RETRIES
+        )
+        if attempt >= max_retries:
             self._escalate_after_exhaustion(scope, "clear_db_cache")
 
     def _try_reconnect(self) -> bool:
@@ -554,18 +622,28 @@ class ResilienceManager:
     def _evaluate_mute_escalation(self, asset_scope: str) -> SystemPosture:
         """
         Track per-asset MUTE counts and escalate posture when thresholds
-        are reached.
+        are reached.  Uses dynamic thresholds from AutoTuner when available.
 
         Thresholds (cumulative per asset):
-          >= _L0_DEGRADED_THRESHOLD → DEGRADED
-          >= _L0_CAUTION_THRESHOLD  → CAUTION
-          < _L0_CAUTION_THRESHOLD   → no change
+          >= l0_degraded_threshold → DEGRADED
+          >= l0_caution_threshold  → CAUTION
+          < l0_caution_threshold   → no change
         """
         self._l0_failure_counts[asset_scope] += 1
         count = self._l0_failure_counts[asset_scope]
-        if count >= _L0_DEGRADED_THRESHOLD:
+        degraded_thr = (
+            int(self._auto_tuner.get_param("l0_degraded_threshold"))
+            if self._auto_tuner is not None
+            else _L0_DEGRADED_THRESHOLD
+        )
+        caution_thr = (
+            int(self._auto_tuner.get_param("l0_caution_threshold"))
+            if self._auto_tuner is not None
+            else _L0_CAUTION_THRESHOLD
+        )
+        if count >= degraded_thr:
             return SystemPosture.DEGRADED
-        if count >= _L0_CAUTION_THRESHOLD:
+        if count >= caution_thr:
             return SystemPosture.CAUTION
         return self._current_posture
 

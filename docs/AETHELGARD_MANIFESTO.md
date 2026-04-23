@@ -12,6 +12,34 @@ Aethelgard es un ecosistema autónomo, proactivo y matemáticamente agnóstico d
 
 ---
 
+## I.0 Pilar de Resiliencia Adaptativa (HU 4.1)
+
+**Vigente desde:** 2026-04-22 | Trace_ID: ARCH-RESILIENCE-AUTOTUNE-V1 | Épica: E4
+
+### Principio
+
+El EDGE es transversal. La resiliencia del sistema debe aprender de la experiencia real
+y autoajustarse de forma incremental, auditada y acotada. Ningún umbral operativo de
+escalación o recuperación puede ser hardcodeado como valor permanente.
+
+### Contrato de AutoTune
+
+| Componente | Responsabilidad |
+|---|---|
+| `ResilienceAutoTuner` | Calibrador incremental — analiza recuperaciones, ajusta params, persiste |
+| `ResilienceManager` | Consume params del tuner vía `get_param()`, llama a `record_recovery()` post-revert |
+| `sys_config["resilience:params"]` | SSOT de los parámetros activos (JSON persistido en DB global) |
+| `sys_audit_logs` | Registro auditable de cada ajuste (`action="RESILIENCE_AUTOTUNE"`) |
+
+### Reglas Inviolables
+
+1. **Limites duros**: Ningún parámetro puede superar su rango `PARAM_BOUNDS`. El sistema no puede auto-configurarse en un estado imposible.
+2. **Prioridad de endurecimiento**: Si `edge_eroded=True`, siempre endurece — incluso si el ciclo fue corto (falso positivo simulado).
+3. **Fire-and-forget en storage**: Un error de persistencia no propaga al flujo de negocio.
+4. **Backward-compat**: Sin `auto_tuner`, `ResilienceManager` opera con umbrales legacy sin cambios.
+
+---
+
 ## I.A Contrato Arquitectónico: DB como SSOT + Snapshot en Memoria
 
 **Vigente desde:** 2026-04-13 | Trace_ID: EDGE-STRATEGY-SSOT-SYNC-2026-04-13
