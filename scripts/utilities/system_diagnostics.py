@@ -43,17 +43,12 @@ class SystemDiagnostics:
             Path to aethelgard.db or empty string if not found
         """
         data_vault_dir = project_root / "data_vault"
-        
-        # Check for main database
-        db_path = data_vault_dir / "aethelgard.db"
+
+        # SSOT: data_vault/global/aethelgard.db
+        db_path = data_vault_dir / "global" / "aethelgard.db"
         if db_path.exists():
             return str(db_path)
-        
-        # Fallback: find first .db file (excluding test databases)
-        db_files = [f for f in data_vault_dir.glob("*.db") if "test" not in f.name.lower()]
-        if db_files:
-            return str(db_files[0])
-        
+
         return ""
     
     @staticmethod

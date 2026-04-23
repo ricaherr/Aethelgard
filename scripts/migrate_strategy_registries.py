@@ -24,7 +24,7 @@ def migrate_strategy_registries():
     
     # Rutas
     project_root = Path(__file__).parent.parent
-    db_path = project_root / "data_vault" / "aethelgard.db"  # UBICACIÓN CORRECTA: data_vault/
+    db_path = project_root / "data_vault" / "global" / "aethelgard.db"  # SSOT: data_vault/global/
     json_path = project_root / "data_vault" / "seed" / "strategy_registry.json"  # UBICACIÓN CORRECTA: seed/
     
     if not json_path.exists():

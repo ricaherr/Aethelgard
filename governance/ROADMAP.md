@@ -9,14 +9,26 @@
 > - **NO agregar aquí**: listas de archivos modificados, métricas de tests, detalles de implementación (eso va en SPRINT.md).
 > - **Framework completo**: `.ai_orchestration_protocol.md` Sección 4.
 
-**Versión Log**: v4.21.0-beta
-**Última Actualización**: 22 de Abril, 2026 (HU 5.1 — Monitoreo Activo de Conexión Broker/Feed iniciado)
+**Versión Log**: v4.22.0-beta
+**Última Actualización**: 23 de Abril, 2026 (DB Governance — Manejo Seguro de Bases de Datos Temporales completado)
 
 ---
 
 ## 📈 ÉPICAS ESTRATÉGICAS
 
 > ℹ️ Solo se muestran Épicas en estado `ACTIVA` o `PENDIENTE`. Las Épicas `COMPLETADA` se archivan en [SYSTEM_LEDGER.md](SYSTEM_LEDGER.md) (sección ÉPICAS ARCHIVADAS) y se eliminan de este documento.
+
+### DB-GOV-001: Gobernanza de Bases de Datos Temporales en Scripts Utilitarios — COMPLETADA ✅
+**Sprint**: 35 | **Trace_ID**: DB-GOV-TEMP-SCRIPTS-2026-04-23 | **Fecha**: 2026-04-23
+**Objetivo**: Garantizar que ningún script utilitario deje archivos .db residuales fuera de las rutas oficiales, con cleanup automático garantizado incluso ante errores.
+- `scripts/utilities/script_db_guard.py` — nuevo: `temp_db()`, `purge_residual_dbs()`, `find_residual_dbs()`, `is_allowed_db_path()`
+- `scripts/runner.py` — nuevo: ejecutor central con auditoría y cleanup post-ejecución
+- `stop.py` — ampliado: `_purge_residual_dbs()` elimina .db fuera de rutas permitidas
+- Corrección de paths legacy en 6 scripts (diagnose_instruments, force_init, list_tables, migrate_strategy_registries, purge_database, system_diagnostics)
+- `tests/test_script_db_governance.py` — 24/24 TDD GREEN
+**Criterios AC**: todos cumplidos.
+
+---
 
 ### E4/HU 4.1 — Autoajuste Dinámico de Resiliencia — COMPLETADA ✅
 **Sprint**: 33 | **Trace_ID**: ARCH-RESILIENCE-AUTOTUNE-V1 | **Fecha**: 2026-04-22

@@ -33,24 +33,12 @@ def get_database_paths() -> list[str]:
         print(f"❌ ERROR: data_vault directory not found at {data_vault_dir}")
         return []
     
-    # Only use main database (aethelgard.db)
-    main_db = data_vault_dir / "aethelgard.db"
-    
+    # SSOT: data_vault/global/aethelgard.db
+    main_db = data_vault_dir / "global" / "aethelgard.db"
+
     if main_db.exists():
         return [str(main_db)]
-    
-    # Fallback: find first non-test database
-    db_files = list(data_vault_dir.glob("*.db"))
-    
-    # Filter out test databases
-    production_dbs = [
-        db for db in db_files 
-        if not any(test_word in db.name.lower() for test_word in ['test', 'temp', 'backup'])
-    ]
-    
-    if production_dbs:
-        return [str(production_dbs[0])]
-    
+
     print("⚠️  No production database found")
     return []
 

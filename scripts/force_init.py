@@ -30,20 +30,21 @@ except Exception as e:
 
 # Check if tables exist NOW
 print("\n2. Checking tables in aethelgard.db...")
-db_path = Path("aethelgard.db")
+db_path = Path(__file__).parent.parent / "data_vault" / "global" / "aethelgard.db"
 if db_path.exists():
     conn = sqlite3.connect(str(db_path))
-    cursor = conn.cursor()
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-    tables = cursor.fetchall()
-    
-    print(f"Tables found: {len(tables)}")
-    for table in tables[:10]:  # Show first 10
-        print(f"  - {table[0]}")
-    if len(tables) > 10:
-        print(f"  ... and {len(tables) - 10} more")
-    
-    conn.close()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+        tables = cursor.fetchall()
+
+        print(f"Tables found: {len(tables)}")
+        for table in tables[:10]:  # Show first 10
+            print(f"  - {table[0]}")
+        if len(tables) > 10:
+            print(f"  ... and {len(tables) - 10} more")
+    finally:
+        conn.close()
 else:
     print(f"❌ Database file not found at {db_path}")
 

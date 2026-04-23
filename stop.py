@@ -168,6 +168,20 @@ def _clean_pycache() -> int:
                 pass
     return count
 
+_ALLOWED_DB_PREFIXES: tuple[Path, ...] = (
+    project_root / "data_vault" / "global",
+    project_root / "data_vault" / "templates",
+    project_root / "data_vault" / "tenants",
+    project_root / "backups",
+)
+_EXCLUDED_DIRS: frozenset[str] = frozenset({"venv", ".venv", "node_modules", "__pycache__", ".git"})
+
+
+def _is_allowed_db(db_path: Path) -> bool:
+    resolved = db_path.resolve()
+    return any(resolved.is_relative_to(prefix.resolve()) for prefix in _ALLOWED_DB_PREFIXES)
+
+
 def _clean_db_locks() -> int:
     """
     Busca todas las bases de datos de Aethelgard (Global y Tenants)
@@ -175,6 +189,8 @@ def _clean_db_locks() -> int:
     """
     cleaned = 0
     for db_path in project_root.rglob("aethelgard.db"):
+        if any(part in _EXCLUDED_DIRS for part in db_path.parts):
+            continue
         try:
             # Timeout corto: si está bloqueada por otro proceso legítimo fallará rápido
             conn = sqlite3.connect(db_path, timeout=3.0)
@@ -184,8 +200,31 @@ def _clean_db_locks() -> int:
             cleaned += 1
         except Exception as e:
             print(f"  [WARN] No se pudo limpiar DB lock en {db_path.parent.name}/{db_path.name}: {e}")
-            
+
     return cleaned
+
+
+def _purge_residual_dbs() -> list[Path]:
+    """
+    Busca y elimina archivos .db que estén fuera de las rutas permitidas.
+    Protege la DB global y de tenants de eliminación accidental.
+    """
+    removed: list[Path] = []
+    for db_file in project_root.rglob("*.db"):
+        if any(part in _EXCLUDED_DIRS for part in db_file.parts):
+            continue
+        if _is_allowed_db(db_file):
+            continue
+        try:
+            db_file.unlink(missing_ok=True)
+            for suffix in ("-wal", "-shm"):
+                side = db_file.with_name(db_file.name + suffix)
+                side.unlink(missing_ok=True)
+            print(f"  [CLEANUP] DB residual eliminada: {db_file.relative_to(project_root)}")
+            removed.append(db_file)
+        except OSError as e:
+            print(f"  [WARN] No se pudo eliminar DB residual {db_file}: {e}")
+    return removed
 
 def main() -> None:
     print("\n" + "=" * 70)
@@ -218,6 +257,13 @@ def main() -> None:
         print(f"  [OK] {dbs_cleaned} base(s) de datos sincronizada(s) y liberada(s)")
     else:
         print("  [INFO] Sin bases de datos que requieran limpieza")
+
+    print("\n[>] Eliminando DBs residuales fuera de rutas permitidas...")
+    residuals_removed = _purge_residual_dbs()
+    if residuals_removed:
+        print(f"  [OK] {len(residuals_removed)} DB(s) residual(es) eliminada(s)")
+    else:
+        print("  [INFO] Sin DBs residuales detectadas")
 
     print("\n[>] Limpiando cache Python...")
     cache_count = _clean_pycache()

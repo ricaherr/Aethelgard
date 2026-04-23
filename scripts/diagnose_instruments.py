@@ -23,7 +23,7 @@ print("="*80)
 # 1. READ RAW FROM DB
 print("\n1. RAW DATA FROM system_state TABLE")
 print("-" * 80)
-db_path = Path(__file__).parent.parent / "aethelgard.db"
+db_path = Path(__file__).parent.parent / "data_vault" / "global" / "aethelgard.db"
 print(f"DB Path: {db_path}")
 print(f"DB Exists: {db_path.exists()}")
 
