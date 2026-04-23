@@ -673,6 +673,75 @@ class ResilienceManager:
         }
         return plans.get(report.action, "")
 
+    # ── Connection Health integration (HU 5.1) ───────────────────────────────
+
+    def process_connection_health_event(
+        self,
+        snapshot: Any,  # ConnectorHealthSnapshot — avoid circular import
+    ) -> SystemPosture:
+        """
+        Convert a ConnectorHealthSnapshot into an EdgeEventReport and process it.
+
+        Mapping:
+          HEALTHY / DEGRADED (latency)  → no escalation (logged only)
+          DISCONNECTED (root=AUTH)      → L2 SELF_HEAL (service-level failure)
+          DISCONNECTED (root=NETWORK)   → L2 SELF_HEAL
+          RECONNECTING                  → no escalation (in-flight recovery)
+          FALLBACK_TRIGGERED            → L3 LOCKDOWN  (unrecoverable connector)
+
+        Returns:
+            Current SystemPosture after processing.
+        """
+        from core_brain.connection_health_monitor import ConnectorHealthStatus, RootCause
+
+        status = snapshot.status
+        root_cause = snapshot.root_cause
+        connector_id = snapshot.connector_id
+
+        # Healthy or degraded by latency — no posture escalation needed
+        if status in (ConnectorHealthStatus.HEALTHY, ConnectorHealthStatus.RECONNECTING):
+            logger.debug(
+                "[ResilienceManager] Connector %s status=%s — no escalation",
+                connector_id, status.value,
+            )
+            return self._current_posture
+
+        if status == ConnectorHealthStatus.DEGRADED:
+            logger.warning(
+                "[ResilienceManager] Connector %s DEGRADED latency=%.0fms",
+                connector_id, snapshot.latency_ms,
+            )
+            return self._current_posture
+
+        # Disconnected — escalate to SERVICE level
+        reason = (
+            f"Connector {connector_id} DISCONNECTED: root_cause={root_cause.value if root_cause else 'UNKNOWN'} "
+            f"reconnect_attempts={snapshot.reconnect_attempts}"
+        )
+
+        # Fallback triggered = L3 (unrecoverable without manual intervention)
+        if snapshot.reconnect_attempts > 0 and status == ConnectorHealthStatus.DISCONNECTED:
+            action = EdgeAction.LOCKDOWN
+            level = ResilienceLevel.GLOBAL
+        else:
+            action = EdgeAction.SELF_HEAL
+            level = ResilienceLevel.SERVICE
+
+        report = EdgeEventReport(
+            level=level,
+            scope=f"connector:{connector_id}",
+            action=action,
+            reason=reason,
+            metadata={
+                "connector_id": connector_id,
+                "root_cause": root_cause.value if root_cause else None,
+                "latency_ms": snapshot.latency_ms,
+                "reconnect_attempts": snapshot.reconnect_attempts,
+                "issue_type": f"connector_{connector_id}_failure",
+            },
+        )
+        return self.process_report(report)
+
     def _persist_audit(self, report: EdgeEventReport) -> None:
         """
         Persist the resilience event to sys_audit_logs.

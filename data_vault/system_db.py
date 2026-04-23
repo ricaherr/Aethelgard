@@ -1423,3 +1423,118 @@ class SystemMixin(BaseRepository):
         finally:
             self._close_conn(conn)
 
+    # ── Connector Health Monitoring (HU 5.1) ─────────────────────────────────
+
+    def record_connector_health_event(
+        self,
+        connector_id: str,
+        event_type: str,
+        root_cause: Optional[str] = None,
+        latency_ms: float = 0.0,
+        reconnect_attempts: int = 0,
+        is_healthy: bool = True,
+        details: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        Persist a connector health event to sys_connector_health.
+
+        Args:
+            connector_id: Unique connector identifier (e.g. 'mt5', 'ctrader').
+            event_type: Event label (CONNECTED, DISCONNECTED, HEARTBEAT_FAIL, ...).
+            root_cause: Classified failure cause or None when healthy.
+            latency_ms: Measured round-trip latency in milliseconds.
+            reconnect_attempts: Cumulative reconnection attempt count.
+            is_healthy: True when connector is fully operational.
+            details: Free-form dict serialized as JSON.
+        """
+        try:
+            details_json = json.dumps(details or {})
+            with self.transaction() as conn:
+                cursor = conn.cursor()
+                try:
+                    cursor.execute(
+                        """
+                        INSERT INTO sys_connector_health
+                            (connector_id, event_type, root_cause, latency_ms,
+                             reconnect_attempts, is_healthy, details)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            connector_id,
+                            event_type,
+                            root_cause,
+                            latency_ms,
+                            reconnect_attempts,
+                            1 if is_healthy else 0,
+                            details_json,
+                        ),
+                    )
+                finally:
+                    cursor.close()
+        except Exception as exc:
+            logger.warning(
+                "[DB] record_connector_health_event failed (%s/%s): %s",
+                connector_id, event_type, exc,
+            )
+
+    def get_connector_health_history(
+        self,
+        connector_id: str,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        """
+        Return the most recent health events for a connector.
+
+        Args:
+            connector_id: Connector to query.
+            limit: Maximum number of rows to return (newest first).
+
+        Returns:
+            List of dicts with keys: id, connector_id, event_type, root_cause,
+            latency_ms, reconnect_attempts, is_healthy, details, timestamp.
+        """
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT id, connector_id, event_type, root_cause, latency_ms,
+                       reconnect_attempts, is_healthy, details, timestamp
+                FROM sys_connector_health
+                WHERE connector_id = ?
+                ORDER BY timestamp DESC
+                LIMIT ?
+                """,
+                (connector_id, limit),
+            )
+            rows = cursor.fetchall()
+            result: List[Dict[str, Any]] = []
+            for row in rows:
+                result.append({
+                    "id": row[0],
+                    "connector_id": row[1],
+                    "event_type": row[2],
+                    "root_cause": row[3],
+                    "latency_ms": row[4],
+                    "reconnect_attempts": row[5],
+                    "is_healthy": bool(row[6]),
+                    "details": json.loads(row[7]) if row[7] else {},
+                    "timestamp": row[8],
+                })
+            return result
+        except Exception as exc:
+            logger.error("[DB] get_connector_health_history failed (%s): %s", connector_id, exc)
+            return []
+        finally:
+            self._close_conn(conn)
+
+    def get_connector_health_latest(self, connector_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Return the most recent health event for a connector, or None.
+
+        Args:
+            connector_id: Connector to query.
+        """
+        history = self.get_connector_health_history(connector_id, limit=1)
+        return history[0] if history else None
+

@@ -31,6 +31,9 @@ from data_vault.storage import StorageManager
 from models.broker_event import BrokerTradeClosedEvent, TradeResult, BrokerEvent
 from utils.market_ops import normalize_price, normalize_volume
 from datetime import timezone
+from typing import TYPE_CHECKING as _TYPE_CHECKING
+if _TYPE_CHECKING:
+    from core_brain.connection_health_monitor import ConnectionHealthMonitor, RootCause
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +151,9 @@ class MT5Connector(BaseConnector):
         # Available symbols cache (auto-discovery)
         self.available_symbols = set()
         self.last_error = None
+
+        # Health monitor — attached externally via attach_health_monitor()
+        self._health_monitor: "Optional[ConnectionHealthMonitor]" = None
 
         # Single-Thread Executor: ALL mt5.* DLL calls are routed to this thread.
         # Eliminates COM-apartment race conditions between background connector,
@@ -331,11 +337,13 @@ class MT5Connector(BaseConnector):
                     logger.error("[ERROR] [BACKGROUND] MT5 connection FAILED")
                     logger.warning("[WARNING]  [BACKGROUND] Retrying in 30 seconds...")
                     self.connection_state = ConnectionState.FAILED
+                    self._notify_health_disconnected()
                     time.sleep(30)
-                
+
             except Exception as e:
                 logger.error(f"[CRITICAL] [BACKGROUND] EXCEPTION in connection thread: {e}", exc_info=True)
                 self.connection_state = ConnectionState.FAILED
+                self._notify_health_disconnected(str(e))
                 time.sleep(30)
     
     def _connect_sync_once(self) -> bool:
@@ -520,8 +528,9 @@ class MT5Connector(BaseConnector):
             
         self.is_connected = True
         self.connection_state = ConnectionState.CONNECTED
-        
+
         logger.info(f"[INSTANCE {id(self)}] [VERBOSE] [OK] Demo account verified, is_connected={self.is_connected}, connection_state={self.connection_state}")
+        self._notify_health_connected()
         return True
 
     def _log_connection_success(self) -> None:
@@ -1898,6 +1907,37 @@ class MT5Connector(BaseConnector):
     def provider_id(self) -> str:
         """Unique identifier for the provider."""
         return "mt5"
+
+    # ── Health Monitor integration (HU 5.1) ──────────────────────────────────
+
+    def attach_health_monitor(self, monitor: "ConnectionHealthMonitor") -> None:
+        """
+        Attach a ConnectionHealthMonitor to this connector.
+
+        The monitor's start() is called immediately so heartbeats begin.
+        Call this after the connector is initialized but before start().
+        """
+        self._health_monitor = monitor
+        monitor.start()
+        logger.info("[MT5] ConnectionHealthMonitor attached and started")
+
+    def _notify_health_connected(self) -> None:
+        """Signal the health monitor that a connection was established."""
+        if self._health_monitor:
+            self._health_monitor.notify_connected(
+                details={"account": self.config.get("account_name"), "demo": self.is_demo}
+            )
+
+    def _notify_health_disconnected(self, error_context: str = "") -> None:
+        """Signal the health monitor that connection was lost, with root cause."""
+        if not self._health_monitor:
+            return
+        from core_brain.connection_health_monitor import RootCause
+        root_cause = self._health_monitor.classify_root_cause(error_context or (self.last_error or ""))
+        self._health_monitor.notify_disconnected(
+            root_cause=root_cause,
+            details={"error": error_context or self.last_error},
+        )
 
 # Singleton instance for easy import
 _mt5_connector_instance = None

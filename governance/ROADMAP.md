@@ -9,8 +9,8 @@
 > - **NO agregar aquí**: listas de archivos modificados, métricas de tests, detalles de implementación (eso va en SPRINT.md).
 > - **Framework completo**: `.ai_orchestration_protocol.md` Sección 4.
 
-**Versión Log**: v4.20.0-beta
-**Última Actualización**: 22 de Abril, 2026 (ETI Autoajuste Dinámico de Resiliencia — HU 4.1 completado)
+**Versión Log**: v4.21.0-beta
+**Última Actualización**: 22 de Abril, 2026 (HU 5.1 — Monitoreo Activo de Conexión Broker/Feed iniciado)
 
 ---
 
@@ -41,6 +41,16 @@
 - `utils/alerting.py` — AlertEventType EDGE + send_edge_event()
 - `tests/test_edge_lockdown_degradation.py` — 36/36 TDD GREEN
 **Criterios AC**: todos cumplidos. Tests: 36/36 nuevos + 2701/2701 regresión = 0 fallos.
+
+---
+
+### E5-HU5.1: Diagnóstico y Resiliencia de Conexión Broker/Feed — ACTIVA
+**Sprint**: 34 | **Trace_ID**: EDGE-CONN-HEALTH-HU5.1-2026-04-22
+**Objetivo**: Monitoreo activo y granular de conectores broker/feed con diagnóstico de causa raíz exacta, autocorrección y fallback automáticos.
+
+| HU | Nombre | Dominio | Sprint | Estado |
+|---|---|---|---|---|
+| HU 5.1 | Monitoreo activo, diagnóstico preciso y autocorrección de conectores | RESILIENCIA | 34 | [IN_PROGRESS] |
 
 ---
 

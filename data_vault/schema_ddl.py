@@ -914,6 +914,40 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_shadow_promotion_log_promotion_status ON sys_shadow_promotion_log (promotion_status)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sys_shadow_promotion_log_created_at ON sys_shadow_promotion_log (created_at DESC)")
 
+    # ── 20. Connector Health Monitoring (HU 5.1) ─────────────────────────────
+    # Append-only event log for active broker/feed connection health monitoring.
+    # Writers: ConnectionHealthMonitor (core_brain/connection_health_monitor.py)
+    # Readers: GET /api/connector-health, ResilienceManager, UI dashboard
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sys_connector_health (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            connector_id TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            root_cause TEXT,
+            latency_ms REAL DEFAULT 0.0,
+            reconnect_attempts INTEGER DEFAULT 0,
+            is_healthy INTEGER DEFAULT 1,
+            details TEXT,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sys_connector_health_connector_id "
+        "ON sys_connector_health (connector_id)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sys_connector_health_event_type "
+        "ON sys_connector_health (event_type)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sys_connector_health_timestamp "
+        "ON sys_connector_health (timestamp DESC)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sys_connector_health_is_healthy "
+        "ON sys_connector_health (is_healthy)"
+    )
+
     # Seed sys_regime_configs with default weights (SSOT)
     _seed_sys_regime_configs(cursor)
 
