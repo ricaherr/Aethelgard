@@ -283,7 +283,7 @@ class MT5Connector(BaseConnector):
         logger.info(f"[INSTANCE {id(self)}] [START] MT5Connector.start() called. Config enabled: {self.config.get('enabled', False)}, Connection state: {self.connection_state}")
         
         if not self.config.get('enabled', False):
-            logger.warning("❌ MT5 connector is DISABLED in config - not starting connection")
+            logger.warning("[DISABLED] MT5 connector is DISABLED in config - not starting connection")
             logger.warning(f"   Config keys: {list(self.config.keys())}")
             return
             
@@ -504,7 +504,7 @@ class MT5Connector(BaseConnector):
         
         account_info = mt5.account_info()
         if account_info is None:
-            logger.error("[VERBOSE] ❌ mt5.account_info() returned None")
+            logger.error("[VERBOSE] [ERROR] mt5.account_info() returned None")
             return False
         
         logger.info(f"[VERBOSE] Account info retrieved: login={account_info.login}, server={account_info.server}, trade_mode={account_info.trade_mode}")
@@ -728,7 +728,7 @@ class MT5Connector(BaseConnector):
             self.is_demo = account_info.trade_mode == mt5.ACCOUNT_TRADE_MODE_DEMO
             
             if not self.is_demo:
-                logger.critical("⚠️  CONNECTED TO REAL ACCOUNT! Trading disabled for safety.")
+                logger.critical("[CRITICAL WARNING] CONNECTED TO REAL ACCOUNT! Trading disabled for safety.")
                 logger.critical("   Aethelgard will NOT execute on real accounts.")
                 mt5.shutdown()
                 self.connection_state = ConnectionState.FAILED
@@ -1139,7 +1139,7 @@ class MT5Connector(BaseConnector):
             return {'success': False, 'error': f'{result.retcode}: {result.comment}'}
         
         logger.info(
-            f"✅ Order executed: {request['symbol']} {signal.signal_type.value} "
+            f"[OK] Order executed: {request['symbol']} {signal.signal_type.value} "
             f"@ {result.price} | Ticket: {result.order}"
         )
         
@@ -1358,7 +1358,7 @@ class MT5Connector(BaseConnector):
             
             if result and result.retcode == mt5.TRADE_RETCODE_DONE:
                 logger.warning(
-                    f"[ANOMALY_SENTINEL] ✅ Order {order_ticket} cancelled successfully. "
+                    f"[ANOMALY_SENTINEL] [OK] Order {order_ticket} cancelled successfully. "
                     f"Reason: {reason}"
                 )
                 return {'success': True, 'ticket': order_ticket}
@@ -1698,7 +1698,7 @@ class MT5Connector(BaseConnector):
                 logger.info(f"  comment: {result.comment}")
             
             if result and result.retcode == mt5.TRADE_RETCODE_DONE:
-                logger.info(f"✅ Position {ticket} modified - SL: {new_sl:.5f}, TP: {final_tp:.5f} - {reason}")
+                logger.info(f"[OK] Position {ticket} modified - SL: {new_sl:.5f}, TP: {final_tp:.5f} - {reason}")
                 return {'success': True}
             else:
                 error_msg = result.comment if result else 'Unknown error'
@@ -1851,7 +1851,7 @@ class MT5Connector(BaseConnector):
             result = mt5.order_send(close_request)
             
             if result and result.retcode == mt5.TRADE_RETCODE_DONE:
-                logger.info(f"✅ Position {ticket} closed successfully - Reason: {reason}")
+                logger.info(f"[OK] Position {ticket} closed successfully - Reason: {reason}")
                 return {'success': True}
             else:
                 error_msg = result.comment if result else 'Unknown error'

@@ -647,7 +647,7 @@ class OrderExecutor:
                     "Risk_Pct": f"{self.risk_manager.risk_per_trade * 100:.2f}%",
                     "Has_Open_Position": self.storage.has_open_position(signal.symbol)
                 }
-                logger.info(f"🔍 HIGH-CONFIDENCE SIGNAL MEMORY DUMP: {memory_dump}")
+                logger.info(f"[DUMP] HIGH-CONFIDENCE SIGNAL MEMORY DUMP: {memory_dump}")
             
             return position_size
             

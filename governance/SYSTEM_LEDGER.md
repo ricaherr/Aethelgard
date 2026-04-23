@@ -28,6 +28,21 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 
 ## 🏛️ ÉPICAS ARCHIVADAS
 
+### E2/HU 2.1 — Executor Productivo en Cuenta DEMO (ETI)
+| Campo | Valor |
+|---|---|
+| **Épica** | E2 — Productividad y Robustez del Executor |
+| **HU** | HU 2.1 — Executor opera en cuenta DEMO, EDGE alineado, logs auditables |
+| **Trace_ID** | `ETI-EXECUTOR-DEMO-PRODUCTIVO-2026-04-22` |
+| **Completada** | 22 de Abril, 2026 |
+| **Tests** | 11 nuevos GREEN (`test_executor_demo_cycle.py`) + 11 regresión (`test_executor.py`) = 22/22 |
+| **Cambios** | `connectors/mt5_connector.py` — 7 emojis → texto ASCII (elimina UnicodeEncodeError en Windows) |
+| | `core_brain/executor.py` — 1 emoji → texto ASCII |
+| | `tests/test_executor_demo_cycle.py` — nuevo: 11 tests TDD ciclo completo DEMO |
+| **Criterios AC** | Capital/riesgo desde DB vía RiskManager (ya implementado). Shadow logs con slippage/latencia auditados. Veto slippage/spread/liquidez. Fallback ante fallo de conector. 0 UnicodeEncodeError. |
+
+---
+
 ### E24 — EDGE DEMO Autoajustable & Exploración Evolutiva
 | Campo | Valor |
 |---|---|
