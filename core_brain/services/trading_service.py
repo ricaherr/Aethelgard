@@ -72,30 +72,38 @@ class TradingService:
             return TenantDBFactory.get_storage(tenant_id)
         return self.storage
 
-    # ========== MT5 Connector ==========
+    # ========== Broker Connector ==========
 
-    def get_mt5_connector(self) -> Optional[Any]:
-        """Lazy-load MT5 connector for balance/position queries."""
+    def get_connector(self, tenant_id: Optional[str] = None) -> Optional[Any]:
+        """Lazy-load the active broker connector via ConnectorFactory."""
         if self._mt5_connector_instance is None:
             try:
-                from connectors.mt5_connector import MT5Connector
-                self._mt5_connector_instance = MT5Connector()
-                if not self._mt5_connector_instance.connect():
-                    logger.warning("MT5Connector created but connection failed")
-                    self._mt5_connector_instance = None
-                    return None
-            except Exception as e:
-                logger.warning(f"Could not load MT5Connector: {e}")
+                from connectors.connector_factory import build_connector_from_account
+                storage = self._resolve_storage(tenant_id)
+                accounts = storage.get_sys_broker_accounts()
+                active = [a for a in accounts if a.get("enabled", True)]
+                for account in active:
+                    connector = build_connector_from_account(account)
+                    if connector is not None:
+                        self._mt5_connector_instance = connector
+                        break
+                if self._mt5_connector_instance is None:
+                    logger.warning("No active broker connector could be established")
+            except Exception as exc:
+                logger.warning("Could not load broker connector: %s", exc)
                 return None
 
-        # Verify connection is still active
-        if self._mt5_connector_instance and not self._mt5_connector_instance.is_connected:
+        if self._mt5_connector_instance and not getattr(self._mt5_connector_instance, "is_connected", True):
             try:
                 self._mt5_connector_instance.connect()
-            except Exception as e:
-                logger.debug(f"Reconnection attempt failed: {e}")
+            except Exception as exc:
+                logger.debug("Reconnection attempt failed: %s", exc)
 
         return self._mt5_connector_instance
+
+    def get_mt5_connector(self, tenant_id: Optional[str] = None) -> Optional[Any]:
+        """Backward-compatible alias for get_connector()."""
+        return self.get_connector(tenant_id=tenant_id)
 
     # ========== Balance Helpers ==========
 

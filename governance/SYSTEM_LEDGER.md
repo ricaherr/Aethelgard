@@ -1,10 +1,10 @@
 # AETHELGARD: SYSTEM LEDGER
 
-**Version**: 4.20.0-beta
+**Version**: 4.23.0-beta
 **Status**: ACTIVE
 **Description**: Historial cronológico de implementación, refactorizaciones y ajustes técnicos.
 
-> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-22 UTC)**: HU 4.1 E4 Autoajuste Dinámico de Resiliencia · `ResilienceAutoTuner` implementado · Integración en `ResilienceManager` (min_stability_cycles, record_recovery, params dinámicos) · `get_resilience_params` / `save_resilience_params` en Storage · **25/25 tests TDD PASSED** · 30/30 regresión PASSED.
+> 🟢 **ÚLTIMA ACTUALIZACIÓN (2026-04-23 UTC)**: E2 MT5 Erradicación completada · `ConnectorFactory` + `normalize_symbol` · 6 módulos core_brain refactorizados · 3 scripts de utilidad actualizados · test de arquitectura permanente · **2881/2881 tests PASSED**.
 
 ---
 
@@ -27,6 +27,23 @@ Cuando una Épica se completa, se archiva aquí con el siguiente formato comprim
 
 
 ## 🏛️ ÉPICAS ARCHIVADAS
+
+### E2 — Erradicación de Dependencias MT5 y Arquitectura Agnóstica (ETI)
+| Campo | Valor |
+|---|---|
+| **Épica** | E2 — Erradicación de dependencias MT5 y arquitectura agnóstica real |
+| **HU** | HU 2.1 — Auditoría y limpieza de imports/lógica MT5 fuera de connectors/ |
+| **Trace_ID** | `ETI-MT5-AUDIT-AGNOSTIC-2026-04-23` |
+| **Completada** | 23 de Abril, 2026 |
+| **Sprints** | 33 |
+| **Dominios** | 02_BROKER_AGNOSTIC · 03_SIGNAL_INTEGRITY · 07_CLEAN_ARCHITECTURE |
+| **Objetivo** | Arquitectura 100% agnóstica — cualquier proveedor activo sin bloqueo por MT5 |
+| **HUs** | HU 2.1 (1/1) |
+| **Validate_all** | ✅ 2881/2881 PASSED |
+| **Archivos nuevos** | `models/symbol_utils.py`, `connectors/connector_factory.py`, `tests/test_architecture_no_mt5_in_core.py` |
+| **Archivos modificados** | `core_brain/signal_factory.py`, `core_brain/signal_deduplicator.py`, `core_brain/multi_timeframe_limiter.py`, `core_brain/edge_monitor.py`, `core_brain/health.py`, `core_brain/services/trading_service.py`, `core_brain/api/routers/trading.py`, `scripts/utilities/verify_risk_calculation.py`, `scripts/utilities/backfill_trade_metadata.py`, `scripts/utilities/backfill_position_metadata.py` |
+
+---
 
 ### E4/HU 4.1 — Autoajuste Dinámico de Resiliencia (ETI)
 | Campo | Valor |

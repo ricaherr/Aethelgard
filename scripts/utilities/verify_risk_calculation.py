@@ -1,5 +1,9 @@
 """Verify risk calculation accuracy"""
-import MetaTrader5 as mt5
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+from connectors.mt5_wrapper import MT5 as mt5
 
 mt5.initialize()
 

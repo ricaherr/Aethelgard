@@ -42,6 +42,7 @@ from core_brain.services.shadow_penalty_injector import ShadowPenaltyInjector
 from core_brain.strategies.base_strategy import BaseStrategy
 from core_brain.strategies.oliver_velez import OliverVelezStrategy
 from models.signal import EXPLORATION_ON
+from models.symbol_utils import normalize_symbol
 
 logger = logging.getLogger(__name__)
 
@@ -345,18 +346,13 @@ class SignalFactory:
     async def _process_valid_signal(self, signal: Signal) -> None:
         """Maneja persistencia y notificación de una señal válida."""
         try:
-            # 0. Normalize symbol for MT5 (provider → MT5 format) BEFORE saving to DB
-            if signal.connector_type == ConnectorType.METATRADER5:
-                try:
-                    from connectors.mt5_connector import MT5Connector
-                    normalized = MT5Connector.normalize_symbol(signal.symbol)
-                    if normalized != signal.symbol:
-                        logger.debug(f"[FACTORY NORM] {signal.symbol} → {normalized}")
-                        if hasattr(signal, 'metadata') and isinstance(signal.metadata, dict):
-                            signal.metadata.setdefault("symbol_normalized_from", signal.symbol)
-                        signal.symbol = normalized
-                except Exception as e:
-                    logger.warning(f"Symbol normalization failed in SignalFactory: {e}")
+            # 0. Strip provider suffixes (e.g. Yahoo's '=X') BEFORE saving to DB
+            normalized = normalize_symbol(signal.symbol)
+            if normalized != signal.symbol:
+                logger.debug(f"[FACTORY NORM] {signal.symbol} → {normalized}")
+                if hasattr(signal, 'metadata') and isinstance(signal.metadata, dict):
+                    signal.metadata.setdefault("symbol_normalized_from", signal.symbol)
+                signal.symbol = normalized
             
             # 0.5. Determine execution_mode (SHADOW/LIVE) from strategy_id
             # PHASE E: Signal persistence now tracks whether signal was generated in SHADOW or LIVE mode

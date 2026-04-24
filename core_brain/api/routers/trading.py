@@ -217,26 +217,25 @@ async def execute_signal_manual(data: dict, token: TokenPayload = Depends(get_cu
         # Add signal_id to metadata for tracking
         signal.metadata['signal_id'] = signal_id
         
-        # Create executor instance (with lazy-loaded MT5 connector)
+        # Create executor instance (with lazy-loaded broker connector)
         from core_brain.executor import OrderExecutor
         from core_brain.risk_manager import RiskManager
-        
-        # Get MT5 connector via TradingService
-        mt5_connector = trading_service.get_mt5_connector(tenant_id=tenant_id)
-        if not mt5_connector:
+
+        broker_connector = trading_service.get_connector(tenant_id=tenant_id)
+        if not broker_connector:
             return {
                 "success": False,
-                "message": "MT5 connector not available. Check connection.",
+                "message": "Broker connector not available. Check broker connection.",
                 "signal_id": signal_id
             }
-        
+
         # Create risk manager and executor
         account_balance = trading_service.get_account_balance(tenant_id=tenant_id)
         risk_manager = RiskManager(storage=storage, initial_capital=account_balance, tenant_id=tenant_id)
         executor = OrderExecutor(
             risk_manager=risk_manager,
             storage=storage,
-            connectors={ConnectorType.METATRADER5: mt5_connector}
+            connectors={signal.connector_type: broker_connector}
         )
         
         # Execute signal

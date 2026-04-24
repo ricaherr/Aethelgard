@@ -13,6 +13,32 @@
 
 ---
 
+# SPRINT 33: E2 — ERRADICACIÓN DE DEPENDENCIAS MT5 Y ARQUITECTURA AGNÓSTICA — [DONE]
+
+**Inicio**: 23 de Abril, 2026
+**Fin**: 23 de Abril, 2026
+**Objetivo**: Eliminar todos los imports directos de `MT5Connector`, `MetaTrader5` y lógica condicional MT5 fuera de `connectors/`. Blindar arquitectura con test de regresión permanente.
+**Épica**: E2 (Erradicación de dependencias MT5 y arquitectura agnóstica real) | **Trace_ID**: ETI-MT5-AUDIT-AGNOSTIC-2026-04-23
+**Dominios**: 02_BROKER_AGNOSTIC · 03_SIGNAL_INTEGRITY · 07_CLEAN_ARCHITECTURE
+
+## 📋 Tareas del Sprint
+
+- [DONE] **HU 2.1: Auditoría y limpieza de imports/lógica MT5 fuera de connectors/**
+  - Creado `models/symbol_utils.py` con `normalize_symbol()` — extraída de `MT5Connector.normalize_symbol` (era solo `str.replace("=X","")`, ahora es agnóstico).
+  - Creado `connectors/connector_factory.py` — SSOT para construir conectores por `platform_id`; `core_brain` nunca más instancia conectores concretos.
+  - `core_brain/signal_factory.py`: eliminado lazy import MT5Connector; usa `normalize_symbol()` universal (aplica a TODOS los proveedores, no solo MT5).
+  - `core_brain/signal_deduplicator.py`: mismo patrón.
+  - `core_brain/multi_timeframe_limiter.py`: eliminado import no usado `MT5Connector` a nivel módulo; renombrado `self.mt5_connector` → `self.connector` (agnóstico).
+  - `core_brain/edge_monitor.py`: `_autodiscover_mt5_connector` usa `ConnectorFactory`; separado `ImportError` (debug) de otras excepciones (warning).
+  - `core_brain/health.py`: `check_mt5_connection` usa `build_connector_from_account()`; eliminados `from connectors.mt5_connector import MT5Connector` y `from connectors.mt5_wrapper import MT5 as mt5`.
+  - `core_brain/services/trading_service.py`: nuevo método `get_connector()` via `ConnectorFactory`; `get_mt5_connector()` queda como alias backward-compat.
+  - `core_brain/api/routers/trading.py`: usa `get_connector()` y `signal.connector_type` como clave del dict de conectores.
+  - `scripts/utilities/verify_risk_calculation.py`, `backfill_trade_metadata.py`, `backfill_position_metadata.py`: `import MetaTrader5` → `from connectors.mt5_wrapper import MT5`.
+  - Creado `tests/test_architecture_no_mt5_in_core.py` — test de regresión permanente que falla si `core_brain/` o los scripts monitorizados vuelven a tener imports prohibidos.
+  - Gate: **2881 passed, 3 skipped, 0 failed** ✅
+
+---
+
 # SPRINT 32: E22 — CANONICAL PERSISTENCE & RUNTIME FUNNEL RECOVERY — [TODO]
 
 **Inicio**: 14 de Abril, 2026

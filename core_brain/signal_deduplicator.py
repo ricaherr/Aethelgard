@@ -11,6 +11,7 @@ import logging
 from typing import Optional
 
 from models.signal import Signal, ConnectorType
+from models.symbol_utils import normalize_symbol
 from data_vault.storage import StorageManager
 
 logger = logging.getLogger(__name__)
@@ -89,22 +90,10 @@ class SignalDeduplicator:
     
     def _normalize_symbol(self, signal: Signal) -> str:
         """
-        Normaliza símbolo según connector type.
-        
-        Ejemplo: "GBPUSD=X" (Yahoo) → "GBPUSD" (MT5)
+        Strip provider suffixes from signal symbol (e.g. Yahoo's '=X').
+        Example: "GBPUSD=X" → "GBPUSD"
         """
-        normalized_symbol = signal.symbol
-        
-        if signal.connector_type == ConnectorType.METATRADER5:
-            try:
-                from connectors.mt5_connector import MT5Connector
-                normalized_symbol = MT5Connector.normalize_symbol(signal.symbol)
-            except ImportError:
-                normalized_symbol = signal.symbol.replace("=X", "")
-            except Exception as e:
-                logger.warning(f"Normalization failed: {e}")
-        
-        return normalized_symbol
+        return normalize_symbol(signal.symbol)
     
     @staticmethod
     def _get_signal_type_str(signal: Signal) -> str:

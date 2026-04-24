@@ -9,14 +9,27 @@
 > - **NO agregar aquí**: listas de archivos modificados, métricas de tests, detalles de implementación (eso va en SPRINT.md).
 > - **Framework completo**: `.ai_orchestration_protocol.md` Sección 4.
 
-**Versión Log**: v4.22.0-beta
-**Última Actualización**: 23 de Abril, 2026 (DB Governance — Manejo Seguro de Bases de Datos Temporales completado)
+**Versión Log**: v4.23.0-beta
+**Última Actualización**: 23 de Abril, 2026 (E2 MT5 Erradicación — Arquitectura agnóstica completada; 2881 tests PASS)
 
 ---
 
 ## 📈 ÉPICAS ESTRATÉGICAS
 
 > ℹ️ Solo se muestran Épicas en estado `ACTIVA` o `PENDIENTE`. Las Épicas `COMPLETADA` se archivan en [SYSTEM_LEDGER.md](SYSTEM_LEDGER.md) (sección ÉPICAS ARCHIVADAS) y se eliminan de este documento.
+
+### E2: Erradicación de Dependencias MT5 y Arquitectura Agnóstica — COMPLETADA ✅
+**Sprint**: 33 | **Trace_ID**: ETI-MT5-AUDIT-AGNOSTIC-2026-04-23 | **Fecha**: 2026-04-23
+**Objetivo**: Eliminar todos los imports directos de MT5Connector/MetaTrader5 fuera de `connectors/`. Sistema opera igual con cTrader, Yahoo o cualquier otro proveedor sin bloqueos por MT5 ausente.
+- `models/symbol_utils.py` — nuevo: `normalize_symbol()` agnóstico
+- `connectors/connector_factory.py` — nuevo: SSOT para instanciar conectores por platform_id
+- 6 archivos `core_brain/` refactorizados (signal_factory, signal_deduplicator, multi_timeframe_limiter, edge_monitor, health, services/trading_service, api/routers/trading)
+- 3 scripts de utilidad actualizados (sin `import MetaTrader5` directo)
+- `tests/test_architecture_no_mt5_in_core.py` — blindaje permanente (4 tests de regresión)
+- **2881 passed, 3 skipped, 0 failed** ✅
+**Criterios AC**: todos cumplidos.
+
+---
 
 ### DB-GOV-001: Gobernanza de Bases de Datos Temporales en Scripts Utilitarios — COMPLETADA ✅
 **Sprint**: 35 | **Trace_ID**: DB-GOV-TEMP-SCRIPTS-2026-04-23 | **Fecha**: 2026-04-23

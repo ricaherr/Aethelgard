@@ -180,44 +180,35 @@ class HealthManager:
 
     def check_mt5_connection(self) -> Dict[str, Any]:
         """
-        Check MT5 installation, connection status and account information.
-        
+        Check broker connection status and account information.
+
+        Delegates connector instantiation to ConnectorFactory so this method
+        remains agnostic of specific connector implementations.
+
         Returns:
-            Dict with MT5 status, account info, and open usr_positions
+            Dict with broker status, account info, and open usr_positions
         """
-        results = {
+        results: Dict[str, Any] = {
             "status": "RED",
             "installed": False,
             "connected": False,
             "account_type": None,
             "account_info": {},
             "open_usr_positions": [],
-            "details": []
+            "details": [],
         }
-        
+
         try:
-            # Check if MT5 library is available
-            try:
-                from connectors.mt5_wrapper import MT5 as mt5
-                results["installed"] = True
-                results["details"].append("[OK] Librería MetaTrader5 instalada correctamente")
-            except ImportError:
-                results["details"].append("[ERROR] La librería de MetaTrader5 no está instalada.")
-                results["details"].append("")
-                results["details"].append("📋 PASOS PARA SOLUCIONAR:")
-                results["details"].append("1. Abra PowerShell o Terminal")
-                results["details"].append("2. Ejecute: .\\venv\\Scripts\\python.exe -m pip install MetaTrader5")
-                results["details"].append("3. Reinicie el Dashboard")
-                results["details"].append("")
-                results["details"].append("[?] ¿Necesita ayuda? Contacte al soporte técnico")
-                return results
-            
-            # Check if MT5 accounts exist in database
             from data_vault.storage import StorageManager
+            from connectors.connector_factory import build_connector_from_account
+
             storage = StorageManager()
             all_accounts = storage.get_sys_broker_accounts()
-            mt5_accounts = [acc for acc in all_accounts if acc.get('platform_id') == 'mt5' and acc.get('enabled', True)]
-            
+            mt5_accounts = [
+                acc for acc in all_accounts
+                if acc.get("platform_id") == "mt5" and acc.get("enabled", True)
+            ]
+
             if not mt5_accounts:
                 results["status"] = "YELLOW"
                 results["details"].append("[WARNING] No hay cuentas MT5 configuradas en el sistema")
@@ -230,22 +221,22 @@ class HealthManager:
                 results["details"].append("5. Seleccione tipo 'DEMO' (recomendado)")
                 results["details"].append("6. Guarde la cuenta")
                 results["details"].append("")
-                results["details"].append("[TIP] DATO: Puede obtener cuenta DEMO gratuita en:")
+                results["details"].append("[TIP] Puede obtener cuenta DEMO gratuita en:")
                 results["details"].append("   - XM: https://www.xm.com/demo-account")
                 results["details"].append("   - IC Markets: https://www.icmarkets.com/demo-trading-account")
                 results["details"].append("")
                 results["details"].append("[?] ¿Necesita ayuda? Contacte al soporte técnico")
                 results["needs_config"] = True
                 return results
-            
-            # Check if accounts have sys_credentials
+
+            # Verify at least one account has saved credentials
             account_with_creds = None
             for acc in mt5_accounts:
-                creds: Optional[Dict[str, str]] = storage.get_credentials(acc['account_id'])
-                if creds and creds.get('password'):
+                creds: Optional[Dict[str, str]] = storage.get_credentials(acc["account_id"])
+                if creds and creds.get("password"):
                     account_with_creds = acc
                     break
-            
+
             if not account_with_creds:
                 results["status"] = "YELLOW"
                 results["details"].append("[WARNING] Cuentas MT5 encontradas pero sin contraseñas guardadas")
@@ -260,125 +251,70 @@ class HealthManager:
                 results["details"].append("[?] ¿Necesita ayuda? Contacte al soporte técnico")
                 results["needs_config"] = True
                 return results
-            
-            # Try to load MT5 connector
+
+            results["installed"] = True
+
             try:
-                from connectors.mt5_connector import MT5Connector
-                
-                connector = MT5Connector()
-                
-                # Attempt connection
-                if connector.connect():
+                connector = build_connector_from_account(account_with_creds)
+
+                if connector is not None:
                     results["connected"] = True
                     results["status"] = "GREEN"
-                    
-                    # Get account info
-                    account_info = mt5.account_info()  # type: ignore
-                    if account_info:
-                        results["account_type"] = "DEMO" if connector.is_demo else "REAL"
-                        results["account_info"] = {
-                            "login": account_info.login,
-                            "server": account_info.server,
-                            "balance": account_info.balance,
-                            "equity": account_info.equity,
-                            "profit": account_info.profit,
-                            "margin": account_info.margin,
-                            "margin_free": account_info.margin_free,
-                            "currency": account_info.currency,
-                            "leverage": account_info.leverage
-                        }
-                        
-                        results["details"].append(
-                            f"[OK] Conectado a cuenta {results['account_type']} de MT5 #{account_info.login}"
-                        )
-                        results["details"].append(
-                            f"[$$] Balance: {account_info.balance:,.2f} {account_info.currency} | Servidor: {account_info.server}"
-                        )
-                    
-                    # Check AutoTrading status
-                    terminal_info = mt5.terminal_info()  # type: ignore
-                    if terminal_info:
-                        if terminal_info.trade_allowed:
-                            results["details"].append("[OK] AutoTrading habilitado en MT5")
-                        else:
-                            results["status"] = "YELLOW"
-                            results["details"].append("[WARNING] AutoTrading DESHABILITADO en MT5")
-                            results["details"].append("")
-                            results["details"].append("📋 PASOS PARA HABILITAR AUTOTRADING:")
-                            results["details"].append("1. Abra MetaTrader 5")
-                            results["details"].append("   En la barra superior, busque el botón 'AutoTrading'")
-                            results["details"].append("3. Haga clic en el botón para activarlo (debe ponerse VERDE)")
-                            results["details"].append("")
-                            results["details"].append("ALTERNATIVA:")
-                            results["details"].append("- Menú -> Herramientas -> Opciones -> Expert Advisors")
-                            results["details"].append("- [OK] Marcar: 'Permitir AutoTrading'")
-                            results["details"].append("")
-                            results["details"].append("[WARNING] SIN AUTOTRADING NO SE PUEDEN EJECUTAR OPERACIONES AUTOMÁTICAS")
-                    
-                    # Get open positions
-                    open_usr_positions = connector.get_open_positions()
-                    results["open_usr_positions"] = open_usr_positions
-                    if len(open_usr_positions) > 0:
-                        results["details"].append(f"[POS] {len(open_usr_positions)} posición(es) abierta(s)")
+
+                    is_demo = getattr(connector, "is_demo", None)
+                    results["account_type"] = "DEMO" if is_demo else "REAL"
+
+                    balance = getattr(connector, "get_account_balance", lambda: None)()
+                    results["account_info"] = {
+                        "login": account_with_creds.get("account_number"),
+                        "server": account_with_creds.get("server"),
+                        "balance": balance,
+                        "account_name": account_with_creds.get("account_name"),
+                    }
+
+                    results["details"].append(
+                        f"[OK] Conectado — cuenta {results['account_type']} "
+                        f"#{account_with_creds.get('account_number')}"
+                    )
+                    if balance is not None:
+                        results["details"].append(f"[$$] Balance: {balance:,.2f} | Servidor: {account_with_creds.get('server')}")
+
+                    open_usr_positions = connector.get_open_positions() if hasattr(connector, "get_open_positions") else []
+                    results["open_usr_positions"] = open_usr_positions or []
+                    pos_count = len(results["open_usr_positions"])
+                    if pos_count > 0:
+                        results["details"].append(f"[POS] {pos_count} posición(es) abierta(s)")
                     else:
-                        results["details"].append(f"[OK] Conexión activa - Sin posiciones abiertas")
-                    
-                    # Disconnect
+                        results["details"].append("[OK] Conexión activa - Sin posiciones abiertas")
+
                     connector.disconnect()
-                    
+
                 else:
                     results["status"] = "YELLOW"
-                    results["details"].append("[ERROR] No se pudo conectar a MetaTrader 5")
+                    results["details"].append("[ERROR] No se pudo conectar al broker")
                     results["details"].append("")
                     results["details"].append("📋 PASOS PARA SOLUCIONAR:")
                     results["details"].append("1. Abra MetaTrader 5 en su computadora")
                     results["details"].append("2. Asegúrese de estar conectado a Internet")
                     results["details"].append("3. Verifique que sus credenciales sean correctas:")
-                    results["details"].append(f"   - Cuenta configurada: {account_with_creds.get('account_name')}")
+                    results["details"].append(f"   - Cuenta: {account_with_creds.get('account_name')}")
                     results["details"].append(f"   - Login: {account_with_creds.get('login') or account_with_creds.get('account_number')}")
                     results["details"].append(f"   - Servidor: {account_with_creds.get('server')}")
                     results["details"].append("4. Pruebe conectar manualmente en MT5 primero")
-                    results["details"].append("5. Si conecta OK en MT5, reintente desde el Dashboard")
                     results["details"].append("")
-                    results["details"].append("[TIP] POSIBLES CAUSAS:")
-                    results["details"].append("   - MT5 no está abierto")
-                    results["details"].append("   - Contraseña incorrecta")
-                    results["details"].append("   - Servidor incorrecto")
-                    results["details"].append("   - Cuenta expirada/deshabilitada")
-                    results["details"].append("")
-                    results["details"].append("[?] ¿Necesita ayuda? Contacte al soporte técnico")
+                    results["details"].append("[TIP] POSIBLES CAUSAS: MT5 no abierto / contraseña incorrecta / cuenta expirada")
                     results["needs_config"] = True
-                    
-            except FileNotFoundError as e:
-                results["status"] = "YELLOW"
-                results["details"].append(f"[WARNING] Error de configuración: {e}")
+
+            except Exception as exc:
+                results["details"].append(f"[ERROR] Error de conexión: {exc}")
                 results["details"].append("")
-                results["details"].append("📋 PASOS PARA SOLUCIONAR:")
-                results["details"].append("1. Vaya a '🔌 Configuración de Brokers'")
-                results["details"].append("2. Verifique que su cuenta MT5 tenga:")
-                results["details"].append("   - Login completo (sin truncar)")
-                results["details"].append("   - Servidor correcto")
-                results["details"].append("   - Contraseña guardada")
-                results["details"].append("3. Si falta algo, edite la cuenta y complete los datos")
-                results["details"].append("")
-                results["details"].append("[?] ¿Necesita ayuda? Contacte al soporte técnico")
-                results["needs_config"] = True
-            except Exception as e:
-                results["details"].append(f"[ERROR] Error de conexión: {str(e)}")
-                results["details"].append("")
-                results["details"].append("📋 PASOS PARA DIAGNOSTICAR:")
-                results["details"].append("1. Ejecute script de diagnóstico:")
-                results["details"].append("   python scripts/utilities/diagnose_mt5_connection.py")
-                results["details"].append("2. Revise los logs del sistema en: logs/")
-                results["details"].append("3. Capture el error completo y envíelo al soporte")
-                results["details"].append("")
+                results["details"].append("📋 Revise los logs del sistema en: logs/")
                 results["details"].append("[?] Contacte al soporte técnico con el mensaje de error")
-                results["details"].append("[TIP] Asegúrese de que MetaTrader 5 esté instalado y en ejecución")
-                
-        except Exception as e:
-            results["details"].append(f"CRITICAL: Unexpected error checking MT5: {e}")
-            logger.error(f"Error in check_mt5_connection: {e}", exc_info=True)
-        
+
+        except Exception as exc:
+            results["details"].append(f"CRITICAL: Unexpected error checking broker: {exc}")
+            logger.error("Error in check_mt5_connection: %s", exc, exc_info=True)
+
         return results
 
     def run_full_diagnostic(self) -> Dict[str, Any]:

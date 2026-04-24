@@ -17,7 +17,6 @@ from typing import Dict, Tuple, List, Any, Optional
 import logging
 
 from models.signal import Signal
-from connectors.mt5_connector import MT5Connector
 
 logger = logging.getLogger(__name__)
 
@@ -28,17 +27,16 @@ class MultiTimeframeLimiter:
     def __init__(self, storage, config: Dict, connector: Optional[Any] = None, mt5_connector: Optional[Any] = None):
         """
         Initialize MultiTimeframeLimiter.
-        
+
         Args:
             storage: StorageManager instance (dependency injection)
             config: Full config dict with 'multi_timeframe_limits' section
-            connector: Agnóstico connector instance (preferred, HU 10.20)
-            mt5_connector: MT5Connector instance for backward compat (deprecated)
+            connector: Agnostic broker connector instance (BaseConnector interface)
+            mt5_connector: Deprecated alias for connector; kept for backward compatibility
         """
         self.storage = storage
         self.config = config.get('multi_timeframe_limits', {})
-        # Prefer agnóstico connector, fallback to mt5_connector for backward compat
-        self.mt5_connector = connector or mt5_connector
+        self.connector = connector or mt5_connector
         self.enabled = self.config.get('enabled', True)
         self.max_usr_positions = self.config.get('max_usr_positions_per_symbol', 3)
         self.max_volume = self.config.get('max_total_volume_per_symbol', 5.0)
@@ -110,7 +108,7 @@ class MultiTimeframeLimiter:
         Returns only usr_positions that are confirmed open in MT5.
         """
         try:
-            if not self.mt5_connector or not self.mt5_connector.is_connected:
+            if not self.connector or not self.connector.is_connected:
                 logger.warning(
                     f"Injected MT5 connector not available or not connected for {symbol}. "
                     "Falling back to DB-only check (may be inaccurate)."
@@ -118,7 +116,7 @@ class MultiTimeframeLimiter:
                 return self._get_open_usr_positions_from_db_only(symbol)
             
             # Get actual open positions from MT5
-            mt5_usr_positions = self.mt5_connector.get_open_positions()
+            mt5_usr_positions = self.connector.get_open_positions()
             
             if mt5_usr_positions is None:
                 logger.warning(f"Failed to query MT5 usr_positions for {symbol}")

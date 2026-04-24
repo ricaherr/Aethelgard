@@ -112,10 +112,14 @@ class EdgeMonitor(threading.Thread):
         return None
 
     def _autodiscover_mt5_connector(self) -> Optional[Any]:
-        """Create an MT5Connector from the first active sys_broker_account with platform_id='mt5'."""
+        """Auto-discover the first active sys_broker_account and build its connector.
+
+        Uses ConnectorFactory so this method is decoupled from any specific
+        connector implementation.
+        """
         try:
             from data_vault.accounts_db import AccountsRepository
-            from connectors.mt5_connector import MT5Connector
+            from connectors.connector_factory import build_connector_from_account
 
             accounts_repo = AccountsRepository(self.storage.db_path)
             accounts = accounts_repo.get_sys_broker_accounts(enabled_only=True)
@@ -127,22 +131,17 @@ class EdgeMonitor(threading.Thread):
 
             account = mt5_accounts[0]
             logger.info(
-                "[EDGE] Auto-connecting MT5 account: %s (server=%s)",
-                account.get("account_number"), account.get("server"),
+                "[EDGE] Auto-connecting account: %s (server=%s, platform=%s)",
+                account.get("account_number"), account.get("server"), account.get("platform_id"),
             )
-            connector = MT5Connector(
-                account_number=account.get("account_number"),
-                server=account.get("server"),
-                account_type=account.get("account_type", "demo"),
-            )
-            connected = connector.connect_blocking()
-            if connected:
+            connector = build_connector_from_account(account)
+            if connector is not None:
                 return connector
-            logger.warning("[EDGE] MT5 auto-discovery: connect_blocking() returned False")
+            logger.warning("[EDGE] Auto-discovery: build_connector_from_account() returned None")
         except ImportError as exc:
-            logger.debug("[EDGE] MT5 auto-discovery skipped — MT5Connector not importable: %s", exc)
+            logger.debug("[EDGE] Auto-discovery skipped — dependency not importable: %s", exc)
         except Exception as exc:
-            logger.warning("[EDGE] MT5 auto-discovery failed: %s", exc)
+            logger.warning("[EDGE] Auto-discovery failed: %s", exc)
         return None
     
     def _check_mt5_external_operations(self) -> None:
