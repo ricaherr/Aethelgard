@@ -55,6 +55,11 @@ class AlertEventType(str, Enum):
     EDGE_MODULE_RESTORED = "EDGE_MODULE_RESTORED"
     EDGE_CLOSE_ONLY_ACTIVATED = "EDGE_CLOSE_ONLY_ACTIVATED"
     EDGE_CLOSE_ONLY_DEACTIVATED = "EDGE_CLOSE_ONLY_DEACTIVATED"
+    # ETI E5-HU5.1 — Incidentes y aprendizaje adaptativo
+    INCIDENT_OPENED = "INCIDENT_OPENED"
+    INCIDENT_RESOLVED = "INCIDENT_RESOLVED"
+    INCIDENT_EXHAUSTED = "INCIDENT_EXHAUSTED"
+    INCIDENT_AUTO_REVERTED = "INCIDENT_AUTO_REVERTED"
 
 
 @dataclass
@@ -315,6 +320,80 @@ class AlertingService:
             key: max(0.0, RATE_LIMIT_SECONDS - (now - ts))
             for key, ts in self._rate_limit_cache.items()
         }
+
+    def send_incident_alert(
+        self,
+        incident_id: str,
+        incident_type: str,
+        cause: str,
+        status: str,
+        routes_tried: List[str],
+        suggestion: str,
+        trace_id: str = "",
+        next_route: Optional[str] = None,
+    ) -> Dict[str, bool]:
+        """
+        Despacha una alerta enriquecida de incidente con contexto accionable.
+
+        Incluye: severidad, causa, rutas intentadas, sugerencia de acción,
+        próxima ruta automática y feedback loop.
+
+        Args:
+            incident_id: ID único del incidente.
+            incident_type: Categoría del incidente.
+            cause: Descripción de la causa.
+            status: Estado actual (OPEN, RESOLVED, EXHAUSTED, AUTO_RESOLVED).
+            routes_tried: Rutas de recovery ya intentadas.
+            suggestion: Acción sugerida al operador.
+            trace_id: ID de trazabilidad del evento origen.
+            next_route: Próxima ruta automática a intentar (si aplica).
+
+        Returns:
+            Dict canal → bool, igual que send_alert.
+        """
+        severity = (
+            AlertSeverity.CRITICAL
+            if status in ("OPEN", "EXHAUSTED")
+            else AlertSeverity.WARNING
+        )
+
+        status_emoji = {
+            "OPEN": "🚨",
+            "EXHAUSTED": "🔴",
+            "RESOLVED": "✅",
+            "AUTO_RESOLVED": "🟢",
+        }.get(status, "⚠️")
+
+        routes_summary = (
+            ", ".join(routes_tried) if routes_tried else "ninguna aún"
+        )
+        next_info = f"\n🔄 Próxima ruta: `{next_route}`" if next_route else ""
+        feedback_hint = "\n💬 Responde a este mensaje con tu feedback para registrarlo."
+
+        message = (
+            f"{status_emoji} *Incidente {status}*\n"
+            f"Tipo: `{incident_type}`\n"
+            f"Causa: {cause}\n"
+            f"Rutas intentadas: `{routes_summary}`\n"
+            f"Sugerencia: {suggestion}"
+            f"{next_info}"
+            f"{feedback_hint}"
+        )
+
+        alert = Alert(
+            severity=severity,
+            key=f"INCIDENT:{incident_type}:{incident_id[:8]}",
+            title=f"[ILE] {status} — {incident_type}",
+            message=message,
+            component="IncidentLearningEngine",
+            extra={
+                "incident_id": incident_id,
+                "trace_id": trace_id,
+                "routes_tried": routes_tried,
+                "next_route": next_route or "",
+            },
+        )
+        return self.send_alert(alert)
 
     def send_edge_event(
         self,

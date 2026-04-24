@@ -9,8 +9,8 @@
 > - **NO agregar aquí**: listas de archivos modificados, métricas de tests, detalles de implementación (eso va en SPRINT.md).
 > - **Framework completo**: `.ai_orchestration_protocol.md` Sección 4.
 
-**Versión Log**: v4.23.0-beta
-**Última Actualización**: 23 de Abril, 2026 (E2 MT5 Erradicación — Arquitectura agnóstica completada; 2881 tests PASS)
+**Versión Log**: v4.24.0-beta
+**Última Actualización**: 24 de Abril, 2026 (E5-HU5.1 ETI — IncidentLearningEngine, escalada progresiva y notificación inteligente implementados)
 
 ---
 
@@ -69,13 +69,20 @@
 
 ---
 
-### E5-HU5.1: Diagnóstico y Resiliencia de Conexión Broker/Feed — ACTIVA
-**Sprint**: 34 | **Trace_ID**: EDGE-CONN-HEALTH-HU5.1-2026-04-22
-**Objetivo**: Monitoreo activo y granular de conectores broker/feed con diagnóstico de causa raíz exacta, autocorrección y fallback automáticos.
+### E5-HU5.1: Aprendizaje Adaptativo y Notificación Inteligente — ACTIVA
+**Sprint**: 34 | **Trace_ID**: ETI-ILE-E5HU51-2026-04-24
+**Objetivo**: Motor de aprendizaje de incidentes con escalada progresiva (≥2 rutas automáticas), notificación Telegram enriquecida con contexto accionable y feedback loop.
 
 | HU | Nombre | Dominio | Sprint | Estado |
 |---|---|---|---|---|
-| HU 5.1 | Monitoreo activo, diagnóstico preciso y autocorrección de conectores | RESILIENCIA | 34 | [IN_PROGRESS] |
+| HU 5.1 | IncidentLearningEngine + escalada autónoma + notificación inteligente | RESILIENCIA | 34 | [IN_PROGRESS] |
+
+**Implementado en este ciclo (2026-04-24)**:
+- `core_brain/incident_learning_engine.py` — nuevo: ILE con ROUTE_CATALOG, estadísticas, auto-revert
+- `resilience_manager.py` — ILE inyectado, registra rutas en _heal_data_coherence/_heal_database/_escalate_after_exhaustion
+- `utils/alerting.py` — `send_incident_alert()`, nuevos AlertEventType INCIDENT_*
+- `operational_edge_monitor.py` — feedback loop: `_ile_open_incidents()` + `_ile_check_auto_reverts()`
+- `tests/test_incident_learning.py` — 32 tests TDD
 
 ---
 

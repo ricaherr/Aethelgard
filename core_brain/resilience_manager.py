@@ -47,6 +47,7 @@ from core_brain.resilience import (
 )
 from core_brain.close_only_guard import CloseOnlyGuard
 from core_brain.resilience_autotune import ResilienceAutoTuner
+from core_brain.incident_learning_engine import IncidentLearningEngine
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +138,7 @@ class ResilienceManager:
         clear_db_cache_fn: Optional[Callable[[], None]] = None,
         close_only_guard: Optional[CloseOnlyGuard] = None,
         auto_tuner: Optional[ResilienceAutoTuner] = None,
+        incident_learning_engine: Optional[IncidentLearningEngine] = None,
     ) -> None:
         self._storage = storage
         self._current_posture: SystemPosture = SystemPosture.NORMAL
@@ -173,6 +175,11 @@ class ResilienceManager:
         self._auto_tuner: Optional[ResilienceAutoTuner] = auto_tuner
         # Nº de veces que try_auto_revert() fue invocado desde la entrada a STRESSED.
         self._revert_attempt_count: int = 0
+
+        # ── Incident Learning Engine — ETI E5-HU5.1 ──────────────────────────
+        self._ile: Optional[IncidentLearningEngine] = incident_learning_engine
+        # Maps heal key (e.g. "data_coherence:XAUUSD") → incident_id activo
+        self._active_incidents: dict[str, str] = {}
 
     # ── Public interface ──────────────────────────────────────────────────────
 
@@ -521,6 +528,7 @@ class ResilienceManager:
         """
         Attempt reconnect_provider() for frozen-tick (Check_Data_Coherence) issues.
         Escalates to STRESSED after _MAX_HEAL_RETRIES failed attempts.
+        Registra cada intento en IncidentLearningEngine cuando está disponible.
         """
         key = f"data_coherence:{scope}"
         attempt = self._healing_attempts[key] + 1
@@ -531,10 +539,25 @@ class ResilienceManager:
             _MAX_HEAL_RETRIES,
             scope,
         )
+        # ILE: abrir incidente en el primer intento
+        if self._ile is not None and attempt == 1:
+            trace_id = self._last_report.trace_id if self._last_report else ""
+            inc_id = self._ile.record_incident(
+                "data_coherence", f"Frozen tick detected for {scope}", trace_id=trace_id
+            )
+            self._active_incidents[key] = inc_id
+
         success = self._try_reconnect()
+        if self._ile is not None and key in self._active_incidents:
+            self._ile.record_route_attempt(
+                self._active_incidents[key], "reconnect_provider", success=success
+            )
+
         if success:
             logger.info("[AUTO-HEAL] reconnect_provider succeeded for %s", scope)
             self._healing_attempts[key] = 0
+            if self._ile is not None and key in self._active_incidents:
+                self._ile.mark_resolved(self._active_incidents.pop(key), "reconnect_provider")
             return
         max_retries = (
             int(self._auto_tuner.get_param("max_heal_retries"))
@@ -548,6 +571,7 @@ class ResilienceManager:
         """
         Attempt clear_db_cache() + reconnect for Check_Database issues.
         Escalates to STRESSED after _MAX_HEAL_RETRIES failed attempts.
+        Registra cada intento en IncidentLearningEngine cuando está disponible.
         """
         key = f"database:{scope}"
         attempt = self._healing_attempts[key] + 1
@@ -558,10 +582,25 @@ class ResilienceManager:
             _MAX_HEAL_RETRIES,
             scope,
         )
+        # ILE: abrir incidente en el primer intento
+        if self._ile is not None and attempt == 1:
+            trace_id = self._last_report.trace_id if self._last_report else ""
+            inc_id = self._ile.record_incident(
+                "database_failure", f"DB issue detected for {scope}", trace_id=trace_id
+            )
+            self._active_incidents[key] = inc_id
+
         success = self._try_db_heal()
+        if self._ile is not None and key in self._active_incidents:
+            self._ile.record_route_attempt(
+                self._active_incidents[key], "clear_db_cache", success=success
+            )
+
         if success:
             logger.info("[AUTO-HEAL] DB heal succeeded for %s", scope)
             self._healing_attempts[key] = 0
+            if self._ile is not None and key in self._active_incidents:
+                self._ile.mark_resolved(self._active_incidents.pop(key), "clear_db_cache")
             return
         max_retries = (
             int(self._auto_tuner.get_param("max_heal_retries"))
@@ -595,13 +634,20 @@ class ResilienceManager:
             self._is_healing = False
 
     def _escalate_after_exhaustion(self, scope: str, action: str) -> None:
-        """Log retry exhaustion and escalate posture to STRESSED."""
+        """Log retry exhaustion, notify ILE, and escalate posture to STRESSED."""
         logger.error(
             "[AUTO-HEAL] Exhausted %d retries for '%s' on %s — escalating to STRESSED.",
             _MAX_HEAL_RETRIES,
             action,
             scope,
         )
+        # ILE: marcar incidente como agotado si existe uno activo para este scope
+        if self._ile is not None:
+            for key, inc_id in list(self._active_incidents.items()):
+                if scope in key:
+                    self._ile.mark_unresolved(inc_id)
+                    self._active_incidents.pop(key, None)
+
         if self._is_escalation(SystemPosture.STRESSED):
             self._current_posture = SystemPosture.STRESSED
 

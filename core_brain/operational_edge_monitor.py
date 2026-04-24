@@ -79,6 +79,7 @@ class OperationalEdgeMonitor(threading.Thread):
         alerting_service: Optional[AlertingService] = None,
         database_manager: Optional[Any] = None,
         sentinel: Optional[Any] = None,
+        incident_learning_engine: Optional[Any] = None,
     ) -> None:
         super().__init__(daemon=True)
         self.storage = storage
@@ -94,6 +95,10 @@ class OperationalEdgeMonitor(threading.Thread):
         self._alerting: AlertingService = alerting_service or AlertingService()
         # ETI: DatabaseManager inyectado para evitar acoplamiento al singleton global
         self._database_manager: Optional[Any] = database_manager
+        # ETI E5-HU5.1: IncidentLearningEngine para feedback loop y aprendizaje
+        self._ile: Optional[Any] = incident_learning_engine
+        # check_name → incident_id abierto (para detectar recuperación)
+        self._open_oem_incidents: Dict[str, str] = {}
 
         # ETI: EDGE_StaleConnection_Response_2026-04-16
         # Buffer deslizante de eventos stale: (timestamp_monotonic, db_path, trace_id)
@@ -164,12 +169,16 @@ class OperationalEdgeMonitor(threading.Thread):
                     logger.error("[OPS-EDGE] Could not persist violation record: %s", exc)
                 # ETI: despachar alertas proactivas ante eventos críticos
                 self._dispatch_critical_alerts(failing, warnings, results)
+                # ETI E5-HU5.1: registrar incidentes nuevos en el ILE
+                self._ile_open_incidents(failing, results)
             else:
                 logger.info(
                     "[OPS-EDGE] All checks passed (warnings=%d): %s",
                     len(warnings),
                     ", ".join(warnings) if warnings else "none",
                 )
+                # ETI E5-HU5.1: verificar auto-reversión de incidentes abiertos
+                self._ile_check_auto_reverts(results)
             # ETI: EDGE Volatility Response — verificar auto-reversión
             if self._vrm is not None:
                 self._vrm.check_auto_reversal(self._sentinel)
@@ -1256,6 +1265,50 @@ class OperationalEdgeMonitor(threading.Thread):
         "db_lock_rate_anomaly",
         "stale_connection_anomaly",
     }
+
+    def _ile_open_incidents(
+        self,
+        failing: List[str],
+        results: Dict[str, CheckResult],
+    ) -> None:
+        """Registra en ILE los checks que fallaron y no tienen incidente abierto aún."""
+        if self._ile is None:
+            return
+        for check_name in failing:
+            if check_name in self._open_oem_incidents:
+                continue
+            detail = results.get(check_name, CheckResult(CheckStatus.FAIL, "")).detail
+            try:
+                inc_id = self._ile.record_incident(
+                    incident_type="oem_invariant_failure",
+                    cause=f"Check '{check_name}' FAIL: {detail}",
+                    trace_id=f"OEM-{check_name}",
+                    notify=True,
+                )
+                self._open_oem_incidents[check_name] = inc_id
+                logger.info("[OEM-ILE] Incidente abierto check=%s id=%s", check_name, inc_id)
+            except Exception as exc:
+                logger.warning("[OEM-ILE] No se pudo abrir incidente para %s: %s", check_name, exc)
+
+    def _ile_check_auto_reverts(self, results: Dict[str, CheckResult]) -> None:
+        """Verifica auto-reversión de incidentes abiertos cuando el check ya pasa."""
+        if self._ile is None or not self._open_oem_incidents:
+            return
+        resolved_checks = []
+        for check_name, inc_id in list(self._open_oem_incidents.items()):
+            result = results.get(check_name)
+            if result is None or result.status == CheckStatus.OK:
+                reverted = self._ile.check_auto_revert(
+                    inc_id, condition_fn=lambda: False
+                )
+                if reverted:
+                    logger.info(
+                        "[OEM-ILE] Check '%s' recuperado — incidente %s auto-revertido",
+                        check_name, inc_id,
+                    )
+                    resolved_checks.append(check_name)
+        for check_name in resolved_checks:
+            self._open_oem_incidents.pop(check_name, None)
 
     def _dispatch_critical_alerts(
         self,
