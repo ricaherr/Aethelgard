@@ -132,6 +132,11 @@ async def get_resilience_status() -> Dict[str, Any]:
     """
     Returns the current SystemPosture, healing budget, and exclusion lists.
 
+    When ResilienceManager is not yet initialised (engine still booting), returns
+    HTTP 200 with posture="UNAVAILABLE" — the server CAN respond, the subsystem
+    is simply not ready.  HTTP 503 is reserved for POST /command which requires an
+    active manager to mutate state.
+
     Response schema::
 
         {
@@ -149,9 +154,7 @@ async def get_resilience_status() -> Dict[str, Any]:
     manager = _get_manager_or_none()
     if manager is None:
         logger.debug("[ResilienceAPI] GET /status — manager not ready, returning UNAVAILABLE.")
-        # Lanzar HTTP 503 para cumplir con el contrato del test y la semántica REST
-        from fastapi import HTTPException
-        raise HTTPException(status_code=503, detail=_UNAVAILABLE_STATUS["narrative"])
+        return _UNAVAILABLE_STATUS
     return _build_status_payload(manager)
 
 
