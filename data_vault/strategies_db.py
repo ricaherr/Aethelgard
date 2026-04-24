@@ -208,6 +208,48 @@ class StrategiesMixin(BaseRepository):
             return result
         return None
 
+    def get_pending_strategies(self) -> List[Dict[str, Any]]:
+        """Return all strategies with readiness = LOGIC_PENDING."""
+        try:
+            results = self.execute_query(
+                "SELECT * FROM sys_strategies WHERE readiness = 'LOGIC_PENDING' ORDER BY created_at DESC"
+            )
+            for result in results:
+                result["affinity_scores"] = json.loads(result.get("affinity_scores", "{}"))
+                result["market_whitelist"] = json.loads(result.get("market_whitelist", "[]"))
+                raw_logic = result.get("logic")
+                if raw_logic and isinstance(raw_logic, str):
+                    try:
+                        result["logic"] = json.loads(raw_logic)
+                    except (json.JSONDecodeError, ValueError):
+                        result["logic"] = None
+            return results
+        except Exception as e:
+            logger.error(f"[STRATEGIES] Error reading LOGIC_PENDING strategies: {e}")
+            return []
+
+    def update_strategy_readiness(
+        self,
+        class_id: str,
+        readiness: str,
+        readiness_notes: Optional[str] = None,
+    ) -> bool:
+        """Update readiness state and optional diagnostic notes for a strategy."""
+        try:
+            self.execute_update(
+                """
+                UPDATE sys_strategies
+                SET readiness = ?, readiness_notes = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE class_id = ?
+                """,
+                (readiness, readiness_notes, class_id),
+            )
+            logger.info(f"[STRATEGIES] Readiness updated: {class_id} → {readiness}")
+            return True
+        except Exception as e:
+            logger.error(f"[STRATEGIES] Error updating readiness for {class_id}: {e}")
+            return False
+
     def delete_strategy(self, class_id: str) -> bool:
         """Delete strategy (hard delete allowed for system cleanup)."""
         try:

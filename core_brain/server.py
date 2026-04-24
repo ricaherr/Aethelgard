@@ -387,6 +387,7 @@ window.addEventListener('load', function() {
     from core_brain.api.routers.shadow import router as shadow_router
     from core_brain.api.routers.shadow_ws import router as shadow_ws_router
     from core_brain.api.routers.resilience import router as resilience_router
+    from core_brain.api.routers.strategy_pending import router as strategy_pending_router
 
     # Mount modular routers (Trading, Risk, Market, System, Notifications, Auth, Admin, Anomalies, Strategy WS, Telemetry, SHADOW, Resilience)
     app.include_router(trading_router, prefix="/api")
@@ -398,6 +399,7 @@ window.addEventListener('load', function() {
     app.include_router(admin_router, prefix="/api")
     app.include_router(shadow_router, prefix="/api")  # SHADOW REST endpoints
     app.include_router(resilience_router, prefix="/api")  # Resilience Control (HU 10.17b)
+    app.include_router(strategy_pending_router, prefix="/api")  # LOGIC_PENDING diagnostics (HU 3.1)
     app.include_router(anomalies_router)
     app.include_router(strategy_ws_router)  # WebSocket doesn't need /api prefix
     app.include_router(telemetry_router)  # WebSocket doesn't need /api prefix (Fractal V3)

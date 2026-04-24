@@ -8,6 +8,7 @@ import { CerebroThought } from '../../types/aethelgard';
 import { AuditLiveMonitor } from './AuditLiveMonitor';
 import { SystemHealthPanel } from './SystemHealthPanel';
 import { ResilienceConsole } from './ResilienceConsole';
+import { PendingStrategiesPanel } from './PendingStrategiesPanel';
 import { useSynapseTelemetry } from '../../hooks/useSynapseTelemetry';
 
 interface MonitorPageProps {
@@ -288,6 +289,9 @@ export const MonitorPage = ({ status, thoughts, runAudit, runRepair }: MonitorPa
                     </div>
                 </GlassPanel>
             </div>
+
+            {/* LOGIC_PENDING Strategy Diagnostics — HU 3.2 */}
+            <PendingStrategiesPanel />
 
             {/* Glass Box Live — Real-time /ws/v3/synapse stream */}
             <GlassPanel className="p-5 border-aethelgard-blue/15">

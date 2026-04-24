@@ -158,6 +158,31 @@ export interface ExplorationState {
     handshake_logs?: string[];
 }
 
+// ============================================================================
+// LOGIC_PENDING STRATEGY DIAGNOSTICS (ETI E3 — HU 3.1 / HU 3.2)
+// ============================================================================
+
+export type PendingCause =
+    | 'MISSING_CLASS_FILE'
+    | 'MISSING_LOGIC'
+    | 'INVALID_LOGIC_JSON'
+    | 'MISSING_SCHEMA_FILE'
+    | 'NEEDS_IMPLEMENTATION'
+    | 'UNKNOWN';
+
+export interface PendingStrategyDiagnosis {
+    class_id: string;
+    mnemonic: string;
+    strategy_type: string;
+    readiness: string;
+    cause?: PendingCause;
+    cause_detail?: string;
+    suggestion?: string;
+    auto_fixed?: boolean;
+    last_checked?: string;
+    description?: string;
+}
+
 export interface ShadowMetrics {
     // PILAR 1: PROFITABILIDAD
     profit_factor: number;
