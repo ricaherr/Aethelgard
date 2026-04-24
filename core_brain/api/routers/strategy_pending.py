@@ -1,5 +1,5 @@
 """
-strategy_pending.py — API Router for LOGIC_PENDING Strategy Management (HU 3.2).
+strategy_pending.py — API Router for LOGIC_PENDING Strategy Management (HU 3.2 / HU 3.7).
 
 Endpoints:
   GET  /api/v3/strategy-pending
@@ -14,10 +14,15 @@ Endpoints:
   POST /api/v3/strategy-pending/{class_id}/promote
       Promueve forzosamente la estrategia a READY_FOR_ENGINE (override manual).
 
+  POST /api/v3/strategy-pending/{class_id}/reset-affinity
+      Vacía affinity_scores y market_whitelist para reiniciar el aprendizaje.
+      Solo disponible para estrategias con affinity_mode='dynamic'.
+      Bloqueado con 403 para affinity_mode='fixed'.
+
 Auth: page-level protection via AuthGuard on the frontend.  Backend auth is not
 applied here — consistent with the MonitorPage endpoint pattern (see resilience.py).
 
-Trace_ID: ETI-E3-HU3.1
+Trace_ID: ETI-E3-HU3.1 / CORE-LOGIC_PENDING-2026-04-23
 """
 from __future__ import annotations
 
@@ -74,6 +79,7 @@ class PendingStrategyResponse(BaseModel):
     cause_detail: Optional[str] = None
     suggestion: Optional[str] = None
     auto_fixed: Optional[bool] = None
+    affinity_mode: str = "dynamic"
     last_checked: Optional[str] = None
     description: Optional[str] = None
 
@@ -106,6 +112,7 @@ async def list_pending_strategies() -> List[PendingStrategyResponse]:
             cause_detail=diagnosis.get("cause_detail"),
             suggestion=diagnosis.get("suggestion"),
             auto_fixed=diagnosis.get("auto_fixed"),
+            affinity_mode=s.get("affinity_mode") or diagnosis.get("affinity_mode") or "dynamic",
             last_checked=diagnosis.get("last_checked"),
             description=s.get("description"),
         ))
@@ -170,3 +177,43 @@ async def promote_strategy(
     storage.update_strategy_readiness(class_id=class_id, readiness="READY_FOR_ENGINE", readiness_notes=notes)
     logger.warning("[STRATEGY_PENDING] %s force-promoted to READY_FOR_ENGINE by operator", class_id)
     return {"ok": True, "class_id": class_id, "new_readiness": "READY_FOR_ENGINE"}
+
+
+@router.post("/{class_id}/reset-affinity")
+async def reset_strategy_affinity(
+    class_id: str,
+    body: ActionRequest = ActionRequest(),
+) -> Dict[str, Any]:
+    """
+    Vacía affinity_scores y market_whitelist para reiniciar el aprendizaje dinámico.
+
+    Solo está disponible para estrategias con affinity_mode='dynamic'.
+    Devuelve 403 si la estrategia tiene affinity_mode='fixed' para proteger
+    configuraciones críticas de afinidad estática.
+
+    Trace_ID: CORE-LOGIC_PENDING-2026-04-23
+    """
+    storage = _get_storage()
+    strategy = storage.get_strategy(class_id)
+    if strategy is None:
+        raise HTTPException(status_code=404, detail=f"Estrategia '{class_id}' no encontrada.")
+
+    affinity_mode = strategy.get("affinity_mode") or "dynamic"
+    if affinity_mode == "fixed":
+        logger.warning(
+            "[STRATEGY_PENDING] Reset de afinidad bloqueado — affinity_mode=fixed: %s", class_id
+        )
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "No se puede resetear la afinidad de esta estrategia porque su modo es 'fixed'. "
+                "La configuración de afinidad fija está protegida contra modificaciones automáticas."
+            ),
+        )
+
+    ok = storage.reset_affinity_and_whitelist(class_id=class_id, reason=body.reason)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Error interno al resetear la afinidad.")
+
+    logger.info("[STRATEGY_PENDING] Affinity reset for %s by operator", class_id)
+    return {"ok": True, "class_id": class_id, "action": "AFFINITY_RESET"}

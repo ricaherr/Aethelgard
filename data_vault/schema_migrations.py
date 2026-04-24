@@ -462,6 +462,17 @@ def run_migrations(conn: sqlite3.Connection) -> None:
             cursor.rowcount,
         )
 
+    # HU 3.7: affinity_mode — distingue afinidad fija (config estática) de dinámica (aprendizaje).
+    # Solo las estrategias 'dynamic' permiten reset de afinidad/whitelist.
+    # TRACE_ID: CORE-LOGIC_PENDING-2026-04-23
+    cursor.execute("PRAGMA table_info(sys_strategies)")
+    strat_affinity_cols = [r[1] for r in cursor.fetchall()]
+    if "affinity_mode" not in strat_affinity_cols:
+        cursor.execute(
+            "ALTER TABLE sys_strategies ADD COLUMN affinity_mode TEXT NOT NULL DEFAULT 'dynamic'"
+        )
+        logger.info("Migration applied: sys_strategies.affinity_mode added (HU 3.7).")
+
     # instruments_config: seed only when key is absent (never overwrite existing data)
     cursor.execute("SELECT 1 FROM sys_config WHERE key = ?", ("instruments_config",))
     if cursor.fetchone() is None:

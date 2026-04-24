@@ -48,6 +48,7 @@ class StrategyDiagnosis:
     suggestion: str
     auto_fixed: bool
     new_readiness: str
+    affinity_mode: str = "dynamic"
     last_checked: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def to_dict(self) -> Dict[str, Any]:
@@ -61,6 +62,7 @@ class StrategyDiagnosis:
             "suggestion": self.suggestion,
             "auto_fixed": self.auto_fixed,
             "new_readiness": self.new_readiness,
+            "affinity_mode": self.affinity_mode,
             "last_checked": self.last_checked,
         }
 
@@ -127,7 +129,7 @@ class StrategyPendingDiagnosticsService:
         class_id = strategy.get("class_id", "")
         mnemonic = strategy.get("mnemonic", class_id)
         strategy_type = strategy.get("type", "PYTHON_CLASS")
-        readiness_notes = strategy.get("readiness_notes") or ""
+        affinity_mode = strategy.get("affinity_mode") or "dynamic"
 
         cause, cause_detail, suggestion = self._detect_cause(strategy)
         auto_fixed, new_readiness = self._attempt_auto_fix(strategy, cause)
@@ -142,6 +144,7 @@ class StrategyPendingDiagnosticsService:
             suggestion=suggestion,
             auto_fixed=auto_fixed,
             new_readiness=new_readiness,
+            affinity_mode=affinity_mode,
         )
 
     def _detect_cause(
@@ -249,6 +252,7 @@ class StrategyPendingDiagnosticsService:
             "cause_detail": diagnosis.cause_detail,
             "suggestion": diagnosis.suggestion,
             "auto_fixed": diagnosis.auto_fixed,
+            "affinity_mode": diagnosis.affinity_mode,
             "last_checked": diagnosis.last_checked,
         })
         self._storage.update_strategy_readiness(

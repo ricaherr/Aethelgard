@@ -159,7 +159,7 @@ export interface ExplorationState {
 }
 
 // ============================================================================
-// LOGIC_PENDING STRATEGY DIAGNOSTICS (ETI E3 — HU 3.1 / HU 3.2)
+// LOGIC_PENDING STRATEGY DIAGNOSTICS (ETI E3 — HU 3.1 / HU 3.2 / HU 3.7)
 // ============================================================================
 
 export type PendingCause =
@@ -170,6 +170,9 @@ export type PendingCause =
     | 'NEEDS_IMPLEMENTATION'
     | 'UNKNOWN';
 
+/** Modo de afinidad: 'fixed' = config estática protegida; 'dynamic' = aprendizaje reiniciable. */
+export type AffinityMode = 'fixed' | 'dynamic';
+
 export interface PendingStrategyDiagnosis {
     class_id: string;
     mnemonic: string;
@@ -179,6 +182,8 @@ export interface PendingStrategyDiagnosis {
     cause_detail?: string;
     suggestion?: string;
     auto_fixed?: boolean;
+    /** Modo de afinidad de la estrategia. Determina si el reset de afinidad está disponible. */
+    affinity_mode?: AffinityMode;
     last_checked?: string;
     description?: string;
 }

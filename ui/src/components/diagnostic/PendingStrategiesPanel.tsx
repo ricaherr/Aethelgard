@@ -1,20 +1,23 @@
 /**
- * PendingStrategiesPanel — HU 3.2
+ * PendingStrategiesPanel — HU 3.2 / HU 3.7
  *
  * Muestra todas las estrategias en estado LOGIC_PENDING con su diagnóstico,
- * causa, sugerencia y acciones disponibles (reintentar, promover, descartar).
+ * causa, sugerencia y acciones disponibles (reintentar, promover, descartar,
+ * resetear afinidad). El botón de reset solo aparece para estrategias con
+ * affinity_mode='dynamic'; las 'fixed' muestran mensaje explicativo.
  *
- * Trace_ID: ETI-E3-HU3.2
+ * Trace_ID: ETI-E3-HU3.2 / CORE-LOGIC_PENDING-2026-04-23
  */
 import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     AlertTriangle, RefreshCw, Trash2, Zap, ChevronDown, ChevronUp,
-    Clock, Lightbulb, FileCode, FlaskConical, CheckCircle2, Loader2
+    Clock, Lightbulb, FileCode, FlaskConical, CheckCircle2, Loader2,
+    RotateCcw, Lock, Unlock,
 } from 'lucide-react';
 import { GlassPanel } from '../common/GlassPanel';
 import { cn } from '../../utils/cn';
-import { PendingStrategyDiagnosis } from '../../types/aethelgard';
+import { PendingStrategyDiagnosis, AffinityMode } from '../../types/aethelgard';
 import { useApi } from '../../hooks/useApi';
 
 const API_BASE = '/api/v3/strategy-pending';
@@ -37,6 +40,25 @@ const CAUSE_COLORS: Record<string, string> = {
     UNKNOWN: 'text-white/40 bg-white/5 border-white/10',
 };
 
+/** Causas estructurales que no pueden resolverse con reset de afinidad. */
+const STRUCTURAL_CAUSES = new Set([
+    'MISSING_CLASS_FILE',
+    'MISSING_LOGIC',
+    'INVALID_LOGIC_JSON',
+    'MISSING_SCHEMA_FILE',
+    'NEEDS_IMPLEMENTATION',
+]);
+
+const AFFINITY_MODE_LABELS: Record<AffinityMode, string> = {
+    dynamic: 'Afinidad dinámica',
+    fixed: 'Afinidad fija',
+};
+
+const AFFINITY_MODE_COLORS: Record<AffinityMode, string> = {
+    dynamic: 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20',
+    fixed: 'text-slate-400 bg-slate-400/10 border-slate-400/20',
+};
+
 export const PendingStrategiesPanel = () => {
     const { apiFetch } = useApi();
     const [strategies, setStrategies] = useState<PendingStrategyDiagnosis[]>([]);
@@ -45,6 +67,7 @@ export const PendingStrategiesPanel = () => {
     const [expanded, setExpanded] = useState<string | null>(null);
     const [actionLoading, setActionLoading] = useState<string | null>(null);
     const [lastFetch, setLastFetch] = useState<string | null>(null);
+    const [resetBlockedFor, setResetBlockedFor] = useState<string | null>(null);
 
     const fetchPending = useCallback(async () => {
         setLoading(true);
@@ -67,10 +90,11 @@ export const PendingStrategiesPanel = () => {
 
     const handleAction = useCallback(async (
         classId: string,
-        action: 'retry' | 'discard' | 'promote',
+        action: 'retry' | 'discard' | 'promote' | 'reset-affinity',
         reason?: string
     ) => {
         setActionLoading(`${classId}-${action}`);
+        setResetBlockedFor(null);
         try {
             const res = await apiFetch(`${API_BASE}/${classId}/${action}`, {
                 method: 'POST',
@@ -78,6 +102,10 @@ export const PendingStrategiesPanel = () => {
             });
             if (!res.ok) {
                 const err = await res.json().catch(() => ({ detail: res.statusText }));
+                if (res.status === 403 && action === 'reset-affinity') {
+                    setResetBlockedFor(classId);
+                    return;
+                }
                 throw new Error(err.detail || res.statusText);
             }
             await fetchPending();
@@ -90,6 +118,9 @@ export const PendingStrategiesPanel = () => {
 
     const isActing = (classId: string, action: string) =>
         actionLoading === `${classId}-${action}`;
+
+    const isStructuralCause = (cause?: string) =>
+        cause ? STRUCTURAL_CAUSES.has(cause) : false;
 
     return (
         <GlassPanel className="p-6 flex flex-col border-yellow-500/15">
@@ -167,6 +198,10 @@ export const PendingStrategiesPanel = () => {
                         const causeKey = s.cause ?? 'UNKNOWN';
                         const causeColor = CAUSE_COLORS[causeKey] ?? CAUSE_COLORS.UNKNOWN;
                         const causeLabel = CAUSE_LABELS[causeKey] ?? causeKey;
+                        const affinityMode: AffinityMode = s.affinity_mode ?? 'dynamic';
+                        const isFixed = affinityMode === 'fixed';
+                        const structural = isStructuralCause(s.cause);
+                        const showResetBlocked = resetBlockedFor === s.class_id;
 
                         return (
                             <motion.div
@@ -207,6 +242,17 @@ export const PendingStrategiesPanel = () => {
                                                         {causeLabel}
                                                     </span>
                                                 )}
+                                                {/* Affinity mode badge */}
+                                                <span className={cn(
+                                                    "flex items-center gap-1 text-[8px] font-black uppercase px-2 py-0.5 rounded border",
+                                                    AFFINITY_MODE_COLORS[affinityMode]
+                                                )}>
+                                                    {isFixed
+                                                        ? <Lock size={8} />
+                                                        : <Unlock size={8} />
+                                                    }
+                                                    {AFFINITY_MODE_LABELS[affinityMode]}
+                                                </span>
                                             </div>
                                         </div>
                                     </div>
@@ -252,6 +298,28 @@ export const PendingStrategiesPanel = () => {
                                                     </div>
                                                 )}
 
+                                                {/* Structural cause notice — reset no ayudará */}
+                                                {structural && (
+                                                    <div className="flex gap-2 p-3 rounded-lg bg-yellow-500/5 border border-yellow-500/10">
+                                                        <AlertTriangle size={12} className="text-yellow-400 mt-0.5 shrink-0" />
+                                                        <p className="text-[10px] text-yellow-300/70 leading-relaxed">
+                                                            La causa es estructural. El reset de afinidad no resolverá este
+                                                            bloqueo — sigue la sugerencia anterior para corregir la configuración.
+                                                        </p>
+                                                    </div>
+                                                )}
+
+                                                {/* Reset bloqueado por affinity_mode=fixed */}
+                                                {showResetBlocked && (
+                                                    <div className="flex gap-2 p-3 rounded-lg bg-slate-500/5 border border-slate-500/20">
+                                                        <Lock size={12} className="text-slate-400 mt-0.5 shrink-0" />
+                                                        <p className="text-[10px] text-slate-300/70 leading-relaxed">
+                                                            Esta estrategia tiene afinidad fija (<code className="font-mono text-slate-300">affinity_mode=fixed</code>).
+                                                            Su configuración de afinidad está protegida y no puede reiniciarse automáticamente.
+                                                        </p>
+                                                    </div>
+                                                )}
+
                                                 {/* Description */}
                                                 {s.description && (
                                                     <p className="text-[10px] text-white/30 italic px-1">
@@ -268,7 +336,7 @@ export const PendingStrategiesPanel = () => {
                                                 )}
 
                                                 {/* Actions */}
-                                                <div className="flex gap-2 pt-2 border-t border-white/5">
+                                                <div className="flex flex-wrap gap-2 pt-2 border-t border-white/5">
                                                     <button
                                                         onClick={() => handleAction(s.class_id, 'retry')}
                                                         disabled={!!actionLoading}
@@ -284,6 +352,41 @@ export const PendingStrategiesPanel = () => {
                                                         }
                                                         Reintentar
                                                     </button>
+
+                                                    {/* Reset afinidad — solo para estrategias dinámicas y no estructurales */}
+                                                    {!isFixed && !structural && (
+                                                        <button
+                                                            onClick={() => handleAction(
+                                                                s.class_id,
+                                                                'reset-affinity',
+                                                                'Reset manual de afinidad por operador'
+                                                            )}
+                                                            disabled={!!actionLoading}
+                                                            title="Vacía affinity_scores y market_whitelist para reiniciar el aprendizaje"
+                                                            className={cn(
+                                                                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border transition-all",
+                                                                "bg-emerald-500/5 border-emerald-500/20 text-emerald-400/80 hover:bg-emerald-500/10",
+                                                                actionLoading && "opacity-50 cursor-wait"
+                                                            )}
+                                                        >
+                                                            {isActing(s.class_id, 'reset-affinity')
+                                                                ? <Loader2 size={11} className="animate-spin" />
+                                                                : <RotateCcw size={11} />
+                                                            }
+                                                            Resetear afinidad
+                                                        </button>
+                                                    )}
+
+                                                    {/* Indicador de reset bloqueado para estrategias fijas */}
+                                                    {isFixed && (
+                                                        <span
+                                                            title="affinity_mode=fixed — reset protegido"
+                                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border border-slate-500/20 text-slate-500/50 bg-slate-500/5 cursor-not-allowed"
+                                                        >
+                                                            <Lock size={11} />
+                                                            Afinidad fija
+                                                        </span>
+                                                    )}
 
                                                     <button
                                                         onClick={() => handleAction(s.class_id, 'promote', 'Override manual')}

@@ -250,6 +250,55 @@ class StrategiesMixin(BaseRepository):
             logger.error(f"[STRATEGIES] Error updating readiness for {class_id}: {e}")
             return False
 
+    def get_strategy_affinity_mode(self, class_id: str) -> str:
+        """Return affinity_mode ('fixed' | 'dynamic') for the given strategy. Defaults to 'dynamic'."""
+        try:
+            rows = self.execute_query(
+                "SELECT affinity_mode FROM sys_strategies WHERE class_id = ?",
+                (class_id,),
+            )
+            if not rows:
+                return "dynamic"
+            return rows[0].get("affinity_mode") or "dynamic"
+        except Exception as e:
+            logger.error(f"[STRATEGIES] Error reading affinity_mode for {class_id}: {e}")
+            return "dynamic"
+
+    def reset_affinity_and_whitelist(self, class_id: str, reason: Optional[str] = None) -> bool:
+        """
+        Clear affinity_scores and market_whitelist for a dynamic strategy, restarting learning.
+        Logs the reset event in readiness_notes for audit trail.
+
+        Returns False without modifying if strategy has affinity_mode='fixed'.
+        Trace_ID: CORE-LOGIC_PENDING-2026-04-23
+        """
+        mode = self.get_strategy_affinity_mode(class_id)
+        if mode == "fixed":
+            logger.warning("[STRATEGIES] Reset blocked — affinity_mode=fixed for %s", class_id)
+            return False
+
+        now = datetime.now(timezone.utc).isoformat()
+        event = json.dumps({
+            "action": "AFFINITY_RESET",
+            "reason": reason or "Reset manual por operador.",
+            "reset_at": now,
+        })
+        try:
+            self.execute_update(
+                """
+                UPDATE sys_strategies
+                SET affinity_scores = '{}', market_whitelist = '[]',
+                    readiness_notes = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE class_id = ?
+                """,
+                (event, class_id),
+            )
+            logger.info("[STRATEGIES] Affinity/whitelist reset for %s", class_id)
+            return True
+        except Exception as e:
+            logger.error(f"[STRATEGIES] Error resetting affinity for {class_id}: {e}")
+            return False
+
     def delete_strategy(self, class_id: str) -> bool:
         """Delete strategy (hard delete allowed for system cleanup)."""
         try:
