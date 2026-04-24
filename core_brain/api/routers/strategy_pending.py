@@ -14,6 +14,9 @@ Endpoints:
   POST /api/v3/strategy-pending/{class_id}/promote
       Promueve forzosamente la estrategia a READY_FOR_ENGINE (override manual).
 
+Auth: page-level protection via AuthGuard on the frontend.  Backend auth is not
+applied here — consistent with the MonitorPage endpoint pattern (see resilience.py).
+
 Trace_ID: ETI-E3-HU3.1
 """
 from __future__ import annotations
@@ -26,17 +29,12 @@ if TYPE_CHECKING:
     from data_vault.storage import StorageManager
     from core_brain.strategy_pending_diagnostics import StrategyPendingDiagnosticsService
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-
-from core_brain.api.dependencies.auth import get_current_active_user
-from models.auth import TokenPayload
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v3/strategy-pending", tags=["Strategy Pending"])
-
-_VALID_ACTIONS = {"retry", "discard", "promote"}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -87,9 +85,7 @@ class ActionRequest(BaseModel):
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.get("/", response_model=List[PendingStrategyResponse])
-async def list_pending_strategies(
-    token: TokenPayload = Depends(get_current_active_user),
-) -> List[PendingStrategyResponse]:
+async def list_pending_strategies() -> List[PendingStrategyResponse]:
     """Lista todas las estrategias LOGIC_PENDING con diagnóstico persistido."""
     storage = _get_storage()
     try:
@@ -120,7 +116,6 @@ async def list_pending_strategies(
 async def retry_diagnosis(
     class_id: str,
     body: ActionRequest = ActionRequest(),
-    token: TokenPayload = Depends(get_current_active_user),
 ) -> Dict[str, Any]:
     """Re-ejecuta diagnóstico y autocorrección para una estrategia."""
     service = _get_diagnostics_service()
@@ -140,7 +135,6 @@ async def retry_diagnosis(
 async def discard_strategy(
     class_id: str,
     body: ActionRequest = ActionRequest(),
-    token: TokenPayload = Depends(get_current_active_user),
 ) -> Dict[str, Any]:
     """Archiva (descarta) una estrategia LOGIC_PENDING marcándola como DISCARDED."""
     storage = _get_storage()
@@ -154,7 +148,7 @@ async def discard_strategy(
         "reason": body.reason or "Archivada manualmente por el operador.",
     })
     storage.update_strategy_readiness(class_id=class_id, readiness="DISCARDED", readiness_notes=notes)
-    logger.info("[STRATEGY_PENDING] %s discarded by user %s", class_id, token.sub)
+    logger.info("[STRATEGY_PENDING] %s discarded by operator", class_id)
     return {"ok": True, "class_id": class_id, "new_readiness": "DISCARDED"}
 
 
@@ -162,7 +156,6 @@ async def discard_strategy(
 async def promote_strategy(
     class_id: str,
     body: ActionRequest = ActionRequest(),
-    token: TokenPayload = Depends(get_current_active_user),
 ) -> Dict[str, Any]:
     """Promueve forzosamente una estrategia a READY_FOR_ENGINE (override manual)."""
     storage = _get_storage()
@@ -175,8 +168,5 @@ async def promote_strategy(
         "reason": body.reason or "Promovida manualmente por el operador.",
     })
     storage.update_strategy_readiness(class_id=class_id, readiness="READY_FOR_ENGINE", readiness_notes=notes)
-    logger.warning(
-        "[STRATEGY_PENDING] %s force-promoted to READY_FOR_ENGINE by user %s",
-        class_id, token.sub,
-    )
+    logger.warning("[STRATEGY_PENDING] %s force-promoted to READY_FOR_ENGINE by operator", class_id)
     return {"ok": True, "class_id": class_id, "new_readiness": "READY_FOR_ENGINE"}

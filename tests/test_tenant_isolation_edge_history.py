@@ -1,16 +1,18 @@
 """
-Test: Tenant Isolation in /api/edge/history Endpoint
+Test: /api/edge/history endpoint — global storage (EdgeTuner is a system process).
 
-Validates that users can only access their own tenant's data, not other tenants' data.
-This is a CRITICAL security test for multi-tenant SaaS.
+usr_edge_learning is written by EdgeTuner via the global orchestrator storage
+(StorageManager with no user_id → data_vault/global/aethelgard.db).
+The endpoint must read from the same global DB so the data is actually visible.
+All authenticated users see the same system-level monitoring data.
 
 Trace_ID: SECURITY-TENANT-ISOLATION-2026-001
 """
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 import json
 
-from data_vault.tenant_factory import TenantDBFactory
+from data_vault.storage import StorageManager
 from models.auth import TokenPayload
 from core_brain.api.routers.trading import get_edge_history
 
@@ -32,73 +34,52 @@ def mock_token_bob():
 
 
 @pytest.mark.asyncio
-async def test_tenant_isolation_edge_history_alice_vs_bob(mock_token_alice, mock_token_bob):
+async def test_edge_history_uses_global_storage_not_tenant(mock_token_alice, mock_token_bob):
     """
-    SECURITY TEST: Verify that Alice cannot access Bob's edge learning history.
-    
-    Scenario:
-    1. Alice logs in (token.sub='alice_uuid')
-    2. Bob logs in (token.sub='bob_uuid')
-    3. Both call GET /api/edge/history
-    4. They must get DIFFERENT data from their isolated BDs
-    
-    Expected:
-    - Alice's endpoint uses TenantDBFactory.get_storage('alice_uuid')
-    - Bob's endpoint uses TenantDBFactory.get_storage('bob_uuid')
-    - Each gets only their own data
+    ARCHITECTURE TEST: /api/edge/history must use global _get_storage(), NOT TenantDBFactory.
+
+    EdgeTuner is a system process: it writes usr_edge_learning rows via
+    StorageManager() (global DB). Reading from tenant DB would return empty results.
+    Both Alice and Bob must see the same system monitoring feed.
     """
-    
-    # Patch TenantDBFactory.get_storage to track which tenant was requested
-    called_tenants = []
-    
-    original_get_storage = TenantDBFactory.get_storage
-    
-    def mock_get_storage_factory(tenant_id, base_path=None):
-        called_tenants.append(tenant_id)
-        return original_get_storage(tenant_id, base_path)
-    
-    with patch.object(TenantDBFactory, 'get_storage', side_effect=mock_get_storage_factory):
-        # Alice calls endpoint
+    global_storage_calls = []
+    original_global = StorageManager
+
+    with patch('core_brain.api.routers.trading._get_storage') as mock_global:
+        mock_storage = Mock()
+        mock_storage.get_tuning_history.return_value = []
+        mock_storage.get_edge_learning_history.return_value = []
+        mock_global.return_value = mock_storage
+
         result_alice = await get_edge_history(limit=50, token=mock_token_alice)
-        
-        # Bob calls endpoint
         result_bob = await get_edge_history(limit=50, token=mock_token_bob)
-    
-    # Verify that TenantDBFactory was called with correct tenant IDs
-    assert "alice_uuid" in called_tenants, "TenantDBFactory should be called with alice_uuid"
-    assert "bob_uuid" in called_tenants, "TenantDBFactory should be called with bob_uuid"
-    
-    # Verify that isolated storage was obtained
-    assert called_tenants.count("alice_uuid") >= 1
-    assert called_tenants.count("bob_uuid") >= 1
+
+    # Both calls must have used global storage
+    assert mock_global.call_count == 2, (
+        f"_get_storage() should be called once per request, got {mock_global.call_count}"
+    )
+    assert isinstance(result_alice, dict) and "history" in result_alice
+    assert isinstance(result_bob, dict) and "history" in result_bob
 
 
 @pytest.mark.asyncio
-async def test_endpoint_uses_tenantdbfactory_not_generic_storage(mock_token_alice):
+async def test_endpoint_uses_global_storage_not_tenantdbfactory(mock_token_alice):
     """
-    UNIT TEST: Verify that /api/edge/history uses TenantDBFactory, NOT _get_storage().
-    
-    This ensures that the endpoint gets the tenant-isolated storage,
-    not a shared generic storage that could leak data.
+    UNIT TEST: /api/edge/history uses _get_storage() (global), NOT TenantDBFactory.
+
+    This is intentional: edge learning data is system-wide operational telemetry,
+    not per-user trading data.
     """
-    called_with = []
-    
-    original_get_storage = TenantDBFactory.get_storage
-    
-    def track_call(tenant_id, base_path=None):
-        called_with.append(("TenantDBFactory.get_storage", tenant_id))
-        return original_get_storage(tenant_id, base_path)
-    
-    with patch.object(TenantDBFactory, 'get_storage', side_effect=track_call) as mock_factory:
+    with patch('core_brain.api.routers.trading._get_storage') as mock_global:
+        mock_storage = Mock()
+        mock_storage.get_tuning_history.return_value = []
+        mock_storage.get_edge_learning_history.return_value = []
+        mock_global.return_value = mock_storage
+
         result = await get_edge_history(limit=50, token=mock_token_alice)
-    
-    # Verify TenantDBFactory.get_storage was called
-    assert mock_factory.called, "TenantDBFactory.get_storage should be called"
-    assert mock_factory.call_count >= 1
-    
-    # Verify it was called with the correct tenant_id
-    all_calls = [call[0][0] for call in mock_factory.call_args_list]
-    assert "alice_uuid" in all_calls, f"Should call with alice_uuid, got {all_calls}"
+
+    assert mock_global.called, "_get_storage() should be called for global edge data"
+    assert "history" in result
 
 
 @pytest.mark.asyncio

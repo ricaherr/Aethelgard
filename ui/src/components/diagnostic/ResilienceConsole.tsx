@@ -282,6 +282,7 @@ export const ResilienceConsole = () => {
   const palette = POSTURE_CONFIG[posture] ?? POSTURE_CONFIG['UNAVAILABLE'];
   const narrative = wsSnapshot?.narrative ?? detail?.narrative ?? '';
   const isHealing = wsSnapshot?.is_healing ?? detail?.is_healing ?? false;
+  const isUnavailable = posture === 'UNAVAILABLE';
 
   const containerVariants = {
     hidden: {},
@@ -398,6 +399,7 @@ export const ResilienceConsole = () => {
             icon={<RefreshCw size={11} />}
             onClick={handleRetryHealing}
             busy={busyAction === 'RETRY_HEALING'}
+            disabled={isUnavailable}
           />
         </motion.div>
         <motion.div variants={itemVariants}>
@@ -408,6 +410,7 @@ export const ResilienceConsole = () => {
             onClick={handleOverrideNormal}
             busy={busyAction === 'OVERRIDE_POSTURE'}
             variant="danger"
+            disabled={isUnavailable}
           />
         </motion.div>
       </motion.div>

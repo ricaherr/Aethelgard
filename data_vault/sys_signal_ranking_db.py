@@ -300,24 +300,22 @@ class StrategyRankingMixin(BaseRepository):
     def get_regime_weights(self, regime: str, user_id: str = "default") -> Dict[str, str]:
         """
         Get metric weights for a specific regime from sys_regime_configs table.
-        
+
         Args:
             regime: Market regime (TREND, RANGE, VOLATILE)
-            user_id: User identifier for isolation
-            
+            user_id: Kept for API compatibility — sys_regime_configs is global (no user_id column).
+
         Returns:
             Dictionary mapping metric_name -> weight (as string for Decimal conversion)
         """
         conn: sqlite3.Connection = self._get_conn()
         try:
-            # Note: sys_regime_configs currently might be global or user-specific.
-            # If following the isolation protocol, we filter by user_id.
             cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute("""
-                SELECT metric_name, weight FROM sys_regime_configs 
-                WHERE regime = ? AND (user_id = ? OR user_id IS NULL)
+                SELECT metric_name, weight FROM sys_regime_configs
+                WHERE regime = ?
                 ORDER BY metric_name
-            """, (regime, user_id))
+            """, (regime,))
             rows: List[Any] = cursor.fetchall()
             return {row[0]: row[1] for row in rows}
         finally:
@@ -326,7 +324,10 @@ class StrategyRankingMixin(BaseRepository):
     def get_all_sys_regime_configs(self, user_id: str = "default") -> Dict[str, Dict[str, str]]:
         """
         Get all regime configurations as nested dict.
-        
+
+        Args:
+            user_id: Kept for API compatibility — sys_regime_configs is global (no user_id column).
+
         Returns:
             Dict[regime → Dict[metric_name → weight]]
         """
@@ -335,17 +336,16 @@ class StrategyRankingMixin(BaseRepository):
             cursor: sqlite3.Cursor = conn.cursor()
             cursor.execute("""
                 SELECT regime, metric_name, weight FROM sys_regime_configs
-                WHERE (user_id = ? OR user_id IS NULL)
                 ORDER BY regime, metric_name
-            """, (user_id,))
+            """)
             rows: List[Any] = cursor.fetchall()
-            
+
             result: Dict[str, Dict[str, Any]] = {}
             for regime, metric_name, weight in rows:
                 if regime not in result:
                     result[regime] = {}
                 result[regime][metric_name] = weight
-            
+
             return result
         finally:
             self._close_conn(conn)

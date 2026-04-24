@@ -388,8 +388,8 @@ async def get_edge_history(limit: int = 50, token: TokenPayload = Depends(get_cu
     Each user only accesses their own isolated database.
     """
     try:
-        # ✅ SECURITY: Get tenant-isolated storage using TenantDBFactory (user_id based after migration)
-        storage = TenantDBFactory.get_storage(token.sub)
+        # EdgeTuner writes to global DB (via orch.storage = StorageManager()), so we read from there too.
+        storage = _get_storage()
         
         # 1. Obtener historial de tuning (legacy)
         tuning_history = storage.get_tuning_history(limit=limit)
@@ -448,8 +448,8 @@ async def get_edge_history(limit: int = 50, token: TokenPayload = Depends(get_cu
                 "details": log.get('learning')
             })
         
-        # Ordenar por timestamp descendente
-        unified_events.sort(key=lambda x: x['timestamp'], reverse=True)
+        # Ordenar por timestamp descendente (None va al final)
+        unified_events.sort(key=lambda x: x['timestamp'] or '', reverse=True)
         
         return {
             "history": unified_events[:limit],

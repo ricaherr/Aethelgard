@@ -99,9 +99,10 @@ def scan_router_file(filepath: Path) -> List[TenantedEndpoint]:
                     
                     # Compliance logic
                     # Global endpoints (like /config/{category}, /health) can use _get_storage()
+                    # /edge/history reads usr_edge_learning written by EdgeTuner (system process, global DB)
                     is_global_endpoint = any(
-                        pattern in endpoint_def 
-                        for pattern in ['/config/', '/health', '/system/', '/audit/']
+                        pattern in endpoint_def
+                        for pattern in ['/config/', '/health', '/system/', '/audit/', '/edge/history']
                     )
                     
                     if not has_token:
